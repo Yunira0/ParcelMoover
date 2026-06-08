@@ -1,0 +1,508 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model admins {
+  id          String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id     String     @unique @db.Uuid
+  location_id String?    @db.Uuid
+  position    String?
+  joined_at   DateTime?  @db.Date
+  created_at  DateTime   @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime   @default(now()) @db.Timestamptz(6)
+  locations   locations? @relation(fields: [location_id], references: [id], onUpdate: NoAction)
+  users       users      @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([location_id], map: "idx_admins_location_id")
+}
+
+model audit_logs {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  actor_id    String?  @db.Uuid
+  entity_type String
+  entity_id   String?  @db.Uuid
+  action      String
+  old_data    Json?
+  new_data    Json?
+  ip_address  String?  @db.Inet
+  user_agent  String?
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+  users       users?   @relation(fields: [actor_id], references: [id], onUpdate: NoAction)
+
+  @@index([action], map: "idx_audit_logs_action")
+  @@index([actor_id], map: "idx_audit_logs_actor_id")
+  @@index([created_at(sort: Desc)], map: "idx_audit_logs_created_at")
+  @@index([entity_type, entity_id, created_at(sort: Desc)], map: "idx_audit_logs_entity")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model cod_collections {
+  id               String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  parcel_id        String             @unique @db.Uuid
+  vendor_id        String?            @db.Uuid
+  rider_id         String?            @db.Uuid
+  cod_amount       Decimal            @db.Decimal(12, 2)
+  collected_amount Decimal            @default(0) @db.Decimal(12, 2)
+  remitted_amount  Decimal            @default(0) @db.Decimal(12, 2)
+  pending_amount   Decimal?           @db.Decimal(12, 2)
+  payment_status   payment_status     @default(pending)
+  collected_at     DateTime?          @db.Timestamptz(6)
+  created_at       DateTime           @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime           @default(now()) @db.Timestamptz(6)
+  parcels          parcels            @relation(fields: [parcel_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  riders           riders?            @relation(fields: [rider_id], references: [id], onUpdate: NoAction)
+  vendors          vendors?           @relation(fields: [vendor_id], references: [id], onUpdate: NoAction)
+  settlement_items settlement_items[]
+
+  @@index([rider_id, payment_status], map: "idx_cod_collections_rider_status")
+  @@index([vendor_id, payment_status], map: "idx_cod_collections_vendor_status")
+}
+
+model dispatch_parcels {
+  dispatch_id String     @db.Uuid
+  parcel_id   String     @db.Uuid
+  created_at  DateTime   @default(now()) @db.Timestamptz(6)
+  dispatches  dispatches @relation(fields: [dispatch_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  parcels     parcels    @relation(fields: [parcel_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([dispatch_id, parcel_id])
+  @@index([parcel_id], map: "idx_dispatch_parcels_parcel_id")
+}
+
+model dispatches {
+  id                                               String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  dispatch_no                                      String             @unique
+  from_location_id                                 String?            @db.Uuid
+  to_location_id                                   String?            @db.Uuid
+  delivery_rider_id                                String?            @db.Uuid
+  dispatched_by                                    String?            @db.Uuid
+  dispatched_at                                    DateTime           @default(now()) @db.Timestamptz(6)
+  arrived_at                                       DateTime?          @db.Timestamptz(6)
+  remarks                                          String?
+  created_at                                       DateTime           @default(now()) @db.Timestamptz(6)
+  updated_at                                       DateTime           @default(now()) @db.Timestamptz(6)
+  dispatch_parcels                                 dispatch_parcels[]
+  riders                                           riders?            @relation(fields: [delivery_rider_id], references: [id], onUpdate: NoAction)
+  users                                            users?             @relation(fields: [dispatched_by], references: [id], onUpdate: NoAction)
+  locations_dispatches_from_location_idTolocations locations?         @relation("dispatches_from_location_idTolocations", fields: [from_location_id], references: [id], onUpdate: NoAction)
+  locations_dispatches_to_location_idTolocations   locations?         @relation("dispatches_to_location_idTolocations", fields: [to_location_id], references: [id], onUpdate: NoAction)
+
+  @@index([delivery_rider_id], map: "idx_dispatches_delivery_rider")
+  @@index([dispatched_at], map: "idx_dispatches_dispatched_at")
+  @@index([dispatched_by], map: "idx_dispatches_dispatched_by")
+  @@index([from_location_id, to_location_id], map: "idx_dispatches_locations")
+  @@index([to_location_id], map: "idx_dispatches_to_location")
+}
+
+model locations {
+  id                                                 String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  parent_id                                          String?                 @db.Uuid
+  name                                               String
+  code                                               String?                 @unique
+  province                                           String?
+  district                                           String?
+  city                                               String?
+  address_line                                       String?
+  latitude                                           Decimal?                @db.Decimal(10, 7)
+  longitude                                          Decimal?                @db.Decimal(10, 7)
+  is_hub                                             Boolean                 @default(false)
+  is_active                                          Boolean                 @default(true)
+  created_at                                         DateTime                @default(now()) @db.Timestamptz(6)
+  updated_at                                         DateTime                @default(now()) @db.Timestamptz(6)
+  admins                                             admins[]
+  dispatches_dispatches_from_location_idTolocations  dispatches[]            @relation("dispatches_from_location_idTolocations")
+  dispatches_dispatches_to_location_idTolocations    dispatches[]            @relation("dispatches_to_location_idTolocations")
+  locations                                          locations?              @relation("locationsTolocations", fields: [parent_id], references: [id], onUpdate: NoAction)
+  other_locations                                    locations[]             @relation("locationsTolocations")
+  parcel_remarks                                     parcel_remarks[]
+  parcel_status_history                              parcel_status_history[]
+  parcels_parcels_current_location_idTolocations     parcels[]               @relation("parcels_current_location_idTolocations")
+  parcels_parcels_destination_location_idTolocations parcels[]               @relation("parcels_destination_location_idTolocations")
+  parcels_parcels_origin_location_idTolocations      parcels[]               @relation("parcels_origin_location_idTolocations")
+  parties                                            parties[]
+  riders                                             riders[]
+  vendors                                            vendors[]
+
+  @@index([parent_id], map: "idx_locations_parent_id")
+}
+
+model notifications {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id    String    @db.Uuid
+  title      String
+  body       String?
+  read_at    DateTime? @db.Timestamptz(6)
+  created_at DateTime  @default(now()) @db.Timestamptz(6)
+  users      users     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model parcel_exceptions {
+  id                                         String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  parcel_id                                  String           @db.Uuid
+  exception_type                             String
+  previous_status                            parcel_status?
+  reason                                     String?
+  age_days                                   Int?
+  package_condition                          String?
+  reported_by                                String?          @db.Uuid
+  resolved_by                                String?          @db.Uuid
+  reported_at                                DateTime         @default(now()) @db.Timestamptz(6)
+  resolved_at                                DateTime?        @db.Timestamptz(6)
+  status                                     exception_status @default(open)
+  parcels                                    parcels          @relation(fields: [parcel_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users_parcel_exceptions_reported_byTousers users?           @relation("parcel_exceptions_reported_byTousers", fields: [reported_by], references: [id], onUpdate: NoAction)
+  users_parcel_exceptions_resolved_byTousers users?           @relation("parcel_exceptions_resolved_byTousers", fields: [resolved_by], references: [id], onUpdate: NoAction)
+
+  @@index([parcel_id], map: "idx_parcel_exceptions_parcel_id")
+  @@index([reported_by], map: "idx_parcel_exceptions_reported_by")
+  @@index([resolved_by], map: "idx_parcel_exceptions_resolved_by")
+  @@index([exception_type, status], map: "idx_parcel_exceptions_type_status")
+}
+
+model parcel_remarks {
+  id          String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  parcel_id   String     @db.Uuid
+  user_id     String?    @db.Uuid
+  location_id String?    @db.Uuid
+  remark      String
+  created_at  DateTime   @default(now()) @db.Timestamptz(6)
+  locations   locations? @relation(fields: [location_id], references: [id], onUpdate: NoAction)
+  parcels     parcels    @relation(fields: [parcel_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users       users?     @relation(fields: [user_id], references: [id], onUpdate: NoAction)
+
+  @@index([location_id], map: "idx_parcel_remarks_location_id")
+  @@index([parcel_id, created_at(sort: Desc)], map: "idx_parcel_remarks_parcel_id")
+  @@index([user_id], map: "idx_parcel_remarks_user_id")
+}
+
+model parcel_status_history {
+  id          String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  parcel_id   String         @db.Uuid
+  old_status  parcel_status?
+  new_status  parcel_status
+  location_id String?        @db.Uuid
+  changed_by  String?        @db.Uuid
+  remarks     String?
+  created_at  DateTime       @default(now()) @db.Timestamptz(6)
+  users       users?         @relation(fields: [changed_by], references: [id], onUpdate: NoAction)
+  locations   locations?     @relation(fields: [location_id], references: [id], onUpdate: NoAction)
+  parcels     parcels        @relation(fields: [parcel_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([changed_by], map: "idx_parcel_status_history_changed_by")
+  @@index([location_id], map: "idx_parcel_status_history_location_id")
+  @@index([parcel_id, created_at(sort: Desc)], map: "idx_parcel_status_history_parcel_id")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model parcels {
+  id                                                   String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tracking_id                                          String                  @unique
+  vendor_id                                            String?                 @db.Uuid
+  sender_id                                            String                  @db.Uuid
+  receiver_id                                          String                  @db.Uuid
+  pickup_rider_id                                      String?                 @db.Uuid
+  delivery_rider_id                                    String?                 @db.Uuid
+  origin_location_id                                   String?                 @db.Uuid
+  current_location_id                                  String?                 @db.Uuid
+  destination_location_id                              String?                 @db.Uuid
+  order_type                                           order_type              @default(delivery)
+  service_type                                         service_type            @default(dtd)
+  status                                               parcel_status           @default(pickup_ordered)
+  pieces                                               Int                     @default(1)
+  weight_kg                                            Decimal?                @db.Decimal(10, 3)
+  cod_amount                                           Decimal                 @default(0) @db.Decimal(12, 2)
+  delivery_charge                                      Decimal                 @default(0) @db.Decimal(12, 2)
+  attempt_count                                        Int                     @default(0)
+  created_by                                           String?                 @db.Uuid
+  created_at                                           DateTime                @default(now()) @db.Timestamptz(6)
+  picked_up_at                                         DateTime?               @db.Timestamptz(6)
+  delivered_at                                         DateTime?               @db.Timestamptz(6)
+  updated_at                                           DateTime                @default(now()) @db.Timestamptz(6)
+  deleted_at                                           DateTime?               @db.Timestamptz(6)
+  cod_collections                                      cod_collections?
+  dispatch_parcels                                     dispatch_parcels[]
+  parcel_exceptions                                    parcel_exceptions[]
+  parcel_remarks                                       parcel_remarks[]
+  parcel_status_history                                parcel_status_history[]
+  users                                                users?                  @relation(fields: [created_by], references: [id], onUpdate: NoAction)
+  locations_parcels_current_location_idTolocations     locations?              @relation("parcels_current_location_idTolocations", fields: [current_location_id], references: [id], onUpdate: NoAction)
+  riders_parcels_delivery_rider_idToriders             riders?                 @relation("parcels_delivery_rider_idToriders", fields: [delivery_rider_id], references: [id], onUpdate: NoAction)
+  locations_parcels_destination_location_idTolocations locations?              @relation("parcels_destination_location_idTolocations", fields: [destination_location_id], references: [id], onUpdate: NoAction)
+  locations_parcels_origin_location_idTolocations      locations?              @relation("parcels_origin_location_idTolocations", fields: [origin_location_id], references: [id], onUpdate: NoAction)
+  riders_parcels_pickup_rider_idToriders               riders?                 @relation("parcels_pickup_rider_idToriders", fields: [pickup_rider_id], references: [id], onUpdate: NoAction)
+  parties_parcels_receiver_idToparties                 parties                 @relation("parcels_receiver_idToparties", fields: [receiver_id], references: [id], onUpdate: NoAction)
+  parties_parcels_sender_idToparties                   parties                 @relation("parcels_sender_idToparties", fields: [sender_id], references: [id], onUpdate: NoAction)
+  vendors                                              vendors?                @relation(fields: [vendor_id], references: [id], onUpdate: NoAction)
+  pickup_tasks                                         pickup_tasks?
+  support_tickets                                      support_tickets[]
+
+  @@index([created_at(sort: Desc)], map: "idx_parcels_created_at")
+  @@index([created_by], map: "idx_parcels_created_by")
+  @@index([current_location_id], map: "idx_parcels_current_location")
+  @@index([delivered_at(sort: Desc)], map: "idx_parcels_delivered_at")
+  @@index([delivery_rider_id], map: "idx_parcels_delivery_rider")
+  @@index([destination_location_id], map: "idx_parcels_destination_location")
+  @@index([origin_location_id], map: "idx_parcels_origin_location")
+  @@index([pickup_rider_id], map: "idx_parcels_pickup_rider")
+  @@index([receiver_id], map: "idx_parcels_receiver_id")
+  @@index([sender_id], map: "idx_parcels_sender_id")
+  @@index([vendor_id], map: "idx_parcels_vendor_id")
+}
+
+model parties {
+  id                                   String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name                                 String
+  phone                                String
+  email                                String?
+  address                              String?
+  location_id                          String?    @db.Uuid
+  created_at                           DateTime   @default(now()) @db.Timestamptz(6)
+  updated_at                           DateTime   @default(now()) @db.Timestamptz(6)
+  parcels_parcels_receiver_idToparties parcels[]  @relation("parcels_receiver_idToparties")
+  parcels_parcels_sender_idToparties   parcels[]  @relation("parcels_sender_idToparties")
+  locations                            locations? @relation(fields: [location_id], references: [id], onUpdate: NoAction)
+
+  @@index([location_id], map: "idx_parties_location_id")
+  @@index([phone], map: "idx_parties_phone")
+}
+
+model pickup_tasks {
+  id             String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  parcel_id      String        @unique @db.Uuid
+  rider_id       String?       @db.Uuid
+  pickup_address String?
+  scheduled_at   DateTime?     @db.Timestamptz(6)
+  completed_at   DateTime?     @db.Timestamptz(6)
+  status         parcel_status @default(pickup_ordered)
+  created_at     DateTime      @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime      @default(now()) @db.Timestamptz(6)
+  parcels        parcels       @relation(fields: [parcel_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  riders         riders?       @relation(fields: [rider_id], references: [id], onUpdate: NoAction)
+
+  @@index([rider_id, status], map: "idx_pickup_tasks_rider_status")
+}
+
+model riders {
+  id                                        String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id                                   String?           @unique @db.Uuid
+  name                                      String
+  phone                                     String            @unique
+  location_id                               String?           @db.Uuid
+  status                                    user_status       @default(active)
+  joined_at                                 DateTime?         @db.Date
+  created_at                                DateTime          @default(now()) @db.Timestamptz(6)
+  updated_at                                DateTime          @default(now()) @db.Timestamptz(6)
+  deleted_at                                DateTime?         @db.Timestamptz(6)
+  cod_collections                           cod_collections[]
+  dispatches                                dispatches[]
+  parcels_parcels_delivery_rider_idToriders parcels[]         @relation("parcels_delivery_rider_idToriders")
+  parcels_parcels_pickup_rider_idToriders   parcels[]         @relation("parcels_pickup_rider_idToriders")
+  pickup_tasks                              pickup_tasks[]
+  locations                                 locations?        @relation(fields: [location_id], references: [id], onUpdate: NoAction)
+  users                                     users?            @relation(fields: [user_id], references: [id], onUpdate: NoAction)
+  settlements                               settlements[]
+
+  @@index([location_id], map: "idx_riders_location_id")
+}
+
+model roles {
+  id          String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code        String       @unique
+  name        String
+  description String?
+  created_at  DateTime     @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime     @default(now()) @db.Timestamptz(6)
+  user_roles  user_roles[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model settlement_items {
+  settlement_id     String          @db.Uuid
+  cod_collection_id String          @db.Uuid
+  amount            Decimal         @db.Decimal(12, 2)
+  created_at        DateTime        @default(now()) @db.Timestamptz(6)
+  cod_collections   cod_collections @relation(fields: [cod_collection_id], references: [id], onUpdate: NoAction)
+  settlements       settlements     @relation(fields: [settlement_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([settlement_id, cod_collection_id])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model settlements {
+  id                                   String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  statement_id                         String             @unique
+  payee_type                           String
+  rider_id                             String?            @db.Uuid
+  vendor_id                            String?            @db.Uuid
+  amount                               Decimal            @db.Decimal(12, 2)
+  payable_amount                       Decimal?           @db.Decimal(12, 2)
+  settlement_date                      DateTime?          @db.Date
+  status                               settlement_status  @default(pending)
+  remark                               String?
+  approved_by                          String?            @db.Uuid
+  settled_by                           String?            @db.Uuid
+  created_at                           DateTime           @default(now()) @db.Timestamptz(6)
+  updated_at                           DateTime           @default(now()) @db.Timestamptz(6)
+  settlement_items                     settlement_items[]
+  users_settlements_approved_byTousers users?             @relation("settlements_approved_byTousers", fields: [approved_by], references: [id], onUpdate: NoAction)
+  riders                               riders?            @relation(fields: [rider_id], references: [id], onUpdate: NoAction)
+  users_settlements_settled_byTousers  users?             @relation("settlements_settled_byTousers", fields: [settled_by], references: [id], onUpdate: NoAction)
+  vendors                              vendors?           @relation(fields: [vendor_id], references: [id], onUpdate: NoAction)
+
+  @@index([approved_by], map: "idx_settlements_approved_by")
+  @@index([settled_by], map: "idx_settlements_settled_by")
+  @@index([settlement_date], map: "idx_settlements_settlement_date")
+}
+
+model support_tickets {
+  id                                       String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ticket_no                                String        @unique
+  parcel_id                                String?       @db.Uuid
+  customer_name                            String?
+  customer_phone                           String?
+  issue_type                               String
+  description                              String?
+  status                                   ticket_status @default(open)
+  assigned_to                              String?       @db.Uuid
+  created_by                               String?       @db.Uuid
+  created_at                               DateTime      @default(now()) @db.Timestamptz(6)
+  updated_at                               DateTime      @default(now()) @db.Timestamptz(6)
+  closed_at                                DateTime?     @db.Timestamptz(6)
+  users_support_tickets_assigned_toTousers users?        @relation("support_tickets_assigned_toTousers", fields: [assigned_to], references: [id], onUpdate: NoAction)
+  users_support_tickets_created_byTousers  users?        @relation("support_tickets_created_byTousers", fields: [created_by], references: [id], onUpdate: NoAction)
+  parcels                                  parcels?      @relation(fields: [parcel_id], references: [id], onUpdate: NoAction)
+
+  @@index([assigned_to], map: "idx_support_tickets_assigned_to")
+  @@index([created_by], map: "idx_support_tickets_created_by")
+  @@index([parcel_id], map: "idx_support_tickets_parcel_id")
+  @@index([status, created_at(sort: Desc)], map: "idx_support_tickets_status")
+}
+
+model user_roles {
+  user_id    String   @db.Uuid
+  role_id    String   @db.Uuid
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  roles      roles    @relation(fields: [role_id], references: [id], onUpdate: NoAction)
+  users      users    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([user_id, role_id])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model users {
+  id                                                     String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  full_name                                              String
+  email                                                  String?                 @unique
+  phone                                                  String?                 @unique
+  password_hash                                          String?
+  status                                                 user_status             @default(active)
+  last_login_at                                          DateTime?               @db.Timestamptz(6)
+  created_at                                             DateTime                @default(now()) @db.Timestamptz(6)
+  updated_at                                             DateTime                @default(now()) @db.Timestamptz(6)
+  deleted_at                                             DateTime?               @db.Timestamptz(6)
+  admins                                                 admins?
+  audit_logs                                             audit_logs[]
+  dispatches                                             dispatches[]
+  notifications                                          notifications[]
+  parcel_exceptions_parcel_exceptions_reported_byTousers parcel_exceptions[]     @relation("parcel_exceptions_reported_byTousers")
+  parcel_exceptions_parcel_exceptions_resolved_byTousers parcel_exceptions[]     @relation("parcel_exceptions_resolved_byTousers")
+  parcel_remarks                                         parcel_remarks[]
+  parcel_status_history                                  parcel_status_history[]
+  parcels                                                parcels[]
+  riders                                                 riders?
+  settlements_settlements_approved_byTousers             settlements[]           @relation("settlements_approved_byTousers")
+  settlements_settlements_settled_byTousers              settlements[]           @relation("settlements_settled_byTousers")
+  support_tickets_support_tickets_assigned_toTousers     support_tickets[]       @relation("support_tickets_assigned_toTousers")
+  support_tickets_support_tickets_created_byTousers      support_tickets[]       @relation("support_tickets_created_byTousers")
+  user_roles                                             user_roles[]
+  vendors                                                vendors?
+}
+
+model vendors {
+  id              String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id         String?           @unique @db.Uuid
+  client_name     String
+  business_name   String?
+  phone           String
+  email           String?
+  location_id     String?           @db.Uuid
+  address         String?
+  status          user_status       @default(active)
+  joined_at       DateTime?         @db.Date
+  last_ordered_at DateTime?         @db.Timestamptz(6)
+  created_at      DateTime          @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime          @default(now()) @db.Timestamptz(6)
+  deleted_at      DateTime?         @db.Timestamptz(6)
+  cod_collections cod_collections[]
+  parcels         parcels[]
+  settlements     settlements[]
+  locations       locations?        @relation(fields: [location_id], references: [id], onUpdate: NoAction)
+  users           users?            @relation(fields: [user_id], references: [id], onUpdate: NoAction)
+
+  @@index([location_id], map: "idx_vendors_location_id")
+}
+
+enum exception_status {
+  open
+  resolved
+  closed
+}
+
+enum order_type {
+  exchange
+  delivery
+  return
+}
+
+enum parcel_status {
+  pickup_ordered
+  rider_assigned
+  picked_up
+  arrived
+  ready_to_deliver
+  oov
+  dispatched
+  arrived_at_branch
+  hold
+  loss_and_damage
+  delivered
+  failed
+  cancelled
+}
+
+enum payment_status {
+  pending
+  paid
+}
+
+enum service_type {
+  dtd
+  btd
+  btb
+  dtb
+}
+
+enum settlement_status {
+  pending
+  settled
+}
+
+enum ticket_status {
+  open
+  in_progress
+  resolved
+  closed
+  pending
+}
+
+enum user_status {
+  active
+  inactive
+}
