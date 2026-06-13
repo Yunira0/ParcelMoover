@@ -17,7 +17,7 @@ declare global {
                 email: string | null;
                 phone: string | null;
                 status: string;
-                role: string[];
+                roles: string[];
             }
         }
     }
@@ -74,7 +74,7 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
             email: user.email,
             phone: user.phone,
             status: user.status,
-            role: user.user_roles.map(ur => ur.roles.name),
+            roles: user.user_roles.map(ur => ur.roles.code),
         };
 
         next();

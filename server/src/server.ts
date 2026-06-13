@@ -1,6 +1,7 @@
 import express, {Express, Request, Response} from 'express';
 import {config} from 'dotenv';
 import routes from "./routes/auth.routes";
+import OrderRoutes from "./routes/order.routes"
 import prisma from "./lib/prisma";
 import cookiesParser from "cookie-parser";
 
@@ -14,9 +15,13 @@ const port = process.env.PORT || 3000;
 // app.use(cors());
 app.use(express.json());
 app.use(cookiesParser());
+// Tell Express to trust the headers passed by your proxy (like X-Forwarded-For)
+app.set("trust proxy", 1);
 
 
 app.use("/api/auth", routes);
+
+app.use("/api/orders", OrderRoutes)
 
 import {authMiddleware} from "./middlewares/auth.mddleware";
 
