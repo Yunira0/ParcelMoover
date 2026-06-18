@@ -10,6 +10,7 @@ type OrderActor = {
 };
 
 const MAX_TRACKING_ID_RETRIES = 5;
+const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000; // 24 hrs
 
 async function generateUniqueTrackingId(
   tx: Prisma.TransactionClient,
@@ -62,15 +63,9 @@ async function findOrCreateParty(
 export async function createOrder(
   actor: OrderActor,
   data: CreateOrderInput,
-  idempotencyKey?: string,
 ) {
-  // Optional Idempotency Check (Requires adding idempotency_key to schema first)
-  // if (idempotencyKey) {
-  //   const existing = await prisma.parcels.findFirst({
-  //     where: { idempotency_key: idempotencyKey },
-  //   });
-  //   if (existing) return existing; 
-  // }
+
+  //check idempotency key
 
   const actorIsVendor = actor.roles.includes("vendor");
 

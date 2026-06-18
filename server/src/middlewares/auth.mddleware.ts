@@ -31,12 +31,10 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
         //     throw new AppError(401, 'Authorization header missing or malformed');
         // }
 
-        const token = authHeader?.startsWith('Bearer ')
-        ? authHeader.split(' ')[1]
-        : req.cookies?.accessToken;
+        const token = req.cookies.accessToken;
 
         if (!token) {
-            throw new AppError(401, 'Token missing');
+            throw new AppError(401, 'Authentication required');
         }
 
         if(!process.env.JWT_SECRET) {

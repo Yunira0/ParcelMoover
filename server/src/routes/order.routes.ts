@@ -3,6 +3,8 @@ import { rateLimit, ipKeyGenerator } from "express-rate-limit";
 import { authMiddleware } from "../middlewares/auth.mddleware";
 import { authorizeRoles } from "../middlewares/authorizeRoles.middleware";
 import { createOrderController } from "../controllers/order.controller";
+import { csrfProtection } from "../middlewares/csrf.middleware";
+
 
 const orderRouter: Router = Router();
 
@@ -26,11 +28,12 @@ const createOrderLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: (req: Request) => req.user?.id ?? ipKeyGenerator(req.ip ?? ""),
-})
+});
 
 orderRouter.post(
   "/",
   authMiddleware,
+  csrfProtection,
   authorizeRoles("super_admin", "admin", "vendor"),
   createOrderLimiter,
   createOrderController,

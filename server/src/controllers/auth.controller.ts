@@ -2,8 +2,7 @@ import express, { Request, Response } from "express";
 import { loginUser, registerUserBySuperAdmin } from "../services/auth.service";
 import { AppError } from "../utils/AppError";
 import { sendSuccess } from "../utils/ApiResponse";
-import crypto from "crypto"
-
+import jwt from "jsonwebtoken";
 
 export const registerUserController = async (req: Request, res: Response) => {
   try {
@@ -15,7 +14,6 @@ export const registerUserController = async (req: Request, res: Response) => {
 
     const result = await registerUserBySuperAdmin(SuperAdminUserID, req.body);
 
-
     return sendSuccess(res, 201, `${result.role} registered successfully`, {
       user: {
         id: result.user.id,
@@ -26,8 +24,8 @@ export const registerUserController = async (req: Request, res: Response) => {
         createdAt: result.user.created_at,
       },
       profile: result.profile,
-      role: result.role
-    }) 
+      role: result.role,
+    });
   } catch (error: any) {
     if (error.code === "P2002") {
       return res.status(409).json({
@@ -54,12 +52,22 @@ export const login = async (req: Request, res: Response) => {
     }
 
     const result = await loginUser({ email, password });
-    const csrfToken = crypto.randomBytes(32).toString("hex");
+    // const csrfToken = crypto.randomBytes(32).toString("hex");
+    const secret = process.env.CSRF_SECRET;
+
+    if (!secret) {
+      throw new Error("CSRF_SECRET is not set");
+    }
+
+    const csrfToken = jwt.sign({ sub: result.user.id }, secret, {
+      expiresIn: "7d",
+    });
 
     res.cookie("accessToken", result.token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
+      path: "/",
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     });
 
@@ -67,13 +75,15 @@ export const login = async (req: Request, res: Response) => {
       httpOnly: false,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
-      maxAge: 7 *24 * 60 * 60 * 1000,
-    })
+      path: "/",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
 
     return res.status(200).json({
       success: true,
       message: "Login successful",
-      data: result
+      data: result.user,
+      csrfToken,
     });
   } catch (error: any) {
     console.log("Error in login controller:", error);

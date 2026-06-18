@@ -11,6 +11,8 @@ interface IuserLoginData {
   password: string;
 }
 
+
+
 function validateRegisterInput(input: RegisterUserInput) {
   if (!input.type) {
     throw new AppError(400, "User type is required");
@@ -186,7 +188,9 @@ export async function registerUserBySuperAdmin(
       };
   });
 }
-
+/** 
+ * this is a cool function
+ */
 export async function loginUser(data: IuserLoginData) {
   try {
     const user = await prisma.users.findUnique({

@@ -5,18 +5,32 @@ import OrderRoutes from "./routes/order.routes"
 import prisma from "./lib/prisma";
 import cookiesParser from "cookie-parser";
 
-// import cors from "cors";
+import cors from "cors"
 
 config();
 
 const app: Express = express();
 const port = process.env.PORT || 3000;
 
-// app.use(cors());
+app.use(cors({
+    origin: process.env.ALLOWeD_ORIGINS?.split(",") || ["https://localhost:3000.com"],
+    credentials: true,
+}));
 app.use(express.json());
 app.use(cookiesParser());
-// Tell Express to trust the headers passed by your proxy (like X-Forwarded-For)
-app.set("trust proxy", 1);
+
+// Trust proxy configuration: only enable in production with a known trusted proxy.
+// In development, proxy trust is disabled to prevent IP spoofing.
+const trustProxy = process.env.TRUST_PROXY === "true" ? true : false;
+app.set("trust proxy", trustProxy);
+
+const trustedProxiesEnv = process.env.TRUSTED_PROXIES;
+if (trustedProxiesEnv) {
+    const trustedProxies = trustedProxiesEnv.split(",").map(ip => ip.trim()).filter(Boolean);
+    if (trustedProxies.length > 0) {
+        app.set("trust proxy", trustedProxies);
+    }
+}
 
 
 app.use("/api/auth", routes);
