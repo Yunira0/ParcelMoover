@@ -1,0 +1,107 @@
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+.modal-content {
+  background-color: var(--color-background-surface);
+  border-radius: var(--border-radius-modal);
+  width: 500px;
+  max-width: 90%;
+  padding: var(--space-6);
+  box-shadow: var(--app-shadow);
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--space-6);
+}
+
+.modal-header h2 {
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-default);
+}
+
+.close-btn {
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: var(--color-text-caption);
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4);
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.form-group label {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-caption);
+}
+
+.form-group input,
+.form-group select {
+  padding: var(--space-2);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-default);
+  outline: none;
+  background-color: var(--color-background-surface);
+  color: var(--color-text-default);
+  font-family: var(--typography-font-family-default);
+  font-size: var(--font-size-sm);
+}
+
+.form-group input:focus,
+.form-group select:focus {
+  border-color: var(--color-border-primary);
+}
+
+.error-text {
+  color: #ef4444;
+  font-size: var(--font-size-sm);
+  margin-top: var(--space-2);
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-4);
+  margin-top: var(--space-6);
+}
+
+.cancel-btn {
+  background-color: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  color: var(--color-text-caption);
+}
+
+.submit-btn {
+  background-color: var(--color-background-primary-default);
+  color: var(--color-text-base);
+  border: none;
+}
+
+.submit-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

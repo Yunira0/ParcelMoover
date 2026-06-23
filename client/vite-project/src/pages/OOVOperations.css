@@ -1,0 +1,393 @@
+.oov-operations-container {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  width: 100%;
+}
+
+.oov-title-row {
+  align-items: flex-start;
+  display: flex;
+  justify-content: space-between;
+}
+
+.oov-title-row h1 {
+  color: #0f172a;
+  font-family: var(--typography-font-family-default);
+  font-size: var(--font-size-2xl);
+  font-weight: var(--font-weight-bold);
+  line-height: var(--line-height-2xl);
+  margin: 0;
+}
+
+.oov-title-row p {
+  color: #64748b;
+  font-family: var(--typography-font-family-default);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-regular);
+  line-height: var(--line-height-sm);
+  margin: var(--space-2) 0 0;
+}
+
+.oov-tabs {
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-modal);
+  display: grid;
+  grid-template-columns: repeat(4, minmax(150px, 1fr));
+  overflow: hidden;
+  width: 100%;
+}
+
+.oov-tab {
+  align-items: center;
+  background: var(--color-background-surface);
+  border: 0;
+  border-right: 1px solid var(--color-border-default);
+  color: var(--color-text-caption);
+  cursor: pointer;
+  display: flex;
+  font-family: var(--typography-font-family-default);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-regular);
+  height: 40px;
+  justify-content: center;
+  line-height: var(--line-height-md);
+  padding: var(--space-2) var(--space-4);
+  white-space: nowrap;
+}
+
+.oov-tab:last-child {
+  border-right: 0;
+}
+
+.oov-tab.active {
+  background: var(--color-background-primary-invert-default);
+  color: var(--color-text-primary);
+  font-weight: var(--font-weight-semi-bold);
+}
+
+.oov-search {
+  align-items: center;
+  background: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-default);
+  color: var(--color-text-placeholder);
+  display: flex;
+  gap: var(--space-2);
+  min-height: 36px;
+  padding: var(--space-2);
+  width: 100%;
+}
+
+.oov-search:focus-within {
+  border-color: var(--color-border-primary);
+  box-shadow: 0 0 0 2px rgb(194 65 12 / 12%);
+}
+
+.oov-search input {
+  background: transparent;
+  border: 0;
+  color: var(--color-text-default);
+  flex: 1;
+  font-family: var(--typography-font-family-default);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-sm);
+  min-width: 0;
+  outline: none;
+}
+
+.oov-toolbar {
+  align-items: center;
+  display: flex;
+  gap: var(--space-4);
+  justify-content: space-between;
+}
+
+.oov-toolbar-actions {
+  align-items: center;
+  display: flex;
+  gap: var(--space-4);
+  margin-left: auto;
+}
+
+.oov-outline-btn {
+  align-items: center;
+  background: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-default);
+  color: var(--color-text-default);
+  cursor: pointer;
+  display: inline-flex;
+  font-family: var(--typography-font-family-default);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  gap: var(--space-2);
+  height: 36px;
+  justify-content: center;
+  min-height: 36px;
+  padding: var(--space-2);
+  white-space: nowrap;
+}
+
+.oov-table th,
+.oov-table td {
+  font-size: var(--font-size-xs, 12px);
+  line-height: var(--line-height-xs, 16px);
+}
+
+.oov-sn-cell {
+  text-align: center;
+}
+
+.oov-tracking-cell {
+  color: var(--color-text-primary) !important;
+  font-weight: var(--font-weight-semi-bold);
+}
+
+.oov-order-type {
+  color: var(--color-text-default);
+  text-transform: capitalize;
+}
+
+.oov-party-cell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.oov-party-cell span {
+  color: var(--color-text-default);
+  font-weight: var(--font-weight-semi-bold);
+}
+
+.oov-party-cell small {
+  color: var(--color-text-placeholder);
+  font-size: var(--font-size-xs, 12px);
+  font-weight: var(--font-weight-regular);
+}
+
+.oov-updated-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.oov-remarks-cell {
+  max-width: 120px;
+}
+
+.oov-action-anchor {
+  position: relative;
+}
+
+.oov-status-popover {
+  background: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-modal);
+  box-shadow: var(--app-shadow);
+  padding: var(--space-3);
+  position: absolute;
+  right: 0;
+  top: calc(100% + var(--space-2));
+  width: 280px;
+  z-index: 40;
+}
+
+.oov-status-popover-header {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: var(--space-2);
+}
+
+.oov-status-popover-header span {
+  color: var(--color-text-caption);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+}
+
+.oov-status-popover-header button {
+  background: transparent;
+  border: 0;
+  color: var(--color-text-caption);
+  cursor: pointer;
+  font-size: 20px;
+  height: 24px;
+  line-height: 1;
+  padding: 0;
+  width: 24px;
+}
+
+.oov-status-options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.oov-status-option {
+  align-items: center;
+  background: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-default);
+  color: var(--color-text-default);
+  cursor: pointer;
+  display: flex;
+  font-family: var(--typography-font-family-default);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  justify-content: flex-start;
+  min-height: 36px;
+  padding: var(--space-2);
+  text-align: left;
+  width: 100%;
+}
+
+.oov-status-option:hover,
+.oov-status-option.selected {
+  background: var(--color-background-primary-invert-default);
+  border-color: var(--color-border-primary);
+  color: var(--color-text-primary);
+}
+
+.oov-status-option:disabled {
+  opacity: var(--opacity-75);
+}
+
+.oov-status-empty {
+  color: var(--color-text-caption);
+  font-size: var(--font-size-sm);
+  margin: 0;
+}
+
+.oov-action-error {
+  color: #b91c1c;
+  font-size: var(--font-size-sm);
+  margin: var(--space-2) 0 0;
+}
+
+.oov-status-submit-row {
+  display: flex;
+  gap: var(--space-2);
+  justify-content: flex-end;
+  margin-top: var(--space-3);
+}
+
+.oov-status-submit-row .oov-outline-btn,
+.oov-apply-btn {
+  height: 34px;
+  min-height: 34px;
+}
+
+.oov-apply-btn {
+  align-items: center;
+  background: var(--color-background-primary-default);
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--border-radius-default);
+  color: var(--color-text-base);
+  cursor: pointer;
+  display: inline-flex;
+  font-family: var(--typography-font-family-default);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  justify-content: center;
+  padding: var(--space-2) var(--space-3);
+  white-space: nowrap;
+}
+
+.oov-apply-btn:disabled {
+  cursor: not-allowed;
+  opacity: var(--opacity-50);
+}
+
+.oov-pagination-row {
+  align-items: center;
+  display: flex;
+  gap: var(--space-4);
+  justify-content: space-between;
+}
+
+.oov-pagination {
+  align-items: center;
+  background: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: 6px;
+  display: flex;
+  height: 38px;
+  overflow: hidden;
+}
+
+.oov-pagination button {
+  align-items: center;
+  background: var(--color-background-surface);
+  border: 0;
+  border-right: 1px solid var(--color-border-default);
+  color: #64748b;
+  cursor: pointer;
+  display: flex;
+  font-family: var(--typography-font-family-default);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  height: 38px;
+  justify-content: center;
+  min-width: 40px;
+  padding: 0 var(--space-3);
+}
+
+.oov-pagination button:last-child {
+  border-right: 0;
+}
+
+.oov-pagination button.active {
+  background: var(--color-background-primary-invert-default);
+  border: 1px solid var(--color-border-primary);
+  color: var(--color-text-primary);
+}
+
+.oov-pagination button:disabled {
+  cursor: not-allowed;
+  opacity: var(--opacity-50);
+}
+
+@media (max-width: 900px) {
+  .oov-tabs {
+    display: flex;
+    overflow-x: auto;
+  }
+
+  .oov-tab {
+    min-width: 150px;
+  }
+
+  .oov-toolbar,
+  .oov-pagination-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .oov-toolbar-actions,
+  .oov-outline-btn,
+  .oov-pagination {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .oov-action-anchor,
+  .oov-action-anchor > .oov-outline-btn {
+    width: 100%;
+  }
+
+  .oov-status-popover {
+    left: 0;
+    right: auto;
+    width: min(320px, calc(100vw - 48px));
+  }
+
+  .oov-status-submit-row {
+    flex-direction: column-reverse;
+  }
+
+  .oov-status-submit-row .oov-outline-btn,
+  .oov-apply-btn {
+    width: 100%;
+  }
+}

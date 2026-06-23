@@ -1,0 +1,83 @@
+:root {
+  /* Color tokens */
+  --color-icon-placeholder: #6b7280;
+  --color-text-placeholder: #6b7280;
+  --color-background-surface: #ffffff;
+  --color-border-default: #d1d5db;
+  --color-text-base: #ffffff;
+  --color-icon-base: #ffffff;
+  --color-background-primary-default: #c2410c;
+  --color-background-primary-invert-default: #ffedd5;
+  --color-text-primary: #c2410c;
+  --color-icon-primary: #c2410c;
+  --color-border-primary: #c2410c;
+  --color-text-caption: #4b5563;
+  --color-text-default: #030712;
+  --color-background-elevated: #e5e7eb;
+  --color-background-success-default: #15803d;
+  --color-background-warning-default: #a16207;
+  --color-icon-caption: #4b5563;
+  --color-icon-default: #030712;
+  --color-background-canvas: #f3f4f6;
+
+  /* Typography tokens */
+  --typography-font-family-default: Inter, system-ui, 'Segoe UI', Roboto, sans-serif;
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semi-bold: 600;
+  --font-weight-bold: 700;
+  --font-size-xxs: 8px;
+  --font-size-sm: 14px;
+  --font-size-md: 16px;
+  --font-size-lg: 18px;
+  --font-size-xl: 20px;
+  --font-size-2xl: 24px;
+  --line-height-xxs: 12px;
+  --line-height-sm: 20px;
+  --line-height-md: 24px;
+  --line-height-lg: 28px;
+  --line-height-2xl: 32px;
+  --typography-medium-text-sm:
+    var(--font-weight-medium) var(--font-size-sm) / var(--line-height-sm)
+    var(--typography-font-family-default);
+
+  /* Spacing tokens */
+  --space-0-5: 2px;
+  --space-1: 4px;
+  --space-1-5: 6px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-16: 64px;
+  --gap-sm: 0;
+
+  /* Size tokens */
+  --width-min-sm: 36px;
+  --size-9: 36px;
+
+  /* Radius tokens */
+  --border-radius-default: 4px;
+  --border-radius-modal: 8px;
+  --border-radius-full: 9999px;
+
+  /* Opacity tokens */
+  --opacity-20: 0.2;
+  --opacity-50: 0.5;
+  --opacity-60: 0.6;
+  --opacity-75: 0.75;
+
+  /* App semantic aliases */
+  --app-color-text: var(--color-text-caption);
+  --app-color-heading: var(--color-text-default);
+  --app-color-background: var(--color-background-surface);
+  --app-color-canvas: var(--color-background-canvas);
+  --app-color-border: var(--color-border-default);
+  --app-color-accent: var(--color-background-primary-default);
+  --app-color-accent-contrast: var(--color-text-base);
+  --app-color-muted-surface: var(--color-background-elevated);
+  --app-shadow:
+    rgb(3 7 18 / 10%) 0 10px 15px -3px,
+    rgb(3 7 18 / 5%) 0 4px 6px -2px;
+}

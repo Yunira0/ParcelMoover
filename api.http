@@ -1,6 +1,8 @@
 @baseUrl = http://localhost:3000/api
+@orderId = 526501c0-42a1-4ef4-8106-414eb6051b96
+
 ### ==========================================================
-### 1. LOGIN — must run first, sets accessToken + csrfToken
+### 1. LOGIN — Super Admin
 ### ==========================================================
 # @name login
 POST {{baseUrl}}/auth/login
@@ -8,18 +10,38 @@ Content-Type: application/json
 
 {
   "email": "superadmin@parcelmoover.com",
-  "password": "SuperAdmin123!"
+  "password": "DemoPass123!"
 }
+
 ### ==========================================================
-### 2. CREATE ORDER — full payload (all fields)
-###    Headers required: Idempotency-Key (UUID), X-CSRF-Token
-###    Cookies required: accessToken, csrfToken
-###    Roles: super_admin, admin, vendor
-###    Rate limit: 3 per minute
+### 2. GET /me — Check logged-in user
+### ==========================================================
+GET http://localhost:3000/me
+Cookie: accessToken={{login.response.cookies.accessToken}}
+
+### ==========================================================
+### 3. REGISTER USER (Admin / Vendor / Rider)
+### ==========================================================
+POST {{baseUrl}}/auth/users/register
+Content-Type: application/json
+X-CSRF-Token: {{login.response.body.csrfToken}}
+Cookie: accessToken={{login.response.cookies.accessToken}}; csrfToken={{login.response.body.csrfToken}}
+
+{
+  "type": "admin",
+  "fullName": "Anil Thakur",
+  "email": "adminAnil@parcelmoover.com",
+  "password": "test123!",
+  "phone": "9800600010",
+  "position": "Branch Manager"
+}
+
+### ==========================================================
+### 4. CREATE ORDER
 ### ==========================================================
 POST {{baseUrl}}/orders
 Content-Type: application/json
-Idempotency-Key: 550e8400-e29b-41d4-a716-447655440000
+Idempotency-Key: 590e8400-e29b-41d4-a716-447655440000
 X-CSRF-Token: {{login.response.body.csrfToken}}
 Cookie: accessToken={{login.response.cookies.accessToken}}; csrfToken={{login.response.body.csrfToken}}
 
@@ -29,17 +51,17 @@ Cookie: accessToken={{login.response.cookies.accessToken}}; csrfToken={{login.re
     "phone": "9800000001",
     "email": "ram@example.com",
     "address": "Kathmandu",
-    "locationId": "ae90576e-fdab-4414-b63c-9de2e31b7186"
+    "locationId": "11111111-0000-0000-0000-000000000001"
   },
   "receiver": {
     "name": "Shyam Lama",
     "phone": "9800000002",
     "email": "shyam@example.com",
     "address": "Pokhara",
-    "locationId": "8c9fb759-3e67-439f-9a14-bc2641140c9d"
+    "locationId": "11111111-0000-0000-0000-000000000002"
   },
-  "originLocationId": "ae90576e-fdab-4414-b63c-9de2e31b7186",
-  "destinationLocationId": "8c9fb759-3e67-439f-9a14-bc2641140c9d",
+  "originLocationId": "11111111-0000-0000-0000-000000000001",
+  "destinationLocationId": "11111111-0000-0000-0000-000000000002",
   "orderType": "delivery",
   "serviceType": "dtd",
   "pieces": 2,
@@ -48,172 +70,18 @@ Cookie: accessToken={{login.response.cookies.accessToken}}; csrfToken={{login.re
   "deliveryCharge": 150,
   "pickupAddress": "New Baneshwor, Kathmandu",
   "scheduledPickupAt": "2026-06-20T10:00:00.000Z",
-  "vendorId": "1bc24257-3be9-4ac5-ba01-8c3c8eef8a30"
+  "vendorId": "55555555-0000-0000-0000-000000000001"
 }
-### ==========================================================
-### 3. CREATE ORDER — minimal (only required fields)
-###    sender.name + sender.phone, receiver.name + receiver.phone
-### ==========================================================
-POST {{baseUrl}}/orders
-Content-Type: application/json
-Idempotency-Key: 660e8400-e29b-41d4-a716-447655440001
-X-CSRF-Token: {{login.response.body.csrfToken}}
-Cookie: accessToken={{login.response.cookies.accessToken}}; csrfToken={{login.response.body.csrfToken}}
 
-{
-  "sender": {
-    "name": "John Doe",
-    "phone": "9801234567"
-  },
-  "receiver": {
-    "name": "Jane Smith",
-    "phone": "9807654321"
-  },
-  "vendorId": "1bc24257-3be9-4ac5-ba01-8c3c8eef8a30"
-}
 ### ==========================================================
-### 4. CREATE ORDER — exchange type
+### 5. UPDATE ORDER STATUS
 ### ==========================================================
-POST {{baseUrl}}/orders
-Content-Type: application/json
-Idempotency-Key: 770e8400-e29b-41d4-a716-447655440002
-X-CSRF-Token: {{login.response.body.csrfToken}}
-Cookie: accessToken={{login.response.cookies.accessToken}}; csrfToken={{login.response.body.csrfToken}}
-
-{
-  "sender": {
-    "name": "Sita Devi",
-    "phone": "98033334444",
-    "email": "sita@example.com",
-    "address": "Biratnagar"
-  },
-  "receiver": {
-    "name": "Gita Kumari",
-    "phone": "98055556666",
-    "email": "gita@example.com",
-    "address": "Dharan"
-  },
-  "orderType": "exchange",
-  "serviceType": "dtb",
-  "pieces": 1,
-  "weightKg": 2.0,
-  "pickupAddress": "Main Road, Biratnagar"
-}
-### ==========================================================
-### 5. CREATE ORDER — return type
-### ==========================================================
-POST {{baseUrl}}/orders
-Content-Type: application/json
-Idempotency-Key: 880e8400-e29b-41d4-a716-447655440003
-X-CSRF-Token: {{login.response.body.csrfToken}}
-Cookie: accessToken={{login.response.cookies.accessToken}}; csrfToken={{login.response.body.csrfToken}}
-
-{
-  "sender": {
-    "name": "Bikash Gurung",
-    "phone": "98077778888",
-    "address": "Pokhara"
-  },
-  "receiver": {
-    "name": "Supplier Co.",
-    "phone": "98099990000",
-    "address": "Kathmandu"
-  },
-  "orderType": "return",
-  "serviceType": "btd",
-  "codAmount": 5000,
-  "deliveryCharge": 200
-}
-### ==========================================================
-### 6. IDEMPOTENCY RETRY — same key + same payload = cached 200
-###    (re-sends request #2 with the same key)
-### ==========================================================
-POST {{baseUrl}}/orders
-Content-Type: application/json
-Idempotency-Key: 550e8400-e29b-41d4-a716-447655440000
-X-CSRF-Token: {{login.response.body.csrfToken}}
-Cookie: accessToken={{login.response.cookies.accessToken}}; csrfToken={{login.response.body.csrfToken}}
-
-{
-  "sender": {
-    "name": "Bahadur",
-    "phone": "9800000001",
-    "email": "ram@example.com",
-    "address": "Kathmandu",
-    "locationId": "ae90576e-fdab-4414-b63c-9de2e31b7186"
-  },
-  "receiver": {
-    "name": "Shyam Lama",
-    "phone": "9800000002",
-    "email": "shyam@example.com",
-    "address": "Pokhara",
-    "locationId": "8c9fb759-3e67-439f-9a14-bc2641140c9d"
-  },
-  "originLocationId": "ae90576e-fdab-4414-b63c-9de2e31b7186",
-  "destinationLocationId": "8c9fb759-3e67-439f-9a14-bc2641140c9d",
-  "orderType": "delivery",
-  "serviceType": "dtd",
-  "pieces": 2,
-  "weightKg": 5.5,
-  "codAmount": 2500,
-  "deliveryCharge": 150,
-  "pickupAddress": "New Baneshwor, Kathmandu",
-  "scheduledPickupAt": "2026-06-20T10:00:00.000Z",
-  "vendorId": "1bc24257-3be9-4ac5-ba01-8c3c8eef8a30"
-}
-### ==========================================================
-### 7. IDEMPOTENCY KEY REUSE — same key, DIFFERENT payload = 422
-### ==========================================================
-POST {{baseUrl}}/orders
-Content-Type: application/json
-Idempotency-Key: 550e8400-e29b-41d4-a716-447655440000
-X-CSRF-Token: {{login.response.body.csrfToken}}
-Cookie: accessToken={{login.response.cookies.accessToken}}; csrfToken={{login.response.body.csrfToken}}
-
-{
-  "sender": {
-    "name": "Different Sender",
-    "phone": "9809999999"
-  },
-  "receiver": {
-    "name": "Shyam Lama",
-    "phone": "9800000002"
-  },
-  "vendorId": "1bc24257-3be9-4ac5-ba01-8c3c8eef8a30"
-}
-### ==========================================================
-### 8. ERROR — missing Idempotency-Key = 400
-### ==========================================================
-POST {{baseUrl}}/orders
+PATCH {{baseUrl}}/orders/{{orderId}}/status
 Content-Type: application/json
 X-CSRF-Token: {{login.response.body.csrfToken}}
 Cookie: accessToken={{login.response.cookies.accessToken}}; csrfToken={{login.response.body.csrfToken}}
 
 {
-  "sender": {
-    "name": "Test",
-    "phone": "9800000001"
-  },
-  "receiver": {
-    "name": "Receiver",
-    "phone": "9800000002"
-  }
-}
-### ==========================================================
-### 9. ERROR — invalid Idempotency-Key (not UUID) = 400
-### ==========================================================
-POST {{baseUrl}}/orders
-Content-Type: application/json
-Idempotency-Key: not-a-valid-uuid
-X-CSRF-Token: {{login.response.body.csrfToken}}
-Cookie: accessToken={{login.response.cookies.accessToken}}; csrfToken={{login.response.body.csrfToken}}
-{
-  "sender": {
-    "name": "Test",
-    "phone": "9800000001"
-  },
-  "receiver": {
-    "name": "Receiver",
-    "phone": "9800000002"
-  }
+  "status": "rider_assigned",
+  "remarks": "Rider assigned for pickup"
 }

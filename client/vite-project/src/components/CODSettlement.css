@@ -1,0 +1,118 @@
+.cod-settlement {
+  background-color: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-modal);
+  padding: var(--space-3) var(--space-4);
+  width: 100%;
+  max-width: 360px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  box-sizing: border-box;
+}
+
+.cod-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+}
+
+.cod-header img {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  object-fit: contain;
+}
+
+.cod-header h3 {
+  color: var(--color-text-primary);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+  margin: 0;
+}
+
+.total-collection {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-4) var(--space-2);
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-md);
+}
+
+.total-amount {
+  color: var(--color-text-primary);
+  font-size: var(--font-size-lg);
+}
+
+.settlement-details {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--color-border-default);
+}
+
+.settlement-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-3) var(--space-2);
+  border-bottom: 1px solid var(--color-border-default);
+}
+
+.status-label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--font-size-md);
+  color: var(--color-text-default);
+}
+
+.status-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.status-dot.settled {
+  background-color: var(--color-background-success-default);
+}
+
+.status-dot.pending {
+  background-color: var(--color-background-warning-default);
+}
+
+.status-amount {
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-md);
+}
+
+.settlement-progress {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.progress-header {
+  display: flex;
+  justify-content: space-between;
+  font-weight: var(--font-weight-semi-bold);
+  font-size: var(--font-size-md);
+}
+
+.progress-percent {
+  color: var(--color-text-primary);
+  font-weight: var(--font-weight-bold);
+}
+
+.progress-bar-container {
+  height: 12px;
+  background-color: var(--color-background-elevated);
+  border-radius: var(--border-radius-full);
+  overflow: hidden;
+}
+
+.progress-bar {
+  height: 100%;
+  background-color: var(--color-background-primary-default);
+}

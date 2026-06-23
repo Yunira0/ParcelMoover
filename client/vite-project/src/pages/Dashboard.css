@@ -1,0 +1,110 @@
+.dashboard-container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  width: 100%;
+}
+
+.overview-title {
+  font-size: var(--font-size-2xl);
+  font-weight: var(--font-weight-semi-bold);
+  color: var(--color-text-default);
+  margin: 0;
+}
+
+.overview-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.overview-meta {
+  color: var(--color-text-caption);
+  font-size: var(--font-size-sm);
+  margin: var(--space-1) 0 0;
+}
+
+.dashboard-refresh-btn {
+  align-items: center;
+  background: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-default);
+  color: var(--color-text-default);
+  cursor: pointer;
+  display: inline-flex;
+  font: var(--typography-medium-text-sm);
+  gap: var(--space-2);
+  min-height: 36px;
+  padding: 0 var(--space-3);
+}
+
+.dashboard-refresh-btn:hover:not(:disabled) {
+  border-color: var(--color-border-primary);
+  color: var(--color-text-primary);
+}
+
+.dashboard-refresh-btn:disabled {
+  cursor: not-allowed;
+  opacity: var(--opacity-60);
+}
+
+.spinning {
+  animation: dashboard-spin 0.8s linear infinite;
+}
+
+@keyframes dashboard-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--space-4);
+  margin-bottom: var(--space-6);
+}
+
+.dashboard-main-grid {
+  display: flex;
+  gap: var(--space-6);
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.grid-left {
+  flex: 2;
+  min-width: 400px;
+}
+
+.grid-right {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  min-width: 320px;
+}
+
+@media (max-width: 1200px) {
+  .dashboard-main-grid {
+    flex-direction: column;
+  }
+  .grid-left, .grid-right {
+    width: 100%;
+    min-width: 0;
+  }
+}
+
+@media (max-width: 640px) {
+  .overview-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .dashboard-refresh-btn {
+    justify-content: center;
+    width: 100%;
+  }
+}

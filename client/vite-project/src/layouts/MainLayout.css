@@ -1,0 +1,31 @@
+.public-layout {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  background-color: var(--color-background-canvas);
+}
+
+.public-header {
+  background-color: var(--color-background-surface);
+  border-bottom: 1px solid var(--color-border-default);
+  padding: var(--space-4) var(--space-6);
+  box-shadow: var(--app-shadow);
+}
+
+.public-main {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: var(--space-6);
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.public-footer {
+  background-color: var(--color-background-surface);
+  border-top: 1px solid var(--color-border-default);
+  padding: var(--space-6);
+  text-align: center;
+}

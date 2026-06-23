@@ -4,6 +4,8 @@ import routes from "./routes/auth.routes";
 import OrderRoutes from "./routes/order.routes"
 import prisma from "./lib/prisma";
 import cookiesParser from "cookie-parser";
+import {authMiddleware} from "./middlewares/auth.mddleware";
+
 
 import cors from "cors"
 
@@ -13,7 +15,7 @@ const app: Express = express();
 const port = process.env.PORT || 3000;
 
 app.use(cors({
-    origin: process.env.ALLOWeD_ORIGINS?.split(",") || ["https://localhost:3000.com"],
+    origin: process.env.ALLOWED_ORIGINS?.split(",") || ["http://localhost:5173"],
     credentials: true,
 }));
 app.use(express.json());
@@ -37,9 +39,8 @@ app.use("/api/auth", routes);
 
 app.use("/api/orders", OrderRoutes)
 
-import {authMiddleware} from "./middlewares/auth.mddleware";
 
-app.get('/me', authMiddleware, async (req: Request, res: Response) => {
+const getCurrentUserHandler = async (req: Request, res: Response) => {
    try{
      if(!req.user?.id) {
         return res.status(401).json({ error: "Unauthorized" });
@@ -51,11 +52,21 @@ app.get('/me', authMiddleware, async (req: Request, res: Response) => {
     if(!user) {
         return res.status(404).json({ error: "User not found" });
     }
-    return res.json(user);
+    return res.json({
+        id: user.id,
+        fullName: user.full_name,
+        email: user.email,
+        phone: user.phone,
+        status: user.status,
+        roles: user.user_roles.map(userRole => userRole.roles.code),
+    });
    } catch(error) {
     console.error("Error fetching user profile:", error);
     return res.status(500).json({ error: "Internal server error" });
    }
-});
+};
+
+app.get('/me', authMiddleware, getCurrentUserHandler);
+app.get('/api/me', authMiddleware, getCurrentUserHandler);
 
 export default app;

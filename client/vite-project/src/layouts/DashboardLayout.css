@@ -1,0 +1,30 @@
+.dashboard-layout {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  width: 100%;
+  overflow: hidden;
+  background-color: var(--color-background-canvas);
+}
+
+.dashboard-body {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+.dashboard-content {
+  display: block;
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  padding: var(--space-6);
+  box-sizing: border-box;
+}
+
+@media (max-width: 1024px) {
+  .dashboard-content {
+    padding: var(--space-4);
+  }
+}

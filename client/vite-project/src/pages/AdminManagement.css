@@ -1,0 +1,120 @@
+.admin-management-container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  width: 100%;
+}
+
+.admin-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.header-info h1 {
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: var(--font-size-2xl);
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0;
+}
+
+.header-info p {
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: var(--font-size-sm);
+  color: #64748b;
+  margin: var(--space-2) 0 0 0;
+}
+
+.add-new-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  background-color: var(--color-background-primary-default);
+  color: var(--color-text-base);
+  border: none;
+  border-radius: var(--border-radius-default);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+}
+
+.add-new-btn img {
+  width: 16px;
+  height: 16px;
+}
+
+.admin-filters {
+  display: flex;
+  margin-top: var(--space-4);
+}
+
+.filter-tabs {
+  display: flex;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-modal);
+  overflow: hidden;
+  width: 266px;
+}
+
+.filter-tab {
+  flex: 1;
+  padding: var(--space-2) var(--space-4);
+  background-color: var(--color-background-surface);
+  color: var(--color-text-caption);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-regular);
+  border: none;
+  border-right: 1px solid var(--color-border-default);
+  cursor: pointer;
+}
+
+.filter-tab:last-child {
+  border-right: none;
+}
+
+.filter-tab.active {
+  background-color: #ffedd5;
+  color: var(--color-text-primary);
+  font-weight: var(--font-weight-semi-bold);
+}
+
+.admin-search {
+  width: 100%;
+}
+
+.search-box {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-default);
+  background-color: var(--color-background-surface);
+  width: 479px;
+}
+
+.search-box img {
+  width: 16px;
+  height: 16px;
+}
+
+.search-box input {
+  border: none;
+  outline: none;
+  width: 100%;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-default);
+  background-color: transparent;
+}
+
+.loading-state {
+  padding: var(--space-6);
+  text-align: center;
+  color: var(--color-text-caption);
+  font-size: var(--font-size-md);
+  background-color: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-modal);
+}

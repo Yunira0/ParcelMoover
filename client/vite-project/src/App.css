@@ -1,0 +1,189 @@
+.app-header {
+  background-color: var(--app-color-background);
+  border-bottom: 1px solid var(--app-color-border);
+  padding: var(--space-4) var(--space-6);
+  box-shadow: var(--app-shadow);
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.header-content {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.app-logo {
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-bold);
+  color: var(--app-color-accent);
+  text-decoration: none;
+}
+
+.header-nav {
+  display: flex;
+  gap: var(--space-4);
+}
+
+.nav-link {
+  color: var(--app-color-text);
+  text-decoration: none;
+  font-weight: var(--font-weight-medium);
+  font-size: var(--font-size-sm);
+  transition: color 0.2s;
+}
+
+.nav-link:hover {
+  color: var(--app-color-accent);
+}
+
+.app-footer {
+  background-color: var(--app-color-background);
+  border-top: 1px solid var(--app-color-border);
+  padding: var(--space-6);
+  text-align: center;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.footer-content {
+  width: 100%;
+}
+
+.footer-content p {
+  color: var(--app-color-text);
+  font-size: var(--font-size-sm);
+  margin: 0;
+}
+
+.main-layout {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--app-color-canvas);
+  font-family: var(--typography-font-family-default);
+  width: 100%;
+}
+
+
+.home-page {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.home-page h1, .dashboard-page h1 {
+  font-size: var(--font-size-2xl);
+  color: var(--app-color-heading);
+  font-weight: var(--font-weight-bold);
+  margin-bottom: var(--space-4);
+}
+
+.login-link {
+  display: inline-block;
+  padding: var(--space-3) var(--space-6);
+  background-color: var(--app-color-accent);
+  color: var(--app-color-accent-contrast);
+  text-decoration: none;
+  border-radius: var(--border-radius-default);
+  font-weight: var(--font-weight-semi-bold);
+  font-size: var(--font-size-md);
+  transition: opacity 0.2s;
+}
+
+.login-link:hover {
+  opacity: 0.9;
+}
+
+.login-page {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+}
+
+.login-card {
+  background: var(--app-color-background);
+  padding: var(--space-16) var(--space-6);
+  border-radius: var(--border-radius-modal);
+  box-shadow: var(--app-shadow);
+  width: 100%;
+  max-width: 400px;
+}
+
+@media (min-width: 640px) {
+  .login-card {
+    padding: var(--space-6);
+  }
+}
+
+.login-card h2 {
+  margin-top: 0;
+  margin-bottom: var(--space-6);
+  text-align: center;
+  color: var(--app-color-heading);
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-bold);
+}
+
+.form-group {
+  margin-bottom: var(--space-4);
+  text-align: left;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: var(--space-2);
+  font-weight: var(--font-weight-medium);
+  color: var(--app-color-text);
+  font-size: var(--font-size-sm);
+}
+
+.form-group input {
+  width: 100%;
+  padding: var(--space-3);
+  border: 1px solid var(--app-color-border);
+  border-radius: var(--border-radius-default);
+  box-sizing: border-box;
+  font-size: var(--font-size-md);
+  color: var(--app-color-heading);
+  background-color: var(--app-color-background);
+}
+
+.form-group input:focus {
+  outline: none;
+  border-color: var(--app-color-accent);
+}
+
+.error-message {
+  color: var(--color-background-surface);
+  background-color: var(--color-background-warning-default);
+  padding: var(--space-3);
+  border-radius: var(--border-radius-default);
+  margin-bottom: var(--space-4);
+  font-size: var(--font-size-sm);
+}
+
+button.submit-button {
+  width: 100%;
+  padding: var(--space-3);
+  background-color: var(--app-color-accent);
+  color: var(--app-color-accent-contrast);
+  border: none;
+  border-radius: var(--border-radius-default);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semi-bold);
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+button.submit-button:hover {
+  opacity: 0.9;
+}
+
+button.submit-button:disabled {
+  opacity: var(--opacity-50);
+  cursor: not-allowed;
+}

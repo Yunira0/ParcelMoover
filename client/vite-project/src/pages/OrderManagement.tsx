@@ -1,0 +1,641 @@
+import React, { useEffect, useMemo, useState } from 'react';
+import {
+  ChevronLeft,
+  ChevronRight,
+  Copy,
+  Download,
+  Edit,
+  MoreVertical,
+  Plus,
+  Printer,
+  Search,
+  X,
+} from 'lucide-react';
+import CreateOrderModal from '../components/CreateOrderModal';
+import Table from '../components/Table';
+import {
+  getOrders,
+  subscribeToOrderStatusChanged,
+  type CreateOrderInput,
+  type Order,
+  type ParcelStatus,
+} from '../services/orders.service';
+import './OrderManagement.css';
+
+const STATUS_LABELS: Record<ParcelStatus, string> = {
+  pickup_ordered: 'Pickup Ordered',
+  rider_assigned: 'Rider Assigned',
+  picked_up: 'Picked Up',
+  arrived: 'Arrived',
+  ready_to_deliver: 'Ready to Deliver',
+  sent_for_delivery: 'In Transit',
+  oov: 'Out of Vehicle',
+  dispatched: 'Dispatched',
+  arrived_at_branch: 'Arrived',
+  hold: 'On Hold',
+  loss_and_damage: 'Loss & Damage',
+  delivered: 'Delivered',
+  failed_pickup: 'Failed Pickup',
+  failed_delivery: 'Failed Delivery',
+  cancelled: 'Cancelled',
+};
+
+type FilterTab =
+  | 'all'
+  | 'pickup_order'
+  | 'ready_to_pick'
+  | 'inprogress'
+  | 'delivered'
+  | 'failed'
+  | 'rtv'
+  | 'cancelled';
+
+const TAB_GROUPS: Record<FilterTab, ParcelStatus[]> = {
+  all: [],
+  pickup_order: ['pickup_ordered'],
+  ready_to_pick: ['rider_assigned'],
+  inprogress: ['picked_up', 'arrived', 'ready_to_deliver', 'sent_for_delivery', 'oov', 'dispatched', 'arrived_at_branch', 'hold'],
+  delivered: ['delivered'],
+  failed: ['failed_pickup', 'failed_delivery', 'loss_and_damage'],
+  rtv: ['failed_delivery', 'cancelled'],
+  cancelled: ['cancelled'],
+};
+
+const TAB_LABELS: Record<FilterTab, string> = {
+  all: 'All',
+  pickup_order: 'Pickup order',
+  ready_to_pick: 'Ready to pick',
+  inprogress: 'Inprogress',
+  delivered: 'Delivered',
+  failed: 'Failed',
+  rtv: 'RTV',
+  cancelled: 'Cancelled',
+};
+
+const MOCK_ORDERS: Order[] = [
+  {
+    id: '1',
+    trackingId: 'TRK-8821932',
+    status: 'delivered',
+    orderType: 'delivery',
+    serviceType: 'dtd',
+    senderName: 'Abishek Thapa',
+    senderPhone: '+977 9841******',
+    receiverName: 'Abishek Thapa',
+    receiverPhone: '+977 9841******',
+    origin: 'KTHMANDU',
+    destination: 'Pokhara Hub',
+    pieces: 1,
+    weightKg: 1,
+    codAmount: 1500,
+    deliveryCharge: 129,
+    riderName: 'Sagar',
+    remarks: 'Fragile',
+    lastUpdatedBy: 'Name',
+    lastUpdatedAt: 'date',
+    createdAt: '2026-06-15',
+  },
+  {
+    id: '2',
+    trackingId: 'TRK-8821932',
+    status: 'arrived',
+    orderType: 'delivery',
+    serviceType: 'btd',
+    senderName: 'Abishek Thapa',
+    senderPhone: '+977 9841******',
+    receiverName: 'Abishek Thapa',
+    receiverPhone: '+977 9841******',
+    origin: 'Lalitpur',
+    destination: 'Butwal',
+    pieces: 1,
+    weightKg: 1,
+    codAmount: 1200,
+    deliveryCharge: 129,
+    riderName: 'Ram',
+    remarks: 'None',
+    lastUpdatedBy: 'Name',
+    lastUpdatedAt: 'date',
+    createdAt: '2026-06-16',
+  },
+  {
+    id: '3',
+    trackingId: 'TRK-8821932',
+    status: 'sent_for_delivery',
+    orderType: 'delivery',
+    serviceType: 'btb',
+    senderName: 'Abishek Thapa',
+    senderPhone: '+977 9841******',
+    receiverName: 'Abishek Thapa',
+    receiverPhone: '+977 9841******',
+    origin: 'Pokhara Hub',
+    destination: 'Pokhara Hub',
+    pieces: 1,
+    weightKg: 1,
+    codAmount: 0,
+    deliveryCharge: 129,
+    riderName: 'sameer',
+    remarks: 'Handle with care',
+    lastUpdatedBy: 'Name',
+    lastUpdatedAt: 'date',
+    createdAt: '2026-06-17',
+  },
+];
+
+const PAGE_SIZE = 10;
+
+const uniqueValues = (values: string[]) =>
+  Array.from(new Set(values.filter(Boolean))).sort((a, b) => a.localeCompare(b));
+
+const maskPhone = (phone: string) => {
+  if (!phone) return '';
+  if (phone.includes('*')) return phone;
+  const digits = phone.replace(/\D/g, '');
+  if (digits.length < 6) return phone;
+  return `+977 ${digits.slice(-10, -6)}******`;
+};
+
+const formatMoney = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 0 });
+
+const getStatusTone = (status: ParcelStatus) => {
+  if (status === 'delivered') return 'success';
+  if (['arrived', 'arrived_at_branch', 'rider_assigned'].includes(status)) return 'info';
+  if (['failed_pickup', 'failed_delivery', 'loss_and_damage'].includes(status)) return 'danger';
+  if (status === 'cancelled') return 'neutral';
+  return 'warning';
+};
+
+const orderToCreateInput = (order: Order): CreateOrderInput => ({
+  sender: {
+    name: order.senderName,
+    phone: order.senderPhone,
+    address: order.origin,
+  },
+  receiver: {
+    name: order.receiverName,
+    phone: order.receiverPhone,
+    address: order.destination,
+  },
+  orderType: order.orderType,
+  serviceType: order.serviceType,
+  pieces: order.pieces,
+  weightKg: order.weightKg,
+  codAmount: order.codAmount,
+  deliveryCharge: order.deliveryCharge,
+  pickupAddress: order.origin,
+});
+
+const OrderManagement: React.FC = () => {
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [modalMode, setModalMode] = useState<'create' | 'copy' | 'edit'>('create');
+  const [modalInitialData, setModalInitialData] = useState<CreateOrderInput | null>(null);
+  const [filter, setFilter] = useState<FilterTab>('all');
+  const [trackingSearch, setTrackingSearch] = useState('');
+  const [originHub, setOriginHub] = useState('');
+  const [riderName, setRiderName] = useState('');
+  const [route, setRoute] = useState('');
+  const [destinationHub, setDestinationHub] = useState('');
+  const [currentStatus, setCurrentStatus] = useState('');
+  const [orderType, setOrderType] = useState('');
+  const [dateRange, setDateRange] = useState('');
+  const [vendor, setVendor] = useState('');
+  const [operationDept, setOperationDept] = useState('');
+  const [page, setPage] = useState(1);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [openActionId, setOpenActionId] = useState<string | null>(null);
+
+  const loadOrders = async () => {
+    setLoading(true);
+    try {
+      const res = await getOrders();
+      if (res?.success && Array.isArray(res.data)) {
+        setOrders(res.data);
+      } else if (Array.isArray(res)) {
+        setOrders(res);
+      } else {
+        setOrders(MOCK_ORDERS);
+      }
+    } catch {
+      setOrders(MOCK_ORDERS);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { loadOrders(); }, []);
+  useEffect(() => subscribeToOrderStatusChanged(loadOrders), []);
+  useEffect(() => { setPage(1); }, [filter, trackingSearch, originHub, riderName, route, destinationHub, currentStatus, orderType, dateRange, vendor, operationDept]);
+
+  const filterOptions = useMemo(() => {
+    const routes = orders.map(order => `${order.origin} -> ${order.destination}`);
+    return {
+      origins: uniqueValues(orders.map(order => order.origin)),
+      riders: uniqueValues(orders.map(order => order.riderName || '')),
+      routes: uniqueValues(routes),
+      destinations: uniqueValues(orders.map(order => order.destination)),
+      vendors: uniqueValues(orders.map(order => order.vendorName || order.senderName)),
+    };
+  }, [orders]);
+
+  const filteredOrders = useMemo(() => orders.filter(order => {
+    const tabStatuses = TAB_GROUPS[filter];
+    const q = trackingSearch.toLowerCase().trim();
+    const orderRoute = `${order.origin} -> ${order.destination}`;
+    const created = new Date(order.createdAt);
+    const now = new Date();
+    const daysOld = Number.isNaN(created.getTime())
+      ? Number.POSITIVE_INFINITY
+      : Math.floor((now.getTime() - created.getTime()) / 86_400_000);
+
+    const matchesTab = filter === 'all' || tabStatuses.includes(order.status);
+    const matchesSearch = !q ||
+      order.trackingId.toLowerCase().includes(q) ||
+      order.senderName.toLowerCase().includes(q) ||
+      order.senderPhone.toLowerCase().includes(q) ||
+      order.receiverName.toLowerCase().includes(q) ||
+      order.receiverPhone.toLowerCase().includes(q);
+    const matchesDate =
+      !dateRange ||
+      (dateRange === 'today' && daysOld === 0) ||
+      (dateRange === '7' && daysOld <= 7) ||
+      (dateRange === '30' && daysOld <= 30);
+    const matchesOperation =
+      !operationDept ||
+      (operationDept === 'pickup' && ['pickup_ordered', 'rider_assigned', 'picked_up'].includes(order.status)) ||
+      (operationDept === 'delivery' && ['ready_to_deliver', 'sent_for_delivery', 'delivered', 'failed_delivery'].includes(order.status)) ||
+      (operationDept === 'returns' && order.orderType === 'return');
+
+    return matchesTab &&
+      matchesSearch &&
+      (!originHub || order.origin === originHub) &&
+      (!riderName || order.riderName === riderName) &&
+      (!route || orderRoute === route) &&
+      (!destinationHub || order.destination === destinationHub) &&
+      (!currentStatus || order.status === currentStatus) &&
+      (!orderType || order.orderType === orderType) &&
+      matchesDate &&
+      (!vendor || (order.vendorName || order.senderName) === vendor) &&
+      matchesOperation;
+  }), [orders, filter, trackingSearch, originHub, riderName, route, destinationHub, currentStatus, orderType, dateRange, vendor, operationDept]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredOrders.length / PAGE_SIZE));
+  const visibleOrders = filteredOrders.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const visibleOrderIds = visibleOrders.map(order => order.id);
+  const selectedOrders = orders.filter(order => selectedIds.has(order.id));
+  const selectedExportOrders = selectedOrders.length > 0 ? selectedOrders : filteredOrders;
+  const allVisibleSelected = visibleOrderIds.length > 0 && visibleOrderIds.every(id => selectedIds.has(id));
+  const someVisibleSelected = visibleOrderIds.some(id => selectedIds.has(id));
+  const firstResult = filteredOrders.length === 0 ? 0 : ((page - 1) * PAGE_SIZE) + 1;
+  const lastResult = Math.min(page * PAGE_SIZE, filteredOrders.length);
+
+  const clearFilters = () => {
+    setOriginHub('');
+    setRiderName('');
+    setRoute('');
+    setDestinationHub('');
+    setCurrentStatus('');
+    setOrderType('');
+    setDateRange('');
+    setVendor('');
+    setOperationDept('');
+  };
+
+  const openCreateModal = () => {
+    setModalMode('create');
+    setModalInitialData(null);
+    setIsModalOpen(true);
+  };
+
+  const openPrefilledModal = (order: Order, mode: 'copy' | 'edit') => {
+    setOpenActionId(null);
+    setModalMode(mode);
+    setModalInitialData(orderToCreateInput(order));
+    setIsModalOpen(true);
+  };
+
+  const closeModal = () => {
+    setIsModalOpen(false);
+    setModalInitialData(null);
+    setModalMode('create');
+  };
+
+  const toggleRowSelection = (orderId: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(orderId)) {
+        next.delete(orderId);
+      } else {
+        next.add(orderId);
+      }
+      return next;
+    });
+  };
+
+  const toggleVisibleSelection = () => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (allVisibleSelected) {
+        visibleOrderIds.forEach(id => next.delete(id));
+      } else {
+        visibleOrderIds.forEach(id => next.add(id));
+      }
+      return next;
+    });
+  };
+
+  const downloadCsv = () => {
+    const headers = ['Tracking ID', 'Origin', 'Sender', 'Receiver', 'Destination', 'COD', 'Delivery Charge', 'Weight', 'Status', 'Rider', 'Remarks', 'Last Updated By', 'Last Updated At'];
+    const rows = selectedExportOrders.map(order => [
+      order.trackingId,
+      order.origin,
+      order.senderName,
+      order.receiverName,
+      order.destination,
+      order.codAmount,
+      order.deliveryCharge,
+      order.weightKg || '',
+      STATUS_LABELS[order.status],
+      order.riderName || '',
+      order.remarks || '',
+      order.lastUpdatedBy || '',
+      order.lastUpdatedAt || '',
+    ]);
+    const csv = [headers, ...rows]
+      .map(row => row.map(value => `"${String(value).replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'orders.csv';
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const orderColumns = [
+    { header: 'TRACKING ID', accessor: (order: Order) => order.trackingId, width: '180px', className: 'tracking-cell' },
+    { header: 'ORIGIN', accessor: (order: Order) => order.origin || '-', width: '150px' },
+    {
+      header: 'SENDOR',
+      accessor: (order: Order) => (
+        <div className="party-cell">
+          <span>{order.senderName}</span>
+          <small>{maskPhone(order.senderPhone)}</small>
+        </div>
+      ),
+      width: '210px',
+    },
+    {
+      header: 'RECEIVER',
+      accessor: (order: Order) => (
+        <div className="party-cell">
+          <span>{order.receiverName}</span>
+          <small>{maskPhone(order.receiverPhone)}</small>
+        </div>
+      ),
+      width: '210px',
+    },
+    { header: 'DESTINATION', accessor: (order: Order) => order.destination || '-', width: '150px' },
+    {
+      header: 'FINANCE',
+      accessor: (order: Order) => (
+        <div className="finance-cell">
+          <span>COD: {formatMoney(order.codAmount)}</span>
+          <span>D. Charge: {formatMoney(order.deliveryCharge)}</span>
+        </div>
+      ),
+      width: '160px',
+    },
+    { header: 'WEIGHT', accessor: (order: Order) => (order.weightKg ? `${order.weightKg} Kg` : '-'), width: '120px' },
+    {
+      header: 'STATUS',
+      accessor: (order: Order) => (
+        <span className={`figma-status-chip ${getStatusTone(order.status)}`}>
+          {STATUS_LABELS[order.status]}
+        </span>
+      ),
+      width: '120px',
+    },
+    { header: 'RIDER', accessor: (order: Order) => order.riderName || '-', width: '120px' },
+    { header: 'REMARKS', accessor: (order: Order) => order.remarks || '-', width: '160px', className: 'remarks-cell' },
+    {
+      header: 'LAST UPDATED BY',
+      accessor: (order: Order) => (
+        <div className="updated-cell">
+          <span>{order.lastUpdatedBy || 'Name'}</span>
+          <span>{order.lastUpdatedAt || 'date'}</span>
+        </div>
+      ),
+      width: '160px',
+    },
+    {
+      header: 'ACTION',
+      accessor: (order: Order) => (
+        <div className="actions-cell">
+          <button
+            type="button"
+            className="row-action-btn"
+            onClick={() => setOpenActionId(value => value === order.id ? null : order.id)}
+            aria-label={`Open actions for ${order.trackingId}`}
+            aria-expanded={openActionId === order.id}
+          >
+            <MoreVertical size={16} />
+          </button>
+          {openActionId === order.id && (
+            <div className="row-action-menu">
+              <button type="button" onClick={() => openPrefilledModal(order, 'edit')}>
+                <Edit size={14} /> Edit
+              </button>
+              <button type="button" onClick={() => openPrefilledModal(order, 'copy')}>
+                <Copy size={14} /> Copy Order
+              </button>
+            </div>
+          )}
+        </div>
+      ),
+      width: '124px',
+      className: 'actions-column',
+    },
+  ];
+
+  return (
+    <div className="order-management-container">
+      <div className="order-title-row">
+        <div>
+          <h1>Orders</h1>
+          <p>Manage and track package orders across the network.</p>
+        </div>
+      </div>
+
+      <div className="order-status-tabs" role="tablist" aria-label="Order status filters">
+        {(Object.keys(TAB_GROUPS) as FilterTab[]).map(tab => (
+          <button
+            key={tab}
+            type="button"
+            className={`order-status-tab ${filter === tab ? 'active' : ''}`}
+            onClick={() => setFilter(tab)}
+          >
+            {TAB_LABELS[tab]}
+          </button>
+        ))}
+      </div>
+
+      <div className="order-filter-panel">
+        <label>
+          <span>ORIGIN HUB</span>
+          <select value={originHub} onChange={event => setOriginHub(event.target.value)}>
+            <option value="">Select Hub</option>
+            {filterOptions.origins.map(value => <option key={value} value={value}>{value}</option>)}
+          </select>
+        </label>
+        <label>
+          <span>RAIDER NAME</span>
+          <select value={riderName} onChange={event => setRiderName(event.target.value)}>
+            <option value="">Type name.....</option>
+            {filterOptions.riders.map(value => <option key={value} value={value}>{value}</option>)}
+          </select>
+        </label>
+        <label>
+          <span>ROUTE</span>
+          <select value={route} onChange={event => setRoute(event.target.value)}>
+            <option value="">Select Route</option>
+            {filterOptions.routes.map(value => <option key={value} value={value}>{value}</option>)}
+          </select>
+        </label>
+        <label>
+          <span>DESTINATION HUB</span>
+          <select value={destinationHub} onChange={event => setDestinationHub(event.target.value)}>
+            <option value="">Select Hub</option>
+            {filterOptions.destinations.map(value => <option key={value} value={value}>{value}</option>)}
+          </select>
+        </label>
+        <label>
+          <span>CURRENT STATUS</span>
+          <select value={currentStatus} onChange={event => setCurrentStatus(event.target.value)}>
+            <option value="">Select status</option>
+            {(Object.keys(STATUS_LABELS) as ParcelStatus[]).map(value => (
+              <option key={value} value={value}>{STATUS_LABELS[value]}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span>ORDER TYPE</span>
+          <select value={orderType} onChange={event => setOrderType(event.target.value)}>
+            <option value="">Standard</option>
+            <option value="delivery">Delivery</option>
+            <option value="exchange">Exchange</option>
+            <option value="return">Return</option>
+          </select>
+        </label>
+        <label>
+          <span>DATE RANGE</span>
+          <select value={dateRange} onChange={event => setDateRange(event.target.value)}>
+            <option value="">17/05/2026</option>
+            <option value="today">Today</option>
+            <option value="7">Last 7 days</option>
+            <option value="30">Last 30 days</option>
+          </select>
+        </label>
+        <label>
+          <span>VENDOR</span>
+          <select value={vendor} onChange={event => setVendor(event.target.value)}>
+            <option value="">All Vendors</option>
+            {filterOptions.vendors.map(value => <option key={value} value={value}>{value}</option>)}
+          </select>
+        </label>
+        <label>
+          <span>OPERATION DEPT</span>
+          <select value={operationDept} onChange={event => setOperationDept(event.target.value)}>
+            <option value="">All Departments</option>
+            <option value="pickup">Pickup</option>
+            <option value="delivery">Delivery</option>
+            <option value="returns">Returns</option>
+          </select>
+        </label>
+        <button type="button" className="clear-filter-btn" onClick={clearFilters}>
+          Clear Filters
+        </button>
+      </div>
+
+      <div className="order-toolbar">
+        <div className="order-toolbar-left">
+          <button type="button" className="new-order-btn" onClick={openCreateModal}>
+            New Order <Plus size={16} />
+          </button>
+          <button type="button" className="bulk-order-btn">Bulk Order</button>
+        </div>
+        <div className="order-toolbar-right">
+          <button type="button" className="primary-action-btn" onClick={downloadCsv}>
+            <Download size={14} /> Download
+          </button>
+          <button type="button" className="primary-action-btn" onClick={() => window.print()}>
+            <Printer size={14} /> Print
+          </button>
+        </div>
+      </div>
+
+      <label className="tracking-search">
+        <Search size={16} />
+        <input
+          value={trackingSearch}
+          onChange={event => setTrackingSearch(event.target.value)}
+          placeholder="Search tracking id"
+        />
+        {trackingSearch && (
+          <button type="button" onClick={() => setTrackingSearch('')} aria-label="Clear search">
+            <X size={14} />
+          </button>
+        )}
+      </label>
+
+      <Table
+        columns={orderColumns}
+        data={visibleOrders}
+        selectedIds={selectedIds}
+        onToggleRow={(id) => toggleRowSelection(String(id))}
+        allSelected={allVisibleSelected}
+        someSelected={someVisibleSelected}
+        onToggleAll={toggleVisibleSelection}
+        getRowClassName={(order) => selectedIds.has(order.id) ? 'selected-row' : ''}
+        loading={loading}
+        loadingMessage="Loading orders..."
+        emptyMessage="No orders found."
+        minWidth="2075px"
+        tableClassName="orders-table"
+      />
+
+      <div className="orders-pagination-row">
+        <p>showing&nbsp; {firstResult} of {lastResult} of {filteredOrders.length} results</p>
+        <nav className="orders-pagination" aria-label="Orders pagination">
+          <button type="button" disabled={page === 1} onClick={() => setPage(value => Math.max(1, value - 1))}>
+            <ChevronLeft size={20} />
+          </button>
+          {Array.from({ length: Math.min(totalPages, 3) }, (_, index) => index + 1).map(pageNumber => (
+            <button
+              key={pageNumber}
+              type="button"
+              className={page === pageNumber ? 'active' : ''}
+              onClick={() => setPage(pageNumber)}
+            >
+              {pageNumber}
+            </button>
+          ))}
+          <button type="button" disabled={page === totalPages} onClick={() => setPage(value => Math.min(totalPages, value + 1))}>
+            <ChevronRight size={20} />
+          </button>
+        </nav>
+      </div>
+
+      <CreateOrderModal
+        isOpen={isModalOpen}
+        onClose={closeModal}
+        onSuccess={() => { loadOrders(); }}
+        initialData={modalInitialData}
+        mode={modalMode}
+      />
+    </div>
+  );
+};
+
+export default OrderManagement;

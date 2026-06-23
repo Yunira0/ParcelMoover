@@ -2,9 +2,13 @@ import { Request, Router } from "express";
 import { rateLimit, ipKeyGenerator } from "express-rate-limit";
 import { authMiddleware } from "../middlewares/auth.mddleware";
 import { authorizeRoles } from "../middlewares/authorizeRoles.middleware";
-import { createOrderController } from "../controllers/order.controller";
+import {
+  createOrderController,
+  dashboardSummaryController,
+  listOrdersController,
+  updateOrderStatusController,
+} from "../controllers/order.controller";
 import { csrfProtection } from "../middlewares/csrf.middleware";
-
 
 const orderRouter: Router = Router();
 
@@ -23,7 +27,7 @@ DELETE /orders/:id
 
 const createOrderLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
-  max: 3, //. 100 orders per minute per IP
+  max: 30, //. 100 orders per minute per IP
   message: { success: false, message: "Too many order creation attempts" },
   standardHeaders: true,
   legacyHeaders: false,
@@ -37,6 +41,29 @@ orderRouter.post(
   authorizeRoles("super_admin", "admin", "vendor"),
   createOrderLimiter,
   createOrderController,
+);
+
+orderRouter.get(
+  "/dashboard-summary",
+  authMiddleware,
+  authorizeRoles("super_admin", "admin", "vendor", "rider"),
+  dashboardSummaryController,
+);
+
+orderRouter.get(
+  "/",
+  authMiddleware,
+  authorizeRoles("super_admin", "admin", "vendor", "rider"),
+  listOrdersController,
+);
+
+// PATCH /orders/:id/status
+orderRouter.patch(
+  "/:id/status",
+  authMiddleware,
+  csrfProtection,
+  authorizeRoles("super_admin", "admin", "rider"),
+  updateOrderStatusController,
 );
 
 export default orderRouter;

@@ -49,7 +49,7 @@ model cod_collections {
   cod_amount       Decimal            @db.Decimal(12, 2)
   collected_amount Decimal            @default(0) @db.Decimal(12, 2)
   remitted_amount  Decimal            @default(0) @db.Decimal(12, 2)
-  pending_amount   Decimal?           @db.Decimal(12, 2)
+  pending_amount   Decimal?           @default(dbgenerated("(\"cod_amount\" - \"remitted_amount\")")) @db.Decimal(12, 2)
   payment_status   payment_status     @default(pending)
   collected_at     DateTime?          @db.Timestamptz(6)
   created_at       DateTime           @default(now()) @db.Timestamptz(6)
@@ -466,13 +466,15 @@ enum parcel_status {
   picked_up
   arrived
   ready_to_deliver
+  sent_for_delivery
   oov
   dispatched
   arrived_at_branch
   hold
   loss_and_damage
   delivered
-  failed
+  failed_pickup
+  failed_delivery
   cancelled
 }
 

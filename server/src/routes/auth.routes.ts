@@ -1,5 +1,14 @@
 import { Router } from "express";
-import { login, registerUserController } from "../controllers/auth.controller";
+import {
+  getAdminsController,
+  getLocationsController,
+  getRidersController,
+  getVendorsController,
+  login,
+  registerUserController,
+  updateManagedUserController,
+  updateManagedUserPasswordController,
+} from "../controllers/auth.controller";
 import { authMiddleware } from "../middlewares/auth.mddleware";
 import { csrfProtection } from "../middlewares/csrf.middleware";
 import rateLimit, {ipKeyGenerator} from "express-rate-limit";
@@ -25,5 +34,11 @@ authRouter.post(
   csrfProtection,
   registerUserController,
 );
+authRouter.get("/users/admins", authMiddleware, getAdminsController);
+authRouter.get("/users/vendors", authMiddleware, getVendorsController);
+authRouter.get("/users/riders", authMiddleware, getRidersController);
+authRouter.patch("/users/:type/:id", authMiddleware, csrfProtection, updateManagedUserController);
+authRouter.patch("/users/:type/:id/password", authMiddleware, csrfProtection, updateManagedUserPasswordController);
+authRouter.get("/locations", authMiddleware, getLocationsController);
 
 export default authRouter;

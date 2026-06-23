@@ -11,6 +11,153 @@ interface IuserLoginData {
   password: string;
 }
 
+type ManagedUserType = "admin" | "vendor" | "rider";
+
+interface UpdateManagedUserInput {
+  type: ManagedUserType;
+  fullName?: string;
+  phone?: string;
+  position?: string;
+  clientName?: string;
+  businessName?: string;
+  address?: string;
+  joinedAt?: string;
+}
+
+async function assertCanManageUsers(userId: string) {
+  const user = await prisma.users.findUnique({
+    where: { id: userId },
+    include: {
+      user_roles: {
+        include: {
+          roles: true,
+        },
+      },
+    },
+  });
+
+  if (!user) {
+    throw new AppError(404, "Unauthorized");
+  }
+
+  const roles = user.user_roles.map((userRole) => userRole.roles.code);
+  if (!roles.includes("super_admin") && !roles.includes("admin")) {
+    throw new AppError(403, "Unauthorized");
+  }
+}
+
+function parseJoinedAt(joinedAt?: string) {
+  return joinedAt ? new Date(joinedAt) : undefined;
+}
+
+async function getManagedProfile(type: ManagedUserType, id: string) {
+  if (type === "admin") {
+    return prisma.admins.findUnique({ where: { id } });
+  }
+
+  if (type === "vendor") {
+    return prisma.vendors.findUnique({ where: { id } });
+  }
+
+  return prisma.riders.findUnique({ where: { id } });
+}
+
+function getProfileUserId(profile: { user_id?: string | null } | null) {
+  if (!profile?.user_id) {
+    throw new AppError(404, "Linked user account not found");
+  }
+
+  return profile.user_id;
+}
+
+export async function updateManagedUserProfile(
+  actorUserId: string,
+  id: string,
+  data: UpdateManagedUserInput,
+) {
+  await assertCanManageUsers(actorUserId);
+
+  const profile = await getManagedProfile(data.type, id);
+  const userId = getProfileUserId(profile);
+
+  return prisma.$transaction(async (tx) => {
+    const userUpdate: Record<string, string> = {};
+
+    if (data.fullName?.trim()) userUpdate.full_name = data.fullName.trim();
+    if (data.phone?.trim()) userUpdate.phone = data.phone.trim();
+
+    if (Object.keys(userUpdate).length > 0) {
+      await tx.users.update({
+        where: { id: userId },
+        data: userUpdate,
+      });
+    }
+
+    if (data.type === "admin") {
+      const adminUpdate: Record<string, string | Date> = { updated_at: new Date() };
+      if (data.position !== undefined) adminUpdate.position = data.position;
+      const joinedAt = parseJoinedAt(data.joinedAt);
+      if (joinedAt) adminUpdate.joined_at = joinedAt;
+
+      return tx.admins.update({
+        where: { id },
+        data: adminUpdate,
+      });
+    }
+
+    if (data.type === "vendor") {
+      const vendorUpdate: Record<string, string | Date> = { updated_at: new Date() };
+      if (data.clientName !== undefined) vendorUpdate.client_name = data.clientName;
+      if (data.businessName !== undefined) vendorUpdate.business_name = data.businessName;
+      if (data.phone !== undefined) vendorUpdate.phone = data.phone;
+      if (data.address !== undefined) vendorUpdate.address = data.address;
+      const joinedAt = parseJoinedAt(data.joinedAt);
+      if (joinedAt) vendorUpdate.joined_at = joinedAt;
+
+      return tx.vendors.update({
+        where: { id },
+        data: vendorUpdate,
+      });
+    }
+
+    const riderUpdate: Record<string, string | Date> = { updated_at: new Date() };
+    if (data.fullName !== undefined) riderUpdate.name = data.fullName;
+    if (data.phone !== undefined) riderUpdate.phone = data.phone;
+    const joinedAt = parseJoinedAt(data.joinedAt);
+    if (joinedAt) riderUpdate.joined_at = joinedAt;
+
+    return tx.riders.update({
+      where: { id },
+      data: riderUpdate,
+    });
+  });
+}
+
+export async function updateManagedUserPassword(
+  actorUserId: string,
+  type: ManagedUserType,
+  id: string,
+  password: string,
+) {
+  await assertCanManageUsers(actorUserId);
+
+  if (!password?.trim() || password.length < 6) {
+    throw new AppError(400, "Password must be at least 6 characters long");
+  }
+
+  const profile = await getManagedProfile(type, id);
+  const userId = getProfileUserId(profile);
+  const passwordHash = await bcrypt.hash(password, 12);
+
+  return prisma.users.update({
+    where: { id: userId },
+    data: {
+      password_hash: passwordHash,
+      updated_at: new Date(),
+    },
+  });
+}
+
 
 
 function validateRegisterInput(input: RegisterUserInput) {
