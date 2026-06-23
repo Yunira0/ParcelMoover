@@ -301,6 +301,15 @@
   margin: 0;
 }
 
+.dispatch-status-option-rider {
+  border-radius: var(--border-radius-default);
+  width: 100%;
+}
+
+.dispatch-status-option-rider.selected {
+  box-shadow: inset 3px 0 0 var(--color-border-primary);
+}
+
 .dispatch-action-error {
   color: #b91c1c;
   font-size: var(--font-size-sm);

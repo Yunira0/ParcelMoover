@@ -73,6 +73,43 @@ export interface Order {
   createdAt: string;
 }
 
+export interface ListOrdersParams {
+  status?: ParcelStatus[];
+  search?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface OrdersPageMeta {
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+}
+
+export interface OrdersListResponse {
+  success: boolean;
+  data: Order[];
+  meta?: OrdersPageMeta;
+}
+
+export interface BulkStatusOptions {
+  remarks?: string;
+  /** Destination hub for the manifest. Required when status === 'dispatched'. */
+  toLocationId?: string;
+  riderId?: string;
+}
+
+export interface BulkStatusResult {
+  updatedCount: number;
+  status: ParcelStatus;
+  dispatch?: {
+    id: string;
+    dispatchNo: string;
+    toLocationId: string;
+  };
+}
+
 export interface DashboardSummary {
   overview: {
     totalOrders: number;
@@ -108,8 +145,14 @@ export const subscribeToOrderStatusChanged = (handler: () => void) => {
   return () => window.removeEventListener(ORDER_STATUS_CHANGED_EVENT, handler);
 };
 
-export const getOrders = async () => {
-  const response = await api.get('/orders');
+export const getOrders = async (params?: ListOrdersParams): Promise<OrdersListResponse> => {
+  const query: Record<string, string> = {};
+  if (params?.status?.length) query.status = params.status.join(',');
+  if (params?.search) query.search = params.search;
+  if (params?.page !== undefined) query.page = String(params.page);
+  if (params?.pageSize !== undefined) query.pageSize = String(params.pageSize);
+
+  const response = await api.get('/orders', { params: query });
   return response.data;
 };
 
@@ -131,11 +174,29 @@ export const updateOrderStatus = async (
   status: ParcelStatus,
   remarks?: string,
   locationId?: string,
+  riderId?: string,
 ) => {
   const response = await api.patch(`/orders/${orderId}/status`, {
     status,
     remarks,
     locationId,
+    riderId,
+  });
+  notifyOrderStatusChanged();
+  return response.data;
+};
+
+export const bulkUpdateOrderStatus = async (
+  ids: string[],
+  status: ParcelStatus,
+  options?: BulkStatusOptions,
+): Promise<{ success: boolean; message: string; data: BulkStatusResult }> => {
+  const response = await api.patch('/orders/bulk-status', {
+    ids,
+    status,
+    remarks: options?.remarks,
+    toLocationId: options?.toLocationId,
+    riderId: options?.riderId,
   });
   notifyOrderStatusChanged();
   return response.data;

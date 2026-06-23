@@ -9,6 +9,7 @@ import {
   Truck,
 } from 'lucide-react';
 import Table from '../components/Table';
+import SearchableSelect from '../components/SearchableSelect';
 import {
   getOrders,
   notifyOrderStatusChanged,
@@ -17,6 +18,7 @@ import {
   type Order,
   type ParcelStatus,
 } from '../services/orders.service';
+import { getRiders } from '../services/users.service';
 import './PickupOperations.css';
 
 type PickupTab = 'pickup_ordered' | 'rider_assigned' | 'picked_up' | 'arrived' | 'failed' | 'cancelled';
@@ -161,6 +163,21 @@ const PickupOperations: React.FC = () => {
   const [selectedNextStatus, setSelectedNextStatus] = useState<ParcelStatus | ''>('');
   const [statusUpdating, setStatusUpdating] = useState(false);
   const [actionError, setActionError] = useState('');
+  const [riders, setRiders] = useState<{ id: string; name: string }[]>([]);
+  const [riderId, setRiderId] = useState('');
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await getRiders();
+        if (res?.success && Array.isArray(res.data)) {
+          setRiders(res.data.filter((r: { status: string }) => r.status === 'active'));
+        }
+      } catch {
+        // rider dropdown will just be empty; not fatal for the rest of the page
+      }
+    })();
+  }, []);
 
   const loadPickups = async () => {
     setLoading(true);
@@ -194,6 +211,7 @@ const PickupOperations: React.FC = () => {
     setPage(1);
     setIsActionOpen(false);
     setActionError('');
+    setRiderId('');
   }, [activeTab, searchQuery]);
 
   const filteredOrders = useMemo(() => {
@@ -237,6 +255,8 @@ const PickupOperations: React.FC = () => {
 
     setSelectedNextStatus(allowedStatusOptions[0] || '');
   }, [allowedStatusOptions, isActionOpen]);
+
+  const isRiderAssignAction = selectedNextStatus === 'rider_assigned';
 
   const toggleRowSelection = (orderId: string | number) => {
     setSelectedIdsByTab(prev => {
@@ -288,11 +308,22 @@ const PickupOperations: React.FC = () => {
       return;
     }
 
+    if (isRiderAssignAction && !riderId) {
+      setActionError('Select a rider to assign this pickup.');
+      return;
+    }
+
     setStatusUpdating(true);
     try {
       if (!usingMockData) {
         await Promise.all(
-          selectedOrders.map(order => updateOrderStatus(order.id, selectedNextStatus)),
+          selectedOrders.map(order => updateOrderStatus(
+            order.id,
+            selectedNextStatus,
+            undefined,
+            undefined,
+            isRiderAssignAction ? riderId : undefined,
+          )),
         );
         await loadPickups();
       } else {
@@ -305,6 +336,7 @@ const PickupOperations: React.FC = () => {
       setSelectedIdsByTab(prev => ({ ...prev, [activeTab]: new Set() }));
       setIsActionOpen(false);
       setSelectedNextStatus('');
+      setRiderId('');
     } catch (err: any) {
       setActionError(err.response?.data?.message || 'Failed to change pickup status.');
     } finally {
@@ -456,29 +488,49 @@ const PickupOperations: React.FC = () => {
                     {allowedStatusOptions.length === 0 ? (
                       <p className="pickup-status-empty">No valid transitions</p>
                     ) : allowedStatusOptions.map(status => (
-                      <button
-                        key={status}
-                        type="button"
-                        className={`pickup-status-option ${selectedNextStatus === status ? 'selected' : ''}`}
-                        onClick={() => setSelectedNextStatus(status)}
-                        disabled={statusUpdating}
-                        tabIndex={selectedNextStatus === status ? 0 : -1}
-                      >
-                        {STATUS_LABELS[status]}
-                      </button>
+                      status === 'rider_assigned' ? (
+                        <div
+                          key={status}
+                          className={`pickup-status-option-rider ${selectedNextStatus === status ? 'selected' : ''}`}
+                        >
+                          <SearchableSelect
+                            options={riders.map(r => ({ id: r.id, label: r.name }))}
+                            value={riderId}
+                            onChange={id => {
+                              setRiderId(id);
+                              setSelectedNextStatus('rider_assigned');
+                            }}
+                            placeholder="Select rider"
+                            searchPlaceholder="Search rider by name..."
+                            emptyMessage="No active riders found."
+                            disabled={statusUpdating}
+                          />
+                        </div>
+                      ) : (
+                        <button
+                          key={status}
+                          type="button"
+                          className={`pickup-status-option ${selectedNextStatus === status ? 'selected' : ''}`}
+                          onClick={() => setSelectedNextStatus(status)}
+                          disabled={statusUpdating}
+                          tabIndex={selectedNextStatus === status ? 0 : -1}
+                        >
+                          {STATUS_LABELS[status]}
+                        </button>
+                      )
                     ))}
                   </div>
                 </div>
                 {actionError && <p className="pickup-action-error">{actionError}</p>}
                 <div className="pickup-status-submit-row">
-                  <button type="button" className="pickup-outline-btn" onClick={() => setIsActionOpen(false)}>
+                  <button type="button" className="pickup-outline-btn" onClick={() => { setIsActionOpen(false); setRiderId(''); }}>
                     Cancel
                   </button>
                   <button
                     type="button"
                     className="pickup-apply-btn"
                     onClick={applyStatusChange}
-                    disabled={statusUpdating || !selectedNextStatus}
+                    disabled={statusUpdating || !selectedNextStatus || (isRiderAssignAction && !riderId)}
                   >
                     {statusUpdating ? 'Applying...' : 'Submit'}
                   </button>

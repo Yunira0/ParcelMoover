@@ -259,6 +259,33 @@
   margin: 0;
 }
 
+.oov-manifest-fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.oov-manifest-fields label {
+  color: var(--color-text-caption);
+  display: flex;
+  flex-direction: column;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  gap: var(--space-1);
+}
+
+.oov-manifest-fields select {
+  background: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-default);
+  color: var(--color-text-default);
+  font-family: var(--typography-font-family-default);
+  font-size: var(--font-size-sm);
+  height: 34px;
+  padding: 0 var(--space-2);
+}
+
 .oov-action-error {
   color: #b91c1c;
   font-size: var(--font-size-sm);

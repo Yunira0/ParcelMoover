@@ -350,6 +350,15 @@
   opacity: var(--opacity-75);
 }
 
+.pickup-status-option-rider {
+  border-radius: var(--border-radius-default);
+  width: 100%;
+}
+
+.pickup-status-option-rider.selected {
+  box-shadow: inset 3px 0 0 var(--color-border-primary);
+}
+
 .pickup-status-empty {
   color: var(--color-text-caption);
   font-size: var(--font-size-sm);

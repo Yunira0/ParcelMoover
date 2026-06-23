@@ -55,6 +55,25 @@ export interface UpdateParcelStatusInput {
   status: ParcelStatus;
   locationId?: string;
   remarks?: string;
+  /** Required when status is "rider_assigned" (pickup rider) or "sent_for_delivery" (delivery rider). */
+  riderId?: string;
+}
+
+export interface ListOrdersQuery {
+  status?: ParcelStatus[];
+  search?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface BulkUpdateParcelStatusInput {
+  ids: string[];
+  status: ParcelStatus;
+  remarks?: string;
+  /** Destination hub for the manifest. Required when status === "dispatched". */
+  toLocationId?: string;
+  /** Rider/vehicle carrying the manifest. Optional. */
+  riderId?: string;
 }
 
 /** Who is allowed to transition to each status */

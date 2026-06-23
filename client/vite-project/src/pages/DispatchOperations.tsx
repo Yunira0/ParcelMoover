@@ -8,6 +8,7 @@ import {
   Send,
 } from 'lucide-react';
 import Table from '../components/Table';
+import SearchableSelect from '../components/SearchableSelect';
 import {
   getOrders,
   notifyOrderStatusChanged,
@@ -16,6 +17,7 @@ import {
   type Order,
   type ParcelStatus,
 } from '../services/orders.service';
+import { getRiders } from '../services/users.service';
 import './DispatchOperations.css';
 
 type DispatchTab =
@@ -30,7 +32,7 @@ const PAGE_SIZE = 10;
 
 const TAB_LABELS: Record<DispatchTab, string> = {
   arrived_at_branch: 'Arrived at branch',
-  ready_to_deliver: 'Dispatch',
+  ready_to_deliver: 'Ready for delivery',
   sent_for_delivery: 'Sent for delivery',
   delivered: 'Delivered',
   failed: 'Failed',
@@ -168,6 +170,21 @@ const DispatchOperations: React.FC = () => {
   const [selectedNextStatus, setSelectedNextStatus] = useState<ParcelStatus | ''>('');
   const [statusUpdating, setStatusUpdating] = useState(false);
   const [actionError, setActionError] = useState('');
+  const [riders, setRiders] = useState<{ id: string; name: string }[]>([]);
+  const [riderId, setRiderId] = useState('');
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await getRiders();
+        if (res?.success && Array.isArray(res.data)) {
+          setRiders(res.data.filter((r: { status: string }) => r.status === 'active'));
+        }
+      } catch {
+        // rider dropdown will just be empty; not fatal for the rest of the page
+      }
+    })();
+  }, []);
 
   const loadDispatches = async () => {
     setLoading(true);
@@ -238,6 +255,8 @@ const DispatchOperations: React.FC = () => {
       ? selectedNextStatus
       : allowedStatusOptions[0] || '';
 
+  const isRiderAssignAction = effectiveNextStatus === 'sent_for_delivery';
+
   const toggleRowSelection = (orderId: string | number) => {
     setSelectedIdsByTab(prev => {
       const next = new Set(prev[activeTab]);
@@ -288,11 +307,22 @@ const DispatchOperations: React.FC = () => {
       return;
     }
 
+    if (isRiderAssignAction && !riderId) {
+      setActionError('Select a rider to send this order for delivery.');
+      return;
+    }
+
     setStatusUpdating(true);
     try {
       if (!usingMockData) {
         await Promise.all(
-          selectedOrders.map(order => updateOrderStatus(order.id, effectiveNextStatus)),
+          selectedOrders.map(order => updateOrderStatus(
+            order.id,
+            effectiveNextStatus,
+            undefined,
+            undefined,
+            isRiderAssignAction ? riderId : undefined,
+          )),
         );
         await loadDispatches();
       } else {
@@ -305,6 +335,7 @@ const DispatchOperations: React.FC = () => {
       setSelectedIdsByTab(prev => ({ ...prev, [activeTab]: new Set() }));
       setIsActionOpen(false);
       setSelectedNextStatus('');
+      setRiderId('');
     } catch (err: unknown) {
       const message =
         typeof err === 'object' &&
@@ -402,6 +433,7 @@ const DispatchOperations: React.FC = () => {
               setPage(1);
               setIsActionOpen(false);
               setActionError('');
+              setRiderId('');
             }}
           >
             {TAB_LABELS[tab]}
@@ -428,27 +460,47 @@ const DispatchOperations: React.FC = () => {
                   {allowedStatusOptions.length === 0 ? (
                     <p className="dispatch-status-empty">No valid transitions</p>
                   ) : allowedStatusOptions.map(status => (
-                    <button
-                      key={status}
-                      type="button"
-                      className={`dispatch-status-option ${effectiveNextStatus === status ? 'selected' : ''}`}
-                      onClick={() => setSelectedNextStatus(status)}
-                      disabled={statusUpdating}
-                    >
-                      {STATUS_LABELS[status]}
-                    </button>
+                    status === 'sent_for_delivery' ? (
+                      <div
+                        key={status}
+                        className={`dispatch-status-option-rider ${effectiveNextStatus === status ? 'selected' : ''}`}
+                      >
+                        <SearchableSelect
+                          options={riders.map(r => ({ id: r.id, label: r.name }))}
+                          value={riderId}
+                          onChange={id => {
+                            setRiderId(id);
+                            setSelectedNextStatus('sent_for_delivery');
+                          }}
+                          placeholder="Select rider"
+                          searchPlaceholder="Search rider by name..."
+                          emptyMessage="No active riders found."
+                          disabled={statusUpdating}
+                        />
+                      </div>
+                    ) : (
+                      <button
+                        key={status}
+                        type="button"
+                        className={`dispatch-status-option ${effectiveNextStatus === status ? 'selected' : ''}`}
+                        onClick={() => setSelectedNextStatus(status)}
+                        disabled={statusUpdating}
+                      >
+                        {STATUS_LABELS[status]}
+                      </button>
+                    )
                   ))}
                 </div>
                 {actionError && <p className="dispatch-action-error">{actionError}</p>}
                 <div className="dispatch-status-submit-row">
-                  <button type="button" className="dispatch-outline-btn" onClick={() => setIsActionOpen(false)}>
+                  <button type="button" className="dispatch-outline-btn" onClick={() => { setIsActionOpen(false); setRiderId(''); }}>
                     Cancel
                   </button>
                   <button
                     type="button"
                     className="dispatch-apply-btn"
                     onClick={applyStatusChange}
-                    disabled={statusUpdating || !effectiveNextStatus}
+                    disabled={statusUpdating || !effectiveNextStatus || (isRiderAssignAction && !riderId)}
                   >
                     {statusUpdating ? 'Applying...' : 'Submit'}
                   </button>
@@ -474,6 +526,7 @@ const DispatchOperations: React.FC = () => {
             setPage(1);
             setIsActionOpen(false);
             setActionError('');
+            setRiderId('');
           }}
           placeholder="Search tracking id"
         />

@@ -2,12 +2,15 @@ import { parcel_status, Prisma } from "../generated/prisma/client";
 import prisma from "../lib/prisma";
 import { AppError } from "../utils/AppError";
 import {
+  BulkUpdateParcelStatusInput,
   CreateOrderInput,
+  ListOrdersQuery,
   ParcelStatus,
   STATUS_TRANSITIONS,
   UpdateParcelStatusInput,
 } from "../types/order.type";
 import { generateTrackingId } from "../utils/trackingId";
+import { generateDispatchNo } from "../utils/dispatchId";
 
 type OrderActor = {
   id: string;
@@ -34,6 +37,37 @@ const DELIVERY_PENDING_STATUSES: parcel_status[] = [
   "sent_for_delivery",
   "oov",
 ];
+
+// Hub-level transitions: building/closing a dispatch manifest is a branch
+// operation, not something a delivery rider should be able to trigger.
+const HUB_OPERATION_STATUSES: parcel_status[] = ["dispatched", "arrived_at_branch"];
+
+const TERMINAL_STATUSES: parcel_status[] = [
+  "delivered",
+  "failed_pickup",
+  "failed_delivery",
+  "cancelled",
+];
+
+const MAX_PAGE_SIZE = 100;
+const DEFAULT_PAGE_SIZE = 10;
+const MAX_BULK_IDS = 200;
+
+// Which parcel column a rider gets written to, depending on the leg they're being assigned for.
+const RIDER_ASSIGNMENT_FIELD: Partial<Record<parcel_status, "pickup_rider_id" | "delivery_rider_id">> = {
+  rider_assigned: "pickup_rider_id",
+  sent_for_delivery: "delivery_rider_id",
+};
+
+async function resolveActiveRider(riderId: string) {
+  const rider = await prisma.riders.findFirst({
+    where: { id: riderId, deleted_at: null, status: "active" },
+  });
+  if (!rider) {
+    throw new AppError(400, "Rider not found or inactive");
+  }
+  return rider;
+}
 
 const OPEN_STATUSES: parcel_status[] = [
   "pickup_ordered",
@@ -109,6 +143,28 @@ async function generateUniqueTrackingId(
   }
 
   return generateUniqueTrackingId(tx, retries + 1);
+}
+
+async function generateUniqueDispatchNo(
+  tx: Prisma.TransactionClient,
+  retries = 0,
+): Promise<string> {
+  const dispatchNo = generateDispatchNo();
+
+  const existing = await tx.dispatches.findUnique({
+    where: { dispatch_no: dispatchNo },
+    select: { id: true },
+  });
+
+  if (!existing) {
+    return dispatchNo;
+  }
+
+  if (retries >= MAX_TRACKING_ID_RETRIES) {
+    throw new AppError(500, "Failed to generate unique dispatch number");
+  }
+
+  return generateUniqueDispatchNo(tx, retries + 1);
 }
 
 async function findOrCreateParty(
@@ -255,80 +311,155 @@ export async function createOrder(actor: OrderActor, data: CreateOrderInput) {
   });
 }
 
-export async function listOrders(actor: OrderActor) {
+function buildOrdersWhere(
+  scope: { vendorId: string | undefined; riderId: string | undefined },
+  query: ListOrdersQuery,
+): Prisma.parcelsWhereInput {
+  const conditions: Prisma.parcelsWhereInput[] = [{ deleted_at: null }];
+
+  if (scope.vendorId) {
+    conditions.push({ vendor_id: scope.vendorId });
+  }
+  if (scope.riderId) {
+    conditions.push({
+      OR: [{ pickup_rider_id: scope.riderId }, { delivery_rider_id: scope.riderId }],
+    });
+  }
+  if (query.status?.length) {
+    conditions.push({ status: { in: query.status as parcel_status[] } });
+  }
+
+  const search = query.search?.trim();
+  if (search) {
+    conditions.push({
+      OR: [
+        { tracking_id: { contains: search, mode: "insensitive" } },
+        { parties_parcels_sender_idToparties: { name: { contains: search, mode: "insensitive" } } },
+        { parties_parcels_receiver_idToparties: { name: { contains: search, mode: "insensitive" } } },
+        {
+          locations_parcels_destination_location_idTolocations: {
+            is: { name: { contains: search, mode: "insensitive" } },
+          },
+        },
+      ],
+    });
+  }
+
+  return { AND: conditions };
+}
+
+const ORDERS_INCLUDE = {
+  parties_parcels_sender_idToparties: true,
+  parties_parcels_receiver_idToparties: true,
+  locations_parcels_origin_location_idTolocations: true,
+  locations_parcels_destination_location_idTolocations: true,
+  vendors: true,
+  riders_parcels_pickup_rider_idToriders: true,
+  riders_parcels_delivery_rider_idToriders: true,
+  parcel_remarks: {
+    orderBy: { created_at: "desc" as const },
+    take: 1,
+  },
+  parcel_status_history: {
+    orderBy: { created_at: "desc" as const },
+    take: 1,
+    include: { users: true },
+  },
+} satisfies Prisma.parcelsInclude;
+
+export interface ListOrdersResult {
+  data: ReturnType<typeof mapOrder>[];
+  meta?: {
+    page: number;
+    pageSize: number;
+    total: number;
+    totalPages: number;
+  };
+}
+
+function mapOrder(
+  parcel: Prisma.parcelsGetPayload<{ include: typeof ORDERS_INCLUDE }>,
+) {
+  const latestHistory = parcel.parcel_status_history[0];
+  const rider =
+    parcel.riders_parcels_delivery_rider_idToriders ||
+    parcel.riders_parcels_pickup_rider_idToriders;
+
+  return {
+    id: parcel.id,
+    trackingId: parcel.tracking_id,
+    status: parcel.status,
+    orderType: parcel.order_type,
+    serviceType: parcel.service_type,
+    senderName: parcel.parties_parcels_sender_idToparties.name,
+    senderPhone: parcel.parties_parcels_sender_idToparties.phone,
+    receiverName: parcel.parties_parcels_receiver_idToparties.name,
+    receiverPhone: parcel.parties_parcels_receiver_idToparties.phone,
+    origin:
+      locationName(parcel.locations_parcels_origin_location_idTolocations) ||
+      parcel.parties_parcels_sender_idToparties.address ||
+      "",
+    destination:
+      locationName(parcel.locations_parcels_destination_location_idTolocations) ||
+      parcel.parties_parcels_receiver_idToparties.address ||
+      "",
+    pieces: parcel.pieces,
+    weightKg: parcel.weight_kg === null ? undefined : Number(parcel.weight_kg),
+    codAmount: Number(parcel.cod_amount),
+    deliveryCharge: Number(parcel.delivery_charge),
+    vendorName: parcel.vendors?.business_name || parcel.vendors?.client_name || "",
+    riderName: rider?.name || "",
+    remarks: parcel.parcel_remarks[0]?.remark || "",
+    lastUpdatedBy: latestHistory?.users?.full_name || "",
+    lastUpdatedAt: formatDate(latestHistory?.created_at || parcel.updated_at),
+    createdAt: formatDate(parcel.created_at),
+  };
+}
+
+export async function listOrders(
+  actor: OrderActor,
+  query: ListOrdersQuery = {},
+): Promise<ListOrdersResult> {
   const { vendorId, riderId } = await getActorScope(actor);
+  const where = buildOrdersWhere({ vendorId, riderId }, query);
 
-  const parcels = await prisma.parcels.findMany({
-    where: {
-      deleted_at: null,
-      ...(vendorId ? { vendor_id: vendorId } : {}),
-      ...(riderId
-        ? {
-            OR: [
-              { pickup_rider_id: riderId },
-              { delivery_rider_id: riderId },
-            ],
-          }
-        : {}),
+  // Pagination only kicks in when the caller explicitly asks for it, so
+  // existing callers that expect a flat array keep working unchanged.
+  const paginated = query.page !== undefined || query.pageSize !== undefined;
+
+  if (!paginated) {
+    const parcels = await prisma.parcels.findMany({
+      where,
+      include: ORDERS_INCLUDE,
+      orderBy: { created_at: "desc" },
+      take: 200,
+    });
+    return { data: parcels.map(mapOrder) };
+  }
+
+  const page = Math.max(1, query.page || 1);
+  const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, query.pageSize || DEFAULT_PAGE_SIZE));
+
+  const [total, parcels] = await Promise.all([
+    prisma.parcels.count({ where }),
+    prisma.parcels.findMany({
+      where,
+      include: ORDERS_INCLUDE,
+      orderBy: { created_at: "desc" },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    }),
+  ]);
+
+  return {
+    data: parcels.map(mapOrder),
+    meta: {
+      page,
+      pageSize,
+      total,
+      totalPages: Math.max(1, Math.ceil(total / pageSize)),
     },
-    include: {
-      parties_parcels_sender_idToparties: true,
-      parties_parcels_receiver_idToparties: true,
-      locations_parcels_origin_location_idTolocations: true,
-      locations_parcels_destination_location_idTolocations: true,
-      vendors: true,
-      riders_parcels_pickup_rider_idToriders: true,
-      riders_parcels_delivery_rider_idToriders: true,
-      parcel_remarks: {
-        orderBy: { created_at: "desc" },
-        take: 1,
-      },
-      parcel_status_history: {
-        orderBy: { created_at: "desc" },
-        take: 1,
-        include: { users: true },
-      },
-    },
-    orderBy: { created_at: "desc" },
-    take: 200,
-  });
-
-  return parcels.map(parcel => {
-    const latestHistory = parcel.parcel_status_history[0];
-    const rider =
-      parcel.riders_parcels_delivery_rider_idToriders ||
-      parcel.riders_parcels_pickup_rider_idToriders;
-
-    return {
-      id: parcel.id,
-      trackingId: parcel.tracking_id,
-      status: parcel.status,
-      orderType: parcel.order_type,
-      serviceType: parcel.service_type,
-      senderName: parcel.parties_parcels_sender_idToparties.name,
-      senderPhone: parcel.parties_parcels_sender_idToparties.phone,
-      receiverName: parcel.parties_parcels_receiver_idToparties.name,
-      receiverPhone: parcel.parties_parcels_receiver_idToparties.phone,
-      origin:
-        locationName(parcel.locations_parcels_origin_location_idTolocations) ||
-        parcel.parties_parcels_sender_idToparties.address ||
-        "",
-      destination:
-        locationName(parcel.locations_parcels_destination_location_idTolocations) ||
-        parcel.parties_parcels_receiver_idToparties.address ||
-        "",
-      pieces: parcel.pieces,
-      weightKg: parcel.weight_kg === null ? undefined : Number(parcel.weight_kg),
-      codAmount: Number(parcel.cod_amount),
-      deliveryCharge: Number(parcel.delivery_charge),
-      vendorName: parcel.vendors?.business_name || parcel.vendors?.client_name || "",
-      riderName: rider?.name || "",
-      remarks: parcel.parcel_remarks[0]?.remark || "",
-      lastUpdatedBy: latestHistory?.users?.full_name || "",
-      lastUpdatedAt: formatDate(latestHistory?.created_at || parcel.updated_at),
-      createdAt: formatDate(parcel.created_at),
-    };
-  });
+  };
 }
 
 export async function getDashboardSummary(actor: OrderActor) {
@@ -460,7 +591,7 @@ export async function updateParcelStatus(
   const newStatus = data.status;
 
   // cannot transition from a terminal state
-  if (["delivered", "failed_pickup", "failed_delivery", "cancelled"].includes(currentStatus)) {
+  if (TERMINAL_STATUSES.includes(currentStatus as parcel_status)) {
     throw new AppError(
       409,
       `Cannot update status: parcel id already '${currentStatus}' (terminal state)`,
@@ -486,7 +617,11 @@ export async function updateParcelStatus(
     throw new AppError(403, "Only admins can cancel an order");
   }
 
-  //rider addignment request just for testing
+  // building/closing a dispatch manifest is a branch operation
+  if (HUB_OPERATION_STATUSES.includes(newStatus as parcel_status) && !isAdmin) {
+    throw new AppError(403, "Only admins can perform dispatch hub operations");
+  }
+
   if (data.locationId) {
     const loc = await prisma.locations.findUnique({
       where: { id: data.locationId },
@@ -494,6 +629,15 @@ export async function updateParcelStatus(
     if (!loc || !loc.is_active) {
       throw new AppError(400, "Location not found or inactive");
     }
+  }
+
+  // rider_assigned needs a pickup rider, sent_for_delivery needs a delivery rider
+  const riderAssignmentField = RIDER_ASSIGNMENT_FIELD[newStatus as parcel_status];
+  if (riderAssignmentField) {
+    if (!data.riderId) {
+      throw new AppError(400, `riderId is required to transition to '${newStatus}'`);
+    }
+    await resolveActiveRider(data.riderId);
   }
 
   return prisma.$transaction(async (tx) => {
@@ -507,6 +651,10 @@ export async function updateParcelStatus(
     // Side-effect: update current_location_id
     if (data.locationId) {
       (updateData as any).current_location_id = data.locationId;
+    }
+    // Side-effect: assign the rider for this leg
+    if (riderAssignmentField) {
+      (updateData as any)[riderAssignmentField] = data.riderId;
     }
     // Side-effect: update pickup_task status in sync
     if (parcel.pickup_tasks && ["rider_assigned", "picked_up", "cancelled"].includes(newStatus)) {
@@ -543,5 +691,233 @@ export async function updateParcelStatus(
       },
     });
     return updatedParcel;
+  });
+}
+
+export interface BulkUpdateResult {
+  updatedCount: number;
+  status: ParcelStatus;
+  dispatch?: {
+    id: string;
+    dispatchNo: string;
+    toLocationId: string;
+  };
+}
+
+/**
+ * Bulk status transition for OOV/dispatch operations. Validates every parcel
+ * up front, then performs all writes as batched queries inside a single
+ * transaction instead of N individual round trips - this is what backs
+ * the OOV page's multi-select "Action" bar.
+ *
+ * When the target status is "dispatched", this also opens a dispatch
+ * manifest (dispatches + dispatch_parcels) grouping the selected parcels,
+ * and closes it out (dispatches.arrived_at) once every parcel in it has
+ * reached "arrived_at_branch".
+ */
+export async function bulkUpdateParcelStatus(
+  actor: OrderActor,
+  data: BulkUpdateParcelStatusInput,
+): Promise<BulkUpdateResult> {
+  const ids = Array.from(new Set(data.ids));
+  if (ids.length === 0) {
+    throw new AppError(400, "No parcel ids provided");
+  }
+  if (ids.length > MAX_BULK_IDS) {
+    throw new AppError(400, `Cannot update more than ${MAX_BULK_IDS} parcels at once`);
+  }
+
+  const newStatus = data.status;
+  const isAdmin = actor.roles.some((r) => ["super_admin", "admin"].includes(r));
+
+  if (newStatus === "cancelled" && !isAdmin) {
+    throw new AppError(403, "Only admins can cancel an order");
+  }
+  if (HUB_OPERATION_STATUSES.includes(newStatus as parcel_status) && !isAdmin) {
+    throw new AppError(403, "Only admins can perform dispatch hub operations");
+  }
+
+  const parcels = await prisma.parcels.findMany({
+    where: { id: { in: ids }, deleted_at: null },
+    include: { pickup_tasks: true },
+  });
+
+  if (parcels.length !== ids.length) {
+    throw new AppError(404, "One or more parcels were not found");
+  }
+
+  for (const parcel of parcels) {
+    const currentStatus = parcel.status as ParcelStatus;
+    if (TERMINAL_STATUSES.includes(currentStatus as parcel_status)) {
+      throw new AppError(
+        409,
+        `Parcel ${parcel.tracking_id} is already '${currentStatus}' (terminal state)`,
+      );
+    }
+    const allowed = STATUS_TRANSITIONS[
+      currentStatus as keyof typeof STATUS_TRANSITIONS
+    ] as readonly ParcelStatus[];
+    if (!allowed || !allowed.includes(newStatus)) {
+      throw new AppError(
+        422,
+        `Invalid status transition for ${parcel.tracking_id}: '${currentStatus}' → '${newStatus}'`,
+      );
+    }
+  }
+
+  let toLocationId: string | null = null;
+  let originLocationId: string | null = null;
+  let riderId: string | null = null;
+
+  if (newStatus === "dispatched") {
+    if (!data.toLocationId) {
+      throw new AppError(400, "toLocationId is required to dispatch a manifest");
+    }
+
+    const distinctOrigins = new Set(parcels.map((p) => p.current_location_id || ""));
+    if (distinctOrigins.size !== 1 || distinctOrigins.has("")) {
+      throw new AppError(
+        422,
+        "All selected parcels must share the same current location to be dispatched together",
+      );
+    }
+    originLocationId = parcels[0]!.current_location_id;
+
+    if (originLocationId === data.toLocationId) {
+      throw new AppError(422, "Destination hub must differ from the current location");
+    }
+
+    const destination = await prisma.locations.findUnique({ where: { id: data.toLocationId } });
+    if (!destination || !destination.is_active) {
+      throw new AppError(400, "Destination location not found or inactive");
+    }
+    toLocationId = destination.id;
+
+    if (data.riderId) {
+      const rider = await prisma.riders.findFirst({
+        where: { id: data.riderId, deleted_at: null, status: "active" },
+      });
+      if (!rider) {
+        throw new AppError(400, "Rider not found or inactive");
+      }
+      riderId = rider.id;
+    }
+  }
+
+  if (data.toLocationId && newStatus !== "dispatched") {
+    const loc = await prisma.locations.findUnique({ where: { id: data.toLocationId } });
+    if (!loc || !loc.is_active) {
+      throw new AppError(400, "Location not found or inactive");
+    }
+  }
+
+  // rider_assigned needs a pickup rider, sent_for_delivery needs a delivery rider
+  const riderAssignmentField = RIDER_ASSIGNMENT_FIELD[newStatus as parcel_status];
+  let parcelRiderId: string | null = null;
+  if (riderAssignmentField) {
+    if (!data.riderId) {
+      throw new AppError(400, `riderId is required to transition to '${newStatus}'`);
+    }
+    const rider = await resolveActiveRider(data.riderId);
+    parcelRiderId = rider.id;
+  }
+
+  return prisma.$transaction(async (tx) => {
+    let dispatch: { id: string; dispatch_no: string } | null = null;
+
+    if (newStatus === "dispatched" && toLocationId && originLocationId) {
+      const dispatchNo = await generateUniqueDispatchNo(tx);
+      dispatch = await tx.dispatches.create({
+        data: {
+          dispatch_no: dispatchNo,
+          from_location_id: originLocationId,
+          to_location_id: toLocationId,
+          delivery_rider_id: riderId,
+          dispatched_by: actor.id,
+        },
+      });
+      await tx.dispatch_parcels.createMany({
+        data: parcels.map((p) => ({ dispatch_id: dispatch!.id, parcel_id: p.id })),
+      });
+    }
+
+    const updateData: Prisma.parcelsUpdateInput = { status: newStatus as parcel_status };
+    if (newStatus === "delivered") {
+      (updateData as any).delivered_at = new Date();
+    }
+    if (toLocationId) {
+      (updateData as any).current_location_id = toLocationId;
+    } else if (data.toLocationId) {
+      (updateData as any).current_location_id = data.toLocationId;
+    }
+    if (riderAssignmentField && parcelRiderId) {
+      (updateData as any)[riderAssignmentField] = parcelRiderId;
+    }
+
+    await tx.parcels.updateMany({
+      where: { id: { in: ids } },
+      data: updateData,
+    });
+
+    const pickupSyncIds = parcels
+      .filter((p) => p.pickup_tasks && ["rider_assigned", "picked_up", "cancelled"].includes(newStatus))
+      .map((p) => p.id);
+    if (pickupSyncIds.length) {
+      await tx.pickup_tasks.updateMany({
+        where: { parcel_id: { in: pickupSyncIds } },
+        data: { status: newStatus as parcel_status },
+      });
+    }
+
+    await tx.parcel_status_history.createMany({
+      data: parcels.map((p) => ({
+        parcel_id: p.id,
+        old_status: p.status,
+        new_status: newStatus as parcel_status,
+        location_id: toLocationId || data.toLocationId || p.current_location_id,
+        changed_by: actor.id,
+        remarks: data.remarks || null,
+      })),
+    });
+
+    await tx.audit_logs.createMany({
+      data: parcels.map((p) => ({
+        actor_id: actor.id,
+        entity_type: "parcel",
+        entity_id: p.id,
+        action: "BULK_UPDATE_STATUS",
+        old_data: { status: p.status },
+        new_data: { status: newStatus, dispatchId: dispatch?.id || null },
+      })),
+    });
+
+    // Close out manifests once none of their parcels are still "dispatched"
+    if (newStatus === "arrived_at_branch") {
+      const links = await tx.dispatch_parcels.findMany({
+        where: { parcel_id: { in: ids } },
+        select: { dispatch_id: true },
+        distinct: ["dispatch_id"],
+      });
+
+      for (const link of links) {
+        const remainingInTransit = await tx.dispatch_parcels.count({
+          where: { dispatch_id: link.dispatch_id, parcels: { status: "dispatched" } },
+        });
+        if (remainingInTransit === 0) {
+          await tx.dispatches.updateMany({
+            where: { id: link.dispatch_id, arrived_at: null },
+            data: { arrived_at: new Date() },
+          });
+        }
+      }
+    }
+
+    return {
+      updatedCount: parcels.length,
+      status: newStatus,
+      ...(dispatch && toLocationId
+        ? { dispatch: { id: dispatch.id, dispatchNo: dispatch.dispatch_no, toLocationId } }
+        : {}),
+    };
   });
 }

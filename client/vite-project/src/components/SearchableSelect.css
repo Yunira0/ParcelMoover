@@ -1,0 +1,104 @@
+.searchable-select {
+  position: relative;
+  width: 100%;
+}
+
+.searchable-select-trigger {
+  align-items: center;
+  background: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-default);
+  color: var(--color-text-default);
+  cursor: pointer;
+  display: flex;
+  font-family: var(--typography-font-family-default);
+  font-size: var(--font-size-sm);
+  height: 34px;
+  justify-content: space-between;
+  padding: 0 var(--space-2);
+  width: 100%;
+}
+
+.searchable-select-trigger:disabled {
+  cursor: not-allowed;
+  opacity: var(--opacity-75);
+}
+
+.searchable-select-placeholder {
+  color: var(--color-text-caption);
+}
+
+.searchable-select-panel {
+  background: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-default);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  left: 0;
+  margin-top: var(--space-1);
+  max-height: 260px;
+  overflow: hidden;
+  position: absolute;
+  top: 100%;
+  width: 100%;
+  z-index: 20;
+}
+
+.searchable-select-search {
+  align-items: center;
+  border-bottom: 1px solid var(--color-border-default);
+  color: var(--color-text-caption);
+  display: flex;
+  gap: var(--space-1);
+  padding: var(--space-2);
+}
+
+.searchable-select-search input {
+  background: transparent;
+  border: none;
+  color: var(--color-text-default);
+  font-family: var(--typography-font-family-default);
+  font-size: var(--font-size-sm);
+  outline: none;
+  width: 100%;
+}
+
+.searchable-select-options {
+  max-height: 200px;
+  overflow-y: auto;
+  padding: var(--space-1);
+}
+
+.searchable-select-option {
+  background: transparent;
+  border: none;
+  border-radius: var(--border-radius-default);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  font-family: var(--typography-font-family-default);
+  padding: var(--space-2);
+  text-align: left;
+  width: 100%;
+}
+
+.searchable-select-option span {
+  color: var(--color-text-default);
+  font-size: var(--font-size-sm);
+}
+
+.searchable-select-option small {
+  color: var(--color-text-caption);
+  font-size: 12px;
+}
+
+.searchable-select-option:hover,
+.searchable-select-option.selected {
+  background: var(--color-background-primary-invert-default);
+}
+
+.searchable-select-empty {
+  color: var(--color-text-caption);
+  font-size: var(--font-size-sm);
+  margin: 0;
+  padding: var(--space-2);
+}

@@ -3,17 +3,19 @@ import { rateLimit, ipKeyGenerator } from "express-rate-limit";
 import { authMiddleware } from "../middlewares/auth.mddleware";
 import { authorizeRoles } from "../middlewares/authorizeRoles.middleware";
 import {
+  bulkUpdateOrderStatusController,
   createOrderController,
   dashboardSummaryController,
   listOrdersController,
   updateOrderStatusController,
 } from "../controllers/order.controller";
 import { csrfProtection } from "../middlewares/csrf.middleware";
+import { createRedisRateLimitStore } from "../lib/rateLimitStore";
 
 const orderRouter: Router = Router();
 
 // absoulate route "i guess"
-/* 
+/*
 POST   /orders
 GET    /orders
 GET    /orders/:id
@@ -21,9 +23,12 @@ GET    /orders/track/:trackingId
 PATCH  /orders/:id
 PATCH  /orders/:id/status
 PATCH  /orders/:id/assign-rider
+PATCH  /orders/bulk-status
 POST   /orders/:id/remarks
 DELETE /orders/:id
  */
+
+const actorOrIpKey = (req: Request) => req.user?.id ?? ipKeyGenerator(req.ip ?? "");
 
 const createOrderLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
@@ -31,7 +36,18 @@ const createOrderLimiter = rateLimit({
   message: { success: false, message: "Too many order creation attempts" },
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req: Request) => req.user?.id ?? ipKeyGenerator(req.ip ?? ""),
+  store: createRedisRateLimitStore("create-order"),
+  keyGenerator: actorOrIpKey,
+});
+
+const statusUpdateLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 60,
+  message: { success: false, message: "Too many status update attempts" },
+  standardHeaders: true,
+  legacyHeaders: false,
+  store: createRedisRateLimitStore("order-status"),
+  keyGenerator: actorOrIpKey,
 });
 
 orderRouter.post(
@@ -63,7 +79,18 @@ orderRouter.patch(
   authMiddleware,
   csrfProtection,
   authorizeRoles("super_admin", "admin", "rider"),
+  statusUpdateLimiter,
   updateOrderStatusController,
+);
+
+// PATCH /orders/bulk-status - batch transitions used by OOV/dispatch operations
+orderRouter.patch(
+  "/bulk-status",
+  authMiddleware,
+  csrfProtection,
+  authorizeRoles("super_admin", "admin", "rider"),
+  statusUpdateLimiter,
+  bulkUpdateOrderStatusController,
 );
 
 export default orderRouter;

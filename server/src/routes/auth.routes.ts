@@ -13,6 +13,7 @@ import { authMiddleware } from "../middlewares/auth.mddleware";
 import { csrfProtection } from "../middlewares/csrf.middleware";
 import rateLimit, {ipKeyGenerator} from "express-rate-limit";
 import crypto from "crypto"
+import { createRedisRateLimitStore } from "../lib/rateLimitStore";
 
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -20,6 +21,7 @@ const loginLimiter = rateLimit({
   message: { success: false, message: "Too many login attempts" },
   standardHeaders: true,
   legacyHeaders: false,
+  store: createRedisRateLimitStore("login"),
   keyGenerator: (req) => ipKeyGenerator(req.ip ?? "unknown")
 });
 

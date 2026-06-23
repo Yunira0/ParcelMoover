@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ChevronLeft,
   ChevronRight,
@@ -8,18 +8,21 @@ import {
 } from 'lucide-react';
 import Table from '../components/Table';
 import {
+  bulkUpdateOrderStatus,
   getOrders,
   notifyOrderStatusChanged,
   subscribeToOrderStatusChanged,
-  updateOrderStatus,
   type Order,
+  type OrdersPageMeta,
   type ParcelStatus,
 } from '../services/orders.service';
+import { getLocations, getRiders } from '../services/users.service';
 import './OOVOperations.css';
 
 type OOVTab = 'oov' | 'dispatch_manifest' | 'dispatched' | 'arrived_at_branch';
 
 const PAGE_SIZE = 10;
+const SEARCH_DEBOUNCE_MS = 300;
 
 const TAB_LABELS: Record<OOVTab, string> = {
   oov: 'OOV',
@@ -140,86 +143,123 @@ const MOCK_OOV_ORDERS: Order[] = [
   },
 ];
 
-const createEmptyTabSelections = (): Record<OOVTab, Set<string | number>> => ({
-  oov: new Set(),
-  dispatch_manifest: new Set(),
-  dispatched: new Set(),
-  arrived_at_branch: new Set(),
+const createEmptySelections = (): Record<OOVTab, Map<string, Order>> => ({
+  oov: new Map(),
+  dispatch_manifest: new Map(),
+  dispatched: new Map(),
+  arrived_at_branch: new Map(),
 });
 
 const formatMoney = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 0 });
 
+const matchesSearch = (order: Order, q: string) =>
+  !q ||
+  order.trackingId.toLowerCase().includes(q) ||
+  order.senderName.toLowerCase().includes(q) ||
+  order.receiverName.toLowerCase().includes(q) ||
+  order.destination.toLowerCase().includes(q);
+
 const OOVOperations: React.FC = () => {
   const [orders, setOrders] = useState<Order[]>([]);
+  const [meta, setMeta] = useState<OrdersPageMeta | null>(null);
+  const [mockOrders, setMockOrders] = useState<Order[]>(MOCK_OOV_ORDERS);
   const [activeTab, setActiveTab] = useState<OOVTab>('oov');
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [usingMockData, setUsingMockData] = useState(false);
-  const [selectedIdsByTab, setSelectedIdsByTab] = useState<Record<OOVTab, Set<string | number>>>(createEmptyTabSelections);
+  const [selectionByTab, setSelectionByTab] = useState<Record<OOVTab, Map<string, Order>>>(createEmptySelections);
   const [isActionOpen, setIsActionOpen] = useState(false);
   const [selectedNextStatus, setSelectedNextStatus] = useState<ParcelStatus | ''>('');
   const [statusUpdating, setStatusUpdating] = useState(false);
   const [actionError, setActionError] = useState('');
+  const [locations, setLocations] = useState<{ id: string; name: string }[]>([]);
+  const [riders, setRiders] = useState<{ id: string; name: string }[]>([]);
+  const [toLocationId, setToLocationId] = useState('');
+  const [riderId, setRiderId] = useState('');
 
-  const loadOovOrders = async () => {
-    setLoading(true);
-    try {
-      const res = await getOrders();
-      if (res?.success && Array.isArray(res.data)) {
-        setOrders(res.data);
-        setUsingMockData(false);
-      } else if (Array.isArray(res)) {
-        setOrders(res);
-        setUsingMockData(false);
-      } else {
-        setOrders(MOCK_OOV_ORDERS);
-        setUsingMockData(true);
-      }
-    } catch {
-      setOrders(MOCK_OOV_ORDERS);
-      setUsingMockData(true);
-    } finally {
-      setLoading(false);
-    }
-  };
-
+  // Debounce search input so every keystroke doesn't fire a request.
   useEffect(() => {
-    loadOovOrders();
-  }, []);
-
-  useEffect(() => subscribeToOrderStatusChanged(loadOovOrders), []);
+    const handle = setTimeout(() => setDebouncedSearch(searchQuery.trim()), SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(handle);
+  }, [searchQuery]);
 
   useEffect(() => {
     setPage(1);
     setIsActionOpen(false);
     setActionError('');
-  }, [activeTab, searchQuery]);
+  }, [activeTab, debouncedSearch]);
 
-  const filteredOrders = useMemo(() => {
-    const tabStatuses = TAB_STATUSES[activeTab];
-    const q = searchQuery.trim().toLowerCase();
+  useEffect(() => {
+    // Hub/rider selects only matter for the "dispatched" manifest action.
+    (async () => {
+      try {
+        const [locRes, riderRes] = await Promise.all([getLocations(), getRiders()]);
+        if (locRes?.success && Array.isArray(locRes.data)) setLocations(locRes.data);
+        if (riderRes?.success && Array.isArray(riderRes.data)) {
+          setRiders(riderRes.data.filter((r: { status: string }) => r.status === 'active'));
+        }
+      } catch {
+        // Manifest fields will just be empty selects; not fatal for the page.
+      }
+    })();
+  }, []);
 
-    return orders
-      .filter(order => tabStatuses.includes(order.status))
-      .filter(order => {
-        if (!q) return true;
-        return (
-          order.trackingId.toLowerCase().includes(q) ||
-          order.senderName.toLowerCase().includes(q) ||
-          order.receiverName.toLowerCase().includes(q) ||
-          order.destination.toLowerCase().includes(q)
-        );
+  const loadOovOrders = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await getOrders({
+        status: TAB_STATUSES[activeTab],
+        search: debouncedSearch || undefined,
+        page,
+        pageSize: PAGE_SIZE,
       });
-  }, [activeTab, orders, searchQuery]);
+      if (res?.success && Array.isArray(res.data)) {
+        setOrders(res.data);
+        setMeta(res.meta ?? null);
+        setUsingMockData(false);
+      } else {
+        setUsingMockData(true);
+      }
+    } catch {
+      setUsingMockData(true);
+    } finally {
+      setLoading(false);
+    }
+  }, [activeTab, debouncedSearch, page]);
 
-  const totalPages = Math.max(1, Math.ceil(filteredOrders.length / PAGE_SIZE));
-  const visibleOrders = filteredOrders.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-  const selectedIds = selectedIdsByTab[activeTab];
+  useEffect(() => {
+    loadOovOrders();
+  }, [loadOovOrders]);
+
+  useEffect(() => subscribeToOrderStatusChanged(loadOovOrders), [loadOovOrders]);
+
+  const mockFilteredOrders = useMemo(() => {
+    if (!usingMockData) return [];
+    const tabStatuses = TAB_STATUSES[activeTab];
+    const q = debouncedSearch.toLowerCase();
+    return mockOrders
+      .filter(order => tabStatuses.includes(order.status))
+      .filter(order => matchesSearch(order, q));
+  }, [usingMockData, mockOrders, activeTab, debouncedSearch]);
+
+  const visibleOrders = usingMockData
+    ? mockFilteredOrders.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+    : orders;
+
+  const totalCount = usingMockData ? mockFilteredOrders.length : meta?.total ?? visibleOrders.length;
+  const totalPages = usingMockData
+    ? Math.max(1, Math.ceil(mockFilteredOrders.length / PAGE_SIZE))
+    : meta?.totalPages ?? 1;
+
+  const selectionMap = selectionByTab[activeTab];
+  const selectedIds = useMemo(() => new Set<string | number>(selectionMap.keys()), [selectionMap]);
+  const selectedOrders = useMemo(() => Array.from(selectionMap.values()), [selectionMap]);
   const visibleOrderIds = visibleOrders.map(order => order.id);
   const allVisibleSelected = visibleOrderIds.length > 0 && visibleOrderIds.every(id => selectedIds.has(id));
   const someVisibleSelected = visibleOrderIds.some(id => selectedIds.has(id));
-  const selectedOrders = filteredOrders.filter(order => selectedIds.has(order.id));
+
   const allowedStatusOptions = useMemo(() => {
     if (selectedOrders.length === 0) return [];
 
@@ -236,27 +276,32 @@ const OOVOperations: React.FC = () => {
       ? selectedNextStatus
       : allowedStatusOptions[0] || '';
 
+  const isDispatchAction = effectiveNextStatus === 'dispatched';
+
   const toggleRowSelection = (orderId: string | number) => {
-    setSelectedIdsByTab(prev => {
-      const next = new Set(prev[activeTab]);
-      if (next.has(orderId)) {
-        next.delete(orderId);
+    const order = visibleOrders.find(o => o.id === orderId);
+    if (!order) return;
+
+    setSelectionByTab(prev => {
+      const nextMap = new Map(prev[activeTab]);
+      if (nextMap.has(String(orderId))) {
+        nextMap.delete(String(orderId));
       } else {
-        next.add(orderId);
+        nextMap.set(String(orderId), order);
       }
-      return { ...prev, [activeTab]: next };
+      return { ...prev, [activeTab]: nextMap };
     });
   };
 
   const toggleVisibleSelection = () => {
-    setSelectedIdsByTab(prev => {
-      const next = new Set(prev[activeTab]);
+    setSelectionByTab(prev => {
+      const nextMap = new Map(prev[activeTab]);
       if (allVisibleSelected) {
-        visibleOrderIds.forEach(id => next.delete(id));
+        visibleOrders.forEach(order => nextMap.delete(String(order.id)));
       } else {
-        visibleOrderIds.forEach(id => next.add(id));
+        visibleOrders.forEach(order => nextMap.set(String(order.id), order));
       }
-      return { ...prev, [activeTab]: next };
+      return { ...prev, [activeTab]: nextMap };
     });
   };
 
@@ -286,23 +331,33 @@ const OOVOperations: React.FC = () => {
       return;
     }
 
+    if (isDispatchAction && !toLocationId) {
+      setActionError('Select a destination hub to dispatch this manifest.');
+      return;
+    }
+
     setStatusUpdating(true);
     try {
+      const ids = selectedOrders.map(order => String(order.id));
+
       if (!usingMockData) {
-        await Promise.all(
-          selectedOrders.map(order => updateOrderStatus(order.id, effectiveNextStatus)),
-        );
+        await bulkUpdateOrderStatus(ids, effectiveNextStatus, {
+          toLocationId: isDispatchAction ? toLocationId : undefined,
+          riderId: isDispatchAction ? riderId || undefined : undefined,
+        });
         await loadOovOrders();
       } else {
-        setOrders(prev => prev.map(order => (
+        setMockOrders(prev => prev.map(order => (
           selectedIds.has(order.id) ? { ...order, status: effectiveNextStatus } : order
         )));
         notifyOrderStatusChanged();
       }
 
-      setSelectedIdsByTab(prev => ({ ...prev, [activeTab]: new Set() }));
+      setSelectionByTab(prev => ({ ...prev, [activeTab]: new Map() }));
       setIsActionOpen(false);
       setSelectedNextStatus('');
+      setToLocationId('');
+      setRiderId('');
     } catch (err: unknown) {
       const message =
         typeof err === 'object' &&
@@ -317,9 +372,9 @@ const OOVOperations: React.FC = () => {
     }
   };
 
-  const downloadCsv = () => {
+  const buildCsv = (rows: Order[]) => {
     const headers = ['Date', 'Tracking ID', 'Order Type', 'Sender', 'Receiver', 'Location', 'Weight', 'COD', 'Last Updated', 'Remarks'];
-    const rows = filteredOrders.map(order => [
+    const csvRows = rows.map(order => [
       order.createdAt,
       order.trackingId,
       order.orderType,
@@ -331,9 +386,28 @@ const OOVOperations: React.FC = () => {
       order.lastUpdatedAt || '',
       order.remarks || '',
     ]);
-    const csv = [headers, ...rows]
+    return [headers, ...csvRows]
       .map(row => row.map(value => `"${String(value).replace(/"/g, '""')}"`).join(','))
       .join('\n');
+  };
+
+  const downloadCsv = async () => {
+    let rows: Order[] = visibleOrders;
+
+    if (usingMockData) {
+      rows = mockFilteredOrders;
+    } else {
+      try {
+        const res = await getOrders({ status: TAB_STATUSES[activeTab], search: debouncedSearch || undefined });
+        if (res?.success && Array.isArray(res.data)) {
+          rows = res.data;
+        }
+      } catch {
+        // fall back to the currently loaded page
+      }
+    }
+
+    const csv = buildCsv(rows);
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -454,6 +528,36 @@ const OOVOperations: React.FC = () => {
                     </button>
                   ))}
                 </div>
+                {isDispatchAction && (
+                  <div className="oov-manifest-fields">
+                    <label>
+                      Destination hub
+                      <select
+                        value={toLocationId}
+                        onChange={event => setToLocationId(event.target.value)}
+                        disabled={statusUpdating}
+                      >
+                        <option value="">Select destination hub</option>
+                        {locations.map(loc => (
+                          <option key={loc.id} value={loc.id}>{loc.name}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      Rider / vehicle (optional)
+                      <select
+                        value={riderId}
+                        onChange={event => setRiderId(event.target.value)}
+                        disabled={statusUpdating}
+                      >
+                        <option value="">Unassigned</option>
+                        {riders.map(rider => (
+                          <option key={rider.id} value={rider.id}>{rider.name}</option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                )}
                 {actionError && <p className="oov-action-error">{actionError}</p>}
                 <div className="oov-status-submit-row">
                   <button type="button" className="oov-outline-btn" onClick={() => setIsActionOpen(false)}>
@@ -496,7 +600,7 @@ const OOVOperations: React.FC = () => {
       />
 
       <div className="oov-pagination-row">
-        <span />
+        <span>{totalCount} order{totalCount === 1 ? '' : 's'}</span>
         <nav className="oov-pagination" aria-label="OOV pagination">
           <button type="button" disabled={page === 1} onClick={() => setPage(value => Math.max(1, value - 1))}>
             <ChevronLeft size={18} />
