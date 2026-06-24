@@ -4,7 +4,7 @@ import './FormField.css';
 
 export type FormFieldOption = { value: string; label: string };
 
-export type FormFieldType = 'text' | 'email' | 'password' | 'number' | 'date' | 'select' | 'searchable-select';
+export type FormFieldType = 'text' | 'email' | 'password' | 'number' | 'date' | 'datetime-local' | 'select' | 'searchable-select' | 'textarea';
 
 interface FormFieldProps {
   label: string;
@@ -28,6 +28,8 @@ interface FormFieldProps {
   className?: string;
   /** Lets a field span multiple columns in a parent CSS grid, e.g. "span 2". */
   gridColumn?: string;
+  /** Visible rows for type="textarea". */
+  rows?: number;
 }
 
 const FormField: React.FC<FormFieldProps> = ({
@@ -49,6 +51,7 @@ const FormField: React.FC<FormFieldProps> = ({
   emptyMessage,
   className,
   gridColumn,
+  rows = 3,
 }) => {
   const id = useId();
 
@@ -77,6 +80,16 @@ const FormField: React.FC<FormFieldProps> = ({
             <option key={opt.value} value={opt.value}>{opt.label}</option>
           ))}
         </select>
+      ) : type === 'textarea' ? (
+        <textarea
+          id={id}
+          required={required}
+          disabled={disabled}
+          placeholder={placeholder}
+          rows={rows}
+          value={value ?? ''}
+          onChange={(e) => onChange(e.target.value)}
+        />
       ) : type === 'searchable-select' ? (
         <SearchableSelect
           options={searchableOptions}

@@ -15,7 +15,9 @@ import {
   RotateCcw,
   OctagonMinus,
   Map,
-  Percent
+  Percent,
+  Ticket,
+  MessageSquare
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import './Sidebar.css';
@@ -62,7 +64,9 @@ const Sidebar: React.FC = () => {
     return: RotateCcw,
     hold: OctagonMinus,
     damage: Map,
-    deliveryRates: Percent
+    deliveryRates: Percent,
+    ticket: Ticket,
+    remarks: MessageSquare
   };
 
   const isSuperAdmin = isCurrentUserSuperAdmin();
@@ -115,18 +119,37 @@ const Sidebar: React.FC = () => {
             <icons.return className="sidebar-icon" size={24} />
             <span className="sidebar-label">Return</span>
           </NavLink>
-          <div className="sidebar-subitem">
+          <NavLink
+            to="/hold"
+            className={({ isActive }) => `sidebar-subitem ${isActive ? 'active' : ''}`}
+          >
             <icons.hold className="sidebar-icon" size={24} />
             <span className="sidebar-label">Hold</span>
-          </div>
-          <div className="sidebar-subitem">
+          </NavLink>
+          <NavLink
+            to="/loss-and-damage"
+            className={({ isActive }) => `sidebar-subitem ${isActive ? 'active' : ''}`}
+          >
             <icons.damage className="sidebar-icon" size={24} />
             <span className="sidebar-label">Loss and Damage</span>
-          </div>
+          </NavLink>
         </div>
         <div className="sidebar-dropdown">
            <span className="dropdown-label">CX/Tickets</span>
            <ChevronDown size={16} style={{ color: 'var(--color-text-caption)' }} />
+        </div>
+        <div className="sidebar-subnav">
+          <NavLink
+            to="/tickets"
+            className={({ isActive }) => `sidebar-subitem ${isActive ? 'active' : ''}`}
+          >
+            <icons.ticket className="sidebar-icon" size={24} />
+            <span className="sidebar-label">Tickets</span>
+          </NavLink>
+          <div className="sidebar-subitem">
+            <icons.remarks className="sidebar-icon" size={24} />
+            <span className="sidebar-label">Remarks</span>
+          </div>
         </div>
       </div>
       
