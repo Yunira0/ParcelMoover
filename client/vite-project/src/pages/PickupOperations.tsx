@@ -1,7 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  ChevronLeft,
-  ChevronRight,
   Download,
   PackageCheck,
   Printer,
@@ -10,6 +8,10 @@ import {
 } from 'lucide-react';
 import Table from '../components/Table';
 import SearchableSelect from '../components/SearchableSelect';
+import Button from '../components/Button';
+import SegmentedTabs from '../components/SegmentedTabs';
+import PageHeader from '../components/PageHeader';
+import Pagination from '../components/Pagination';
 import {
   getOrders,
   notifyOrderStatusChanged,
@@ -438,9 +440,9 @@ const PickupOperations: React.FC = () => {
     {
       header: 'ACTION',
       accessor: () => (
-        <button className="pickup-details-btn" type="button">
+        <Button variant="primary" className="pickup-details-btn">
           view details
-        </button>
+        </Button>
       ),
       width: '156px',
     },
@@ -448,33 +450,22 @@ const PickupOperations: React.FC = () => {
 
   return (
     <div className="pickup-operations-container">
-      <div className="pickup-title-row">
-        <div>
-          <h1>Pickup Operations</h1>
-          <p>Manage and track your pickup orders across the hub network.</p>
-        </div>
-      </div>
+      <PageHeader title="Pickup Operations" subtitle="Manage and track your pickup orders across the hub network." />
 
-      <div className="pickup-tabs" role="tablist" aria-label="Pickup operation filters">
-        {(Object.keys(TAB_LABELS) as PickupTab[]).map(tab => (
-          <button
-            key={tab}
-            type="button"
-            className={`pickup-tab ${activeTab === tab ? 'active' : ''}`}
-            onClick={() => setActiveTab(tab)}
-          >
-            {TAB_LABELS[tab]}
-          </button>
-        ))}
-      </div>
+      <SegmentedTabs
+        ariaLabel="Pickup operation filters"
+        value={activeTab}
+        onChange={setActiveTab}
+        options={(Object.keys(TAB_LABELS) as PickupTab[]).map(tab => ({ value: tab, label: TAB_LABELS[tab] }))}
+      />
 
       <div className="pickup-toolbar">
         <div />
         <div className="pickup-toolbar-actions">
           <div className="pickup-action-anchor">
-            <button type="button" className="pickup-outline-btn" onClick={openStatusAction}>
+            <Button variant="secondary" className="pickup-outline-btn" onClick={openStatusAction}>
               Action{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
-            </button>
+            </Button>
             {isActionOpen && (
               <div className="pickup-status-popover" onKeyDown={handleStatusPopoverKeyDown}>
                 <div className="pickup-status-popover-header">
@@ -523,27 +514,27 @@ const PickupOperations: React.FC = () => {
                 </div>
                 {actionError && <p className="pickup-action-error">{actionError}</p>}
                 <div className="pickup-status-submit-row">
-                  <button type="button" className="pickup-outline-btn" onClick={() => { setIsActionOpen(false); setRiderId(''); }}>
+                  <Button variant="secondary" className="pickup-outline-btn" onClick={() => { setIsActionOpen(false); setRiderId(''); }}>
                     Cancel
-                  </button>
-                  <button
-                    type="button"
+                  </Button>
+                  <Button
+                    variant="primary"
                     className="pickup-apply-btn"
                     onClick={applyStatusChange}
                     disabled={statusUpdating || !selectedNextStatus || (isRiderAssignAction && !riderId)}
                   >
                     {statusUpdating ? 'Applying...' : 'Submit'}
-                  </button>
+                  </Button>
                 </div>
               </div>
             )}
           </div>
-          <button type="button" className="pickup-outline-btn">
+          <Button variant="secondary" className="pickup-outline-btn">
             <Download size={14} /> Download
-          </button>
-          <button type="button" className="pickup-outline-btn" onClick={() => window.print()}>
+          </Button>
+          <Button variant="secondary" className="pickup-outline-btn" onClick={() => window.print()}>
             <Printer size={14} /> Print
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -571,27 +562,12 @@ const PickupOperations: React.FC = () => {
         tableClassName="pickup-table"
       />
 
-      <div className="pickup-pagination-row">
-        <span />
-        <nav className="pickup-pagination" aria-label="Pickup pagination">
-          <button type="button" disabled={page === 1} onClick={() => setPage(value => Math.max(1, value - 1))}>
-            <ChevronLeft size={18} />
-          </button>
-          {Array.from({ length: Math.min(totalPages, 3) }, (_, index) => index + 1).map(pageNumber => (
-            <button
-              key={pageNumber}
-              type="button"
-              className={page === pageNumber ? 'active' : ''}
-              onClick={() => setPage(pageNumber)}
-            >
-              {pageNumber}
-            </button>
-          ))}
-          <button type="button" disabled={page === totalPages} onClick={() => setPage(value => Math.min(totalPages, value + 1))}>
-            <ChevronRight size={18} />
-          </button>
-        </nav>
-      </div>
+      <Pagination
+        ariaLabel="Pickup pagination"
+        page={page}
+        totalPages={totalPages}
+        onPageChange={setPage}
+      />
     </div>
   );
 };

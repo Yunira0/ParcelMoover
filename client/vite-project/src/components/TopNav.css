@@ -50,55 +50,12 @@
   width: 100%;
 }
 
-.search-button {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
-  background-color: var(--color-background-primary-default);
-  color: var(--color-text-base);
-  border: none;
-  border-radius: var(--border-radius-default);
-  cursor: pointer;
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-medium);
-  height: 36px;
-}
-
-.search-button img {
-  width: 16px;
-  height: 16px;
-  flex-shrink: 0;
-  object-fit: contain;
-}
-
 .top-nav-profile {
   display: flex;
   align-items: center;
   gap: var(--space-6);
 }
 
-.cmt-button {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
-  background-color: var(--color-background-surface);
-  color: var(--color-text-primary);
-  border: 1px solid var(--color-border-primary);
-  border-radius: var(--border-radius-default);
-  cursor: pointer;
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-medium);
-  height: 36px;
-}
-
-.cmt-button img {
-  width: 16px;
-  height: 16px;
-  flex-shrink: 0;
-  object-fit: contain;
-}
 
 .notification-bell {
   position: relative;

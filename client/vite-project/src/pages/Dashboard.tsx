@@ -4,6 +4,7 @@ import CODSettlement from '../components/CODSettlement';
 import TodayOverview from '../components/TodayOverview';
 import WeeklyStats from '../components/WeeklyStats';
 import DashboardHeader from '../components/DashboardHeader';
+import Button from '../components/Button';
 import { getDashboardSummary, type DashboardSummary } from '../services/orders.service';
 import { 
   ClipboardList, 
@@ -122,8 +123,8 @@ const Dashboard: React.FC = () => {
               {error || `Last updated ${formatUpdatedAt(summary.updatedAt)}`}
             </p>
           </div>
-          <button
-            type="button"
+          <Button
+            variant="secondary"
             className="dashboard-refresh-btn"
             onClick={() => loadSummary(true)}
             disabled={refreshing}
@@ -131,7 +132,7 @@ const Dashboard: React.FC = () => {
           >
             <RefreshCw size={16} className={refreshing ? 'spinning' : ''} />
             <span>{refreshing ? 'Refreshing' : 'Refresh'}</span>
-          </button>
+          </Button>
         </div>
         <div className="stats-grid">
           {stats.map((stat, index) => (

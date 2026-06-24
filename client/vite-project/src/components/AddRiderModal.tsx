@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import './Modal.css';
+import FormField from './FormField';
+import Button from './Button';
 import { registerUser, getLocations, type RegisterUserInput } from '../services/users.service';
 
 interface AddRiderModalProps {
@@ -60,76 +62,58 @@ const AddRiderModal: React.FC<AddRiderModalProps> = ({ isOpen, onClose, onSucces
       <div className="modal-content">
         <div className="modal-header">
           <h2>Add New Rider</h2>
-          <button className="close-btn" onClick={onClose}>&times;</button>
+          <Button variant="ghost" size="icon" className="modal-close-btn" onClick={onClose}>&times;</Button>
         </div>
         <form onSubmit={handleSubmit}>
           <div className="form-grid">
-            <div className="form-group">
-              <label>Full Name</label>
-              <input
-                type="text"
-                required
-                value={formData.fullName}
-                onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
-              />
-            </div>
-            <div className="form-group">
-              <label>Email</label>
-              <input
-                type="email"
-                required
-                value={formData.email}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-              />
-            </div>
-            <div className="form-group">
-              <label>Password</label>
-              <input
-                type="password"
-                required
-                value={formData.password}
-                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-              />
-            </div>
-            <div className="form-group">
-              <label>Phone</label>
-              <input
-                type="text"
-                required
-                value={formData.phone}
-                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-              />
-            </div>
-            <div className="form-group">
-              <label>Location</label>
-              <select
-                required
-                value={formData.locationId}
-                onChange={(e) => setFormData({ ...formData, locationId: e.target.value })}
-              >
-                <option value="">Select Location</option>
-                {locations.map((loc) => (
-                  <option key={loc.id} value={loc.id}>
-                    {loc.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="form-group">
-              <label>Joined At</label>
-              <input
-                type="date"
-                value={formData.joinedAt}
-                onChange={(e) => setFormData({ ...formData, joinedAt: e.target.value })}
-              />
-            </div>
+            <FormField
+              label="Full Name"
+              required
+              value={formData.fullName}
+              onChange={(value) => setFormData({ ...formData, fullName: value })}
+            />
+            <FormField
+              label="Email"
+              type="email"
+              required
+              value={formData.email}
+              onChange={(value) => setFormData({ ...formData, email: value })}
+            />
+            <FormField
+              label="Password"
+              type="password"
+              required
+              value={formData.password}
+              onChange={(value) => setFormData({ ...formData, password: value })}
+            />
+            <FormField
+              label="Phone"
+              required
+              value={formData.phone}
+              onChange={(value) => setFormData({ ...formData, phone: value })}
+            />
+            <FormField
+              label="Location"
+              type="select"
+              required
+              placeholder="Select Location"
+              options={locations.map((loc) => ({ value: loc.id, label: loc.name }))}
+              value={formData.locationId}
+              onChange={(value) => setFormData({ ...formData, locationId: value })}
+            />
+            <FormField
+              label="Joined At"
+              type="date"
+              value={formData.joinedAt}
+              onChange={(value) => setFormData({ ...formData, joinedAt: value })}
+            />
           </div>
           {error && <p className="error-text">{error}</p>}
           <div className="modal-footer">
-            <button type="button" className="cancel-btn" onClick={onClose}>Cancel</button>
-            <button type="submit" className="submit-btn" disabled={loading}>
+            <Button type="button" variant="secondary" onClick={onClose}>Cancel</Button>
+            <Button type="submit" variant="primary" disabled={loading}>
               {loading ? 'Adding...' : 'Add Rider'}
-            </button>
+            </Button>
           </div>
         </form>
       </div>

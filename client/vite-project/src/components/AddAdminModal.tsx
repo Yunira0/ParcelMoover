@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import './Modal.css';
+import FormField from './FormField';
+import Button from './Button';
 import { registerUser, type RegisterUserInput } from '../services/users.service';
 
 interface AddAdminModalProps {
@@ -43,69 +45,54 @@ const AddAdminModal: React.FC<AddAdminModalProps> = ({ isOpen, onClose, onSucces
       <div className="modal-content">
         <div className="modal-header">
           <h2>Add New Admin</h2>
-          <button className="close-btn" onClick={onClose}>&times;</button>
+          <Button variant="ghost" size="icon" className="modal-close-btn" onClick={onClose}>&times;</Button>
         </div>
         <form onSubmit={handleSubmit}>
           <div className="form-grid">
-            <div className="form-group">
-              <label>Full Name</label>
-              <input
-                type="text"
-                required
-                value={formData.fullName}
-                onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
-              />
-            </div>
-            <div className="form-group">
-              <label>Email</label>
-              <input
-                type="email"
-                required
-                value={formData.email}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-              />
-            </div>
-            <div className="form-group">
-              <label>Password</label>
-              <input
-                type="password"
-                required
-                value={formData.password}
-                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-              />
-            </div>
-            <div className="form-group">
-              <label>Phone</label>
-              <input
-                type="text"
-                value={formData.phone}
-                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-              />
-            </div>
-            <div className="form-group">
-              <label>Position</label>
-              <input
-                type="text"
-                required
-                value={formData.position}
-                onChange={(e) => setFormData({ ...formData, position: e.target.value })}
-              />
-            </div>
-            <div className="form-group">
-              <label>Joined At</label>
-              <input
-                type="date"
-                value={formData.joinedAt}
-                onChange={(e) => setFormData({ ...formData, joinedAt: e.target.value })}
-              />
-            </div>
+            <FormField
+              label="Full Name"
+              required
+              value={formData.fullName}
+              onChange={(value) => setFormData({ ...formData, fullName: value })}
+            />
+            <FormField
+              label="Email"
+              type="email"
+              required
+              value={formData.email}
+              onChange={(value) => setFormData({ ...formData, email: value })}
+            />
+            <FormField
+              label="Password"
+              type="password"
+              required
+              value={formData.password}
+              onChange={(value) => setFormData({ ...formData, password: value })}
+            />
+            <FormField
+              label="Phone"
+              value={formData.phone}
+              onChange={(value) => setFormData({ ...formData, phone: value })}
+            />
+            <FormField
+              label="Position"
+              required
+              value={formData.position}
+              onChange={(value) => setFormData({ ...formData, position: value })}
+            />
+            <FormField
+              label="Joined At"
+              type="date"
+              value={formData.joinedAt}
+              onChange={(value) => setFormData({ ...formData, joinedAt: value })}
+            />
           </div>
           {error && <p className="error-text">{error}</p>}
           <div className="modal-footer">
-            <button type="button" className="cancel-btn" onClick={onClose}>Cancel</button>
-            <button type="submit" className="submit-btn" disabled={loading}>
+            <Button type="button" variant="secondary" onClick={onClose}>Cancel</Button>
+            <Button type="submit" variant="primary" disabled={loading}>
               {loading ? 'Adding...' : 'Add Admin'}
-            </button>
+            </Button>
           </div>
         </form>
       </div>

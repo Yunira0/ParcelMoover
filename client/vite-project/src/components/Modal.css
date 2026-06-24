@@ -33,12 +33,8 @@
   color: var(--color-text-default);
 }
 
-.close-btn {
-  background: none;
-  border: none;
+.modal-close-btn {
   font-size: 24px;
-  cursor: pointer;
-  color: var(--color-text-caption);
 }
 
 .form-grid {
@@ -47,34 +43,7 @@
   gap: var(--space-4);
 }
 
-.form-group {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-}
-
-.form-group label {
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-medium);
-  color: var(--color-text-caption);
-}
-
-.form-group input,
-.form-group select {
-  padding: var(--space-2);
-  border: 1px solid var(--color-border-default);
-  border-radius: var(--border-radius-default);
-  outline: none;
-  background-color: var(--color-background-surface);
-  color: var(--color-text-default);
-  font-family: var(--typography-font-family-default);
-  font-size: var(--font-size-sm);
-}
-
-.form-group input:focus,
-.form-group select:focus {
-  border-color: var(--color-border-primary);
-}
+/* .form-group styling now lives in FormField.css - it's the single shared input component. */
 
 .error-text {
   color: #ef4444;
@@ -89,19 +58,3 @@
   margin-top: var(--space-6);
 }
 
-.cancel-btn {
-  background-color: var(--color-background-surface);
-  border: 1px solid var(--color-border-default);
-  color: var(--color-text-caption);
-}
-
-.submit-btn {
-  background-color: var(--color-background-primary-default);
-  color: var(--color-text-base);
-  border: none;
-}
-
-.submit-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}

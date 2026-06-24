@@ -1,12 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  ChevronLeft,
-  ChevronRight,
   Download,
   Printer,
   Search,
 } from 'lucide-react';
 import Table from '../components/Table';
+import Button from '../components/Button';
+import SegmentedTabs from '../components/SegmentedTabs';
+import PageHeader from '../components/PageHeader';
+import Pagination from '../components/Pagination';
 import {
   bulkUpdateOrderStatus,
   getOrders,
@@ -469,42 +471,22 @@ const OOVOperations: React.FC = () => {
 
   return (
     <div className="oov-operations-container">
-      <div className="oov-title-row">
-        <div>
-          <h1>Out of the valley (OOV)</h1>
-          <p>Keep track of your dispatch orders across the entire hub network.</p>
-        </div>
-      </div>
+      <PageHeader title="Out of the valley (OOV)" subtitle="Keep track of your dispatch orders across the entire hub network." />
 
-      <div className="oov-tabs" role="tablist" aria-label="OOV operation filters">
-        {(Object.keys(TAB_LABELS) as OOVTab[]).map(tab => (
-          <button
-            key={tab}
-            type="button"
-            className={`oov-tab ${activeTab === tab ? 'active' : ''}`}
-            onClick={() => setActiveTab(tab)}
-          >
-            {TAB_LABELS[tab]}
-          </button>
-        ))}
-      </div>
-
-      <label className="oov-search">
-        <Search size={16} />
-        <input
-          value={searchQuery}
-          onChange={event => setSearchQuery(event.target.value)}
-          placeholder="Search tracking id"
-        />
-      </label>
+      <SegmentedTabs
+        ariaLabel="OOV operation filters"
+        value={activeTab}
+        onChange={setActiveTab}
+        options={(Object.keys(TAB_LABELS) as OOVTab[]).map(tab => ({ value: tab, label: TAB_LABELS[tab] }))}
+      />
 
       <div className="oov-toolbar">
         <div />
         <div className="oov-toolbar-actions">
           <div className="oov-action-anchor">
-            <button type="button" className="oov-outline-btn" onClick={openStatusAction}>
+            <Button variant="secondary" className="oov-outline-btn" onClick={openStatusAction}>
               Action{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
-            </button>
+            </Button>
             {isActionOpen && (
               <div className="oov-status-popover">
                 <div className="oov-status-popover-header">
@@ -560,29 +542,38 @@ const OOVOperations: React.FC = () => {
                 )}
                 {actionError && <p className="oov-action-error">{actionError}</p>}
                 <div className="oov-status-submit-row">
-                  <button type="button" className="oov-outline-btn" onClick={() => setIsActionOpen(false)}>
+                  <Button variant="secondary" className="oov-outline-btn" onClick={() => setIsActionOpen(false)}>
                     Cancel
-                  </button>
-                  <button
-                    type="button"
+                  </Button>
+                  <Button
+                    variant="primary"
                     className="oov-apply-btn"
                     onClick={applyStatusChange}
                     disabled={statusUpdating || !effectiveNextStatus}
                   >
                     {statusUpdating ? 'Applying...' : 'Submit'}
-                  </button>
+                  </Button>
                 </div>
               </div>
             )}
           </div>
-          <button type="button" className="oov-outline-btn" onClick={downloadCsv}>
+          <Button variant="secondary" className="oov-outline-btn" onClick={downloadCsv}>
             <Download size={14} /> Download
-          </button>
-          <button type="button" className="oov-outline-btn" onClick={() => window.print()}>
+          </Button>
+          <Button variant="secondary" className="oov-outline-btn" onClick={() => window.print()}>
             <Printer size={14} /> Print
-          </button>
+          </Button>
         </div>
       </div>
+
+      <label className="oov-search">
+        <Search size={16} />
+        <input
+          value={searchQuery}
+          onChange={event => setSearchQuery(event.target.value)}
+          placeholder="Search tracking id"
+        />
+      </label>
 
       <Table
         columns={oovColumns}
@@ -599,27 +590,13 @@ const OOVOperations: React.FC = () => {
         tableClassName="oov-table"
       />
 
-      <div className="oov-pagination-row">
-        <span>{totalCount} order{totalCount === 1 ? '' : 's'}</span>
-        <nav className="oov-pagination" aria-label="OOV pagination">
-          <button type="button" disabled={page === 1} onClick={() => setPage(value => Math.max(1, value - 1))}>
-            <ChevronLeft size={18} />
-          </button>
-          {Array.from({ length: Math.min(totalPages, 3) }, (_, index) => index + 1).map(pageNumber => (
-            <button
-              key={pageNumber}
-              type="button"
-              className={page === pageNumber ? 'active' : ''}
-              onClick={() => setPage(pageNumber)}
-            >
-              {pageNumber}
-            </button>
-          ))}
-          <button type="button" disabled={page === totalPages} onClick={() => setPage(value => Math.min(totalPages, value + 1))}>
-            <ChevronRight size={18} />
-          </button>
-        </nav>
-      </div>
+      <Pagination
+        ariaLabel="OOV pagination"
+        page={page}
+        totalPages={totalPages}
+        onPageChange={setPage}
+        summary={`${totalCount} order${totalCount === 1 ? '' : 's'}`}
+      />
     </div>
   );
 };

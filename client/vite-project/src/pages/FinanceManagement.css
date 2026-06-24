@@ -5,82 +5,37 @@
   width: 100%;
 }
 
-.finance-header {
+.finance-filters {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
+  flex-direction: column;
   gap: var(--space-4);
 }
 
-.finance-tabs {
+.search-box {
   display: flex;
-  width: 266px;
-  overflow: hidden;
-  border: 1px solid var(--color-border-default);
-  border-radius: var(--border-radius-modal);
-  background-color: var(--color-background-surface);
-}
-
-.finance-tab {
-  flex: 1;
-  height: 40px;
-  padding: var(--space-2) var(--space-4);
-  border: 0;
-  border-right: 1px solid var(--color-border-default);
-  background-color: var(--color-background-surface);
-  color: var(--color-text-caption);
-  cursor: pointer;
-  font-size: var(--font-size-md);
-  font-weight: var(--font-weight-regular);
-  line-height: var(--line-height-md);
-}
-
-.finance-tab:last-child {
-  border-right: 0;
-}
-
-.finance-tab.active {
-  background-color: var(--color-background-primary-invert-default);
-  color: var(--color-text-primary);
-  font-weight: var(--font-weight-semi-bold);
-}
-
-.finance-search {
-  width: 100%;
-}
-
-.finance-status {
-  display: inline-flex;
   align-items: center;
-  min-height: 24px;
-  padding: var(--space-1) var(--space-2);
-  border-radius: var(--border-radius-full);
-  font-size: var(--font-size-xxs);
-  font-weight: var(--font-weight-bold);
-  text-transform: uppercase;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-default);
+  background-color: var(--color-background-surface);
+  width: 479px;
 }
 
-.finance-status-pending {
-  background-color: #fef3c7;
-  color: #92400e;
+.search-box input {
+  border: none;
+  outline: none;
+  width: 100%;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-default);
+  background-color: transparent;
 }
 
-.finance-status-settled {
-  background-color: #dcfce7;
-  color: #166534;
-}
-
-.finance-status-review {
-  background-color: #dbeafe;
-  color: #1d4ed8;
+.search-box input::placeholder {
+  color: var(--color-text-placeholder);
 }
 
 @media (max-width: 768px) {
-  .finance-header {
-    flex-direction: column;
-  }
-
-  .finance-tabs,
   .search-box {
     width: 100%;
   }

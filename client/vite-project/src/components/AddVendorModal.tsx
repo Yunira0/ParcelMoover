@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import './Modal.css';
+import FormField from './FormField';
+import Button from './Button';
 import { registerUser, type RegisterUserInput } from '../services/users.service';
 
 interface AddVendorModalProps {
@@ -45,87 +47,67 @@ const AddVendorModal: React.FC<AddVendorModalProps> = ({ isOpen, onClose, onSucc
       <div className="modal-content">
         <div className="modal-header">
           <h2>Add New Vendor</h2>
-          <button className="close-btn" onClick={onClose}>&times;</button>
+          <Button variant="ghost" size="icon" className="modal-close-btn" onClick={onClose}>&times;</Button>
         </div>
         <form onSubmit={handleSubmit}>
           <div className="form-grid">
-            <div className="form-group">
-              <label>Full Name</label>
-              <input
-                type="text"
-                required
-                value={formData.fullName}
-                onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
-              />
-            </div>
-            <div className="form-group">
-              <label>Email</label>
-              <input
-                type="email"
-                required
-                value={formData.email}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-              />
-            </div>
-            <div className="form-group">
-              <label>Password</label>
-              <input
-                type="password"
-                required
-                value={formData.password}
-                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-              />
-            </div>
-            <div className="form-group">
-              <label>Phone</label>
-              <input
-                type="text"
-                required
-                value={formData.phone}
-                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-              />
-            </div>
-            <div className="form-group">
-              <label>Client Name</label>
-              <input
-                type="text"
-                required
-                value={formData.clientName}
-                onChange={(e) => setFormData({ ...formData, clientName: e.target.value })}
-              />
-            </div>
-            <div className="form-group">
-              <label>Business Name</label>
-              <input
-                type="text"
-                required
-                value={formData.businessName}
-                onChange={(e) => setFormData({ ...formData, businessName: e.target.value })}
-              />
-            </div>
-            <div className="form-group" style={{ gridColumn: 'span 2' }}>
-              <label>Address</label>
-              <input
-                type="text"
-                value={formData.address}
-                onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-              />
-            </div>
-            <div className="form-group">
-              <label>Joined At</label>
-              <input
-                type="date"
-                value={formData.joinedAt}
-                onChange={(e) => setFormData({ ...formData, joinedAt: e.target.value })}
-              />
-            </div>
+            <FormField
+              label="Full Name"
+              required
+              value={formData.fullName}
+              onChange={(value) => setFormData({ ...formData, fullName: value })}
+            />
+            <FormField
+              label="Email"
+              type="email"
+              required
+              value={formData.email}
+              onChange={(value) => setFormData({ ...formData, email: value })}
+            />
+            <FormField
+              label="Password"
+              type="password"
+              required
+              value={formData.password}
+              onChange={(value) => setFormData({ ...formData, password: value })}
+            />
+            <FormField
+              label="Phone"
+              required
+              value={formData.phone}
+              onChange={(value) => setFormData({ ...formData, phone: value })}
+            />
+            <FormField
+              label="Client Name"
+              required
+              value={formData.clientName}
+              onChange={(value) => setFormData({ ...formData, clientName: value })}
+            />
+            <FormField
+              label="Business Name"
+              required
+              value={formData.businessName}
+              onChange={(value) => setFormData({ ...formData, businessName: value })}
+            />
+            <FormField
+              label="Address"
+              gridColumn="span 2"
+              value={formData.address}
+              onChange={(value) => setFormData({ ...formData, address: value })}
+            />
+            <FormField
+              label="Joined At"
+              type="date"
+              value={formData.joinedAt}
+              onChange={(value) => setFormData({ ...formData, joinedAt: value })}
+            />
           </div>
           {error && <p className="error-text">{error}</p>}
           <div className="modal-footer">
-            <button type="button" className="cancel-btn" onClick={onClose}>Cancel</button>
-            <button type="submit" className="submit-btn" disabled={loading}>
+            <Button type="button" variant="secondary" onClick={onClose}>Cancel</Button>
+            <Button type="submit" variant="primary" disabled={loading}>
               {loading ? 'Adding...' : 'Add Vendor'}
-            </button>
+            </Button>
           </div>
         </form>
       </div>

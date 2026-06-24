@@ -1,0 +1,30 @@
+.page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.page-header-info h1 {
+  font-family: var(--typography-font-family-default);
+  font-size: var(--font-size-2xl);
+  font-weight: var(--font-weight-bold);
+  line-height: var(--line-height-2xl);
+  color: var(--color-text-default);
+  margin: 0;
+}
+
+.page-header-info p {
+  font-family: var(--typography-font-family-default);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-regular);
+  line-height: var(--line-height-md);
+  color: var(--color-text-caption);
+  margin: var(--space-2) 0 0;
+}
+
+@media (max-width: 768px) {
+  .page-header {
+    flex-direction: column;
+  }
+}

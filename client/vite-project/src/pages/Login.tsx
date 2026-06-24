@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { login } from '../services/auth.service';
+import FormField from '../components/FormField';
+import Button from '../components/Button';
 
 const Login: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -17,11 +19,9 @@ const Login: React.FC = () => {
     try {
       const response = await login({ email, password });
       if (response.success) {
-        // Save user data to localStorage for ProtectedRoute to verify the session
-        localStorage.setItem('user', JSON.stringify(response.data.user));
-        if (response.data.token) {
-          localStorage.setItem('token', response.data.token);
-        }
+        // Save user data to localStorage for ProtectedRoute to verify the session.
+        // The accessToken itself lives in an httpOnly cookie, not in this body.
+        localStorage.setItem('user', JSON.stringify(response.data));
         navigate('/dashboard');
       } else {
         setError(response.message || 'Login failed');
@@ -48,38 +48,32 @@ const Login: React.FC = () => {
       <div className="login-card">
         <h2>Login to ParcelMoover</h2>
         <form onSubmit={handleSubmit}>
-          <div className="form-group">
-            <label htmlFor="email">Email Address</label>
-            <input
-              type="email"
-              id="email"
-              placeholder="Enter your email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              autoComplete="email"
-              required
-            />
-          </div>
-          <div className="form-group">
-            <label htmlFor="password">Password</label>
-            <input
-              type="password"
-              id="password"
-              placeholder="Enter your password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              autoComplete="current-password"
-              required
-            />
-          </div>
+          <FormField
+            label="Email Address"
+            type="email"
+            required
+            value={email}
+            onChange={setEmail}
+            placeholder="Enter your email"
+            autoComplete="email"
+          />
+          <FormField
+            label="Password"
+            type="password"
+            required
+            value={password}
+            onChange={setPassword}
+            placeholder="Enter your password"
+            autoComplete="current-password"
+          />
           {error && (
             <div className="error-message" role="alert">
               {error}
             </div>
           )}
-          <button type="submit" disabled={loading} className="submit-button">
+          <Button type="submit" variant="primary" fullWidth disabled={loading} className="login-submit-btn">
             {loading ? 'Authenticating...' : 'Login'}
-          </button>
+          </Button>
         </form>
       </div>
     </div>

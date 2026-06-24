@@ -1,5 +1,6 @@
 import React from 'react';
 import { Search, ArrowRight, Info, Bell, User } from 'lucide-react';
+import Button from './Button';
 import './TopNav.css';
 
 const TopNav: React.FC = () => {
@@ -18,17 +19,17 @@ const TopNav: React.FC = () => {
             className="search-input"
           />
         </div>
-        <button className="search-button">
+        <Button variant="primary" className="search-button">
           Search
           <ArrowRight size={16} />
-        </button>
+        </Button>
       </div>
-      
+
       <div className="top-nav-profile">
-        <button className="cmt-button">
+        <Button variant="outline" className="cmt-button">
           Unclosed cmt
           <Info size={16} style={{ color: 'var(--color-text-primary)' }} />
-        </button>
+        </Button>
         
         <div className="notification-bell">
           <Bell size={24} style={{ color: 'var(--color-text-primary)' }} />

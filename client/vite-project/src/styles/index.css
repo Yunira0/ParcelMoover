@@ -1,5 +1,14 @@
 @import './tokens.css';
 
+/* Without this, any element that sets both an explicit height and padding (e.g. tab/toggle
+   buttons) renders taller than intended, since the default content-box model adds padding
+   on top of the height instead of inside it. */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
 :root {
   --sans: var(--typography-font-family-default);
   --heading: var(--typography-font-family-default);

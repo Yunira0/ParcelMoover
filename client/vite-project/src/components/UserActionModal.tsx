@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import './Modal.css';
+import FormField from './FormField';
+import Button from './Button';
 import {
   updateUserPassword,
   updateUserProfile,
@@ -138,102 +140,81 @@ const UserActionModal: React.FC<UserActionModalProps> = ({
       <div className="modal-content">
         <div className="modal-header">
           <h2>{title}</h2>
-          <button className="close-btn" onClick={onClose} type="button">&times;</button>
+          <Button variant="ghost" size="icon" className="modal-close-btn" onClick={onClose} type="button">&times;</Button>
         </div>
         <form onSubmit={handleSubmit}>
           {mode === 'edit' ? (
             <div className="form-grid">
               {userType === 'vendor' ? (
                 <>
-                  <div className="form-group">
-                    <label>Client Name</label>
-                    <input
-                      type="text"
-                      required
-                      value={profileForm.clientName}
-                      onChange={(event) => setProfileForm({ ...profileForm, clientName: event.target.value })}
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>Business Name</label>
-                    <input
-                      type="text"
-                      required
-                      value={profileForm.businessName}
-                      onChange={(event) => setProfileForm({ ...profileForm, businessName: event.target.value })}
-                    />
-                  </div>
+                  <FormField
+                    label="Client Name"
+                    required
+                    value={profileForm.clientName}
+                    onChange={(value) => setProfileForm({ ...profileForm, clientName: value })}
+                  />
+                  <FormField
+                    label="Business Name"
+                    required
+                    value={profileForm.businessName}
+                    onChange={(value) => setProfileForm({ ...profileForm, businessName: value })}
+                  />
                 </>
               ) : (
-                <div className="form-group">
-                  <label>Full Name</label>
-                  <input
-                    type="text"
-                    required
-                    value={profileForm.fullName}
-                    onChange={(event) => setProfileForm({ ...profileForm, fullName: event.target.value })}
-                  />
-                </div>
-              )}
-              <div className="form-group">
-                <label>Phone</label>
-                <input
-                  type="text"
+                <FormField
+                  label="Full Name"
                   required
-                  value={profileForm.phone}
-                  onChange={(event) => setProfileForm({ ...profileForm, phone: event.target.value })}
+                  value={profileForm.fullName}
+                  onChange={(value) => setProfileForm({ ...profileForm, fullName: value })}
                 />
-              </div>
-              {userType === 'admin' && (
-                <div className="form-group">
-                  <label>Position</label>
-                  <input
-                    type="text"
-                    required
-                    value={profileForm.position}
-                    onChange={(event) => setProfileForm({ ...profileForm, position: event.target.value })}
-                  />
-                </div>
               )}
-              <div className="form-group">
-                <label>Joined At</label>
-                <input
-                  type="date"
-                  value={profileForm.joinedAt}
-                  onChange={(event) => setProfileForm({ ...profileForm, joinedAt: event.target.value })}
+              <FormField
+                label="Phone"
+                required
+                value={profileForm.phone}
+                onChange={(value) => setProfileForm({ ...profileForm, phone: value })}
+              />
+              {userType === 'admin' && (
+                <FormField
+                  label="Position"
+                  required
+                  value={profileForm.position}
+                  onChange={(value) => setProfileForm({ ...profileForm, position: value })}
                 />
-              </div>
+              )}
+              <FormField
+                label="Joined At"
+                type="date"
+                value={profileForm.joinedAt}
+                onChange={(value) => setProfileForm({ ...profileForm, joinedAt: value })}
+              />
             </div>
           ) : (
             <div className="form-grid">
-              <div className="form-group">
-                <label>New Password</label>
-                <input
-                  type="password"
-                  required
-                  minLength={6}
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                />
-              </div>
-              <div className="form-group">
-                <label>Confirm Password</label>
-                <input
-                  type="password"
-                  required
-                  minLength={6}
-                  value={confirmPassword}
-                  onChange={(event) => setConfirmPassword(event.target.value)}
-                />
-              </div>
+              <FormField
+                label="New Password"
+                type="password"
+                required
+                minLength={6}
+                value={password}
+                onChange={setPassword}
+              />
+              <FormField
+                label="Confirm Password"
+                type="password"
+                required
+                minLength={6}
+                value={confirmPassword}
+                onChange={setConfirmPassword}
+              />
             </div>
           )}
           {error && <p className="error-text">{error}</p>}
           <div className="modal-footer">
-            <button type="button" className="cancel-btn" onClick={onClose}>Cancel</button>
-            <button type="submit" className="submit-btn" disabled={loading}>
+            <Button type="button" variant="secondary" onClick={onClose}>Cancel</Button>
+            <Button type="submit" variant="primary" disabled={loading}>
               {loading ? 'Saving...' : titleAction}
-            </button>
+            </Button>
           </div>
         </form>
       </div>

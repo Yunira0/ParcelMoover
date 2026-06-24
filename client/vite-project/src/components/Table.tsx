@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Edit, KeyRound } from 'lucide-react';
+import Button from './Button';
 import './Table.css';
 
 interface Column<T> {
@@ -203,14 +204,14 @@ export const TableRowActions = ({
   onUpdatePassword: () => void;
 }) => (
   <div className="action-buttons">
-    <button className="action-btn" type="button" onClick={onEdit}>
+    <Button variant="outline" size="sm" onClick={onEdit}>
       <Edit size={14} />
       Edit
-    </button>
-    <button className="action-btn" type="button" onClick={onUpdatePassword}>
+    </Button>
+    <Button variant="outline" size="sm" onClick={onUpdatePassword}>
       <KeyRound size={14} />
       Update password
-    </button>
+    </Button>
   </div>
 );
 

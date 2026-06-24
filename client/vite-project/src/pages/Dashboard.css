@@ -26,30 +26,6 @@
   margin: var(--space-1) 0 0;
 }
 
-.dashboard-refresh-btn {
-  align-items: center;
-  background: var(--color-background-surface);
-  border: 1px solid var(--color-border-default);
-  border-radius: var(--border-radius-default);
-  color: var(--color-text-default);
-  cursor: pointer;
-  display: inline-flex;
-  font: var(--typography-medium-text-sm);
-  gap: var(--space-2);
-  min-height: 36px;
-  padding: 0 var(--space-3);
-}
-
-.dashboard-refresh-btn:hover:not(:disabled) {
-  border-color: var(--color-border-primary);
-  color: var(--color-text-primary);
-}
-
-.dashboard-refresh-btn:disabled {
-  cursor: not-allowed;
-  opacity: var(--opacity-60);
-}
-
 .spinning {
   animation: dashboard-spin 0.8s linear infinite;
 }

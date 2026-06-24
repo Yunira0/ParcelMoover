@@ -3,6 +3,9 @@ import { Plus, Search } from 'lucide-react';
 import Table, { TableRowActions } from '../components/Table';
 import AddRiderModal from '../components/AddRiderModal';
 import UserActionModal from '../components/UserActionModal';
+import PageHeader from '../components/PageHeader';
+import SegmentedTabs from '../components/SegmentedTabs';
+import StatusChip from '../components/StatusChip';
 import { getRiders } from '../services/users.service';
 import './RiderManagement.css';
 
@@ -87,9 +90,9 @@ const RiderManagement: React.FC = () => {
     { 
       header: 'STATUS', 
       accessor: (item: RiderUser) => (
-        <span className={`status-badge ${item.status}`}>
+        <StatusChip variant="solid" tone={item.status === 'active' ? 'success' : 'danger'}>
           {item.status}
-        </span>
+        </StatusChip>
       ),
       width: '113px'
     },
@@ -124,32 +127,25 @@ const RiderManagement: React.FC = () => {
 
   return (
     <div className="rider-management-container">
-      <div className="rider-header">
-        <div className="header-info">
-          <h1>RIDER MANAGEMENT</h1>
-          <p>Manage rider accounts, monitor delivery metrics</p>
-        </div>
-        <button className="add-new-btn" onClick={() => setIsModalOpen(true)}>
-          Add new
-          <Plus size={16} />
-        </button>
-      </div>
+      <PageHeader
+        title="RIDER MANAGEMENT"
+        subtitle="Manage rider accounts, monitor delivery metrics"
+        actionLabel="Add new"
+        actionIcon={<Plus size={16} />}
+        onAction={() => setIsModalOpen(true)}
+      />
 
       <div className="rider-filters">
-        <div className="filter-tabs">
-          <button 
-            className={`filter-tab ${filter === 'all' ? 'active' : ''}`}
-            onClick={() => setFilter('all')}
-          >
-            All
-          </button>
-          <button 
-            className={`filter-tab ${filter === 'active' ? 'active' : ''}`}
-            onClick={() => setFilter('active')}
-          >
-            ACTIVE
-          </button>
-        </div>
+        <SegmentedTabs
+          ariaLabel="Rider status filter"
+          fullWidth={false}
+          value={filter}
+          onChange={setFilter}
+          options={[
+            { value: 'all', label: 'All' },
+            { value: 'active', label: 'ACTIVE' },
+          ]}
+        />
 
         <div className="search-box">
           <Search size={16} style={{ color: 'var(--color-text-caption)' }} />

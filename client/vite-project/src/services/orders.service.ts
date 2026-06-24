@@ -32,6 +32,7 @@ export interface CreateOrderInput {
   receiver: {
     name: string;
     phone: string;
+    alternatePhone?: string;
     email?: string;
     address?: string;
     locationId?: string;
@@ -43,7 +44,10 @@ export interface CreateOrderInput {
   pieces: number;
   weightKg?: number;
   codAmount?: number;
+  /** Unused by the new Create Order page - kept for type compat with older flows; the server computes the real charge from the route's delivery rate. */
   deliveryCharge?: number;
+  packageType?: string;
+  deliveryInstruction?: string;
   pickupAddress?: string;
   scheduledPickupAt?: string;
   vendorId?: string;

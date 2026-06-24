@@ -1,6 +1,9 @@
 import React, { useMemo, useState } from 'react';
 import { Plus, Search } from 'lucide-react';
 import Table from '../components/Table';
+import PageHeader from '../components/PageHeader';
+import SegmentedTabs from '../components/SegmentedTabs';
+import StatusChip, { type StatusChipTone } from '../components/StatusChip';
 import './FinanceManagement.css';
 
 type FinanceType = 'rider' | 'vendor';
@@ -94,6 +97,12 @@ const statusLabels: Record<SettlementStatus, string> = {
   review: 'Review',
 };
 
+const statusTones: Record<SettlementStatus, StatusChipTone> = {
+  pending: 'warning',
+  settled: 'success',
+  review: 'info',
+};
+
 const FinanceManagement: React.FC = () => {
   const [activeType, setActiveType] = useState<FinanceType>('rider');
   const [searchQuery, setSearchQuery] = useState('');
@@ -129,48 +138,35 @@ const FinanceManagement: React.FC = () => {
     {
       header: 'STATUS',
       accessor: (item: FinanceSettlement) => (
-        <span className={`finance-status finance-status-${item.status}`}>
+        <StatusChip variant="solid" tone={statusTones[item.status]}>
           {statusLabels[item.status]}
-        </span>
+        </StatusChip>
       ),
     },
   ];
 
   return (
     <div className="finance-management-container">
-      <div className="finance-header">
-        <div className="header-info">
-          <h1>FINANCE MANAGEMENT</h1>
-          <p>Manage financial accounts and monitor performance indicators.</p>
-        </div>
-        <button className="add-new-btn" type="button" title="Report generation endpoint is not connected yet">
-          Create new financial reports.
-          <Plus size={16} />
-        </button>
-      </div>
+      <PageHeader
+        title="FINANCE MANAGEMENT"
+        subtitle="Manage financial accounts and monitor performance indicators."
+        actionLabel="Create new financial reports."
+        actionIcon={<Plus size={16} />}
+        actionTitle="Report generation endpoint is not connected yet"
+      />
 
-      <div className="finance-tabs" role="tablist" aria-label="Finance account type">
-        <button
-          className={`finance-tab ${activeType === 'rider' ? 'active' : ''}`}
-          type="button"
-          role="tab"
-          aria-selected={activeType === 'rider'}
-          onClick={() => setActiveType('rider')}
-        >
-          RIDER
-        </button>
-        <button
-          className={`finance-tab ${activeType === 'vendor' ? 'active' : ''}`}
-          type="button"
-          role="tab"
-          aria-selected={activeType === 'vendor'}
-          onClick={() => setActiveType('vendor')}
-        >
-          VENDOR
-        </button>
-      </div>
+      <div className="finance-filters">
+        <SegmentedTabs
+          ariaLabel="Finance account type"
+          fullWidth={false}
+          value={activeType}
+          onChange={setActiveType}
+          options={[
+            { value: 'rider', label: 'RIDER' },
+            { value: 'vendor', label: 'VENDOR' },
+          ]}
+        />
 
-      <div className="finance-search">
         <div className="search-box">
           <Search size={16} style={{ color: 'var(--color-text-caption)' }} />
           <input

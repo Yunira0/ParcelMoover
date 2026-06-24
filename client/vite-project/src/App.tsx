@@ -5,13 +5,16 @@ import Home from './pages/Home'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import OrderManagement from './pages/OrderManagement'
+import CreateOrderPage from './pages/CreateOrderPage'
 import AdminManagement from './pages/AdminManagement'
 import VendorManagement from './pages/VendorManagement'
 import RiderManagement from './pages/RiderManagement'
 import FinanceManagement from './pages/FinanceManagement'
+import DeliveryRateSettings from './pages/DeliveryRateSettings'
 import PickupOperations from './pages/PickupOperations'
 import DispatchOperations from './pages/DispatchOperations'
 import OOVOperations from './pages/OOVOperations'
+import ReturnOperations from './pages/ReturnOperations'
 import ProtectedRoute from './components/ProtectedRoute'
 import './App.css'
 function App() {
@@ -33,13 +36,16 @@ function App() {
         >
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/orders" element={<OrderManagement />} />
+          <Route path="/orders/create" element={<CreateOrderPage />} />
           <Route path="/admin" element={<AdminManagement />} />
           <Route path="/vendors" element={<VendorManagement />} />
           <Route path="/riders" element={<RiderManagement />} />
           <Route path="/finance" element={<FinanceManagement />} />
+          <Route path="/settings/delivery-rates" element={<DeliveryRateSettings />} />
           <Route path="/pickup" element={<PickupOperations />} />
           <Route path="/dispatch" element={<DispatchOperations />} />
           <Route path="/oov" element={<OOVOperations />} />
+          <Route path="/return" element={<ReturnOperations />} />
         </Route>
         {/* Catch-all */}
 

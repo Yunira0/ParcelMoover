@@ -3,6 +3,9 @@ import { Plus, Search, ChevronDown } from 'lucide-react';
 import Table, { TableRowActions } from '../components/Table';
 import AddVendorModal from '../components/AddVendorModal';
 import UserActionModal from '../components/UserActionModal';
+import PageHeader from '../components/PageHeader';
+import SegmentedTabs from '../components/SegmentedTabs';
+import StatusChip from '../components/StatusChip';
 import { getVendors } from '../services/users.service';
 import './VendorManagement.css';
 
@@ -111,9 +114,9 @@ const VendorManagement: React.FC = () => {
     { 
       header: 'STATUS', 
       accessor: (item: VendorUser) => (
-        <span className={`status-badge ${item.status}`}>
+        <StatusChip variant="solid" tone={item.status === 'active' ? 'success' : 'danger'}>
           {item.status}
-        </span>
+        </StatusChip>
       )
     },
     { header: 'JOINED', accessor: 'joined' as keyof VendorUser },
@@ -161,44 +164,27 @@ const VendorManagement: React.FC = () => {
 
   return (
     <div className="vendor-management-container">
-      <div className="vendor-header">
-        <div className="header-info">
-          <h1>VENDOR MANAGEMENT</h1>
-          <p>Oversee client accounts, delivery statistics, and financial tracking.</p>
-        </div>
-        <button className="add-new-btn" onClick={() => setIsModalOpen(true)}>
-          Add new
-          <Plus size={16} />
-        </button>
-      </div>
+      <PageHeader
+        title="VENDOR MANAGEMENT"
+        subtitle="Oversee client accounts, delivery statistics, and financial tracking."
+        actionLabel="Add new"
+        actionIcon={<Plus size={16} />}
+        onAction={() => setIsModalOpen(true)}
+      />
 
       <div className="vendor-filters">
-        <div className="filter-tabs">
-          <button 
-            className={`filter-tab ${filter === 'all' ? 'active' : ''}`}
-            onClick={() => setFilter('all')}
-          >
-            All
-          </button>
-          <button 
-            className={`filter-tab ${filter === 'high-volume' ? 'active' : ''}`}
-            onClick={() => setFilter('high-volume')}
-          >
-            High volume client
-          </button>
-          <button 
-            className={`filter-tab ${filter === 'active' ? 'active' : ''}`}
-            onClick={() => setFilter('active')}
-          >
-            Active client
-          </button>
-          <button 
-            className={`filter-tab ${filter === 'cod-pending' ? 'active' : ''}`}
-            onClick={() => setFilter('cod-pending')}
-          >
-            Cod pending
-          </button>
-        </div>
+        <SegmentedTabs
+          ariaLabel="Vendor filter"
+          fullWidth={false}
+          value={filter}
+          onChange={setFilter}
+          options={[
+            { value: 'all', label: 'All' },
+            { value: 'high-volume', label: 'High volume client' },
+            { value: 'active', label: 'Active client' },
+            { value: 'cod-pending', label: 'Cod pending' },
+          ]}
+        />
 
         <div className="search-and-dropdowns">
           <div className="search-box">

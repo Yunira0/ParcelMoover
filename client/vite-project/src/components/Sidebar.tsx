@@ -1,12 +1,12 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { 
-  LayoutDashboard, 
-  Package, 
-  UserCheck, 
-  Store, 
-  Bike, 
-  Wallet, 
+import {
+  LayoutDashboard,
+  Package,
+  UserCheck,
+  Store,
+  Bike,
+  Wallet,
   HelpCircle,
   ChevronDown,
   Archive,
@@ -14,7 +14,8 @@ import {
   Route,
   RotateCcw,
   OctagonMinus,
-  Map
+  Map,
+  Percent
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import './Sidebar.css';
@@ -37,6 +38,15 @@ const SidebarItem: React.FC<SidebarItemProps> = ({ to, icon: Icon, label }) => {
   );
 };
 
+const isCurrentUserSuperAdmin = (): boolean => {
+  try {
+    const roles = JSON.parse(localStorage.getItem('user') || 'null')?.roles;
+    return Array.isArray(roles) && roles.includes('super_admin');
+  } catch {
+    return false;
+  }
+};
+
 const Sidebar: React.FC = () => {
   const icons = {
     dashboard: LayoutDashboard,
@@ -51,8 +61,11 @@ const Sidebar: React.FC = () => {
     oov: Route,
     return: RotateCcw,
     hold: OctagonMinus,
-    damage: Map
+    damage: Map,
+    deliveryRates: Percent
   };
+
+  const isSuperAdmin = isCurrentUserSuperAdmin();
 
   return (
     <aside className="sidebar">
@@ -63,7 +76,10 @@ const Sidebar: React.FC = () => {
         <SidebarItem to="/vendors" icon={icons.vendor} label="Vendor Management" />
         <SidebarItem to="/riders" icon={icons.rider} label="Rider Management" />
         <SidebarItem to="/finance" icon={icons.finance} label="Finance Management" />
-        
+        {isSuperAdmin && (
+          <SidebarItem to="/settings/delivery-rates" icon={icons.deliveryRates} label="Delivery Rates" />
+        )}
+
         <div className="sidebar-divider"></div>
         
         <div className="sidebar-dropdown">
@@ -92,10 +108,13 @@ const Sidebar: React.FC = () => {
             <icons.oov className="sidebar-icon" size={24} />
             <span className="sidebar-label">OOV</span>
           </NavLink>
-          <div className="sidebar-subitem">
+          <NavLink
+            to="/return"
+            className={({ isActive }) => `sidebar-subitem ${isActive ? 'active' : ''}`}
+          >
             <icons.return className="sidebar-icon" size={24} />
             <span className="sidebar-label">Return</span>
-          </div>
+          </NavLink>
           <div className="sidebar-subitem">
             <icons.hold className="sidebar-icon" size={24} />
             <span className="sidebar-label">Hold</span>

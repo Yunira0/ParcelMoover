@@ -128,33 +128,10 @@
   font-weight: var(--font-weight-bold);
 }
 
-.form-group {
-  margin-bottom: var(--space-4);
-  text-align: left;
-}
-
-.form-group label {
-  display: block;
-  margin-bottom: var(--space-2);
-  font-weight: var(--font-weight-medium);
-  color: var(--app-color-text);
-  font-size: var(--font-size-sm);
-}
-
-.form-group input {
-  width: 100%;
-  padding: var(--space-3);
-  border: 1px solid var(--app-color-border);
-  border-radius: var(--border-radius-default);
-  box-sizing: border-box;
-  font-size: var(--font-size-md);
-  color: var(--app-color-heading);
-  background-color: var(--app-color-background);
-}
-
-.form-group input:focus {
-  outline: none;
-  border-color: var(--app-color-accent);
+.login-card form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
 }
 
 .error-message {
@@ -162,28 +139,5 @@
   background-color: var(--color-background-warning-default);
   padding: var(--space-3);
   border-radius: var(--border-radius-default);
-  margin-bottom: var(--space-4);
   font-size: var(--font-size-sm);
-}
-
-button.submit-button {
-  width: 100%;
-  padding: var(--space-3);
-  background-color: var(--app-color-accent);
-  color: var(--app-color-accent-contrast);
-  border: none;
-  border-radius: var(--border-radius-default);
-  font-size: var(--font-size-md);
-  font-weight: var(--font-weight-semi-bold);
-  cursor: pointer;
-  transition: opacity 0.2s;
-}
-
-button.submit-button:hover {
-  opacity: 0.9;
-}
-
-button.submit-button:disabled {
-  opacity: var(--opacity-50);
-  cursor: not-allowed;
 }

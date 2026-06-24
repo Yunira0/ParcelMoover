@@ -1,7 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  ChevronLeft,
-  ChevronRight,
   Download,
   Printer,
   Search,
@@ -9,6 +7,11 @@ import {
 } from 'lucide-react';
 import Table from '../components/Table';
 import SearchableSelect from '../components/SearchableSelect';
+import Button from '../components/Button';
+import SegmentedTabs from '../components/SegmentedTabs';
+import PageHeader from '../components/PageHeader';
+import Pagination from '../components/Pagination';
+import StatusChip, { type StatusChipTone } from '../components/StatusChip';
 import {
   getOrders,
   notifyOrderStatusChanged,
@@ -150,7 +153,7 @@ const createEmptyTabSelections = (): Record<DispatchTab, Set<string | number>> =
   cancelled: new Set(),
 });
 
-const getStatusTone = (status: ParcelStatus) => {
+const getStatusTone = (status: ParcelStatus): StatusChipTone => {
   if (status === 'delivered') return 'success';
   if (['failed_delivery', 'failed_pickup', 'loss_and_damage'].includes(status)) return 'danger';
   if (status === 'cancelled') return 'neutral';
@@ -404,9 +407,9 @@ const DispatchOperations: React.FC = () => {
     {
       header: 'STATUS',
       accessor: (order: Order) => (
-        <span className={`dispatch-status-chip ${getStatusTone(order.status)}`}>
+        <StatusChip tone={getStatusTone(order.status)}>
           {STATUS_LABELS[order.status]}
-        </span>
+        </StatusChip>
       ),
       width: '170px',
     },
@@ -415,39 +418,28 @@ const DispatchOperations: React.FC = () => {
 
   return (
     <div className="dispatch-operations-container">
-      <div className="dispatch-title-row">
-        <div>
-          <h1>Dispatch Operations</h1>
-          <p>Oversee and monitor your dispatch orders throughout the hub network.</p>
-        </div>
-      </div>
+      <PageHeader title="Dispatch Operations" subtitle="Oversee and monitor your dispatch orders throughout the hub network." />
 
-      <div className="dispatch-tabs" role="tablist" aria-label="Dispatch operation filters">
-        {(Object.keys(TAB_LABELS) as DispatchTab[]).map(tab => (
-          <button
-            key={tab}
-            type="button"
-            className={`dispatch-tab ${activeTab === tab ? 'active' : ''}`}
-            onClick={() => {
-              setActiveTab(tab);
-              setPage(1);
-              setIsActionOpen(false);
-              setActionError('');
-              setRiderId('');
-            }}
-          >
-            {TAB_LABELS[tab]}
-          </button>
-        ))}
-      </div>
+      <SegmentedTabs
+        ariaLabel="Dispatch operation filters"
+        value={activeTab}
+        onChange={(tab) => {
+          setActiveTab(tab);
+          setPage(1);
+          setIsActionOpen(false);
+          setActionError('');
+          setRiderId('');
+        }}
+        options={(Object.keys(TAB_LABELS) as DispatchTab[]).map(tab => ({ value: tab, label: TAB_LABELS[tab] }))}
+      />
 
       <div className="dispatch-toolbar">
         <div />
         <div className="dispatch-toolbar-actions">
           <div className="dispatch-action-anchor">
-            <button type="button" className="dispatch-outline-btn" onClick={openStatusAction}>
+            <Button variant="secondary" className="dispatch-outline-btn" onClick={openStatusAction}>
               Action{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
-            </button>
+            </Button>
             {isActionOpen && (
               <div className="dispatch-status-popover">
                 <div className="dispatch-status-popover-header">
@@ -493,27 +485,27 @@ const DispatchOperations: React.FC = () => {
                 </div>
                 {actionError && <p className="dispatch-action-error">{actionError}</p>}
                 <div className="dispatch-status-submit-row">
-                  <button type="button" className="dispatch-outline-btn" onClick={() => { setIsActionOpen(false); setRiderId(''); }}>
+                  <Button variant="secondary" className="dispatch-outline-btn" onClick={() => { setIsActionOpen(false); setRiderId(''); }}>
                     Cancel
-                  </button>
-                  <button
-                    type="button"
+                  </Button>
+                  <Button
+                    variant="primary"
                     className="dispatch-apply-btn"
                     onClick={applyStatusChange}
                     disabled={statusUpdating || !effectiveNextStatus || (isRiderAssignAction && !riderId)}
                   >
                     {statusUpdating ? 'Applying...' : 'Submit'}
-                  </button>
+                  </Button>
                 </div>
               </div>
             )}
           </div>
-          <button type="button" className="dispatch-outline-btn" onClick={downloadCsv}>
+          <Button variant="secondary" className="dispatch-outline-btn" onClick={downloadCsv}>
             <Download size={14} /> Download
-          </button>
-          <button type="button" className="dispatch-outline-btn" onClick={() => window.print()}>
+          </Button>
+          <Button variant="secondary" className="dispatch-outline-btn" onClick={() => window.print()}>
             <Printer size={14} /> Print
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -547,27 +539,12 @@ const DispatchOperations: React.FC = () => {
         tableClassName="dispatch-table"
       />
 
-      <div className="dispatch-pagination-row">
-        <span />
-        <nav className="dispatch-pagination" aria-label="Dispatch pagination">
-          <button type="button" disabled={page === 1} onClick={() => setPage(value => Math.max(1, value - 1))}>
-            <ChevronLeft size={18} />
-          </button>
-          {Array.from({ length: Math.min(totalPages, 3) }, (_, index) => index + 1).map(pageNumber => (
-            <button
-              key={pageNumber}
-              type="button"
-              className={page === pageNumber ? 'active' : ''}
-              onClick={() => setPage(pageNumber)}
-            >
-              {pageNumber}
-            </button>
-          ))}
-          <button type="button" disabled={page === totalPages} onClick={() => setPage(value => Math.min(totalPages, value + 1))}>
-            <ChevronRight size={18} />
-          </button>
-        </nav>
-      </div>
+      <Pagination
+        ariaLabel="Dispatch pagination"
+        page={page}
+        totalPages={totalPages}
+        onPageChange={setPage}
+      />
     </div>
   );
 };

@@ -3,6 +3,9 @@ import { Plus, Search } from 'lucide-react';
 import Table, { TableRowActions } from '../components/Table';
 import AddAdminModal from '../components/AddAdminModal';
 import UserActionModal from '../components/UserActionModal';
+import PageHeader from '../components/PageHeader';
+import SegmentedTabs from '../components/SegmentedTabs';
+import StatusChip from '../components/StatusChip';
 import { getAdmins } from '../services/users.service';
 import './AdminManagement.css';
 
@@ -56,9 +59,9 @@ const AdminManagement: React.FC = () => {
     { 
       header: 'STATUS', 
       accessor: (item: AdminUser) => (
-        <span className={`status-badge ${item.status}`}>
+        <StatusChip variant="solid" tone={item.status === 'active' ? 'success' : 'danger'}>
           {item.status}
-        </span>
+        </StatusChip>
       )
     },
     {
@@ -91,43 +94,36 @@ const AdminManagement: React.FC = () => {
 
   return (
     <div className="admin-management-container">
-      <div className="admin-header">
-        <div className="header-info">
-          <h1>ADMIN MANAGEMENT</h1>
-          <p>Oversee admin accounts and track performance metrics.</p>
-        </div>
-        <button className="add-new-btn" onClick={() => setIsModalOpen(true)}>
-          Add new
-          <Plus size={16} />
-        </button>
-      </div>
+      <PageHeader
+        title="ADMIN MANAGEMENT"
+        subtitle="Oversee admin accounts and track performance metrics."
+        actionLabel="Add new"
+        actionIcon={<Plus size={16} />}
+        onAction={() => setIsModalOpen(true)}
+      />
 
       <div className="admin-filters">
-        <div className="filter-tabs">
-          <button 
-            className={`filter-tab ${filter === 'all' ? 'active' : ''}`}
-            onClick={() => setFilter('all')}
-          >
-            All
-          </button>
-          <button 
-            className={`filter-tab ${filter === 'active' ? 'active' : ''}`}
-            onClick={() => setFilter('active')}
-          >
-            ACTIVE
-          </button>
-        </div>
-      </div>
+        <SegmentedTabs
+          ariaLabel="Admin status filter"
+          fullWidth={false}
+          value={filter}
+          onChange={setFilter}
+          options={[
+            { value: 'all', label: 'All' },
+            { value: 'active', label: 'ACTIVE' },
+          ]}
+        />
 
-      <div className="admin-search">
-        <div className="search-box">
-          <Search size={16} style={{ color: 'var(--color-text-caption)' }} />
-          <input 
-            type="text" 
-            placeholder="Search name, phone, email" 
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
+        <div className="admin-search">
+          <div className="search-box">
+            <Search size={16} style={{ color: 'var(--color-text-caption)' }} />
+            <input
+              type="text"
+              placeholder="Search name, phone, email"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+          </div>
         </div>
       </div>
 

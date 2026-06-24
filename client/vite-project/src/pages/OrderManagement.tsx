@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
-  ChevronLeft,
-  ChevronRight,
   Copy,
   Download,
   Edit,
@@ -11,8 +10,12 @@ import {
   Search,
   X,
 } from 'lucide-react';
-import CreateOrderModal from '../components/CreateOrderModal';
 import Table from '../components/Table';
+import PageHeader from '../components/PageHeader';
+import Button from '../components/Button';
+import SegmentedTabs from '../components/SegmentedTabs';
+import Pagination from '../components/Pagination';
+import StatusChip, { type StatusChipTone } from '../components/StatusChip';
 import {
   getOrders,
   subscribeToOrderStatusChanged,
@@ -156,7 +159,7 @@ const maskPhone = (phone: string) => {
 
 const formatMoney = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 0 });
 
-const getStatusTone = (status: ParcelStatus) => {
+const getStatusTone = (status: ParcelStatus): StatusChipTone => {
   if (status === 'delivered') return 'success';
   if (['arrived', 'arrived_at_branch', 'rider_assigned'].includes(status)) return 'info';
   if (['failed_pickup', 'failed_delivery', 'loss_and_damage'].includes(status)) return 'danger';
@@ -185,11 +188,9 @@ const orderToCreateInput = (order: Order): CreateOrderInput => ({
 });
 
 const OrderManagement: React.FC = () => {
+  const navigate = useNavigate();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [modalMode, setModalMode] = useState<'create' | 'copy' | 'edit'>('create');
-  const [modalInitialData, setModalInitialData] = useState<CreateOrderInput | null>(null);
   const [filter, setFilter] = useState<FilterTab>('all');
   const [trackingSearch, setTrackingSearch] = useState('');
   const [originHub, setOriginHub] = useState('');
@@ -302,22 +303,12 @@ const OrderManagement: React.FC = () => {
   };
 
   const openCreateModal = () => {
-    setModalMode('create');
-    setModalInitialData(null);
-    setIsModalOpen(true);
+    navigate('/orders/create');
   };
 
   const openPrefilledModal = (order: Order, mode: 'copy' | 'edit') => {
     setOpenActionId(null);
-    setModalMode(mode);
-    setModalInitialData(orderToCreateInput(order));
-    setIsModalOpen(true);
-  };
-
-  const closeModal = () => {
-    setIsModalOpen(false);
-    setModalInitialData(null);
-    setModalMode('create');
+    navigate('/orders/create', { state: { initialData: orderToCreateInput(order), mode } });
   };
 
   const toggleRowSelection = (orderId: string) => {
@@ -411,9 +402,9 @@ const OrderManagement: React.FC = () => {
     {
       header: 'STATUS',
       accessor: (order: Order) => (
-        <span className={`figma-status-chip ${getStatusTone(order.status)}`}>
+        <StatusChip tone={getStatusTone(order.status)}>
           {STATUS_LABELS[order.status]}
-        </span>
+        </StatusChip>
       ),
       width: '120px',
     },
@@ -433,15 +424,16 @@ const OrderManagement: React.FC = () => {
       header: 'ACTION',
       accessor: (order: Order) => (
         <div className="actions-cell">
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="icon"
             className="row-action-btn"
             onClick={() => setOpenActionId(value => value === order.id ? null : order.id)}
             aria-label={`Open actions for ${order.trackingId}`}
             aria-expanded={openActionId === order.id}
           >
             <MoreVertical size={16} />
-          </button>
+          </Button>
           {openActionId === order.id && (
             <div className="row-action-menu">
               <button type="button" onClick={() => openPrefilledModal(order, 'edit')}>
@@ -461,25 +453,14 @@ const OrderManagement: React.FC = () => {
 
   return (
     <div className="order-management-container">
-      <div className="order-title-row">
-        <div>
-          <h1>Orders</h1>
-          <p>Manage and track package orders across the network.</p>
-        </div>
-      </div>
+      <PageHeader title="Orders" subtitle="Manage and track package orders across the network." />
 
-      <div className="order-status-tabs" role="tablist" aria-label="Order status filters">
-        {(Object.keys(TAB_GROUPS) as FilterTab[]).map(tab => (
-          <button
-            key={tab}
-            type="button"
-            className={`order-status-tab ${filter === tab ? 'active' : ''}`}
-            onClick={() => setFilter(tab)}
-          >
-            {TAB_LABELS[tab]}
-          </button>
-        ))}
-      </div>
+      <SegmentedTabs
+        ariaLabel="Order status filters"
+        value={filter}
+        onChange={setFilter}
+        options={(Object.keys(TAB_GROUPS) as FilterTab[]).map(tab => ({ value: tab, label: TAB_LABELS[tab] }))}
+      />
 
       <div className="order-filter-panel">
         <label>
@@ -553,25 +534,25 @@ const OrderManagement: React.FC = () => {
             <option value="returns">Returns</option>
           </select>
         </label>
-        <button type="button" className="clear-filter-btn" onClick={clearFilters}>
+        <Button variant="outline" className="clear-filter-btn" onClick={clearFilters}>
           Clear Filters
-        </button>
+        </Button>
       </div>
 
       <div className="order-toolbar">
         <div className="order-toolbar-left">
-          <button type="button" className="new-order-btn" onClick={openCreateModal}>
+          <Button variant="primary" onClick={openCreateModal}>
             New Order <Plus size={16} />
-          </button>
-          <button type="button" className="bulk-order-btn">Bulk Order</button>
+          </Button>
+          <Button variant="secondary">Bulk Order</Button>
         </div>
         <div className="order-toolbar-right">
-          <button type="button" className="primary-action-btn" onClick={downloadCsv}>
+          <Button variant="primary" onClick={downloadCsv}>
             <Download size={14} /> Download
-          </button>
-          <button type="button" className="primary-action-btn" onClick={() => window.print()}>
+          </Button>
+          <Button variant="primary" onClick={() => window.print()}>
             <Printer size={14} /> Print
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -605,34 +586,12 @@ const OrderManagement: React.FC = () => {
         tableClassName="orders-table"
       />
 
-      <div className="orders-pagination-row">
-        <p>showing&nbsp; {firstResult} of {lastResult} of {filteredOrders.length} results</p>
-        <nav className="orders-pagination" aria-label="Orders pagination">
-          <button type="button" disabled={page === 1} onClick={() => setPage(value => Math.max(1, value - 1))}>
-            <ChevronLeft size={20} />
-          </button>
-          {Array.from({ length: Math.min(totalPages, 3) }, (_, index) => index + 1).map(pageNumber => (
-            <button
-              key={pageNumber}
-              type="button"
-              className={page === pageNumber ? 'active' : ''}
-              onClick={() => setPage(pageNumber)}
-            >
-              {pageNumber}
-            </button>
-          ))}
-          <button type="button" disabled={page === totalPages} onClick={() => setPage(value => Math.min(totalPages, value + 1))}>
-            <ChevronRight size={20} />
-          </button>
-        </nav>
-      </div>
-
-      <CreateOrderModal
-        isOpen={isModalOpen}
-        onClose={closeModal}
-        onSuccess={() => { loadOrders(); }}
-        initialData={modalInitialData}
-        mode={modalMode}
+      <Pagination
+        ariaLabel="Orders pagination"
+        page={page}
+        totalPages={totalPages}
+        onPageChange={setPage}
+        summary={`showing  ${firstResult} of ${lastResult} of ${filteredOrders.length} results`}
       />
     </div>
   );

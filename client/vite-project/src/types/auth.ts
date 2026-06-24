@@ -7,12 +7,9 @@ export interface AuthResponse {
   success: boolean;
   message: string;
   data: {
-    token: string;
-    user: {
-      id: string;
-      email: string;
-      fullName: string;
-      role: string;
-    };
+    id: string;
+    email: string;
+    fullName: string;
+    roles: string[];
   };
 }
