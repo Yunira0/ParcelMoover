@@ -2,6 +2,7 @@ import express, {Express, Request, Response} from 'express';
 import {config} from 'dotenv';
 import routes from "./routes/auth.routes";
 import OrderRoutes from "./routes/order.routes"
+import DeliveryRateRoutes from "./routes/delivery-rate.routes"
 import prisma from "./lib/prisma";
 import cookiesParser from "cookie-parser";
 import {authMiddleware} from "./middlewares/auth.mddleware";
@@ -38,6 +39,8 @@ if (trustedProxiesEnv) {
 app.use("/api/auth", routes);
 
 app.use("/api/orders", OrderRoutes)
+
+app.use("/api/delivery-rates", DeliveryRateRoutes)
 
 
 const getCurrentUserHandler = async (req: Request, res: Response) => {

@@ -5,6 +5,7 @@ export type ServiceType = "dtd" | "btd" | "btb" | "dtb";
 export interface OrderPartyInput {
   name: string;
   phone: string;
+  alternatePhone?: string;
   email?: string;
   address?: string;
   locationId?: string;
@@ -26,7 +27,11 @@ export interface CreateOrderInput {
   weightKg?: number;
 
   codAmount?: number;
+  /** Fallback only - used when origin/destination locations aren't both set, so no route rate can be looked up. */
   deliveryCharge?: number;
+
+  packageType?: string;
+  deliveryInstruction?: string;
 
   pickupAddress?: string;
   scheduledPickupAt?: string;
