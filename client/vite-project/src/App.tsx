@@ -15,6 +15,9 @@ import PickupOperations from './pages/PickupOperations'
 import DispatchOperations from './pages/DispatchOperations'
 import OOVOperations from './pages/OOVOperations'
 import ReturnOperations from './pages/ReturnOperations'
+import HoldOperations from './pages/HoldOperations'
+import LossAndDamageOperations from './pages/LossAndDamageOperations'
+import Tickets from './pages/Tickets'
 import ProtectedRoute from './components/ProtectedRoute'
 import './App.css'
 function App() {
@@ -46,6 +49,9 @@ function App() {
           <Route path="/dispatch" element={<DispatchOperations />} />
           <Route path="/oov" element={<OOVOperations />} />
           <Route path="/return" element={<ReturnOperations />} />
+          <Route path="/hold" element={<HoldOperations />} />
+          <Route path="/loss-and-damage" element={<LossAndDamageOperations />} />
+          <Route path="/tickets" element={<Tickets />} />
         </Route>
         {/* Catch-all */}
 

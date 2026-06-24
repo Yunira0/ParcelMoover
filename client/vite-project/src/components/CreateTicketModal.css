@@ -1,0 +1,74 @@
+.ticket-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* The category picker leads the form — it determines every field below it. */
+.ticket-category-field label {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semi-bold);
+  color: var(--color-text-default);
+}
+
+.ticket-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4);
+}
+
+.ticket-field-full {
+  grid-column: span 2;
+}
+
+.ticket-orderids {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  grid-column: span 2;
+}
+
+.ticket-orderids > label {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-caption);
+}
+
+.ticket-orderids label .required {
+  color: #b91c1c;
+  margin-left: 2px;
+}
+
+.ticket-orderid-row {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.ticket-orderid-row input {
+  flex: 1;
+  height: 36px;
+  padding: var(--space-2);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-default);
+  outline: none;
+  background-color: var(--color-background-surface);
+  color: var(--color-text-default);
+  font-family: var(--typography-font-family-default);
+  font-size: var(--font-size-sm);
+}
+
+.ticket-orderid-row input:focus {
+  border-color: var(--color-border-primary);
+  box-shadow: 0 0 0 2px rgb(194 65 12 / 12%);
+}
+
+.ticket-add-orderid {
+  align-self: flex-start;
+  margin-top: var(--space-1);
+}
+
+.ticket-slot-note {
+  color: #b91c1c;
+  font-size: var(--font-size-xs, 12px);
+}

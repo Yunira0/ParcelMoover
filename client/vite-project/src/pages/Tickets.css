@@ -1,0 +1,110 @@
+.tickets-container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  width: 100%;
+}
+
+.tickets-filters {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+
+.tickets-search {
+  align-items: center;
+  background: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-default);
+  color: var(--color-text-placeholder);
+  display: flex;
+  flex: 1 1 320px;
+  gap: var(--space-2);
+  min-height: 36px;
+  min-width: 240px;
+  padding: var(--space-2);
+}
+
+.tickets-search:focus-within {
+  border-color: var(--color-border-primary);
+  box-shadow: 0 0 0 2px rgb(194 65 12 / 12%);
+}
+
+.tickets-search input {
+  background: transparent;
+  border: 0;
+  color: var(--color-text-default);
+  flex: 1;
+  font-family: var(--typography-font-family-default);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-sm);
+  min-width: 0;
+  outline: none;
+}
+
+.tickets-select {
+  background: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-default);
+  color: var(--color-text-default);
+  font-family: var(--typography-font-family-default);
+  font-size: var(--font-size-sm);
+  min-height: 36px;
+  padding: 0 var(--space-2);
+}
+
+.tickets-select:focus {
+  border-color: var(--color-border-primary);
+  outline: none;
+}
+
+.tickets-table th,
+.tickets-table td {
+  font-size: var(--font-size-xs, 12px);
+  line-height: var(--line-height-xs, 16px);
+}
+
+.tickets-sn-cell {
+  text-align: center;
+}
+
+.tickets-id-cell {
+  color: var(--color-text-primary) !important;
+  font-weight: var(--font-weight-semi-bold);
+}
+
+.tickets-customer-cell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.tickets-customer-cell span {
+  color: var(--color-text-default);
+  font-weight: var(--font-weight-semi-bold);
+}
+
+.tickets-customer-cell small {
+  color: var(--color-text-placeholder);
+  font-size: var(--font-size-xs, 12px);
+  font-weight: var(--font-weight-regular);
+}
+
+.tickets-subject-cell {
+  max-width: 220px;
+  white-space: normal;
+  word-break: break-word;
+}
+
+@media (max-width: 900px) {
+  .tickets-filters {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .tickets-search,
+  .tickets-select {
+    width: 100%;
+  }
+}

@@ -3,6 +3,7 @@ import {config} from 'dotenv';
 import routes from "./routes/auth.routes";
 import OrderRoutes from "./routes/order.routes"
 import DeliveryRateRoutes from "./routes/delivery-rate.routes"
+import TicketRoutes from "./routes/ticket.routes"
 import prisma from "./lib/prisma";
 import cookiesParser from "cookie-parser";
 import {authMiddleware} from "./middlewares/auth.mddleware";
@@ -41,6 +42,8 @@ app.use("/api/auth", routes);
 app.use("/api/orders", OrderRoutes)
 
 app.use("/api/delivery-rates", DeliveryRateRoutes)
+
+app.use("/api/tickets", TicketRoutes)
 
 
 const getCurrentUserHandler = async (req: Request, res: Response) => {

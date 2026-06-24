@@ -5,6 +5,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 model admins {
@@ -391,6 +392,9 @@ model support_tickets {
   customer_phone                           String?
   issue_type                               String
   description                              String?
+  subject                                  String?
+  category                                 String?
+  priority                                 String?
   status                                   ticket_status @default(open)
   assigned_to                              String?       @db.Uuid
   created_by                               String?       @db.Uuid
