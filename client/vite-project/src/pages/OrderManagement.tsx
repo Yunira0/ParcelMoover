@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import {
   Copy,
   Download,
@@ -16,6 +16,7 @@ import Button from '../components/Button';
 import SegmentedTabs from '../components/SegmentedTabs';
 import Pagination from '../components/Pagination';
 import StatusChip, { type StatusChipTone } from '../components/StatusChip';
+import RemarksModal from '../components/RemarksModal';
 import {
   getOrders,
   subscribeToOrderStatusChanged,
@@ -205,6 +206,7 @@ const OrderManagement: React.FC = () => {
   const [page, setPage] = useState(1);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [openActionId, setOpenActionId] = useState<string | null>(null);
+  const [remarksOrder, setRemarksOrder] = useState<Order | null>(null);
 
   const loadOrders = async () => {
     setLoading(true);
@@ -365,7 +367,7 @@ const OrderManagement: React.FC = () => {
   };
 
   const orderColumns = [
-    { header: 'TRACKING ID', accessor: (order: Order) => order.trackingId, width: '180px', className: 'tracking-cell' },
+    { header: 'TRACKING ID', accessor: (order: Order) => <Link to={`/orders/track/${order.trackingId}`} className="tracking-link">{order.trackingId}</Link>, width: '180px', className: 'tracking-cell' },
     { header: 'ORIGIN', accessor: (order: Order) => order.origin || '-', width: '150px' },
     {
       header: 'SENDOR',
@@ -409,7 +411,16 @@ const OrderManagement: React.FC = () => {
       width: '120px',
     },
     { header: 'RIDER', accessor: (order: Order) => order.riderName || '-', width: '120px' },
-    { header: 'REMARKS', accessor: (order: Order) => order.remarks || '-', width: '160px', className: 'remarks-cell' },
+    {
+      header: 'REMARKS',
+      accessor: (order: Order) => (
+        <button type="button" className="remarks-cell-btn" onClick={() => setRemarksOrder(order)}>
+          {order.remarks || 'Add remark'}
+        </button>
+      ),
+      width: '160px',
+      className: 'remarks-cell',
+    },
     {
       header: 'LAST UPDATED BY',
       accessor: (order: Order) => (
@@ -593,6 +604,16 @@ const OrderManagement: React.FC = () => {
         onPageChange={setPage}
         summary={`showing  ${firstResult} of ${lastResult} of ${filteredOrders.length} results`}
       />
+
+      {remarksOrder && (
+        <RemarksModal
+          orderId={remarksOrder.id}
+          trackingId={remarksOrder.trackingId}
+          isOpen={Boolean(remarksOrder)}
+          onClose={() => setRemarksOrder(null)}
+          onChanged={loadOrders}
+        />
+      )}
     </div>
   );
 };

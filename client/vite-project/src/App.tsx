@@ -15,6 +15,7 @@ import PickupOperations from './pages/PickupOperations'
 import DispatchOperations from './pages/DispatchOperations'
 import OOVOperations from './pages/OOVOperations'
 import ReturnOperations from './pages/ReturnOperations'
+import OrderDetail from './pages/OrderDetail'
 import ProtectedRoute from './components/ProtectedRoute'
 import './App.css'
 function App() {
@@ -37,6 +38,7 @@ function App() {
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/orders" element={<OrderManagement />} />
           <Route path="/orders/create" element={<CreateOrderPage />} />
+          <Route path="/orders/track/:trackingId" element={<OrderDetail />} />
           <Route path="/admin" element={<AdminManagement />} />
           <Route path="/vendors" element={<VendorManagement />} />
           <Route path="/riders" element={<RiderManagement />} />

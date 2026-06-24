@@ -14,7 +14,7 @@ import { generateTrackingId } from "../utils/trackingId";
 import { generateDispatchNo } from "../utils/dispatchId";
 import { getDeliveryQuote } from "./delivery-rate.service";
 
-type OrderActor = {
+export type OrderActor = {
   id: string;
   roles: string[];
 };
@@ -114,7 +114,7 @@ const formatDate = (date?: Date | null) => date ? date.toISOString().slice(0, 10
 
 const moneyToNumber = (value?: Prisma.Decimal | null) => value ? Number(value) : 0;
 
-async function getActorScope(actor: OrderActor) {
+export async function getActorScope(actor: OrderActor) {
   const actorIsVendor = actor.roles.includes("vendor");
   const actorIsRider = actor.roles.includes("rider");
 
@@ -983,4 +983,212 @@ export async function bulkUpdateParcelStatus(
 
   await invalidateDashboardSummaryCache();
   return result;
+}
+
+// ---------------------------------------------------------------------------
+// getOrderByTrackingId — single order detail for the tracking page
+// ---------------------------------------------------------------------------
+
+const ORDER_DETAIL_INCLUDE = {
+  parties_parcels_sender_idToparties: true,
+  parties_parcels_receiver_idToparties: true,
+  locations_parcels_origin_location_idTolocations: true,
+  locations_parcels_destination_location_idTolocations: true,
+  locations_parcels_current_location_idTolocations: true,
+  vendors: { include: { locations: true } },
+  riders_parcels_pickup_rider_idToriders: true,
+  riders_parcels_delivery_rider_idToriders: true,
+  cod_collections: true,
+} satisfies Prisma.parcelsInclude;
+
+type OrderDetailParcel = Prisma.parcelsGetPayload<{ include: typeof ORDER_DETAIL_INCLUDE }>;
+
+export interface OrderDetailStatusHistoryEntry {
+  id: string;
+  oldStatus: string | null;
+  newStatus: string;
+  locationName: string | null;
+  actorName: string | null;
+  branchName: string | null;
+  remarks: string | null;
+  timestamp: string;
+}
+
+export interface OrderDetailRemark {
+  id: string;
+  remark: string;
+  authorName: string;
+  createdAt: string;
+  replies: OrderDetailRemark[];
+}
+
+export interface OrderDetailResult {
+  parcel: {
+    id: string;
+    trackingId: string;
+    status: string;
+    orderType: string;
+    serviceType: string;
+    pieces: number;
+    weightKg: number | null;
+    codAmount: number;
+    deliveryCharge: number;
+    packageType: string | null;
+    deliveryInstruction: string | null;
+    attemptCount: number;
+    createdAt: string;
+    pickedUpAt: string | null;
+    deliveredAt: string | null;
+    updatedAt: string;
+  };
+  sender: { name: string; phone: string; email: string | null; address: string | null };
+  receiver: { name: string; phone: string; email: string | null; address: string | null };
+  origin: string;
+  destination: string;
+  currentLocation: string | null;
+  vendorName: string;
+  pickupRider: string | null;
+  deliveryRider: string | null;
+  codCollection: {
+    codAmount: number;
+    collectedAmount: number;
+    remittedAmount: number;
+    pendingAmount: number | null;
+    paymentStatus: string;
+  } | null;
+  statusHistory: OrderDetailStatusHistoryEntry[];
+  remarks: OrderDetailRemark[];
+}
+
+function mapRemark(remark: any): OrderDetailRemark {
+  return {
+    id: remark.id,
+    remark: remark.remark,
+    authorName: remark.users?.full_name || "System",
+    createdAt: remark.created_at?.toISOString?.() || String(remark.created_at),
+    replies: (remark.replies || []).map(mapRemark),
+  };
+}
+
+export async function getOrderByTrackingId(
+  actor: OrderActor,
+  trackingId: string,
+): Promise<OrderDetailResult> {
+  const parcel = await prisma.parcels.findUnique({
+    where: { tracking_id: trackingId, deleted_at: null },
+    include: ORDER_DETAIL_INCLUDE,
+  });
+
+  if (!parcel) {
+    throw new AppError(404, "Order not found");
+  }
+
+  // Scope check: vendors can only see their own parcels
+  const { vendorId } = await getActorScope(actor);
+  const isVendor = actor.roles.includes("vendor");
+  if (isVendor && vendorId && parcel.vendor_id !== vendorId) {
+    throw new AppError(404, "Order not found");
+  }
+
+  // Fetch full status history with user + location names
+  const historyRows = await prisma.parcel_status_history.findMany({
+    where: { parcel_id: parcel.id },
+    orderBy: { created_at: "asc" },
+    include: {
+      users: { select: { full_name: true } },
+      locations: { select: { name: true } },
+    },
+  });
+
+  const statusHistory: OrderDetailStatusHistoryEntry[] = historyRows.map((h) => ({
+    id: h.id,
+    oldStatus: h.old_status,
+    newStatus: h.new_status,
+    locationName: h.locations?.name || null,
+    actorName: h.users?.full_name || null,
+    branchName: h.locations?.name || null,
+    remarks: h.remarks,
+    timestamp: h.created_at.toISOString(),
+  }));
+
+  // Fetch all remarks (top-level only; replies nested)
+  const remarkRows = await prisma.parcel_remarks.findMany({
+    where: { parcel_id: parcel.id, parent_remark_id: null },
+    orderBy: { created_at: "desc" },
+    include: {
+      users: { select: { full_name: true } },
+      replies: {
+        orderBy: { created_at: "asc" },
+        include: { users: { select: { full_name: true } } },
+      },
+    },
+  });
+
+  const remarks: OrderDetailRemark[] = remarkRows.map(mapRemark);
+
+  // Location helpers
+  const loc = (l?: { name: string; city: string | null; district: string | null } | null) =>
+    l ? [l.name, l.city || l.district].filter(Boolean).join(", ") : "";
+
+  const rider =
+    parcel.riders_parcels_delivery_rider_idToriders ||
+    parcel.riders_parcels_pickup_rider_idToriders;
+
+  return {
+    parcel: {
+      id: parcel.id,
+      trackingId: parcel.tracking_id,
+      status: parcel.status,
+      orderType: parcel.order_type,
+      serviceType: parcel.service_type,
+      pieces: parcel.pieces,
+      weightKg: parcel.weight_kg === null ? null : Number(parcel.weight_kg),
+      codAmount: Number(parcel.cod_amount),
+      deliveryCharge: Number(parcel.delivery_charge),
+      packageType: parcel.package_type,
+      deliveryInstruction: parcel.delivery_instruction,
+      attemptCount: parcel.attempt_count,
+      createdAt: parcel.created_at.toISOString(),
+      pickedUpAt: parcel.picked_up_at?.toISOString?.() || null,
+      deliveredAt: parcel.delivered_at?.toISOString?.() || null,
+      updatedAt: parcel.updated_at.toISOString(),
+    },
+    sender: {
+      name: parcel.parties_parcels_sender_idToparties.name,
+      phone: parcel.parties_parcels_sender_idToparties.phone,
+      email: parcel.parties_parcels_sender_idToparties.email,
+      address: parcel.parties_parcels_sender_idToparties.address,
+    },
+    receiver: {
+      name: parcel.parties_parcels_receiver_idToparties.name,
+      phone: parcel.parties_parcels_receiver_idToparties.phone,
+      email: parcel.parties_parcels_receiver_idToparties.email,
+      address: parcel.parties_parcels_receiver_idToparties.address,
+    },
+    origin:
+      loc(parcel.locations_parcels_origin_location_idTolocations) ||
+      parcel.parties_parcels_sender_idToparties.address ||
+      "",
+    destination:
+      loc(parcel.locations_parcels_destination_location_idTolocations) ||
+      parcel.parties_parcels_receiver_idToparties.address ||
+      "",
+    currentLocation: loc(parcel.locations_parcels_current_location_idTolocations) || null,
+    vendorName: parcel.vendors?.business_name || parcel.vendors?.client_name || "",
+    pickupRider: parcel.riders_parcels_pickup_rider_idToriders?.name || null,
+    deliveryRider: parcel.riders_parcels_delivery_rider_idToriders?.name || null,
+    codCollection: parcel.cod_collections
+      ? {
+          codAmount: Number(parcel.cod_collections.cod_amount),
+          collectedAmount: Number(parcel.cod_collections.collected_amount),
+          remittedAmount: Number(parcel.cod_collections.remitted_amount),
+          pendingAmount: parcel.cod_collections.pending_amount
+            ? Number(parcel.cod_collections.pending_amount)
+            : null,
+          paymentStatus: parcel.cod_collections.payment_status,
+        }
+      : null,
+    statusHistory,
+    remarks,
+  };
 }

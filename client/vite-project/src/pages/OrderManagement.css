@@ -119,6 +119,18 @@
   color: var(--color-text-primary) !important;
 }
 
+.tracking-link {
+  color: var(--color-background-primary-default);
+  text-decoration: none;
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition: opacity 150ms ease;
+}
+.tracking-link:hover {
+  opacity: 0.8;
+  text-decoration: underline;
+}
+
 .party-cell,
 .finance-cell,
 .updated-cell {
@@ -143,6 +155,26 @@
 
 .remarks-cell {
   max-width: 160px;
+}
+
+.remarks-cell-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  width: 100%;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--color-text-primary);
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+  text-decoration: underline;
+  text-decoration-color: transparent;
+}
+
+.remarks-cell-btn:hover {
+  text-decoration-color: var(--color-text-primary);
 }
 
 .actions-column {

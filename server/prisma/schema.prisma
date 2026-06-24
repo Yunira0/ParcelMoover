@@ -186,19 +186,23 @@ model parcel_exceptions {
 }
 
 model parcel_remarks {
-  id          String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  parcel_id   String     @db.Uuid
-  user_id     String?    @db.Uuid
-  location_id String?    @db.Uuid
-  remark      String
-  created_at  DateTime   @default(now()) @db.Timestamptz(6)
-  locations   locations? @relation(fields: [location_id], references: [id], onUpdate: NoAction)
-  parcels     parcels    @relation(fields: [parcel_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  users       users?     @relation(fields: [user_id], references: [id], onUpdate: NoAction)
+  id               String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  parcel_id        String           @db.Uuid
+  user_id          String?          @db.Uuid
+  location_id      String?          @db.Uuid
+  parent_remark_id String?          @db.Uuid
+  remark           String
+  created_at       DateTime         @default(now()) @db.Timestamptz(6)
+  locations        locations?       @relation(fields: [location_id], references: [id], onUpdate: NoAction)
+  parcels          parcels          @relation(fields: [parcel_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users            users?           @relation(fields: [user_id], references: [id], onUpdate: NoAction)
+  parent           parcel_remarks?  @relation("parcel_remark_replies", fields: [parent_remark_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  replies          parcel_remarks[] @relation("parcel_remark_replies")
 
   @@index([location_id], map: "idx_parcel_remarks_location_id")
   @@index([parcel_id, created_at(sort: Desc)], map: "idx_parcel_remarks_parcel_id")
   @@index([user_id], map: "idx_parcel_remarks_user_id")
+  @@index([parent_remark_id], map: "idx_parcel_remarks_parent_remark_id")
 }
 
 model parcel_status_history {

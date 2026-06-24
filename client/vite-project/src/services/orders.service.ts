@@ -77,6 +77,17 @@ export interface Order {
   createdAt: string;
 }
 
+export interface Remark {
+  id: string;
+  parcelId: string;
+  parentRemarkId: string | null;
+  remark: string;
+  authorId: string | null;
+  authorName: string;
+  createdAt: string;
+  replies: Remark[];
+}
+
 export interface ListOrdersParams {
   status?: ParcelStatus[];
   search?: string;
@@ -138,6 +149,69 @@ export interface DashboardSummary {
   updatedAt: string;
 }
 
+// ---------------------------------------------------------------------------
+// Order Detail (tracking page)
+// ---------------------------------------------------------------------------
+
+export interface OrderDetailStatusHistoryEntry {
+  id: string;
+  oldStatus: string | null;
+  newStatus: string;
+  locationName: string | null;
+  actorName: string | null;
+  branchName: string | null;
+  remarks: string | null;
+  timestamp: string;
+}
+
+export interface OrderDetailRemark {
+  id: string;
+  remark: string;
+  authorName: string;
+  createdAt: string;
+  replies: OrderDetailRemark[];
+}
+
+export interface OrderDetailParcel {
+  id: string;
+  trackingId: string;
+  status: ParcelStatus;
+  orderType: OrderType;
+  serviceType: ServiceType;
+  pieces: number;
+  weightKg: number | null;
+  codAmount: number;
+  deliveryCharge: number;
+  packageType: string | null;
+  deliveryInstruction: string | null;
+  attemptCount: number;
+  createdAt: string;
+  pickedUpAt: string | null;
+  deliveredAt: string | null;
+  updatedAt: string;
+}
+
+export interface OrderDetailData {
+  parcel: OrderDetailParcel;
+  sender: { name: string; phone: string; email: string | null; address: string | null };
+  receiver: { name: string; phone: string; email: string | null; address: string | null };
+  origin: string;
+  destination: string;
+  currentLocation: string | null;
+  vendorName: string;
+  pickupRider: string | null;
+  deliveryRider: string | null;
+  codCollection: {
+    codAmount: number;
+    collectedAmount: number;
+    remittedAmount: number;
+    pendingAmount: number | null;
+    paymentStatus: string;
+  } | null;
+  statusHistory: OrderDetailStatusHistoryEntry[];
+  remarks: OrderDetailRemark[];
+}
+
 const ORDER_STATUS_CHANGED_EVENT = 'parcelmoover:order-status-changed';
 
 export const notifyOrderStatusChanged = () => {
@@ -190,6 +264,28 @@ export const updateOrderStatus = async (
   return response.data;
 };
 
+export const getOrderRemarks = async (orderId: string): Promise<{ success: boolean; data: Remark[] }> => {
+  const response = await api.get(`/orders/${orderId}/remarks`);
+  return response.data;
+};
+
+export const createOrderRemark = async (
+  orderId: string,
+  remark: string,
+): Promise<{ success: boolean; message: string; data: Remark }> => {
+  const response = await api.post(`/orders/${orderId}/remarks`, { remark });
+  return response.data;
+};
+
+export const replyToOrderRemark = async (
+  orderId: string,
+  remarkId: string,
+  remark: string,
+): Promise<{ success: boolean; message: string; data: Remark }> => {
+  const response = await api.post(`/orders/${orderId}/remarks/${remarkId}/replies`, { remark });
+  return response.data;
+};
+
 export const bulkUpdateOrderStatus = async (
   ids: string[],
   status: ParcelStatus,
@@ -203,5 +299,12 @@ export const bulkUpdateOrderStatus = async (
     riderId: options?.riderId,
   });
   notifyOrderStatusChanged();
+  return response.data;
+};
+
+export const getOrderDetail = async (
+  trackingId: string,
+): Promise<{ success: boolean; data: OrderDetailData }> => {
+  const response = await api.get(`/orders/track/${encodeURIComponent(trackingId)}`);
   return response.data;
 };

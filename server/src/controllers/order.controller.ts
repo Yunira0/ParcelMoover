@@ -3,6 +3,7 @@ import {
   bulkUpdateParcelStatus,
   createOrder,
   getDashboardSummary,
+  getOrderByTrackingId,
   listOrders,
   updateParcelStatus,
 } from "../services/order.service";
@@ -303,6 +304,31 @@ export async function updateOrderStatusController(req: Request, res: Response) {
     return res.status(error.statusCode || 500).json({
       success: false,
       message: error.message || "Failed to update order status",
+    });
+  }
+}
+
+export async function getOrderByTrackingIdController(req: Request, res: Response) {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const { trackingId } = req.params;
+    if (!trackingId || typeof trackingId !== "string") {
+      return res.status(400).json({ success: false, message: "Tracking ID is required" });
+    }
+
+    const result = await getOrderByTrackingId(
+      { id: req.user.id, roles: req.user.roles },
+      trackingId,
+    );
+
+    return res.status(200).json({ success: true, data: result });
+  } catch (error: any) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to load order details",
     });
   }
 }

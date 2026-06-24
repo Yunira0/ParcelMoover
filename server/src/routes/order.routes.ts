@@ -6,9 +6,15 @@ import {
   bulkUpdateOrderStatusController,
   createOrderController,
   dashboardSummaryController,
+  getOrderByTrackingIdController,
   listOrdersController,
   updateOrderStatusController,
 } from "../controllers/order.controller";
+import {
+  createRemarkController,
+  listRemarksController,
+  replyToRemarkController,
+} from "../controllers/remark.controller";
 import { csrfProtection } from "../middlewares/csrf.middleware";
 import { createRedisRateLimitStore } from "../lib/rateLimitStore";
 
@@ -24,7 +30,9 @@ PATCH  /orders/:id
 PATCH  /orders/:id/status
 PATCH  /orders/:id/assign-rider
 PATCH  /orders/bulk-status
+GET    /orders/:id/remarks
 POST   /orders/:id/remarks
+POST   /orders/:id/remarks/:remarkId/replies
 DELETE /orders/:id
  */
 
@@ -47,6 +55,16 @@ const statusUpdateLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   store: createRedisRateLimitStore("order-status"),
+  keyGenerator: actorOrIpKey,
+});
+
+const remarkLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 30,
+  message: { success: false, message: "Too many remark attempts" },
+  standardHeaders: true,
+  legacyHeaders: false,
+  store: createRedisRateLimitStore("order-remarks"),
   keyGenerator: actorOrIpKey,
 });
 
@@ -73,6 +91,14 @@ orderRouter.get(
   listOrdersController,
 );
 
+// GET /orders/track/:trackingId - order detail by tracking ID
+orderRouter.get(
+  "/track/:trackingId",
+  authMiddleware,
+  authorizeRoles("super_admin", "admin", "vendor", "rider"),
+  getOrderByTrackingIdController,
+);
+
 // PATCH /orders/:id/status
 orderRouter.patch(
   "/:id/status",
@@ -91,6 +117,34 @@ orderRouter.patch(
   authorizeRoles("super_admin", "admin", "rider"),
   statusUpdateLimiter,
   bulkUpdateOrderStatusController,
+);
+
+// GET /orders/:id/remarks - threaded remarks for an order
+orderRouter.get(
+  "/:id/remarks",
+  authMiddleware,
+  authorizeRoles("super_admin", "admin", "vendor", "rider"),
+  listRemarksController,
+);
+
+// POST /orders/:id/remarks - add a top-level remark
+orderRouter.post(
+  "/:id/remarks",
+  authMiddleware,
+  csrfProtection,
+  authorizeRoles("super_admin", "admin", "vendor", "rider"),
+  remarkLimiter,
+  createRemarkController,
+);
+
+// POST /orders/:id/remarks/:remarkId/replies - reply to a remark
+orderRouter.post(
+  "/:id/remarks/:remarkId/replies",
+  authMiddleware,
+  csrfProtection,
+  authorizeRoles("super_admin", "admin", "vendor", "rider"),
+  remarkLimiter,
+  replyToRemarkController,
 );
 
 export default orderRouter;
