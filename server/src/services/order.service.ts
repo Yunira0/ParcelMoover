@@ -1,5 +1,6 @@
 import { parcel_status, Prisma } from "../generated/prisma/client";
 import prisma from "../lib/prisma";
+import redis from "../lib/redis";
 import { AppError } from "../utils/AppError";
 import {
   BulkUpdateParcelStatusInput,
@@ -11,6 +12,7 @@ import {
 } from "../types/order.type";
 import { generateTrackingId } from "../utils/trackingId";
 import { generateDispatchNo } from "../utils/dispatchId";
+import { getDeliveryQuote } from "./delivery-rate.service";
 
 type OrderActor = {
   id: string;
@@ -52,6 +54,26 @@ const TERMINAL_STATUSES: parcel_status[] = [
 const MAX_PAGE_SIZE = 100;
 const DEFAULT_PAGE_SIZE = 10;
 const MAX_BULK_IDS = 200;
+
+const DASHBOARD_SUMMARY_CACHE_PREFIX = "dashboard:summary:";
+const DASHBOARD_SUMMARY_TTL_SECONDS = 30;
+
+function dashboardSummaryCacheKey(vendorId?: string, riderId?: string) {
+  return `${DASHBOARD_SUMMARY_CACHE_PREFIX}${vendorId ?? "none"}:${riderId ?? "none"}`;
+}
+
+// Best-effort: a Redis hiccup should never block a status update or fall
+// back to a 503 - the dashboard just serves a stale value until the TTL expires.
+async function invalidateDashboardSummaryCache() {
+  try {
+    const keys = await redis.keys(`${DASHBOARD_SUMMARY_CACHE_PREFIX}*`);
+    if (keys.length) {
+      await redis.del(...keys);
+    }
+  } catch (error) {
+    console.error("[Redis] Failed to invalidate dashboard summary cache:", error);
+  }
+}
 
 // Which parcel column a rider gets written to, depending on the leg they're being assigned for.
 const RIDER_ASSIGNMENT_FIELD: Partial<Record<parcel_status, "pickup_rider_id" | "delivery_rider_id">> = {
@@ -186,6 +208,7 @@ async function findOrCreateParty(
     data: {
       name: partyData.name.trim(),
       phone: normalizedPhone,
+      alternate_phone: partyData.alternatePhone?.trim() || null,
       email: partyData.email?.trim() || null,
       address: partyData.address?.trim() || null,
     },
@@ -229,7 +252,20 @@ export async function createOrder(actor: OrderActor, data: CreateOrderInput) {
     }
   }
 
-  return prisma.$transaction(async (tx) => {
+  const resolvedOriginLocationId = data.originLocationId || data.sender.locationId || null;
+  const resolvedDestinationLocationId = data.destinationLocationId || data.receiver.locationId || null;
+  const weightKg = data.weightKg || 1;
+
+  // Payable is computed server-side from the route's configured rate so the
+  // client can't spoof the charge. Falls back to a manually supplied charge
+  // only when a route can't be resolved (e.g. legacy callers without locations).
+  let deliveryCharge = data.deliveryCharge || 0;
+  if (resolvedOriginLocationId && resolvedDestinationLocationId) {
+    const quote = await getDeliveryQuote(resolvedOriginLocationId, resolvedDestinationLocationId, weightKg);
+    deliveryCharge = quote.totalPayable;
+  }
+
+  const parcel = await prisma.$transaction(async (tx) => {
     const trackingId = await generateUniqueTrackingId(tx);
 
     const [sender, receiver] = await Promise.all([
@@ -243,19 +279,18 @@ export async function createOrder(actor: OrderActor, data: CreateOrderInput) {
         vendor_id: vendor?.id || null,
         sender_id: sender.id,
         receiver_id: receiver.id,
-        origin_location_id:
-          data.originLocationId || data.sender.locationId || null,
-        current_location_id:
-          data.originLocationId || data.sender.locationId || null,
-        destination_location_id:
-          data.destinationLocationId || data.receiver.locationId || null,
+        origin_location_id: resolvedOriginLocationId,
+        current_location_id: resolvedOriginLocationId,
+        destination_location_id: resolvedDestinationLocationId,
         order_type: data.orderType || "delivery",
         service_type: data.serviceType || "dtd",
         status: "pickup_ordered",
         pieces: data.pieces || 1,
-        weight_kg: data.weightKg || 1,
+        weight_kg: weightKg,
         cod_amount: data.codAmount || 0,
-        delivery_charge: data.deliveryCharge || 0,
+        delivery_charge: deliveryCharge,
+        package_type: data.packageType || null,
+        delivery_instruction: data.deliveryInstruction || null,
         created_by: actor.id,
       },
     });
@@ -309,6 +344,9 @@ export async function createOrder(actor: OrderActor, data: CreateOrderInput) {
 
     return parcel;
   });
+
+  await invalidateDashboardSummaryCache();
+  return parcel;
 }
 
 function buildOrdersWhere(
@@ -464,6 +502,17 @@ export async function listOrders(
 
 export async function getDashboardSummary(actor: OrderActor) {
   const { vendorId, riderId } = await getActorScope(actor);
+  const cacheKey = dashboardSummaryCacheKey(vendorId, riderId);
+
+  try {
+    const cached = await redis.get(cacheKey);
+    if (cached) {
+      return JSON.parse(cached);
+    }
+  } catch (error) {
+    console.error("[Redis] Failed to read dashboard summary cache:", error);
+  }
+
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
 
@@ -546,7 +595,7 @@ export async function getDashboardSummary(actor: OrderActor) {
     ? Math.max(totalCod - settledCod, 0)
     : moneyToNumber(codTotals._sum.pending_amount);
 
-  return {
+  const summary = {
     overview: {
       totalOrders,
       pendingPickups,
@@ -569,6 +618,14 @@ export async function getDashboardSummary(actor: OrderActor) {
     },
     updatedAt: new Date().toISOString(),
   };
+
+  try {
+    await redis.setex(cacheKey, DASHBOARD_SUMMARY_TTL_SECONDS, JSON.stringify(summary));
+  } catch (error) {
+    console.error("[Redis] Failed to write dashboard summary cache:", error);
+  }
+
+  return summary;
 }
 
 export async function updateParcelStatus(
@@ -640,7 +697,7 @@ export async function updateParcelStatus(
     await resolveActiveRider(data.riderId);
   }
 
-  return prisma.$transaction(async (tx) => {
+  const updatedParcel = await prisma.$transaction(async (tx) => {
     const updateData: Prisma.parcelsUpdateInput = {
       status: newStatus as parcel_status,
     };
@@ -692,6 +749,9 @@ export async function updateParcelStatus(
     });
     return updatedParcel;
   });
+
+  await invalidateDashboardSummaryCache();
+  return updatedParcel;
 }
 
 export interface BulkUpdateResult {
@@ -822,7 +882,7 @@ export async function bulkUpdateParcelStatus(
     parcelRiderId = rider.id;
   }
 
-  return prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
     let dispatch: { id: string; dispatch_no: string } | null = null;
 
     if (newStatus === "dispatched" && toLocationId && originLocationId) {
@@ -920,4 +980,7 @@ export async function bulkUpdateParcelStatus(
         : {}),
     };
   });
+
+  await invalidateDashboardSummaryCache();
+  return result;
 }
