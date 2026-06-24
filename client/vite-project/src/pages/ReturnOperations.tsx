@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Download, Printer, Search } from 'lucide-react';
 import Table from '../components/Table';
 import Button from '../components/Button';
@@ -121,7 +122,14 @@ const ReturnOperations: React.FC = () => {
       className: 'return-sn-cell',
     },
     { header: 'DATE', accessor: (order: Order) => order.createdAt || '-', width: '100px' },
-    { header: 'TRACKING ID', accessor: (order: Order) => order.trackingId, width: '124px', className: 'return-tracking-cell' },
+    {
+      header: 'TRACKING ID',
+      accessor: (order: Order) => (
+        <Link to={`/orders/track/${order.trackingId}`} className="tracking-id-link">{order.trackingId}</Link>
+      ),
+      width: '124px',
+      className: 'return-tracking-cell',
+    },
     {
       header: 'SENDER',
       accessor: (order: Order) => (

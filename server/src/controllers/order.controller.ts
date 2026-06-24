@@ -1,8 +1,10 @@
 import { Request, Response } from "express";
 import {
+  addOrderRemark,
   bulkUpdateParcelStatus,
   createOrder,
   getDashboardSummary,
+  getOrderByTrackingId,
   listOrders,
   updateParcelStatus,
 } from "../services/order.service";
@@ -160,6 +162,65 @@ export async function listOrdersController(req: Request, res: Response) {
     return res.status(error.statusCode || 500).json({
       success: false,
       message: error.message || "Failed to load orders",
+    });
+  }
+}
+
+export async function getOrderByTrackingIdController(req: Request, res: Response) {
+  try {
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized",
+      });
+    }
+
+    const { trackingId } = req.params;
+    if (typeof trackingId !== "string" || !trackingId) {
+      return res.status(400).json({ success: false, message: "Invalid tracking id" });
+    }
+
+    const order = await getOrderByTrackingId(
+      { id: req.user.id, roles: req.user.roles },
+      trackingId,
+    );
+
+    return res.status(200).json({ success: true, data: order });
+  } catch (error: any) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to load order",
+    });
+  }
+}
+
+export async function addOrderRemarkController(req: Request, res: Response) {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const { id } = req.params;
+    if (typeof id !== "string" || !id) {
+      return res.status(400).json({ success: false, message: "Invalid order id" });
+    }
+    const { remark, parentRemarkId } = req.body;
+    if (typeof remark !== "string" || !remark.trim()) {
+      return res.status(400).json({ success: false, message: "Remark text is required" });
+    }
+
+    const created = await addOrderRemark(
+      { id: req.user.id, roles: req.user.roles },
+      id,
+      remark,
+      typeof parentRemarkId === "string" ? parentRemarkId : null,
+    );
+
+    return res.status(201).json({ success: true, data: created });
+  } catch (error: any) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to add remark",
     });
   }
 }

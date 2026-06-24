@@ -500,6 +500,149 @@ export async function listOrders(
   };
 }
 
+const ORDER_DETAIL_INCLUDE = {
+  parties_parcels_sender_idToparties: true,
+  parties_parcels_receiver_idToparties: true,
+  locations_parcels_origin_location_idTolocations: true,
+  locations_parcels_destination_location_idTolocations: true,
+  vendors: true,
+  riders_parcels_pickup_rider_idToriders: true,
+  riders_parcels_delivery_rider_idToriders: true,
+  parcel_remarks: {
+    orderBy: { created_at: "desc" as const },
+    include: { users: true, parent_remark: { include: { users: true } } },
+  },
+  parcel_status_history: {
+    orderBy: { created_at: "desc" as const },
+    include: { users: true, locations: true },
+  },
+} satisfies Prisma.parcelsInclude;
+
+export async function getOrderByTrackingId(actor: OrderActor, trackingId: string) {
+  const { vendorId, riderId } = await getActorScope(actor);
+  const isStaff = actor.roles.includes("super_admin") || actor.roles.includes("admin");
+
+  const parcel = await prisma.parcels.findFirst({
+    where: {
+      tracking_id: trackingId,
+      deleted_at: null,
+      ...(vendorId ? { vendor_id: vendorId } : {}),
+      ...(riderId ? { OR: [{ pickup_rider_id: riderId }, { delivery_rider_id: riderId }] } : {}),
+    },
+    include: ORDER_DETAIL_INCLUDE,
+  });
+
+  if (!parcel) {
+    throw new AppError(404, "Order not found");
+  }
+
+  const vendorName = parcel.vendors?.business_name || parcel.vendors?.client_name || "";
+
+  return {
+    ...mapOrder(parcel),
+    canChangeStatus: isStaff,
+    remarks: parcel.parcel_remarks.map((remark) => ({
+      id: remark.id,
+      remark: remark.remark,
+      addedBy: remark.users?.full_name || "Unknown",
+      createdAt: formatDate(remark.created_at),
+      parentRemarkId: remark.parent_remark_id,
+      parentAuthor: remark.parent_remark?.users?.full_name || null,
+      parentSnippet: remark.parent_remark?.remark || null,
+    })),
+    // Staff see who (which user) changed the status; vendors/riders only see
+    // which branch/company made the change - never an internal staff member's name.
+    statusHistory: parcel.parcel_status_history.map((entry) => {
+      const branchLabel = entry.locations?.name || vendorName || "Branch";
+      return {
+        id: entry.id,
+        oldStatus: entry.old_status,
+        newStatus: entry.new_status,
+        remarks: entry.remarks || "",
+        changedBy: isStaff ? entry.users?.full_name || "System" : branchLabel,
+        changedByType: isStaff ? ("user" as const) : ("branch" as const),
+        createdAt: formatDate(entry.created_at),
+      };
+    }),
+  };
+}
+
+export async function addOrderRemark(
+  actor: OrderActor,
+  parcelId: string,
+  remarkText: string,
+  parentRemarkId?: string | null,
+) {
+  const trimmed = remarkText.trim();
+  if (!trimmed) {
+    throw new AppError(400, "Remark text is required");
+  }
+
+  const { vendorId, riderId } = await getActorScope(actor);
+
+  const parcel = await prisma.parcels.findFirst({
+    where: {
+      id: parcelId,
+      deleted_at: null,
+      ...(vendorId ? { vendor_id: vendorId } : {}),
+      ...(riderId ? { OR: [{ pickup_rider_id: riderId }, { delivery_rider_id: riderId }] } : {}),
+    },
+    select: { id: true },
+  });
+
+  if (!parcel) {
+    throw new AppError(404, "Order not found");
+  }
+
+  let validParentId: string | null = null;
+  if (parentRemarkId) {
+    const parent = await prisma.parcel_remarks.findFirst({
+      where: { id: parentRemarkId, parcel_id: parcel.id },
+      select: { id: true },
+    });
+    if (!parent) {
+      throw new AppError(400, "Remark being replied to was not found on this order");
+    }
+    validParentId = parent.id;
+  }
+
+  let locationId: string | null = null;
+  if (actor.roles.includes("super_admin") || actor.roles.includes("admin")) {
+    const admin = await prisma.admins.findUnique({
+      where: { user_id: actor.id },
+      select: { location_id: true },
+    });
+    locationId = admin?.location_id ?? null;
+  } else if (riderId) {
+    const rider = await prisma.riders.findUnique({
+      where: { id: riderId },
+      select: { location_id: true },
+    });
+    locationId = rider?.location_id ?? null;
+  }
+
+  const remark = await prisma.parcel_remarks.create({
+    data: {
+      parcel_id: parcel.id,
+      user_id: actor.id,
+      location_id: locationId,
+      remark: trimmed,
+      parent_remark_id: validParentId,
+    },
+    include: { users: true, parent_remark: { include: { users: true } } },
+  });
+
+  return {
+    id: remark.id,
+    remark: remark.remark,
+    addedBy: remark.users?.full_name || "Unknown",
+    createdAt: formatDate(remark.created_at),
+    parentRemarkId: remark.parent_remark_id,
+    parentAuthor: remark.parent_remark?.users?.full_name || null,
+    parentSnippet: remark.parent_remark?.remark || null,
+  };
+}
+
 export async function getDashboardSummary(actor: OrderActor) {
   const { vendorId, riderId } = await getActorScope(actor);
   const cacheKey = dashboardSummaryCacheKey(vendorId, riderId);

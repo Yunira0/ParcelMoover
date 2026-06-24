@@ -1,2 +1,3 @@
 -- AlterTable
-ALTER TABLE "cod_collections" ALTER COLUMN "pending_amount" SET DEFAULT ("cod_amount" - "remitted_amount");
+-- No-op: "pending_amount" is already a GENERATED ALWAYS AS (cod_amount - remitted_amount) STORED
+-- column (see 20260529044206_initial_migration), so it has no DEFAULT to set.

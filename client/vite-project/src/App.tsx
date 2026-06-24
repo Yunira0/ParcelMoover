@@ -6,6 +6,7 @@ import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import OrderManagement from './pages/OrderManagement'
 import CreateOrderPage from './pages/CreateOrderPage'
+import OrderDetailPage from './pages/OrderDetailPage'
 import AdminManagement from './pages/AdminManagement'
 import VendorManagement from './pages/VendorManagement'
 import RiderManagement from './pages/RiderManagement'
@@ -18,6 +19,8 @@ import ReturnOperations from './pages/ReturnOperations'
 import HoldOperations from './pages/HoldOperations'
 import LossAndDamageOperations from './pages/LossAndDamageOperations'
 import Tickets from './pages/Tickets'
+import Remarks from './pages/Remarks'
+import RemarkDetail from './pages/RemarkDetail'
 import ProtectedRoute from './components/ProtectedRoute'
 import './App.css'
 function App() {
@@ -40,6 +43,7 @@ function App() {
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/orders" element={<OrderManagement />} />
           <Route path="/orders/create" element={<CreateOrderPage />} />
+          <Route path="/orders/track/:trackingId" element={<OrderDetailPage />} />
           <Route path="/admin" element={<AdminManagement />} />
           <Route path="/vendors" element={<VendorManagement />} />
           <Route path="/riders" element={<RiderManagement />} />
@@ -52,6 +56,8 @@ function App() {
           <Route path="/hold" element={<HoldOperations />} />
           <Route path="/loss-and-damage" element={<LossAndDamageOperations />} />
           <Route path="/tickets" element={<Tickets />} />
+          <Route path="/remarks" element={<Remarks />} />
+          <Route path="/remarks/:id" element={<RemarkDetail />} />
         </Route>
         {/* Catch-all */}
 

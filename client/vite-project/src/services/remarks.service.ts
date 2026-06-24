@@ -1,0 +1,65 @@
+import api from '../utils/api';
+import type { ParcelStatus } from './orders.service';
+
+export interface Remark {
+  id: string;
+  remarkId: string;
+  trackingId: string;
+  customerName: string;
+  customerPhone: string;
+  subject: string;
+  status: ParcelStatus;
+  addedBy: string;
+  createdAt: string;
+}
+
+export interface ListRemarksParams {
+  status?: ParcelStatus;
+  search?: string;
+  fromDate?: string;
+  toDate?: string;
+}
+
+export interface RemarksListResponse {
+  success: boolean;
+  data: Remark[];
+}
+
+export interface RemarkThreadEntry {
+  id: string;
+  remark: string;
+  addedBy: string;
+  createdAt: string;
+  parentRemarkId: string | null;
+  parentAuthor: string | null;
+  parentSnippet: string | null;
+}
+
+export interface RemarkDetail {
+  id: string;
+  remarkId: string;
+  parcelId: string;
+  trackingId: string;
+  status: ParcelStatus;
+  senderName: string;
+  senderPhone: string;
+  receiverName: string;
+  receiverPhone: string;
+  thread: RemarkThreadEntry[];
+}
+
+export const getRemarks = async (params?: ListRemarksParams): Promise<RemarksListResponse> => {
+  const query: Record<string, string> = {};
+  if (params?.status) query.status = params.status;
+  if (params?.search) query.search = params.search;
+  if (params?.fromDate) query.fromDate = params.fromDate;
+  if (params?.toDate) query.toDate = params.toDate;
+
+  const response = await api.get('/remarks', { params: query });
+  return response.data;
+};
+
+export const getRemarkById = async (id: string): Promise<{ success: boolean; data: RemarkDetail }> => {
+  const response = await api.get(`/remarks/${id}`);
+  return response.data;
+};

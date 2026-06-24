@@ -3,9 +3,11 @@ import { rateLimit, ipKeyGenerator } from "express-rate-limit";
 import { authMiddleware } from "../middlewares/auth.mddleware";
 import { authorizeRoles } from "../middlewares/authorizeRoles.middleware";
 import {
+  addOrderRemarkController,
   bulkUpdateOrderStatusController,
   createOrderController,
   dashboardSummaryController,
+  getOrderByTrackingIdController,
   listOrdersController,
   updateOrderStatusController,
 } from "../controllers/order.controller";
@@ -50,6 +52,16 @@ const statusUpdateLimiter = rateLimit({
   keyGenerator: actorOrIpKey,
 });
 
+const remarkLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 30,
+  message: { success: false, message: "Too many remarks added" },
+  standardHeaders: true,
+  legacyHeaders: false,
+  store: createRedisRateLimitStore("order-remark"),
+  keyGenerator: actorOrIpKey,
+});
+
 orderRouter.post(
   "/",
   authMiddleware,
@@ -73,6 +85,14 @@ orderRouter.get(
   listOrdersController,
 );
 
+// GET /orders/track/:trackingId — single order detail (must come before any /:id route)
+orderRouter.get(
+  "/track/:trackingId",
+  authMiddleware,
+  authorizeRoles("super_admin", "admin", "vendor", "rider"),
+  getOrderByTrackingIdController,
+);
+
 // PATCH /orders/:id/status
 orderRouter.patch(
   "/:id/status",
@@ -81,6 +101,16 @@ orderRouter.patch(
   authorizeRoles("super_admin", "admin", "rider"),
   statusUpdateLimiter,
   updateOrderStatusController,
+);
+
+// POST /orders/:id/remarks - leave a remark on a parcel (visible to anyone with access to it)
+orderRouter.post(
+  "/:id/remarks",
+  authMiddleware,
+  csrfProtection,
+  authorizeRoles("super_admin", "admin", "vendor", "rider"),
+  remarkLimiter,
+  addOrderRemarkController,
 );
 
 // PATCH /orders/bulk-status - batch transitions used by OOV/dispatch operations

@@ -6,8 +6,23 @@ type DashboardHeaderProps = {
   user: string;
 }
 
+const formatTime = (date: Date) => {
+  return date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: true });
+};
+
+const formatDate = (date: Date) => {
+  return date.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' });
+};
+
+const getGreeting = (hour: number) => {
+  if (hour < 12) return 'Good Morning';
+  if (hour < 17) return 'Good Afternoon';
+  return 'Good Evening';
+};
+
 const DashboardHeader: React.FC<DashboardHeaderProps> = ({ user }) => {
   const [userName, setUserName] = useState(user);
+  const [now, setNow] = useState(new Date());
 
   useEffect(() => {
     getCurrentUser()
@@ -21,18 +36,23 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({ user }) => {
       });
   }, [user]);
 
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
   return (
     <div className="dashboard-header">
       <div className="welcome-section">
         <div className="welcome-text">
-          <h1>Good Morning, {userName}</h1>
+          <h1>{getGreeting(now.getHours())}, {userName}</h1>
           <p>Operational overview for Parcel Moover across the Nepal network.</p>
         </div>
       </div>
       
       <div className="time-section">
-        <span className="current-time">17:54 PM</span>
-        <span className="current-date">Friday 15 May</span>
+        <span className="current-time">{formatTime(now)}</span>
+        <span className="current-date">{formatDate(now)}</span>
       </div>
     </div>
   );

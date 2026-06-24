@@ -1,29 +1,44 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Search, ArrowRight, Info, Bell, User } from 'lucide-react';
 import Button from './Button';
 import './TopNav.css';
 
 const TopNav: React.FC = () => {
+  const navigate = useNavigate();
+  const [query, setQuery] = useState('');
+
+  const runSearch = () => {
+    const trimmed = query.trim();
+    if (!trimmed) return;
+    navigate(`/orders?search=${encodeURIComponent(trimmed)}`);
+  };
+
   return (
     <nav className="top-nav">
       <div className="top-nav-logo">
         {/* Logo removed as requested */}
       </div>
-      
-      <div className="top-nav-search">
+
+      <form
+        className="top-nav-search"
+        onSubmit={(event) => { event.preventDefault(); runSearch(); }}
+      >
         <div className="search-input-wrapper">
           <Search size={16} style={{ color: 'var(--color-text-caption)' }} />
-          <input 
-            type="text" 
-            placeholder="Search number, name, tracking id" 
+          <input
+            type="text"
+            placeholder="Search number, name, tracking id"
             className="search-input"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
           />
         </div>
-        <Button variant="primary" className="search-button">
+        <Button type="submit" variant="primary" className="search-button">
           Search
           <ArrowRight size={16} />
         </Button>
-      </div>
+      </form>
 
       <div className="top-nav-profile">
         <Button variant="outline" className="cmt-button">

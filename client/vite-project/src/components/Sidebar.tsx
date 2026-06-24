@@ -146,10 +146,13 @@ const Sidebar: React.FC = () => {
             <icons.ticket className="sidebar-icon" size={24} />
             <span className="sidebar-label">Tickets</span>
           </NavLink>
-          <div className="sidebar-subitem">
+          <NavLink
+            to="/remarks"
+            className={({ isActive }) => `sidebar-subitem ${isActive ? 'active' : ''}`}
+          >
             <icons.remarks className="sidebar-icon" size={24} />
             <span className="sidebar-label">Remarks</span>
-          </div>
+          </NavLink>
         </div>
       </div>
       

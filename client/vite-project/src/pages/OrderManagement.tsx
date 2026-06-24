@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Copy,
   Download,
@@ -16,6 +16,8 @@ import Button from '../components/Button';
 import SegmentedTabs from '../components/SegmentedTabs';
 import Pagination from '../components/Pagination';
 import StatusChip, { type StatusChipTone } from '../components/StatusChip';
+import FilterDropdown from '../components/FilterDropdown';
+import QuickRemarkPopup from '../components/QuickRemarkPopup';
 import {
   getOrders,
   subscribeToOrderStatusChanged,
@@ -189,10 +191,11 @@ const orderToCreateInput = (order: Order): CreateOrderInput => ({
 
 const OrderManagement: React.FC = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<FilterTab>('all');
-  const [trackingSearch, setTrackingSearch] = useState('');
+  const [trackingSearch, setTrackingSearch] = useState(() => searchParams.get('search') || '');
   const [originHub, setOriginHub] = useState('');
   const [riderName, setRiderName] = useState('');
   const [route, setRoute] = useState('');
@@ -205,6 +208,7 @@ const OrderManagement: React.FC = () => {
   const [page, setPage] = useState(1);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [openActionId, setOpenActionId] = useState<string | null>(null);
+  const [remarkPopupOrder, setRemarkPopupOrder] = useState<Order | null>(null);
 
   const loadOrders = async () => {
     setLoading(true);
@@ -227,6 +231,11 @@ const OrderManagement: React.FC = () => {
   useEffect(() => { loadOrders(); }, []);
   useEffect(() => subscribeToOrderStatusChanged(loadOrders), []);
   useEffect(() => { setPage(1); }, [filter, trackingSearch, originHub, riderName, route, destinationHub, currentStatus, orderType, dateRange, vendor, operationDept]);
+  // Re-sync when the navbar search re-navigates here with a new ?search= param.
+  useEffect(() => {
+    const fromUrl = searchParams.get('search');
+    if (fromUrl !== null) setTrackingSearch(fromUrl);
+  }, [searchParams]);
 
   const filterOptions = useMemo(() => {
     const routes = orders.map(order => `${order.origin} -> ${order.destination}`);
@@ -365,7 +374,14 @@ const OrderManagement: React.FC = () => {
   };
 
   const orderColumns = [
-    { header: 'TRACKING ID', accessor: (order: Order) => order.trackingId, width: '180px', className: 'tracking-cell' },
+    {
+      header: 'TRACKING ID',
+      accessor: (order: Order) => (
+        <Link to={`/orders/track/${order.trackingId}`} className="tracking-id-link">{order.trackingId}</Link>
+      ),
+      width: '180px',
+      className: 'tracking-cell',
+    },
     { header: 'ORIGIN', accessor: (order: Order) => order.origin || '-', width: '150px' },
     {
       header: 'SENDOR',
@@ -409,7 +425,16 @@ const OrderManagement: React.FC = () => {
       width: '120px',
     },
     { header: 'RIDER', accessor: (order: Order) => order.riderName || '-', width: '120px' },
-    { header: 'REMARKS', accessor: (order: Order) => order.remarks || '-', width: '160px', className: 'remarks-cell' },
+    { header: 'REMARKS', accessor: (order: Order) => (
+      <button
+        type="button"
+        className="remarks-cell-btn"
+        onClick={() => setRemarkPopupOrder(order)}
+        title={order.remarks || 'Add remark'}
+      >
+        {order.remarks || '-'}
+      </button>
+    ), width: '160px', className: 'remarks-cell' },
     {
       header: 'LAST UPDATED BY',
       accessor: (order: Order) => (
@@ -463,77 +488,81 @@ const OrderManagement: React.FC = () => {
       />
 
       <div className="order-filter-panel">
-        <label>
-          <span>ORIGIN HUB</span>
-          <select value={originHub} onChange={event => setOriginHub(event.target.value)}>
-            <option value="">Select Hub</option>
-            {filterOptions.origins.map(value => <option key={value} value={value}>{value}</option>)}
-          </select>
-        </label>
-        <label>
-          <span>RAIDER NAME</span>
-          <select value={riderName} onChange={event => setRiderName(event.target.value)}>
-            <option value="">Type name.....</option>
-            {filterOptions.riders.map(value => <option key={value} value={value}>{value}</option>)}
-          </select>
-        </label>
-        <label>
-          <span>ROUTE</span>
-          <select value={route} onChange={event => setRoute(event.target.value)}>
-            <option value="">Select Route</option>
-            {filterOptions.routes.map(value => <option key={value} value={value}>{value}</option>)}
-          </select>
-        </label>
-        <label>
-          <span>DESTINATION HUB</span>
-          <select value={destinationHub} onChange={event => setDestinationHub(event.target.value)}>
-            <option value="">Select Hub</option>
-            {filterOptions.destinations.map(value => <option key={value} value={value}>{value}</option>)}
-          </select>
-        </label>
-        <label>
-          <span>CURRENT STATUS</span>
-          <select value={currentStatus} onChange={event => setCurrentStatus(event.target.value)}>
-            <option value="">Select status</option>
-            {(Object.keys(STATUS_LABELS) as ParcelStatus[]).map(value => (
-              <option key={value} value={value}>{STATUS_LABELS[value]}</option>
-            ))}
-          </select>
-        </label>
-        <label>
-          <span>ORDER TYPE</span>
-          <select value={orderType} onChange={event => setOrderType(event.target.value)}>
-            <option value="">Standard</option>
-            <option value="delivery">Delivery</option>
-            <option value="exchange">Exchange</option>
-            <option value="return">Return</option>
-          </select>
-        </label>
-        <label>
-          <span>DATE RANGE</span>
-          <select value={dateRange} onChange={event => setDateRange(event.target.value)}>
-            <option value="">17/05/2026</option>
-            <option value="today">Today</option>
-            <option value="7">Last 7 days</option>
-            <option value="30">Last 30 days</option>
-          </select>
-        </label>
-        <label>
-          <span>VENDOR</span>
-          <select value={vendor} onChange={event => setVendor(event.target.value)}>
-            <option value="">All Vendors</option>
-            {filterOptions.vendors.map(value => <option key={value} value={value}>{value}</option>)}
-          </select>
-        </label>
-        <label>
-          <span>OPERATION DEPT</span>
-          <select value={operationDept} onChange={event => setOperationDept(event.target.value)}>
-            <option value="">All Departments</option>
-            <option value="pickup">Pickup</option>
-            <option value="delivery">Delivery</option>
-            <option value="returns">Returns</option>
-          </select>
-        </label>
+        <FilterDropdown
+          label="ORIGIN HUB"
+          value={originHub}
+          onChange={setOriginHub}
+          placeholder="Select Hub"
+          options={filterOptions.origins.map(value => ({ value, label: value }))}
+        />
+        <FilterDropdown
+          label="RIDER NAME"
+          value={riderName}
+          onChange={setRiderName}
+          placeholder="Type name....."
+          options={filterOptions.riders.map(value => ({ value, label: value }))}
+        />
+        <FilterDropdown
+          label="ROUTE"
+          value={route}
+          onChange={setRoute}
+          placeholder="Select Route"
+          options={filterOptions.routes.map(value => ({ value, label: value }))}
+        />
+        <FilterDropdown
+          label="DESTINATION HUB"
+          value={destinationHub}
+          onChange={setDestinationHub}
+          placeholder="Select Hub"
+          options={filterOptions.destinations.map(value => ({ value, label: value }))}
+        />
+        <FilterDropdown
+          label="CURRENT STATUS"
+          value={currentStatus}
+          onChange={setCurrentStatus}
+          placeholder="Select status"
+          options={(Object.keys(STATUS_LABELS) as ParcelStatus[]).map(value => ({ value, label: STATUS_LABELS[value] }))}
+        />
+        <FilterDropdown
+          label="ORDER TYPE"
+          value={orderType}
+          onChange={setOrderType}
+          placeholder="Standard"
+          options={[
+            { value: 'delivery', label: 'Delivery' },
+            { value: 'exchange', label: 'Exchange' },
+            { value: 'return', label: 'Return' },
+          ]}
+        />
+        <FilterDropdown
+          label="DATE RANGE"
+          value={dateRange}
+          onChange={setDateRange}
+          placeholder="17/05/2026"
+          options={[
+            { value: 'today', label: 'Today' },
+            { value: '7', label: 'Last 7 days' },
+            { value: '30', label: 'Last 30 days' },
+          ]}
+        />
+        <FilterDropdown
+          label="VENDOR"
+          value={vendor}
+          onChange={setVendor}
+          placeholder="All Vendors"
+          options={filterOptions.vendors.map(value => ({ value, label: value }))}
+        />
+        <FilterDropdown
+          label="OPERATION DEPT"
+          value={operationDept}
+          onChange={setOperationDept}
+          placeholder="All Departments"
+          options={[
+            { value: 'pickup', label: 'Pickup' },
+            { value: 'delivery', label: 'Delivery' },
+            { value: 'returns', label: 'Returns' },
+          ]}
+        />
         <Button variant="outline" className="clear-filter-btn" onClick={clearFilters}>
           Clear Filters
         </Button>
@@ -593,6 +622,14 @@ const OrderManagement: React.FC = () => {
         onPageChange={setPage}
         summary={`showing  ${firstResult} of ${lastResult} of ${filteredOrders.length} results`}
       />
+
+      {remarkPopupOrder && (
+        <QuickRemarkPopup
+          orderId={remarkPopupOrder.id}
+          trackingId={remarkPopupOrder.trackingId}
+          onClose={() => setRemarkPopupOrder(null)}
+        />
+      )}
     </div>
   );
 };

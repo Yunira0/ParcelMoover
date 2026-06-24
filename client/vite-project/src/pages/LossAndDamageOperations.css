@@ -64,6 +64,17 @@
   font-weight: var(--font-weight-semi-bold);
 }
 
+.tracking-id-link {
+  color: inherit;
+  cursor: pointer;
+  font-weight: var(--font-weight-semi-bold);
+  text-decoration: none;
+}
+
+.tracking-id-link:hover {
+  text-decoration: underline;
+}
+
 .lossdamage-party-cell {
   display: flex;
   flex-direction: column;

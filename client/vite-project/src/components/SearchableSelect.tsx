@@ -61,10 +61,10 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
         onClick={() => setIsOpen(open => !open)}
         disabled={disabled}
       >
-        <span className={selectedOption ? '' : 'searchable-select-placeholder'}>
+        <span className={`searchable-select-value${selectedOption ? '' : ' searchable-select-placeholder'}`}>
           {selectedOption ? selectedOption.label : placeholder}
         </span>
-        <ChevronDown size={14} />
+        <ChevronDown size={16} className="searchable-select-icon" />
       </button>
 
       {isOpen && (

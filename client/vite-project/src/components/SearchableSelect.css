@@ -13,10 +13,18 @@
   display: flex;
   font-family: var(--typography-font-family-default);
   font-size: var(--font-size-sm);
-  height: 34px;
+  font-weight: var(--font-weight-regular);
+  height: 38px;
   justify-content: space-between;
-  padding: 0 var(--space-2);
+  gap: var(--space-2);
+  padding: 0 var(--space-3);
   width: 100%;
+  line-height: 1;
+  text-align: left;
+}
+
+.searchable-select-trigger:hover {
+  border-color: var(--color-border-primary);
 }
 
 .searchable-select-trigger:disabled {
@@ -24,8 +32,29 @@
   opacity: var(--opacity-75);
 }
 
+/* Hardened with the `.searchable-select` ancestor so this always wins over a
+   page's generic `label`/`label span` reset (e.g. `.order-filter-panel label span`) -
+   this component is routinely rendered inside someone else's <label> wrapper. */
+.searchable-select .searchable-select-value {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-regular);
+  line-height: 1.2;
+  font-family: var(--typography-font-family-default);
+}
+
 .searchable-select-placeholder {
   color: var(--color-text-caption);
+}
+
+.searchable-select-icon {
+  flex-shrink: 0;
+  color: var(--color-text-caption);
+  transition: transform 200ms ease;
 }
 
 .searchable-select-panel {
@@ -43,13 +72,18 @@
   z-index: 20;
 }
 
-.searchable-select-search {
+.searchable-select-panel .searchable-select-search {
   align-items: center;
+  flex-direction: row;
   border-bottom: 1px solid var(--color-border-default);
   color: var(--color-text-caption);
   display: flex;
-  gap: var(--space-1);
-  padding: var(--space-2);
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+}
+
+.searchable-select-search svg {
+  flex-shrink: 0;
 }
 
 .searchable-select-search input {
@@ -60,6 +94,7 @@
   font-size: var(--font-size-sm);
   outline: none;
   width: 100%;
+  line-height: 1.2;
 }
 
 .searchable-select-options {
@@ -76,24 +111,38 @@
   display: flex;
   flex-direction: column;
   font-family: var(--typography-font-family-default);
-  padding: var(--space-2);
+  padding: var(--space-2) var(--space-3);
   text-align: left;
   width: 100%;
+  gap: 2px;
+  transition: background 150ms ease;
 }
 
-.searchable-select-option span {
+.searchable-select-option:hover {
+  background: var(--color-background-primary-invert-default);
+}
+
+.searchable-select-options .searchable-select-option span {
   color: var(--color-text-default);
   font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-regular);
+  line-height: var(--line-height-sm);
 }
 
-.searchable-select-option small {
+.searchable-select-options .searchable-select-option small {
   color: var(--color-text-caption);
-  font-size: 12px;
+  font-size: var(--font-size-xxs);
+  line-height: var(--line-height-xxs);
 }
 
 .searchable-select-option:hover,
 .searchable-select-option.selected {
   background: var(--color-background-primary-invert-default);
+}
+
+.searchable-select-options .searchable-select-option.selected span {
+  font-weight: var(--font-weight-medium);
+  color: var(--color-background-primary-default);
 }
 
 .searchable-select-empty {

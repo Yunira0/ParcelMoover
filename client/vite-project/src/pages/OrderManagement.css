@@ -30,25 +30,6 @@
   line-height: var(--line-height-xxs);
 }
 
-.order-filter-panel select {
-  appearance: none;
-  background:
-    linear-gradient(45deg, transparent 50%, var(--color-text-default) 50%) right 14px center / 5px 5px no-repeat,
-    linear-gradient(135deg, var(--color-text-default) 50%, transparent 50%) right 9px center / 5px 5px no-repeat,
-    var(--color-background-surface);
-  border: 1px solid var(--color-border-default);
-  border-radius: var(--border-radius-default);
-  color: var(--color-text-placeholder);
-  font-family: var(--typography-font-family-default);
-  font-size: var(--font-size-sm);
-  height: 36px;
-  line-height: var(--line-height-sm);
-  outline: none;
-  padding: var(--space-2) 30px var(--space-2) var(--space-2);
-  width: 100%;
-}
-
-.order-filter-panel select:focus,
 .tracking-search:focus-within {
   border-color: var(--color-border-primary);
   box-shadow: 0 0 0 2px rgb(194 65 12 / 12%);
@@ -119,6 +100,17 @@
   color: var(--color-text-primary) !important;
 }
 
+.tracking-id-link {
+  color: inherit;
+  cursor: pointer;
+  font-weight: var(--font-weight-semi-bold);
+  text-decoration: none;
+}
+
+.tracking-id-link:hover {
+  text-decoration: underline;
+}
+
 .party-cell,
 .finance-cell,
 .updated-cell {
@@ -143,6 +135,28 @@
 
 .remarks-cell {
   max-width: 160px;
+}
+
+.remarks-cell-btn {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--color-text-primary);
+  cursor: pointer;
+  text-align: left;
+  border-bottom: 1px dashed var(--color-border-default);
+  transition: all 150ms ease;
+}
+
+.remarks-cell-btn:hover {
+  color: var(--color-background-primary-default);
+  border-bottom-color: var(--color-background-primary-default);
 }
 
 .actions-column {

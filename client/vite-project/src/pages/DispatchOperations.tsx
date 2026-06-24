@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   Download,
   Printer,
@@ -378,7 +379,9 @@ const DispatchOperations: React.FC = () => {
   const dispatchColumns = [
     {
       header: 'TRACKING ID',
-      accessor: (order: Order) => order.trackingId,
+      accessor: (order: Order) => (
+        <Link to={`/orders/track/${order.trackingId}`} className="tracking-id-link">{order.trackingId}</Link>
+      ),
       width: '160px',
       className: 'dispatch-tracking-cell',
     },

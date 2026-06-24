@@ -5,11 +5,39 @@
   width: 100%;
 }
 
-.tickets-filters {
-  align-items: center;
-  display: flex;
-  flex-wrap: wrap;
+.tickets-filter-panel {
+  background: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-modal);
+  display: grid;
   gap: var(--space-4);
+  grid-template-columns: repeat(3, minmax(150px, 1fr));
+  padding: var(--space-4);
+}
+
+.tickets-filter-panel label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.tickets-filter-panel label span {
+  color: var(--color-text-caption);
+  font-family: var(--typography-font-family-default);
+  font-size: var(--font-size-xxs);
+  font-weight: var(--font-weight-semi-bold);
+  line-height: var(--line-height-xxs);
+}
+
+.tickets-search:focus-within {
+  border-color: var(--color-border-primary);
+  box-shadow: 0 0 0 2px rgb(194 65 12 / 12%);
+}
+
+.clear-filter-btn {
+  align-self: end;
+  justify-self: start;
 }
 
 .tickets-search {
@@ -19,16 +47,10 @@
   border-radius: var(--border-radius-default);
   color: var(--color-text-placeholder);
   display: flex;
-  flex: 1 1 320px;
   gap: var(--space-2);
   min-height: 36px;
-  min-width: 240px;
   padding: var(--space-2);
-}
-
-.tickets-search:focus-within {
-  border-color: var(--color-border-primary);
-  box-shadow: 0 0 0 2px rgb(194 65 12 / 12%);
+  width: 100%;
 }
 
 .tickets-search input {
@@ -43,20 +65,21 @@
   outline: none;
 }
 
-.tickets-select {
-  background: var(--color-background-surface);
-  border: 1px solid var(--color-border-default);
-  border-radius: var(--border-radius-default);
-  color: var(--color-text-default);
-  font-family: var(--typography-font-family-default);
-  font-size: var(--font-size-sm);
-  min-height: 36px;
-  padding: 0 var(--space-2);
+.tickets-search input::placeholder {
+  color: var(--color-text-placeholder);
 }
 
-.tickets-select:focus {
-  border-color: var(--color-border-primary);
-  outline: none;
+.tickets-search button {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: var(--color-text-caption);
+  cursor: pointer;
+  display: flex;
+  height: 24px;
+  justify-content: center;
+  padding: 0;
+  width: 24px;
 }
 
 .tickets-table th,
@@ -97,14 +120,8 @@
   word-break: break-word;
 }
 
-@media (max-width: 900px) {
-  .tickets-filters {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .tickets-search,
-  .tickets-select {
-    width: 100%;
+@media (max-width: 760px) {
+  .tickets-filter-panel {
+    grid-template-columns: 1fr;
   }
 }

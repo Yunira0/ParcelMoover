@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Eye, Plus, Search } from 'lucide-react';
+import { Eye, Plus, Search, X } from 'lucide-react';
 import Table from '../components/Table';
 import Button from '../components/Button';
 import PageHeader from '../components/PageHeader';
@@ -7,6 +7,7 @@ import SegmentedTabs from '../components/SegmentedTabs';
 import Pagination from '../components/Pagination';
 import StatusChip, { type StatusChipTone } from '../components/StatusChip';
 import CreateTicketModal from '../components/CreateTicketModal';
+import FilterDropdown from '../components/FilterDropdown';
 import {
   getTickets,
   TICKET_CATEGORY_LABELS,
@@ -159,11 +160,9 @@ const Tickets: React.FC = () => {
   };
 
   const resetFilters = () => {
-    setSearchQuery('');
     setPriorityFilter('');
     setCategoryFilter('');
     setDateRange('');
-    setActiveTab('all');
   };
 
   const columns = useMemo(() => [
@@ -230,53 +229,55 @@ const Tickets: React.FC = () => {
         options={TAB_ORDER.map((tab) => ({ value: tab, label: `${TAB_LABELS[tab]} ${statusCounts[tab]}` }))}
       />
 
-      <div className="tickets-filters">
-        <label className="tickets-search">
-          <Search size={16} />
-          <input
-            value={searchQuery}
-            onChange={(event) => setSearchQuery(event.target.value)}
-            placeholder="Search name, phone, email"
-          />
-        </label>
-
-        <select
-          className="tickets-select"
+      <div className="tickets-filter-panel">
+        <FilterDropdown
+          label="PRIORITY"
           value={priorityFilter}
-          onChange={(event) => setPriorityFilter(event.target.value as TicketPriority | '')}
-          aria-label="Filter by priority"
-        >
-          <option value="">Select priority</option>
-          {(Object.keys(TICKET_PRIORITY_LABELS) as TicketPriority[]).map((priority) => (
-            <option key={priority} value={priority}>{TICKET_PRIORITY_LABELS[priority]}</option>
-          ))}
-        </select>
+          onChange={(value) => setPriorityFilter(value as TicketPriority | '')}
+          placeholder="Select priority"
+          options={(Object.keys(TICKET_PRIORITY_LABELS) as TicketPriority[]).map((priority) => ({
+            value: priority,
+            label: TICKET_PRIORITY_LABELS[priority],
+          }))}
+        />
 
-        <select
-          className="tickets-select"
+        <FilterDropdown
+          label="CATEGORY"
           value={categoryFilter}
-          onChange={(event) => setCategoryFilter(event.target.value as TicketCategory | '')}
-          aria-label="Filter by category"
-        >
-          <option value="">Select category</option>
-          {(Object.keys(TICKET_CATEGORY_LABELS) as TicketCategory[]).map((category) => (
-            <option key={category} value={category}>{TICKET_CATEGORY_LABELS[category]}</option>
-          ))}
-        </select>
+          onChange={(value) => setCategoryFilter(value as TicketCategory | '')}
+          placeholder="Select category"
+          options={(Object.keys(TICKET_CATEGORY_LABELS) as TicketCategory[]).map((category) => ({
+            value: category,
+            label: TICKET_CATEGORY_LABELS[category],
+          }))}
+        />
 
-        <select
-          className="tickets-select"
+        <FilterDropdown
+          label="DATE RANGE"
           value={dateRange}
-          onChange={(event) => setDateRange(event.target.value as DateRange)}
-          aria-label="Filter by date range"
-        >
-          {DATE_RANGE_OPTIONS.map((opt) => (
-            <option key={opt.value} value={opt.value}>{opt.label}</option>
-          ))}
-        </select>
+          onChange={(value) => setDateRange(value as DateRange)}
+          placeholder="Select date range"
+          options={DATE_RANGE_OPTIONS.filter((opt) => opt.value).map((opt) => ({ value: opt.value, label: opt.label }))}
+        />
 
-        <Button variant="secondary" onClick={resetFilters}>Reset</Button>
+        <Button variant="outline" className="clear-filter-btn" onClick={resetFilters}>
+          Clear Filters
+        </Button>
       </div>
+
+      <label className="tickets-search">
+        <Search size={16} />
+        <input
+          value={searchQuery}
+          onChange={(event) => setSearchQuery(event.target.value)}
+          placeholder="Search name, phone, email"
+        />
+        {searchQuery && (
+          <button type="button" onClick={() => setSearchQuery('')} aria-label="Clear search">
+            <X size={14} />
+          </button>
+        )}
+      </label>
 
       <Table
         columns={columns}

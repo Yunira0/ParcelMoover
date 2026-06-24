@@ -165,6 +165,50 @@ export const getDashboardSummary = async () => {
   return response.data;
 };
 
+export interface OrderRemark {
+  id: string;
+  remark: string;
+  addedBy: string;
+  createdAt: string;
+  parentRemarkId: string | null;
+  parentAuthor: string | null;
+  parentSnippet: string | null;
+}
+
+export interface OrderStatusHistoryEntry {
+  id: string;
+  oldStatus: ParcelStatus | null;
+  newStatus: ParcelStatus;
+  remarks: string;
+  changedBy: string;
+  /** 'user' for staff-visible attribution, 'branch' when the viewer only gets a branch/company name. */
+  changedByType: 'user' | 'branch';
+  createdAt: string;
+}
+
+export interface OrderDetail extends Omit<Order, 'remarks'> {
+  remarks: OrderRemark[];
+  statusHistory: OrderStatusHistoryEntry[];
+  /** True when the viewer is allowed to change this order's status (super_admin/admin). */
+  canChangeStatus: boolean;
+}
+
+export const getOrderByTrackingId = async (
+  trackingId: string,
+): Promise<{ success: boolean; data: OrderDetail }> => {
+  const response = await api.get(`/orders/track/${encodeURIComponent(trackingId)}`);
+  return response.data;
+};
+
+export const addOrderRemark = async (
+  orderId: string,
+  remark: string,
+  parentRemarkId?: string | null,
+): Promise<{ success: boolean; data: OrderRemark }> => {
+  const response = await api.post(`/orders/${orderId}/remarks`, { remark, parentRemarkId });
+  return response.data;
+};
+
 export const createOrder = async (data: CreateOrderInput) => {
   const idempotencyKey = uuidv4();
   const response = await api.post('/orders', data, {

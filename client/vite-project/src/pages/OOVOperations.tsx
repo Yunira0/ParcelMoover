@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   Download,
   Printer,
@@ -9,6 +10,7 @@ import Button from '../components/Button';
 import SegmentedTabs from '../components/SegmentedTabs';
 import PageHeader from '../components/PageHeader';
 import Pagination from '../components/Pagination';
+import QuickRemarkPopup from '../components/QuickRemarkPopup';
 import {
   bulkUpdateOrderStatus,
   getOrders,
@@ -180,6 +182,7 @@ const OOVOperations: React.FC = () => {
   const [riders, setRiders] = useState<{ id: string; name: string }[]>([]);
   const [toLocationId, setToLocationId] = useState('');
   const [riderId, setRiderId] = useState('');
+  const [remarkPopupOrder, setRemarkPopupOrder] = useState<Order | null>(null);
 
   // Debounce search input so every keystroke doesn't fire a request.
   useEffect(() => {
@@ -427,7 +430,14 @@ const OOVOperations: React.FC = () => {
       className: 'oov-sn-cell',
     },
     { header: 'DATE', accessor: (order: Order) => order.createdAt || '-', width: '100px' },
-    { header: 'TRACKING ID', accessor: (order: Order) => order.trackingId, width: '124px', className: 'oov-tracking-cell' },
+    {
+      header: 'TRACKING ID',
+      accessor: (order: Order) => (
+        <Link to={`/orders/track/${order.trackingId}`} className="tracking-id-link">{order.trackingId}</Link>
+      ),
+      width: '124px',
+      className: 'oov-tracking-cell',
+    },
     {
       header: 'ORDER TYPE',
       accessor: (order: Order) => <span className="oov-order-type">{order.orderType}</span>,
@@ -466,7 +476,16 @@ const OOVOperations: React.FC = () => {
       ),
       width: '155px',
     },
-    { header: 'REMARKS', accessor: (order: Order) => order.remarks || '-', width: '84px', className: 'oov-remarks-cell' },
+    { header: 'REMARKS', accessor: (order: Order) => (
+      <button
+        type="button"
+        className="oov-remarks-cell-btn"
+        onClick={() => setRemarkPopupOrder(order)}
+        title={order.remarks || 'Add remark'}
+      >
+        {order.remarks || '-'}
+      </button>
+    ), width: '84px', className: 'oov-remarks-cell' },
   ];
 
   return (
@@ -597,6 +616,14 @@ const OOVOperations: React.FC = () => {
         onPageChange={setPage}
         summary={`${totalCount} order${totalCount === 1 ? '' : 's'}`}
       />
+
+      {remarkPopupOrder && (
+        <QuickRemarkPopup
+          orderId={remarkPopupOrder.id}
+          trackingId={remarkPopupOrder.trackingId}
+          onClose={() => setRemarkPopupOrder(null)}
+        />
+      )}
     </div>
   );
 };

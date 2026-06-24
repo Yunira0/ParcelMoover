@@ -1,10 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Download, Printer, Search } from 'lucide-react';
 import Table from '../components/Table';
 import Button from '../components/Button';
 import PageHeader from '../components/PageHeader';
 import Pagination from '../components/Pagination';
 import StatusChip from '../components/StatusChip';
+import QuickRemarkPopup from '../components/QuickRemarkPopup';
 import {
   bulkUpdateOrderStatus,
   getOrders,
@@ -44,6 +46,7 @@ const HoldOperations: React.FC = () => {
   const [selectedIds, setSelectedIds] = useState<Set<string | number>>(new Set());
   const [statusUpdating, setStatusUpdating] = useState(false);
   const [actionError, setActionError] = useState('');
+  const [remarkPopupOrder, setRemarkPopupOrder] = useState<Order | null>(null);
 
   // Debounce search input so every keystroke doesn't fire a request.
   useEffect(() => {
@@ -180,7 +183,14 @@ const HoldOperations: React.FC = () => {
       className: 'hold-sn-cell',
     },
     { header: 'DATE', accessor: (order: Order) => order.createdAt || '-', width: '100px' },
-    { header: 'TRACKING ID', accessor: (order: Order) => order.trackingId, width: '124px', className: 'hold-tracking-cell' },
+    {
+      header: 'TRACKING ID',
+      accessor: (order: Order) => (
+        <Link to={`/orders/track/${order.trackingId}`} className="tracking-id-link">{order.trackingId}</Link>
+      ),
+      width: '124px',
+      className: 'hold-tracking-cell',
+    },
     {
       header: 'SENDER',
       accessor: (order: Order) => (
@@ -217,7 +227,16 @@ const HoldOperations: React.FC = () => {
     { header: 'LAST UPDATED', accessor: (order: Order) => order.lastUpdatedAt || '-', width: '155px' },
     {
       header: 'LAST REMARKS',
-      accessor: (order: Order) => order.remarks || '-',
+      accessor: (order: Order) => (
+        <button
+          type="button"
+          className="hold-remarks-cell-btn"
+          onClick={() => setRemarkPopupOrder(order)}
+          title={order.remarks || 'Add remark'}
+        >
+          {order.remarks || '-'}
+        </button>
+      ),
       width: '155px',
       className: 'hold-remarks-cell',
     },
@@ -281,6 +300,14 @@ const HoldOperations: React.FC = () => {
         onPageChange={setPage}
         summary={`${totalCount} order${totalCount === 1 ? '' : 's'}`}
       />
+
+      {remarkPopupOrder && (
+        <QuickRemarkPopup
+          orderId={remarkPopupOrder.id}
+          trackingId={remarkPopupOrder.trackingId}
+          onClose={() => setRemarkPopupOrder(null)}
+        />
+      )}
     </div>
   );
 };
