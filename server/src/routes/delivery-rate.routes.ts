@@ -56,10 +56,11 @@ deliveryRateRouter.get(
 );
 
 // GET /api/delivery-rates — list all configured routes
+// Vendors get read-only access so they can see the charges that apply to them.
 deliveryRateRouter.get(
   "/",
   authMiddleware,
-  authorizeRoles("super_admin", "admin"),
+  authorizeRoles("super_admin", "admin", "vendor"),
   ratesReadLimiter,
   listDeliveryRatesController,
 );

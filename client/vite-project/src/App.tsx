@@ -4,7 +4,7 @@ import DashboardLayout from './layouts/DashboardLayout'
 import Home from './pages/Home'
 import Login from './pages/Login'
 import DashboardRouter from './pages/DashboardRouter'
-import OrderManagement from './pages/OrderManagement'
+import OrdersRouter from './pages/OrdersRouter'
 import CreateOrderPage from './pages/CreateOrderPage'
 import OrderDetailPage from './pages/OrderDetailPage'
 import AdminManagement from './pages/AdminManagement'
@@ -47,7 +47,7 @@ function App() {
           }
         >
           <Route path="/dashboard" element={<DashboardRouter />} />
-          <Route path="/orders" element={<OrderManagement />} />
+          <Route path="/orders" element={<OrdersRouter />} />
           <Route path="/orders/create" element={<CreateOrderPage />} />
           <Route path="/orders/track/:trackingId" element={<OrderDetailPage />} />
           <Route path="/admin" element={<AdminManagement />} />

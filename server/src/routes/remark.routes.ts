@@ -2,7 +2,12 @@ import { Request, Router } from "express";
 import { rateLimit, ipKeyGenerator } from "express-rate-limit";
 import { authMiddleware } from "../middlewares/auth.mddleware";
 import { authorizeRoles } from "../middlewares/authorizeRoles.middleware";
-import { getRemarkByIdController, listRemarksController } from "../controllers/remark.controller";
+import { csrfProtection } from "../middlewares/csrf.middleware";
+import {
+  getRemarkByIdController,
+  listRemarksController,
+  setRemarkStatusController,
+} from "../controllers/remark.controller";
 import { createRedisRateLimitStore } from "../lib/rateLimitStore";
 
 const remarkRouter: Router = Router();
@@ -19,22 +24,34 @@ const remarksReadLimiter = rateLimit({
   keyGenerator: actorOrIpKey,
 });
 
-// GET /api/remarks — list parcel remarks added across the app (with optional status/date/search filters)
+// Vendors see remarks on their own parcels; admins see all (scoped in the service).
+const CX_ROLES = ["super_admin", "admin", "vendor"] as const;
+
+// GET /api/remarks — list remarks (status/date/search filters; vendor-scoped)
 remarkRouter.get(
   "/",
   authMiddleware,
-  authorizeRoles("super_admin", "admin"),
+  authorizeRoles(...CX_ROLES),
   remarksReadLimiter,
   listRemarksController,
 );
 
-// GET /api/remarks/:id — single remark + its full per-parcel conversation thread
+// GET /api/remarks/:id — single remark + its conversation thread (viewing a pending one sets it Open)
 remarkRouter.get(
   "/:id",
   authMiddleware,
-  authorizeRoles("super_admin", "admin"),
+  authorizeRoles(...CX_ROLES),
   remarksReadLimiter,
   getRemarkByIdController,
+);
+
+// PATCH /api/remarks/:id/status — set Open / Pending / Closed (e.g. Mark as Done / on reply)
+remarkRouter.patch(
+  "/:id/status",
+  authMiddleware,
+  csrfProtection,
+  authorizeRoles(...CX_ROLES),
+  setRemarkStatusController,
 );
 
 export default remarkRouter;

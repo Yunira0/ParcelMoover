@@ -6,10 +6,21 @@ import { createNotification } from "./notification.service";
 
 type Actor = { id: string; roles: string[] };
 
-const VALID_STATUSES: TicketStatus[] = ["open", "in_progress", "pending", "resolved", "closed"];
+// The workflow only uses these three; legacy values are normalized on read.
+const WORKFLOW_STATUSES: TicketStatus[] = ["open", "pending", "closed"];
+
+const isStaff = (actor: Actor) =>
+  actor.roles.includes("admin") || actor.roles.includes("super_admin");
 
 function generateTicketNo(date = new Date()) {
   return `TKT-${getDatePart(date)}-${randomBase32(6)}`;
+}
+
+// Map any stored status onto the open/pending/closed workflow.
+function normalizeStatus(status: string): TicketStatus {
+  if (status === "open" || status === "in_progress") return "open";
+  if (status === "closed" || status === "resolved") return "closed";
+  return "pending";
 }
 
 function mapTicket(ticket: {
@@ -35,7 +46,7 @@ function mapTicket(ticket: {
     category: ticket.category || "general",
     priority: ticket.priority || "medium",
     description: ticket.description || "",
-    status: ticket.status === "open" ? "pending" : ticket.status,
+    status: normalizeStatus(ticket.status),
     assignedTo: ticket.users_support_tickets_assigned_toTousers?.full_name || "Unassigned",
     createdAt: ticket.created_at.toISOString().slice(0, 10),
   };
@@ -45,12 +56,14 @@ const TICKET_INCLUDE = {
   users_support_tickets_assigned_toTousers: true,
 } as const;
 
+// Vendors can only touch tickets they created; staff (admin) can touch any.
+function scopeWhere(actor: Actor, extra: Record<string, unknown> = {}) {
+  return isStaff(actor) ? extra : { ...extra, created_by: actor.id };
+}
+
 export async function createTicket(actor: Actor, input: CreateTicketInput) {
   if (!input.subject?.trim()) {
     throw new AppError(400, "Subject is required");
-  }
-  if (input.status && !VALID_STATUSES.includes(input.status)) {
-    throw new AppError(400, "Invalid ticket status");
   }
 
   const ticket = await prisma.support_tickets.create({
@@ -63,7 +76,7 @@ export async function createTicket(actor: Actor, input: CreateTicketInput) {
       category: input.category?.trim() || null,
       priority: input.priority?.trim() || null,
       description: input.description?.trim() || null,
-      status: input.status || "pending",
+      status: "pending",
       assigned_to: input.assignedTo || null,
       created_by: actor.id,
     },
@@ -81,10 +94,10 @@ export async function createTicket(actor: Actor, input: CreateTicketInput) {
   return mapTicket(ticket);
 }
 
-export async function listTickets(params: ListTicketsParams = {}) {
-  const where: Record<string, unknown> = {};
+export async function listTickets(actor: Actor, params: ListTicketsParams = {}) {
+  const where: Record<string, unknown> = scopeWhere(actor);
 
-  if (params.status && VALID_STATUSES.includes(params.status)) {
+  if (params.status && WORKFLOW_STATUSES.includes(params.status)) {
     where.status = params.status;
   }
   if (params.priority) where.priority = params.priority;
@@ -114,4 +127,87 @@ export async function listTickets(params: ListTicketsParams = {}) {
   });
 
   return tickets.map(mapTicket);
+}
+
+async function findAccessibleTicket(actor: Actor, id: string) {
+  const ticket = await prisma.support_tickets.findFirst({
+    where: scopeWhere(actor, { id }),
+    include: TICKET_INCLUDE,
+  });
+  if (!ticket) throw new AppError(404, "Ticket not found");
+  return ticket;
+}
+
+// Viewing a pending ticket moves it to "open" (in progress).
+export async function getTicketById(actor: Actor, id: string) {
+  let ticket = await findAccessibleTicket(actor, id);
+
+  if (normalizeStatus(ticket.status) === "pending") {
+    ticket = await prisma.support_tickets.update({
+      where: { id },
+      data: { status: "open", updated_at: new Date() },
+      include: TICKET_INCLUDE,
+    });
+  }
+
+  const replies = await prisma.ticket_replies.findMany({
+    where: { ticket_id: id },
+    orderBy: { created_at: "asc" },
+  });
+
+  return {
+    ...mapTicket(ticket),
+    thread: replies.map((reply) => ({
+      id: reply.id,
+      message: reply.message,
+      author: reply.author_name,
+      createdAt: reply.created_at.toISOString(),
+    })),
+  };
+}
+
+// Replying resolves the ticket (sets it closed).
+export async function addTicketReply(actor: Actor, id: string, message: string) {
+  if (!message?.trim()) throw new AppError(400, "Message is required");
+  await findAccessibleTicket(actor, id);
+
+  const user = await prisma.users.findUnique({
+    where: { id: actor.id },
+    select: { full_name: true },
+  });
+
+  await prisma.ticket_replies.create({
+    data: {
+      ticket_id: id,
+      author_id: actor.id,
+      author_name: user?.full_name || "Unknown",
+      message: message.trim(),
+    },
+  });
+
+  await prisma.support_tickets.update({
+    where: { id },
+    data: { status: "closed", closed_at: new Date(), updated_at: new Date() },
+  });
+
+  return getTicketById(actor, id);
+}
+
+export async function setTicketStatus(actor: Actor, id: string, status: TicketStatus) {
+  if (!WORKFLOW_STATUSES.includes(status)) {
+    throw new AppError(400, "Invalid ticket status");
+  }
+  await findAccessibleTicket(actor, id);
+
+  const ticket = await prisma.support_tickets.update({
+    where: { id },
+    data: {
+      status,
+      closed_at: status === "closed" ? new Date() : null,
+      updated_at: new Date(),
+    },
+    include: TICKET_INCLUDE,
+  });
+
+  return mapTicket(ticket);
 }

@@ -1,16 +1,40 @@
 import prisma from "../lib/prisma";
+import { AppError } from "../utils/AppError";
 import { ListRemarksParams } from "../types/remark.type";
-import { parcel_status } from "../generated/prisma/enums";
 
-const VALID_STATUSES: string[] = Object.values(parcel_status);
+type Actor = { id: string; roles: string[] };
+
+export type RemarkWorkflowStatus = "open" | "pending" | "closed";
+
+const WORKFLOW_STATUSES: RemarkWorkflowStatus[] = ["open", "pending", "closed"];
+
+const isStaff = (actor: Actor) =>
+  actor.roles.includes("admin") || actor.roles.includes("super_admin");
+
+const normalizeStatus = (status: string | null): RemarkWorkflowStatus => {
+  if (status === "open") return "open";
+  if (status === "closed") return "closed";
+  return "pending";
+};
+
+// Vendors only see remarks on their own parcels; staff see everything.
+async function scopeWhere(actor: Actor, extra: Record<string, unknown> = {}) {
+  if (isStaff(actor)) return extra;
+  const vendor = await prisma.vendors.findFirst({
+    where: { user_id: actor.id, deleted_at: null },
+    select: { id: true },
+  });
+  if (!vendor) throw new AppError(403, "No vendor profile found");
+  return { ...extra, parcels: { vendor_id: vendor.id } };
+}
 
 function mapRemark(remark: {
   id: string;
   remark: string;
   created_at: Date;
+  workflow_status: string | null;
   parcels: {
     tracking_id: string;
-    status: string;
     parties_parcels_sender_idToparties: { name: string; phone: string };
   };
   users: { full_name: string } | null;
@@ -22,17 +46,17 @@ function mapRemark(remark: {
     customerName: remark.parcels.parties_parcels_sender_idToparties.name,
     customerPhone: remark.parcels.parties_parcels_sender_idToparties.phone,
     subject: remark.remark,
-    status: remark.parcels.status,
+    status: normalizeStatus(remark.workflow_status),
     addedBy: remark.users?.full_name || "Unknown",
     createdAt: remark.created_at.toISOString().slice(0, 10),
   };
 }
 
-export async function listRemarks(params: ListRemarksParams = {}) {
-  const where: Record<string, unknown> = {};
+export async function listRemarks(actor: Actor, params: ListRemarksParams = {}) {
+  const where: Record<string, unknown> = await scopeWhere(actor);
 
-  if (params.status && VALID_STATUSES.includes(params.status)) {
-    where.parcels = { status: params.status };
+  if (params.status && WORKFLOW_STATUSES.includes(params.status as RemarkWorkflowStatus)) {
+    where.workflow_status = params.status;
   }
 
   if (params.fromDate || params.toDate) {
@@ -58,7 +82,6 @@ export async function listRemarks(params: ListRemarksParams = {}) {
       parcels: {
         select: {
           tracking_id: true,
-          status: true,
           parties_parcels_sender_idToparties: { select: { name: true, phone: true } },
         },
       },
@@ -70,7 +93,21 @@ export async function listRemarks(params: ListRemarksParams = {}) {
   return remarks.map(mapRemark);
 }
 
-export async function getRemarkById(id: string) {
+async function findAccessibleRemark(actor: Actor, id: string) {
+  const where = await scopeWhere(actor, { id });
+  const remark = await prisma.parcel_remarks.findFirst({ where, select: { id: true, workflow_status: true } });
+  if (!remark) throw new AppError(404, "Remark not found");
+  return remark;
+}
+
+// Viewing a pending remark moves it to "open".
+export async function getRemarkById(actor: Actor, id: string) {
+  const accessible = await findAccessibleRemark(actor, id);
+
+  if (normalizeStatus(accessible.workflow_status) === "pending") {
+    await prisma.parcel_remarks.update({ where: { id }, data: { workflow_status: "open" } });
+  }
+
   const remark = await prisma.parcel_remarks.findUnique({
     where: { id },
     include: {
@@ -78,7 +115,6 @@ export async function getRemarkById(id: string) {
         select: {
           id: true,
           tracking_id: true,
-          status: true,
           parties_parcels_sender_idToparties: { select: { name: true, phone: true } },
           parties_parcels_receiver_idToparties: { select: { name: true, phone: true } },
         },
@@ -86,9 +122,7 @@ export async function getRemarkById(id: string) {
     },
   });
 
-  if (!remark) {
-    return null;
-  }
+  if (!remark) return null;
 
   const thread = await prisma.parcel_remarks.findMany({
     where: { parcel_id: remark.parcel_id },
@@ -101,7 +135,7 @@ export async function getRemarkById(id: string) {
     remarkId: `RMK-${remark.id.slice(0, 8).toUpperCase()}`,
     parcelId: remark.parcels.id,
     trackingId: remark.parcels.tracking_id,
-    status: remark.parcels.status,
+    status: normalizeStatus(remark.workflow_status),
     senderName: remark.parcels.parties_parcels_sender_idToparties.name,
     senderPhone: remark.parcels.parties_parcels_sender_idToparties.phone,
     receiverName: remark.parcels.parties_parcels_receiver_idToparties.name,
@@ -116,4 +150,13 @@ export async function getRemarkById(id: string) {
       parentSnippet: entry.parent_remark?.remark || null,
     })),
   };
+}
+
+export async function setRemarkStatus(actor: Actor, id: string, status: RemarkWorkflowStatus) {
+  if (!WORKFLOW_STATUSES.includes(status)) {
+    throw new AppError(400, "Invalid remark status");
+  }
+  await findAccessibleRemark(actor, id);
+  await prisma.parcel_remarks.update({ where: { id }, data: { workflow_status: status } });
+  return { id, status };
 }
