@@ -1,5 +1,12 @@
 import api from '../utils/api';
-import type { ParcelStatus } from './orders.service';
+
+export type RemarkStatus = 'open' | 'pending' | 'closed';
+
+export const REMARK_STATUS_LABELS: Record<RemarkStatus, string> = {
+  open: 'Open',
+  pending: 'Pending',
+  closed: 'Closed',
+};
 
 export interface Remark {
   id: string;
@@ -8,13 +15,13 @@ export interface Remark {
   customerName: string;
   customerPhone: string;
   subject: string;
-  status: ParcelStatus;
+  status: RemarkStatus;
   addedBy: string;
   createdAt: string;
 }
 
 export interface ListRemarksParams {
-  status?: ParcelStatus;
+  status?: RemarkStatus;
   search?: string;
   fromDate?: string;
   toDate?: string;
@@ -40,7 +47,7 @@ export interface RemarkDetail {
   remarkId: string;
   parcelId: string;
   trackingId: string;
-  status: ParcelStatus;
+  status: RemarkStatus;
   senderName: string;
   senderPhone: string;
   receiverName: string;
@@ -61,5 +68,13 @@ export const getRemarks = async (params?: ListRemarksParams): Promise<RemarksLis
 
 export const getRemarkById = async (id: string): Promise<{ success: boolean; data: RemarkDetail }> => {
   const response = await api.get(`/remarks/${id}`);
+  return response.data;
+};
+
+export const setRemarkStatus = async (
+  id: string,
+  status: RemarkStatus,
+): Promise<{ success: boolean; data: { id: string; status: RemarkStatus } }> => {
+  const response = await api.patch(`/remarks/${id}/status`, { status });
   return response.data;
 };

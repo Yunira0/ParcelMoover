@@ -21,6 +21,8 @@ import {
   Receipt,
   ClipboardList,
   Banknote,
+  Users,
+  Truck,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { getCurrentUserRoles } from '../utils/auth';
@@ -64,6 +66,8 @@ const icons = {
   pendingCod: Receipt,
   orderPayments: ClipboardList,
   settlements: Banknote,
+  userManagement: Users,
+  deliveryCharges: Truck,
 };
 
 // Vendors get a focused nav scoped to what their role can actually access -
@@ -93,6 +97,10 @@ const VendorSidebar: React.FC = () => (
           <span className="sidebar-label">Pending COD</span>
         </NavLink>
       </div>
+
+      <SidebarItem to="/user-management" icon={icons.userManagement} label="User Management" />
+      <SidebarItem to="/tickets" icon={icons.ticket} label="Tickets" />
+      <SidebarItem to="/delivery-charges" icon={icons.deliveryCharges} label="Delivery Charges" />
     </div>
 
     <div className="sidebar-footer">

@@ -1,36 +1,24 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, MessageSquare, Package, Phone, RefreshCw, Send, User, X } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, MessageSquare, Package, Phone, RefreshCw, RotateCcw, Send, User, X } from 'lucide-react';
 import Button from '../components/Button';
 import StatusChip, { type StatusChipTone } from '../components/StatusChip';
-import { getRemarkById, type RemarkDetail as RemarkDetailType, type RemarkThreadEntry } from '../services/remarks.service';
-import { addOrderRemark, type ParcelStatus } from '../services/orders.service';
+import {
+  getRemarkById,
+  setRemarkStatus,
+  REMARK_STATUS_LABELS,
+  type RemarkDetail as RemarkDetailType,
+  type RemarkThreadEntry,
+  type RemarkStatus,
+} from '../services/remarks.service';
+import { addOrderRemark } from '../services/orders.service';
 import './RemarkDetail.css';
+import './TicketDetail.css';
 
-const STATUS_LABELS: Record<ParcelStatus, string> = {
-  pickup_ordered: 'Pickup Ordered',
-  rider_assigned: 'Rider Assigned',
-  picked_up: 'Picked Up',
-  arrived: 'Arrived',
-  ready_to_deliver: 'Ready to Deliver',
-  sent_for_delivery: 'In Transit',
-  oov: 'Out of Vehicle',
-  dispatched: 'Dispatched',
-  arrived_at_branch: 'Arrived',
-  hold: 'On Hold',
-  loss_and_damage: 'Loss & Damage',
-  delivered: 'Delivered',
-  failed_pickup: 'Failed Pickup',
-  failed_delivery: 'Failed Delivery',
-  cancelled: 'Cancelled',
-};
-
-const getStatusTone = (status: ParcelStatus): StatusChipTone => {
-  if (status === 'delivered') return 'success';
-  if (['arrived', 'arrived_at_branch', 'rider_assigned'].includes(status)) return 'info';
-  if (['failed_pickup', 'failed_delivery', 'loss_and_damage'].includes(status)) return 'danger';
-  if (status === 'cancelled') return 'neutral';
-  return 'warning';
+const STATUS_TONE: Record<RemarkStatus, StatusChipTone> = {
+  open: 'info',
+  pending: 'warning',
+  closed: 'success',
 };
 
 const getInitials = (name: string) => name.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2);
@@ -85,6 +73,7 @@ const RemarkDetail: React.FC = () => {
   const [remark, setRemark] = useState<RemarkDetailType | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [statusUpdating, setStatusUpdating] = useState(false);
 
   const [bottomText, setBottomText] = useState('');
   const [bottomSubmitting, setBottomSubmitting] = useState(false);
@@ -129,6 +118,8 @@ const RemarkDetail: React.FC = () => {
     try {
       const parentId = replyingTo?.id || undefined;
       await addOrderRemark(remark.parcelId, trimmed, parentId);
+      // Replying resolves the remark.
+      await setRemarkStatus(remark.id, 'closed');
       setBottomText('');
       setReplyingTo(null);
       setInlineText('');
@@ -160,6 +151,7 @@ const RemarkDetail: React.FC = () => {
     setInlineError('');
     try {
       await addOrderRemark(remark.parcelId, trimmed, replyingTo.id);
+      await setRemarkStatus(remark.id, 'closed');
       setInlineText('');
       setReplyingTo(null);
       await loadRemark(true);
@@ -167,6 +159,17 @@ const RemarkDetail: React.FC = () => {
       setInlineError(err.response?.data?.message || 'Failed to post.');
     } finally {
       setInlineSubmitting(false);
+    }
+  };
+
+  const changeStatus = async (status: RemarkStatus) => {
+    if (!remark) return;
+    setStatusUpdating(true);
+    try {
+      await setRemarkStatus(remark.id, status);
+      await loadRemark(true);
+    } finally {
+      setStatusUpdating(false);
     }
   };
 
@@ -250,14 +253,25 @@ const RemarkDetail: React.FC = () => {
               <div className="detail-header-main">
                 <div className="tracking-row">
                   <h1 className="tracking-id">{remark.remarkId}</h1>
-                  <StatusChip tone={getStatusTone(remark.status)}>
-                    {STATUS_LABELS[remark.status]}
+                  <StatusChip tone={STATUS_TONE[remark.status]}>
+                    {REMARK_STATUS_LABELS[remark.status]}
                   </StatusChip>
                 </div>
                 <Link to={`/orders/track/${remark.trackingId}`} className="tracking-link">
                   <Package size={14} strokeWidth={1.5} />
                   {remark.trackingId}
                 </Link>
+              </div>
+              <div className="detail-header-actions">
+                {remark.status !== 'closed' ? (
+                  <Button variant="primary" onClick={() => changeStatus('closed')} disabled={statusUpdating}>
+                    <CheckCircle2 size={16} /> Mark as Done
+                  </Button>
+                ) : (
+                  <Button variant="secondary" onClick={() => changeStatus('open')} disabled={statusUpdating}>
+                    <RotateCcw size={16} /> Reopen
+                  </Button>
+                )}
               </div>
             </div>
 
