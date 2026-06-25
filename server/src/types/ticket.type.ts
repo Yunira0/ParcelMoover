@@ -1,5 +1,7 @@
 export type TicketStatus = "open" | "in_progress" | "pending" | "resolved" | "closed";
 
+export type TicketWorkflowStatus = "open" | "pending" | "closed";
+
 export interface CreateTicketInput {
   customerName?: string;
   customerPhone?: string;

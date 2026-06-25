@@ -194,6 +194,7 @@ model parcel_remarks {
   remark            String
   created_at        DateTime         @default(now()) @db.Timestamptz(6)
   parent_remark_id  String?          @db.Uuid
+  workflow_status   String?          @default("pending")
   locations         locations?       @relation(fields: [location_id], references: [id], onUpdate: NoAction)
   parcels           parcels          @relation(fields: [parcel_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   users             users?           @relation(fields: [user_id], references: [id], onUpdate: NoAction)
@@ -537,4 +538,36 @@ enum ticket_status {
 enum user_status {
   active
   inactive
+}
+
+// Reply thread for support tickets. Standalone (ticket_id is a DB-level FK) so
+// it doesn't require relation fields on the existing support_tickets model.
+// author_name is denormalized to avoid a users relation/join.
+model ticket_replies {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ticket_id   String   @db.Uuid
+  author_id   String?  @db.Uuid
+  author_name String
+  message     String
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([ticket_id, created_at], map: "idx_ticket_replies_ticket_id")
+}
+
+// Vendor-owned staff accounts with per-member permission flags.
+// Standalone table (vendor_id is a plain FK applied at the DB level) so it
+// doesn't require relation fields on the existing vendors model.
+model vendor_staff {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  vendor_id   String    @db.Uuid
+  name        String
+  email       String
+  permissions String[]
+  enabled     Boolean   @default(true)
+  created_by  String?   @db.Uuid
+  created_at  DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime  @default(now()) @db.Timestamptz(6)
+  deleted_at  DateTime? @db.Timestamptz(6)
+
+  @@index([vendor_id], map: "idx_vendor_staff_vendor_id")
 }

@@ -7,6 +7,7 @@ import TicketRoutes from "./routes/ticket.routes"
 import RemarkRoutes from "./routes/remark.routes"
 import NotificationRoutes from "./routes/notification.routes"
 import FinanceRoutes from "./routes/finance.routes"
+import StaffRoutes from "./routes/staff.routes"
 import prisma from "./lib/prisma";
 import cookiesParser from "cookie-parser";
 import {authMiddleware} from "./middlewares/auth.mddleware";
@@ -53,6 +54,8 @@ app.use("/api/remarks", RemarkRoutes)
 app.use("/api/notifications", NotificationRoutes)
 
 app.use("/api/finance", FinanceRoutes)
+
+app.use("/api/staff", StaffRoutes)
 
 
 const getCurrentUserHandler = async (req: Request, res: Response) => {

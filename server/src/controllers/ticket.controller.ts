@@ -1,9 +1,16 @@
 import { Request, Response } from "express";
-import { createTicket, listTickets } from "../services/ticket.service";
-import { ListTicketsParams, TicketStatus } from "../types/ticket.type";
+import {
+  addTicketReply,
+  createTicket,
+  getTicketById,
+  listTickets,
+  setTicketStatus,
+} from "../services/ticket.service";
+import { ListTicketsParams, TicketStatus, TicketWorkflowStatus } from "../types/ticket.type";
 
 export async function listTicketsController(req: Request, res: Response) {
   try {
+    if (!req.user) return res.status(401).json({ success: false, message: "Unauthorized" });
     const { status, search, priority, category, fromDate, toDate } = req.query;
 
     const params: ListTicketsParams = {};
@@ -14,7 +21,7 @@ export async function listTicketsController(req: Request, res: Response) {
     if (typeof fromDate === "string") params.fromDate = fromDate;
     if (typeof toDate === "string") params.toDate = toDate;
 
-    const tickets = await listTickets(params);
+    const tickets = await listTickets({ id: req.user.id, roles: req.user.roles }, params);
 
     return res.status(200).json({ success: true, data: tickets });
   } catch (error: any) {
@@ -50,6 +57,69 @@ export async function createTicketController(req: Request, res: Response) {
     return res.status(error.statusCode || 500).json({
       success: false,
       message: error.message || "Failed to create ticket",
+    });
+  }
+}
+
+export async function getTicketByIdController(req: Request, res: Response) {
+  try {
+    if (!req.user) return res.status(401).json({ success: false, message: "Unauthorized" });
+    const { id } = req.params;
+    if (typeof id !== "string") {
+      return res.status(400).json({ success: false, message: "Invalid ticket id" });
+    }
+    const ticket = await getTicketById({ id: req.user.id, roles: req.user.roles }, id);
+    return res.status(200).json({ success: true, data: ticket });
+  } catch (error: any) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to load ticket",
+    });
+  }
+}
+
+export async function replyTicketController(req: Request, res: Response) {
+  try {
+    if (!req.user) return res.status(401).json({ success: false, message: "Unauthorized" });
+    const { id } = req.params;
+    const { message } = req.body;
+    if (typeof id !== "string") {
+      return res.status(400).json({ success: false, message: "Invalid ticket id" });
+    }
+    if (typeof message !== "string" || !message.trim()) {
+      return res.status(400).json({ success: false, message: "message is required" });
+    }
+    const ticket = await addTicketReply({ id: req.user.id, roles: req.user.roles }, id, message);
+    return res.status(201).json({ success: true, message: "Reply posted", data: ticket });
+  } catch (error: any) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to post reply",
+    });
+  }
+}
+
+export async function setTicketStatusController(req: Request, res: Response) {
+  try {
+    if (!req.user) return res.status(401).json({ success: false, message: "Unauthorized" });
+    const { id } = req.params;
+    const { status } = req.body;
+    if (typeof id !== "string") {
+      return res.status(400).json({ success: false, message: "Invalid ticket id" });
+    }
+    if (status !== "open" && status !== "pending" && status !== "closed") {
+      return res.status(400).json({ success: false, message: "Invalid status" });
+    }
+    const ticket = await setTicketStatus(
+      { id: req.user.id, roles: req.user.roles },
+      id,
+      status as TicketWorkflowStatus,
+    );
+    return res.status(200).json({ success: true, message: "Status updated", data: ticket });
+  } catch (error: any) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to update status",
     });
   }
 }
