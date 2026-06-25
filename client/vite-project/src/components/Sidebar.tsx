@@ -17,9 +17,13 @@ import {
   Map,
   Percent,
   Ticket,
-  MessageSquare
+  MessageSquare,
+  Receipt,
+  ClipboardList,
+  Banknote,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import { getCurrentUserRoles } from '../utils/auth';
 import './Sidebar.css';
 
 interface SidebarItemProps {
@@ -40,127 +44,164 @@ const SidebarItem: React.FC<SidebarItemProps> = ({ to, icon: Icon, label }) => {
   );
 };
 
-const isCurrentUserSuperAdmin = (): boolean => {
-  try {
-    const roles = JSON.parse(localStorage.getItem('user') || 'null')?.roles;
-    return Array.isArray(roles) && roles.includes('super_admin');
-  } catch {
-    return false;
-  }
+const icons = {
+  dashboard: LayoutDashboard,
+  order: Package,
+  admin: UserCheck,
+  vendor: Store,
+  rider: Bike,
+  finance: Wallet,
+  help: HelpCircle,
+  pickup: Archive,
+  dispatch: Send,
+  oov: Route,
+  return: RotateCcw,
+  hold: OctagonMinus,
+  damage: Map,
+  deliveryRates: Percent,
+  ticket: Ticket,
+  remarks: MessageSquare,
+  pendingCod: Receipt,
+  orderPayments: ClipboardList,
+  settlements: Banknote,
 };
 
+// Vendors get a focused nav scoped to what their role can actually access -
+// the admin-only sections (Admin/Vendor/Rider Management, Operations, CX)
+// would just 403 on the backend, so there's no reason to show them.
+const VendorSidebar: React.FC = () => (
+  <aside className="sidebar">
+    <div className="sidebar-nav">
+      <SidebarItem to="/dashboard" icon={icons.dashboard} label="Dashboard" />
+      <SidebarItem to="/orders" icon={icons.order} label="Order" />
+
+      <div className="sidebar-dropdown">
+        <span className="dropdown-label">Finance</span>
+        <ChevronDown size={16} style={{ color: 'var(--color-text-caption)' }} />
+      </div>
+      <div className="sidebar-subnav">
+        <NavLink to="/finance/settlements" className={({ isActive }) => `sidebar-subitem ${isActive ? 'active' : ''}`}>
+          <icons.settlements className="sidebar-icon" size={24} />
+          <span className="sidebar-label">Settlement</span>
+        </NavLink>
+        <NavLink to="/finance/order-payments" className={({ isActive }) => `sidebar-subitem ${isActive ? 'active' : ''}`}>
+          <icons.orderPayments className="sidebar-icon" size={24} />
+          <span className="sidebar-label">Order wise payment</span>
+        </NavLink>
+        <NavLink to="/finance/pending-cod" className={({ isActive }) => `sidebar-subitem ${isActive ? 'active' : ''}`}>
+          <icons.pendingCod className="sidebar-icon" size={24} />
+          <span className="sidebar-label">Pending COD</span>
+        </NavLink>
+      </div>
+    </div>
+
+    <div className="sidebar-footer">
+      <SidebarItem to="/help" icon={icons.help} label="Help and Support" />
+    </div>
+  </aside>
+);
+
+const AdminSidebar: React.FC<{ isSuperAdmin: boolean }> = ({ isSuperAdmin }) => (
+  <aside className="sidebar">
+    <div className="sidebar-nav">
+      <SidebarItem to="/dashboard" icon={icons.dashboard} label="Dashboard" />
+      <SidebarItem to="/orders" icon={icons.order} label="Order" />
+      <SidebarItem to="/admin" icon={icons.admin} label="Admin Management" />
+      <SidebarItem to="/vendors" icon={icons.vendor} label="Vendor Management" />
+      <SidebarItem to="/riders" icon={icons.rider} label="Rider Management" />
+      <SidebarItem to="/finance" icon={icons.finance} label="Finance Management" />
+      {isSuperAdmin && (
+        <SidebarItem to="/settings/delivery-rates" icon={icons.deliveryRates} label="Delivery Rates" />
+      )}
+
+      <div className="sidebar-divider"></div>
+
+      <div className="sidebar-dropdown">
+         <span className="dropdown-label">Operation</span>
+         <ChevronDown size={16} style={{ color: 'var(--color-text-caption)' }} />
+      </div>
+      <div className="sidebar-subnav">
+        <NavLink
+          to="/pickup"
+          className={({ isActive }) => `sidebar-subitem ${isActive ? 'active' : ''}`}
+        >
+          <icons.pickup className="sidebar-icon" size={24} />
+          <span className="sidebar-label">Pickup</span>
+        </NavLink>
+        <NavLink
+          to="/dispatch"
+          className={({ isActive }) => `sidebar-subitem ${isActive ? 'active' : ''}`}
+        >
+          <icons.dispatch className="sidebar-icon" size={24} />
+          <span className="sidebar-label">Dispatch</span>
+        </NavLink>
+        <NavLink
+          to="/oov"
+          className={({ isActive }) => `sidebar-subitem ${isActive ? 'active' : ''}`}
+        >
+          <icons.oov className="sidebar-icon" size={24} />
+          <span className="sidebar-label">OOV</span>
+        </NavLink>
+        <NavLink
+          to="/return"
+          className={({ isActive }) => `sidebar-subitem ${isActive ? 'active' : ''}`}
+        >
+          <icons.return className="sidebar-icon" size={24} />
+          <span className="sidebar-label">Return</span>
+        </NavLink>
+        <NavLink
+          to="/hold"
+          className={({ isActive }) => `sidebar-subitem ${isActive ? 'active' : ''}`}
+        >
+          <icons.hold className="sidebar-icon" size={24} />
+          <span className="sidebar-label">Hold</span>
+        </NavLink>
+        <NavLink
+          to="/loss-and-damage"
+          className={({ isActive }) => `sidebar-subitem ${isActive ? 'active' : ''}`}
+        >
+          <icons.damage className="sidebar-icon" size={24} />
+          <span className="sidebar-label">Loss and Damage</span>
+        </NavLink>
+      </div>
+      <div className="sidebar-dropdown">
+         <span className="dropdown-label">CX/Tickets</span>
+         <ChevronDown size={16} style={{ color: 'var(--color-text-caption)' }} />
+      </div>
+      <div className="sidebar-subnav">
+        <NavLink
+          to="/tickets"
+          className={({ isActive }) => `sidebar-subitem ${isActive ? 'active' : ''}`}
+        >
+          <icons.ticket className="sidebar-icon" size={24} />
+          <span className="sidebar-label">Tickets</span>
+        </NavLink>
+        <NavLink
+          to="/remarks"
+          className={({ isActive }) => `sidebar-subitem ${isActive ? 'active' : ''}`}
+        >
+          <icons.remarks className="sidebar-icon" size={24} />
+          <span className="sidebar-label">Remarks</span>
+        </NavLink>
+      </div>
+    </div>
+
+    <div className="sidebar-footer">
+      <SidebarItem to="/help" icon={icons.help} label="Help and Support" />
+    </div>
+  </aside>
+);
+
 const Sidebar: React.FC = () => {
-  const icons = {
-    dashboard: LayoutDashboard,
-    order: Package,
-    admin: UserCheck,
-    vendor: Store,
-    rider: Bike,
-    finance: Wallet,
-    help: HelpCircle,
-    pickup: Archive,
-    dispatch: Send,
-    oov: Route,
-    return: RotateCcw,
-    hold: OctagonMinus,
-    damage: Map,
-    deliveryRates: Percent,
-    ticket: Ticket,
-    remarks: MessageSquare
-  };
+  const roles = getCurrentUserRoles();
+  const isStaff = roles.includes('super_admin') || roles.includes('admin');
+  const isVendorOnly = roles.includes('vendor') && !isStaff;
 
-  const isSuperAdmin = isCurrentUserSuperAdmin();
+  if (isVendorOnly) {
+    return <VendorSidebar />;
+  }
 
-  return (
-    <aside className="sidebar">
-      <div className="sidebar-nav">
-        <SidebarItem to="/dashboard" icon={icons.dashboard} label="Dashboard" />
-        <SidebarItem to="/orders" icon={icons.order} label="Order" />
-        <SidebarItem to="/admin" icon={icons.admin} label="Admin Management" />
-        <SidebarItem to="/vendors" icon={icons.vendor} label="Vendor Management" />
-        <SidebarItem to="/riders" icon={icons.rider} label="Rider Management" />
-        <SidebarItem to="/finance" icon={icons.finance} label="Finance Management" />
-        {isSuperAdmin && (
-          <SidebarItem to="/settings/delivery-rates" icon={icons.deliveryRates} label="Delivery Rates" />
-        )}
-
-        <div className="sidebar-divider"></div>
-        
-        <div className="sidebar-dropdown">
-           <span className="dropdown-label">Operation</span>
-           <ChevronDown size={16} style={{ color: 'var(--color-text-caption)' }} />
-        </div>
-        <div className="sidebar-subnav">
-          <NavLink
-            to="/pickup"
-            className={({ isActive }) => `sidebar-subitem ${isActive ? 'active' : ''}`}
-          >
-            <icons.pickup className="sidebar-icon" size={24} />
-            <span className="sidebar-label">Pickup</span>
-          </NavLink>
-          <NavLink
-            to="/dispatch"
-            className={({ isActive }) => `sidebar-subitem ${isActive ? 'active' : ''}`}
-          >
-            <icons.dispatch className="sidebar-icon" size={24} />
-            <span className="sidebar-label">Dispatch</span>
-          </NavLink>
-          <NavLink
-            to="/oov"
-            className={({ isActive }) => `sidebar-subitem ${isActive ? 'active' : ''}`}
-          >
-            <icons.oov className="sidebar-icon" size={24} />
-            <span className="sidebar-label">OOV</span>
-          </NavLink>
-          <NavLink
-            to="/return"
-            className={({ isActive }) => `sidebar-subitem ${isActive ? 'active' : ''}`}
-          >
-            <icons.return className="sidebar-icon" size={24} />
-            <span className="sidebar-label">Return</span>
-          </NavLink>
-          <NavLink
-            to="/hold"
-            className={({ isActive }) => `sidebar-subitem ${isActive ? 'active' : ''}`}
-          >
-            <icons.hold className="sidebar-icon" size={24} />
-            <span className="sidebar-label">Hold</span>
-          </NavLink>
-          <NavLink
-            to="/loss-and-damage"
-            className={({ isActive }) => `sidebar-subitem ${isActive ? 'active' : ''}`}
-          >
-            <icons.damage className="sidebar-icon" size={24} />
-            <span className="sidebar-label">Loss and Damage</span>
-          </NavLink>
-        </div>
-        <div className="sidebar-dropdown">
-           <span className="dropdown-label">CX/Tickets</span>
-           <ChevronDown size={16} style={{ color: 'var(--color-text-caption)' }} />
-        </div>
-        <div className="sidebar-subnav">
-          <NavLink
-            to="/tickets"
-            className={({ isActive }) => `sidebar-subitem ${isActive ? 'active' : ''}`}
-          >
-            <icons.ticket className="sidebar-icon" size={24} />
-            <span className="sidebar-label">Tickets</span>
-          </NavLink>
-          <NavLink
-            to="/remarks"
-            className={({ isActive }) => `sidebar-subitem ${isActive ? 'active' : ''}`}
-          >
-            <icons.remarks className="sidebar-icon" size={24} />
-            <span className="sidebar-label">Remarks</span>
-          </NavLink>
-        </div>
-      </div>
-      
-      <div className="sidebar-footer">
-        <SidebarItem to="/help" icon={icons.help} label="Help and Support" />
-      </div>
-    </aside>
-  );
+  return <AdminSidebar isSuperAdmin={roles.includes('super_admin')} />;
 };
 
 export default Sidebar;

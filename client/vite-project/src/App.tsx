@@ -3,7 +3,7 @@ import MainLayout from './layouts/MainLayout'
 import DashboardLayout from './layouts/DashboardLayout'
 import Home from './pages/Home'
 import Login from './pages/Login'
-import Dashboard from './pages/Dashboard'
+import DashboardRouter from './pages/DashboardRouter'
 import OrderManagement from './pages/OrderManagement'
 import CreateOrderPage from './pages/CreateOrderPage'
 import OrderDetailPage from './pages/OrderDetailPage'
@@ -21,7 +21,11 @@ import LossAndDamageOperations from './pages/LossAndDamageOperations'
 import Tickets from './pages/Tickets'
 import Remarks from './pages/Remarks'
 import RemarkDetail from './pages/RemarkDetail'
+import VendorSettlements from './pages/vendor/VendorSettlements'
+import VendorPendingCod from './pages/vendor/VendorPendingCod'
+import VendorOrderPayments from './pages/vendor/VendorOrderPayments'
 import ProtectedRoute from './components/ProtectedRoute'
+import RoleGuard from './components/RoleGuard'
 import './App.css'
 function App() {
 
@@ -40,7 +44,7 @@ function App() {
             </ProtectedRoute>
           }
         >
-          <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/dashboard" element={<DashboardRouter />} />
           <Route path="/orders" element={<OrderManagement />} />
           <Route path="/orders/create" element={<CreateOrderPage />} />
           <Route path="/orders/track/:trackingId" element={<OrderDetailPage />} />
@@ -58,6 +62,18 @@ function App() {
           <Route path="/tickets" element={<Tickets />} />
           <Route path="/remarks" element={<Remarks />} />
           <Route path="/remarks/:id" element={<RemarkDetail />} />
+          <Route
+            path="/finance/settlements"
+            element={<RoleGuard allowedRoles={['vendor']}><VendorSettlements /></RoleGuard>}
+          />
+          <Route
+            path="/finance/pending-cod"
+            element={<RoleGuard allowedRoles={['vendor']}><VendorPendingCod /></RoleGuard>}
+          />
+          <Route
+            path="/finance/order-payments"
+            element={<RoleGuard allowedRoles={['vendor']}><VendorOrderPayments /></RoleGuard>}
+          />
         </Route>
         {/* Catch-all */}
 

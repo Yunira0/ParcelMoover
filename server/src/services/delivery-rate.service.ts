@@ -1,8 +1,32 @@
 import prisma from "../lib/prisma";
+import redis from "../lib/redis";
 import { AppError } from "../utils/AppError";
 import { DeliveryQuote, UpsertDeliveryRateInput } from "../types/delivery-rate.type";
 
 type Actor = { id: string; roles: string[] };
+
+const RATE_CACHE_PREFIX = "delivery-rate:";
+const RATE_CACHE_TTL_SECONDS = 5 * 60;
+
+interface CachedRate {
+  baseCharge: number;
+  freeWeightKg: number;
+  extraWeightPercent: number;
+}
+
+function rateCacheKey(originLocationId: string, destinationLocationId: string) {
+  return `${RATE_CACHE_PREFIX}${originLocationId}:${destinationLocationId}`;
+}
+
+// Rate config only changes on admin writes, so a Redis hiccup just means
+// falling back to Postgres for this lookup - never block the quote on it.
+async function invalidateRateCache(originLocationId: string, destinationLocationId: string) {
+  try {
+    await redis.del(rateCacheKey(originLocationId, destinationLocationId));
+  } catch (error) {
+    console.error("[Redis] Failed to invalidate delivery rate cache:", error);
+  }
+}
 
 async function assertActiveLocation(locationId: string, label: string) {
   const loc = await prisma.locations.findUnique({ where: { id: locationId } });
@@ -32,7 +56,7 @@ export async function upsertDeliveryRate(actor: Actor, input: UpsertDeliveryRate
     is_active: true,
   };
 
-  return prisma.delivery_rates.upsert({
+  const rate = await prisma.delivery_rates.upsert({
     where: {
       origin_location_id_destination_location_id: {
         origin_location_id: input.originLocationId,
@@ -47,6 +71,10 @@ export async function upsertDeliveryRate(actor: Actor, input: UpsertDeliveryRate
       created_by: actor.id,
     },
   });
+
+  await invalidateRateCache(input.originLocationId, input.destinationLocationId);
+
+  return rate;
 }
 
 export async function listDeliveryRates() {
@@ -77,14 +105,26 @@ export async function setDeliveryRateActive(id: string, isActive: boolean) {
   if (!rate) {
     throw new AppError(404, "Delivery rate not found");
   }
-  return prisma.delivery_rates.update({ where: { id }, data: { is_active: isActive } });
+  const updated = await prisma.delivery_rates.update({ where: { id }, data: { is_active: isActive } });
+  await invalidateRateCache(rate.origin_location_id, rate.destination_location_id);
+  return updated;
 }
 
-export async function getDeliveryQuote(
+async function getActiveRate(
   originLocationId: string,
   destinationLocationId: string,
-  weightKg: number,
-): Promise<DeliveryQuote> {
+): Promise<CachedRate> {
+  const cacheKey = rateCacheKey(originLocationId, destinationLocationId);
+
+  try {
+    const cached = await redis.get(cacheKey);
+    if (cached) {
+      return JSON.parse(cached);
+    }
+  } catch (error) {
+    console.error("[Redis] Failed to read delivery rate cache:", error);
+  }
+
   const rate = await prisma.delivery_rates.findFirst({
     where: {
       origin_location_id: originLocationId,
@@ -97,9 +137,30 @@ export async function getDeliveryQuote(
     throw new AppError(404, "No delivery rate configured for this route");
   }
 
-  const baseCharge = Number(rate.base_charge);
-  const freeWeightKg = Number(rate.free_weight_kg);
-  const extraWeightPercent = Number(rate.extra_weight_percent);
+  const result: CachedRate = {
+    baseCharge: Number(rate.base_charge),
+    freeWeightKg: Number(rate.free_weight_kg),
+    extraWeightPercent: Number(rate.extra_weight_percent),
+  };
+
+  try {
+    await redis.setex(cacheKey, RATE_CACHE_TTL_SECONDS, JSON.stringify(result));
+  } catch (error) {
+    console.error("[Redis] Failed to write delivery rate cache:", error);
+  }
+
+  return result;
+}
+
+export async function getDeliveryQuote(
+  originLocationId: string,
+  destinationLocationId: string,
+  weightKg: number,
+): Promise<DeliveryQuote> {
+  const { baseCharge, freeWeightKg, extraWeightPercent } = await getActiveRate(
+    originLocationId,
+    destinationLocationId,
+  );
 
   const extraKg = Math.max(0, weightKg - freeWeightKg);
   const weightSurcharge = extraKg * (baseCharge * (extraWeightPercent / 100));

@@ -66,6 +66,7 @@ export interface UpdateParcelStatusInput {
 
 export interface ListOrdersQuery {
   status?: ParcelStatus[];
+  orderType?: OrderType;
   search?: string;
   page?: number;
   pageSize?: number;

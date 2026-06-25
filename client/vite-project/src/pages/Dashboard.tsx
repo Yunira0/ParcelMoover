@@ -24,12 +24,16 @@ const EMPTY_SUMMARY: DashboardSummary = {
     pendingReturns: 0,
     inTransit: 0,
     pendingDeliveries: 0,
+    totalDelivered: 0,
+    totalReturns: 0,
   },
   today: {
     totalOrders: 0,
     delivered: 0,
     inTransit: 0,
     returns: 0,
+    remarks: 0,
+    unclosedComments: 0,
   },
   codSettlement: {
     totalCod: 0,
@@ -37,7 +41,10 @@ const EMPTY_SUMMARY: DashboardSummary = {
     pendingCod: 0,
     progressPercent: 0,
     scopedToRider: false,
+    lastAmount: 0,
+    lastSettledAt: null,
   },
+  weeklyTrend: [],
   updatedAt: new Date().toISOString(),
 };
 

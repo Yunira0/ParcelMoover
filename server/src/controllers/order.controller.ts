@@ -9,12 +9,13 @@ import {
   updateParcelStatus,
 } from "../services/order.service";
 import { withIdempotency } from "../services/idempotency.service";
-import { ParcelStatus, STATUS_TRANSITIONS } from "../types/order.type";
+import { OrderType, ParcelStatus, STATUS_TRANSITIONS } from "../types/order.type";
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const VALID_STATUSES = new Set(Object.keys(STATUS_TRANSITIONS));
+const VALID_ORDER_TYPES: OrderType[] = ["delivery", "exchange", "return"];
 const MAX_BULK_IDS = 200;
 
 function parseStatusQuery(raw: unknown): ParcelStatus[] | undefined {
@@ -128,6 +129,17 @@ export async function listOrdersController(req: Request, res: Response) {
 
     const search = typeof req.query.search === "string" ? req.query.search : undefined;
 
+    let orderType: OrderType | undefined;
+    if (req.query.orderType !== undefined) {
+      if (typeof req.query.orderType !== "string" || !VALID_ORDER_TYPES.includes(req.query.orderType as OrderType)) {
+        return res.status(400).json({
+          success: false,
+          message: `orderType must be one of: ${VALID_ORDER_TYPES.join(", ")}`,
+        });
+      }
+      orderType = req.query.orderType as OrderType;
+    }
+
     let page: number | undefined;
     let pageSize: number | undefined;
     if (req.query.page !== undefined) {
@@ -147,6 +159,7 @@ export async function listOrdersController(req: Request, res: Response) {
       { id: req.user.id, roles: req.user.roles },
       {
         ...(status ? { status } : {}),
+        ...(orderType ? { orderType } : {}),
         ...(search ? { search } : {}),
         ...(page !== undefined ? { page } : {}),
         ...(pageSize !== undefined ? { pageSize } : {}),
@@ -261,16 +274,49 @@ export async function bulkUpdateOrderStatusController(req: Request, res: Respons
       });
     }
 
-    const result = await bulkUpdateParcelStatus(
-      { id: req.user.id, roles: req.user.roles },
-      { ids, status: status as ParcelStatus, remarks, toLocationId, riderId },
+    const idempotencyKey = req.headers["idempotency-key"] as string | undefined;
+    if (!idempotencyKey) {
+      return res.status(400).json({
+        success: false,
+        message: "Idempotency-Key header is required",
+      });
+    }
+    if (!UUID_REGEX.test(idempotencyKey)) {
+      return res.status(400).json({
+        success: false,
+        message: "Idempotency-Key must be a valid UUID",
+      });
+    }
+
+    // Namespaced so a client reusing the same key across different endpoints
+    // (e.g. create-order vs bulk-status) can't collide on the shared idempotency store.
+    const body = await withIdempotency(
+      `order-bulk-status:${idempotencyKey}`,
+      req.body,
+      async () => {
+        const result = await bulkUpdateParcelStatus(
+          { id: req.user!.id, roles: req.user!.roles },
+          { ids, status: status as ParcelStatus, remarks, toLocationId, riderId },
+        );
+
+        const responseBody = {
+          success: true,
+          message: `${result.updatedCount} order(s) updated to '${result.status}'`,
+          data: result,
+        };
+
+        return {
+          result: responseBody,
+          response: {
+            statusCode: 200,
+            body: responseBody,
+            resourceID: ids.join(","),
+          },
+        };
+      },
     );
 
-    return res.status(200).json({
-      success: true,
-      message: `${result.updatedCount} order(s) updated to '${result.status}'`,
-      data: result,
-    });
+    return res.status(200).json(body);
   } catch (error: any) {
     if ([400, 403, 404, 409, 422].includes(error.statusCode)) {
       return res.status(error.statusCode).json({
@@ -319,7 +365,6 @@ export async function updateOrderStatusController(req: Request, res: Response) {
         message: "Unauthorized",
       });
     }
-    const { id } = req.params;
     const { status, locationId, remarks, riderId } = req.body;
     if (!status) {
       return res.status(400).json({
@@ -337,23 +382,57 @@ export async function updateOrderStatusController(req: Request, res: Response) {
       });
     }
 
-    const parcel = await updateParcelStatus(
-      { id: req.user.id, roles: req.user.roles },
-      rawId,
-      { status, locationId, remarks, riderId },
-    );
-    return res.status(200).json({
-      success: true,
-      message: `Order status updated to '${status}'`,
-      data: {
-        id: parcel.id,
-        trackingId: parcel.tracking_id,
-        status: parcel.status,
-        currentLocationId: parcel.current_location_id,
-        deliveredAt: parcel.delivered_at,
-        updatedAt: parcel.updated_at,
+    const idempotencyKey = req.headers["idempotency-key"] as string | undefined;
+    if (!idempotencyKey) {
+      return res.status(400).json({
+        success: false,
+        message: "Idempotency-Key header is required",
+      });
+    }
+    if (!UUID_REGEX.test(idempotencyKey)) {
+      return res.status(400).json({
+        success: false,
+        message: "Idempotency-Key must be a valid UUID",
+      });
+    }
+
+    // Namespaced per order id + endpoint so the same key can't be replayed
+    // against a different order or collide with other idempotent endpoints.
+    const body = await withIdempotency(
+      `order-status:${rawId}:${idempotencyKey}`,
+      req.body,
+      async () => {
+        const parcel = await updateParcelStatus(
+          { id: req.user!.id, roles: req.user!.roles },
+          rawId,
+          { status, locationId, remarks, riderId },
+        );
+
+        const responseBody = {
+          success: true,
+          message: `Order status updated to '${status}'`,
+          data: {
+            id: parcel.id,
+            trackingId: parcel.tracking_id,
+            status: parcel.status,
+            currentLocationId: parcel.current_location_id,
+            deliveredAt: parcel.delivered_at,
+            updatedAt: parcel.updated_at,
+          },
+        };
+
+        return {
+          result: responseBody,
+          response: {
+            statusCode: 200,
+            body: responseBody,
+            resourceID: parcel.id,
+          },
+        };
       },
-    });
+    );
+
+    return res.status(200).json(body);
   } catch (error: any) {
     if (error.statusCode === 409 || error.statusCode === 422) {
       return res.status(error.statusCode).json({

@@ -79,6 +79,7 @@ export interface Order {
 
 export interface ListOrdersParams {
   status?: ParcelStatus[];
+  orderType?: OrderType;
   search?: string;
   page?: number;
   pageSize?: number;
@@ -114,6 +115,13 @@ export interface BulkStatusResult {
   };
 }
 
+export interface DashboardTrendDay {
+  day: string;
+  date: string;
+  delivered: number;
+  returned: number;
+}
+
 export interface DashboardSummary {
   overview: {
     totalOrders: number;
@@ -121,12 +129,16 @@ export interface DashboardSummary {
     pendingReturns: number;
     inTransit: number;
     pendingDeliveries: number;
+    totalDelivered: number;
+    totalReturns: number;
   };
   today: {
     totalOrders: number;
     delivered: number;
     inTransit: number;
     returns: number;
+    remarks: number;
+    unclosedComments: number;
   };
   codSettlement: {
     totalCod: number;
@@ -134,7 +146,10 @@ export interface DashboardSummary {
     pendingCod: number;
     progressPercent: number;
     scopedToRider: boolean;
+    lastAmount: number;
+    lastSettledAt: string | null;
   };
+  weeklyTrend: DashboardTrendDay[];
   updatedAt: string;
 }
 
@@ -152,6 +167,7 @@ export const subscribeToOrderStatusChanged = (handler: () => void) => {
 export const getOrders = async (params?: ListOrdersParams): Promise<OrdersListResponse> => {
   const query: Record<string, string> = {};
   if (params?.status?.length) query.status = params.status.join(',');
+  if (params?.orderType) query.orderType = params.orderType;
   if (params?.search) query.search = params.search;
   if (params?.page !== undefined) query.page = String(params.page);
   if (params?.pageSize !== undefined) query.pageSize = String(params.pageSize);
@@ -224,12 +240,17 @@ export const updateOrderStatus = async (
   locationId?: string,
   riderId?: string,
 ) => {
-  const response = await api.patch(`/orders/${orderId}/status`, {
-    status,
-    remarks,
-    locationId,
-    riderId,
-  });
+  const idempotencyKey = uuidv4();
+  const response = await api.patch(
+    `/orders/${orderId}/status`,
+    {
+      status,
+      remarks,
+      locationId,
+      riderId,
+    },
+    { headers: { 'Idempotency-Key': idempotencyKey } },
+  );
   notifyOrderStatusChanged();
   return response.data;
 };
@@ -239,13 +260,18 @@ export const bulkUpdateOrderStatus = async (
   status: ParcelStatus,
   options?: BulkStatusOptions,
 ): Promise<{ success: boolean; message: string; data: BulkStatusResult }> => {
-  const response = await api.patch('/orders/bulk-status', {
-    ids,
-    status,
-    remarks: options?.remarks,
-    toLocationId: options?.toLocationId,
-    riderId: options?.riderId,
-  });
+  const idempotencyKey = uuidv4();
+  const response = await api.patch(
+    '/orders/bulk-status',
+    {
+      ids,
+      status,
+      remarks: options?.remarks,
+      toLocationId: options?.toLocationId,
+      riderId: options?.riderId,
+    },
+    { headers: { 'Idempotency-Key': idempotencyKey } },
+  );
   notifyOrderStatusChanged();
   return response.data;
 };

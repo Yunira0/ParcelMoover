@@ -37,3 +37,16 @@ export async function withRedis<T>(fn: () => Promise<T>): Promise<T> {
     throw new AppError(503, "Service temporarily unavailable. Please retry.");
   }
 }
+
+// SCAN iterates incrementally instead of blocking the event loop like KEYS does,
+// which matters once the keyspace holding this prefix grows past a handful of entries.
+export async function scanAndDelete(pattern: string): Promise<void> {
+  let cursor = "0";
+  do {
+    const [nextCursor, keys] = await redis.scan(cursor, "MATCH", pattern, "COUNT", 100);
+    cursor = nextCursor;
+    if (keys.length) {
+      await redis.del(...keys);
+    }
+  } while (cursor !== "0");
+}

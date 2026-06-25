@@ -64,7 +64,6 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  cursor: pointer;
 }
 
 .notification-bell img {
@@ -72,6 +71,19 @@
   height: 24px;
   flex-shrink: 0;
   object-fit: contain;
+}
+
+.notification-bell-trigger {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
 }
 
 .bell-dot {
@@ -82,6 +94,90 @@
   height: 6px;
   background-color: var(--color-background-primary-default);
   border-radius: 50%;
+}
+
+.notification-panel {
+  position: absolute;
+  top: calc(100% + var(--space-2));
+  right: 0;
+  width: 340px;
+  max-height: 420px;
+  background-color: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-default);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  display: flex;
+  flex-direction: column;
+  z-index: 200;
+}
+
+.notification-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-border-default);
+  font-weight: 600;
+  color: var(--color-text-default);
+}
+
+.notification-mark-all {
+  background: none;
+  border: none;
+  color: var(--color-background-primary-default);
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  cursor: pointer;
+  padding: 0;
+}
+
+.notification-panel-list {
+  overflow-y: auto;
+  max-height: 360px;
+}
+
+.notification-panel-empty {
+  padding: var(--space-6) var(--space-4);
+  text-align: center;
+  color: var(--color-text-caption);
+  font-size: var(--font-size-sm);
+}
+
+.notification-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: var(--space-3) var(--space-4);
+  border: none;
+  border-bottom: 1px solid var(--color-border-default);
+  background: none;
+  cursor: pointer;
+}
+
+.notification-item:last-child {
+  border-bottom: none;
+}
+
+.notification-item-unread {
+  background-color: var(--color-background-primary-subtle, rgba(37, 99, 235, 0.06));
+}
+
+.notification-item-title {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--color-text-default);
+}
+
+.notification-item-body {
+  margin-top: 2px;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-caption);
+}
+
+.notification-item-time {
+  margin-top: var(--space-1);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-caption);
 }
 
 .user-profile {

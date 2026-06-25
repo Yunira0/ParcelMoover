@@ -1,0 +1,22 @@
+.vendor-overview-cards {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+.vendor-overview-cards .section-title {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-default);
+  margin: 0 0 var(--space-2);
+}
+
+.vendor-overview-cards-row {
+  display: flex;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.vendor-overview-cards-row .stat-card {
+  min-width: 220px;
+}

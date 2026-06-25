@@ -1,0 +1,139 @@
+.vendor-finance-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  width: 100%;
+}
+
+.vendor-finance-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.vendor-finance-subtext {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-caption);
+}
+
+.vendor-finance-error {
+  color: #b91c1c;
+  font-size: var(--font-size-sm);
+  margin: 0;
+}
+
+.vendor-finance-date-range {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-3);
+}
+
+.vendor-finance-date-range label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-caption);
+}
+
+.vendor-finance-date-range input {
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-default);
+  padding: var(--space-2);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-default);
+  background-color: var(--color-background-surface);
+}
+
+.cod-bill {
+  background-color: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-default);
+  padding: var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.cod-bill-header {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-6);
+}
+
+.cod-bill-billto {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--color-text-default);
+}
+
+.cod-bill-vendor-name {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+}
+
+.cod-bill-meta {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 220px;
+}
+
+.cod-bill-meta > div {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-4);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-default);
+}
+
+.cod-bill-meta > div > span:first-child {
+  color: var(--color-text-caption);
+}
+
+.cod-bill-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.cod-bill-table th {
+  text-align: left;
+  font-size: var(--font-size-xs);
+  text-transform: uppercase;
+  color: var(--color-text-caption);
+  border-bottom: 1px solid var(--color-border-default);
+  padding: var(--space-2) var(--space-2);
+}
+
+.cod-bill-table td {
+  padding: var(--space-3) var(--space-2);
+  border-bottom: 1px solid var(--color-border-default);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-default);
+}
+
+.cod-bill-totals {
+  align-self: flex-end;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 260px;
+}
+
+.cod-bill-totals > div {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-default);
+}
+
+.cod-bill-totals-payable {
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-md);
+  border-top: 1px solid var(--color-border-default);
+  padding-top: var(--space-2);
+}

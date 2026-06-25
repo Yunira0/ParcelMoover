@@ -1,6 +1,6 @@
 import { parcel_status, Prisma } from "../generated/prisma/client";
 import prisma from "../lib/prisma";
-import redis from "../lib/redis";
+import redis, { scanAndDelete } from "../lib/redis";
 import { AppError } from "../utils/AppError";
 import {
   BulkUpdateParcelStatusInput,
@@ -13,6 +13,7 @@ import {
 import { generateTrackingId } from "../utils/trackingId";
 import { generateDispatchNo } from "../utils/dispatchId";
 import { getDeliveryQuote } from "./delivery-rate.service";
+import { createNotification } from "./notification.service";
 
 type OrderActor = {
   id: string;
@@ -58,20 +59,29 @@ const MAX_BULK_IDS = 200;
 const DASHBOARD_SUMMARY_CACHE_PREFIX = "dashboard:summary:";
 const DASHBOARD_SUMMARY_TTL_SECONDS = 30;
 
+const ORDERS_LIST_CACHE_PREFIX = "orders:list:";
+const ORDERS_LIST_TTL_SECONDS = 20;
+
 function dashboardSummaryCacheKey(vendorId?: string, riderId?: string) {
   return `${DASHBOARD_SUMMARY_CACHE_PREFIX}${vendorId ?? "none"}:${riderId ?? "none"}`;
 }
 
+// Only the default, unfiltered/unpaginated listOrders() call is cached, so the
+// scope (vendor/rider) is all that distinguishes one cached list from another.
+function ordersListCacheKey(vendorId?: string, riderId?: string) {
+  return `${ORDERS_LIST_CACHE_PREFIX}${vendorId ?? "none"}:${riderId ?? "none"}`;
+}
+
 // Best-effort: a Redis hiccup should never block a status update or fall
-// back to a 503 - the dashboard just serves a stale value until the TTL expires.
-async function invalidateDashboardSummaryCache() {
+// back to a 503 - the dashboard/list just serve a stale value until the TTL expires.
+async function invalidateOrderCaches() {
   try {
-    const keys = await redis.keys(`${DASHBOARD_SUMMARY_CACHE_PREFIX}*`);
-    if (keys.length) {
-      await redis.del(...keys);
-    }
+    await Promise.all([
+      scanAndDelete(`${DASHBOARD_SUMMARY_CACHE_PREFIX}*`),
+      scanAndDelete(`${ORDERS_LIST_CACHE_PREFIX}*`),
+    ]);
   } catch (error) {
-    console.error("[Redis] Failed to invalidate dashboard summary cache:", error);
+    console.error("[Redis] Failed to invalidate order caches:", error);
   }
 }
 
@@ -345,7 +355,7 @@ export async function createOrder(actor: OrderActor, data: CreateOrderInput) {
     return parcel;
   });
 
-  await invalidateDashboardSummaryCache();
+  await invalidateOrderCaches();
   return parcel;
 }
 
@@ -365,6 +375,9 @@ function buildOrdersWhere(
   }
   if (query.status?.length) {
     conditions.push({ status: { in: query.status as parcel_status[] } });
+  }
+  if (query.orderType) {
+    conditions.push({ order_type: query.orderType });
   }
 
   const search = query.search?.trim();
@@ -465,6 +478,24 @@ export async function listOrders(
   // existing callers that expect a flat array keep working unchanged.
   const paginated = query.page !== undefined || query.pageSize !== undefined;
 
+  // Most pages (OrderManagement, DispatchOperations, PickupOperations, ...)
+  // call listOrders() with no filters at all and reload on every status-change
+  // event - that's the only shape worth caching, since filtered/paginated
+  // queries have too many distinct combinations to get useful hit rates.
+  const isDefaultUnfilteredQuery = !paginated && !query.status?.length && !query.orderType && !query.search;
+  const cacheKey = isDefaultUnfilteredQuery ? ordersListCacheKey(vendorId, riderId) : null;
+
+  if (cacheKey) {
+    try {
+      const cached = await redis.get(cacheKey);
+      if (cached) {
+        return JSON.parse(cached);
+      }
+    } catch (error) {
+      console.error("[Redis] Failed to read orders list cache:", error);
+    }
+  }
+
   if (!paginated) {
     const parcels = await prisma.parcels.findMany({
       where,
@@ -472,7 +503,17 @@ export async function listOrders(
       orderBy: { created_at: "desc" },
       take: 200,
     });
-    return { data: parcels.map(mapOrder) };
+    const result: ListOrdersResult = { data: parcels.map(mapOrder) };
+
+    if (cacheKey) {
+      try {
+        await redis.setex(cacheKey, ORDERS_LIST_TTL_SECONDS, JSON.stringify(result));
+      } catch (error) {
+        console.error("[Redis] Failed to write orders list cache:", error);
+      }
+    }
+
+    return result;
   }
 
   const page = Math.max(1, query.page || 1);
@@ -587,7 +628,7 @@ export async function addOrderRemark(
       ...(vendorId ? { vendor_id: vendorId } : {}),
       ...(riderId ? { OR: [{ pickup_rider_id: riderId }, { delivery_rider_id: riderId }] } : {}),
     },
-    select: { id: true },
+    select: { id: true, tracking_id: true },
   });
 
   if (!parcel) {
@@ -631,6 +672,15 @@ export async function addOrderRemark(
     },
     include: { users: true, parent_remark: { include: { users: true } } },
   });
+
+  const parentAuthorId = remark.parent_remark?.users?.id;
+  if (parentAuthorId && parentAuthorId !== actor.id) {
+    await createNotification(
+      parentAuthorId,
+      `New reply on order ${parcel.tracking_id}`,
+      trimmed.length > 200 ? `${trimmed.slice(0, 200)}…` : trimmed,
+    );
+  }
 
   return {
     id: remark.id,
@@ -677,16 +727,38 @@ export async function getDashboardSummary(actor: OrderActor) {
     ...(riderId ? { rider_id: riderId } : {}),
   };
 
+  const settlementWhere: Prisma.settlementsWhereInput = {
+    status: "settled",
+    ...(vendorId ? { vendor_id: vendorId } : {}),
+    ...(riderId ? { rider_id: riderId } : {}),
+  };
+
+  const TREND_DAYS = 7;
+  const trendDayRanges = Array.from({ length: TREND_DAYS }, (_, index) => {
+    const offset = TREND_DAYS - 1 - index;
+    const start = new Date(todayStart);
+    start.setDate(start.getDate() - offset);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 1);
+    return { start, end };
+  });
+
   const [
     totalOrders,
     pendingPickups,
     pendingReturns,
     inTransit,
     pendingDeliveries,
+    totalDelivered,
+    totalReturns,
     todaysOrders,
     todaysDelivered,
     todaysReturns,
+    todaysRemarks,
+    unclosedComments,
     codTotals,
+    lastSettlement,
+    trendCounts,
   ] = await Promise.all([
     prisma.parcels.count({ where: parcelWhere }),
     prisma.parcels.count({
@@ -706,6 +778,12 @@ export async function getDashboardSummary(actor: OrderActor) {
       where: { ...parcelWhere, status: { in: DELIVERY_PENDING_STATUSES } },
     }),
     prisma.parcels.count({
+      where: { ...parcelWhere, status: "delivered" },
+    }),
+    prisma.parcels.count({
+      where: { ...parcelWhere, order_type: "return" },
+    }),
+    prisma.parcels.count({
       where: { ...parcelWhere, created_at: { gte: todayStart } },
     }),
     prisma.parcels.count({
@@ -722,6 +800,15 @@ export async function getDashboardSummary(actor: OrderActor) {
         created_at: { gte: todayStart },
       },
     }),
+    prisma.parcel_remarks.count({
+      where: { created_at: { gte: todayStart }, parcels: parcelWhere },
+    }),
+    prisma.support_tickets.count({
+      where: {
+        status: { notIn: ["resolved", "closed"] },
+        ...(vendorId || riderId ? { parcels: parcelWhere } : {}),
+      },
+    }),
     prisma.cod_collections.aggregate({
       where: codWhere,
       _sum: {
@@ -730,6 +817,31 @@ export async function getDashboardSummary(actor: OrderActor) {
         pending_amount: true,
       },
     }),
+    prisma.settlements.findFirst({
+      where: settlementWhere,
+      orderBy: [{ settlement_date: "desc" }, { created_at: "desc" }],
+      select: { amount: true, settlement_date: true, created_at: true },
+    }),
+    Promise.all(
+      trendDayRanges.map(({ start, end }) =>
+        Promise.all([
+          prisma.parcels.count({
+            where: {
+              ...parcelWhere,
+              status: "delivered",
+              delivered_at: { gte: start, lt: end },
+            },
+          }),
+          prisma.parcels.count({
+            where: {
+              ...parcelWhere,
+              order_type: "return",
+              created_at: { gte: start, lt: end },
+            },
+          }),
+        ]),
+      ),
+    ),
   ]);
 
   const totalCod = moneyToNumber(codTotals._sum.cod_amount);
@@ -738,6 +850,16 @@ export async function getDashboardSummary(actor: OrderActor) {
     ? Math.max(totalCod - settledCod, 0)
     : moneyToNumber(codTotals._sum.pending_amount);
 
+  const weeklyTrend = trendDayRanges.map(({ start }, index) => {
+    const [delivered, returned] = trendCounts[index] ?? [0, 0];
+    return {
+      day: start.toLocaleDateString("en-US", { weekday: "short" }),
+      date: formatDate(start),
+      delivered,
+      returned,
+    };
+  });
+
   const summary = {
     overview: {
       totalOrders,
@@ -745,12 +867,16 @@ export async function getDashboardSummary(actor: OrderActor) {
       pendingReturns,
       inTransit,
       pendingDeliveries,
+      totalDelivered,
+      totalReturns,
     },
     today: {
       totalOrders: todaysOrders,
       delivered: todaysDelivered,
       inTransit,
       returns: todaysReturns,
+      remarks: todaysRemarks,
+      unclosedComments,
     },
     codSettlement: {
       totalCod,
@@ -758,7 +884,12 @@ export async function getDashboardSummary(actor: OrderActor) {
       pendingCod,
       progressPercent: totalCod > 0 ? (settledCod / totalCod) * 100 : 0,
       scopedToRider: Boolean(riderId),
+      lastAmount: lastSettlement ? moneyToNumber(lastSettlement.amount) : 0,
+      lastSettledAt: lastSettlement
+        ? formatDate(lastSettlement.settlement_date || lastSettlement.created_at)
+        : null,
     },
+    weeklyTrend,
     updatedAt: new Date().toISOString(),
   };
 
@@ -769,6 +900,28 @@ export async function getDashboardSummary(actor: OrderActor) {
   }
 
   return summary;
+}
+
+async function notifyVendorOfStatusChange(
+  vendorId: string | null,
+  trackingId: string,
+  newStatus: ParcelStatus,
+  actorId: string,
+) {
+  if (!vendorId) return;
+
+  const vendor = await prisma.vendors.findUnique({
+    where: { id: vendorId },
+    select: { user_id: true },
+  });
+
+  if (!vendor?.user_id || vendor.user_id === actorId) return;
+
+  await createNotification(
+    vendor.user_id,
+    `Order ${trackingId} updated`,
+    `Status changed to '${newStatus}'.`,
+  );
 }
 
 export async function updateParcelStatus(
@@ -893,7 +1046,8 @@ export async function updateParcelStatus(
     return updatedParcel;
   });
 
-  await invalidateDashboardSummaryCache();
+  await invalidateOrderCaches();
+  await notifyVendorOfStatusChange(parcel.vendor_id, parcel.tracking_id, newStatus, actor.id);
   return updatedParcel;
 }
 
@@ -1124,6 +1278,30 @@ export async function bulkUpdateParcelStatus(
     };
   });
 
-  await invalidateDashboardSummaryCache();
+  await invalidateOrderCaches();
+
+  const vendorIds = Array.from(
+    new Set(parcels.map((p) => p.vendor_id).filter((id): id is string => Boolean(id))),
+  );
+  if (vendorIds.length) {
+    const vendors = await prisma.vendors.findMany({
+      where: { id: { in: vendorIds } },
+      select: { id: true, user_id: true },
+    });
+    const vendorUserIdById = new Map(vendors.map((v) => [v.id, v.user_id]));
+
+    await Promise.all(
+      parcels.map((p) => {
+        const vendorUserId = p.vendor_id ? vendorUserIdById.get(p.vendor_id) : null;
+        if (!vendorUserId || vendorUserId === actor.id) return Promise.resolve();
+        return createNotification(
+          vendorUserId,
+          `Order ${p.tracking_id} updated`,
+          `Status changed to '${newStatus}'.`,
+        );
+      }),
+    );
+  }
+
   return result;
 }

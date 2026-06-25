@@ -1,0 +1,36 @@
+.vendor-dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  width: 100%;
+}
+
+.vendor-dashboard-error {
+  color: #b91c1c;
+  font-size: var(--font-size-sm);
+  margin: 0;
+}
+
+.vendor-dashboard-card {
+  background-color: var(--color-background-surface);
+  border-radius: var(--border-radius-modal);
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.vendor-dashboard-charts-row {
+  display: flex;
+  gap: var(--space-4);
+  align-items: stretch;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 900px) {
+  .vendor-dashboard-charts-row {
+    flex-direction: column;
+  }
+}

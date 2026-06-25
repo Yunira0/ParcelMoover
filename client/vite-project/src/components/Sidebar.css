@@ -52,7 +52,7 @@
 .sidebar-label {
   font-family: var(--typography-font-family-default);
   font-weight: var(--font-weight-medium);
-  font-size: var(--font-size-md);
+  font-size: var(--font-size-lg);
   white-space: nowrap;
 }
 

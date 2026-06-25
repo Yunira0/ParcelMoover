@@ -1,0 +1,162 @@
+import { Request, Response } from "express";
+import { getPendingCodBill, listOrderCod, listSettlements } from "../services/finance.service";
+import { CodPaymentFilter } from "../types/finance.type";
+
+const UUID_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function parseVendorIdParam(req: Request): { error?: string; vendorId?: string } {
+  const raw = req.query.vendorId;
+  if (raw === undefined) return {};
+  if (typeof raw !== "string" || !UUID_REGEX.test(raw)) {
+    return { error: "vendorId must be a valid UUID" };
+  }
+  return { vendorId: raw };
+}
+
+function parsePagination(req: Request): {
+  error?: string;
+  page?: number | undefined;
+  pageSize?: number | undefined;
+} {
+  let page: number | undefined;
+  let pageSize: number | undefined;
+
+  if (req.query.page !== undefined) {
+    page = Number(req.query.page);
+    if (!Number.isInteger(page) || page < 1) {
+      return { error: "page must be a positive integer" };
+    }
+  }
+  if (req.query.pageSize !== undefined) {
+    pageSize = Number(req.query.pageSize);
+    if (!Number.isInteger(pageSize) || pageSize < 1) {
+      return { error: "pageSize must be a positive integer" };
+    }
+  }
+
+  return { page, pageSize };
+}
+
+export async function getPendingCodController(req: Request, res: Response) {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const { error, vendorId } = parseVendorIdParam(req);
+    if (error) {
+      return res.status(400).json({ success: false, message: error });
+    }
+
+    const bill = await getPendingCodBill({ id: req.user.id, roles: req.user.roles }, vendorId);
+    return res.status(200).json({ success: true, data: bill });
+  } catch (error: any) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to load pending COD",
+    });
+  }
+}
+
+const VALID_COD_STATUS_FILTERS: CodPaymentFilter[] = ["settled", "not_settled"];
+
+export async function listOrderCodController(req: Request, res: Response) {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const { error: vendorError, vendorId } = parseVendorIdParam(req);
+    if (vendorError) {
+      return res.status(400).json({ success: false, message: vendorError });
+    }
+
+    const { error: pageError, page, pageSize } = parsePagination(req);
+    if (pageError) {
+      return res.status(400).json({ success: false, message: pageError });
+    }
+
+    let status: CodPaymentFilter | undefined;
+    if (req.query.status !== undefined) {
+      if (typeof req.query.status !== "string" || !VALID_COD_STATUS_FILTERS.includes(req.query.status as CodPaymentFilter)) {
+        return res.status(400).json({
+          success: false,
+          message: `status must be one of: ${VALID_COD_STATUS_FILTERS.join(", ")}`,
+        });
+      }
+      status = req.query.status as CodPaymentFilter;
+    }
+
+    const result = await listOrderCod(
+      { id: req.user.id, roles: req.user.roles },
+      vendorId,
+      status,
+      page,
+      pageSize,
+    );
+    return res.status(200).json({ success: true, ...result });
+  } catch (error: any) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to load order COD payments",
+    });
+  }
+}
+
+function parseDateParam(raw: unknown, label: string): { error?: string; date?: Date } {
+  if (raw === undefined) return {};
+  if (typeof raw !== "string") {
+    return { error: `${label} must be a date string` };
+  }
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) {
+    return { error: `${label} must be a valid date` };
+  }
+  return { date };
+}
+
+export async function listSettlementsController(req: Request, res: Response) {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const { error: vendorError, vendorId } = parseVendorIdParam(req);
+    if (vendorError) {
+      return res.status(400).json({ success: false, message: vendorError });
+    }
+
+    const { error: pageError, page, pageSize } = parsePagination(req);
+    if (pageError) {
+      return res.status(400).json({ success: false, message: pageError });
+    }
+
+    const { error: fromError, date: fromDate } = parseDateParam(req.query.fromDate, "fromDate");
+    if (fromError) {
+      return res.status(400).json({ success: false, message: fromError });
+    }
+    const { error: toError, date: toDate } = parseDateParam(req.query.toDate, "toDate");
+    if (toError) {
+      return res.status(400).json({ success: false, message: toError });
+    }
+    if (fromDate && toDate && fromDate > toDate) {
+      return res.status(400).json({ success: false, message: "fromDate must be before toDate" });
+    }
+
+    const result = await listSettlements(
+      { id: req.user.id, roles: req.user.roles },
+      vendorId,
+      page,
+      pageSize,
+      fromDate,
+      toDate,
+    );
+    return res.status(200).json({ success: true, ...result });
+  } catch (error: any) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to load settlements",
+    });
+  }
+}

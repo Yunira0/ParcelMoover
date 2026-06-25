@@ -2,6 +2,7 @@ import prisma from "../lib/prisma";
 import { AppError } from "../utils/AppError";
 import { getDatePart, randomBase32 } from "../utils/trackingId";
 import { CreateTicketInput, ListTicketsParams, TicketStatus } from "../types/ticket.type";
+import { createNotification } from "./notification.service";
 
 type Actor = { id: string; roles: string[] };
 
@@ -68,6 +69,14 @@ export async function createTicket(actor: Actor, input: CreateTicketInput) {
     },
     include: TICKET_INCLUDE,
   });
+
+  if (ticket.assigned_to && ticket.assigned_to !== actor.id) {
+    await createNotification(
+      ticket.assigned_to,
+      `Ticket ${ticket.ticket_no} assigned to you`,
+      ticket.subject,
+    );
+  }
 
   return mapTicket(ticket);
 }

@@ -1,0 +1,87 @@
+.vendor-cod-card {
+  background-color: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-modal);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  width: 360px;
+  flex-shrink: 0;
+  box-sizing: border-box;
+}
+
+.vendor-cod-card-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+}
+
+.vendor-cod-card-header h3 {
+  color: var(--color-text-primary);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+  margin: 0;
+}
+
+.vendor-cod-card-body {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  flex: 1;
+}
+
+.vendor-cod-card-rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.vendor-cod-card-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: var(--space-3) var(--space-2);
+  border-bottom: 1px solid var(--color-border-default);
+}
+
+.vendor-cod-card-row-label {
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-regular);
+  color: var(--color-text-default);
+}
+
+.vendor-cod-card-row-value-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.vendor-cod-card-row-value {
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-default);
+}
+
+.vendor-cod-card-row-date {
+  font-size: var(--font-size-sm);
+  color: var(--color-background-success-default);
+}
+
+.vendor-cod-card-total {
+  background-color: var(--color-background-elevated);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-2);
+  font-weight: var(--font-weight-bold);
+}
+
+.vendor-cod-card-total span:first-child {
+  font-size: var(--font-size-md);
+  color: var(--color-text-default);
+}
+
+.vendor-cod-card-total-value {
+  font-size: var(--font-size-lg);
+  color: var(--color-text-primary);
+}

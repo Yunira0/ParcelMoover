@@ -1,0 +1,64 @@
+.vendor-orders-trend-chart {
+  background: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-modal);
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  flex: 1;
+  min-width: 280px;
+  box-sizing: border-box;
+}
+
+.vendor-orders-trend-chart .section-title {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-default);
+  margin: 0;
+}
+
+.vendor-orders-trend-chart-svg {
+  width: 100%;
+  height: 200px;
+}
+
+.vendor-orders-trend-chart-empty {
+  height: 200px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-caption);
+  font-size: var(--font-size-sm);
+}
+
+.vendor-orders-trend-chart-grid {
+  stroke: var(--color-border-default);
+  stroke-width: 1;
+}
+
+.vendor-orders-trend-chart-tick,
+.vendor-orders-trend-chart-day {
+  fill: var(--color-text-caption);
+  font-size: 9px;
+}
+
+.vendor-orders-trend-chart-line-delivered {
+  fill: none;
+  stroke: var(--color-background-success-default);
+  stroke-width: 2;
+}
+
+.vendor-orders-trend-chart-line-returned {
+  fill: none;
+  stroke: #dc2626;
+  stroke-width: 2;
+}
+
+.vendor-orders-trend-chart-dot-delivered {
+  fill: var(--color-background-success-default);
+}
+
+.vendor-orders-trend-chart-dot-returned {
+  fill: #dc2626;
+}
