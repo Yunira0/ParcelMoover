@@ -4,42 +4,33 @@ import { Eye, Search, X } from 'lucide-react';
 import Table from '../components/Table';
 import Button from '../components/Button';
 import PageHeader from '../components/PageHeader';
+import SegmentedTabs from '../components/SegmentedTabs';
 import Pagination from '../components/Pagination';
 import StatusChip, { type StatusChipTone } from '../components/StatusChip';
 import FilterDropdown from '../components/FilterDropdown';
 import {
   getRemarks,
+  REMARK_STATUS_LABELS,
   type Remark,
+  type RemarkStatus,
 } from '../services/remarks.service';
-import type { ParcelStatus } from '../services/orders.service';
 import './Remarks.css';
 
 const PAGE_SIZE = 10;
 
-const STATUS_LABELS: Record<ParcelStatus, string> = {
-  pickup_ordered: 'Pickup Ordered',
-  rider_assigned: 'Rider Assigned',
-  picked_up: 'Picked Up',
-  arrived: 'Arrived',
-  ready_to_deliver: 'Ready to Deliver',
-  sent_for_delivery: 'In Transit',
-  oov: 'Out of Vehicle',
-  dispatched: 'Dispatched',
-  arrived_at_branch: 'Arrived',
-  hold: 'On Hold',
-  loss_and_damage: 'Loss & Damage',
-  delivered: 'Delivered',
-  failed_pickup: 'Failed Pickup',
-  failed_delivery: 'Failed Delivery',
-  cancelled: 'Cancelled',
+type RemarkTab = 'all' | RemarkStatus;
+
+const TAB_ORDER: RemarkTab[] = ['all', 'open', 'pending', 'closed'];
+
+const TAB_LABELS: Record<RemarkTab, string> = {
+  all: 'All',
+  ...REMARK_STATUS_LABELS,
 };
 
-const getStatusTone = (status: ParcelStatus): StatusChipTone => {
-  if (status === 'delivered') return 'success';
-  if (['arrived', 'arrived_at_branch', 'rider_assigned'].includes(status)) return 'info';
-  if (['failed_pickup', 'failed_delivery', 'loss_and_damage'].includes(status)) return 'danger';
-  if (status === 'cancelled') return 'neutral';
-  return 'warning';
+const STATUS_TONE: Record<RemarkStatus, StatusChipTone> = {
+  open: 'info',
+  pending: 'warning',
+  closed: 'success',
 };
 
 type DateRange = '' | 'today' | '7d' | '30d';
@@ -71,7 +62,7 @@ const Remarks: React.FC = () => {
   const navigate = useNavigate();
   const [remarks, setRemarks] = useState<Remark[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<ParcelStatus | ''>('');
+  const [activeTab, setActiveTab] = useState<RemarkTab>('all');
   const [dateRange, setDateRange] = useState<DateRange>('');
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
@@ -91,12 +82,18 @@ const Remarks: React.FC = () => {
 
   useEffect(() => { loadRemarks(); }, [loadRemarks]);
 
-  useEffect(() => { setPage(1); }, [searchQuery, statusFilter, dateRange]);
+  useEffect(() => { setPage(1); }, [searchQuery, activeTab, dateRange]);
+
+  const statusCounts = useMemo(() => {
+    const counts: Record<RemarkTab, number> = { all: remarks.length, open: 0, pending: 0, closed: 0 };
+    remarks.forEach((remark) => { counts[remark.status] += 1; });
+    return counts;
+  }, [remarks]);
 
   const filteredRemarks = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     return remarks.filter((remark) => {
-      if (statusFilter && remark.status !== statusFilter) return false;
+      if (activeTab !== 'all' && remark.status !== activeTab) return false;
       if (!isWithinRange(remark.createdAt, dateRange)) return false;
       if (q && !(
         remark.customerName.toLowerCase().includes(q) ||
@@ -106,7 +103,7 @@ const Remarks: React.FC = () => {
       )) return false;
       return true;
     });
-  }, [remarks, searchQuery, statusFilter, dateRange]);
+  }, [remarks, searchQuery, activeTab, dateRange]);
 
   const totalPages = Math.max(1, Math.ceil(filteredRemarks.length / PAGE_SIZE));
   const visibleRemarks = filteredRemarks.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
@@ -139,7 +136,6 @@ const Remarks: React.FC = () => {
   };
 
   const resetFilters = () => {
-    setStatusFilter('');
     setDateRange('');
   };
 
@@ -172,7 +168,7 @@ const Remarks: React.FC = () => {
     {
       header: 'STATUS',
       accessor: (remark: Remark) => (
-        <StatusChip tone={getStatusTone(remark.status)}>{STATUS_LABELS[remark.status]}</StatusChip>
+        <StatusChip tone={STATUS_TONE[remark.status]}>{REMARK_STATUS_LABELS[remark.status]}</StatusChip>
       ),
       width: '140px',
     },
@@ -196,18 +192,14 @@ const Remarks: React.FC = () => {
         subtitle="Handle customer inquiries, monitor progress, and address concerns."
       />
 
-      <div className="remarks-filter-panel">
-        <FilterDropdown
-          label="STATUS"
-          value={statusFilter}
-          onChange={(value) => setStatusFilter(value as ParcelStatus | '')}
-          placeholder="Select status"
-          options={(Object.keys(STATUS_LABELS) as ParcelStatus[]).map((status) => ({
-            value: status,
-            label: STATUS_LABELS[status],
-          }))}
-        />
+      <SegmentedTabs
+        ariaLabel="Remark status filters"
+        value={activeTab}
+        onChange={setActiveTab}
+        options={TAB_ORDER.map((tab) => ({ value: tab, label: `${TAB_LABELS[tab]} ${statusCounts[tab]}` }))}
+      />
 
+      <div className="remarks-filter-panel">
         <FilterDropdown
           label="DATE RANGE"
           value={dateRange}

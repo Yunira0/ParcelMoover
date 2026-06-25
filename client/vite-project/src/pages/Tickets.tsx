@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Eye, Plus, Search, X } from 'lucide-react';
 import Table from '../components/Table';
 import Button from '../components/Button';
@@ -24,7 +25,7 @@ type TicketTab = 'all' | TicketStatus;
 
 const PAGE_SIZE = 10;
 
-const TAB_ORDER: TicketTab[] = ['all', 'in_progress', 'pending', 'resolved', 'closed'];
+const TAB_ORDER: TicketTab[] = ['all', 'open', 'pending', 'closed'];
 
 const TAB_LABELS: Record<TicketTab, string> = {
   all: 'All',
@@ -39,10 +40,9 @@ const PRIORITY_TONE: Record<TicketPriority, StatusChipTone> = {
 };
 
 const STATUS_TONE: Record<TicketStatus, StatusChipTone> = {
-  in_progress: 'info',
+  open: 'info',
   pending: 'warning',
-  resolved: 'success',
-  closed: 'neutral',
+  closed: 'success',
 };
 
 type DateRange = '' | 'today' | '7d' | '30d';
@@ -71,6 +71,7 @@ const isWithinRange = (createdAt: string, range: DateRange) => {
 };
 
 const Tickets: React.FC = () => {
+  const navigate = useNavigate();
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [activeTab, setActiveTab] = useState<TicketTab>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -103,9 +104,8 @@ const Tickets: React.FC = () => {
   const statusCounts = useMemo(() => {
     const counts: Record<TicketTab, number> = {
       all: tickets.length,
-      in_progress: 0,
+      open: 0,
       pending: 0,
-      resolved: 0,
       closed: 0,
     };
     tickets.forEach((ticket) => { counts[ticket.status] += 1; });
@@ -203,14 +203,14 @@ const Tickets: React.FC = () => {
     { header: 'CREATED AT', accessor: (ticket: Ticket) => ticket.createdAt, width: '110px' },
     {
       header: 'ACTION',
-      accessor: () => (
-        <Button variant="outline" size="sm">
+      accessor: (ticket: Ticket) => (
+        <Button variant="outline" size="sm" onClick={() => navigate(`/tickets/${ticket.id}`)}>
           <Eye size={14} /> View
         </Button>
       ),
       width: '110px',
     },
-  ], [page, visibleTickets]);
+  ], [page, visibleTickets, navigate]);
 
   return (
     <div className="tickets-container">

@@ -1,6 +1,6 @@
 import api from '../utils/api';
 
-export type TicketStatus = 'in_progress' | 'pending' | 'resolved' | 'closed';
+export type TicketStatus = 'open' | 'pending' | 'closed';
 export type TicketPriority = 'low' | 'medium' | 'high' | 'urgent';
 export type TicketCategory = 'delivery' | 'billing' | 'pickup' | 'general';
 
@@ -17,10 +17,21 @@ export interface Ticket {
   createdAt: string;
 }
 
+export interface TicketThreadEntry {
+  id: string;
+  message: string;
+  author: string;
+  createdAt: string;
+}
+
+export interface TicketDetail extends Ticket {
+  description: string;
+  thread: TicketThreadEntry[];
+}
+
 export const TICKET_STATUS_LABELS: Record<TicketStatus, string> = {
-  in_progress: 'In progress',
+  open: 'Open',
   pending: 'Pending',
-  resolved: 'Resolved',
   closed: 'Closed',
 };
 
@@ -79,5 +90,28 @@ export const createTicket = async (
   data: CreateTicketInput,
 ): Promise<{ success: boolean; message: string; data: Ticket }> => {
   const response = await api.post('/tickets', data);
+  return response.data;
+};
+
+export const getTicketById = async (
+  id: string,
+): Promise<{ success: boolean; data: TicketDetail }> => {
+  const response = await api.get(`/tickets/${id}`);
+  return response.data;
+};
+
+export const replyToTicket = async (
+  id: string,
+  message: string,
+): Promise<{ success: boolean; data: TicketDetail }> => {
+  const response = await api.post(`/tickets/${id}/reply`, { message });
+  return response.data;
+};
+
+export const setTicketStatus = async (
+  id: string,
+  status: TicketStatus,
+): Promise<{ success: boolean; data: Ticket }> => {
+  const response = await api.patch(`/tickets/${id}/status`, { status });
   return response.data;
 };

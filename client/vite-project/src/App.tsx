@@ -18,12 +18,14 @@ import OOVOperations from './pages/OOVOperations'
 import ReturnOperations from './pages/ReturnOperations'
 import HoldOperations from './pages/HoldOperations'
 import LossAndDamageOperations from './pages/LossAndDamageOperations'
-import Tickets from './pages/Tickets'
-import Remarks from './pages/Remarks'
+import CXCenter from './pages/CXCenter'
 import RemarkDetail from './pages/RemarkDetail'
+import TicketDetail from './pages/TicketDetail'
 import VendorSettlements from './pages/vendor/VendorSettlements'
 import VendorPendingCod from './pages/vendor/VendorPendingCod'
 import VendorOrderPayments from './pages/vendor/VendorOrderPayments'
+import VendorUserManagement from './pages/vendor/VendorUserManagement'
+import VendorDeliveryCharges from './pages/vendor/VendorDeliveryCharges'
 import ProtectedRoute from './components/ProtectedRoute'
 import RoleGuard from './components/RoleGuard'
 import './App.css'
@@ -59,8 +61,9 @@ function App() {
           <Route path="/return" element={<ReturnOperations />} />
           <Route path="/hold" element={<HoldOperations />} />
           <Route path="/loss-and-damage" element={<LossAndDamageOperations />} />
-          <Route path="/tickets" element={<Tickets />} />
-          <Route path="/remarks" element={<Remarks />} />
+          <Route path="/tickets" element={<CXCenter />} />
+          <Route path="/tickets/:id" element={<TicketDetail />} />
+          <Route path="/remarks" element={<CXCenter />} />
           <Route path="/remarks/:id" element={<RemarkDetail />} />
           <Route
             path="/finance/settlements"
@@ -73,6 +76,14 @@ function App() {
           <Route
             path="/finance/order-payments"
             element={<RoleGuard allowedRoles={['vendor']}><VendorOrderPayments /></RoleGuard>}
+          />
+          <Route
+            path="/user-management"
+            element={<RoleGuard allowedRoles={['vendor']}><VendorUserManagement /></RoleGuard>}
+          />
+          <Route
+            path="/delivery-charges"
+            element={<RoleGuard allowedRoles={['vendor']}><VendorDeliveryCharges /></RoleGuard>}
           />
         </Route>
         {/* Catch-all */}
