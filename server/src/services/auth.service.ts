@@ -3,6 +3,7 @@ import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 
 import { AppError } from "../utils/AppError";
+import { sendWelcomeEmail } from "../lib/mailer";
 
 import { RegisterUserInput } from "../types/user-registration";
 
@@ -259,7 +260,7 @@ export async function registerUserBySuperAdmin(
 
   const passwordHash = await bcrypt.hash(data.password, 12);
 
-  return prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
     const user = await tx.users.create({
       data: {
         full_name: data.fullName,
@@ -267,6 +268,7 @@ export async function registerUserBySuperAdmin(
         phone: data.phone,
         password_hash: passwordHash,
         status: "active",
+        must_change_password: true,
       },
     });
 
@@ -286,12 +288,7 @@ export async function registerUserBySuperAdmin(
           joined_at: data.joinedAt ? new Date(data.joinedAt) : null,
         },
       });
-
-      return {
-        user,
-        profile: admin,
-        role: data.type,
-      };
+      return { user, profile: admin, role: data.type };
     }
 
     if (data.type === "vendor") {
@@ -308,32 +305,30 @@ export async function registerUserBySuperAdmin(
           joined_at: data.joinedAt ? new Date(data.joinedAt) : null,
         },
       });
-
-      
-      return {
-        user,
-        profile: vendor,
-        role: data.type,
-      };
+      return { user, profile: vendor, role: data.type };
     }
 
-      const raider = await tx.riders.create({
-        data: {
-          user_id: user.id,
-          name: data.fullName,
-          phone: data.phone!,
-          location_id: data.locationId ?? null,
-          status: "active",
-          joined_at: data.joinedAt ? new Date(data.joinedAt) : null,
-        },
-      });
-      
-      return {
-        user,
-        profile: raider,
-        role: data.type,
-      };
+    const raider = await tx.riders.create({
+      data: {
+        user_id: user.id,
+        name: data.fullName,
+        phone: data.phone!,
+        location_id: data.locationId ?? null,
+        status: "active",
+        joined_at: data.joinedAt ? new Date(data.joinedAt) : null,
+      },
+    });
+    return { user, profile: raider, role: data.type };
   });
+
+  // Fire-and-forget: email failure must not roll back the registration.
+  sendWelcomeEmail({
+    to: data.email,
+    name: data.fullName,
+    password: data.password,
+  }).catch((err) => console.error("Welcome email failed:", err));
+
+  return result;
 }
 /** 
  * this is a cool function
@@ -364,11 +359,21 @@ export async function loginUser(data: IuserLoginData) {
 
     const roles = user.user_roles.map((url) => url.roles.code);
 
+    // For vendor_staff, surface their permission list so the frontend can
+    // render only the nav items they're allowed to access.
+    let staffPermissions: string[] | undefined;
+    if (roles.includes("vendor_staff")) {
+      const staffRecord = await prisma.vendor_staff.findFirst({
+        where: { user_id: user.id, deleted_at: null, enabled: true },
+        select: { permissions: true },
+      });
+      staffPermissions = (staffRecord?.permissions ?? []) as string[];
+    }
+
+    const mustChangePassword = user.must_change_password;
+
     const token = jwt.sign(
-      {
-        id: user.id,
-        roles
-      },
+      { id: user.id, roles, mustChangePassword },
       process.env.JWT_SECRET,
       { expiresIn: "7d" },
     );
@@ -377,7 +382,6 @@ export async function loginUser(data: IuserLoginData) {
       where: { id: user.id },
       data: { last_login_at: new Date() },
     });
-
 
     return {
       token,
@@ -388,6 +392,8 @@ export async function loginUser(data: IuserLoginData) {
         phone: user.phone,
         status: user.status,
         roles,
+        mustChangePassword,
+        ...(staffPermissions !== undefined && { permissions: staffPermissions }),
       }
     }
 
@@ -398,4 +404,30 @@ export async function loginUser(data: IuserLoginData) {
     console.error("Login service error:", error);
     throw new AppError(500, "Error occurred while logging in");
   }
+}
+
+export async function changePassword(
+  userId: string,
+  currentPassword: string,
+  newPassword: string,
+) {
+  if (!newPassword || newPassword.length < 8) {
+    throw new AppError(400, "New password must be at least 8 characters");
+  }
+
+  const user = await prisma.users.findUnique({ where: { id: userId } });
+  if (!user || !user.password_hash) throw new AppError(404, "User not found");
+
+  const valid = await bcrypt.compare(currentPassword, user.password_hash);
+  if (!valid) throw new AppError(401, "Current password is incorrect");
+
+  if (currentPassword === newPassword) {
+    throw new AppError(400, "New password must be different from the current password");
+  }
+
+  const hash = await bcrypt.hash(newPassword, 12);
+  await prisma.users.update({
+    where: { id: userId },
+    data: { password_hash: hash, must_change_password: false, updated_at: new Date() },
+  });
 }

@@ -2,7 +2,10 @@
   "permissions": {
     "allow": [
       "mcp__3d88db8b-53b0-4fea-aebe-e0bfac048dcf__get_design_context",
-      "mcp__claude_ai_Figma__get_design_context"
+      "mcp__claude_ai_Figma__get_design_context",
+      "Bash(npx prisma *)",
+      "Bash(npx tsc *)",
+      "Bash(npm install *)"
     ]
   }
 }

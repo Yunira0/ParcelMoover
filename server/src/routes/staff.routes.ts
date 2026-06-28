@@ -1,9 +1,12 @@
 import { Router } from "express";
+import { rateLimit } from "express-rate-limit";
 import { authMiddleware } from "../middlewares/auth.mddleware";
 import { authorizeRoles } from "../middlewares/authorizeRoles.middleware";
 import { csrfProtection } from "../middlewares/csrf.middleware";
+import { createRedisRateLimitStore } from "../lib/rateLimitStore";
 import {
   createStaffController,
+  getMyStaffProfileController,
   listStaffController,
   setStaffEnabledController,
   updateStaffController,
@@ -11,18 +14,42 @@ import {
 
 const staffRouter: Router = Router();
 
-// All staff endpoints are vendor-owned.
-staffRouter.get("/", authMiddleware, authorizeRoles("vendor"), listStaffController);
+const staffReadLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 120,
+  message: { success: false, message: "Too many requests, please slow down" },
+  standardHeaders: true,
+  legacyHeaders: false,
+  store: createRedisRateLimitStore("staff-read"),
+  keyGenerator: (req) => req.user?.id ?? (req.ip ?? ""),
+});
 
-staffRouter.post("/", authMiddleware, csrfProtection, authorizeRoles("vendor"), createStaffController);
+const staffWriteLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  message: { success: false, message: "Too many requests, please slow down" },
+  standardHeaders: true,
+  legacyHeaders: false,
+  store: createRedisRateLimitStore("staff-write"),
+  keyGenerator: (req) => req.user?.id ?? (req.ip ?? ""),
+});
 
-staffRouter.patch("/:id", authMiddleware, csrfProtection, authorizeRoles("vendor"), updateStaffController);
+// Staff member fetches their own live permissions (called on app mount to avoid stale localStorage).
+staffRouter.get("/me", authMiddleware, authorizeRoles("vendor_staff"), staffReadLimiter, getMyStaffProfileController);
+
+// All other staff endpoints are vendor-owned.
+staffRouter.get("/", authMiddleware, authorizeRoles("vendor"), staffReadLimiter, listStaffController);
+
+staffRouter.post("/", authMiddleware, csrfProtection, authorizeRoles("vendor"), staffWriteLimiter, createStaffController);
+
+staffRouter.patch("/:id", authMiddleware, csrfProtection, authorizeRoles("vendor"), staffWriteLimiter, updateStaffController);
 
 staffRouter.patch(
   "/:id/status",
   authMiddleware,
   csrfProtection,
   authorizeRoles("vendor"),
+  staffWriteLimiter,
   setStaffEnabledController,
 );
 

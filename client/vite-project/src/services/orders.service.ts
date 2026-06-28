@@ -255,6 +255,43 @@ export const updateOrderStatus = async (
   return response.data;
 };
 
+export interface BulkCreateOrderRow {
+  sender?: { name: string; phone: string; address?: string };
+  receiver: { name: string; phone: string; alternatePhone?: string; address?: string };
+  codAmount?: number;
+  weightKg?: number;
+  orderType?: OrderType;
+  serviceType?: ServiceType;
+  deliveryInstruction?: string;
+  originLocationId?: string;
+  destinationLocationId?: string;
+}
+
+export interface BulkCreateOrderInput {
+  defaultSender?: { name: string; phone: string; address?: string };
+  orders: BulkCreateOrderRow[];
+}
+
+export interface BulkCreateResult {
+  created: number;
+  failed: number;
+  results: Array<
+    | { index: number; success: true; trackingId: string }
+    | { index: number; success: false; error: string }
+  >;
+}
+
+export const bulkCreateOrders = async (
+  input: BulkCreateOrderInput,
+): Promise<{ success: boolean; message: string; data: BulkCreateResult }> => {
+  const idempotencyKey = uuidv4();
+  const response = await api.post('/orders/bulk', input, {
+    headers: { 'Idempotency-Key': idempotencyKey },
+  });
+  notifyOrderStatusChanged();
+  return response.data;
+};
+
 export const bulkUpdateOrderStatus = async (
   ids: string[],
   status: ParcelStatus,

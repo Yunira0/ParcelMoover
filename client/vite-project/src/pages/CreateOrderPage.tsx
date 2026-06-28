@@ -7,6 +7,7 @@ import Button from '../components/Button';
 import { getLocations, getVendors } from '../services/users.service';
 import { getDeliveryQuote } from '../services/deliveryRates.service';
 import { createOrder, type CreateOrderInput, type OrderType, type ServiceType } from '../services/orders.service';
+import { isVendorSide } from '../utils/auth';
 import './CreateOrderPage.css';
 
 interface VendorOption {
@@ -69,7 +70,7 @@ const CreateOrderPage: React.FC = () => {
   const prefillInitialData = (location.state as { initialData?: CreateOrderInput } | null)?.initialData;
 
   const currentUser = getCurrentUser();
-  const isVendorActor = Boolean(currentUser?.roles?.includes('vendor'));
+  const isVendorActor = isVendorSide();
 
   const [vendors, setVendors] = useState<VendorOption[]>([]);
   const [locationOptions, setLocationOptions] = useState<LocationOption[]>([]);

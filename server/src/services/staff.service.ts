@@ -1,46 +1,71 @@
+import bcrypt from "bcrypt";
 import prisma from "../lib/prisma";
 import { AppError } from "../utils/AppError";
+import { sendWelcomeEmail } from "../lib/mailer";
 import { STAFF_PERMISSIONS, StaffInput, StaffPermission } from "../types/staff.type";
 
 type Actor = { id: string; roles: string[] };
 
 const VALID_PERMISSIONS = new Set<string>(STAFF_PERMISSIONS);
+const MIN_PASSWORD_LENGTH = 8;
 
-// Staff are owned by the acting vendor; resolve (and assert) that vendor first.
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
 async function resolveVendorId(actor: Actor): Promise<string> {
   const vendor = await prisma.vendors.findFirst({
     where: { user_id: actor.id, deleted_at: null },
     select: { id: true },
   });
-  if (!vendor) {
-    throw new AppError(403, "Only vendors can manage staff");
-  }
+  if (!vendor) throw new AppError(403, "Only vendors can manage staff");
   return vendor.id;
 }
 
 function sanitizePermissions(permissions: unknown): StaffPermission[] {
-  if (!Array.isArray(permissions)) {
-    throw new AppError(400, "permissions must be an array");
-  }
+  if (!Array.isArray(permissions)) throw new AppError(400, "permissions must be an array");
   const cleaned = permissions.filter(
     (p): p is StaffPermission => typeof p === "string" && VALID_PERMISSIONS.has(p),
   );
-  if (cleaned.length === 0) {
-    throw new AppError(400, "Select at least one valid permission");
-  }
-  // De-dupe while preserving order.
+  if (cleaned.length === 0) throw new AppError(400, "Select at least one valid permission");
   return Array.from(new Set(cleaned));
 }
 
 function validateInput(input: StaffInput) {
   if (!input.name?.trim()) throw new AppError(400, "Name is required");
   if (!input.email?.trim()) throw new AppError(400, "Email is required");
+  const email = input.email.trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new AppError(400, "Invalid email address");
   return {
     name: input.name.trim(),
-    email: input.email.trim(),
+    email,
     permissions: sanitizePermissions(input.permissions),
     enabled: input.enabled ?? true,
   };
+}
+
+// Returns the non-empty password if it passes policy, null if blank (edit-mode skip).
+function validatePassword(password: string | undefined, required: boolean): string | null {
+  if (!password || password.trim() === "") {
+    if (required) throw new AppError(400, `Password must be at least ${MIN_PASSWORD_LENGTH} characters`);
+    return null;
+  }
+  if (password.length < MIN_PASSWORD_LENGTH) {
+    throw new AppError(400, `Password must be at least ${MIN_PASSWORD_LENGTH} characters`);
+  }
+  return password;
+}
+
+async function getVendorStaffRoleId(): Promise<string> {
+  const role = await prisma.roles.findUnique({ where: { code: "vendor_staff" } });
+  if (!role) throw new AppError(500, "vendor_staff role not seeded — run migrations");
+  return role.id;
+}
+
+async function assertOwnedStaff(vendorId: string, id: string) {
+  const existing = await prisma.vendor_staff.findFirst({
+    where: { id, vendor_id: vendorId, deleted_at: null },
+    select: { id: true },
+  });
+  if (!existing) throw new AppError(404, "Staff not found");
 }
 
 function mapStaff(staff: {
@@ -59,6 +84,17 @@ function mapStaff(staff: {
   };
 }
 
+// ── Public API ─────────────────────────────────────────────────────────────────
+
+export async function getMyStaffProfile(actor: Actor) {
+  const staff = await prisma.vendor_staff.findFirst({
+    where: { user_id: actor.id, deleted_at: null, enabled: true },
+    select: { permissions: true },
+  });
+  if (!staff) throw new AppError(404, "Staff profile not found or inactive");
+  return { permissions: staff.permissions as string[] };
+}
+
 export async function listStaff(actor: Actor) {
   const vendorId = await resolveVendorId(actor);
   const staff = await prisma.vendor_staff.findMany({
@@ -71,55 +107,143 @@ export async function listStaff(actor: Actor) {
 export async function createStaff(actor: Actor, input: StaffInput) {
   const vendorId = await resolveVendorId(actor);
   const data = validateInput(input);
+  const password = validatePassword(input.password, true)!;
 
-  const staff = await prisma.vendor_staff.create({
-    data: {
-      vendor_id: vendorId,
-      created_by: actor.id,
-      name: data.name,
-      email: data.email,
-      permissions: data.permissions,
-      enabled: data.enabled,
-    },
-  });
-  return mapStaff(staff);
-}
+  // Reject if another user already owns this email.
+  const existing = await prisma.users.findUnique({ where: { email: data.email } });
+  if (existing) throw new AppError(409, "A user with this email already exists");
 
-async function assertOwnedStaff(vendorId: string, id: string) {
-  const existing = await prisma.vendor_staff.findFirst({
-    where: { id, vendor_id: vendorId, deleted_at: null },
-    select: { id: true },
+  const [passwordHash, roleId] = await Promise.all([
+    bcrypt.hash(password, 12),
+    getVendorStaffRoleId(),
+  ]);
+
+  const staff = await prisma.$transaction(async (tx) => {
+    const user = await tx.users.create({
+      data: {
+        full_name: data.name,
+        email: data.email,
+        password_hash: passwordHash,
+        status: "active",
+        must_change_password: true,
+      },
+    });
+
+    await tx.user_roles.create({ data: { user_id: user.id, role_id: roleId } });
+
+    const created = await tx.vendor_staff.create({
+      data: {
+        vendor_id: vendorId,
+        user_id: user.id,
+        created_by: actor.id,
+        name: data.name,
+        email: data.email,
+        permissions: data.permissions,
+        enabled: data.enabled,
+      },
+    });
+
+    return mapStaff(created);
   });
-  if (!existing) {
-    throw new AppError(404, "Staff not found");
-  }
+
+  sendWelcomeEmail({ to: data.email, name: data.name, password }).catch(
+    (err) => console.error("Staff welcome email failed:", err),
+  );
+
+  return staff;
 }
 
 export async function updateStaff(actor: Actor, id: string, input: StaffInput) {
   const vendorId = await resolveVendorId(actor);
   await assertOwnedStaff(vendorId, id);
   const data = validateInput(input);
+  const newPassword = validatePassword(input.password, false);
 
-  const staff = await prisma.vendor_staff.update({
-    where: { id },
-    data: {
-      name: data.name,
-      email: data.email,
-      permissions: data.permissions,
-      enabled: data.enabled,
-      updated_at: new Date(),
-    },
+  return prisma.$transaction(async (tx) => {
+    const existing = await tx.vendor_staff.findUnique({
+      where: { id },
+      select: { user_id: true, email: true },
+    });
+
+    if (existing?.user_id) {
+      // Staff already has a linked user — update name/email/password as needed.
+      const userUpdate: Record<string, unknown> = {
+        full_name: data.name,
+        updated_at: new Date(),
+      };
+
+      if (existing.email !== data.email) {
+        const conflict = await tx.users.findUnique({ where: { email: data.email } });
+        if (conflict && conflict.id !== existing.user_id) {
+          throw new AppError(409, "A user with this email already exists");
+        }
+        userUpdate.email = data.email;
+      }
+
+      if (newPassword) {
+        userUpdate.password_hash = await bcrypt.hash(newPassword, 12);
+      }
+
+      await tx.users.update({ where: { id: existing.user_id }, data: userUpdate });
+    } else if (newPassword) {
+      // Legacy staff with no user account — create one now so they can log in.
+      const conflict = await tx.users.findUnique({ where: { email: data.email } });
+      if (conflict) throw new AppError(409, "A user with this email already exists");
+
+      const roleId = await getVendorStaffRoleId();
+      const user = await tx.users.create({
+        data: {
+          full_name: data.name,
+          email: data.email,
+          password_hash: await bcrypt.hash(newPassword, 12),
+          status: data.enabled ? "active" : "inactive",
+        },
+      });
+      await tx.user_roles.create({ data: { user_id: user.id, role_id: roleId } });
+
+      // Link the vendor_staff row to the new user before the rest of the update runs.
+      await tx.vendor_staff.update({ where: { id }, data: { user_id: user.id } });
+    }
+
+    const staff = await tx.vendor_staff.update({
+      where: { id },
+      data: {
+        name: data.name,
+        email: data.email,
+        permissions: data.permissions,
+        enabled: data.enabled,
+        updated_at: new Date(),
+      },
+    });
+
+    return mapStaff(staff);
   });
-  return mapStaff(staff);
 }
 
+// Toggling enabled also flips the linked user's login status so the account
+// is immediately blocked at the auth layer, not just in the UI.
 export async function setStaffEnabled(actor: Actor, id: string, enabled: boolean) {
   const vendorId = await resolveVendorId(actor);
   await assertOwnedStaff(vendorId, id);
 
-  const staff = await prisma.vendor_staff.update({
-    where: { id },
-    data: { enabled, updated_at: new Date() },
+  return prisma.$transaction(async (tx) => {
+    const existing = await tx.vendor_staff.findUnique({
+      where: { id },
+      select: { user_id: true },
+    });
+
+    if (existing?.user_id) {
+      await tx.users.update({
+        where: { id: existing.user_id },
+        data: { status: enabled ? "active" : "inactive", updated_at: new Date() },
+      });
+    }
+
+    const staff = await tx.vendor_staff.update({
+      where: { id },
+      data: { enabled, updated_at: new Date() },
+    });
+
+    return mapStaff(staff);
   });
-  return mapStaff(staff);
 }

@@ -50,6 +50,16 @@
   color: var(--color-text-base);
 }
 
+.btn-danger {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #b91c1c;
+}
+.btn-danger:hover:not(:disabled) {
+  background: #fee2e2;
+  border-color: #f87171;
+}
+
 .btn-ghost {
   background: transparent;
   border: 0;

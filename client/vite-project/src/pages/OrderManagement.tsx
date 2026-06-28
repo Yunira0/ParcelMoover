@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Copy,
@@ -25,6 +25,7 @@ import {
   type Order,
   type ParcelStatus,
 } from '../services/orders.service';
+import { printLabels } from '../utils/printLabels';
 import './OrderManagement.css';
 
 const STATUS_LABELS: Record<ParcelStatus, string> = {
@@ -209,6 +210,7 @@ const OrderManagement: React.FC = () => {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [openActionId, setOpenActionId] = useState<string | null>(null);
   const [remarkPopupOrder, setRemarkPopupOrder] = useState<Order | null>(null);
+  const [printWorking, setPrintWorking] = useState(false);
 
   const loadOrders = async () => {
     setLoading(true);
@@ -250,7 +252,7 @@ const OrderManagement: React.FC = () => {
 
   const filteredOrders = useMemo(() => orders.filter(order => {
     const tabStatuses = TAB_GROUPS[filter];
-    const q = trackingSearch.toLowerCase().trim();
+    const q = trackingSearch.toLowerCase();
     const orderRoute = `${order.origin} -> ${order.destination}`;
     const created = new Date(order.createdAt);
     const now = new Date();
@@ -259,12 +261,18 @@ const OrderManagement: React.FC = () => {
       : Math.floor((now.getTime() - created.getTime()) / 86_400_000);
 
     const matchesTab = filter === 'all' || tabStatuses.includes(order.status);
-    const matchesSearch = !q ||
-      order.trackingId.toLowerCase().includes(q) ||
-      order.senderName.toLowerCase().includes(q) ||
-      order.senderPhone.toLowerCase().includes(q) ||
-      order.receiverName.toLowerCase().includes(q) ||
-      order.receiverPhone.toLowerCase().includes(q);
+    const terms = q ? q.split(',').map(t => t.trim()).filter(Boolean) : [];
+    const matchesSearch = terms.length === 0 || (
+      terms.length > 1
+        ? terms.some(t => order.trackingId.toLowerCase() === t)
+        : (
+            order.trackingId.toLowerCase().includes(terms[0]!) ||
+            order.senderName.toLowerCase().includes(terms[0]!) ||
+            order.senderPhone.toLowerCase().includes(terms[0]!) ||
+            order.receiverName.toLowerCase().includes(terms[0]!) ||
+            order.receiverPhone.toLowerCase().includes(terms[0]!)
+          )
+    );
     const matchesDate =
       !dateRange ||
       (dateRange === 'today' && daysOld === 0) ||
@@ -298,6 +306,19 @@ const OrderManagement: React.FC = () => {
   const someVisibleSelected = visibleOrderIds.some(id => selectedIds.has(id));
   const firstResult = filteredOrders.length === 0 ? 0 : ((page - 1) * PAGE_SIZE) + 1;
   const lastResult = Math.min(page * PAGE_SIZE, filteredOrders.length);
+
+  const handlePrintLabels = useCallback(async () => {
+    const labelOrders = selectedIds.size > 0
+      ? orders.filter(o => selectedIds.has(o.id))
+      : visibleOrders;
+    if (labelOrders.length === 0) return;
+    setPrintWorking(true);
+    try {
+      await printLabels(labelOrders);
+    } finally {
+      setPrintWorking(false);
+    }
+  }, [selectedIds, orders, visibleOrders]);
 
   const clearFilters = () => {
     setOriginHub('');
@@ -579,8 +600,13 @@ const OrderManagement: React.FC = () => {
           <Button variant="primary" onClick={downloadCsv}>
             <Download size={14} /> Download
           </Button>
-          <Button variant="primary" onClick={() => window.print()}>
-            <Printer size={14} /> Print
+          <Button variant="primary" onClick={handlePrintLabels} disabled={printWorking}>
+            <Printer size={14} />
+            {printWorking
+              ? 'Preparing…'
+              : selectedIds.size > 0
+                ? `Print ${selectedIds.size} Label${selectedIds.size !== 1 ? 's' : ''}`
+                : `Print ${visibleOrders.length} Label${visibleOrders.length !== 1 ? 's' : ''}`}
           </Button>
         </div>
       </div>
@@ -590,7 +616,7 @@ const OrderManagement: React.FC = () => {
         <input
           value={trackingSearch}
           onChange={event => setTrackingSearch(event.target.value)}
-          placeholder="Search tracking id"
+          placeholder="TRK001 or TRK001, TRK002, TRK003"
         />
         {trackingSearch && (
           <button type="button" onClick={() => setTrackingSearch('')} aria-label="Clear search">

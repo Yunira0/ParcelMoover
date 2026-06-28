@@ -76,7 +76,7 @@ export async function createTicket(actor: Actor, input: CreateTicketInput) {
       category: input.category?.trim() || null,
       priority: input.priority?.trim() || null,
       description: input.description?.trim() || null,
-      status: "pending",
+      status: "open",
       assigned_to: input.assignedTo || null,
       created_by: actor.id,
     },
@@ -138,17 +138,8 @@ async function findAccessibleTicket(actor: Actor, id: string) {
   return ticket;
 }
 
-// Viewing a pending ticket moves it to "open" (in progress).
 export async function getTicketById(actor: Actor, id: string) {
-  let ticket = await findAccessibleTicket(actor, id);
-
-  if (normalizeStatus(ticket.status) === "pending") {
-    ticket = await prisma.support_tickets.update({
-      where: { id },
-      data: { status: "open", updated_at: new Date() },
-      include: TICKET_INCLUDE,
-    });
-  }
+  const ticket = await findAccessibleTicket(actor, id);
 
   const replies = await prisma.ticket_replies.findMany({
     where: { ticket_id: id },
@@ -166,7 +157,7 @@ export async function getTicketById(actor: Actor, id: string) {
   };
 }
 
-// Replying resolves the ticket (sets it closed).
+// Staff reply → "pending" (waiting for vendor); vendor reply → "open" (needs staff attention).
 export async function addTicketReply(actor: Actor, id: string, message: string) {
   if (!message?.trim()) throw new AppError(400, "Message is required");
   await findAccessibleTicket(actor, id);
@@ -185,9 +176,10 @@ export async function addTicketReply(actor: Actor, id: string, message: string) 
     },
   });
 
+  const newStatus = isStaff(actor) ? "pending" : "open";
   await prisma.support_tickets.update({
     where: { id },
-    data: { status: "closed", closed_at: new Date(), updated_at: new Date() },
+    data: { status: newStatus, updated_at: new Date() },
   });
 
   return getTicketById(actor, id);

@@ -22,6 +22,8 @@ export interface StaffInput {
   email: string;
   permissions: StaffPermission[];
   enabled: boolean;
+  /** Required on create. Optional on edit — leave blank to keep the existing password. */
+  password?: string;
 }
 
 export const STAFF_PERMISSIONS: { value: StaffPermission; label: string }[] = [
@@ -38,6 +40,11 @@ export const PERMISSION_LABELS: Record<StaffPermission, string> = STAFF_PERMISSI
   (acc, p) => ({ ...acc, [p.value]: p.label }),
   {} as Record<StaffPermission, string>,
 );
+
+export const getMyPermissions = async (): Promise<string[]> => {
+  const response = await api.get('/staff/me');
+  return response.data.data.permissions;
+};
 
 export const getStaff = async (): Promise<Staff[]> => {
   const response = await api.get('/staff');

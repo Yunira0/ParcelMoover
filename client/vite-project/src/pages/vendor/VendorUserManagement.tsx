@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard,
   Mail,
@@ -16,15 +17,11 @@ import type { LucideIcon } from 'lucide-react';
 import PageHeader from '../../components/PageHeader';
 import Table from '../../components/Table';
 import Button from '../../components/Button';
-import StaffModal from '../../components/StaffModal';
 import {
-  createStaff,
   getStaff,
   PERMISSION_LABELS,
   setStaffEnabled,
-  updateStaff,
   type Staff,
-  type StaffInput,
   type StaffPermission,
 } from '../../services/staff.service';
 import './VendorUserManagement.css';
@@ -49,11 +46,10 @@ const initials = (name: string) =>
     .toUpperCase() || 'S';
 
 const VendorUserManagement: React.FC = () => {
+  const navigate = useNavigate();
   const [staff, setStaff] = useState<Staff[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [modalOpen, setModalOpen] = useState(false);
-  const [editing, setEditing] = useState<Staff | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [error, setError] = useState('');
 
@@ -79,23 +75,17 @@ const VendorUserManagement: React.FC = () => {
     );
   }, [staff, searchQuery]);
 
-  const openCreate = () => { setEditing(null); setModalOpen(true); };
-  const openEdit = (member: Staff) => { setEditing(member); setModalOpen(true); };
-
-  const handleSubmit = async (input: StaffInput) => {
-    if (editing) {
-      await updateStaff(editing.id, input);
-    } else {
-      await createStaff(input);
-    }
-    await loadStaff();
-  };
+  const openCreate = () => navigate('/user-management/staff/new');
+  const openEdit = (member: Staff) =>
+    navigate(`/user-management/staff/${member.id}/edit`, { state: { staff: member } });
 
   const toggleEnabled = async (member: Staff) => {
     setTogglingId(member.id);
     try {
       await setStaffEnabled(member.id, !member.enabled);
       await loadStaff();
+    } catch (err: any) {
+      setError(err?.response?.data?.message || 'Failed to update staff status.');
     } finally {
       setTogglingId(null);
     }
@@ -221,12 +211,6 @@ const VendorUserManagement: React.FC = () => {
         minWidth="980px"
       />
 
-      <StaffModal
-        isOpen={modalOpen}
-        staff={editing}
-        onClose={() => setModalOpen(false)}
-        onSubmit={handleSubmit}
-      />
     </div>
   );
 };

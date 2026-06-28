@@ -1,10 +1,24 @@
 import { Request, Response } from "express";
 import {
   createStaff,
+  getMyStaffProfile,
   listStaff,
   setStaffEnabled,
   updateStaff,
 } from "../services/staff.service";
+
+export async function getMyStaffProfileController(req: Request, res: Response) {
+  try {
+    if (!req.user) return res.status(401).json({ success: false, message: "Unauthorized" });
+    const profile = await getMyStaffProfile({ id: req.user.id, roles: req.user.roles });
+    return res.status(200).json({ success: true, data: profile });
+  } catch (error: any) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to load staff profile",
+    });
+  }
+}
 
 export async function listStaffController(req: Request, res: Response) {
   try {

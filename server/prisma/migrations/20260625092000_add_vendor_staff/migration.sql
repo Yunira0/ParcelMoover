@@ -1,0 +1,1 @@
+-- placeholder: superseded by 20260625120000_add_vendor_staff which uses IF NOT EXISTS guards

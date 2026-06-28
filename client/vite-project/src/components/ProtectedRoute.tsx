@@ -1,5 +1,6 @@
 import React from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
+import { getCurrentUser } from '../utils/auth';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -7,12 +8,15 @@ interface ProtectedRouteProps {
 
 const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   const location = useLocation();
-  // Simple check for user in localStorage
-  const user = localStorage.getItem('user');
+  const user = getCurrentUser();
 
   if (!user) {
-    // Redirect to login but save the current location they were trying to go to
     return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+
+  // Block access to every protected route until the user sets a permanent password.
+  if (user.mustChangePassword) {
+    return <Navigate to="/change-password" replace />;
   }
 
   return <>{children}</>;

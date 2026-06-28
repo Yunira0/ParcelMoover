@@ -24,7 +24,7 @@ const VendorSettlements: React.FC = () => {
   const dateRangeInvalid = Boolean(fromDate && toDate && fromDate > toDate);
 
   useEffect(() => {
-    if (dateRangeInvalid) return;
+    if (dateRangeInvalid) { setLoading(false); return; }
 
     let active = true;
     setLoading(true);

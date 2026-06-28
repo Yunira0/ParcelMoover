@@ -4,6 +4,7 @@ import { authMiddleware } from "../middlewares/auth.mddleware";
 import { authorizeRoles } from "../middlewares/authorizeRoles.middleware";
 import {
   addOrderRemarkController,
+  bulkCreateOrdersController,
   bulkUpdateOrderStatusController,
   createOrderController,
   dashboardSummaryController,
@@ -19,15 +20,12 @@ const orderRouter: Router = Router();
 // absoulate route "i guess"
 /*
 POST   /orders
+POST   /orders/bulk
 GET    /orders
-GET    /orders/:id
 GET    /orders/track/:trackingId
-PATCH  /orders/:id
 PATCH  /orders/:id/status
-PATCH  /orders/:id/assign-rider
 PATCH  /orders/bulk-status
 POST   /orders/:id/remarks
-DELETE /orders/:id
  */
 
 const actorOrIpKey = (req: Request) => req.user?.id ?? ipKeyGenerator(req.ip ?? "");
@@ -62,11 +60,32 @@ const remarkLimiter = rateLimit({
   keyGenerator: actorOrIpKey,
 });
 
+// One slot = one batch (up to 100 orders), so vendors can't spam by batching.
+const bulkCreateLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 5,
+  message: { success: false, message: "Too many bulk order requests, please slow down" },
+  standardHeaders: true,
+  legacyHeaders: false,
+  store: createRedisRateLimitStore("bulk-create-order"),
+  keyGenerator: actorOrIpKey,
+});
+
+// POST /orders/bulk — must be registered before POST /orders to avoid Express matching /bulk as a body param
+orderRouter.post(
+  "/bulk",
+  authMiddleware,
+  csrfProtection,
+  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff"),
+  bulkCreateLimiter,
+  bulkCreateOrdersController,
+);
+
 orderRouter.post(
   "/",
   authMiddleware,
   csrfProtection,
-  authorizeRoles("super_admin", "admin", "vendor"),
+  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff"),
   createOrderLimiter,
   createOrderController,
 );
@@ -74,14 +93,14 @@ orderRouter.post(
 orderRouter.get(
   "/dashboard-summary",
   authMiddleware,
-  authorizeRoles("super_admin", "admin", "vendor", "rider"),
+  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider"),
   dashboardSummaryController,
 );
 
 orderRouter.get(
   "/",
   authMiddleware,
-  authorizeRoles("super_admin", "admin", "vendor", "rider"),
+  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider"),
   listOrdersController,
 );
 
@@ -89,7 +108,7 @@ orderRouter.get(
 orderRouter.get(
   "/track/:trackingId",
   authMiddleware,
-  authorizeRoles("super_admin", "admin", "vendor", "rider"),
+  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider"),
   getOrderByTrackingIdController,
 );
 
@@ -108,17 +127,17 @@ orderRouter.post(
   "/:id/remarks",
   authMiddleware,
   csrfProtection,
-  authorizeRoles("super_admin", "admin", "vendor", "rider"),
+  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider"),
   remarkLimiter,
   addOrderRemarkController,
 );
 
-// PATCH /orders/bulk-status - batch transitions used by OOV/dispatch operations
+// PATCH /orders/bulk-status — batch transitions; vendors allowed (service enforces valid transitions)
 orderRouter.patch(
   "/bulk-status",
   authMiddleware,
   csrfProtection,
-  authorizeRoles("super_admin", "admin", "rider"),
+  authorizeRoles("super_admin", "admin", "rider", "vendor", "vendor_staff"),
   statusUpdateLimiter,
   bulkUpdateOrderStatusController,
 );

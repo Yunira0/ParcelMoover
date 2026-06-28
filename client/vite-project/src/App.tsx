@@ -25,7 +25,10 @@ import VendorSettlements from './pages/vendor/VendorSettlements'
 import VendorPendingCod from './pages/vendor/VendorPendingCod'
 import VendorOrderPayments from './pages/vendor/VendorOrderPayments'
 import VendorUserManagement from './pages/vendor/VendorUserManagement'
+import StaffFormPage from './pages/vendor/StaffFormPage'
+import BulkOrderPage from './pages/vendor/BulkOrderPage'
 import VendorDeliveryCharges from './pages/vendor/VendorDeliveryCharges'
+import ForceChangePasswordPage from './pages/ForceChangePasswordPage'
 import ProtectedRoute from './components/ProtectedRoute'
 import RoleGuard from './components/RoleGuard'
 import './App.css'
@@ -37,6 +40,8 @@ function App() {
         {/* Public Routes */}
         <Route path="/" element={<MainLayout><Home /></MainLayout>} />
         <Route path="/login" element={<MainLayout><Login /></MainLayout>} />
+        {/* Standalone — no sidebar/topnav, intentionally outside ProtectedRoute */}
+        <Route path="/change-password" element={<ForceChangePasswordPage />} />
 
         {/* Protected Dashboard Routes */}
         <Route 
@@ -48,42 +53,102 @@ function App() {
         >
           <Route path="/dashboard" element={<DashboardRouter />} />
           <Route path="/orders" element={<OrdersRouter />} />
-          <Route path="/orders/create" element={<CreateOrderPage />} />
+          <Route
+            path="/orders/create"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'vendor', 'vendor_staff']}><CreateOrderPage /></RoleGuard>}
+          />
+          <Route
+            path="/orders/bulk-create"
+            element={<RoleGuard allowedRoles={['vendor', 'vendor_staff']}><BulkOrderPage /></RoleGuard>}
+          />
           <Route path="/orders/track/:trackingId" element={<OrderDetailPage />} />
-          <Route path="/admin" element={<AdminManagement />} />
-          <Route path="/vendors" element={<VendorManagement />} />
-          <Route path="/riders" element={<RiderManagement />} />
-          <Route path="/finance" element={<FinanceManagement />} />
-          <Route path="/settings/delivery-rates" element={<DeliveryRateSettings />} />
-          <Route path="/pickup" element={<PickupOperations />} />
-          <Route path="/dispatch" element={<DispatchOperations />} />
-          <Route path="/oov" element={<OOVOperations />} />
-          <Route path="/return" element={<ReturnOperations />} />
-          <Route path="/hold" element={<HoldOperations />} />
-          <Route path="/loss-and-damage" element={<LossAndDamageOperations />} />
-          <Route path="/tickets" element={<CXCenter />} />
-          <Route path="/tickets/:id" element={<TicketDetail />} />
-          <Route path="/remarks" element={<CXCenter />} />
-          <Route path="/remarks/:id" element={<RemarkDetail />} />
+          <Route
+            path="/admin"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']}><AdminManagement /></RoleGuard>}
+          />
+          <Route
+            path="/vendors"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']}><VendorManagement /></RoleGuard>}
+          />
+          <Route
+            path="/riders"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']}><RiderManagement /></RoleGuard>}
+          />
+          <Route
+            path="/finance"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']}><FinanceManagement /></RoleGuard>}
+          />
+          <Route
+            path="/settings/delivery-rates"
+            element={<RoleGuard allowedRoles={['super_admin']}><DeliveryRateSettings /></RoleGuard>}
+          />
+          <Route
+            path="/pickup"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']}><PickupOperations /></RoleGuard>}
+          />
+          <Route
+            path="/dispatch"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']}><DispatchOperations /></RoleGuard>}
+          />
+          <Route
+            path="/oov"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']}><OOVOperations /></RoleGuard>}
+          />
+          <Route
+            path="/return"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']}><ReturnOperations /></RoleGuard>}
+          />
+          <Route
+            path="/hold"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']}><HoldOperations /></RoleGuard>}
+          />
+          <Route
+            path="/loss-and-damage"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']}><LossAndDamageOperations /></RoleGuard>}
+          />
+          <Route
+            path="/tickets"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'vendor', 'vendor_staff']}><CXCenter /></RoleGuard>}
+          />
+          <Route
+            path="/tickets/:id"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'vendor', 'vendor_staff']}><TicketDetail /></RoleGuard>}
+          />
+          <Route
+            path="/remarks"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'vendor', 'vendor_staff']}><CXCenter /></RoleGuard>}
+          />
+          <Route
+            path="/remarks/:id"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'vendor', 'vendor_staff']}><RemarkDetail /></RoleGuard>}
+          />
           <Route
             path="/finance/settlements"
-            element={<RoleGuard allowedRoles={['vendor']}><VendorSettlements /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['vendor', 'vendor_staff']}><VendorSettlements /></RoleGuard>}
           />
           <Route
             path="/finance/pending-cod"
-            element={<RoleGuard allowedRoles={['vendor']}><VendorPendingCod /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['vendor', 'vendor_staff']}><VendorPendingCod /></RoleGuard>}
           />
           <Route
             path="/finance/order-payments"
-            element={<RoleGuard allowedRoles={['vendor']}><VendorOrderPayments /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['vendor', 'vendor_staff']}><VendorOrderPayments /></RoleGuard>}
           />
           <Route
             path="/user-management"
             element={<RoleGuard allowedRoles={['vendor']}><VendorUserManagement /></RoleGuard>}
           />
           <Route
+            path="/user-management/staff/new"
+            element={<RoleGuard allowedRoles={['vendor']}><StaffFormPage /></RoleGuard>}
+          />
+          <Route
+            path="/user-management/staff/:id/edit"
+            element={<RoleGuard allowedRoles={['vendor']}><StaffFormPage /></RoleGuard>}
+          />
+          <Route
             path="/delivery-charges"
-            element={<RoleGuard allowedRoles={['vendor']}><VendorDeliveryCharges /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['vendor', 'vendor_staff']}><VendorDeliveryCharges /></RoleGuard>}
           />
         </Route>
         {/* Catch-all */}

@@ -82,6 +82,21 @@ export interface BulkUpdateParcelStatusInput {
   riderId?: string;
 }
 
+export interface BulkCreateOrderInput {
+  /** Sender applied to every order that omits its own sender field. */
+  defaultSender?: OrderPartyInput;
+  orders: CreateOrderInput[];
+}
+
+export interface BulkCreateResult {
+  created: number;
+  failed: number;
+  results: Array<
+    | { index: number; success: true; trackingId: string }
+    | { index: number; success: false; error: string }
+  >;
+}
+
 /** Who is allowed to transition to each status */
 export const STATUS_TRANSITIONS = {
   pickup_ordered:    ["rider_assigned", "cancelled"],

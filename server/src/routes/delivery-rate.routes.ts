@@ -50,7 +50,7 @@ const ratesWriteLimiter = rateLimit({
 deliveryRateRouter.get(
   "/quote",
   authMiddleware,
-  authorizeRoles("super_admin", "admin", "vendor"),
+  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff"),
   quoteLimiter,
   getDeliveryQuoteController,
 );
@@ -60,7 +60,7 @@ deliveryRateRouter.get(
 deliveryRateRouter.get(
   "/",
   authMiddleware,
-  authorizeRoles("super_admin", "admin", "vendor"),
+  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff"),
   ratesReadLimiter,
   listDeliveryRatesController,
 );

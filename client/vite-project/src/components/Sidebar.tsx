@@ -25,7 +25,8 @@ import {
   Truck,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { getCurrentUserRoles } from '../utils/auth';
+import { getCurrentUserRoles, isAdminSide } from '../utils/auth';
+import { useStaffPermissions } from '../context/StaffPermissionsContext';
 import './Sidebar.css';
 
 interface SidebarItemProps {
@@ -108,6 +109,62 @@ const VendorSidebar: React.FC = () => (
     </div>
   </aside>
 );
+
+// Sidebar for vendor_staff — shows only sections the vendor granted them access to.
+const VendorStaffSidebar: React.FC = () => {
+  const perms = useStaffPermissions();
+  const has = (p: string) => perms.includes(p);
+
+  return (
+    <aside className="sidebar">
+      <div className="sidebar-nav">
+        {has('DASHBOARD_ACCESS') && (
+          <SidebarItem to="/dashboard" icon={icons.dashboard} label="Dashboard" />
+        )}
+        {has('ORDER_ACCESS') && (
+          <SidebarItem to="/orders" icon={icons.order} label="Order" />
+        )}
+        {has('FINANCE_ACCESS') && (
+          <>
+            <div className="sidebar-dropdown">
+              <span className="dropdown-label">Finance</span>
+              <ChevronDown size={16} style={{ color: 'var(--color-text-caption)' }} />
+            </div>
+            <div className="sidebar-subnav">
+              <NavLink to="/finance/settlements" className={({ isActive }) => `sidebar-subitem ${isActive ? 'active' : ''}`}>
+                <icons.settlements className="sidebar-icon" size={24} />
+                <span className="sidebar-label">Settlement</span>
+              </NavLink>
+              <NavLink to="/finance/order-payments" className={({ isActive }) => `sidebar-subitem ${isActive ? 'active' : ''}`}>
+                <icons.orderPayments className="sidebar-icon" size={24} />
+                <span className="sidebar-label">Order wise payment</span>
+              </NavLink>
+              <NavLink to="/finance/pending-cod" className={({ isActive }) => `sidebar-subitem ${isActive ? 'active' : ''}`}>
+                <icons.pendingCod className="sidebar-icon" size={24} />
+                <span className="sidebar-label">Pending COD</span>
+              </NavLink>
+            </div>
+          </>
+        )}
+        {has('TICKETS_ACCESS') && (
+          <SidebarItem to="/tickets" icon={icons.ticket} label="Tickets" />
+        )}
+        {has('USER_ACCESS') && (
+          <SidebarItem to="/user-management" icon={icons.userManagement} label="User Management" />
+        )}
+        {has('REMARKS_ACCESS') && (
+          <SidebarItem to="/remarks" icon={icons.remarks} label="Remarks" />
+        )}
+        {has('DELIVERY_CHARGES_ACCESS') && (
+          <SidebarItem to="/delivery-charges" icon={icons.deliveryCharges} label="Delivery Charges" />
+        )}
+      </div>
+      <div className="sidebar-footer">
+        <SidebarItem to="/help" icon={icons.help} label="Help and Support" />
+      </div>
+    </aside>
+  );
+};
 
 const AdminSidebar: React.FC<{ isSuperAdmin: boolean }> = ({ isSuperAdmin }) => (
   <aside className="sidebar">
@@ -202,13 +259,9 @@ const AdminSidebar: React.FC<{ isSuperAdmin: boolean }> = ({ isSuperAdmin }) => 
 
 const Sidebar: React.FC = () => {
   const roles = getCurrentUserRoles();
-  const isStaff = roles.includes('super_admin') || roles.includes('admin');
-  const isVendorOnly = roles.includes('vendor') && !isStaff;
 
-  if (isVendorOnly) {
-    return <VendorSidebar />;
-  }
-
+  if (roles.includes('vendor_staff')) return <VendorStaffSidebar />;
+  if (roles.includes('vendor') && !isAdminSide()) return <VendorSidebar />;
   return <AdminSidebar isSuperAdmin={roles.includes('super_admin')} />;
 };
 

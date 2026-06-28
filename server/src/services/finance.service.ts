@@ -24,14 +24,24 @@ const DEFAULT_PAGE_SIZE = 20;
 async function resolveVendor(actor: Actor, vendorIdParam?: string) {
   const isStaff = actor.roles.some((r) => ["super_admin", "admin"].includes(r));
   const isVendor = actor.roles.includes("vendor");
+  const isVendorStaff = actor.roles.includes("vendor_staff");
 
   if (isVendor) {
     const vendor = await prisma.vendors.findFirst({
       where: { user_id: actor.id, deleted_at: null, status: "active" },
     });
-    if (!vendor) {
-      throw new AppError(403, "Vendor profile not found or inactive");
-    }
+    if (!vendor) throw new AppError(403, "Vendor profile not found or inactive");
+    return vendor;
+  }
+
+  if (isVendorStaff) {
+    const staffRecord = await prisma.vendor_staff.findFirst({
+      where: { user_id: actor.id, deleted_at: null, enabled: true },
+      select: { vendor_id: true },
+    });
+    if (!staffRecord) throw new AppError(403, "Staff profile not found or inactive");
+    const vendor = await prisma.vendors.findFirst({ where: { id: staffRecord.vendor_id } });
+    if (!vendor) throw new AppError(403, "Vendor not found");
     return vendor;
   }
 

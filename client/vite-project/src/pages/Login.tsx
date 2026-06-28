@@ -22,7 +22,11 @@ const Login: React.FC = () => {
         // Save user data to localStorage for ProtectedRoute to verify the session.
         // The accessToken itself lives in an httpOnly cookie, not in this body.
         localStorage.setItem('user', JSON.stringify(response.data));
-        navigate('/dashboard');
+        if (response.data?.mustChangePassword) {
+          navigate('/change-password', { replace: true });
+        } else {
+          navigate('/dashboard');
+        }
       } else {
         setError(response.message || 'Login failed');
       }

@@ -17,15 +17,28 @@ const normalizeStatus = (status: string | null): RemarkWorkflowStatus => {
   return "pending";
 };
 
-// Vendors only see remarks on their own parcels; staff see everything.
+// Vendors and their staff only see remarks on their vendor's parcels; admins see everything.
 async function scopeWhere(actor: Actor, extra: Record<string, unknown> = {}) {
   if (isStaff(actor)) return extra;
-  const vendor = await prisma.vendors.findFirst({
-    where: { user_id: actor.id, deleted_at: null },
-    select: { id: true },
-  });
-  if (!vendor) throw new AppError(403, "No vendor profile found");
-  return { ...extra, parcels: { vendor_id: vendor.id } };
+
+  let vendorId: string | null = null;
+
+  if (actor.roles.includes("vendor")) {
+    const vendor = await prisma.vendors.findFirst({
+      where: { user_id: actor.id, deleted_at: null },
+      select: { id: true },
+    });
+    vendorId = vendor?.id ?? null;
+  } else if (actor.roles.includes("vendor_staff")) {
+    const staffRecord = await prisma.vendor_staff.findFirst({
+      where: { user_id: actor.id, deleted_at: null, enabled: true },
+      select: { vendor_id: true },
+    });
+    vendorId = staffRecord?.vendor_id ?? null;
+  }
+
+  if (!vendorId) throw new AppError(403, "No vendor profile found");
+  return { ...extra, parcels: { vendor_id: vendorId } };
 }
 
 function mapRemark(remark: {

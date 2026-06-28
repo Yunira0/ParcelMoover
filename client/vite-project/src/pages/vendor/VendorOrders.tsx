@@ -1,6 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ChevronsLeft, ChevronsRight, Download, FileUp, MessageSquareText, Plus, Printer } from 'lucide-react';
+import { ChevronsLeft, ChevronsRight, Download, FileUp, MessageSquareText, Plus, Printer, Search, X } from 'lucide-react';
 import PageHeader from '../../components/PageHeader';
 import Table from '../../components/Table';
 import Button from '../../components/Button';
@@ -9,11 +9,13 @@ import Pagination from '../../components/Pagination';
 import StatusChip, { type StatusChipTone } from '../../components/StatusChip';
 import QuickRemarkPopup from '../../components/QuickRemarkPopup';
 import {
+  bulkUpdateOrderStatus,
   getOrders,
   subscribeToOrderStatusChanged,
   type Order,
   type ParcelStatus,
 } from '../../services/orders.service';
+import { printLabels } from '../../utils/printLabels';
 import './VendorOrders.css';
 
 const STATUS_LABELS: Record<ParcelStatus, string> = {
@@ -90,6 +92,11 @@ const VendorOrders: React.FC = () => {
   const [page, setPage] = useState(1);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [remarkPopupOrder, setRemarkPopupOrder] = useState<Order | null>(null);
+  const [trackingSearch, setTrackingSearch] = useState('');
+  const [printWorking, setPrintWorking] = useState(false);
+  const [bulkWorking, setBulkWorking] = useState(false);
+  const [bulkError, setBulkError] = useState('');
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   const loadOrders = async () => {
     setLoading(true);
@@ -111,24 +118,36 @@ const VendorOrders: React.FC = () => {
 
   useEffect(() => { loadOrders(); }, []);
   useEffect(() => subscribeToOrderStatusChanged(loadOrders), []);
-  useEffect(() => { setPage(1); }, [applied]);
+  useEffect(() => { setPage(1); }, [applied, trackingSearch]);
 
   const hubOptions = useMemo(
     () => uniqueValues(orders.map(order => order.destination)),
     [orders],
   );
 
-  const filteredOrders = useMemo(() => orders.filter(order => {
-    const orderDay = toIsoDay(order.createdAt);
-    const matchesDate =
-      (!applied.fromDate || (orderDay && orderDay >= applied.fromDate)) &&
-      (!applied.toDate || (orderDay && orderDay <= applied.toDate));
-
-    return matchesDate &&
-      (!applied.orderType || order.orderType === applied.orderType) &&
-      (!applied.hub || order.destination === applied.hub) &&
-      (!applied.status || order.status === applied.status);
-  }), [orders, applied]);
+  const filteredOrders = useMemo(() => {
+    const q = trackingSearch.toLowerCase();
+    const terms = q ? q.split(',').map(t => t.trim()).filter(Boolean) : [];
+    return orders.filter(order => {
+      const orderDay = toIsoDay(order.createdAt);
+      const matchesDate =
+        (!applied.fromDate || (orderDay && orderDay >= applied.fromDate)) &&
+        (!applied.toDate || (orderDay && orderDay <= applied.toDate));
+      const matchesSearch = terms.length === 0 || (
+        terms.length > 1
+          ? terms.some(t => order.trackingId.toLowerCase() === t)
+          : (
+              order.trackingId.toLowerCase().includes(terms[0]!) ||
+              order.receiverName.toLowerCase().includes(terms[0]!) ||
+              order.receiverPhone.toLowerCase().includes(terms[0]!)
+            )
+      );
+      return matchesDate && matchesSearch &&
+        (!applied.orderType || order.orderType === applied.orderType) &&
+        (!applied.hub || order.destination === applied.hub) &&
+        (!applied.status || order.status === applied.status);
+    });
+  }, [orders, applied, trackingSearch]);
 
   const totalPages = Math.max(1, Math.ceil(filteredOrders.length / PAGE_SIZE));
   const visibleOrders = filteredOrders.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
@@ -164,6 +183,38 @@ const VendorOrders: React.FC = () => {
     });
   };
 
+  const bulkCancel = async () => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    const confirmed = window.confirm(
+      `Cancel ${ids.length} order${ids.length !== 1 ? 's' : ''}? This cannot be undone.`,
+    );
+    if (!confirmed) return;
+    setBulkWorking(true);
+    setBulkError('');
+    try {
+      await bulkUpdateOrderStatus(ids, 'cancelled', { remarks: 'Bulk cancelled by vendor' });
+      setSelectedIds(new Set());
+    } catch (err: any) {
+      setBulkError(err?.response?.data?.message || err?.message || 'Bulk cancel failed');
+    } finally {
+      setBulkWorking(false);
+    }
+  };
+
+  const handlePrintLabels = async () => {
+    const labelOrders = selectedIds.size > 0
+      ? orders.filter(o => selectedIds.has(o.id))
+      : visibleOrders;
+    if (labelOrders.length === 0) return;
+    setPrintWorking(true);
+    try {
+      await printLabels(labelOrders);
+    } finally {
+      setPrintWorking(false);
+    }
+  };
+
   const downloadCsv = () => {
     const headers = ['Order ID', 'Status', 'Customer', 'Phone', 'Order Type', 'Destination Branch', 'COD Amount', 'Service Charge', 'Last Comment'];
     const rows = exportOrders.map(order => [
@@ -185,7 +236,9 @@ const VendorOrders: React.FC = () => {
     const link = document.createElement('a');
     link.href = url;
     link.download = 'orders.csv';
+    document.body.appendChild(link);
     link.click();
+    document.body.removeChild(link);
     URL.revokeObjectURL(url);
   };
 
@@ -343,17 +396,62 @@ const VendorOrders: React.FC = () => {
         <Button variant="primary" onClick={() => navigate('/orders/create')}>
           Create New Order <Plus size={16} />
         </Button>
-        <Button variant="secondary" disabled title="Bulk order import is coming soon">
-          Bulk Order <FileUp size={16} />
+        <Button variant="secondary" onClick={() => navigate('/orders/bulk-create')}>
+          Bulk Import <FileUp size={16} />
         </Button>
       </div>
+
+      {selectedIds.size > 0 && (
+        <div className="vo-bulk-bar">
+          <span className="vo-bulk-count">{selectedIds.size} order{selectedIds.size !== 1 ? 's' : ''} selected</span>
+          <div className="vo-bulk-actions">
+            {bulkError && <span className="vo-bulk-error">{bulkError}</span>}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => { setSelectedIds(new Set()); setBulkError(''); }}
+              disabled={bulkWorking}
+            >
+              Clear Selection
+            </Button>
+            <Button
+              variant="danger"
+              size="sm"
+              onClick={bulkCancel}
+              disabled={bulkWorking}
+            >
+              {bulkWorking ? 'Cancelling…' : `Cancel ${selectedIds.size} Order${selectedIds.size !== 1 ? 's' : ''}`}
+            </Button>
+          </div>
+        </div>
+      )}
 
       <div className="vo-list-card">
         <div className="vo-list-header">
           <h2>Order List</h2>
+          <label className="vo-search-box">
+            <Search size={15} />
+            <input
+              ref={searchInputRef}
+              value={trackingSearch}
+              onChange={e => setTrackingSearch(e.target.value)}
+              placeholder="TRK001 or TRK001, TRK002, TRK003"
+              aria-label="Search by tracking ID"
+            />
+            {trackingSearch && (
+              <button type="button" onClick={() => setTrackingSearch('')} aria-label="Clear search">
+                <X size={13} />
+              </button>
+            )}
+          </label>
           <div className="vo-list-actions">
-            <Button variant="outline" onClick={() => window.print()}>
-              <Printer size={16} /> Print Label
+            <Button variant="outline" onClick={handlePrintLabels} disabled={printWorking}>
+              <Printer size={16} />
+              {printWorking
+                ? 'Preparing…'
+                : selectedIds.size > 0
+                  ? `Print ${selectedIds.size} Label${selectedIds.size !== 1 ? 's' : ''}`
+                  : `Print ${visibleOrders.length} Label${visibleOrders.length !== 1 ? 's' : ''}`}
             </Button>
             <Button variant="outline" onClick={downloadCsv} disabled={exportOrders.length === 0}>
               <Download size={16} /> Export

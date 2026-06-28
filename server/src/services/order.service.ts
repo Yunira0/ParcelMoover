@@ -3,9 +3,11 @@ import prisma from "../lib/prisma";
 import redis, { scanAndDelete } from "../lib/redis";
 import { AppError } from "../utils/AppError";
 import {
+  BulkCreateOrderInput,
   BulkUpdateParcelStatusInput,
   CreateOrderInput,
   ListOrdersQuery,
+  OrderPartyInput,
   ParcelStatus,
   STATUS_TRANSITIONS,
   UpdateParcelStatusInput,
@@ -127,6 +129,17 @@ const moneyToNumber = (value?: Prisma.Decimal | null) => value ? Number(value) :
 async function getActorScope(actor: OrderActor) {
   const actorIsVendor = actor.roles.includes("vendor");
   const actorIsRider = actor.roles.includes("rider");
+  const actorIsVendorStaff = actor.roles.includes("vendor_staff");
+
+  // Vendor staff: resolve vendor via their staff record, not the vendors table.
+  if (actorIsVendorStaff) {
+    const staffRecord = await prisma.vendor_staff.findFirst({
+      where: { user_id: actor.id, deleted_at: null, enabled: true },
+      select: { vendor_id: true },
+    });
+    if (!staffRecord) throw new AppError(403, "Staff profile not found or inactive");
+    return { vendorId: staffRecord.vendor_id, riderId: undefined };
+  }
 
   const [vendor, rider] = await Promise.all([
     actorIsVendor
@@ -225,7 +238,17 @@ async function findOrCreateParty(
   });
 }
 
+async function createOrderCore(actor: OrderActor, data: CreateOrderInput) {
+  return _createOrderImpl(actor, data);
+}
+
 export async function createOrder(actor: OrderActor, data: CreateOrderInput) {
+  const parcel = await _createOrderImpl(actor, data);
+  await invalidateOrderCaches();
+  return parcel;
+}
+
+async function _createOrderImpl(actor: OrderActor, data: CreateOrderInput) {
   //check idempotency key
 
   const actorIsVendor = actor.roles.includes("vendor");
@@ -355,8 +378,64 @@ export async function createOrder(actor: OrderActor, data: CreateOrderInput) {
     return parcel;
   });
 
-  await invalidateOrderCaches();
   return parcel;
+}
+
+const BULK_CREATE_MAX = 100;
+
+export async function bulkCreateOrders(actor: OrderActor, input: BulkCreateOrderInput) {
+  if (!Array.isArray(input.orders) || input.orders.length === 0) {
+    throw new AppError(400, "orders must be a non-empty array");
+  }
+  if (input.orders.length > BULK_CREATE_MAX) {
+    throw new AppError(400, `Maximum ${BULK_CREATE_MAX} orders per bulk request`);
+  }
+
+  let created = 0;
+  let failed = 0;
+  const results: Array<
+    | { index: number; success: true; trackingId: string }
+    | { index: number; success: false; error: string }
+  > = [];
+
+  for (let i = 0; i < input.orders.length; i++) {
+    const raw = input.orders[i]!;
+    // Merge defaultSender only when the order doesn't supply its own sender.
+    const resolvedSender: OrderPartyInput | undefined =
+      raw.sender?.phone ? raw.sender : input.defaultSender;
+
+    if (!resolvedSender?.name || !resolvedSender?.phone) {
+      results.push({ index: i, success: false, error: "Sender name and phone are required" });
+      failed++;
+      continue;
+    }
+
+    if (!raw.receiver?.name || !raw.receiver?.phone) {
+      results.push({ index: i, success: false, error: "Receiver name and phone are required" });
+      failed++;
+      continue;
+    }
+
+    const orderData: CreateOrderInput = {
+      ...raw,
+      sender: resolvedSender,
+      receiver: raw.receiver,
+    };
+
+    try {
+      const parcel = await createOrderCore(actor, orderData);
+      results.push({ index: i, success: true, trackingId: parcel.tracking_id });
+      created++;
+    } catch (err: any) {
+      results.push({ index: i, success: false, error: err.message || "Order creation failed" });
+      failed++;
+    }
+  }
+
+  // Flush caches once for the whole batch instead of after each individual order.
+  if (created > 0) await invalidateOrderCaches();
+
+  return { created, failed, results };
 }
 
 function buildOrdersWhere(
@@ -382,18 +461,25 @@ function buildOrdersWhere(
 
   const search = query.search?.trim();
   if (search) {
-    conditions.push({
-      OR: [
-        { tracking_id: { contains: search, mode: "insensitive" } },
-        { parties_parcels_sender_idToparties: { name: { contains: search, mode: "insensitive" } } },
-        { parties_parcels_receiver_idToparties: { name: { contains: search, mode: "insensitive" } } },
-        {
-          locations_parcels_destination_location_idTolocations: {
-            is: { name: { contains: search, mode: "insensitive" } },
+    const terms = search.split(",").map((t) => t.trim()).filter(Boolean);
+    if (terms.length > 1) {
+      conditions.push({
+        OR: terms.map((t) => ({ tracking_id: { equals: t, mode: "insensitive" as const } })),
+      });
+    } else {
+      conditions.push({
+        OR: [
+          { tracking_id: { contains: search, mode: "insensitive" } },
+          { parties_parcels_sender_idToparties: { name: { contains: search, mode: "insensitive" } } },
+          { parties_parcels_receiver_idToparties: { name: { contains: search, mode: "insensitive" } } },
+          {
+            locations_parcels_destination_location_idTolocations: {
+              is: { name: { contains: search, mode: "insensitive" } },
+            },
           },
-        },
-      ],
-    });
+        ],
+      });
+    }
   }
 
   return { AND: conditions };
@@ -1086,21 +1172,35 @@ export async function bulkUpdateParcelStatus(
 
   const newStatus = data.status;
   const isAdmin = actor.roles.some((r) => ["super_admin", "admin"].includes(r));
+  const isVendorActor =
+    actor.roles.includes("vendor") || actor.roles.includes("vendor_staff");
 
-  if (newStatus === "cancelled" && !isAdmin) {
-    throw new AppError(403, "Only admins can cancel an order");
-  }
+  // Hub operations (dispatch, OOV transitions) are admin-only.
   if (HUB_OPERATION_STATUSES.includes(newStatus as parcel_status) && !isAdmin) {
     throw new AppError(403, "Only admins can perform dispatch hub operations");
   }
+  // Cancellation is allowed for admins and vendors (vendors may only cancel their own orders,
+  // enforced by the vendor_id scope below).
+  if (newStatus === "cancelled" && !isAdmin && !isVendorActor) {
+    throw new AppError(403, "Only vendors or admins can cancel orders");
+  }
+
+  // Resolve vendor scope so vendors can only act on their own parcels.
+  const { vendorId } = isVendorActor
+    ? await getActorScope(actor)
+    : { vendorId: undefined };
 
   const parcels = await prisma.parcels.findMany({
-    where: { id: { in: ids }, deleted_at: null },
+    where: {
+      id: { in: ids },
+      deleted_at: null,
+      ...(vendorId ? { vendor_id: vendorId } : {}),
+    },
     include: { pickup_tasks: true },
   });
 
   if (parcels.length !== ids.length) {
-    throw new AppError(404, "One or more parcels were not found");
+    throw new AppError(404, "One or more parcels were not found or do not belong to your account");
   }
 
   for (const parcel of parcels) {

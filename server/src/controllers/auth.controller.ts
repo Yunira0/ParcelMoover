@@ -1,5 +1,6 @@
 import express, { Request, Response } from "express";
 import {
+  changePassword,
   loginUser,
   registerUserBySuperAdmin,
   updateManagedUserPassword,
@@ -321,6 +322,27 @@ export const getRidersController = async (_req: Request, res: Response) => {
     return res.status(500).json({
       success: false,
       message: error.message || "Failed to load riders",
+    });
+  }
+};
+
+export const changePasswordController = async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) throw new AppError(401, "Unauthorized");
+
+    const { currentPassword, newPassword } = req.body;
+    if (!currentPassword || !newPassword) {
+      throw new AppError(400, "currentPassword and newPassword are required");
+    }
+
+    await changePassword(userId, currentPassword, newPassword);
+
+    return sendSuccess(res, 200, "Password changed successfully");
+  } catch (error: any) {
+    return res.status(error.statusCode || 400).json({
+      success: false,
+      message: error.message || "Failed to change password",
     });
   }
 };

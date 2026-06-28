@@ -433,6 +433,7 @@ model users {
   phone                                                  String?                 @unique
   password_hash                                          String?
   status                                                 user_status             @default(active)
+  must_change_password                                   Boolean                 @default(false)
   last_login_at                                          DateTime?               @db.Timestamptz(6)
   created_at                                             DateTime                @default(now()) @db.Timestamptz(6)
   updated_at                                             DateTime                @default(now()) @db.Timestamptz(6)
@@ -453,6 +454,7 @@ model users {
   support_tickets_support_tickets_assigned_toTousers     support_tickets[]       @relation("support_tickets_assigned_toTousers")
   support_tickets_support_tickets_created_byTousers      support_tickets[]       @relation("support_tickets_created_byTousers")
   user_roles                                             user_roles[]
+  vendor_staff                                           vendor_staff?
   vendors                                                vendors?
 }
 
@@ -560,6 +562,7 @@ model ticket_replies {
 model vendor_staff {
   id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   vendor_id   String    @db.Uuid
+  user_id     String?   @unique @db.Uuid
   name        String
   email       String
   permissions String[]
@@ -568,6 +571,7 @@ model vendor_staff {
   created_at  DateTime  @default(now()) @db.Timestamptz(6)
   updated_at  DateTime  @default(now()) @db.Timestamptz(6)
   deleted_at  DateTime? @db.Timestamptz(6)
+  users       users?    @relation(fields: [user_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
   @@index([vendor_id], map: "idx_vendor_staff_vendor_id")
 }

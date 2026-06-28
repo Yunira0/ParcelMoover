@@ -95,7 +95,85 @@
   gap: var(--space-3);
 }
 
-/* Order list card -------------------------------------------------------- */
+/* Bulk action bar --------------------------------------------------------- */
+.vo-bulk-bar {
+  align-items: center;
+  background: var(--color-background-surface);
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--border-radius-modal);
+  display: flex;
+  gap: var(--space-4);
+  justify-content: space-between;
+  padding: var(--space-3) var(--space-4);
+}
+
+.vo-bulk-count {
+  color: var(--color-text-default);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semi-bold);
+}
+
+.vo-bulk-actions {
+  align-items: center;
+  display: flex;
+  gap: var(--space-3);
+}
+
+.vo-bulk-error {
+  color: #b91c1c;
+  font-size: var(--font-size-sm);
+}
+
+/* Tracking search box ---------------------------------------------------- */
+.vo-search-box {
+  align-items: center;
+  background: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-default);
+  color: var(--color-text-caption);
+  cursor: text;
+  display: flex;
+  flex: 0 1 320px;
+  gap: var(--space-2);
+  height: 36px;
+  padding: 0 var(--space-3);
+}
+
+.vo-search-box:focus-within {
+  border-color: var(--color-border-primary);
+  box-shadow: 0 0 0 2px rgb(194 65 12 / 12%);
+}
+
+.vo-search-box input {
+  background: transparent;
+  border: 0;
+  color: var(--color-text-default);
+  flex: 1;
+  font-family: var(--typography-font-family-default);
+  font-size: var(--font-size-sm);
+  min-width: 0;
+  outline: none;
+}
+
+.vo-search-box input::placeholder {
+  color: var(--color-text-caption);
+}
+
+.vo-search-box button {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: var(--color-text-caption);
+  cursor: pointer;
+  display: flex;
+  padding: 0;
+}
+
+.vo-search-box button:hover {
+  color: var(--color-text-default);
+}
+
+/* Order list card --------------------------------------------------------- */
 .vo-list-card {
   background: var(--color-background-surface);
   border: 1px solid var(--color-border-default);
@@ -109,13 +187,13 @@
 .vo-list-header {
   align-items: center;
   display: flex;
-  justify-content: space-between;
   flex-wrap: wrap;
   gap: var(--space-3);
 }
 
 .vo-list-header h2 {
   color: var(--color-text-primary);
+  flex: none;
   font-size: var(--font-size-lg);
   font-weight: var(--font-weight-semi-bold);
   margin: 0;
@@ -124,6 +202,7 @@
 .vo-list-actions {
   display: flex;
   gap: var(--space-3);
+  margin-left: auto;
 }
 
 /* Cells ------------------------------------------------------------------ */

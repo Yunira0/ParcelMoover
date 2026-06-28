@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import {
   addOrderRemark,
+  bulkCreateOrders,
   bulkUpdateParcelStatus,
   createOrder,
   getDashboardSummary,
@@ -107,6 +108,47 @@ export async function createOrderController(req: Request, res: Response) {
     return res.status(error.statusCode || 500).json({
       success: false,
       message: error.message || "Failed to create order",
+    });
+  }
+}
+
+export async function bulkCreateOrdersController(req: Request, res: Response) {
+  try {
+    if (!req.user) return res.status(401).json({ success: false, message: "Unauthorized" });
+
+    const idempotencyKey = req.headers["idempotency-key"] as string | undefined;
+    if (!idempotencyKey || !UUID_REGEX.test(idempotencyKey)) {
+      return res.status(400).json({ success: false, message: "Valid Idempotency-Key header is required" });
+    }
+
+    const result = await withIdempotency(idempotencyKey, req.body, async () => {
+      const data = await bulkCreateOrders({ id: req.user!.id, roles: req.user!.roles }, req.body);
+      return {
+        result: data,
+        response: {
+          statusCode: 207,
+          body: {
+            success: true,
+            message: `${data.created} order(s) created, ${data.failed} failed`,
+            data,
+          },
+          resourceID: `bulk-${idempotencyKey}`,
+        },
+      };
+    });
+
+    return res.status(207).json({
+      success: true,
+      message: `${result.created} order(s) created, ${result.failed} failed`,
+      data: result,
+    });
+  } catch (error: any) {
+    if (error.statusCode === 200 && error.meta?._cachedResponse) {
+      return res.status(200).json(error.meta._cachedResponse);
+    }
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Bulk order creation failed",
     });
   }
 }

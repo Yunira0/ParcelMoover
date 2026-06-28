@@ -217,7 +217,7 @@ const TicketDetail: React.FC = () => {
               <div className="rd-bottom-input-bar">
                 <textarea
                   className="rd-bottom-textarea"
-                  placeholder="Write a reply... (replying resolves the ticket)"
+                  placeholder="Write a reply..."
                   value={replyText}
                   onChange={(e) => setReplyText(e.target.value)}
                   onKeyDown={(e) => {

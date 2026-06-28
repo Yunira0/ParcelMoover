@@ -27,7 +27,7 @@ const ticketsReadLimiter = rateLimit({
 });
 
 const createTicketLimiter = rateLimit({
-  windowMs: 60 * 1000, // 1 minute
+  windowMs: 60 * 1000,
   max: 20,
   message: { success: false, message: "Too many tickets created, please slow down" },
   standardHeaders: true,
@@ -36,8 +36,18 @@ const createTicketLimiter = rateLimit({
   keyGenerator: actorOrIpKey,
 });
 
-// Vendors create + view their own tickets; admins see and manage all (scoped in the service).
-const CX_ROLES = ["super_admin", "admin", "vendor"] as const;
+const ticketsWriteLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  message: { success: false, message: "Too many requests, please slow down" },
+  standardHeaders: true,
+  legacyHeaders: false,
+  store: createRedisRateLimitStore("tickets-write"),
+  keyGenerator: actorOrIpKey,
+});
+
+// Vendors/staff create + view their own tickets; admins see and manage all (scoped in the service).
+const CX_ROLES = ["super_admin", "admin", "vendor", "vendor_staff"] as const;
 
 // GET /api/tickets — list tickets (status/priority/category/date filters; vendor-scoped)
 ticketRouter.get(
@@ -48,7 +58,7 @@ ticketRouter.get(
   listTicketsController,
 );
 
-// GET /api/tickets/:id — ticket detail + reply thread (viewing a pending ticket sets it Open)
+// GET /api/tickets/:id — ticket detail + reply thread
 ticketRouter.get(
   "/:id",
   authMiddleware,
@@ -67,12 +77,13 @@ ticketRouter.post(
   createTicketController,
 );
 
-// POST /api/tickets/:id/reply — reply (resolves the ticket -> Closed)
+// POST /api/tickets/:id/reply — add a reply (staff→pending, vendor→open)
 ticketRouter.post(
   "/:id/reply",
   authMiddleware,
   csrfProtection,
   authorizeRoles(...CX_ROLES),
+  ticketsWriteLimiter,
   replyTicketController,
 );
 
@@ -82,6 +93,7 @@ ticketRouter.patch(
   authMiddleware,
   csrfProtection,
   authorizeRoles(...CX_ROLES),
+  ticketsWriteLimiter,
   setTicketStatusController,
 );
 

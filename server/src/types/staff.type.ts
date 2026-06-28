@@ -16,4 +16,6 @@ export interface StaffInput {
   email: string;
   permissions: string[];
   enabled?: boolean;
+  /** Required on create, optional on update (omit or empty string to keep existing). */
+  password?: string;
 }

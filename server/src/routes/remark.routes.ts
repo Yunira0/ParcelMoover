@@ -15,7 +15,7 @@ const remarkRouter: Router = Router();
 const actorOrIpKey = (req: Request) => req.user?.id ?? ipKeyGenerator(req.ip ?? "");
 
 const remarksReadLimiter = rateLimit({
-  windowMs: 60 * 1000, // 1 minute
+  windowMs: 60 * 1000,
   max: 120,
   message: { success: false, message: "Too many requests, please slow down" },
   standardHeaders: true,
@@ -24,8 +24,18 @@ const remarksReadLimiter = rateLimit({
   keyGenerator: actorOrIpKey,
 });
 
-// Vendors see remarks on their own parcels; admins see all (scoped in the service).
-const CX_ROLES = ["super_admin", "admin", "vendor"] as const;
+const remarksWriteLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  message: { success: false, message: "Too many requests, please slow down" },
+  standardHeaders: true,
+  legacyHeaders: false,
+  store: createRedisRateLimitStore("remarks-write"),
+  keyGenerator: actorOrIpKey,
+});
+
+// Vendors and their staff see remarks on their parcels; admins see all (scoped in the service).
+const CX_ROLES = ["super_admin", "admin", "vendor", "vendor_staff"] as const;
 
 // GET /api/remarks — list remarks (status/date/search filters; vendor-scoped)
 remarkRouter.get(
@@ -51,6 +61,7 @@ remarkRouter.patch(
   authMiddleware,
   csrfProtection,
   authorizeRoles(...CX_ROLES),
+  remarksWriteLimiter,
   setRemarkStatusController,
 );
 
