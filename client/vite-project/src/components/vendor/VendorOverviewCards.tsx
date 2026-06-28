@@ -1,40 +1,61 @@
 import React from 'react';
-import { Clock, Truck, ArrowLeftRight, CheckCircle2 } from 'lucide-react';
-import StatCard from '../StatCard';
+import {
+  Package, Truck, RotateCcw,
+  PackageSearch, PauseCircle, RefreshCw,
+} from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import './VendorOverviewCards.css';
 
 interface VendorOverviewCardsProps {
-  orders: number;
+  totalOrders: number;
   delivered: number;
-  processing: number;
-  returns: number;
+  rtvDelivered: number;
+  inDelivery: number;
+  holdOrders: number;
+  returnProcess: number;
   loading?: boolean;
 }
 
+interface MetricCard {
+  icon: LucideIcon;
+  label: string;
+  value: string;
+  accent: string;
+}
+
 const VendorOverviewCards: React.FC<VendorOverviewCardsProps> = ({
-  orders,
+  totalOrders,
   delivered,
-  processing,
-  returns,
+  rtvDelivered,
+  inDelivery,
+  holdOrders,
+  returnProcess,
   loading = false,
 }) => {
-  const display = (value: number) => (loading ? '...' : value.toLocaleString());
+  const fmt = (v: number) => (loading ? '—' : v.toLocaleString());
 
-  const cards = [
-    { icon: Clock, label: 'Orders', value: display(orders) },
-    { icon: Truck, label: 'Delivered', value: display(delivered) },
-    { icon: ArrowLeftRight, label: 'Processing', value: display(processing) },
-    { icon: CheckCircle2, label: 'Return', value: display(returns) },
+  const cards: MetricCard[] = [
+    { icon: Package,       label: 'Total Orders',  value: fmt(totalOrders),  accent: 'primary'  },
+    { icon: Truck,         label: 'Delivered',     value: fmt(delivered),    accent: 'success'  },
+    { icon: RotateCcw,     label: 'RTV Delivered', value: fmt(rtvDelivered), accent: 'warning'  },
+    { icon: PackageSearch, label: 'In Delivery',   value: fmt(inDelivery),   accent: 'info'     },
+    { icon: PauseCircle,   label: 'Hold Orders',   value: fmt(holdOrders),   accent: 'neutral'  },
+    { icon: RefreshCw,     label: 'Return Process',value: fmt(returnProcess),accent: 'danger'   },
   ];
 
   return (
     <div className="vendor-overview-cards">
-      <h2 className="section-title">Overview</h2>
-      <div className="vendor-overview-cards-row">
-        {cards.map((card) => (
-          <StatCard key={card.label} {...card} />
-        ))}
-      </div>
+      {cards.map(({ icon: Icon, label, value, accent }) => (
+        <div key={label} className="vendor-metric-card">
+          <div className={`vendor-metric-icon vendor-metric-icon--${accent}`}>
+            <Icon size={18} />
+          </div>
+          <div className="vendor-metric-body">
+            <span className="vendor-metric-value">{value}</span>
+            <span className="vendor-metric-label">{label}</span>
+          </div>
+        </div>
+      ))}
     </div>
   );
 };

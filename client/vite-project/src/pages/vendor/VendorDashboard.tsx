@@ -1,10 +1,10 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import VendorQuickActions from '../../components/vendor/VendorQuickActions';
-import VendorOverviewStrip from '../../components/vendor/VendorOverviewStrip';
 import VendorOverviewCards from '../../components/vendor/VendorOverviewCards';
 import OrdersTrendDonut from '../../components/vendor/OrdersTrendDonut';
 import VendorOrdersTrendChart from '../../components/vendor/VendorOrdersTrendChart';
 import VendorCodCard from '../../components/vendor/VendorCodCard';
+import VendorTodayPanel from '../../components/vendor/VendorTodayPanel';
 import VendorOrderDetails from '../../components/vendor/VendorOrderDetails';
 import { getDashboardSummary, type DashboardSummary } from '../../services/orders.service';
 import './VendorDashboard.css';
@@ -69,13 +69,14 @@ const VendorDashboard: React.FC = () => {
     const handleVisibilityChange = () => {
       if (!document.hidden) loadSummary();
     };
-
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => {
       window.clearInterval(intervalId);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [loadSummary]);
+
+  const { overview, today, codSettlement, weeklyTrend } = summary;
 
   return (
     <div className="vendor-dashboard">
@@ -84,27 +85,39 @@ const VendorDashboard: React.FC = () => {
       {error && <p className="vendor-dashboard-error">{error}</p>}
 
       <div className="vendor-dashboard-card">
-        <VendorOverviewStrip
-          orders={summary.today.totalOrders}
-          delivered={summary.today.delivered}
-          returns={summary.today.returns}
-          remarks={summary.today.remarks}
-          unclosedComments={summary.today.unclosedComments}
-          loading={loading}
-        />
 
+        {/* 8 coloured metric cards */}
         <VendorOverviewCards
-          orders={summary.overview.totalOrders}
-          delivered={summary.overview.totalDelivered}
-          processing={summary.overview.inTransit}
-          returns={summary.overview.totalReturns}
+          totalOrders={overview.totalOrders}
+          delivered={overview.totalDelivered}
+          rtvDelivered={overview.totalReturns}
+          inDelivery={overview.inTransit}
+          holdOrders={overview.pendingPickups}
+          returnProcess={overview.pendingReturns}
           loading={loading}
         />
 
-        <div className="vendor-dashboard-charts-row">
-          <OrdersTrendDonut delivered={summary.today.delivered} returns={summary.today.returns} loading={loading} />
-          <VendorOrdersTrendChart data={summary.weeklyTrend} loading={loading} />
-          <VendorCodCard data={summary.codSettlement} loading={loading} />
+        {/* Charts + side panel */}
+        <div className="vendor-dashboard-main-row">
+          <div className="vendor-dashboard-charts-col">
+            <OrdersTrendDonut
+              delivered={today.delivered}
+              returns={today.returns}
+              loading={loading}
+            />
+            <VendorOrdersTrendChart data={weeklyTrend} loading={loading} />
+          </div>
+
+          <div className="vendor-dashboard-side-col">
+            <VendorTodayPanel
+              orders={today.totalOrders}
+              delivered={today.delivered}
+              returns={today.returns}
+              remarks={today.remarks}
+              loading={loading}
+            />
+            <VendorCodCard data={codSettlement} loading={loading} />
+          </div>
         </div>
 
         <VendorOrderDetails />
