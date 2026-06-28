@@ -51,13 +51,13 @@
 }
 
 .btn-danger {
-  background: #fef2f2;
-  border-color: #fecaca;
-  color: #b91c1c;
+  background: var(--color-danger-surface);
+  border-color: var(--color-danger-border);
+  color: var(--color-danger-text);
 }
 .btn-danger:hover:not(:disabled) {
-  background: #fee2e2;
-  border-color: #f87171;
+  background: var(--color-danger-surface-hover);
+  border-color: var(--color-danger-border-hover);
 }
 
 .btn-ghost {
@@ -68,7 +68,7 @@
 }
 
 .btn-sm {
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   gap: var(--space-1);
   height: auto;
   padding: var(--space-1-5) var(--space-2);

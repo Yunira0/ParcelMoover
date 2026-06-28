@@ -182,7 +182,7 @@
   white-space: nowrap;
 }
 .bop-status--ok { color: #15803d; }
-.bop-status--error { color: #b91c1c; }
+.bop-status--error { color: var(--color-danger-text); }
 
 /* ── Result ────────────────────────────────────────────────────── */
 .bop-result-card {
@@ -208,7 +208,7 @@
   gap: var(--space-1);
 }
 .bop-result-stat--success { color: #15803d; }
-.bop-result-stat--fail { color: #b91c1c; }
+.bop-result-stat--fail { color: var(--color-danger-text); }
 
 .bop-result-num {
   font-size: 36px;
@@ -244,7 +244,7 @@
   border-top: 1px solid var(--color-border-default);
   padding: var(--space-2) var(--space-3);
 }
-.bop-result-error-msg { color: #b91c1c; }
+.bop-result-error-msg { color: var(--color-danger-text); }
 
 .bop-result-actions {
   display: flex;
@@ -253,10 +253,10 @@
 
 /* ── Error banner ──────────────────────────────────────────────── */
 .bop-error {
-  background: #fef2f2;
-  border: 1px solid #fecaca;
+  background: var(--color-danger-surface);
+  border: 1px solid var(--color-danger-border);
   border-radius: var(--border-radius-default);
-  color: #b91c1c;
+  color: var(--color-danger-text);
   font-size: var(--font-size-sm);
   margin: 0;
   padding: var(--space-3) var(--space-4);

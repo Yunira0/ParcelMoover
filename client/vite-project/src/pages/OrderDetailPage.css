@@ -260,13 +260,13 @@
 }
 
 .od-timeline-item.timeline-danger .od-timeline-dot {
-  border-color: #dc2626;
-  color: #dc2626;
+  border-color: var(--color-danger-default);
+  color: var(--color-danger-default);
 }
 
 .od-timeline-item.timeline-danger .od-timeline-dot-terminal {
-  background: #dc2626;
-  border-color: #dc2626;
+  background: var(--color-danger-default);
+  border-color: var(--color-danger-default);
   color: white;
 }
 
@@ -408,7 +408,7 @@
 .od-bottom-send:hover:not(:disabled) { background: #b33a0c; transform: scale(1.05); }
 .od-bottom-send:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
 
-.od-bottom-error { font-size: var(--font-size-sm); color: #dc2626; margin: var(--space-2) 0 0; padding-left: var(--space-4); }
+.od-bottom-error { font-size: var(--font-size-sm); color: var(--color-danger-default); margin: var(--space-2) 0 0; padding-left: var(--space-4); }
 
 /* Animations */
 @keyframes od-fade-in { from { opacity: 0; transform: translateX(-50%) translateY(4px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }

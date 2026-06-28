@@ -8,9 +8,9 @@
 .pagination-summary {
   color: var(--color-text-caption);
   font-family: var(--typography-font-family-default);
-  font-size: var(--font-size-xs, 12px);
+  font-size: var(--font-size-xs);
   font-weight: var(--font-weight-semi-bold);
-  line-height: var(--line-height-xs, 16px);
+  line-height: var(--line-height-xs);
 }
 
 .pagination {

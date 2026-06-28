@@ -1,0 +1,147 @@
+.afp-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  width: 100%;
+}
+
+.afp-back {
+  align-items: center;
+  background: transparent;
+  border: none;
+  color: var(--color-text-caption);
+  cursor: pointer;
+  display: inline-flex;
+  font-family: var(--typography-font-family-default);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  gap: var(--space-2);
+  padding: 0;
+  transition: color 150ms ease;
+  width: fit-content;
+}
+
+.afp-back:hover {
+  color: var(--color-text-default);
+}
+
+.afp-back:focus-visible {
+  border-radius: var(--border-radius-default);
+  outline: 2px solid var(--color-border-primary);
+  outline-offset: 2px;
+}
+
+.afp-header h1 {
+  color: var(--color-text-default);
+  font-size: var(--font-size-2xl);
+  font-weight: var(--font-weight-bold);
+  line-height: var(--line-height-2xl);
+  margin: 0 0 var(--space-1) 0;
+}
+
+.afp-header p {
+  color: var(--color-text-caption);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-sm);
+  margin: 0;
+}
+
+.afp-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.afp-form-card {
+  background: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-modal);
+  padding: var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.afp-section h3 {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--color-text-default);
+  margin: 0 0 var(--space-4) 0;
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--color-border-default);
+}
+
+.afp-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4);
+}
+
+.afp-hint {
+  color: var(--color-text-caption);
+  font-size: 12px;
+  line-height: 16px;
+  margin: var(--space-2) 0 0;
+}
+
+.afp-error {
+  background: var(--color-danger-surface);
+  border: 1px solid var(--color-danger-border);
+  border-radius: var(--border-radius-default);
+  color: var(--color-danger-text);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-sm);
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+}
+
+.afp-actions {
+  display: flex;
+  gap: var(--space-3);
+  justify-content: flex-end;
+  padding-top: var(--space-2);
+}
+
+.afp-success-card {
+  background: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-modal);
+  padding: var(--space-10) var(--space-6);
+  text-align: center;
+}
+
+.afp-success-icon {
+  color: var(--color-success-default);
+  margin-bottom: var(--space-5);
+}
+
+.afp-success-card h3 {
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--color-text-default);
+  margin: 0 0 var(--space-3) 0;
+}
+
+.afp-success-card p {
+  font-size: 0.9rem;
+  color: var(--color-text-caption);
+  line-height: 1.6;
+  margin: 0 0 var(--space-2);
+}
+
+.afp-success-actions {
+  display: flex;
+  gap: var(--space-3);
+  justify-content: center;
+  margin-top: var(--space-5);
+}
+
+@media (max-width: 640px) {
+  .afp-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .afp-form-card {
+    padding: var(--space-4);
+  }
+}

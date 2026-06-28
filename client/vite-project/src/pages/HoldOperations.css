@@ -51,8 +51,8 @@
 
 .hold-table th,
 .hold-table td {
-  font-size: var(--font-size-xs, 12px);
-  line-height: var(--line-height-xs, 16px);
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-xs);
 }
 
 .hold-sn-cell {
@@ -88,7 +88,7 @@
 
 .hold-party-cell small {
   color: var(--color-text-placeholder);
-  font-size: var(--font-size-xs, 12px);
+  font-size: var(--font-size-xs);
   font-weight: var(--font-weight-regular);
 }
 
@@ -127,7 +127,7 @@
 }
 
 .hold-action-error {
-  color: #b91c1c;
+  color: var(--color-danger-text);
   font-size: var(--font-size-sm);
   margin: 0;
 }

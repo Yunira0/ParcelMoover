@@ -5,7 +5,32 @@
       "mcp__claude_ai_Figma__get_design_context",
       "Bash(npx prisma *)",
       "Bash(npx tsc *)",
-      "Bash(npm install *)"
+      "Bash(npm install *)",
+      "Bash(git branch *)",
+      "Bash(xargs basename -a)",
+      "Bash(npx vite *)",
+      "Bash(python3 *)",
+      "Bash(node *)",
+      "Bash(npx tsx -e ' *)",
+      "Bash(npx dotenv-cli -e .env -- npx tsx -e ' *)",
+      "Skill(run)",
+      "Bash(npm run *)",
+      "Bash(echo \"Client PID: $!\")",
+      "Bash(curl -s http://localhost:3000/api/health)",
+      "Bash(curl -s http://localhost:3000/)",
+      "Bash(curl -s -X POST http://localhost:3000/api/auth/login -H 'Content-Type: application/json' -d '{\"email\":\"ezekay175@gmail.com\",\"password\":\"test\"}')",
+      "Bash(open -a \"Google Chrome\" \"http://localhost:5173\")",
+      "Bash(open \"http://localhost:5173\")",
+      "Bash(screencapture -x /private/tmp/claude-501/-Users-gyanendrakhatiwada-parcelmoover-beta/fda13501-298a-4e40-bb73-07e8b1501426/scratchpad/home.png)",
+      "Bash(osascript)",
+      "Bash(screencapture /private/tmp/claude-501/-Users-gyanendrakhatiwada-parcelmoover-beta/fda13501-298a-4e40-bb73-07e8b1501426/scratchpad/dashboard.png)",
+      "Bash(curl -sv -X POST http://localhost:3000/api/auth/login -H 'Content-Type: application/json' -d '{\"email\":\"superadmin@parcelmoover.com\",\"password\":\"DemoPass123!\"}')",
+      "Bash(echo \"PID: $!\")",
+      "Bash(curl -s http://localhost:3000/api/auth/login -X POST -H \"Content-Type: application/json\" -d '{\"email\":\"superadmin@parcelmoover.com\",\"password\":\"DemoPass123!\"}')",
+      "Bash(curl -s -X POST http://localhost:3000/api/auth/login -H 'Content-Type: application/json' -d '{\"email\":\"superadmin@parcelmoover.com\",\"password\":\"DemoPass123!\"}')",
+      "Bash(ps -o lstart= -p 46889)",
+      "Bash(grep \"__iconNode\\\\$9M\" /Users/gyanendrakhatiwada/parcelmoover-beta/client/vite-project/node_modules/lucide-react/dist/cjs/lucide-react.js)",
+      "Bash(xargs cat)"
     ]
   }
 }

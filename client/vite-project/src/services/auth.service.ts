@@ -15,3 +15,8 @@ export const changePassword = async (currentPassword: string, newPassword: strin
   const response = await api.post('/auth/change-password', { currentPassword, newPassword });
   return response.data;
 };
+
+export const updateMe = async (data: { fullName: string; phone?: string }) => {
+  const response = await api.patch('/me', data);
+  return response.data;
+};

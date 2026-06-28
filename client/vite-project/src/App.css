@@ -102,6 +102,9 @@
   justify-content: center;
   align-items: center;
   width: 100%;
+  flex: 1;
+  padding: var(--space-6);
+  box-sizing: border-box;
 }
 
 .login-card {

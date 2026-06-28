@@ -228,6 +228,7 @@ model parcel_status_history {
 model parcels {
   id                                                   String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   tracking_id                                          String                  @unique
+  search_text                                          String?
   vendor_id                                            String?                 @db.Uuid
   sender_id                                            String                  @db.Uuid
   receiver_id                                          String                  @db.Uuid
@@ -540,6 +541,55 @@ enum ticket_status {
 enum user_status {
   active
   inactive
+}
+
+enum kyc_status {
+  pending
+  approved
+  rejected
+}
+
+model vendor_kyc_applications {
+  id                   String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  status               kyc_status @default(pending)
+
+  // Business Details
+  online_business_name String
+  pickup_location      String
+  pickup_landmark      String?
+  business_contact     String
+
+  // Owner / Contact Person
+  owner_name           String
+  owner_email          String
+  owner_contact        String
+
+  // Billing Details
+  billing_business_name String?
+  registered_address    String?
+  registration_no       String?
+  pan_vat_no            String?
+
+  // Documents (stored file paths)
+  citizenship_doc      String?
+  pan_vat_doc          String?
+  business_cert_doc    String?
+
+  // Bank Details
+  bank_name            String?
+  bank_account_no      String?
+  bank_account_holder  String?
+
+  // Review metadata
+  reviewed_by          String?   @db.Uuid
+  reviewed_at          DateTime? @db.Timestamptz(6)
+  rejection_reason     String?
+  notes                String?
+  created_at           DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@index([status], map: "idx_kyc_status")
+  @@index([created_at(sort: Desc)], map: "idx_kyc_created_at")
 }
 
 // Reply thread for support tickets. Standalone (ticket_id is a DB-level FK) so

@@ -25,10 +25,10 @@
   padding: 0 var(--space-2);
   color: var(--color-text-caption);
   font-family: var(--typography-font-family-default);
-  font-size: var(--font-size-xs, 12px);
+  font-size: var(--font-size-xs);
   font-weight: var(--font-weight-semi-bold);
   height: 52px;
-  line-height: var(--line-height-xs, 16px);
+  line-height: var(--line-height-xs);
   text-transform: uppercase;
   border-bottom: 1px solid var(--color-border-default);
   white-space: nowrap;

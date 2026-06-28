@@ -1,0 +1,263 @@
+.kyc-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  background: var(--color-bg, #f5f5f7);
+  padding: 40px 24px;
+}
+
+.kyc-container {
+  width: 100%;
+  max-width: 680px;
+}
+
+.kyc-header {
+  text-align: center;
+  margin-bottom: 28px;
+}
+
+.kyc-logo {
+  display: inline-block;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--color-primary, #4f46e5);
+  text-decoration: none;
+  margin-bottom: 16px;
+  letter-spacing: -0.3px;
+}
+
+.kyc-header h1 {
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: var(--color-text, #111);
+  margin: 0 0 8px;
+}
+
+.kyc-header p {
+  font-size: 0.9rem;
+  color: var(--color-text-caption, #6b7280);
+  margin: 0;
+}
+
+/* Step indicator */
+.kyc-steps {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  margin-bottom: 28px;
+}
+
+.kyc-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  position: relative;
+}
+
+.kyc-step-circle {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 2px solid var(--color-border, #d1d5db);
+  background: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-text-caption, #9ca3af);
+  transition: all 0.2s;
+}
+
+.kyc-step.active .kyc-step-circle {
+  border-color: var(--color-primary, #4f46e5);
+  background: var(--color-primary, #4f46e5);
+  color: #fff;
+}
+
+.kyc-step.done .kyc-step-circle {
+  border-color: #10b981;
+  background: #10b981;
+  color: #fff;
+}
+
+.kyc-step-label {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--color-text-caption, #9ca3af);
+  white-space: nowrap;
+}
+
+.kyc-step.active .kyc-step-label {
+  color: var(--color-primary, #4f46e5);
+  font-weight: 600;
+}
+
+.kyc-step.done .kyc-step-label {
+  color: #10b981;
+}
+
+.kyc-step-line {
+  width: 60px;
+  height: 2px;
+  background: var(--color-border, #d1d5db);
+  margin-bottom: 18px;
+  flex-shrink: 0;
+  transition: background 0.2s;
+}
+
+.kyc-step-line.done {
+  background: #10b981;
+}
+
+/* Form card */
+.kyc-form {
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.07);
+  padding: 32px;
+}
+
+.kyc-section h3 {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--color-text, #111);
+  margin: 0 0 20px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--color-border, #e5e7eb);
+}
+
+.kyc-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+/* Review step */
+.kyc-review {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  margin-bottom: 20px;
+}
+
+.kyc-review-group {
+  background: var(--color-background-surface, #f9fafb);
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.kyc-review-group h4 {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--color-text-caption, #6b7280);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 0 0 12px;
+}
+
+.review-row {
+  display: flex;
+  gap: 12px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--color-border, #f3f4f6);
+  font-size: 0.875rem;
+}
+
+.review-row:last-child {
+  border-bottom: none;
+}
+
+.review-label {
+  color: var(--color-text-caption, #6b7280);
+  flex-shrink: 0;
+  width: 140px;
+}
+
+.review-value {
+  color: var(--color-text, #111);
+  font-weight: 500;
+  word-break: break-word;
+}
+
+.kyc-declaration {
+  font-size: 0.8rem;
+  color: var(--color-text-caption, #6b7280);
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* Error */
+.kyc-error {
+  margin: 16px 0 0;
+  padding: 10px 14px;
+  background: var(--color-danger-surface);
+  border: 1px solid var(--color-danger-border);
+  border-radius: 6px;
+  color: var(--color-danger-default);
+  font-size: 0.85rem;
+}
+
+/* Actions */
+.kyc-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--color-border, #e5e7eb);
+}
+
+/* Success state */
+.kyc-success {
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.07);
+  padding: 48px 40px;
+  text-align: center;
+  max-width: 480px;
+  margin: 0 auto;
+}
+
+.kyc-success-icon {
+  color: #10b981;
+  margin-bottom: 20px;
+}
+
+.kyc-success h2 {
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--color-text, #111);
+  margin: 0 0 12px;
+}
+
+.kyc-success p {
+  font-size: 0.9rem;
+  color: var(--color-text-caption, #6b7280);
+  line-height: 1.6;
+  margin: 0 0 12px;
+}
+
+.kyc-success a {
+  display: inline-block;
+  margin-top: 8px;
+}
+
+/* Responsive */
+@media (max-width: 560px) {
+  .kyc-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .kyc-form {
+    padding: 20px;
+  }
+
+  .kyc-step-line {
+    width: 32px;
+  }
+}

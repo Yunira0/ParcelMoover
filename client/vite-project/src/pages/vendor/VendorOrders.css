@@ -120,7 +120,7 @@
 }
 
 .vo-bulk-error {
-  color: #b91c1c;
+  color: var(--color-danger-text);
   font-size: var(--font-size-sm);
 }
 
@@ -276,8 +276,8 @@
 }
 
 .vo-type-in {
-  background: var(--color-background-danger-invert-default, #fee2e2);
-  color: var(--color-text-danger, #dc2626);
+  background: var(--color-danger-surface-hover);
+  color: var(--color-danger-default);
 }
 
 .vo-action-btn {

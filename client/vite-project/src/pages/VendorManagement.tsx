@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Plus, Search, ChevronDown } from 'lucide-react';
 import Table, { TableRowActions } from '../components/Table';
-import AddVendorModal from '../components/AddVendorModal';
 import UserActionModal from '../components/UserActionModal';
 import PageHeader from '../components/PageHeader';
 import SegmentedTabs from '../components/SegmentedTabs';
@@ -28,7 +28,7 @@ interface VendorUser {
 }
 
 const VendorManagement: React.FC = () => {
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const navigate = useNavigate();
   const [filter, setFilter] = useState<'all' | 'high-volume' | 'active' | 'cod-pending'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [activeStatus, setActiveStatus] = useState('all');
@@ -169,7 +169,7 @@ const VendorManagement: React.FC = () => {
         subtitle="Oversee client accounts, delivery statistics, and financial tracking."
         actionLabel="Add new"
         actionIcon={<Plus size={16} />}
-        onAction={() => setIsModalOpen(true)}
+        onAction={() => navigate('/vendors/new')}
       />
 
       <div className="vendor-filters">
@@ -234,13 +234,6 @@ const VendorManagement: React.FC = () => {
         <Table columns={columns} data={filteredVendors} selectable={false} />
       )}
 
-      <AddVendorModal 
-        isOpen={isModalOpen} 
-        onClose={() => setIsModalOpen(false)}
-        onSuccess={() => {
-          loadVendors();
-        }}
-      />
       <UserActionModal
         isOpen={Boolean(activeVendor)}
         mode={actionMode}

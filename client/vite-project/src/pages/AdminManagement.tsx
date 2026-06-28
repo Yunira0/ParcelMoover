@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Plus, Search } from 'lucide-react';
 import Table, { TableRowActions } from '../components/Table';
-import AddAdminModal from '../components/AddAdminModal';
 import UserActionModal from '../components/UserActionModal';
 import PageHeader from '../components/PageHeader';
 import SegmentedTabs from '../components/SegmentedTabs';
@@ -21,7 +21,7 @@ interface AdminUser {
 }
 
 const AdminManagement: React.FC = () => {
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const navigate = useNavigate();
   const [filter, setFilter] = useState<'all' | 'active'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [admins, setAdmins] = useState<AdminUser[]>([]);
@@ -99,7 +99,7 @@ const AdminManagement: React.FC = () => {
         subtitle="Oversee admin accounts and track performance metrics."
         actionLabel="Add new"
         actionIcon={<Plus size={16} />}
-        onAction={() => setIsModalOpen(true)}
+        onAction={() => navigate('/admin/new')}
       />
 
       <div className="admin-filters">
@@ -133,13 +133,6 @@ const AdminManagement: React.FC = () => {
         <Table columns={columns} data={filteredAdmins} selectable={false} />
       )}
 
-      <AddAdminModal 
-        isOpen={isModalOpen} 
-        onClose={() => setIsModalOpen(false)}
-        onSuccess={() => {
-          loadAdmins();
-        }}
-      />
       <UserActionModal
         isOpen={Boolean(activeAdmin)}
         mode={actionMode}

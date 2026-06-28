@@ -16,7 +16,7 @@ const OrdersTrendDonut: React.FC<OrdersTrendDonutProps> = ({ delivered, returns,
       <h3 className="section-title">Orders Trend</h3>
       <div
         className="donut-ring"
-        style={{ background: `conic-gradient(var(--color-background-success-default) ${deliveredPercent}%, #dc2626 ${deliveredPercent}% 100%)` }}
+        style={{ background: `conic-gradient(var(--color-background-success-default) ${deliveredPercent}%, var(--color-danger-default) ${deliveredPercent}% 100%)` }}
       >
         <div className="donut-center">
           <span>{loading ? '...' : `${deliveredPercent}%`}</span>

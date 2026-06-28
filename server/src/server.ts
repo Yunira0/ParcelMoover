@@ -1,4 +1,5 @@
 import express, {Express, Request, Response} from 'express';
+import path from 'path';
 import {config} from 'dotenv';
 import routes from "./routes/auth.routes";
 import OrderRoutes from "./routes/order.routes"
@@ -8,6 +9,7 @@ import RemarkRoutes from "./routes/remark.routes"
 import NotificationRoutes from "./routes/notification.routes"
 import FinanceRoutes from "./routes/finance.routes"
 import StaffRoutes from "./routes/staff.routes"
+import KycRoutes from "./routes/kyc.routes"
 import prisma from "./lib/prisma";
 import cookiesParser from "cookie-parser";
 import {authMiddleware} from "./middlewares/auth.mddleware";
@@ -57,6 +59,9 @@ app.use("/api/finance", FinanceRoutes)
 
 app.use("/api/staff", StaffRoutes)
 
+app.use("/api/kyc", KycRoutes)
+app.use("/uploads", express.static(path.join(process.cwd(), "uploads")))
+
 
 const getCurrentUserHandler = async (req: Request, res: Response) => {
    try{
@@ -86,5 +91,35 @@ const getCurrentUserHandler = async (req: Request, res: Response) => {
 
 app.get('/me', authMiddleware, getCurrentUserHandler);
 app.get('/api/me', authMiddleware, getCurrentUserHandler);
+
+const updateCurrentUserHandler = async (req: Request, res: Response) => {
+  try {
+    if (!req.user?.id) return res.status(401).json({ error: "Unauthorized" });
+
+    const { fullName, phone } = req.body;
+    if (!fullName?.trim()) return res.status(400).json({ error: "Full name is required" });
+
+    const updated = await prisma.users.update({
+      where: { id: req.user.id },
+      data: {
+        full_name: fullName.trim(),
+        phone: phone?.trim() || null,
+        updated_at: new Date(),
+      },
+    });
+
+    return res.json({
+      id: updated.id,
+      fullName: updated.full_name,
+      email: updated.email,
+      phone: updated.phone,
+    });
+  } catch (error) {
+    console.error("Error updating user profile:", error);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+app.patch('/api/me', authMiddleware, updateCurrentUserHandler);
 
 export default app;

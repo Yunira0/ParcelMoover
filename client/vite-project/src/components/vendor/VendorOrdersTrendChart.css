@@ -51,7 +51,7 @@
 
 .vendor-orders-trend-chart-line-returned {
   fill: none;
-  stroke: #dc2626;
+  stroke: var(--color-danger-default);
   stroke-width: 2;
 }
 
@@ -60,5 +60,5 @@
 }
 
 .vendor-orders-trend-chart-dot-returned {
-  fill: #dc2626;
+  fill: var(--color-danger-default);
 }

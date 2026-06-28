@@ -107,7 +107,7 @@
 }
 
 .order-form-error {
-  color: #b91c1c;
+  color: var(--color-danger-text);
   font-size: var(--font-size-sm);
   margin: 0;
 }

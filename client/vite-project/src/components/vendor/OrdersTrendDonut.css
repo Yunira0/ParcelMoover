@@ -72,5 +72,5 @@
 }
 
 .donut-dot-returned {
-  background: #dc2626;
+  background: var(--color-danger-default);
 }

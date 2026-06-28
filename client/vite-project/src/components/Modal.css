@@ -4,11 +4,11 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: rgba(0, 0, 0, 0.5);
+  background-color: var(--color-overlay);
   display: flex;
   justify-content: center;
   align-items: center;
-  z-index: 1000;
+  z-index: var(--z-modal);
 }
 
 .modal-content {
@@ -46,7 +46,7 @@
 /* .form-group styling now lives in FormField.css - it's the single shared input component. */
 
 .error-text {
-  color: #ef4444;
+  color: var(--color-danger-default);
   font-size: var(--font-size-sm);
   margin-top: var(--space-2);
 }

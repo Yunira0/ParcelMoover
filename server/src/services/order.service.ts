@@ -14,6 +14,15 @@ import {
 } from "../types/order.type";
 import { generateTrackingId } from "../utils/trackingId";
 import { generateDispatchNo } from "../utils/dispatchId";
+
+type Party = { name: string; phone: string; alternate_phone?: string | null };
+function buildSearchText(trackingId: string, sender: Party, receiver: Party): string {
+  return [
+    trackingId,
+    sender.name, sender.phone, sender.alternate_phone ?? "",
+    receiver.name, receiver.phone, receiver.alternate_phone ?? "",
+  ].join(" ").toLowerCase();
+}
 import { getDeliveryQuote } from "./delivery-rate.service";
 import { createNotification } from "./notification.service";
 
@@ -244,46 +253,39 @@ async function createOrderCore(actor: OrderActor, data: CreateOrderInput) {
 
 export async function createOrder(actor: OrderActor, data: CreateOrderInput) {
   const parcel = await _createOrderImpl(actor, data);
-  await invalidateOrderCaches();
+  // Fire-and-forget: Redis latency should never add to the caller's response time.
+  invalidateOrderCaches().catch((err) => console.error("[Redis] cache invalidation failed:", err));
   return parcel;
 }
 
 async function _createOrderImpl(actor: OrderActor, data: CreateOrderInput) {
-  //check idempotency key
-
   const actorIsVendor = actor.roles.includes("vendor");
 
-  let vendor = null;
-  if (actorIsVendor) {
-    vendor = await prisma.vendors.findFirst({
-      where: { user_id: actor.id, deleted_at: null, status: "active" },
-    });
-    if (!vendor)
-      throw new AppError(403, "Vendor profile not found or inactive");
-  } else if (data.vendorId) {
-    vendor = await prisma.vendors.findFirst({
-      where: { id: data.vendorId, deleted_at: null, status: "active" },
-    });
-    if (!vendor) throw new AppError(404, "Vendor not found or inactive");
-  }
+  // Run all three independent reads in parallel instead of sequentially.
+  const [vendor, originLoc, destinationLoc] = await Promise.all([
+    actorIsVendor
+      ? prisma.vendors.findFirst({
+          where: { user_id: actor.id, deleted_at: null, status: "active" },
+        })
+      : data.vendorId
+      ? prisma.vendors.findFirst({
+          where: { id: data.vendorId, deleted_at: null, status: "active" },
+        })
+      : Promise.resolve(null),
+    data.originLocationId
+      ? prisma.locations.findUnique({ where: { id: data.originLocationId } })
+      : Promise.resolve(null),
+    data.destinationLocationId
+      ? prisma.locations.findUnique({ where: { id: data.destinationLocationId } })
+      : Promise.resolve(null),
+  ]);
 
-  if (data.originLocationId) {
-    const loc = await prisma.locations.findUnique({
-      where: { id: data.originLocationId },
-    });
-    if (!loc || !loc.is_active) {
-      throw new AppError(400, "Origin location not found or inactive");
-    }
-  }
-
-  if (data.destinationLocationId) {
-    const loc = await prisma.locations.findUnique({
-      where: { id: data.destinationLocationId },
-    });
-    if (!loc || !loc.is_active) {
-      throw new AppError(400, "Destination location not found or inactive");
-    }
-  }
+  if (actorIsVendor && !vendor) throw new AppError(403, "Vendor profile not found or inactive");
+  if (!actorIsVendor && data.vendorId && !vendor) throw new AppError(404, "Vendor not found or inactive");
+  if (data.originLocationId && (!originLoc || !originLoc.is_active))
+    throw new AppError(400, "Origin location not found or inactive");
+  if (data.destinationLocationId && (!destinationLoc || !destinationLoc.is_active))
+    throw new AppError(400, "Destination location not found or inactive");
 
   const resolvedOriginLocationId = data.originLocationId || data.sender.locationId || null;
   const resolvedDestinationLocationId = data.destinationLocationId || data.receiver.locationId || null;
@@ -309,6 +311,7 @@ async function _createOrderImpl(actor: OrderActor, data: CreateOrderInput) {
     const parcel = await tx.parcels.create({
       data: {
         tracking_id: trackingId,
+        search_text: buildSearchText(trackingId, sender, receiver),
         vendor_id: vendor?.id || null,
         sender_id: sender.id,
         receiver_id: receiver.id,
@@ -328,6 +331,7 @@ async function _createOrderImpl(actor: OrderActor, data: CreateOrderInput) {
       },
     });
 
+    // All four secondary writes are independent — run them in parallel.
     await Promise.all([
       tx.parcel_status_history.create({
         data: {
@@ -343,37 +347,32 @@ async function _createOrderImpl(actor: OrderActor, data: CreateOrderInput) {
         data: {
           parcel_id: parcel.id,
           pickup_address: data.pickupAddress || data.sender.address || null,
-          scheduled_at: data.scheduledPickupAt
-            ? new Date(data.scheduledPickupAt)
-            : null,
+          scheduled_at: data.scheduledPickupAt ? new Date(data.scheduledPickupAt) : null,
           status: "pickup_ordered",
         },
       }),
-    ]);
-
-    await tx.cod_collections.create({
-      data: {
-        parcel_id: parcel.id,
-        vendor_id: vendor?.id || null,
-        cod_amount: data.codAmount || 0,
-        payment_status: "pending",
-      },
-    });
-
-    await tx.audit_logs.create({
-      data: {
-        actor_id: actor.id,
-        entity_type: "parcel",
-        entity_id: parcel.id,
-        action: "CREATE_ORDER",
-
-        new_data: {
-          trackingId: parcel.tracking_id,
-          senderId: sender.id,
-          receiverId: receiver.id,
+      tx.cod_collections.create({
+        data: {
+          parcel_id: parcel.id,
+          vendor_id: vendor?.id || null,
+          cod_amount: data.codAmount || 0,
+          payment_status: "pending",
         },
-      },
-    });
+      }),
+      tx.audit_logs.create({
+        data: {
+          actor_id: actor.id,
+          entity_type: "parcel",
+          entity_id: parcel.id,
+          action: "CREATE_ORDER",
+          new_data: {
+            trackingId: parcel.tracking_id,
+            senderId: sender.id,
+            receiverId: receiver.id,
+          },
+        },
+      }),
+    ]);
 
     return parcel;
   });
@@ -467,17 +466,10 @@ function buildOrdersWhere(
         OR: terms.map((t) => ({ tracking_id: { equals: t, mode: "insensitive" as const } })),
       });
     } else {
+      // Single-column GIN trigram search — no JOINs, stays fast at any table size.
+      // Covers: tracking_id, sender/receiver name, sender/receiver phone.
       conditions.push({
-        OR: [
-          { tracking_id: { contains: search, mode: "insensitive" } },
-          { parties_parcels_sender_idToparties: { name: { contains: search, mode: "insensitive" } } },
-          { parties_parcels_receiver_idToparties: { name: { contains: search, mode: "insensitive" } } },
-          {
-            locations_parcels_destination_location_idTolocations: {
-              is: { name: { contains: search, mode: "insensitive" } },
-            },
-          },
-        ],
+        search_text: { contains: search.toLowerCase(), mode: "insensitive" },
       });
     }
   }

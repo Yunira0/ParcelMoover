@@ -11,7 +11,7 @@
 }
 
 .form-group label .required {
-  color: #b91c1c;
+  color: var(--color-danger-text);
   margin-left: 2px;
 }
 
@@ -68,7 +68,7 @@
 .form-group select:focus,
 .form-group textarea:focus {
   border-color: var(--color-border-primary);
-  box-shadow: 0 0 0 2px rgb(194 65 12 / 12%);
+  box-shadow: var(--shadow-focus);
 }
 
 .form-group input:disabled,

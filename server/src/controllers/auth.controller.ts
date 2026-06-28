@@ -168,6 +168,7 @@ export const login = async (req: Request, res: Response) => {
       message: "Login successful",
       data: result.user,
       csrfToken,
+      token: result.token,
     });
   } catch (error: any) {
     console.log("Error in login controller:", error);

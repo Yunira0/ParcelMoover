@@ -16,9 +16,7 @@
 .public-main {
   flex: 1;
   display: flex;
-  justify-content: center;
-  align-items: center;
-  padding: var(--space-6);
+  flex-direction: column;
   width: 100%;
   box-sizing: border-box;
 }

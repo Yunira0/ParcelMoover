@@ -35,7 +35,7 @@
 }
 
 .ticket-orderids label .required {
-  color: #b91c1c;
+  color: var(--color-danger-text);
   margin-left: 2px;
 }
 
@@ -60,7 +60,7 @@
 
 .ticket-orderid-row input:focus {
   border-color: var(--color-border-primary);
-  box-shadow: 0 0 0 2px rgb(194 65 12 / 12%);
+  box-shadow: var(--shadow-focus);
 }
 
 .ticket-add-orderid {
@@ -69,6 +69,6 @@
 }
 
 .ticket-slot-note {
-  color: #b91c1c;
-  font-size: var(--font-size-xs, 12px);
+  color: var(--color-danger-text);
+  font-size: var(--font-size-xs);
 }

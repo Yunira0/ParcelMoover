@@ -51,8 +51,8 @@
 
 .return-table th,
 .return-table td {
-  font-size: var(--font-size-xs, 12px);
-  line-height: var(--line-height-xs, 16px);
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-xs);
 }
 
 .return-sn-cell {
@@ -88,7 +88,7 @@
 
 .return-party-cell small {
   color: var(--color-text-placeholder);
-  font-size: var(--font-size-xs, 12px);
+  font-size: var(--font-size-xs);
   font-weight: var(--font-weight-regular);
 }
 

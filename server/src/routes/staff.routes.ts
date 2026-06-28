@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { rateLimit } from "express-rate-limit";
+import { rateLimit, ipKeyGenerator } from "express-rate-limit";
 import { authMiddleware } from "../middlewares/auth.mddleware";
 import { authorizeRoles } from "../middlewares/authorizeRoles.middleware";
 import { csrfProtection } from "../middlewares/csrf.middleware";
@@ -21,7 +21,7 @@ const staffReadLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   store: createRedisRateLimitStore("staff-read"),
-  keyGenerator: (req) => req.user?.id ?? (req.ip ?? ""),
+  keyGenerator: (req) => req.user?.id ?? ipKeyGenerator(req.ip ?? ""),
 });
 
 const staffWriteLimiter = rateLimit({
@@ -31,7 +31,7 @@ const staffWriteLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   store: createRedisRateLimitStore("staff-write"),
-  keyGenerator: (req) => req.user?.id ?? (req.ip ?? ""),
+  keyGenerator: (req) => req.user?.id ?? ipKeyGenerator(req.ip ?? ""),
 });
 
 // Staff member fetches their own live permissions (called on app mount to avoid stale localStorage).

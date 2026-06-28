@@ -128,9 +128,9 @@
 
 .party-cell small {
   color: var(--color-text-caption);
-  font-size: var(--font-size-xs, 12px);
+  font-size: var(--font-size-xs);
   font-weight: var(--font-weight-semi-bold);
-  line-height: var(--line-height-xs, 16px);
+  line-height: var(--line-height-xs);
 }
 
 .remarks-cell {

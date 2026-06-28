@@ -26,12 +26,8 @@ declare global {
 export async function authMiddleware(req: Request, res: Response, next: NextFunction) {
     try {
         const authHeader = req.headers.authorization;
-        
-        // if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        //     throw new AppError(401, 'Authorization header missing or malformed');
-        // }
-
-        const token = req.cookies.accessToken;
+        const token = (authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null)
+            ?? req.cookies.accessToken;
 
         if (!token) {
             throw new AppError(401, 'Authentication required');

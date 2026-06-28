@@ -1,5 +1,5 @@
 :root {
-  /* Color tokens */
+  /* ── Base color tokens ───────────────────────────────────────────────────── */
   --color-icon-placeholder: #6b7280;
   --color-text-placeholder: #6b7280;
   --color-background-surface: #ffffff;
@@ -8,9 +8,12 @@
   --color-icon-base: #ffffff;
   --color-background-primary-default: #c2410c;
   --color-background-primary-invert-default: #ffedd5;
+  --color-background-primary-subtle: rgb(194 65 12 / 6%);
   --color-text-primary: #c2410c;
   --color-icon-primary: #c2410c;
   --color-border-primary: #c2410c;
+  --color-primary: #c2410c;
+  --color-primary-subtle: rgb(194 65 12 / 6%);
   --color-text-caption: #4b5563;
   --color-text-default: #030712;
   --color-background-elevated: #e5e7eb;
@@ -20,19 +23,42 @@
   --color-icon-default: #030712;
   --color-background-canvas: #f3f4f6;
 
-  /* Typography tokens */
+  /* ── Danger / Error tokens ───────────────────────────────────────────────── */
+  --color-danger-surface: #fef2f2;
+  --color-danger-surface-hover: #fee2e2;
+  --color-danger-border: #fecaca;
+  --color-danger-border-hover: #f87171;
+  --color-danger-text: #b91c1c;
+  --color-danger-default: #dc2626;
+  --color-danger-chip: #991b1b;
+  --color-danger-chip-surface: rgb(153 27 27 / 10%);
+
+  /* ── Info tokens ─────────────────────────────────────────────────────────── */
+  --color-info-surface: rgb(29 78 216 / 10%);
+  --color-info-text: #1d4ed8;
+
+  /* ── Status surface tokens ───────────────────────────────────────────────── */
+  --color-success-surface: rgb(21 128 61 / 10%);
+  --color-warning-surface: rgb(161 98 7 / 10%);
+  --color-neutral-surface: rgb(75 85 99 / 10%);
+
+  /* ── Typography tokens ───────────────────────────────────────────────────── */
   --typography-font-family-default: Inter, system-ui, 'Segoe UI', Roboto, sans-serif;
   --font-weight-regular: 400;
   --font-weight-medium: 500;
   --font-weight-semi-bold: 600;
   --font-weight-bold: 700;
   --font-size-xxs: 8px;
+  --font-size-xs: 12px;
   --font-size-sm: 14px;
   --font-size-md: 16px;
   --font-size-lg: 18px;
   --font-size-xl: 20px;
   --font-size-2xl: 24px;
+  --font-size-3xl: 30px;
+  --font-size-4xl: 36px;
   --line-height-xxs: 12px;
+  --line-height-xs: 16px;
   --line-height-sm: 20px;
   --line-height-md: 24px;
   --line-height-lg: 28px;
@@ -41,7 +67,7 @@
     var(--font-weight-medium) var(--font-size-sm) / var(--line-height-sm)
     var(--typography-font-family-default);
 
-  /* Spacing tokens */
+  /* ── Spacing tokens ──────────────────────────────────────────────────────── */
   --space-0-5: 2px;
   --space-1: 4px;
   --space-1-5: 6px;
@@ -50,26 +76,48 @@
   --space-4: 16px;
   --space-5: 20px;
   --space-6: 24px;
+  --space-7: 28px;
   --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
   --space-16: 64px;
   --gap-sm: 0;
 
-  /* Size tokens */
+  /* ── Size tokens ─────────────────────────────────────────────────────────── */
   --width-min-sm: 36px;
   --size-9: 36px;
 
-  /* Radius tokens */
+  /* ── Radius tokens ───────────────────────────────────────────────────────── */
+  --border-radius-sm: 2px;
   --border-radius-default: 4px;
+  --border-radius-md: 6px;
+  --border-radius-lg: 8px;
   --border-radius-modal: 8px;
+  --border-radius-xl: 12px;
   --border-radius-full: 9999px;
 
-  /* Opacity tokens */
+  /* ── Shadow tokens ───────────────────────────────────────────────────────── */
+  --shadow-sm: 0 1px 2px rgb(3 7 18 / 6%);
+  --shadow-md: 0 4px 6px -1px rgb(3 7 18 / 10%), 0 2px 4px -2px rgb(3 7 18 / 6%);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.12);
+  --shadow-focus: 0 0 0 2px rgb(194 65 12 / 12%);
+
+  /* ── Overlay ─────────────────────────────────────────────────────────────── */
+  --color-overlay: rgba(0, 0, 0, 0.5);
+
+  /* ── Z-index scale ───────────────────────────────────────────────────────── */
+  --z-sticky: 10;
+  --z-topnav: 100;
+  --z-dropdown: 200;
+  --z-modal: 1000;
+
+  /* ── Opacity tokens ──────────────────────────────────────────────────────── */
   --opacity-20: 0.2;
   --opacity-50: 0.5;
   --opacity-60: 0.6;
   --opacity-75: 0.75;
 
-  /* App semantic aliases */
+  /* ── App semantic aliases ────────────────────────────────────────────────── */
   --app-color-text: var(--color-text-caption);
   --app-color-heading: var(--color-text-default);
   --app-color-background: var(--color-background-surface);

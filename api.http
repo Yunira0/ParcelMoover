@@ -9,7 +9,7 @@ POST {{baseUrl}}/auth/login
 Content-Type: application/json
 
 {
-  "email": "  ",
+  "email": "superadmin@parcelmoover.com",
   "password": "DemoPass123!"
 }
 

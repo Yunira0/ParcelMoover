@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Plus, Search } from 'lucide-react';
 import Table, { TableRowActions } from '../components/Table';
-import AddRiderModal from '../components/AddRiderModal';
 import UserActionModal from '../components/UserActionModal';
 import PageHeader from '../components/PageHeader';
 import SegmentedTabs from '../components/SegmentedTabs';
@@ -26,9 +26,9 @@ interface RiderUser {
 }
 
 const RiderManagement: React.FC = () => {
+  const navigate = useNavigate();
   const [riders, setRiders] = useState<RiderUser[]>([]);
   const [loading, setLoading] = useState(true);
-  const [isModalOpen, setIsModalOpen] = useState(false);
   const [filter, setFilter] = useState<'all' | 'active'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [actionMode, setActionMode] = useState<'edit' | 'password'>('edit');
@@ -132,7 +132,7 @@ const RiderManagement: React.FC = () => {
         subtitle="Manage rider accounts, monitor delivery metrics"
         actionLabel="Add new"
         actionIcon={<Plus size={16} />}
-        onAction={() => setIsModalOpen(true)}
+        onAction={() => navigate('/riders/new')}
       />
 
       <div className="rider-filters">
@@ -164,13 +164,6 @@ const RiderManagement: React.FC = () => {
         <Table columns={columns} data={filteredRiders} selectable={false} />
       )}
 
-      <AddRiderModal 
-        isOpen={isModalOpen} 
-        onClose={() => setIsModalOpen(false)}
-        onSuccess={() => {
-          loadRiders();
-        }}
-      />
       <UserActionModal
         isOpen={Boolean(activeRider)}
         mode={actionMode}

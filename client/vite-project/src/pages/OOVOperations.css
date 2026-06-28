@@ -51,8 +51,8 @@
 
 .oov-table th,
 .oov-table td {
-  font-size: var(--font-size-xs, 12px);
-  line-height: var(--line-height-xs, 16px);
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-xs);
 }
 
 .oov-sn-cell {
@@ -93,7 +93,7 @@
 
 .oov-party-cell small {
   color: var(--color-text-placeholder);
-  font-size: var(--font-size-xs, 12px);
+  font-size: var(--font-size-xs);
   font-weight: var(--font-weight-regular);
 }
 
@@ -240,7 +240,7 @@
 }
 
 .oov-action-error {
-  color: #b91c1c;
+  color: var(--color-danger-text);
   font-size: var(--font-size-sm);
   margin: var(--space-2) 0 0;
 }

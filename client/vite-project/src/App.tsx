@@ -8,8 +8,11 @@ import OrdersRouter from './pages/OrdersRouter'
 import CreateOrderPage from './pages/CreateOrderPage'
 import OrderDetailPage from './pages/OrderDetailPage'
 import AdminManagement from './pages/AdminManagement'
+import AdminFormPage from './pages/AdminFormPage'
 import VendorManagement from './pages/VendorManagement'
+import VendorFormPage from './pages/VendorFormPage'
 import RiderManagement from './pages/RiderManagement'
+import RiderFormPage from './pages/RiderFormPage'
 import FinanceManagement from './pages/FinanceManagement'
 import DeliveryRateSettings from './pages/DeliveryRateSettings'
 import PickupOperations from './pages/PickupOperations'
@@ -29,6 +32,9 @@ import StaffFormPage from './pages/vendor/StaffFormPage'
 import BulkOrderPage from './pages/vendor/BulkOrderPage'
 import VendorDeliveryCharges from './pages/vendor/VendorDeliveryCharges'
 import ForceChangePasswordPage from './pages/ForceChangePasswordPage'
+import KycApplicationPage from './pages/KycApplicationPage'
+import KycManagement from './pages/KycManagement'
+import ProfilePage from './pages/ProfilePage'
 import ProtectedRoute from './components/ProtectedRoute'
 import RoleGuard from './components/RoleGuard'
 import './App.css'
@@ -42,6 +48,7 @@ function App() {
         <Route path="/login" element={<MainLayout><Login /></MainLayout>} />
         {/* Standalone — no sidebar/topnav, intentionally outside ProtectedRoute */}
         <Route path="/change-password" element={<ForceChangePasswordPage />} />
+        <Route path="/apply" element={<KycApplicationPage />} />
 
         {/* Protected Dashboard Routes */}
         <Route 
@@ -67,12 +74,28 @@ function App() {
             element={<RoleGuard allowedRoles={['super_admin', 'admin']}><AdminManagement /></RoleGuard>}
           />
           <Route
+            path="/admin/new"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']}><AdminFormPage /></RoleGuard>}
+          />
+          <Route
             path="/vendors"
             element={<RoleGuard allowedRoles={['super_admin', 'admin']}><VendorManagement /></RoleGuard>}
           />
           <Route
+            path="/vendors/new"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']}><VendorFormPage /></RoleGuard>}
+          />
+          <Route
+            path="/kyc-applications"
+            element={<RoleGuard allowedRoles={['super_admin']}><KycManagement /></RoleGuard>}
+          />
+          <Route
             path="/riders"
             element={<RoleGuard allowedRoles={['super_admin', 'admin']}><RiderManagement /></RoleGuard>}
+          />
+          <Route
+            path="/riders/new"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']}><RiderFormPage /></RoleGuard>}
           />
           <Route
             path="/finance"
@@ -150,6 +173,7 @@ function App() {
             path="/delivery-charges"
             element={<RoleGuard allowedRoles={['vendor', 'vendor_staff']}><VendorDeliveryCharges /></RoleGuard>}
           />
+          <Route path="/profile" element={<ProfilePage />} />
         </Route>
         {/* Catch-all */}
 

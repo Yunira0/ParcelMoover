@@ -1,5 +1,5 @@
-import React from 'react';
-import { NavLink } from 'react-router-dom';
+import React, { createContext, useCallback, useContext, useState } from 'react';
+import { NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard,
   Package,
@@ -8,7 +8,6 @@ import {
   Bike,
   Wallet,
   HelpCircle,
-  ChevronDown,
   Archive,
   Send,
   Route,
@@ -23,246 +22,235 @@ import {
   Banknote,
   Users,
   Truck,
+  ClipboardCheck,
+  LogOut,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { getCurrentUserRoles, isAdminSide } from '../utils/auth';
 import { useStaffPermissions } from '../context/StaffPermissionsContext';
 import './Sidebar.css';
 
-interface SidebarItemProps {
-  to: string;
-  icon: LucideIcon;
-  label: string;
-}
+// ── Collapse context ───────────────────────────────────────────────────────────
+interface CollapseCtx { collapsed: boolean; toggle: () => void }
+const SidebarCollapseContext = createContext<CollapseCtx>({ collapsed: false, toggle: () => {} });
+const useSidebarCollapse = () => useContext(SidebarCollapseContext);
+
+// ── Shared atoms ───────────────────────────────────────────────────────────────
+interface SidebarItemProps { to: string; icon: LucideIcon; label: string }
 
 const SidebarItem: React.FC<SidebarItemProps> = ({ to, icon: Icon, label }) => {
+  const { collapsed } = useSidebarCollapse();
   return (
-    <NavLink 
-      to={to} 
+    <NavLink
+      to={to}
       className={({ isActive }) => `sidebar-item ${isActive ? 'active' : ''}`}
+      title={collapsed ? label : undefined}
     >
-      <Icon className="sidebar-icon" size={24} />
+      <Icon className="sidebar-icon" size={18} />
       <span className="sidebar-label">{label}</span>
     </NavLink>
   );
 };
 
-const icons = {
-  dashboard: LayoutDashboard,
-  order: Package,
-  admin: UserCheck,
-  vendor: Store,
-  rider: Bike,
-  finance: Wallet,
-  help: HelpCircle,
-  pickup: Archive,
-  dispatch: Send,
-  oov: Route,
-  return: RotateCcw,
-  hold: OctagonMinus,
-  damage: Map,
-  deliveryRates: Percent,
-  ticket: Ticket,
-  remarks: MessageSquare,
-  pendingCod: Receipt,
-  orderPayments: ClipboardList,
-  settlements: Banknote,
-  userManagement: Users,
-  deliveryCharges: Truck,
+interface SubItemProps { to: string; icon: LucideIcon; label: string }
+
+const SubItem: React.FC<SubItemProps> = ({ to, icon: Icon, label }) => {
+  const { collapsed } = useSidebarCollapse();
+  return (
+    <NavLink
+      to={to}
+      className={({ isActive }) => `sidebar-subitem ${isActive ? 'active' : ''}`}
+      title={collapsed ? label : undefined}
+    >
+      <Icon size={15} style={{ flexShrink: 0 }} />
+      <span className="sidebar-label">{label}</span>
+    </NavLink>
+  );
 };
 
-// Vendors get a focused nav scoped to what their role can actually access -
-// the admin-only sections (Admin/Vendor/Rider Management, Operations, CX)
-// would just 403 on the backend, so there's no reason to show them.
-const VendorSidebar: React.FC = () => (
-  <aside className="sidebar">
-    <div className="sidebar-nav">
-      <SidebarItem to="/dashboard" icon={icons.dashboard} label="Dashboard" />
-      <SidebarItem to="/orders" icon={icons.order} label="Order" />
-
-      <div className="sidebar-dropdown">
-        <span className="dropdown-label">Finance</span>
-        <ChevronDown size={16} style={{ color: 'var(--color-text-caption)' }} />
-      </div>
-      <div className="sidebar-subnav">
-        <NavLink to="/finance/settlements" className={({ isActive }) => `sidebar-subitem ${isActive ? 'active' : ''}`}>
-          <icons.settlements className="sidebar-icon" size={24} />
-          <span className="sidebar-label">Settlement</span>
-        </NavLink>
-        <NavLink to="/finance/order-payments" className={({ isActive }) => `sidebar-subitem ${isActive ? 'active' : ''}`}>
-          <icons.orderPayments className="sidebar-icon" size={24} />
-          <span className="sidebar-label">Order wise payment</span>
-        </NavLink>
-        <NavLink to="/finance/pending-cod" className={({ isActive }) => `sidebar-subitem ${isActive ? 'active' : ''}`}>
-          <icons.pendingCod className="sidebar-icon" size={24} />
-          <span className="sidebar-label">Pending COD</span>
-        </NavLink>
-      </div>
-
-      <SidebarItem to="/user-management" icon={icons.userManagement} label="User Management" />
-      <SidebarItem to="/tickets" icon={icons.ticket} label="Tickets" />
-      <SidebarItem to="/delivery-charges" icon={icons.deliveryCharges} label="Delivery Charges" />
-    </div>
-
-    <div className="sidebar-footer">
-      <SidebarItem to="/help" icon={icons.help} label="Help and Support" />
-    </div>
-  </aside>
+const SidebarSection: React.FC<{ label: string }> = ({ label }) => (
+  <div className="sidebar-section-label">{label}</div>
 );
 
-// Sidebar for vendor_staff — shows only sections the vendor granted them access to.
-const VendorStaffSidebar: React.FC = () => {
-  const perms = useStaffPermissions();
-  const has = (p: string) => perms.includes(p);
-
+const SidebarLogout: React.FC = () => {
+  const navigate = useNavigate();
+  const { collapsed } = useSidebarCollapse();
+  const handleLogout = () => {
+    localStorage.removeItem('user');
+    localStorage.removeItem('token');
+    navigate('/login');
+  };
   return (
-    <aside className="sidebar">
+    <button
+      className="sidebar-logout"
+      onClick={handleLogout}
+      title={collapsed ? 'Logout' : undefined}
+    >
+      <LogOut size={18} style={{ flexShrink: 0 }} />
+      <span className="sidebar-label">Logout</span>
+    </button>
+  );
+};
+
+const SidebarToggleBtn: React.FC = () => {
+  const { collapsed, toggle } = useSidebarCollapse();
+  return (
+    <div className="sidebar-header">
+      <button
+        type="button"
+        className="sidebar-toggle-btn"
+        onClick={toggle}
+        aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+      >
+        {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+      </button>
+    </div>
+  );
+};
+
+// ── Vendor sidebar ─────────────────────────────────────────────────────────────
+const VendorSidebar: React.FC = () => {
+  const { collapsed } = useSidebarCollapse();
+  return (
+    <aside className={`sidebar${collapsed ? ' sidebar--collapsed' : ''}`}>
+      <SidebarToggleBtn />
       <div className="sidebar-nav">
-        {has('DASHBOARD_ACCESS') && (
-          <SidebarItem to="/dashboard" icon={icons.dashboard} label="Dashboard" />
-        )}
-        {has('ORDER_ACCESS') && (
-          <SidebarItem to="/orders" icon={icons.order} label="Order" />
-        )}
-        {has('FINANCE_ACCESS') && (
-          <>
-            <div className="sidebar-dropdown">
-              <span className="dropdown-label">Finance</span>
-              <ChevronDown size={16} style={{ color: 'var(--color-text-caption)' }} />
-            </div>
-            <div className="sidebar-subnav">
-              <NavLink to="/finance/settlements" className={({ isActive }) => `sidebar-subitem ${isActive ? 'active' : ''}`}>
-                <icons.settlements className="sidebar-icon" size={24} />
-                <span className="sidebar-label">Settlement</span>
-              </NavLink>
-              <NavLink to="/finance/order-payments" className={({ isActive }) => `sidebar-subitem ${isActive ? 'active' : ''}`}>
-                <icons.orderPayments className="sidebar-icon" size={24} />
-                <span className="sidebar-label">Order wise payment</span>
-              </NavLink>
-              <NavLink to="/finance/pending-cod" className={({ isActive }) => `sidebar-subitem ${isActive ? 'active' : ''}`}>
-                <icons.pendingCod className="sidebar-icon" size={24} />
-                <span className="sidebar-label">Pending COD</span>
-              </NavLink>
-            </div>
-          </>
-        )}
-        {has('TICKETS_ACCESS') && (
-          <SidebarItem to="/tickets" icon={icons.ticket} label="Tickets" />
-        )}
-        {has('USER_ACCESS') && (
-          <SidebarItem to="/user-management" icon={icons.userManagement} label="User Management" />
-        )}
-        {has('REMARKS_ACCESS') && (
-          <SidebarItem to="/remarks" icon={icons.remarks} label="Remarks" />
-        )}
-        {has('DELIVERY_CHARGES_ACCESS') && (
-          <SidebarItem to="/delivery-charges" icon={icons.deliveryCharges} label="Delivery Charges" />
-        )}
+        <SidebarItem to="/dashboard" icon={LayoutDashboard} label="Dashboard" />
+        <SidebarItem to="/orders" icon={Package} label="Orders" />
+
+        <SidebarSection label="Finance" />
+        <div className="sidebar-subnav">
+          <SubItem to="/finance/settlements" icon={Banknote} label="Settlements" />
+          <SubItem to="/finance/order-payments" icon={ClipboardList} label="Order Payments" />
+          <SubItem to="/finance/pending-cod" icon={Receipt} label="Pending COD" />
+        </div>
+
+        <SidebarSection label="Account" />
+        <SidebarItem to="/user-management" icon={Users} label="User Management" />
+        <SidebarItem to="/tickets" icon={Ticket} label="Tickets" />
+        <SidebarItem to="/delivery-charges" icon={Truck} label="Delivery Charges" />
       </div>
+
       <div className="sidebar-footer">
-        <SidebarItem to="/help" icon={icons.help} label="Help and Support" />
+        <SidebarItem to="/help" icon={HelpCircle} label="Help & Support" />
+        <SidebarLogout />
       </div>
     </aside>
   );
 };
 
-const AdminSidebar: React.FC<{ isSuperAdmin: boolean }> = ({ isSuperAdmin }) => (
-  <aside className="sidebar">
-    <div className="sidebar-nav">
-      <SidebarItem to="/dashboard" icon={icons.dashboard} label="Dashboard" />
-      <SidebarItem to="/orders" icon={icons.order} label="Order" />
-      <SidebarItem to="/admin" icon={icons.admin} label="Admin Management" />
-      <SidebarItem to="/vendors" icon={icons.vendor} label="Vendor Management" />
-      <SidebarItem to="/riders" icon={icons.rider} label="Rider Management" />
-      <SidebarItem to="/finance" icon={icons.finance} label="Finance Management" />
-      {isSuperAdmin && (
-        <SidebarItem to="/settings/delivery-rates" icon={icons.deliveryRates} label="Delivery Rates" />
-      )}
+// ── Vendor staff sidebar ───────────────────────────────────────────────────────
+const VendorStaffSidebar: React.FC = () => {
+  const perms = useStaffPermissions();
+  const { collapsed } = useSidebarCollapse();
+  const has = (p: string) => perms.includes(p);
 
-      <div className="sidebar-divider"></div>
+  return (
+    <aside className={`sidebar${collapsed ? ' sidebar--collapsed' : ''}`}>
+      <SidebarToggleBtn />
+      <div className="sidebar-nav">
+        {has('DASHBOARD_ACCESS') && (
+          <SidebarItem to="/dashboard" icon={LayoutDashboard} label="Dashboard" />
+        )}
+        {has('ORDER_ACCESS') && (
+          <SidebarItem to="/orders" icon={Package} label="Orders" />
+        )}
+        {has('FINANCE_ACCESS') && (
+          <>
+            <SidebarSection label="Finance" />
+            <div className="sidebar-subnav">
+              <SubItem to="/finance/settlements" icon={Banknote} label="Settlements" />
+              <SubItem to="/finance/order-payments" icon={ClipboardList} label="Order Payments" />
+              <SubItem to="/finance/pending-cod" icon={Receipt} label="Pending COD" />
+            </div>
+          </>
+        )}
+        {has('TICKETS_ACCESS') && <SidebarItem to="/tickets" icon={Ticket} label="Tickets" />}
+        {has('USER_ACCESS') && <SidebarItem to="/user-management" icon={Users} label="User Management" />}
+        {has('REMARKS_ACCESS') && <SidebarItem to="/remarks" icon={MessageSquare} label="Remarks" />}
+        {has('DELIVERY_CHARGES_ACCESS') && <SidebarItem to="/delivery-charges" icon={Truck} label="Delivery Charges" />}
+      </div>
 
-      <div className="sidebar-dropdown">
-         <span className="dropdown-label">Operation</span>
-         <ChevronDown size={16} style={{ color: 'var(--color-text-caption)' }} />
+      <div className="sidebar-footer">
+        <SidebarItem to="/help" icon={HelpCircle} label="Help & Support" />
+        <SidebarLogout />
       </div>
-      <div className="sidebar-subnav">
-        <NavLink
-          to="/pickup"
-          className={({ isActive }) => `sidebar-subitem ${isActive ? 'active' : ''}`}
-        >
-          <icons.pickup className="sidebar-icon" size={24} />
-          <span className="sidebar-label">Pickup</span>
-        </NavLink>
-        <NavLink
-          to="/dispatch"
-          className={({ isActive }) => `sidebar-subitem ${isActive ? 'active' : ''}`}
-        >
-          <icons.dispatch className="sidebar-icon" size={24} />
-          <span className="sidebar-label">Dispatch</span>
-        </NavLink>
-        <NavLink
-          to="/oov"
-          className={({ isActive }) => `sidebar-subitem ${isActive ? 'active' : ''}`}
-        >
-          <icons.oov className="sidebar-icon" size={24} />
-          <span className="sidebar-label">OOV</span>
-        </NavLink>
-        <NavLink
-          to="/return"
-          className={({ isActive }) => `sidebar-subitem ${isActive ? 'active' : ''}`}
-        >
-          <icons.return className="sidebar-icon" size={24} />
-          <span className="sidebar-label">Return</span>
-        </NavLink>
-        <NavLink
-          to="/hold"
-          className={({ isActive }) => `sidebar-subitem ${isActive ? 'active' : ''}`}
-        >
-          <icons.hold className="sidebar-icon" size={24} />
-          <span className="sidebar-label">Hold</span>
-        </NavLink>
-        <NavLink
-          to="/loss-and-damage"
-          className={({ isActive }) => `sidebar-subitem ${isActive ? 'active' : ''}`}
-        >
-          <icons.damage className="sidebar-icon" size={24} />
-          <span className="sidebar-label">Loss and Damage</span>
-        </NavLink>
-      </div>
-      <div className="sidebar-dropdown">
-         <span className="dropdown-label">CX/Tickets</span>
-         <ChevronDown size={16} style={{ color: 'var(--color-text-caption)' }} />
-      </div>
-      <div className="sidebar-subnav">
-        <NavLink
-          to="/tickets"
-          className={({ isActive }) => `sidebar-subitem ${isActive ? 'active' : ''}`}
-        >
-          <icons.ticket className="sidebar-icon" size={24} />
-          <span className="sidebar-label">Tickets</span>
-        </NavLink>
-        <NavLink
-          to="/remarks"
-          className={({ isActive }) => `sidebar-subitem ${isActive ? 'active' : ''}`}
-        >
-          <icons.remarks className="sidebar-icon" size={24} />
-          <span className="sidebar-label">Remarks</span>
-        </NavLink>
-      </div>
-    </div>
+    </aside>
+  );
+};
 
-    <div className="sidebar-footer">
-      <SidebarItem to="/help" icon={icons.help} label="Help and Support" />
-    </div>
-  </aside>
-);
+// ── Admin / super-admin sidebar ────────────────────────────────────────────────
+const AdminSidebar: React.FC<{ isSuperAdmin: boolean }> = ({ isSuperAdmin }) => {
+  const { collapsed } = useSidebarCollapse();
+  return (
+    <aside className={`sidebar${collapsed ? ' sidebar--collapsed' : ''}`}>
+      <SidebarToggleBtn />
+      <div className="sidebar-nav">
+        <SidebarItem to="/dashboard" icon={LayoutDashboard} label="Dashboard" />
+        <SidebarItem to="/orders" icon={Package} label="Orders" />
 
+        <SidebarSection label="Management" />
+        <SidebarItem to="/admin" icon={UserCheck} label="Admin Management" />
+        <SidebarItem to="/vendors" icon={Store} label="Vendor Management" />
+        {isSuperAdmin && <SidebarItem to="/kyc-applications" icon={ClipboardCheck} label="KYC Applications" />}
+        <SidebarItem to="/riders" icon={Bike} label="Rider Management" />
+        <SidebarItem to="/finance" icon={Wallet} label="Finance" />
+        {isSuperAdmin && <SidebarItem to="/settings/delivery-rates" icon={Percent} label="Delivery Rates" />}
+
+        <SidebarSection label="Operations" />
+        <div className="sidebar-subnav">
+          <SubItem to="/pickup" icon={Archive} label="Pickup" />
+          <SubItem to="/dispatch" icon={Send} label="Dispatch" />
+          <SubItem to="/oov" icon={Route} label="OOV" />
+          <SubItem to="/return" icon={RotateCcw} label="Return" />
+          <SubItem to="/hold" icon={OctagonMinus} label="Hold" />
+          <SubItem to="/loss-and-damage" icon={Map} label="Loss & Damage" />
+        </div>
+
+        <SidebarSection label="Customer Experience" />
+        <div className="sidebar-subnav">
+          <SubItem to="/tickets" icon={Ticket} label="Tickets" />
+          <SubItem to="/remarks" icon={MessageSquare} label="Remarks" />
+        </div>
+      </div>
+
+      <div className="sidebar-footer">
+        <SidebarItem to="/help" icon={HelpCircle} label="Help & Support" />
+        <SidebarLogout />
+      </div>
+    </aside>
+  );
+};
+
+// ── Root — owns collapse state, provides context ───────────────────────────────
 const Sidebar: React.FC = () => {
+  const [collapsed, setCollapsed] = useState(
+    () => localStorage.getItem('sidebar-collapsed') === 'true',
+  );
+  const toggle = useCallback(() => {
+    setCollapsed((c) => {
+      const next = !c;
+      localStorage.setItem('sidebar-collapsed', String(next));
+      return next;
+    });
+  }, []);
+
   const roles = getCurrentUserRoles();
 
-  if (roles.includes('vendor_staff')) return <VendorStaffSidebar />;
-  if (roles.includes('vendor') && !isAdminSide()) return <VendorSidebar />;
-  return <AdminSidebar isSuperAdmin={roles.includes('super_admin')} />;
+  return (
+    <SidebarCollapseContext.Provider value={{ collapsed, toggle }}>
+      {roles.includes('vendor_staff') ? (
+        <VendorStaffSidebar />
+      ) : roles.includes('vendor') && !isAdminSide() ? (
+        <VendorSidebar />
+      ) : (
+        <AdminSidebar isSuperAdmin={roles.includes('super_admin')} />
+      )}
+    </SidebarCollapseContext.Provider>
+  );
 };
 
 export default Sidebar;

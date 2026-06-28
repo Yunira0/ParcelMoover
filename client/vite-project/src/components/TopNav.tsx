@@ -165,9 +165,14 @@ const TopNav: React.FC = () => {
           )}
         </div>
 
-        <div className="user-profile">
+        <button
+          type="button"
+          className="user-profile"
+          onClick={() => navigate('/profile')}
+          title="My profile"
+        >
           <User size={20} style={{ color: 'var(--color-background-surface)' }} />
-        </div>
+        </button>
       </div>
     </nav>
   );

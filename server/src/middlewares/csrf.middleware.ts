@@ -19,6 +19,10 @@ export function csrfProtection(
   if (safeMethods.includes(req.method)) {
     return next();
   }
+  // Bearer token clients are not vulnerable to CSRF (no browser auto-sends cookies for them)
+  if (req.headers.authorization?.startsWith('Bearer ')) {
+    return next();
+  }
   const csrfCookie = req.cookies?.csrfToken;
   const csrfHeader = req.headers["x-csrf-token"];
   if (!csrfCookie || !csrfHeader || csrfCookie !== csrfHeader) {

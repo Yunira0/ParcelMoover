@@ -9,8 +9,8 @@
 
 .status-chip-outline {
   border: 1px solid currentColor;
-  font-size: var(--font-size-xs, 12px);
-  line-height: var(--line-height-xs, 16px);
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-xs);
   padding: var(--space-0-5) var(--space-2);
 }
 
@@ -23,26 +23,26 @@
 }
 
 .status-chip-success {
-  background: rgb(21 128 61 / 10%);
+  background: var(--color-success-surface);
   color: var(--color-background-success-default);
 }
 
 .status-chip-info {
-  background: rgb(29 78 216 / 10%);
-  color: #1d4ed8;
+  background: var(--color-info-surface);
+  color: var(--color-info-text);
 }
 
 .status-chip-warning {
-  background: rgb(161 98 7 / 10%);
+  background: var(--color-warning-surface);
   color: var(--color-background-warning-default);
 }
 
 .status-chip-danger {
-  background: rgb(153 27 27 / 10%);
-  color: #991b1b;
+  background: var(--color-danger-chip-surface);
+  color: var(--color-danger-chip);
 }
 
 .status-chip-neutral {
-  background: rgb(75 85 99 / 10%);
+  background: var(--color-neutral-surface);
   color: var(--color-text-caption);
 }

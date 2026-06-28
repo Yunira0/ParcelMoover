@@ -467,7 +467,7 @@
 
 .rd-bottom-error {
   font-size: var(--font-size-sm);
-  color: #dc2626;
+  color: var(--color-danger-default);
   margin: 0;
   padding: 0 var(--space-4);
 }
