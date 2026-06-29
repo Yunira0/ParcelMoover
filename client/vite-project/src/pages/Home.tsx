@@ -1,7 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight, CheckCircle } from 'lucide-react';
-import Button from '../components/Button';
 import './Home.css';
 
 const Home: React.FC = () => {

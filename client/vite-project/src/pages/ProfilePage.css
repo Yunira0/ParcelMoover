@@ -16,6 +16,12 @@
   border-radius: var(--border-radius-modal);
 }
 
+.profile-logout-btn {
+  margin-left: auto;
+  align-self: flex-start;
+  flex-shrink: 0;
+}
+
 .profile-avatar {
   width: 64px;
   height: 64px;

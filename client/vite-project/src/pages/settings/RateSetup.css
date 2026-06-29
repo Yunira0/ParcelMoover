@@ -1,0 +1,96 @@
+.rate-setup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.rate-card {
+  background: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-modal, 12px);
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.rate-card h3 {
+  margin: var(--space-2) 0 0;
+  font-size: 0.95rem;
+  color: var(--color-text-default);
+}
+
+.rate-muted {
+  color: var(--color-text-caption);
+  font-size: 0.82rem;
+  margin: 0;
+}
+
+.rate-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-3);
+  margin-top: 4px;
+}
+
+.rate-grid label,
+.rate-table label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.8rem;
+  color: var(--color-text-caption);
+}
+
+.rate-grid input,
+.rate-table input,
+.rate-table select {
+  padding: 8px 10px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 8px;
+  font-size: 0.85rem;
+  background: var(--color-background-surface);
+  color: var(--color-text-default);
+}
+
+.rate-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--space-2);
+}
+
+.rate-table-wrap {
+  overflow-x: auto;
+  margin-top: var(--space-2);
+}
+
+.rate-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.rate-table th,
+.rate-table td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--color-border-default);
+  white-space: nowrap;
+}
+
+.rate-table th {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-caption);
+}
+
+.rate-table input {
+  width: 120px;
+}
+
+.rate-msg {
+  font-size: 0.85rem;
+  color: var(--color-primary, #4f46e5);
+  margin: 0;
+}

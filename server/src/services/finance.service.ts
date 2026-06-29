@@ -10,6 +10,8 @@ import {
   PendingCodItem,
   SettlementListItem,
   SettlementsListResult,
+  UnsettledOrderItem,
+  UnsettledOrdersResult,
   VendorBillingProfile,
 } from "../types/finance.type";
 
@@ -25,6 +27,22 @@ async function resolveVendor(actor: Actor, vendorIdParam?: string) {
   const isStaff = actor.roles.some((r) => ["super_admin", "admin"].includes(r));
   const isVendor = actor.roles.includes("vendor");
   const isVendorStaff = actor.roles.includes("vendor_staff");
+  const isSales = actor.roles.includes("sales") && !isStaff;
+
+  // Sales accounts may view finance for one of their own clients only. They must
+  // name the vendor, and we verify ownership before returning it.
+  if (isSales) {
+    if (!vendorIdParam) {
+      throw new AppError(400, "vendorId is required");
+    }
+    const vendor = await prisma.vendors.findFirst({
+      where: { id: vendorIdParam, sales_user_id: actor.id, deleted_at: null },
+    });
+    if (!vendor) {
+      throw new AppError(403, "Not authorized to view this client's finance records");
+    }
+    return vendor;
+  }
 
   if (isVendor) {
     const vendor = await prisma.vendors.findFirst({
@@ -251,5 +269,101 @@ export async function listSettlements(
       total,
       totalPages: Math.max(1, Math.ceil(total / take)),
     },
+  };
+}
+
+export async function getUnsettledOrders(
+  actor: Actor,
+  type: "rider" | "vendor",
+  targetId?: string,
+): Promise<UnsettledOrdersResult> {
+  const isStaff = actor.roles.some((r) => ["super_admin", "admin"].includes(r));
+  const isSales = actor.roles.includes("sales") && !isStaff;
+
+  let riderId: string | undefined;
+  let vendorId: string | undefined;
+
+  if (type === "rider") {
+    if (isSales) {
+      // Sales accounts have no visibility into rider settlements.
+      throw new AppError(403, "Not authorized to view rider settlements");
+    }
+    if (isStaff) {
+      if (!targetId) throw new AppError(400, "riderId is required");
+      riderId = targetId;
+    } else {
+      const rider = await prisma.riders.findFirst({
+        where: { user_id: actor.id, deleted_at: null },
+      });
+      if (!rider) throw new AppError(403, "Rider profile not found");
+      riderId = rider.id;
+    }
+  } else {
+    if (isSales) {
+      if (!targetId) throw new AppError(400, "vendorId is required");
+      const owned = await prisma.vendors.findFirst({
+        where: { id: targetId, sales_user_id: actor.id, deleted_at: null },
+        select: { id: true },
+      });
+      if (!owned) throw new AppError(403, "Not authorized to view this client's records");
+      vendorId = owned.id;
+    } else if (isStaff) {
+      if (!targetId) throw new AppError(400, "vendorId is required");
+      vendorId = targetId;
+    } else {
+      const vendor = await prisma.vendors.findFirst({
+        where: { user_id: actor.id, deleted_at: null, status: "active" },
+      });
+      if (!vendor) throw new AppError(403, "Vendor profile not found");
+      vendorId = vendor.id;
+    }
+  }
+
+  const where: Prisma.cod_collectionsWhereInput = {
+    payment_status: payment_status.pending,
+    ...(riderId ? { rider_id: riderId } : {}),
+    ...(vendorId ? { vendor_id: vendorId } : {}),
+  };
+
+  const collections = await prisma.cod_collections.findMany({
+    where,
+    include: {
+      parcels: {
+        select: {
+          tracking_id: true,
+          delivery_charge: true,
+          parties_parcels_receiver_idToparties: { select: { name: true } },
+          locations_parcels_destination_location_idTolocations: {
+            select: { name: true, city: true, district: true },
+          },
+        },
+      },
+    },
+    orderBy: { created_at: "desc" },
+  });
+
+  const items: UnsettledOrderItem[] = collections.map((c) => {
+    const codAmount = Number(c.cod_amount);
+    const deliveryCharge = Number(c.parcels.delivery_charge);
+    return {
+      id: c.parcel_id,
+      codCollectionId: c.id,
+      trackingId: c.parcels.tracking_id,
+      receiverName: c.parcels.parties_parcels_receiver_idToparties.name,
+      destination: formatLocation(c.parcels.locations_parcels_destination_location_idTolocations),
+      codAmount,
+      deliveryCharge,
+      netPayable: codAmount - deliveryCharge,
+    };
+  });
+
+  const totalCod = items.reduce((sum, item) => sum + item.codAmount, 0);
+  const totalDeliveryCharge = items.reduce((sum, item) => sum + item.deliveryCharge, 0);
+
+  return {
+    items,
+    totalCod,
+    totalDeliveryCharge,
+    totalNetPayable: totalCod - totalDeliveryCharge,
   };
 }

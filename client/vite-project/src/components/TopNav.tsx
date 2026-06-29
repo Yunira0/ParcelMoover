@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, ArrowRight, Info, Bell, User } from 'lucide-react';
+import { Search, ArrowRight, Bell, User } from 'lucide-react';
 import Button from './Button';
 import type { AppNotification } from '../services/notifications.service';
 import {
@@ -10,6 +10,7 @@ import {
   markNotificationRead,
   subscribeToNotificationStream,
 } from '../services/notifications.service';
+import { getUnclosedRemarksCount } from '../services/remarks.service';
 import './TopNav.css';
 
 const timeAgo = (iso: string) => {
@@ -28,6 +29,7 @@ const TopNav: React.FC = () => {
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [unclosedCount, setUnclosedCount] = useState(0);
   const notificationsRef = useRef<HTMLDivElement>(null);
 
   const runSearch = () => {
@@ -38,6 +40,13 @@ const TopNav: React.FC = () => {
 
   useEffect(() => {
     getUnreadNotificationCount().then(setUnreadCount).catch(() => {});
+    getUnclosedRemarksCount()
+      .then((res) => {
+        if (res?.success && res.data?.count !== undefined) {
+          setUnclosedCount(res.data.count);
+        }
+      })
+      .catch(() => {});
 
     const unsubscribe = subscribeToNotificationStream((notification) => {
       setNotifications((prev) => [notification, ...prev]);
@@ -115,9 +124,17 @@ const TopNav: React.FC = () => {
       </form>
 
       <div className="top-nav-profile">
-        <Button variant="outline" className="cmt-button">
+        <Button
+          variant="outline"
+          className="cmt-button"
+          onClick={() => navigate('/remarks?status=pending')}
+        >
           Unclosed cmt
-          <Info size={16} style={{ color: 'var(--color-text-primary)' }} />
+          {unclosedCount > 0 && (
+            <span className="cmt-badge" aria-label={`${unclosedCount} unclosed comments`}>
+              {unclosedCount > 99 ? '99+' : unclosedCount}
+            </span>
+          )}
         </Button>
         
         <div className="notification-bell" ref={notificationsRef}>

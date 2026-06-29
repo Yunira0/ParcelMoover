@@ -10,13 +10,19 @@
   display: flex;
   gap: var(--space-4);
   justify-content: space-between;
+  flex-wrap: wrap;
 }
 
 .return-toolbar-actions {
   align-items: center;
   display: flex;
-  gap: var(--space-4);
-  margin-left: auto;
+  gap: var(--space-3);
+}
+
+.return-action-msg {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--color-text-danger, #dc2626);
 }
 
 .return-search {

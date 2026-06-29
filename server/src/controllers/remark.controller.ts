@@ -3,6 +3,7 @@ import {
   getRemarkById,
   listRemarks,
   setRemarkStatus,
+  getUnclosedRemarksCount,
   type RemarkWorkflowStatus,
 } from "../services/remark.service";
 import { ListRemarksParams } from "../types/remark.type";
@@ -72,6 +73,19 @@ export async function setRemarkStatusController(req: Request, res: Response) {
     return res.status(error.statusCode || 500).json({
       success: false,
       message: error.message || "Failed to update status",
+    });
+  }
+}
+
+export async function getUnclosedRemarksCountController(req: Request, res: Response) {
+  try {
+    if (!req.user) return res.status(401).json({ success: false, message: "Unauthorized" });
+    const count = await getUnclosedRemarksCount({ id: req.user.id, roles: req.user.roles });
+    return res.status(200).json({ success: true, data: { count } });
+  } catch (error: any) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to load unclosed remarks count",
     });
   }
 }

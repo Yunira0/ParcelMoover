@@ -192,6 +192,45 @@
 }
 
 /* Error */
+.kyc-file-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.kyc-file-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-text-default, #1f2937);
+}
+
+.kyc-file-btn,
+.kyc-file-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border: 1px dashed var(--color-border-default, #d1d5db);
+  border-radius: 8px;
+  background: var(--color-background-surface, #fff);
+  font-size: 0.85rem;
+  cursor: pointer;
+  color: var(--color-text-default, #1f2937);
+}
+
+.kyc-file-chip {
+  border-style: solid;
+  justify-content: space-between;
+}
+
+.kyc-file-chip button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  display: inline-flex;
+  color: var(--color-text-caption, #6b7280);
+}
+
 .kyc-error {
   margin: 16px 0 0;
   padding: 10px 14px;

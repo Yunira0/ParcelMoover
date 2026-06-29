@@ -7,6 +7,7 @@ import {
   getRemarkByIdController,
   listRemarksController,
   setRemarkStatusController,
+  getUnclosedRemarksCountController,
 } from "../controllers/remark.controller";
 import { createRedisRateLimitStore } from "../lib/rateLimitStore";
 
@@ -35,7 +36,7 @@ const remarksWriteLimiter = rateLimit({
 });
 
 // Vendors and their staff see remarks on their parcels; admins see all (scoped in the service).
-const CX_ROLES = ["super_admin", "admin", "vendor", "vendor_staff"] as const;
+const CX_ROLES = ["super_admin", "admin", "vendor", "vendor_staff", "sales"] as const;
 
 // GET /api/remarks — list remarks (status/date/search filters; vendor-scoped)
 remarkRouter.get(
@@ -63,6 +64,15 @@ remarkRouter.patch(
   authorizeRoles(...CX_ROLES),
   remarksWriteLimiter,
   setRemarkStatusController,
+);
+
+// GET /api/remarks/unclosed/count — count of unclosed remarks
+remarkRouter.get(
+  "/unclosed/count",
+  authMiddleware,
+  authorizeRoles(...CX_ROLES),
+  remarksReadLimiter,
+  getUnclosedRemarksCountController,
 );
 
 export default remarkRouter;

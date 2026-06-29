@@ -1,51 +1,65 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { CheckCircle, ChevronRight, ChevronLeft } from 'lucide-react';
+import { CheckCircle, ChevronRight, ChevronLeft, Upload, X } from 'lucide-react';
 import Button from '../components/Button';
 import FormField from '../components/FormField';
 import { submitKycApplication, type KycApplicationInput } from '../services/kyc.service';
 import './KycApplicationPage.css';
 
-const STEPS = ['Business Info', 'Owner & ID', 'Review'];
-
-const BUSINESS_TYPES = [
-  { value: 'ecommerce', label: 'E-Commerce' },
-  { value: 'retail', label: 'Retail' },
-  { value: 'wholesale', label: 'Wholesale' },
-  { value: 'manufacturing', label: 'Manufacturing' },
-  { value: 'services', label: 'Services' },
-  { value: 'other', label: 'Other' },
-];
-
-const SHIPMENT_ESTIMATES = [
-  { value: '1-50', label: '1 – 50 parcels/month' },
-  { value: '51-200', label: '51 – 200 parcels/month' },
-  { value: '201-500', label: '201 – 500 parcels/month' },
-  { value: '501-1000', label: '501 – 1,000 parcels/month' },
-  { value: '1000+', label: '1,000+ parcels/month' },
-];
-
-const ID_TYPES = [
-  { value: 'citizenship', label: 'Citizenship Card' },
-  { value: 'passport', label: 'Passport' },
-  { value: 'driving_license', label: 'Driving License' },
-];
+const STEPS = ['Business', 'Owner & Bank', 'Documents'];
 
 const emptyForm = (): KycApplicationInput => ({
-  businessName: '',
+  onlineBusinessName: '',
+  pickupLocation: '',
+  pickupLandmark: '',
+  businessContact: '',
   ownerName: '',
-  email: '',
-  phone: '',
-  address: '',
-  city: '',
-  businessType: '',
+  ownerEmail: '',
+  ownerContact: '',
+  billingBusinessName: '',
+  registeredAddress: '',
+  registrationNo: '',
   panVatNo: '',
-  idType: 'citizenship',
-  idNumber: '',
-  website: '',
-  monthlyShipmentEstimate: '',
-  description: '',
+  citizenshipDoc: null,
+  panVatDoc: null,
+  businessCertDoc: null,
+  bankName: '',
+  bankAccountNo: '',
+  bankAccountHolder: '',
 });
+
+// Minimal file picker (FormField has no file type); optional documents.
+const FileField: React.FC<{
+  label: string;
+  file: File | null | undefined;
+  onChange: (f: File | null) => void;
+}> = ({ label, file, onChange }) => {
+  const ref = useRef<HTMLInputElement>(null);
+  return (
+    <div className="kyc-file-field">
+      <span className="kyc-file-label">{label}</span>
+      {file ? (
+        <div className="kyc-file-chip">
+          <span>{file.name}</span>
+          <button type="button" onClick={() => onChange(null)} aria-label="Remove">
+            <X size={14} />
+          </button>
+        </div>
+      ) : (
+        <button type="button" className="kyc-file-btn" onClick={() => ref.current?.click()}>
+          <Upload size={15} /> Upload
+        </button>
+      )}
+      <input
+        ref={ref}
+        type="file"
+        accept="image/*,.pdf"
+        style={{ display: 'none' }}
+        onChange={(e) => onChange(e.target.files?.[0] ?? null)}
+      />
+    </div>
+  );
+};
 
 const KycApplicationPage: React.FC = () => {
   const [step, setStep] = useState(0);
@@ -56,18 +70,19 @@ const KycApplicationPage: React.FC = () => {
 
   const set = (field: keyof KycApplicationInput) => (value: string) =>
     setForm((prev) => ({ ...prev, [field]: value }));
+  const setFile = (field: keyof KycApplicationInput) => (file: File | null) =>
+    setForm((prev) => ({ ...prev, [field]: file }));
 
   const validateStep = (): string => {
     if (step === 0) {
-      if (!form.businessName.trim()) return 'Business name is required';
-      if (!form.address.trim()) return 'Business address is required';
-      if (!form.city.trim()) return 'City / District is required';
+      if (!form.onlineBusinessName.trim()) return 'Business name is required';
+      if (!form.pickupLocation.trim()) return 'Pickup location is required';
+      if (!form.businessContact.trim()) return 'Business contact is required';
     }
     if (step === 1) {
       if (!form.ownerName.trim()) return 'Owner name is required';
-      if (!form.email.trim()) return 'Email is required';
-      if (!form.phone.trim()) return 'Phone number is required';
-      if (!form.idNumber.trim()) return 'ID number is required';
+      if (!form.ownerEmail.trim()) return 'Email is required';
+      if (!form.ownerContact.trim()) return 'Contact number is required';
     }
     return '';
   };
@@ -106,9 +121,9 @@ const KycApplicationPage: React.FC = () => {
           <h2>Application Submitted!</h2>
           <p>
             Thank you, <strong>{form.ownerName}</strong>. Your KYC application for{' '}
-            <strong>{form.businessName}</strong> has been received.
+            <strong>{form.onlineBusinessName}</strong> has been received.
           </p>
-          <p>Our team will review it and send the login credentials to <strong>{form.email}</strong> once approved.</p>
+          <p>Our team will review it and send the login credentials to <strong>{form.ownerEmail}</strong> once approved.</p>
           <Link to="/">
             <Button variant="primary">Back to Home</Button>
           </Link>
@@ -147,62 +162,55 @@ const KycApplicationPage: React.FC = () => {
               <h3>Business Information</h3>
               <div className="kyc-grid">
                 <FormField
-                  label="Business Name"
+                  label="Online Business Name"
                   required
-                  value={form.businessName}
-                  onChange={set('businessName')}
-                  placeholder="e.g. Nepal Traders Pvt. Ltd."
+                  value={form.onlineBusinessName}
+                  onChange={set('onlineBusinessName')}
+                  placeholder="e.g. Nepal Traders"
                 />
                 <FormField
-                  label="Business Type"
-                  type="select"
-                  value={form.businessType}
-                  onChange={set('businessType')}
-                  options={BUSINESS_TYPES}
-                  placeholder="Select type"
+                  label="Business Contact"
+                  required
+                  value={form.businessContact}
+                  onChange={set('businessContact')}
+                  placeholder="e.g. 9800000000"
+                />
+                <FormField
+                  label="Pickup Location"
+                  required
+                  value={form.pickupLocation}
+                  onChange={set('pickupLocation')}
+                  placeholder="City / area parcels are picked up from"
+                />
+                <FormField
+                  label="Pickup Landmark"
+                  value={form.pickupLandmark ?? ''}
+                  onChange={set('pickupLandmark')}
+                  placeholder="Nearby landmark"
+                />
+                <FormField
+                  label="Billing Business Name"
+                  value={form.billingBusinessName ?? ''}
+                  onChange={set('billingBusinessName')}
+                  placeholder="Registered/legal business name"
+                />
+                <FormField
+                  label="Registration No."
+                  value={form.registrationNo ?? ''}
+                  onChange={set('registrationNo')}
+                  placeholder="Company registration number"
                 />
                 <FormField
                   label="PAN / VAT Number"
-                  value={form.panVatNo}
+                  value={form.panVatNo ?? ''}
                   onChange={set('panVatNo')}
                   placeholder="e.g. 123456789"
                 />
                 <FormField
-                  label="Monthly Shipment Volume"
-                  type="select"
-                  value={form.monthlyShipmentEstimate}
-                  onChange={set('monthlyShipmentEstimate')}
-                  options={SHIPMENT_ESTIMATES}
-                  placeholder="Select estimate"
-                />
-                <FormField
-                  label="Business Address"
-                  required
-                  value={form.address}
-                  onChange={set('address')}
-                  placeholder="Street / Tole / Ward"
-                />
-                <FormField
-                  label="City / District"
-                  required
-                  value={form.city}
-                  onChange={set('city')}
-                  placeholder="e.g. Kathmandu"
-                />
-                <FormField
-                  label="Website (optional)"
-                  value={form.website}
-                  onChange={set('website')}
-                  placeholder="https://example.com"
-                  gridColumn="span 2"
-                />
-                <FormField
-                  label="About Your Business"
-                  type="textarea"
-                  value={form.description}
-                  onChange={set('description')}
-                  placeholder="Brief description of your business and what you'll be shipping..."
-                  rows={3}
+                  label="Registered Address"
+                  value={form.registeredAddress ?? ''}
+                  onChange={set('registeredAddress')}
+                  placeholder="Street / Tole / Ward, City"
                   gridColumn="span 2"
                 />
               </div>
@@ -211,7 +219,7 @@ const KycApplicationPage: React.FC = () => {
 
           {step === 1 && (
             <div className="kyc-section">
-              <h3>Owner & Identity Information</h3>
+              <h3>Owner &amp; Bank Details</h3>
               <div className="kyc-grid">
                 <FormField
                   label="Owner Full Name"
@@ -221,35 +229,37 @@ const KycApplicationPage: React.FC = () => {
                   placeholder="As on government ID"
                 />
                 <FormField
-                  label="Email Address"
+                  label="Owner Email"
                   type="email"
                   required
-                  value={form.email}
-                  onChange={set('email')}
+                  value={form.ownerEmail}
+                  onChange={set('ownerEmail')}
                   placeholder="Your login email"
                 />
                 <FormField
-                  label="Phone Number"
+                  label="Owner Contact"
                   required
-                  value={form.phone}
-                  onChange={set('phone')}
+                  value={form.ownerContact}
+                  onChange={set('ownerContact')}
                   placeholder="e.g. 9800000000"
                 />
                 <FormField
-                  label="ID Type"
-                  type="select"
-                  required
-                  value={form.idType}
-                  onChange={set('idType')}
-                  options={ID_TYPES}
+                  label="Bank Name"
+                  value={form.bankName ?? ''}
+                  onChange={set('bankName')}
+                  placeholder="e.g. Nabil Bank"
                 />
                 <FormField
-                  label="ID Number"
-                  required
-                  value={form.idNumber}
-                  onChange={set('idNumber')}
-                  placeholder="ID document number"
-                  gridColumn="span 2"
+                  label="Bank Account No."
+                  value={form.bankAccountNo ?? ''}
+                  onChange={set('bankAccountNo')}
+                  placeholder="Account number"
+                />
+                <FormField
+                  label="Account Holder Name"
+                  value={form.bankAccountHolder ?? ''}
+                  onChange={set('bankAccountHolder')}
+                  placeholder="Name as on bank account"
                 />
               </div>
             </div>
@@ -257,25 +267,25 @@ const KycApplicationPage: React.FC = () => {
 
           {step === 2 && (
             <div className="kyc-section">
-              <h3>Review Your Application</h3>
+              <h3>Documents &amp; Review</h3>
+              <div className="kyc-grid">
+                <FileField label="Citizenship" file={form.citizenshipDoc} onChange={setFile('citizenshipDoc')} />
+                <FileField label="PAN / VAT Document" file={form.panVatDoc} onChange={setFile('panVatDoc')} />
+                <FileField label="Business Certificate" file={form.businessCertDoc} onChange={setFile('businessCertDoc')} />
+              </div>
               <div className="kyc-review">
                 <div className="kyc-review-group">
-                  <h4>Business Information</h4>
-                  <ReviewRow label="Business Name" value={form.businessName} />
-                  <ReviewRow label="Business Type" value={BUSINESS_TYPES.find(b => b.value === form.businessType)?.label || '—'} />
+                  <h4>Business</h4>
+                  <ReviewRow label="Business Name" value={form.onlineBusinessName} />
+                  <ReviewRow label="Contact" value={form.businessContact} />
+                  <ReviewRow label="Pickup Location" value={form.pickupLocation} />
                   <ReviewRow label="PAN / VAT No." value={form.panVatNo || '—'} />
-                  <ReviewRow label="Address" value={`${form.address}, ${form.city}`} />
-                  <ReviewRow label="Monthly Volume" value={SHIPMENT_ESTIMATES.find(s => s.value === form.monthlyShipmentEstimate)?.label || '—'} />
-                  {form.website && <ReviewRow label="Website" value={form.website} />}
-                  {form.description && <ReviewRow label="Description" value={form.description} />}
                 </div>
                 <div className="kyc-review-group">
-                  <h4>Owner Information</h4>
+                  <h4>Owner</h4>
                   <ReviewRow label="Owner Name" value={form.ownerName} />
-                  <ReviewRow label="Email" value={form.email} />
-                  <ReviewRow label="Phone" value={form.phone} />
-                  <ReviewRow label="ID Type" value={ID_TYPES.find(t => t.value === form.idType)?.label || form.idType} />
-                  <ReviewRow label="ID Number" value={form.idNumber} />
+                  <ReviewRow label="Email" value={form.ownerEmail} />
+                  <ReviewRow label="Contact" value={form.ownerContact} />
                 </div>
               </div>
               <p className="kyc-declaration">

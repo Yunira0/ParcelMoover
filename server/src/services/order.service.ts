@@ -24,6 +24,7 @@ function buildSearchText(trackingId: string, sender: Party, receiver: Party): st
   ].join(" ").toLowerCase();
 }
 import { getDeliveryQuote } from "./delivery-rate.service";
+import { getVendorQuote, RateType } from "./pricing.service";
 import { createNotification } from "./notification.service";
 
 type OrderActor = {
@@ -56,11 +57,18 @@ const DELIVERY_PENDING_STATUSES: parcel_status[] = [
 // operation, not something a delivery rider should be able to trigger.
 const HUB_OPERATION_STATUSES: parcel_status[] = ["dispatched", "arrived_at_branch"];
 
+// Return-to-Origin workflow stages — staff-only, driven from Return Operations.
+const RETURN_WORKFLOW_STATUSES: parcel_status[] = [
+  "follow_up",
+  "ready_to_return",
+  "sent_to_vendor",
+  "returned_to_vendor",
+];
+
 const TERMINAL_STATUSES: parcel_status[] = [
   "delivered",
-  "failed_pickup",
-  "failed_delivery",
   "cancelled",
+  "returned_to_vendor",
 ];
 
 const MAX_PAGE_SIZE = 100;
@@ -100,6 +108,8 @@ async function invalidateOrderCaches() {
 const RIDER_ASSIGNMENT_FIELD: Partial<Record<parcel_status, "pickup_rider_id" | "delivery_rider_id">> = {
   rider_assigned: "pickup_rider_id",
   sent_for_delivery: "delivery_rider_id",
+  // Sending an RTO parcel back to the vendor needs a rider to carry it.
+  sent_to_vendor: "delivery_rider_id",
 };
 
 async function resolveActiveRider(riderId: string) {
@@ -136,9 +146,11 @@ const formatDate = (date?: Date | null) => date ? date.toISOString().slice(0, 10
 const moneyToNumber = (value?: Prisma.Decimal | null) => value ? Number(value) : 0;
 
 async function getActorScope(actor: OrderActor) {
+  const isStaff = actor.roles.includes("super_admin") || actor.roles.includes("admin");
   const actorIsVendor = actor.roles.includes("vendor");
   const actorIsRider = actor.roles.includes("rider");
   const actorIsVendorStaff = actor.roles.includes("vendor_staff");
+  const actorIsSales = actor.roles.includes("sales");
 
   // Vendor staff: resolve vendor via their staff record, not the vendors table.
   if (actorIsVendorStaff) {
@@ -147,7 +159,17 @@ async function getActorScope(actor: OrderActor) {
       select: { vendor_id: true },
     });
     if (!staffRecord) throw new AppError(403, "Staff profile not found or inactive");
-    return { vendorId: staffRecord.vendor_id, riderId: undefined };
+    return { vendorId: staffRecord.vendor_id, vendorIds: undefined, riderId: undefined };
+  }
+
+  // Sales: scoped to the set of vendors (clients) they own. Staff/super_admin
+  // are unrestricted, so this only applies to a pure sales account.
+  if (actorIsSales && !isStaff) {
+    const ownedVendors = await prisma.vendors.findMany({
+      where: { sales_user_id: actor.id, deleted_at: null },
+      select: { id: true },
+    });
+    return { vendorId: undefined, vendorIds: ownedVendors.map((v) => v.id), riderId: undefined };
   }
 
   const [vendor, rider] = await Promise.all([
@@ -173,7 +195,7 @@ async function getActorScope(actor: OrderActor) {
     throw new AppError(403, "Rider profile not found or inactive");
   }
 
-  return { vendorId: vendor?.id, riderId: rider?.id };
+  return { vendorId: vendor?.id, vendorIds: undefined, riderId: rider?.id };
 }
 
 async function generateUniqueTrackingId(
@@ -291,11 +313,21 @@ async function _createOrderImpl(actor: OrderActor, data: CreateOrderInput) {
   const resolvedDestinationLocationId = data.destinationLocationId || data.receiver.locationId || null;
   const weightKg = data.weightKg || 1;
 
-  // Payable is computed server-side from the route's configured rate so the
-  // client can't spoof the charge. Falls back to a manually supplied charge
-  // only when a route can't be resolved (e.g. legacy callers without locations).
+  // Payable is computed server-side so the client can't spoof the charge. Vendor
+  // orders price by the vendor's chosen rate model (per-destination / zone / flat);
+  // non-vendor orders fall back to the legacy origin→destination route rate, then
+  // to a manually supplied charge when no rate can be resolved.
   let deliveryCharge = data.deliveryCharge || 0;
-  if (resolvedOriginLocationId && resolvedDestinationLocationId) {
+  if (vendor && resolvedDestinationLocationId) {
+    const quote = await getVendorQuote(vendor.rate_type as RateType, resolvedDestinationLocationId, weightKg, {
+      flatInsideValley: vendor.flat_inside_valley === null ? null : Number(vendor.flat_inside_valley),
+      flatOutsideValley: vendor.flat_outside_valley === null ? null : Number(vendor.flat_outside_valley),
+      zoneMajorCities: vendor.zone_major_cities === null ? null : Number(vendor.zone_major_cities),
+      zoneUrbanAreas: vendor.zone_urban_areas === null ? null : Number(vendor.zone_urban_areas),
+      zoneRemoteAreas: vendor.zone_remote_areas === null ? null : Number(vendor.zone_remote_areas),
+    });
+    deliveryCharge = quote.totalPayable;
+  } else if (resolvedOriginLocationId && resolvedDestinationLocationId) {
     const quote = await getDeliveryQuote(resolvedOriginLocationId, resolvedDestinationLocationId, weightKg);
     deliveryCharge = quote.totalPayable;
   }
@@ -438,13 +470,18 @@ export async function bulkCreateOrders(actor: OrderActor, input: BulkCreateOrder
 }
 
 function buildOrdersWhere(
-  scope: { vendorId: string | undefined; riderId: string | undefined },
+  scope: { vendorId: string | undefined; vendorIds?: string[] | undefined; riderId: string | undefined },
   query: ListOrdersQuery,
 ): Prisma.parcelsWhereInput {
   const conditions: Prisma.parcelsWhereInput[] = [{ deleted_at: null }];
 
   if (scope.vendorId) {
     conditions.push({ vendor_id: scope.vendorId });
+  }
+  // Sales accounts are scoped to a set of owned vendors. An empty set means
+  // they own no clients yet, so they should see nothing.
+  if (scope.vendorIds) {
+    conditions.push({ vendor_id: { in: scope.vendorIds } });
   }
   if (scope.riderId) {
     conditions.push({
@@ -549,8 +586,8 @@ export async function listOrders(
   actor: OrderActor,
   query: ListOrdersQuery = {},
 ): Promise<ListOrdersResult> {
-  const { vendorId, riderId } = await getActorScope(actor);
-  const where = buildOrdersWhere({ vendorId, riderId }, query);
+  const { vendorId, vendorIds, riderId } = await getActorScope(actor);
+  const where = buildOrdersWhere({ vendorId, vendorIds, riderId }, query);
 
   // Pagination only kicks in when the caller explicitly asks for it, so
   // existing callers that expect a flat array keep working unchanged.
@@ -560,7 +597,10 @@ export async function listOrders(
   // call listOrders() with no filters at all and reload on every status-change
   // event - that's the only shape worth caching, since filtered/paginated
   // queries have too many distinct combinations to get useful hit rates.
-  const isDefaultUnfilteredQuery = !paginated && !query.status?.length && !query.orderType && !query.search;
+  // Sales scope (vendorIds) is per-account and would collide with the shared
+  // global cache key, so those queries skip the cache.
+  const isDefaultUnfilteredQuery =
+    !paginated && !query.status?.length && !query.orderType && !query.search && vendorIds === undefined;
   const cacheKey = isDefaultUnfilteredQuery ? ordersListCacheKey(vendorId, riderId) : null;
 
   if (cacheKey) {
@@ -638,7 +678,7 @@ const ORDER_DETAIL_INCLUDE = {
 } satisfies Prisma.parcelsInclude;
 
 export async function getOrderByTrackingId(actor: OrderActor, trackingId: string) {
-  const { vendorId, riderId } = await getActorScope(actor);
+  const { vendorId, vendorIds, riderId } = await getActorScope(actor);
   const isStaff = actor.roles.includes("super_admin") || actor.roles.includes("admin");
 
   const parcel = await prisma.parcels.findFirst({
@@ -646,6 +686,7 @@ export async function getOrderByTrackingId(actor: OrderActor, trackingId: string
       tracking_id: trackingId,
       deleted_at: null,
       ...(vendorId ? { vendor_id: vendorId } : {}),
+      ...(vendorIds ? { vendor_id: { in: vendorIds } } : {}),
       ...(riderId ? { OR: [{ pickup_rider_id: riderId }, { delivery_rider_id: riderId }] } : {}),
     },
     include: ORDER_DETAIL_INCLUDE,
@@ -697,13 +738,14 @@ export async function addOrderRemark(
     throw new AppError(400, "Remark text is required");
   }
 
-  const { vendorId, riderId } = await getActorScope(actor);
+  const { vendorId, vendorIds, riderId } = await getActorScope(actor);
 
   const parcel = await prisma.parcels.findFirst({
     where: {
       id: parcelId,
       deleted_at: null,
       ...(vendorId ? { vendor_id: vendorId } : {}),
+      ...(vendorIds ? { vendor_id: { in: vendorIds } } : {}),
       ...(riderId ? { OR: [{ pickup_rider_id: riderId }, { delivery_rider_id: riderId }] } : {}),
     },
     select: { id: true, tracking_id: true },
@@ -772,16 +814,19 @@ export async function addOrderRemark(
 }
 
 export async function getDashboardSummary(actor: OrderActor) {
-  const { vendorId, riderId } = await getActorScope(actor);
-  const cacheKey = dashboardSummaryCacheKey(vendorId, riderId);
+  const { vendorId, vendorIds, riderId } = await getActorScope(actor);
+  // Sales scope is per-account; skip the shared cache to avoid cross-account leaks.
+  const cacheKey = vendorIds === undefined ? dashboardSummaryCacheKey(vendorId, riderId) : null;
 
-  try {
-    const cached = await redis.get(cacheKey);
-    if (cached) {
-      return JSON.parse(cached);
+  if (cacheKey) {
+    try {
+      const cached = await redis.get(cacheKey);
+      if (cached) {
+        return JSON.parse(cached);
+      }
+    } catch (error) {
+      console.error("[Redis] Failed to read dashboard summary cache:", error);
     }
-  } catch (error) {
-    console.error("[Redis] Failed to read dashboard summary cache:", error);
   }
 
   const todayStart = new Date();
@@ -790,6 +835,7 @@ export async function getDashboardSummary(actor: OrderActor) {
   const parcelWhere: Prisma.parcelsWhereInput = {
     deleted_at: null,
     ...(vendorId ? { vendor_id: vendorId } : {}),
+    ...(vendorIds ? { vendor_id: { in: vendorIds } } : {}),
     ...(riderId
       ? {
           OR: [
@@ -802,12 +848,14 @@ export async function getDashboardSummary(actor: OrderActor) {
 
   const codWhere: Prisma.cod_collectionsWhereInput = {
     ...(vendorId ? { vendor_id: vendorId } : {}),
+    ...(vendorIds ? { vendor_id: { in: vendorIds } } : {}),
     ...(riderId ? { rider_id: riderId } : {}),
   };
 
   const settlementWhere: Prisma.settlementsWhereInput = {
     status: "settled",
     ...(vendorId ? { vendor_id: vendorId } : {}),
+    ...(vendorIds ? { vendor_id: { in: vendorIds } } : {}),
     ...(riderId ? { rider_id: riderId } : {}),
   };
 
@@ -971,10 +1019,12 @@ export async function getDashboardSummary(actor: OrderActor) {
     updatedAt: new Date().toISOString(),
   };
 
-  try {
-    await redis.setex(cacheKey, DASHBOARD_SUMMARY_TTL_SECONDS, JSON.stringify(summary));
-  } catch (error) {
-    console.error("[Redis] Failed to write dashboard summary cache:", error);
+  if (cacheKey) {
+    try {
+      await redis.setex(cacheKey, DASHBOARD_SUMMARY_TTL_SECONDS, JSON.stringify(summary));
+    } catch (error) {
+      console.error("[Redis] Failed to write dashboard summary cache:", error);
+    }
   }
 
   return summary;
@@ -1051,6 +1101,11 @@ export async function updateParcelStatus(
   // building/closing a dispatch manifest is a branch operation
   if (HUB_OPERATION_STATUSES.includes(newStatus as parcel_status) && !isAdmin) {
     throw new AppError(403, "Only admins can perform dispatch hub operations");
+  }
+
+  // the return-to-origin workflow is managed by staff, not riders/vendors
+  if (RETURN_WORKFLOW_STATUSES.includes(newStatus as parcel_status) && !isAdmin) {
+    throw new AppError(403, "Only admins can manage the return workflow");
   }
 
   if (data.locationId) {
@@ -1171,6 +1226,10 @@ export async function bulkUpdateParcelStatus(
   if (HUB_OPERATION_STATUSES.includes(newStatus as parcel_status) && !isAdmin) {
     throw new AppError(403, "Only admins can perform dispatch hub operations");
   }
+  // The return-to-origin workflow is staff-only.
+  if (RETURN_WORKFLOW_STATUSES.includes(newStatus as parcel_status) && !isAdmin) {
+    throw new AppError(403, "Only admins can manage the return workflow");
+  }
   // Cancellation is allowed for admins and vendors (vendors may only cancel their own orders,
   // enforced by the vendor_id scope below).
   if (newStatus === "cancelled" && !isAdmin && !isVendorActor) {
@@ -1219,37 +1278,35 @@ export async function bulkUpdateParcelStatus(
   let riderId: string | null = null;
 
   if (newStatus === "dispatched") {
-    if (!data.toLocationId) {
-      throw new AppError(400, "toLocationId is required to dispatch a manifest");
-    }
-
-    const distinctOrigins = new Set(parcels.map((p) => p.current_location_id || ""));
-    if (distinctOrigins.size !== 1 || distinctOrigins.has("")) {
-      throw new AppError(
-        422,
-        "All selected parcels must share the same current location to be dispatched together",
-      );
-    }
-    originLocationId = parcels[0]!.current_location_id;
-
-    if (originLocationId === data.toLocationId) {
-      throw new AppError(422, "Destination hub must differ from the current location");
-    }
-
-    const destination = await prisma.locations.findUnique({ where: { id: data.toLocationId } });
-    if (!destination || !destination.is_active) {
-      throw new AppError(400, "Destination location not found or inactive");
-    }
-    toLocationId = destination.id;
-
-    if (data.riderId) {
-      const rider = await prisma.riders.findFirst({
-        where: { id: data.riderId, deleted_at: null, status: "active" },
-      });
-      if (!rider) {
-        throw new AppError(400, "Rider not found or inactive");
+    if (data.toLocationId) {
+      const distinctOrigins = new Set(parcels.map((p) => p.current_location_id || ""));
+      if (distinctOrigins.size !== 1 || distinctOrigins.has("")) {
+        throw new AppError(
+          422,
+          "All selected parcels must share the same current location to be dispatched together",
+        );
       }
-      riderId = rider.id;
+      originLocationId = parcels[0]!.current_location_id;
+
+      if (originLocationId === data.toLocationId) {
+        throw new AppError(422, "Destination hub must differ from the current location");
+      }
+
+      const destination = await prisma.locations.findUnique({ where: { id: data.toLocationId } });
+      if (!destination || !destination.is_active) {
+        throw new AppError(400, "Destination location not found or inactive");
+      }
+      toLocationId = destination.id;
+
+      if (data.riderId) {
+        const rider = await prisma.riders.findFirst({
+          where: { id: data.riderId, deleted_at: null, status: "active" },
+        });
+        if (!rider) {
+          throw new AppError(400, "Rider not found or inactive");
+        }
+        riderId = rider.id;
+      }
     }
   }
 

@@ -41,7 +41,7 @@ const STATUS_LABELS: Record<ParcelStatus, string> = {
   arrived: 'Arrived',
   ready_to_deliver: 'Ready to Deliver',
   sent_for_delivery: 'In Transit',
-  oov: 'Out of Vehicle',
+  oov: 'Transit',
   dispatched: 'Dispatched',
   arrived_at_branch: 'Arrived at Branch',
   hold: 'On Hold',
@@ -50,6 +50,10 @@ const STATUS_LABELS: Record<ParcelStatus, string> = {
   failed_pickup: 'Failed Pickup',
   failed_delivery: 'Failed Delivery',
   cancelled: 'Cancelled',
+  follow_up: 'Follow Up',
+  ready_to_return: 'Ready to Return',
+  sent_to_vendor: 'Sent to Vendor',
+  returned_to_vendor: 'Returned to Vendor',
 };
 
 const STATUS_ICONS: Record<ParcelStatus, React.ReactNode> = {
@@ -68,6 +72,10 @@ const STATUS_ICONS: Record<ParcelStatus, React.ReactNode> = {
   failed_pickup: <XCircle size={14} />,
   failed_delivery: <XCircle size={14} />,
   cancelled: <XCircle size={14} />,
+  follow_up: <Clock size={14} />,
+  ready_to_return: <Package size={14} />,
+  sent_to_vendor: <Truck size={14} />,
+  returned_to_vendor: <CheckCircle2 size={14} />,
 };
 
 const getStatusTone = (status: ParcelStatus): StatusChipTone => {

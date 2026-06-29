@@ -21,6 +21,15 @@ const normalizeStatus = (status: string | null): RemarkWorkflowStatus => {
 async function scopeWhere(actor: Actor, extra: Record<string, unknown> = {}) {
   if (isStaff(actor)) return extra;
 
+  // Sales: remarks on parcels belonging to any of the vendors (clients) they own.
+  if (actor.roles.includes("sales")) {
+    const owned = await prisma.vendors.findMany({
+      where: { sales_user_id: actor.id, deleted_at: null },
+      select: { id: true },
+    });
+    return { ...extra, parcels: { vendor_id: { in: owned.map((v) => v.id) } } };
+  }
+
   let vendorId: string | null = null;
 
   if (actor.roles.includes("vendor")) {
@@ -172,4 +181,11 @@ export async function setRemarkStatus(actor: Actor, id: string, status: RemarkWo
   await findAccessibleRemark(actor, id);
   await prisma.parcel_remarks.update({ where: { id }, data: { workflow_status: status } });
   return { id, status };
+}
+
+export async function getUnclosedRemarksCount(actor: Actor): Promise<number> {
+  const where = await scopeWhere(actor, {
+    workflow_status: { not: "closed" },
+  });
+  return prisma.parcel_remarks.count({ where });
 }

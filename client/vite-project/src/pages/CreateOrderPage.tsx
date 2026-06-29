@@ -5,7 +5,7 @@ import FormField from '../components/FormField';
 import PageHeader from '../components/PageHeader';
 import Button from '../components/Button';
 import { getLocations, getVendors } from '../services/users.service';
-import { getDeliveryQuote } from '../services/deliveryRates.service';
+import { getVendorQuote } from '../services/pricing.service';
 import { createOrder, type CreateOrderInput, type OrderType, type ServiceType } from '../services/orders.service';
 import { isVendorSide } from '../utils/auth';
 import './CreateOrderPage.css';
@@ -16,6 +16,7 @@ interface VendorOption {
   label: string;
   phone: string;
   address: string;
+  locationId: string | null;
 }
 
 interface LocationOption {
@@ -93,6 +94,7 @@ const CreateOrderPage: React.FC = () => {
             label: v.company || v.client,
             phone: v.phone,
             address: v.address || '',
+            locationId: v.locationId ?? null,
           })));
         }
       } catch (err) {
@@ -141,12 +143,24 @@ const CreateOrderPage: React.FC = () => {
 
   const selectedVendor = isVendorActor ? myVendor : vendors.find(v => v.id === form.vendorId);
 
+  // Default the "From" (origin) location to the selected vendor's current hub/branch.
+  // Vendor orders always originate from the vendor's hub (e.g. Imadol for Kathmandu
+  // valley vendors). Still editable afterwards.
+  useEffect(() => {
+    const hubId = selectedVendor?.locationId;
+    if (!hubId) return;
+    setForm(prev => (prev.originLocationId === hubId ? prev : { ...prev, originLocationId: hubId }));
+  }, [selectedVendor?.locationId]);
+
   const weightKgNumber = Number(form.weightKg) || 0;
 
-  // Auto-calculate the payable amount whenever route + weight are known - this mirrors
-  // the server-side calculation in order.service.ts so the client can't see a stale number.
+  // Auto-calculate the payable amount from the VENDOR's chosen rate model
+  // (per-destination / zone / flat) — mirrors the server-side charge in
+  // order.service.ts so the displayed number matches what gets saved.
   useEffect(() => {
-    if (!form.originLocationId || !form.destinationLocationId || !weightKgNumber) {
+    const vendorId = selectedVendor?.id;
+    // Need a destination, a weight, and a resolvable vendor (admins must pick one).
+    if (!form.destinationLocationId || !weightKgNumber || (!isVendorActor && !form.vendorId)) {
       setQuote(null);
       setQuoteError('');
       return;
@@ -156,7 +170,7 @@ const CreateOrderPage: React.FC = () => {
     setQuoteError('');
     const timer = setTimeout(async () => {
       try {
-        const res = await getDeliveryQuote(form.originLocationId, form.destinationLocationId, weightKgNumber);
+        const res = await getVendorQuote(form.destinationLocationId, weightKgNumber, vendorId);
         if (!cancelled && res?.success) {
           setQuote(res.data);
         }
@@ -165,8 +179,8 @@ const CreateOrderPage: React.FC = () => {
           setQuote(null);
           setQuoteError(
             err.response?.status === 404
-              ? 'No delivery rate configured for this route yet. Contact an admin to set one up.'
-              : 'Failed to calculate charges for this route.',
+              ? (err.response?.data?.message || 'No rate configured for this destination yet. Contact an admin.')
+              : 'Failed to calculate charges for this destination.',
           );
         }
       } finally {
@@ -174,7 +188,7 @@ const CreateOrderPage: React.FC = () => {
       }
     }, 400);
     return () => { cancelled = true; clearTimeout(timer); };
-  }, [form.originLocationId, form.destinationLocationId, weightKgNumber]);
+  }, [form.destinationLocationId, weightKgNumber, form.vendorId, selectedVendor?.id, isVendorActor]);
 
   const setField = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm(prev => ({ ...prev, [key]: value }));

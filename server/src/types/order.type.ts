@@ -52,7 +52,11 @@ export type ParcelStatus =
   | "delivered"
   | "failed_pickup"
   | "failed_delivery"
-  | "cancelled";
+  | "cancelled"
+  | "follow_up"
+  | "ready_to_return"
+  | "sent_to_vendor"
+  | "returned_to_vendor";
 
 
 
@@ -110,8 +114,15 @@ export const STATUS_TRANSITIONS = {
   oov:               ["dispatched","hold"],
   hold:              ["ready_to_deliver","oov","loss_and_damage"],
   delivered:         [],
-  failed_pickup:     [],
-  failed_delivery:   [],
+  failed_pickup:     ["pickup_ordered", "cancelled"],
+  // A failed delivery can be re-attempted, sent into NDR follow-up, or returned
+  // straight away (Return-to-Origin) when recovery is clearly hopeless.
+  failed_delivery:   ["ready_to_deliver", "follow_up", "ready_to_return"],
   cancelled:         [],
   loss_and_damage:   ["ready_to_deliver","arrived_at_branch"],
+  // ── Return-to-Origin (RTO) workflow ───────────────────────────────────────
+  follow_up:          ["ready_to_deliver", "ready_to_return"],
+  ready_to_return:    ["sent_to_vendor"],
+  sent_to_vendor:     ["returned_to_vendor"],
+  returned_to_vendor: [],
 };

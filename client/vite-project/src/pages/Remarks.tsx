@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Eye, Search, X } from 'lucide-react';
 import Table from '../components/Table';
 import Button from '../components/Button';
@@ -60,9 +60,14 @@ const isWithinRange = (createdAt: string, range: DateRange) => {
 
 const Remarks: React.FC = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [remarks, setRemarks] = useState<Remark[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeTab, setActiveTab] = useState<RemarkTab>('all');
+  // Allow deep-linking to a specific status tab, e.g. /remarks?status=pending
+  const statusParam = searchParams.get('status');
+  const initialTab: RemarkTab =
+    statusParam && (TAB_ORDER as string[]).includes(statusParam) ? (statusParam as RemarkTab) : 'all';
+  const [activeTab, setActiveTab] = useState<RemarkTab>(initialTab);
   const [dateRange, setDateRange] = useState<DateRange>('');
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
@@ -83,6 +88,14 @@ const Remarks: React.FC = () => {
   useEffect(() => { loadRemarks(); }, [loadRemarks]);
 
   useEffect(() => { setPage(1); }, [searchQuery, activeTab, dateRange]);
+
+  // Keep the active tab in sync with the ?status= param so re-navigating to it
+  // (e.g. from the "Unclosed cmt" button) switches tabs without a remount.
+  useEffect(() => {
+    if (statusParam && (TAB_ORDER as string[]).includes(statusParam)) {
+      setActiveTab(statusParam as RemarkTab);
+    }
+  }, [statusParam]);
 
   const statusCounts = useMemo(() => {
     const counts: Record<RemarkTab, number> = { all: remarks.length, open: 0, pending: 0, closed: 0 };

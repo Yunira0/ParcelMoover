@@ -12,8 +12,12 @@ import {
 import { withIdempotency } from "../services/idempotency.service";
 import { OrderType, ParcelStatus, STATUS_TRANSITIONS } from "../types/order.type";
 
+// General UUID shape (8-4-4-4-12 hex). Intentionally not strict about the
+// RFC-4122 version/variant nibbles, since seeded/demo records use deterministic
+// ids like 77777777-0000-0000-0000-000000000004. Real existence is validated
+// against the database downstream — this is only a cheap format guard.
 const UUID_REGEX =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const VALID_STATUSES = new Set(Object.keys(STATUS_TRANSITIONS));
 const VALID_ORDER_TYPES: OrderType[] = ["delivery", "exchange", "return"];

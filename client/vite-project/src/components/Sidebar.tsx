@@ -14,7 +14,7 @@ import {
   RotateCcw,
   OctagonMinus,
   Map,
-  Percent,
+  Settings,
   Ticket,
   MessageSquare,
   Receipt,
@@ -160,7 +160,7 @@ const VendorStaffSidebar: React.FC = () => {
         )}
         {has('FINANCE_ACCESS') && (
           <>
-            <SidebarSection label="Finance" />
+            <SidebarSection label="COD Management" />
             <div className="sidebar-subnav">
               <SubItem to="/finance/settlements" icon={Banknote} label="Settlements" />
               <SubItem to="/finance/order-payments" icon={ClipboardList} label="Order Payments" />
@@ -172,6 +172,34 @@ const VendorStaffSidebar: React.FC = () => {
         {has('USER_ACCESS') && <SidebarItem to="/user-management" icon={Users} label="User Management" />}
         {has('REMARKS_ACCESS') && <SidebarItem to="/remarks" icon={MessageSquare} label="Remarks" />}
         {has('DELIVERY_CHARGES_ACCESS') && <SidebarItem to="/delivery-charges" icon={Truck} label="Delivery Charges" />}
+      </div>
+
+      <div className="sidebar-footer">
+        <SidebarItem to="/help" icon={HelpCircle} label="Help & Support" />
+        <SidebarLogout />
+      </div>
+    </aside>
+  );
+};
+
+// ── Sales sidebar ──────────────────────────────────────────────────────────────
+// Sales accounts only manage their own clients: dashboard, orders, the vendor
+// (client) list, and customer-experience (remarks/tickets) — all backend-scoped.
+const SalesSidebar: React.FC = () => {
+  const { collapsed } = useSidebarCollapse();
+  return (
+    <aside className={`sidebar${collapsed ? ' sidebar--collapsed' : ''}`}>
+      <SidebarToggleBtn />
+      <div className="sidebar-nav">
+        <SidebarItem to="/dashboard" icon={LayoutDashboard} label="Dashboard" />
+        <SidebarItem to="/orders" icon={Package} label="Orders" />
+        <SidebarItem to="/vendors" icon={Store} label="Vendor Management" />
+
+        <SidebarSection label="Customer Experience" />
+        <div className="sidebar-subnav">
+          <SubItem to="/tickets" icon={Ticket} label="Tickets" />
+          <SubItem to="/remarks" icon={MessageSquare} label="Remarks" />
+        </div>
       </div>
 
       <div className="sidebar-footer">
@@ -197,14 +225,14 @@ const AdminSidebar: React.FC<{ isSuperAdmin: boolean }> = ({ isSuperAdmin }) => 
         <SidebarItem to="/vendors" icon={Store} label="Vendor Management" />
         {isSuperAdmin && <SidebarItem to="/kyc-applications" icon={ClipboardCheck} label="KYC Applications" />}
         <SidebarItem to="/riders" icon={Bike} label="Rider Management" />
-        <SidebarItem to="/finance" icon={Wallet} label="Finance" />
-        {isSuperAdmin && <SidebarItem to="/settings/delivery-rates" icon={Percent} label="Delivery Rates" />}
+        <SidebarItem to="/finance" icon={Wallet} label="COD Management" />
+        {isSuperAdmin && <SidebarItem to="/settings" icon={Settings} label="Settings" />}
 
         <SidebarSection label="Operations" />
         <div className="sidebar-subnav">
           <SubItem to="/pickup" icon={Archive} label="Pickup" />
-          <SubItem to="/dispatch" icon={Send} label="Dispatch" />
-          <SubItem to="/oov" icon={Route} label="OOV" />
+          <SubItem to="/dispatch" icon={Send} label="Local Dispatch" />
+          <SubItem to="/oov" icon={Route} label="Transit" />
           <SubItem to="/return" icon={RotateCcw} label="Return" />
           <SubItem to="/hold" icon={OctagonMinus} label="Hold" />
           <SubItem to="/loss-and-damage" icon={Map} label="Loss & Damage" />
@@ -246,6 +274,8 @@ const Sidebar: React.FC = () => {
         <VendorStaffSidebar />
       ) : roles.includes('vendor') && !isAdminSide() ? (
         <VendorSidebar />
+      ) : roles.includes('sales') && !isAdminSide() ? (
+        <SalesSidebar />
       ) : (
         <AdminSidebar isSuperAdmin={roles.includes('super_admin')} />
       )}

@@ -5,6 +5,7 @@ import {
   registerUserBySuperAdmin,
   updateManagedUserPassword,
   updateManagedUserProfile,
+  getManagedUserDetail,
 } from "../services/auth.service";
 import { AppError } from "../utils/AppError";
 import { sendSuccess } from "../utils/ApiResponse";
@@ -31,7 +32,22 @@ export const registerUserController = async (req: Request, res: Response) => {
       throw new AppError(401, "Unauthorized");
     }
 
-    const result = await registerUserBySuperAdmin(SuperAdminUserID, req.body);
+    // Multipart registration: merge uploaded document paths into the payload.
+    const files = req.files as Record<string, Express.Multer.File[]> | undefined;
+    const docPath = (f?: Express.Multer.File) =>
+      f?.filename ? `uploads/registration/${f.filename}` : undefined;
+
+    const result = await registerUserBySuperAdmin(SuperAdminUserID, {
+      ...req.body,
+      idDocumentPath: docPath(files?.idDocument?.[0]),
+      citizenshipDocPath: docPath(files?.citizenshipDoc?.[0]),
+      panDocPath: docPath(files?.panDoc?.[0]),
+      panVatDocPath: docPath(files?.panVatDoc?.[0]),
+      experienceLetterDocPath: docPath(files?.experienceLetterDoc?.[0]),
+      licenceDocPath: docPath(files?.licenceDoc?.[0]),
+      bluebookDocPath: docPath(files?.bluebookDoc?.[0]),
+      businessCertDocPath: docPath(files?.businessCertDoc?.[0]),
+    });
 
     return sendSuccess(res, 201, `${result.role} registered successfully`, {
       user: {
@@ -53,9 +69,25 @@ export const registerUserController = async (req: Request, res: Response) => {
         field: error.meta?.target,
       });
     }
-    return res.status(400).json({
+    return res.status(error.statusCode || 400).json({
       success: false,
       message: error.message || "Failed to register user",
+    });
+  }
+};
+
+export const getManagedUserController = async (req: Request, res: Response) => {
+  try {
+    const { type, id } = req.params;
+    if (!isManagedUserType(type) || typeof id !== "string") {
+      throw new AppError(400, "Invalid user type");
+    }
+    const data = await getManagedUserDetail(type, id);
+    return res.status(200).json({ success: true, data });
+  } catch (error: any) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to load user",
     });
   }
 };
@@ -203,6 +235,7 @@ export const getAdminsController = async (_req: Request, res: Response) => {
         phone: admin.users.phone || "",
         location: locationLabel(admin.locations),
         position: admin.position || "",
+        department: admin.department || "",
         joined: formatDate(admin.joined_at),
         status: admin.users.status,
       })),
@@ -215,10 +248,15 @@ export const getAdminsController = async (_req: Request, res: Response) => {
   }
 };
 
-export const getVendorsController = async (_req: Request, res: Response) => {
+export const getVendorsController = async (req: Request, res: Response) => {
   try {
+    // Sales accounts see only the vendors (clients) they own; staff see all.
+    const roles = req.user?.roles ?? [];
+    const isStaff = roles.includes("super_admin") || roles.includes("admin");
+    const salesScope = roles.includes("sales") && !isStaff ? { sales_user_id: req.user!.id } : {};
+
     const vendors = await prisma.vendors.findMany({
-      where: { deleted_at: null },
+      where: { deleted_at: null, ...salesScope },
       include: {
         locations: true,
         parcels: {
@@ -244,7 +282,10 @@ export const getVendorsController = async (_req: Request, res: Response) => {
         email: vendor.email || "",
         phone: vendor.phone,
         location: locationLabel(vendor.locations),
+        locationId: vendor.location_id,
         address: vendor.address || "",
+        sales: vendor.sales || "",
+        salesUserId: vendor.sales_user_id,
         orders: {
           total: vendor.parcels.length,
           delivered: vendor.parcels.filter(parcel => parcel.status === "delivered").length,
@@ -363,6 +404,7 @@ export const getLocationsController = async (_req: Request, res: Response) => {
         code: location.code,
         city: location.city,
         district: location.district,
+        is_hub: location.is_hub,
       })),
     });
   } catch (error: any) {

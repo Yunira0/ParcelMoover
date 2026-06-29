@@ -7,6 +7,7 @@ import {
   getPendingCodController,
   listOrderCodController,
   listSettlementsController,
+  getUnsettledOrdersController,
 } from "../controllers/finance.controller";
 
 const financeRouter: Router = Router();
@@ -27,7 +28,7 @@ const financeReadLimiter = rateLimit({
 financeRouter.get(
   "/pending-cod",
   authMiddleware,
-  authorizeRoles("super_admin", "admin", "vendor"),
+  authorizeRoles("super_admin", "admin", "vendor", "sales"),
   financeReadLimiter,
   getPendingCodController,
 );
@@ -36,7 +37,7 @@ financeRouter.get(
 financeRouter.get(
   "/order-cod",
   authMiddleware,
-  authorizeRoles("super_admin", "admin", "vendor"),
+  authorizeRoles("super_admin", "admin", "vendor", "sales"),
   financeReadLimiter,
   listOrderCodController,
 );
@@ -45,9 +46,18 @@ financeRouter.get(
 financeRouter.get(
   "/settlements",
   authMiddleware,
-  authorizeRoles("super_admin", "admin", "vendor"),
+  authorizeRoles("super_admin", "admin", "vendor", "sales"),
   financeReadLimiter,
   listSettlementsController,
+);
+
+// GET /api/finance/unsettled-orders — unsettled COD orders for rider or vendor
+financeRouter.get(
+  "/unsettled-orders",
+  authMiddleware,
+  authorizeRoles("super_admin", "admin", "vendor", "rider", "sales"),
+  financeReadLimiter,
+  getUnsettledOrdersController,
 );
 
 export default financeRouter;

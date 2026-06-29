@@ -101,10 +101,7 @@ const RiderManagement: React.FC = () => {
       header: 'ACTION',
       accessor: (item: RiderUser) => (
         <TableRowActions
-          onEdit={() => {
-            setActiveRider(item);
-            setActionMode('edit');
-          }}
+          onEdit={() => navigate(`/riders/${item.id}/edit`)}
           onUpdatePassword={() => {
             setActiveRider(item);
             setActionMode('password');

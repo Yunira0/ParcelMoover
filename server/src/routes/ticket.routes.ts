@@ -47,7 +47,9 @@ const ticketsWriteLimiter = rateLimit({
 });
 
 // Vendors/staff create + view their own tickets; admins see and manage all (scoped in the service).
-const CX_ROLES = ["super_admin", "admin", "vendor", "vendor_staff"] as const;
+// Sales can view/respond to their clients' tickets but not open new ones.
+const CX_ROLES = ["super_admin", "admin", "vendor", "vendor_staff", "sales"] as const;
+const CREATE_ROLES = ["super_admin", "admin", "vendor", "vendor_staff"] as const;
 
 // GET /api/tickets — list tickets (status/priority/category/date filters; vendor-scoped)
 ticketRouter.get(
@@ -72,7 +74,7 @@ ticketRouter.post(
   "/",
   authMiddleware,
   csrfProtection,
-  authorizeRoles(...CX_ROLES),
+  authorizeRoles(...CREATE_ROLES),
   createTicketLimiter,
   createTicketController,
 );

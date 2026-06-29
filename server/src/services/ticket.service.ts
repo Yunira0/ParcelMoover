@@ -56,9 +56,20 @@ const TICKET_INCLUDE = {
   users_support_tickets_assigned_toTousers: true,
 } as const;
 
-// Vendors can only touch tickets they created; staff (admin) can touch any.
-function scopeWhere(actor: Actor, extra: Record<string, unknown> = {}) {
-  return isStaff(actor) ? extra : { ...extra, created_by: actor.id };
+// Vendors can only touch tickets they created; staff (admin) can touch any;
+// sales see tickets tied to parcels owned by one of their vendors (clients).
+async function scopeWhere(actor: Actor, extra: Record<string, unknown> = {}) {
+  if (isStaff(actor)) return extra;
+
+  if (actor.roles.includes("sales")) {
+    const owned = await prisma.vendors.findMany({
+      where: { sales_user_id: actor.id, deleted_at: null },
+      select: { id: true },
+    });
+    return { ...extra, parcels: { vendor_id: { in: owned.map((v) => v.id) } } };
+  }
+
+  return { ...extra, created_by: actor.id };
 }
 
 export async function createTicket(actor: Actor, input: CreateTicketInput) {
@@ -95,7 +106,7 @@ export async function createTicket(actor: Actor, input: CreateTicketInput) {
 }
 
 export async function listTickets(actor: Actor, params: ListTicketsParams = {}) {
-  const where: Record<string, unknown> = scopeWhere(actor);
+  const where: Record<string, unknown> = await scopeWhere(actor);
 
   if (params.status && WORKFLOW_STATUSES.includes(params.status)) {
     where.status = params.status;
@@ -131,7 +142,7 @@ export async function listTickets(actor: Actor, params: ListTicketsParams = {}) 
 
 async function findAccessibleTicket(actor: Actor, id: string) {
   const ticket = await prisma.support_tickets.findFirst({
-    where: scopeWhere(actor, { id }),
+    where: await scopeWhere(actor, { id }),
     include: TICKET_INCLUDE,
   });
   if (!ticket) throw new AppError(404, "Ticket not found");

@@ -81,6 +81,98 @@
   padding: var(--space-6);
 }
 
+/* Delivery rate option cards */
+.vfp-rate-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--space-3);
+}
+
+.vfp-rate-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  text-align: left;
+  padding: 14px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 10px;
+  background: var(--color-background-surface);
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.vfp-rate-option:hover {
+  border-color: var(--color-primary, #4f46e5);
+}
+
+.vfp-rate-option.selected {
+  border-color: var(--color-primary, #4f46e5);
+  box-shadow: 0 0 0 1px var(--color-primary, #4f46e5);
+}
+
+.vfp-rate-radio {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  border-radius: 50%;
+  border: 2px solid var(--color-border-default);
+}
+
+.vfp-rate-option.selected .vfp-rate-radio {
+  border-color: var(--color-primary, #4f46e5);
+  background:
+    radial-gradient(circle, var(--color-primary, #4f46e5) 0 4px, transparent 5px);
+}
+
+.vfp-rate-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.vfp-rate-text strong {
+  font-size: 0.9rem;
+  color: var(--color-text-default);
+}
+
+.vfp-rate-text small {
+  font-size: 0.78rem;
+  color: var(--color-text-caption);
+}
+
+.vfp-rate-fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.vfp-rate-note {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--color-text-caption);
+}
+
+.vfp-rate-config-link {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: var(--space-2);
+  padding: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--color-primary, #4f46e5);
+}
+
+.vfp-rate-config-link:hover {
+  text-decoration: underline;
+}
+
 /* Section header with icon */
 .vfp-section-header {
   align-items: flex-start;

@@ -63,7 +63,7 @@ async function main() {
       address_line: "New Road, Kathmandu",
       latitude: 27.7172,
       longitude: 85.324,
-      is_hub: true,
+      is_hub: false,
       is_active: true,
     },
     {
@@ -119,6 +119,19 @@ async function main() {
       is_hub: false,
       is_active: true,
       parent_id: demoUuid("loc", 1),
+    },
+    {
+      id: demoUuid("loc", 6),
+      name: "Imadol",
+      code: "IMADOL",
+      province: "Bagmati",
+      district: "Lalitpur",
+      city: "Lalitpur",
+      address_line: "Imadol, Lalitpur",
+      latitude: 27.6606,
+      longitude: 85.3413,
+      is_hub: true,
+      is_active: true,
     },
   ];
   for (const loc of locationsData) {
@@ -214,21 +227,21 @@ async function main() {
     {
       id: demoUuid("adm", 1),
       user_id: usersData[0]!.id,
-      location_id: demoUuid("loc", 1),
+      location_id: demoUuid("loc", 6), // Imadol hub
       position: "Chief Executive Officer",
       joined_at: new Date("2023-01-15"),
     },
     {
       id: demoUuid("adm", 2),
       user_id: usersData[1]!.id,
-      location_id: demoUuid("loc", 2),
+      location_id: demoUuid("loc", 6), // Imadol hub
       position: "Branch Manager",
       joined_at: new Date("2023-03-20"),
     },
     {
       id: demoUuid("adm", 3),
       user_id: usersData[2]!.id,
-      location_id: demoUuid("loc", 3),
+      location_id: demoUuid("loc", 6), // Imadol hub
       position: "Operations Head",
       joined_at: new Date("2023-06-10"),
     },

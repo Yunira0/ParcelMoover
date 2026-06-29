@@ -10,7 +10,9 @@ import NotificationRoutes from "./routes/notification.routes"
 import FinanceRoutes from "./routes/finance.routes"
 import StaffRoutes from "./routes/staff.routes"
 import KycRoutes from "./routes/kyc.routes"
-import prisma from "./lib/prisma";
+import LocationRoutes from "./routes/location.routes"
+import PricingRoutes from "./routes/pricing.routes"
+import prisma, { pool } from "./lib/prisma";
 import cookiesParser from "cookie-parser";
 import {authMiddleware} from "./middlewares/auth.mddleware";
 
@@ -60,6 +62,11 @@ app.use("/api/finance", FinanceRoutes)
 app.use("/api/staff", StaffRoutes)
 
 app.use("/api/kyc", KycRoutes)
+
+app.use("/api/locations", LocationRoutes)
+
+app.use("/api/pricing", PricingRoutes)
+
 app.use("/uploads", express.static(path.join(process.cwd(), "uploads")))
 
 
@@ -70,7 +77,10 @@ const getCurrentUserHandler = async (req: Request, res: Response) => {
     }
     const user = await prisma.users.findUnique({
         where: { id: req.user?.id },
-        include: { user_roles: { include: { roles: true } } },
+        include: {
+            user_roles: { include: { roles: true } },
+            admins: { include: { locations: true } },
+        },
     });
     if(!user) {
         return res.status(404).json({ error: "User not found" });
@@ -82,6 +92,8 @@ const getCurrentUserHandler = async (req: Request, res: Response) => {
         phone: user.phone,
         status: user.status,
         roles: user.user_roles.map(userRole => userRole.roles.code),
+        hubId: user.admins?.location_id ?? null,
+        hubName: user.admins?.locations?.name ?? null,
     });
    } catch(error) {
     console.error("Error fetching user profile:", error);
@@ -121,5 +133,15 @@ const updateCurrentUserHandler = async (req: Request, res: Response) => {
 };
 
 app.patch('/api/me', authMiddleware, updateCurrentUserHandler);
+
+const shutdown = async () => {
+  console.log("[Server] Shutting down...");
+  await prisma.$disconnect();
+  await pool.end();
+  process.exit(0);
+};
+
+process.on("SIGTERM", shutdown);
+process.on("SIGINT", shutdown);
 
 export default app;

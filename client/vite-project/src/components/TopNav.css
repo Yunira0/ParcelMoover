@@ -86,6 +86,34 @@
   cursor: pointer;
 }
 
+/* Anchor for the floating unclosed-comments count badge */
+.cmt-button {
+  position: relative;
+  overflow: visible;
+}
+
+/* Count bubble that pops over the button's top-right corner, like a
+   notification badge. Pill-shaped so multi-digit counts (and "99+") fit. */
+.cmt-badge {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--color-background-primary-default);
+  color: var(--color-background-surface);
+  border-radius: 9px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  box-shadow: 0 0 0 2px var(--color-background-surface);
+  pointer-events: none;
+}
+
 .bell-dot {
   position: absolute;
   top: 6px;

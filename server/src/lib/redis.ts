@@ -6,12 +6,10 @@ const redis = new Redis({
     host: process.env.REDIS_HOST || "localhost",
     port: parseInt(process.env.REDIS_PORT || "6379"),
     db: parseInt(process.env.REDIS_DB || "0"),
-    // Fail commands immediately rather than queuing retries when Redis is down
-    maxRetriesPerRequest: 0,
+    maxRetriesPerRequest: 3,
     lazyConnect: true,
     connectTimeout: 5000,
     commandTimeout: 5000,
-    // Exponential backoff up to 30 s, then give up reconnecting after 10 attempts
     retryStrategy(times) {
         if (times > 10) return null;
         return Math.min(times * 500, 30_000);

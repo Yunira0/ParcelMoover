@@ -1,6 +1,6 @@
 import React from 'react';
-import { Navigate } from 'react-router-dom';
 import { hasAnyRole } from '../utils/auth';
+import NotAuthorized from '../pages/NotAuthorized';
 
 interface RoleGuardProps {
   allowedRoles: string[];
@@ -10,9 +10,10 @@ interface RoleGuardProps {
 // Sits inside ProtectedRoute (which only checks "is logged in"). This adds the
 // "is this role allowed on this specific route" check - e.g. vendor-only finance
 // pages shouldn't be reachable by typing the URL as a rider or another vendor's admin.
+// Disallowed roles get an explicit "Not Authorized" page instead of a silent redirect.
 const RoleGuard: React.FC<RoleGuardProps> = ({ allowedRoles, children }) => {
   if (!hasAnyRole(allowedRoles)) {
-    return <Navigate to="/dashboard" replace />;
+    return <NotAuthorized />;
   }
 
   return <>{children}</>;

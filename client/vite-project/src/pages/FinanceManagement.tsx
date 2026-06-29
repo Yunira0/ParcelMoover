@@ -4,6 +4,7 @@ import Table from '../components/Table';
 import PageHeader from '../components/PageHeader';
 import SegmentedTabs from '../components/SegmentedTabs';
 import StatusChip, { type StatusChipTone } from '../components/StatusChip';
+import AddSettlementModal from '../components/AddSettlementModal';
 import './FinanceManagement.css';
 
 type FinanceType = 'rider' | 'vendor';
@@ -21,6 +22,9 @@ interface FinanceSettlement {
   type: FinanceType;
   phone: string;
   email: string;
+  bankName: string;
+  bankAccountNo: string;
+  bankAccountHolder: string;
 }
 
 const SETTLEMENTS: FinanceSettlement[] = [
@@ -36,6 +40,9 @@ const SETTLEMENTS: FinanceSettlement[] = [
     type: 'rider',
     phone: '9800000001',
     email: 'rider.one@parcelmoover.com',
+    bankName: 'Nabil Bank',
+    bankAccountNo: '1234567890',
+    bankAccountHolder: 'Rider One',
   },
   {
     id: 'rider-2',
@@ -49,6 +56,9 @@ const SETTLEMENTS: FinanceSettlement[] = [
     type: 'rider',
     phone: '9800000002',
     email: 'rider.two@parcelmoover.com',
+    bankName: 'Nepal Investment Bank',
+    bankAccountNo: '9876543210',
+    bankAccountHolder: 'Rider Two',
   },
   {
     id: 'rider-3',
@@ -62,6 +72,9 @@ const SETTLEMENTS: FinanceSettlement[] = [
     type: 'rider',
     phone: '9800000003',
     email: 'rider.three@parcelmoover.com',
+    bankName: 'Prabhu Bank',
+    bankAccountNo: '5555666677',
+    bankAccountHolder: 'Rider Three',
   },
   {
     id: 'vendor-1',
@@ -75,6 +88,9 @@ const SETTLEMENTS: FinanceSettlement[] = [
     type: 'vendor',
     phone: '9876543210',
     email: 'finance@techcorp.com',
+    bankName: 'Nabil Bank',
+    bankAccountNo: '1234567890123',
+    bankAccountHolder: 'Tech Corp Pvt Ltd',
   },
   {
     id: 'vendor-2',
@@ -88,6 +104,9 @@ const SETTLEMENTS: FinanceSettlement[] = [
     type: 'vendor',
     phone: '9800000000',
     email: 'accounts@bizinc.com',
+    bankName: 'Himalayan Bank',
+    bankAccountNo: '9876543210987',
+    bankAccountHolder: 'Biz Inc Trading',
   },
 ];
 
@@ -106,11 +125,13 @@ const statusTones: Record<SettlementStatus, StatusChipTone> = {
 const FinanceManagement: React.FC = () => {
   const [activeType, setActiveType] = useState<FinanceType>('rider');
   const [searchQuery, setSearchQuery] = useState('');
+  const [settlements, setSettlements] = useState<FinanceSettlement[]>(SETTLEMENTS);
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   const rows = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
 
-    return SETTLEMENTS
+    return settlements
       .filter(item => item.type === activeType)
       .filter(item => {
         if (!q) return true;
@@ -123,7 +144,17 @@ const FinanceManagement: React.FC = () => {
         );
       })
       .map((item, index) => ({ ...item, sn: index + 1 }));
-  }, [activeType, searchQuery]);
+  }, [activeType, searchQuery, settlements]);
+
+  // The modal doesn't collect bank details, so default them when adding to the list.
+  const handleAddSettlement = (
+    newSettlement: Omit<FinanceSettlement, 'bankName' | 'bankAccountNo' | 'bankAccountHolder'>,
+  ) => {
+    setSettlements(prev => [
+      { ...newSettlement, bankName: '', bankAccountNo: '', bankAccountHolder: '' },
+      ...prev,
+    ]);
+  };
 
   const columns = [
     { header: 'SN', accessor: 'sn' as keyof FinanceSettlement, width: '50px' },
@@ -134,6 +165,20 @@ const FinanceManagement: React.FC = () => {
       accessor: (item: FinanceSettlement) => `Rs. ${item.amount.toLocaleString()}`,
     },
     { header: 'SETTLEMENT DATE', accessor: 'settlementDate' as keyof FinanceSettlement },
+    ...(activeType === 'vendor'
+      ? [
+          {
+            header: 'BANK DETAILS',
+            accessor: (item: FinanceSettlement) => (
+              <div style={{ fontSize: '12px', lineHeight: '1.6', color: 'var(--color-text-caption)' }}>
+                <div><span style={{ fontWeight: 600, color: 'var(--color-text-default)' }}>Bank:</span> {item.bankName}</div>
+                <div><span style={{ fontWeight: 600, color: 'var(--color-text-default)' }}>A/C:</span> {item.bankAccountNo}</div>
+                <div><span style={{ fontWeight: 600, color: 'var(--color-text-default)' }}>Name:</span> {item.bankAccountHolder}</div>
+              </div>
+            ),
+          },
+        ]
+      : []),
     { header: 'REMARK', accessor: 'remark' as keyof FinanceSettlement },
     {
       header: 'STATUS',
@@ -148,11 +193,11 @@ const FinanceManagement: React.FC = () => {
   return (
     <div className="finance-management-container">
       <PageHeader
-        title="FINANCE MANAGEMENT"
+        title="COD MANAGEMENT"
         subtitle="Manage financial accounts and monitor performance indicators."
-        actionLabel="Create new financial reports."
+        actionLabel="Add Settlement"
         actionIcon={<Plus size={16} />}
-        actionTitle="Report generation endpoint is not connected yet"
+        onAction={() => setIsModalOpen(true)}
       />
 
       <div className="finance-filters">
@@ -183,6 +228,14 @@ const FinanceManagement: React.FC = () => {
       ) : (
         <Table columns={columns} data={rows} selectable={false} />
       )}
+
+      <AddSettlementModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        onSuccess={handleAddSettlement}
+        defaultType={activeType}
+        existingCount={settlements.filter(s => s.type === activeType).length}
+      />
     </div>
   );
 };

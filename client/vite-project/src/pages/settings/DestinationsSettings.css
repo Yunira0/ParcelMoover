@@ -1,0 +1,144 @@
+.dest-settings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.dest-settings-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.dest-settings-head h2 {
+  margin: 0 0 4px;
+  font-size: 1.05rem;
+  color: var(--color-text-default);
+}
+
+.dest-settings-head p {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--color-text-caption);
+  max-width: 560px;
+}
+
+.dest-form,
+.dest-card {
+  background: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-modal, 12px);
+  padding: var(--space-4);
+}
+
+.dest-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.dest-form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+}
+
+.dest-form-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.dest-error {
+  color: var(--color-text-danger, #dc2626);
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+.dest-muted {
+  color: var(--color-text-caption);
+  font-size: 0.85rem;
+}
+
+.dest-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.dest-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.dest-card--inactive {
+  opacity: 0.65;
+}
+
+.dest-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.dest-card-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  color: var(--color-text-default);
+}
+
+.dest-code {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 12px;
+  background: var(--color-primary-subtle, #ede9fe);
+  color: var(--color-primary, #4f46e5);
+}
+
+.dest-toggle {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.dest-areas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.dest-area-chip {
+  font-size: 0.78rem;
+  padding: 4px 10px;
+  border-radius: 16px;
+  border: 1px solid var(--color-border-default);
+  background: var(--color-background-subtle, #f4f4f5);
+  color: var(--color-text-default);
+  cursor: pointer;
+}
+
+.dest-area-chip--inactive {
+  text-decoration: line-through;
+  opacity: 0.6;
+}
+
+.dest-add-area {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.dest-add-area input {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 8px;
+  font-size: 0.85rem;
+  background: var(--color-background-surface);
+  color: var(--color-text-default);
+}

@@ -3,3 +3,9 @@ node_modules
 .env
 
 /src/generated/prisma
+
+# Runtime / local artifacts
+dump.rdb
+/uploads
+.agents
+skills-lock.json

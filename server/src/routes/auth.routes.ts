@@ -5,6 +5,7 @@ import {
   getLocationsController,
   getRidersController,
   getVendorsController,
+  getManagedUserController,
   login,
   registerUserController,
   updateManagedUserController,
@@ -15,6 +16,7 @@ import { csrfProtection } from "../middlewares/csrf.middleware";
 import rateLimit, {ipKeyGenerator} from "express-rate-limit";
 import { createRedisRateLimitStore } from "../lib/rateLimitStore";
 import { sendWelcomeEmail } from "../lib/mailer";
+import { registrationUpload } from "../lib/registrationUpload";
 
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -49,11 +51,13 @@ authRouter.post(
   "/users/register",
   authMiddleware,
   csrfProtection,
+  registrationUpload,
   registerUserController,
 );
 authRouter.get("/users/admins", authMiddleware, getAdminsController);
 authRouter.get("/users/vendors", authMiddleware, getVendorsController);
 authRouter.get("/users/riders", authMiddleware, getRidersController);
+authRouter.get("/users/:type/:id", authMiddleware, getManagedUserController);
 authRouter.patch("/users/:type/:id", authMiddleware, csrfProtection, updateManagedUserController);
 authRouter.patch("/users/:type/:id/password", authMiddleware, csrfProtection, updateManagedUserPasswordController);
 authRouter.get("/locations", authMiddleware, getLocationsController);

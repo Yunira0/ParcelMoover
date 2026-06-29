@@ -16,7 +16,11 @@ export type ParcelStatus =
   | 'delivered'
   | 'failed_pickup'
   | 'failed_delivery'
-  | 'cancelled';
+  | 'cancelled'
+  | 'follow_up'
+  | 'ready_to_return'
+  | 'sent_to_vendor'
+  | 'returned_to_vendor';
 
 export type OrderType = 'delivery' | 'exchange' | 'return';
 export type ServiceType = 'dtd' | 'btd' | 'btb' | 'dtb';

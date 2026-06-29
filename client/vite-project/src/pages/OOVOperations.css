@@ -219,6 +219,27 @@
   margin-top: var(--space-3);
 }
 
+.oov-dispatch-method {
+  display: flex;
+  gap: var(--space-4);
+  margin-top: var(--space-3);
+}
+
+.oov-dispatch-radio {
+  align-items: center;
+  color: var(--color-text-default);
+  cursor: pointer;
+  display: flex;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  gap: var(--space-2);
+}
+
+.oov-dispatch-radio input[type="radio"] {
+  cursor: pointer;
+  margin: 0;
+}
+
 .oov-manifest-fields label {
   color: var(--color-text-caption);
   display: flex;

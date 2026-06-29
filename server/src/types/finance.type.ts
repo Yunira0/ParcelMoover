@@ -75,3 +75,21 @@ export interface SettlementsListResult {
   data: SettlementListItem[];
   meta: { page: number; pageSize: number; total: number; totalPages: number };
 }
+
+export interface UnsettledOrderItem {
+  id: string;
+  codCollectionId: string;
+  trackingId: string;
+  receiverName: string;
+  destination: string;
+  codAmount: number;
+  deliveryCharge: number;
+  netPayable: number;
+}
+
+export interface UnsettledOrdersResult {
+  items: UnsettledOrderItem[];
+  totalCod: number;
+  totalDeliveryCharge: number;
+  totalNetPayable: number;
+}

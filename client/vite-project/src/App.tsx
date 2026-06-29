@@ -15,6 +15,7 @@ import RiderManagement from './pages/RiderManagement'
 import RiderFormPage from './pages/RiderFormPage'
 import FinanceManagement from './pages/FinanceManagement'
 import DeliveryRateSettings from './pages/DeliveryRateSettings'
+import Settings from './pages/settings/Settings'
 import PickupOperations from './pages/PickupOperations'
 import DispatchOperations from './pages/DispatchOperations'
 import OOVOperations from './pages/OOVOperations'
@@ -78,11 +79,19 @@ function App() {
             element={<RoleGuard allowedRoles={['super_admin', 'admin']}><AdminFormPage /></RoleGuard>}
           />
           <Route
+            path="/admin/:id/edit"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']}><AdminFormPage /></RoleGuard>}
+          />
+          <Route
             path="/vendors"
-            element={<RoleGuard allowedRoles={['super_admin', 'admin']}><VendorManagement /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'sales']}><VendorManagement /></RoleGuard>}
           />
           <Route
             path="/vendors/new"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'sales']}><VendorFormPage /></RoleGuard>}
+          />
+          <Route
+            path="/vendors/:id/edit"
             element={<RoleGuard allowedRoles={['super_admin', 'admin']}><VendorFormPage /></RoleGuard>}
           />
           <Route
@@ -98,8 +107,16 @@ function App() {
             element={<RoleGuard allowedRoles={['super_admin', 'admin']}><RiderFormPage /></RoleGuard>}
           />
           <Route
+            path="/riders/:id/edit"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']}><RiderFormPage /></RoleGuard>}
+          />
+          <Route
             path="/finance"
             element={<RoleGuard allowedRoles={['super_admin', 'admin']}><FinanceManagement /></RoleGuard>}
+          />
+          <Route
+            path="/settings"
+            element={<RoleGuard allowedRoles={['super_admin']}><Settings /></RoleGuard>}
           />
           <Route
             path="/settings/delivery-rates"
@@ -131,19 +148,19 @@ function App() {
           />
           <Route
             path="/tickets"
-            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'vendor', 'vendor_staff']}><CXCenter /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'vendor', 'vendor_staff', 'sales']}><CXCenter /></RoleGuard>}
           />
           <Route
             path="/tickets/:id"
-            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'vendor', 'vendor_staff']}><TicketDetail /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'vendor', 'vendor_staff', 'sales']}><TicketDetail /></RoleGuard>}
           />
           <Route
             path="/remarks"
-            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'vendor', 'vendor_staff']}><CXCenter /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'vendor', 'vendor_staff', 'sales']}><CXCenter /></RoleGuard>}
           />
           <Route
             path="/remarks/:id"
-            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'vendor', 'vendor_staff']}><RemarkDetail /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'vendor', 'vendor_staff', 'sales']}><RemarkDetail /></RoleGuard>}
           />
           <Route
             path="/finance/settlements"

@@ -4,7 +4,7 @@ import './FormField.css';
 
 export type FormFieldOption = { value: string; label: string };
 
-export type FormFieldType = 'text' | 'email' | 'password' | 'number' | 'date' | 'datetime-local' | 'select' | 'searchable-select' | 'textarea';
+export type FormFieldType = 'text' | 'email' | 'password' | 'number' | 'date' | 'datetime-local' | 'select' | 'searchable-select' | 'combobox' | 'textarea';
 
 interface FormFieldProps {
   label: string;
@@ -90,6 +90,25 @@ const FormField: React.FC<FormFieldProps> = ({
           value={value ?? ''}
           onChange={(e) => onChange(e.target.value)}
         />
+      ) : type === 'combobox' ? (
+        <>
+          <input
+            id={id}
+            type="text"
+            list={`${id}-list`}
+            required={required}
+            disabled={disabled}
+            placeholder={placeholder}
+            autoComplete="off"
+            value={value ?? ''}
+            onChange={(e) => onChange(e.target.value)}
+          />
+          <datalist id={`${id}-list`}>
+            {options.map((opt) => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </datalist>
+        </>
       ) : type === 'searchable-select' ? (
         <SearchableSelect
           options={searchableOptions}

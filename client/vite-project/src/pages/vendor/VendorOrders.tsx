@@ -25,7 +25,7 @@ const STATUS_LABELS: Record<ParcelStatus, string> = {
   arrived: 'Arrived',
   ready_to_deliver: 'Ready to Deliver',
   sent_for_delivery: 'Out for Delivery',
-  oov: 'Out of Vehicle',
+  oov: 'Transit',
   dispatched: 'Dispatched',
   arrived_at_branch: 'Arrived',
   hold: 'On Hold',
@@ -34,6 +34,10 @@ const STATUS_LABELS: Record<ParcelStatus, string> = {
   failed_pickup: 'Failed Pickup',
   failed_delivery: 'Failed Delivery',
   cancelled: 'Cancelled',
+  follow_up: 'Follow Up',
+  ready_to_return: 'Ready to Return',
+  sent_to_vendor: 'Sent to Vendor',
+  returned_to_vendor: 'Returned to Vendor',
 };
 
 const ORDER_TYPE_LABELS: Record<Order['orderType'], string> = {

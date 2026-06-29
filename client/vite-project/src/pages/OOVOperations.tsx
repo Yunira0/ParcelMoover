@@ -23,23 +23,19 @@ import {
 import { getLocations, getRiders } from '../services/users.service';
 import './OOVOperations.css';
 
-type OOVTab = 'oov' | 'dispatch_manifest' | 'dispatched' | 'arrived_at_branch';
+type OOVTab = 'oov' | 'dispatched';
 
 const PAGE_SIZE = 10;
 const SEARCH_DEBOUNCE_MS = 300;
 
 const TAB_LABELS: Record<OOVTab, string> = {
-  oov: 'OOV',
-  dispatch_manifest: 'Dispatch manifest',
-  dispatched: 'Dispatched',
-  arrived_at_branch: 'Arrived at branch',
+  oov: 'Transit',
+  dispatched: 'In Transit',
 };
 
 const TAB_STATUSES: Record<OOVTab, ParcelStatus[]> = {
   oov: ['oov'],
-  dispatch_manifest: ['oov', 'dispatched', 'arrived_at_branch'],
   dispatched: ['dispatched'],
-  arrived_at_branch: ['arrived_at_branch', 'arrived'],
 };
 
 const STATUS_LABELS: Record<ParcelStatus, string> = {
@@ -49,8 +45,8 @@ const STATUS_LABELS: Record<ParcelStatus, string> = {
   arrived: 'Arrived',
   ready_to_deliver: 'Ready to Deliver',
   sent_for_delivery: 'Sent for Delivery',
-  oov: 'OOV',
-  dispatched: 'Dispatched',
+  oov: 'Transit',
+  dispatched: 'In Transit',
   arrived_at_branch: 'Arrived at Branch',
   hold: 'Hold',
   loss_and_damage: 'Loss and Damage',
@@ -58,6 +54,10 @@ const STATUS_LABELS: Record<ParcelStatus, string> = {
   failed_pickup: 'Failed Pickup',
   failed_delivery: 'Failed Delivery',
   cancelled: 'Cancelled',
+  follow_up: 'Follow Up',
+  ready_to_return: 'Ready to Return',
+  sent_to_vendor: 'Sent to Vendor',
+  returned_to_vendor: 'Returned to Vendor',
 };
 
 const STATUS_TRANSITIONS: Record<ParcelStatus, ParcelStatus[]> = {
@@ -72,10 +72,14 @@ const STATUS_TRANSITIONS: Record<ParcelStatus, ParcelStatus[]> = {
   oov: ['dispatched', 'hold'],
   hold: ['ready_to_deliver', 'oov', 'loss_and_damage'],
   delivered: [],
-  failed_pickup: [],
-  failed_delivery: [],
+  failed_pickup: ['pickup_ordered', 'cancelled'],
+  failed_delivery: ['ready_to_deliver', 'follow_up', 'ready_to_return'],
   cancelled: [],
   loss_and_damage: ['ready_to_deliver', 'arrived_at_branch'],
+  follow_up: ['ready_to_deliver', 'ready_to_return'],
+  ready_to_return: [],
+  sent_to_vendor: [],
+  returned_to_vendor: [],
 };
 
 const MOCK_OOV_ORDERS: Order[] = [
@@ -149,9 +153,7 @@ const MOCK_OOV_ORDERS: Order[] = [
 
 const createEmptySelections = (): Record<OOVTab, Map<string, Order>> => ({
   oov: new Map(),
-  dispatch_manifest: new Map(),
   dispatched: new Map(),
-  arrived_at_branch: new Map(),
 });
 
 const formatMoney = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 0 });
@@ -178,11 +180,12 @@ const OOVOperations: React.FC = () => {
   const [selectedNextStatus, setSelectedNextStatus] = useState<ParcelStatus | ''>('');
   const [statusUpdating, setStatusUpdating] = useState(false);
   const [actionError, setActionError] = useState('');
+  const [remarkPopupOrder, setRemarkPopupOrder] = useState<Order | null>(null);
+  const [dispatchMethod, setDispatchMethod] = useState<'manifest' | 'tpl'>('manifest');
   const [locations, setLocations] = useState<{ id: string; name: string }[]>([]);
   const [riders, setRiders] = useState<{ id: string; name: string }[]>([]);
   const [toLocationId, setToLocationId] = useState('');
   const [riderId, setRiderId] = useState('');
-  const [remarkPopupOrder, setRemarkPopupOrder] = useState<Order | null>(null);
 
   // Debounce search input so every keystroke doesn't fire a request.
   useEffect(() => {
@@ -197,7 +200,6 @@ const OOVOperations: React.FC = () => {
   }, [activeTab, debouncedSearch]);
 
   useEffect(() => {
-    // Hub/rider selects only matter for the "dispatched" manifest action.
     (async () => {
       try {
         const [locRes, riderRes] = await Promise.all([getLocations(), getRiders()]);
@@ -206,7 +208,7 @@ const OOVOperations: React.FC = () => {
           setRiders(riderRes.data.filter((r: { status: string }) => r.status === 'active'));
         }
       } catch {
-        // Manifest fields will just be empty selects; not fatal for the page.
+        // dropdowns will just be empty; not fatal
       }
     })();
   }, []);
@@ -315,7 +317,7 @@ const OOVOperations: React.FC = () => {
     setIsActionOpen(nextOpen);
 
     if (selectedOrders.length === 0) {
-      setActionError('Select at least one OOV order first.');
+      setActionError('Select at least one order first.');
       return;
     }
 
@@ -327,7 +329,7 @@ const OOVOperations: React.FC = () => {
     setActionError('');
 
     if (selectedOrders.length === 0) {
-      setActionError('Select at least one OOV order first.');
+      setActionError('Select at least one order first.');
       return;
     }
 
@@ -336,7 +338,7 @@ const OOVOperations: React.FC = () => {
       return;
     }
 
-    if (isDispatchAction && !toLocationId) {
+    if (isDispatchAction && dispatchMethod === 'manifest' && !toLocationId) {
       setActionError('Select a destination hub to dispatch this manifest.');
       return;
     }
@@ -347,8 +349,8 @@ const OOVOperations: React.FC = () => {
 
       if (!usingMockData) {
         await bulkUpdateOrderStatus(ids, effectiveNextStatus, {
-          toLocationId: isDispatchAction ? toLocationId : undefined,
-          riderId: isDispatchAction ? riderId || undefined : undefined,
+          toLocationId: isDispatchAction && dispatchMethod === 'manifest' ? toLocationId : undefined,
+          riderId: isDispatchAction && dispatchMethod === 'manifest' ? riderId || undefined : undefined,
         });
         await loadOovOrders();
       } else {
@@ -363,6 +365,7 @@ const OOVOperations: React.FC = () => {
       setSelectedNextStatus('');
       setToLocationId('');
       setRiderId('');
+      setDispatchMethod('manifest');
     } catch (err: unknown) {
       const message =
         typeof err === 'object' &&
@@ -370,7 +373,7 @@ const OOVOperations: React.FC = () => {
         'response' in err &&
         typeof (err as { response?: { data?: { message?: unknown } } }).response?.data?.message === 'string'
           ? (err as { response: { data: { message: string } } }).response.data.message
-          : 'Failed to change OOV status.';
+          : 'Failed to change order status.';
       setActionError(message);
     } finally {
       setStatusUpdating(false);
@@ -490,10 +493,10 @@ const OOVOperations: React.FC = () => {
 
   return (
     <div className="oov-operations-container">
-      <PageHeader title="Out of the valley (OOV)" subtitle="Keep track of your dispatch orders across the entire hub network." />
+      <PageHeader title="Transit Operations" subtitle="Keep track of your parcel orders across the entire hub network." />
 
       <SegmentedTabs
-        ariaLabel="OOV operation filters"
+        ariaLabel="Order operation filters"
         value={activeTab}
         onChange={setActiveTab}
         options={(Object.keys(TAB_LABELS) as OOVTab[]).map(tab => ({ value: tab, label: TAB_LABELS[tab] }))}
@@ -530,6 +533,32 @@ const OOVOperations: React.FC = () => {
                   ))}
                 </div>
                 {isDispatchAction && (
+                  <div className="oov-dispatch-method">
+                    <label className="oov-dispatch-radio">
+                      <input
+                        type="radio"
+                        name="dispatchMethod"
+                        value="manifest"
+                        checked={dispatchMethod === 'manifest'}
+                        onChange={() => setDispatchMethod('manifest')}
+                        disabled={statusUpdating}
+                      />
+                      <span>Via Manifest</span>
+                    </label>
+                    <label className="oov-dispatch-radio">
+                      <input
+                        type="radio"
+                        name="dispatchMethod"
+                        value="tpl"
+                        checked={dispatchMethod === 'tpl'}
+                        onChange={() => setDispatchMethod('tpl')}
+                        disabled={statusUpdating}
+                      />
+                      <span>Via 3PL</span>
+                    </label>
+                  </div>
+                )}
+                {isDispatchAction && dispatchMethod === 'manifest' && (
                   <div className="oov-manifest-fields">
                     <label>
                       Destination hub
@@ -603,8 +632,8 @@ const OOVOperations: React.FC = () => {
         someSelected={someVisibleSelected}
         onToggleAll={toggleVisibleSelection}
         loading={loading}
-        loadingMessage="Loading OOV orders..."
-        emptyMessage="No OOV orders found."
+        loadingMessage="Loading orders..."
+        emptyMessage="No orders found."
         minWidth="1480px"
         tableClassName="oov-table"
       />

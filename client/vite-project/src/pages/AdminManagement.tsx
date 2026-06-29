@@ -68,10 +68,7 @@ const AdminManagement: React.FC = () => {
       header: 'ACTION',
       accessor: (item: AdminUser) => (
         <TableRowActions
-          onEdit={() => {
-            setActiveAdmin(item);
-            setActionMode('edit');
-          }}
+          onEdit={() => navigate(`/admin/${item.id}/edit`)}
           onUpdatePassword={() => {
             setActiveAdmin(item);
             setActionMode('password');

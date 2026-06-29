@@ -12,21 +12,122 @@ export interface RegisterUserInput {
   locationId?: string;
   address?: string;
   joinedAt?: string;
+
+  // Shared profile / bank
+  pan?: string;
+  citizenshipNo?: string;
+  bankName?: string;
+  bankAccountNo?: string;
+  bankAccountHolder?: string;
+
+  // Admin profile
+  department?: string;
+  idDocumentType?: string;
+  idDocumentNumber?: string;
+  fatherName?: string;
+  motherName?: string;
+  grandfatherName?: string;
+  permanentAddress?: string;
+  currentAddress?: string;
+  experience?: string;
+
+  // Rider profile
+  riderLocation?: string;
+  licenceNo?: string;
+  vehicleNo?: string;
+  salaryCommission?: string;
+
+  // Vendor profile
+  sales?: string;
+  rateType?: string; // per_destination | zone | flat
+  // Per-vendor rate overrides (sent as strings; blank → use Settings default)
+  flatInsideValley?: string;
+  flatOutsideValley?: string;
+  zoneMajorCities?: string;
+  zoneUrbanAreas?: string;
+  zoneRemoteAreas?: string;
+  pickupLandmark?: string;
+  billingBusinessName?: string;
+  registrationNo?: string;
+  panVatNo?: string;
+
+  // Documents (field names must match the server's multer config)
+  idDocument?: File | null;
+  citizenshipDoc?: File | null;
+  panDoc?: File | null;
+  panVatDoc?: File | null;
+  experienceLetterDoc?: File | null;
+  licenceDoc?: File | null;
+  bluebookDoc?: File | null;
+  businessCertDoc?: File | null;
 }
 
 export interface UpdateUserProfileInput {
   type: 'admin' | 'vendor' | 'rider';
   fullName?: string;
   phone?: string;
+  email?: string;
+  joinedAt?: string;
+  locationId?: string;
+  address?: string;
+  pan?: string;
+  citizenshipNo?: string;
+  bankName?: string;
+  bankAccountNo?: string;
+  bankAccountHolder?: string;
+  // admin
   position?: string;
+  department?: string;
+  idDocumentType?: string;
+  idDocumentNumber?: string;
+  fatherName?: string;
+  motherName?: string;
+  grandfatherName?: string;
+  permanentAddress?: string;
+  currentAddress?: string;
+  experience?: string;
+  // vendor
   clientName?: string;
   businessName?: string;
-  address?: string;
-  joinedAt?: string;
+  sales?: string;
+  rateType?: string;
+  flatInsideValley?: string;
+  flatOutsideValley?: string;
+  zoneMajorCities?: string;
+  zoneUrbanAreas?: string;
+  zoneRemoteAreas?: string;
+  pickupLandmark?: string;
+  billingBusinessName?: string;
+  registrationNo?: string;
+  panVatNo?: string;
+  // rider
+  riderLocation?: string;
+  licenceNo?: string;
+  vehicleNo?: string;
+  salaryCommission?: string;
 }
 
+export const getManagedUser = async (type: 'admin' | 'vendor' | 'rider', id: string) => {
+  const response = await api.get(`/auth/users/${type}/${id}`);
+  return response.data;
+};
+
 export const registerUser = async (data: RegisterUserInput) => {
-  const response = await api.post('/auth/users/register', data);
+  // Sent as multipart/form-data so document files can be uploaded alongside the
+  // scalar fields. Only non-empty values are appended.
+  const form = new FormData();
+  Object.entries(data).forEach(([key, value]) => {
+    if (value === undefined || value === null || value === '') return;
+    if (value instanceof File) {
+      form.append(key, value);
+    } else {
+      form.append(key, String(value));
+    }
+  });
+
+  const response = await api.post('/auth/users/register', form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
   return response.data;
 };
 

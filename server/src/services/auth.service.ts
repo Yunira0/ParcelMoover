@@ -18,11 +18,56 @@ interface UpdateManagedUserInput {
   type: ManagedUserType;
   fullName?: string;
   phone?: string;
+  email?: string;
+  joinedAt?: string;
+  locationId?: string;
+  address?: string;
+  pan?: string;
+  citizenshipNo?: string;
+  bankName?: string;
+  bankAccountNo?: string;
+  bankAccountHolder?: string;
+  // admin
   position?: string;
+  department?: string;
+  idDocumentType?: string;
+  idDocumentNumber?: string;
+  fatherName?: string;
+  motherName?: string;
+  grandfatherName?: string;
+  permanentAddress?: string;
+  currentAddress?: string;
+  experience?: string;
+  // vendor
   clientName?: string;
   businessName?: string;
-  address?: string;
-  joinedAt?: string;
+  sales?: string;
+  rateType?: string;
+  flatInsideValley?: string | number;
+  flatOutsideValley?: string | number;
+  zoneMajorCities?: string | number;
+  zoneUrbanAreas?: string | number;
+  zoneRemoteAreas?: string | number;
+  pickupLandmark?: string;
+  billingBusinessName?: string;
+  registrationNo?: string;
+  panVatNo?: string;
+  // rider
+  riderLocation?: string;
+  licenceNo?: string;
+  vehicleNo?: string;
+  salaryCommission?: string;
+}
+
+// Sets a text field when provided; empty string clears it to null.
+function putText(obj: Record<string, unknown>, key: string, val: string | undefined) {
+  if (val !== undefined) obj[key] = val.trim() === "" ? null : val.trim();
+}
+function putRate(obj: Record<string, unknown>, key: string, val: string | number | undefined) {
+  if (val === undefined) return;
+  if (val === "" || val === null) { obj[key] = null; return; }
+  const n = Number(val);
+  obj[key] = Number.isFinite(n) ? n : null;
 }
 
 async function assertCanManageUsers(userId: string) {
@@ -82,56 +127,135 @@ export async function updateManagedUserProfile(
   const userId = getProfileUserId(profile);
 
   return prisma.$transaction(async (tx) => {
-    const userUpdate: Record<string, string> = {};
-
+    const userUpdate: Record<string, unknown> = {};
     if (data.fullName?.trim()) userUpdate.full_name = data.fullName.trim();
     if (data.phone?.trim()) userUpdate.phone = data.phone.trim();
+    if (data.email?.trim()) userUpdate.email = data.email.trim();
 
     if (Object.keys(userUpdate).length > 0) {
-      await tx.users.update({
-        where: { id: userId },
-        data: userUpdate,
-      });
+      userUpdate.updated_at = new Date();
+      await tx.users.update({ where: { id: userId }, data: userUpdate });
     }
 
-    if (data.type === "admin") {
-      const adminUpdate: Record<string, string | Date> = { updated_at: new Date() };
-      if (data.position !== undefined) adminUpdate.position = data.position;
-      const joinedAt = parseJoinedAt(data.joinedAt);
-      if (joinedAt) adminUpdate.joined_at = joinedAt;
+    const joinedAt = parseJoinedAt(data.joinedAt);
 
-      return tx.admins.update({
-        where: { id },
-        data: adminUpdate,
-      });
+    if (data.type === "admin") {
+      const u: Record<string, unknown> = { updated_at: new Date() };
+      putText(u, "position", data.position);
+      putText(u, "department", data.department);
+      putText(u, "address", data.address);
+      putText(u, "citizenship_no", data.citizenshipNo);
+      putText(u, "pan", data.pan);
+      putText(u, "father_name", data.fatherName);
+      putText(u, "mother_name", data.motherName);
+      putText(u, "grandfather_name", data.grandfatherName);
+      putText(u, "permanent_address", data.permanentAddress);
+      putText(u, "current_address", data.currentAddress);
+      putText(u, "experience", data.experience);
+      putText(u, "id_document_type", data.idDocumentType);
+      putText(u, "id_document_number", data.idDocumentNumber);
+      putText(u, "bank_name", data.bankName);
+      putText(u, "bank_account_no", data.bankAccountNo);
+      putText(u, "bank_account_holder", data.bankAccountHolder);
+      if (data.locationId !== undefined) u.location_id = data.locationId || null;
+      if (joinedAt) u.joined_at = joinedAt;
+      return tx.admins.update({ where: { id }, data: u });
     }
 
     if (data.type === "vendor") {
-      const vendorUpdate: Record<string, string | Date> = { updated_at: new Date() };
-      if (data.clientName !== undefined) vendorUpdate.client_name = data.clientName;
-      if (data.businessName !== undefined) vendorUpdate.business_name = data.businessName;
-      if (data.phone !== undefined) vendorUpdate.phone = data.phone;
-      if (data.address !== undefined) vendorUpdate.address = data.address;
-      const joinedAt = parseJoinedAt(data.joinedAt);
-      if (joinedAt) vendorUpdate.joined_at = joinedAt;
-
-      return tx.vendors.update({
-        where: { id },
-        data: vendorUpdate,
-      });
+      const u: Record<string, unknown> = { updated_at: new Date() };
+      if (data.clientName?.trim()) u.client_name = data.clientName.trim();
+      if (data.businessName?.trim()) u.business_name = data.businessName.trim();
+      if (data.phone?.trim()) u.phone = data.phone.trim();
+      putText(u, "email", data.email);
+      putText(u, "address", data.address);
+      putText(u, "sales", data.sales);
+      putText(u, "pickup_landmark", data.pickupLandmark);
+      putText(u, "billing_business_name", data.billingBusinessName);
+      putText(u, "registration_no", data.registrationNo);
+      putText(u, "pan_vat_no", data.panVatNo);
+      putText(u, "bank_name", data.bankName);
+      putText(u, "bank_account_no", data.bankAccountNo);
+      putText(u, "bank_account_holder", data.bankAccountHolder);
+      if (data.locationId !== undefined) u.location_id = data.locationId || null;
+      if (data.rateType && ["per_destination", "zone", "flat"].includes(data.rateType)) u.rate_type = data.rateType;
+      putRate(u, "flat_inside_valley", data.flatInsideValley);
+      putRate(u, "flat_outside_valley", data.flatOutsideValley);
+      putRate(u, "zone_major_cities", data.zoneMajorCities);
+      putRate(u, "zone_urban_areas", data.zoneUrbanAreas);
+      putRate(u, "zone_remote_areas", data.zoneRemoteAreas);
+      if (joinedAt) u.joined_at = joinedAt;
+      return tx.vendors.update({ where: { id }, data: u });
     }
 
-    const riderUpdate: Record<string, string | Date> = { updated_at: new Date() };
-    if (data.fullName !== undefined) riderUpdate.name = data.fullName;
-    if (data.phone !== undefined) riderUpdate.phone = data.phone;
-    const joinedAt = parseJoinedAt(data.joinedAt);
-    if (joinedAt) riderUpdate.joined_at = joinedAt;
-
-    return tx.riders.update({
-      where: { id },
-      data: riderUpdate,
-    });
+    const u: Record<string, unknown> = { updated_at: new Date() };
+    if (data.fullName?.trim()) u.name = data.fullName.trim();
+    if (data.phone?.trim()) u.phone = data.phone.trim();
+    putText(u, "rider_location", data.riderLocation);
+    putText(u, "citizenship_no", data.citizenshipNo);
+    putText(u, "licence_no", data.licenceNo);
+    putText(u, "vehicle_no", data.vehicleNo);
+    putText(u, "salary_commission", data.salaryCommission);
+    putText(u, "pan", data.pan);
+    putText(u, "bank_name", data.bankName);
+    putText(u, "bank_account_no", data.bankAccountNo);
+    putText(u, "bank_account_holder", data.bankAccountHolder);
+    if (data.locationId !== undefined) u.location_id = data.locationId || null;
+    if (joinedAt) u.joined_at = joinedAt;
+    return tx.riders.update({ where: { id }, data: u });
   });
+}
+
+// Full editable profile for the edit form, mapped to the create-form field names.
+export async function getManagedUserDetail(type: ManagedUserType, id: string) {
+  const num = (v: unknown) => (v === null || v === undefined ? null : Number(v));
+  const dateStr = (d: Date | null) => (d ? new Date(d).toISOString().slice(0, 10) : "");
+
+  if (type === "vendor") {
+    const v = await prisma.vendors.findUnique({ where: { id }, include: { users: true } });
+    if (!v) throw new AppError(404, "Vendor not found");
+    return {
+      type, id: v.id, userId: v.user_id,
+      clientName: v.client_name, businessName: v.business_name, phone: v.phone,
+      email: v.email, locationId: v.location_id, address: v.address, sales: v.sales,
+      rateType: v.rate_type,
+      flatInsideValley: num(v.flat_inside_valley), flatOutsideValley: num(v.flat_outside_valley),
+      zoneMajorCities: num(v.zone_major_cities), zoneUrbanAreas: num(v.zone_urban_areas),
+      zoneRemoteAreas: num(v.zone_remote_areas),
+      pickupLandmark: v.pickup_landmark, billingBusinessName: v.billing_business_name,
+      registrationNo: v.registration_no, panVatNo: v.pan_vat_no,
+      bankName: v.bank_name, bankAccountNo: v.bank_account_no, bankAccountHolder: v.bank_account_holder,
+      joinedAt: dateStr(v.joined_at),
+    };
+  }
+
+  if (type === "admin") {
+    const a = await prisma.admins.findUnique({ where: { id }, include: { users: true } });
+    if (!a) throw new AppError(404, "Admin not found");
+    return {
+      type, id: a.id, userId: a.user_id,
+      fullName: a.users.full_name, email: a.users.email, phone: a.users.phone,
+      locationId: a.location_id, position: a.position, department: a.department,
+      address: a.address, citizenshipNo: a.citizenship_no, pan: a.pan,
+      fatherName: a.father_name, motherName: a.mother_name, grandfatherName: a.grandfather_name,
+      permanentAddress: a.permanent_address, currentAddress: a.current_address, experience: a.experience,
+      idDocumentType: a.id_document_type, idDocumentNumber: a.id_document_number,
+      bankName: a.bank_name, bankAccountNo: a.bank_account_no, bankAccountHolder: a.bank_account_holder,
+      joinedAt: dateStr(a.joined_at),
+    };
+  }
+
+  const r = await prisma.riders.findUnique({ where: { id }, include: { users: true } });
+  if (!r) throw new AppError(404, "Rider not found");
+  return {
+    type, id: r.id, userId: r.user_id,
+    fullName: r.name, email: r.users?.email ?? "", phone: r.phone,
+    locationId: r.location_id, riderLocation: r.rider_location,
+    citizenshipNo: r.citizenship_no, licenceNo: r.licence_no, vehicleNo: r.vehicle_no,
+    salaryCommission: r.salary_commission, pan: r.pan,
+    bankName: r.bank_name, bankAccountNo: r.bank_account_no, bankAccountHolder: r.bank_account_holder,
+    joinedAt: dateStr(r.joined_at),
+  };
 }
 
 export async function updateManagedUserPassword(
@@ -212,6 +336,14 @@ function validateRegisterInput(input: RegisterUserInput) {
   }
 }
 
+// Parses an optional rate value (string over multipart) to a number, or null
+// when blank/invalid so the global default rate applies instead.
+function parseRate(value: string | number | undefined): number | null {
+  if (value === undefined || value === null || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
 export async function registerUserBySuperAdmin(
   superAdminUserID: string,
   data: RegisterUserInput,
@@ -236,13 +368,23 @@ export async function registerUserBySuperAdmin(
   
   const isSuperAdmin = creatorRoles.includes("super_admin");
   const isAdmin = creatorRoles.includes("admin");
+  const isSales = creatorRoles.includes("sales");
 
-  if (!isSuperAdmin && !isAdmin) {
+  if (!isSuperAdmin && !isAdmin && !isSales) {
     throw new AppError(403, "Unauthorized");
   }
 
   if (!isSuperAdmin && isAdmin && !["rider", "vendor"].includes(data.type)) {
     throw new AppError(403, "Admins can only create vendor or rider accounts");
+  }
+
+  // Sales (without admin rights) may only onboard vendor (client) accounts, and
+  // those are always linked to the sales user who created them.
+  if (!isSuperAdmin && !isAdmin && isSales) {
+    if (data.type !== "vendor") {
+      throw new AppError(403, "Sales can only create vendor accounts");
+    }
+    data.salesUserId = superAdminUserID;
   }
 
   validateRegisterInput(data);
@@ -285,6 +427,25 @@ export async function registerUserBySuperAdmin(
           user_id: user.id,
           location_id: data.locationId ?? null,
           position: data.position ?? null,
+          department: data.department ?? null,
+          id_document_type: data.idDocumentType ?? null,
+          id_document_number: data.idDocumentNumber ?? null,
+          id_document: data.idDocumentPath ?? null,
+          address: data.address ?? null,
+          citizenship_no: data.citizenshipNo ?? null,
+          pan: data.pan ?? null,
+          father_name: data.fatherName ?? null,
+          mother_name: data.motherName ?? null,
+          grandfather_name: data.grandfatherName ?? null,
+          permanent_address: data.permanentAddress ?? null,
+          current_address: data.currentAddress ?? null,
+          experience: data.experience ?? null,
+          citizenship_doc: data.citizenshipDocPath ?? null,
+          pan_doc: data.panDocPath ?? null,
+          experience_letter_doc: data.experienceLetterDocPath ?? null,
+          bank_name: data.bankName ?? null,
+          bank_account_no: data.bankAccountNo ?? null,
+          bank_account_holder: data.bankAccountHolder ?? null,
           joined_at: data.joinedAt ? new Date(data.joinedAt) : null,
         },
       });
@@ -301,6 +462,26 @@ export async function registerUserBySuperAdmin(
           email: data.email!,
           location_id: data.locationId ?? null,
           address: data.address ?? null,
+          sales: data.sales ?? null,
+          sales_user_id: data.salesUserId ?? null,
+          rate_type: ["per_destination", "zone", "flat"].includes(data.rateType ?? "")
+            ? data.rateType!
+            : "flat",
+          flat_inside_valley: parseRate(data.flatInsideValley),
+          flat_outside_valley: parseRate(data.flatOutsideValley),
+          zone_major_cities: parseRate(data.zoneMajorCities),
+          zone_urban_areas: parseRate(data.zoneUrbanAreas),
+          zone_remote_areas: parseRate(data.zoneRemoteAreas),
+          pickup_landmark: data.pickupLandmark ?? null,
+          billing_business_name: data.billingBusinessName ?? null,
+          registration_no: data.registrationNo ?? null,
+          pan_vat_no: data.panVatNo ?? null,
+          citizenship_doc: data.citizenshipDocPath ?? null,
+          pan_vat_doc: data.panVatDocPath ?? null,
+          business_cert_doc: data.businessCertDocPath ?? null,
+          bank_name: data.bankName ?? null,
+          bank_account_no: data.bankAccountNo ?? null,
+          bank_account_holder: data.bankAccountHolder ?? null,
           status: "active",
           joined_at: data.joinedAt ? new Date(data.joinedAt) : null,
         },
@@ -314,6 +495,19 @@ export async function registerUserBySuperAdmin(
         name: data.fullName,
         phone: data.phone!,
         location_id: data.locationId ?? null,
+        rider_location: data.riderLocation ?? null,
+        citizenship_no: data.citizenshipNo ?? null,
+        licence_no: data.licenceNo ?? null,
+        vehicle_no: data.vehicleNo ?? null,
+        salary_commission: data.salaryCommission ?? null,
+        pan: data.pan ?? null,
+        citizenship_doc: data.citizenshipDocPath ?? null,
+        pan_vat_doc: data.panVatDocPath ?? null,
+        licence_doc: data.licenceDocPath ?? null,
+        bluebook_doc: data.bluebookDocPath ?? null,
+        bank_name: data.bankName ?? null,
+        bank_account_no: data.bankAccountNo ?? null,
+        bank_account_holder: data.bankAccountHolder ?? null,
         status: "active",
         joined_at: data.joinedAt ? new Date(data.joinedAt) : null,
       },

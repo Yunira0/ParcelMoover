@@ -35,7 +35,7 @@ const STATUS_LABELS: Record<ParcelStatus, string> = {
   arrived: 'Arrived',
   ready_to_deliver: 'Ready to Deliver',
   sent_for_delivery: 'In Transit',
-  oov: 'Out of Vehicle',
+  oov: 'Transit',
   dispatched: 'Dispatched',
   arrived_at_branch: 'Arrived',
   hold: 'On Hold',
@@ -44,6 +44,10 @@ const STATUS_LABELS: Record<ParcelStatus, string> = {
   failed_pickup: 'Failed Pickup',
   failed_delivery: 'Failed Delivery',
   cancelled: 'Cancelled',
+  follow_up: 'Follow Up',
+  ready_to_return: 'Ready to Return',
+  sent_to_vendor: 'Sent to Vendor',
+  returned_to_vendor: 'Returned to Vendor',
 };
 
 type FilterTab =
@@ -63,7 +67,7 @@ const TAB_GROUPS: Record<FilterTab, ParcelStatus[]> = {
   inprogress: ['picked_up', 'arrived', 'ready_to_deliver', 'sent_for_delivery', 'oov', 'dispatched', 'arrived_at_branch', 'hold'],
   delivered: ['delivered'],
   failed: ['failed_pickup', 'failed_delivery', 'loss_and_damage'],
-  rtv: ['failed_delivery', 'cancelled'],
+  rtv: ['failed_delivery', 'follow_up', 'ready_to_return', 'sent_to_vendor', 'returned_to_vendor'],
   cancelled: ['cancelled'],
 };
 
@@ -166,6 +170,7 @@ const getStatusTone = (status: ParcelStatus): StatusChipTone => {
   if (status === 'delivered') return 'success';
   if (['arrived', 'arrived_at_branch', 'rider_assigned'].includes(status)) return 'info';
   if (['failed_pickup', 'failed_delivery', 'loss_and_damage'].includes(status)) return 'danger';
+  if (status === 'returned_to_vendor') return 'success';
   if (status === 'cancelled') return 'neutral';
   return 'warning';
 };

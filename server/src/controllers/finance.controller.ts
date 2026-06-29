@@ -1,9 +1,11 @@
 import { Request, Response } from "express";
-import { getPendingCodBill, listOrderCod, listSettlements } from "../services/finance.service";
+import { getPendingCodBill, listOrderCod, listSettlements, getUnsettledOrders } from "../services/finance.service";
 import { CodPaymentFilter } from "../types/finance.type";
 
+// General UUID shape — not strict about RFC-4122 version/variant nibbles, so
+// seeded/demo ids (e.g. 55555555-0000-0000-0000-000000000002) are accepted.
 const UUID_REGEX =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function parseVendorIdParam(req: Request): { error?: string; vendorId?: string } {
   const raw = req.query.vendorId;
@@ -157,6 +159,41 @@ export async function listSettlementsController(req: Request, res: Response) {
     return res.status(error.statusCode || 500).json({
       success: false,
       message: error.message || "Failed to load settlements",
+    });
+  }
+}
+
+const VALID_SETTLEMENT_TYPES = ["rider", "vendor"];
+
+export async function getUnsettledOrdersController(req: Request, res: Response) {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const type = req.query.type;
+    if (typeof type !== "string" || !VALID_SETTLEMENT_TYPES.includes(type)) {
+      return res.status(400).json({
+        success: false,
+        message: `type must be one of: ${VALID_SETTLEMENT_TYPES.join(", ")}`,
+      });
+    }
+
+    const targetId = req.query.targetId;
+    if (targetId !== undefined && (typeof targetId !== "string" || !UUID_REGEX.test(targetId))) {
+      return res.status(400).json({ success: false, message: "targetId must be a valid UUID" });
+    }
+
+    const result = await getUnsettledOrders(
+      { id: req.user.id, roles: req.user.roles },
+      type as "rider" | "vendor",
+      targetId as string | undefined,
+    );
+    return res.status(200).json({ success: true, data: result });
+  } catch (error: any) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to load unsettled orders",
     });
   }
 }

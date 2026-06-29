@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { User, Lock, Check } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { User, Lock, Check, LogOut } from 'lucide-react';
 import FormField from '../components/FormField';
 import Button from '../components/Button';
 import { getCurrentUser as fetchMe, changePassword, updateMe } from '../services/auth.service';
@@ -17,8 +18,15 @@ const ROLE_LABELS: Record<string, string> = {
 };
 
 const ProfilePage: React.FC = () => {
+  const navigate = useNavigate();
   const cached = getCurrentUser();
   const [tab, setTab] = useState<Tab>('info');
+
+  const handleLogout = () => {
+    localStorage.removeItem('user');
+    localStorage.removeItem('token');
+    navigate('/login');
+  };
 
   // Profile fields
   const [fullName, setFullName] = useState(cached?.fullName ?? '');
@@ -105,6 +113,9 @@ const ProfilePage: React.FC = () => {
             ))}
           </div>
         </div>
+        <Button variant="danger" className="profile-logout-btn" onClick={handleLogout}>
+          <LogOut size={16} /> Log Out
+        </Button>
       </div>
 
       <div className="profile-tabs">

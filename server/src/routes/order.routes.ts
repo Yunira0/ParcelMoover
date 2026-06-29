@@ -93,14 +93,14 @@ orderRouter.post(
 orderRouter.get(
   "/dashboard-summary",
   authMiddleware,
-  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider"),
+  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider", "sales"),
   dashboardSummaryController,
 );
 
 orderRouter.get(
   "/",
   authMiddleware,
-  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider"),
+  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider", "sales"),
   listOrdersController,
 );
 
@@ -108,7 +108,7 @@ orderRouter.get(
 orderRouter.get(
   "/track/:trackingId",
   authMiddleware,
-  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider"),
+  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider", "sales"),
   getOrderByTrackingIdController,
 );
 
@@ -117,7 +117,7 @@ orderRouter.patch(
   "/:id/status",
   authMiddleware,
   csrfProtection,
-  authorizeRoles("super_admin", "admin", "rider"),
+  authorizeRoles("super_admin", "admin", "rider", "vendor", "vendor_staff"),
   statusUpdateLimiter,
   updateOrderStatusController,
 );
@@ -127,7 +127,7 @@ orderRouter.post(
   "/:id/remarks",
   authMiddleware,
   csrfProtection,
-  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider"),
+  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider", "sales"),
   remarkLimiter,
   addOrderRemarkController,
 );

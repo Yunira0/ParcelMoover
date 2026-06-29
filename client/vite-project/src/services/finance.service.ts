@@ -99,3 +99,31 @@ export const getSettlements = async (
   });
   return response.data;
 };
+
+export interface UnsettledOrderItem {
+  id: string;
+  codCollectionId: string;
+  trackingId: string;
+  receiverName: string;
+  destination: string;
+  codAmount: number;
+  deliveryCharge: number;
+  netPayable: number;
+}
+
+export interface UnsettledOrdersResult {
+  items: UnsettledOrderItem[];
+  totalCod: number;
+  totalDeliveryCharge: number;
+  totalNetPayable: number;
+}
+
+export const getUnsettledOrders = async (
+  type: 'rider' | 'vendor',
+  targetId?: string,
+): Promise<{ success: boolean; data: UnsettledOrdersResult }> => {
+  const response = await api.get('/finance/unsettled-orders', {
+    params: { type, ...(targetId ? { targetId } : {}) },
+  });
+  return response.data;
+};

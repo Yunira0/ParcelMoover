@@ -9,9 +9,12 @@ import Pagination from '../components/Pagination';
 import StatusChip from '../components/StatusChip';
 import {
   getOrders,
+  bulkUpdateOrderStatus,
   subscribeToOrderStatusChanged,
   type Order,
+  type ParcelStatus,
 } from '../services/orders.service';
+import RiderAssignModal from '../components/RiderAssignModal';
 import './ReturnOperations.css';
 
 type ReturnTab = 'follow_up' | 'ready_to_return' | 'sent_to_vendor' | 'returned_to_vendor';
@@ -21,8 +24,43 @@ const PAGE_SIZE = 10;
 const TAB_LABELS: Record<ReturnTab, string> = {
   follow_up: 'Follow up',
   ready_to_return: 'Ready to return',
-  sent_to_vendor: 'sent to vendor',
+  sent_to_vendor: 'Sent to vendor',
   returned_to_vendor: 'Returned to vendor',
+};
+
+const STATUS_LABELS: Partial<Record<ParcelStatus, string>> = {
+  pickup_ordered: 'Pickup Ordered',
+  rider_assigned: 'Rider Assigned',
+  picked_up: 'Picked Up',
+  arrived: 'Arrived',
+  ready_to_deliver: 'Ready to Deliver',
+  sent_for_delivery: 'In Transit',
+  oov: 'Transit',
+  dispatched: 'Dispatched',
+  arrived_at_branch: 'Arrived',
+  hold: 'On Hold',
+  delivered: 'Delivered',
+  failed_delivery: 'Failed Delivery',
+  follow_up: 'Follow Up',
+  ready_to_return: 'Ready to Return',
+  sent_to_vendor: 'Sent to Vendor',
+  returned_to_vendor: 'Returned to Vendor',
+};
+
+// Maps any return-relevant parcel into one of the four return stages.
+// Type 2 (RTO of a failed delivery) maps by its real status; Type 1 (an
+// order_type='return' reverse shipment) maps by where it is in its lifecycle.
+const returnStage = (o: Order): ReturnTab | null => {
+  if (o.status === 'failed_delivery' || o.status === 'follow_up') return 'follow_up';
+  if (o.status === 'ready_to_return') return 'ready_to_return';
+  if (o.status === 'sent_to_vendor') return 'sent_to_vendor';
+  if (o.status === 'returned_to_vendor') return 'returned_to_vendor';
+  if (o.orderType === 'return') {
+    if (o.status === 'delivered') return 'returned_to_vendor';
+    if (['pickup_ordered', 'rider_assigned'].includes(o.status)) return 'ready_to_return';
+    return 'sent_to_vendor';
+  }
+  return null;
 };
 
 const formatMoney = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 0 });
@@ -34,13 +72,19 @@ const ReturnOperations: React.FC = () => {
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [selectedIds, setSelectedIds] = useState<Set<string | number>>(new Set());
+  const [actionMsg, setActionMsg] = useState('');
+  const [acting, setActing] = useState(false);
+  // Rider-assignment popup for ready_to_return → sent_to_vendor.
+  const [riderModalOpen, setRiderModalOpen] = useState(false);
+  const [pendingIds, setPendingIds] = useState<string[]>([]);
 
   const loadReturns = async () => {
     setLoading(true);
     try {
       const res = await getOrders();
       if (res?.success && Array.isArray(res.data)) {
-        setOrders(res.data.filter((order) => order.orderType === 'return'));
+        // Both kinds of returns: reverse orders + failed deliveries in the RTO flow.
+        setOrders(res.data.filter((order) => returnStage(order) !== null));
       }
     } finally {
       setLoading(false);
@@ -49,17 +93,20 @@ const ReturnOperations: React.FC = () => {
 
   useEffect(() => { loadReturns(); }, []);
   useEffect(() => subscribeToOrderStatusChanged(loadReturns), []);
-  useEffect(() => { setPage(1); }, [activeTab, searchQuery]);
+  useEffect(() => { setPage(1); setSelectedIds(new Set()); setActionMsg(''); }, [activeTab, searchQuery]);
 
   const filteredOrders = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    if (!q) return orders;
-    return orders.filter((order) =>
-      order.trackingId.toLowerCase().includes(q) ||
-      order.senderName.toLowerCase().includes(q) ||
-      order.receiverName.toLowerCase().includes(q),
-    );
-  }, [orders, searchQuery]);
+    return orders.filter((order) => {
+      if (returnStage(order) !== activeTab) return false;
+      if (!q) return true;
+      return (
+        order.trackingId.toLowerCase().includes(q) ||
+        order.senderName.toLowerCase().includes(q) ||
+        order.receiverName.toLowerCase().includes(q)
+      );
+    });
+  }, [orders, activeTab, searchQuery]);
 
   const totalPages = Math.max(1, Math.ceil(filteredOrders.length / PAGE_SIZE));
   const visibleOrders = filteredOrders.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
@@ -70,11 +117,7 @@ const ReturnOperations: React.FC = () => {
   const toggleRowSelection = (orderId: string | number) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
-      if (next.has(orderId)) {
-        next.delete(orderId);
-      } else {
-        next.add(orderId);
-      }
+      next.has(orderId) ? next.delete(orderId) : next.add(orderId);
       return next;
     });
   };
@@ -82,25 +125,77 @@ const ReturnOperations: React.FC = () => {
   const toggleVisibleSelection = () => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
-      if (allVisibleSelected) {
-        visibleOrderIds.forEach((id) => next.delete(id));
-      } else {
-        visibleOrderIds.forEach((id) => next.add(id));
-      }
+      if (allVisibleSelected) visibleOrderIds.forEach((id) => next.delete(id));
+      else visibleOrderIds.forEach((id) => next.add(id));
       return next;
     });
   };
 
+  // Advance selected RTO parcels to the next stage. Only items currently in one
+  // of `sourceStatuses` are eligible (server rejects invalid transitions), so we
+  // pre-filter to avoid failing the whole batch.
+  const advance = async (target: ParcelStatus, sourceStatuses: ParcelStatus[]) => {
+    const eligible = visibleOrders
+      .filter((o) => selectedIds.has(o.id) && sourceStatuses.includes(o.status))
+      .map((o) => o.id);
+    if (eligible.length === 0) {
+      setActionMsg('Select one or more orders in the return flow to action.');
+      return;
+    }
+    setActing(true);
+    setActionMsg('');
+    try {
+      await bulkUpdateOrderStatus(eligible, target);
+      setSelectedIds(new Set());
+      await loadReturns();
+    } catch (err: any) {
+      setActionMsg(err.response?.data?.message || 'Action failed.');
+    } finally {
+      setActing(false);
+    }
+  };
+
+  // Sending to the vendor needs a rider, so it opens the rider picker first.
+  const openSendToVendor = () => {
+    const eligible = visibleOrders
+      .filter((o) => selectedIds.has(o.id) && o.status === 'ready_to_return')
+      .map((o) => o.id);
+    if (eligible.length === 0) {
+      setActionMsg('Select one or more "ready to return" orders first.');
+      return;
+    }
+    setActionMsg('');
+    setPendingIds(eligible);
+    setRiderModalOpen(true);
+  };
+
+  const confirmSendToVendor = async (riderId: string) => {
+    if (!riderId) return;
+    setActing(true);
+    setActionMsg('');
+    try {
+      await bulkUpdateOrderStatus(pendingIds, 'sent_to_vendor', { riderId });
+      setRiderModalOpen(false);
+      setSelectedIds(new Set());
+      setPendingIds([]);
+      await loadReturns();
+    } catch (err: any) {
+      setActionMsg(err.response?.data?.message || 'Failed to assign rider.');
+    } finally {
+      setActing(false);
+    }
+  };
+
   const downloadCsv = () => {
-    const headers = ['Tracking ID', 'Sender', 'Receiver', 'Weight', 'COD', 'Last Updated By', 'Last Updated'];
+    const headers = ['Tracking ID', 'Type', 'Status', 'Sender', 'Receiver', 'Weight', 'COD'];
     const rows = filteredOrders.map((order) => [
       order.trackingId,
+      order.orderType === 'return' ? 'Return order' : 'RTO',
+      STATUS_LABELS[order.status] || order.status,
       order.senderName,
       order.receiverName,
       order.weightKg ? `${order.weightKg} Kg` : '',
       order.codAmount,
-      order.lastUpdatedBy || '',
-      order.lastUpdatedAt || '',
     ]);
     const csv = [headers, ...rows]
       .map((row) => row.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(','))
@@ -131,47 +226,46 @@ const ReturnOperations: React.FC = () => {
       className: 'return-tracking-cell',
     },
     {
+      header: 'TYPE',
+      accessor: (order: Order) => (
+        <StatusChip tone={order.orderType === 'return' ? 'info' : 'warning'}>
+          {order.orderType === 'return' ? 'Return order' : 'RTO'}
+        </StatusChip>
+      ),
+      width: '110px',
+    },
+    {
       header: 'SENDER',
       accessor: (order: Order) => (
-        <div className="return-party-cell">
-          <span>{order.senderName}</span>
-          <small>{order.senderPhone}</small>
-        </div>
+        <div className="return-party-cell"><span>{order.senderName}</span><small>{order.senderPhone}</small></div>
       ),
-      width: '173px',
+      width: '160px',
     },
     {
       header: 'RECEIVER',
       accessor: (order: Order) => (
-        <div className="return-party-cell">
-          <span>{order.receiverName}</span>
-          <small>{order.receiverPhone}</small>
-        </div>
+        <div className="return-party-cell"><span>{order.receiverName}</span><small>{order.receiverPhone}</small></div>
       ),
-      width: '172px',
+      width: '160px',
     },
     { header: 'WEIGHT', accessor: (order: Order) => (order.weightKg ? `${order.weightKg} Kg` : '-'), width: '80px' },
-    { header: 'COD', accessor: (order: Order) => formatMoney(order.codAmount), width: '113px' },
-    {
-      header: 'LAST UPDATED BY',
-      accessor: (order: Order) => (
-        <div className="return-updated-cell">
-          <span>{order.lastUpdatedBy || '-'}</span>
-        </div>
-      ),
-      width: '155px',
-    },
-    { header: 'LAST UPDATED', accessor: (order: Order) => order.lastUpdatedAt || '-', width: '155px' },
+    { header: 'COD', accessor: (order: Order) => formatMoney(order.codAmount), width: '100px' },
     {
       header: 'STATUS',
-      accessor: () => <StatusChip tone="neutral">{TAB_LABELS[activeTab]}</StatusChip>,
-      width: '84px',
+      accessor: (order: Order) => (
+        <StatusChip tone={order.status === 'returned_to_vendor' ? 'success' : 'neutral'}>
+          {STATUS_LABELS[order.status] || order.status}
+        </StatusChip>
+      ),
+      width: '150px',
     },
   ];
 
+  const noSelection = selectedIds.size === 0 || acting;
+
   return (
     <div className="return-operations-container">
-      <PageHeader title="Return" subtitle="Monitor your dispatch orders throughout the entire hub network." />
+      <PageHeader title="Return" subtitle="Manage return orders and failed deliveries going back to the vendor." />
 
       <SegmentedTabs
         ariaLabel="Return operation filters"
@@ -181,23 +275,35 @@ const ReturnOperations: React.FC = () => {
       />
 
       <div className="return-toolbar">
-        <div />
         <div className="return-toolbar-actions">
-          <Button
-            variant="secondary"
-            disabled={selectedIds.size === 0}
-            title="Return status workflow is not connected yet"
-          >
-            Action{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
-          </Button>
-          <Button variant="secondary" onClick={downloadCsv}>
-            <Download size={14} /> Download
-          </Button>
-          <Button variant="secondary" onClick={() => window.print()}>
-            <Printer size={14} /> Print
-          </Button>
+          {activeTab === 'follow_up' && (
+            <>
+              <Button variant="secondary" disabled={noSelection} onClick={() => advance('ready_to_deliver', ['failed_delivery', 'follow_up'])}>
+                Reattempt delivery
+              </Button>
+              <Button variant="primary" disabled={noSelection} onClick={() => advance('ready_to_return', ['failed_delivery', 'follow_up'])}>
+                Mark for return
+              </Button>
+            </>
+          )}
+          {activeTab === 'ready_to_return' && (
+            <Button variant="primary" disabled={noSelection} onClick={openSendToVendor}>
+              Send to vendor
+            </Button>
+          )}
+          {activeTab === 'sent_to_vendor' && (
+            <Button variant="primary" disabled={noSelection} onClick={() => advance('returned_to_vendor', ['sent_to_vendor'])}>
+              Mark returned to vendor
+            </Button>
+          )}
+        </div>
+        <div className="return-toolbar-actions">
+          <Button variant="secondary" onClick={downloadCsv}><Download size={14} /> Download</Button>
+          <Button variant="secondary" onClick={() => window.print()}><Printer size={14} /> Print</Button>
         </div>
       </div>
+
+      {actionMsg && <p className="return-action-msg">{actionMsg}</p>}
 
       <label className="return-search">
         <Search size={16} />
@@ -218,7 +324,7 @@ const ReturnOperations: React.FC = () => {
         onToggleAll={toggleVisibleSelection}
         loading={loading}
         loadingMessage="Loading return orders..."
-        emptyMessage="No return orders found."
+        emptyMessage="No return orders in this stage."
         minWidth="1130px"
         tableClassName="return-table"
       />
@@ -228,6 +334,18 @@ const ReturnOperations: React.FC = () => {
         page={page}
         totalPages={totalPages}
         onPageChange={setPage}
+        summary={`${filteredOrders.length} order${filteredOrders.length === 1 ? '' : 's'}`}
+      />
+
+      <RiderAssignModal
+        isOpen={riderModalOpen}
+        title="Assign rider"
+        description={`Pick the rider who will carry ${pendingIds.length} parcel${pendingIds.length === 1 ? '' : 's'} back to the vendor.`}
+        confirmLabel="Send to vendor"
+        busy={acting}
+        error={actionMsg}
+        onClose={() => setRiderModalOpen(false)}
+        onConfirm={confirmSendToVendor}
       />
     </div>
   );

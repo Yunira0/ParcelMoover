@@ -16,7 +16,6 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import PageHeader from '../../components/PageHeader';
 import Table from '../../components/Table';
-import Button from '../../components/Button';
 import {
   getStaff,
   PERMISSION_LABELS,

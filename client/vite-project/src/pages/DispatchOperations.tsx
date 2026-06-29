@@ -39,7 +39,7 @@ const TAB_LABELS: Record<DispatchTab, string> = {
   ready_to_deliver: 'Ready for delivery',
   sent_for_delivery: 'Sent for delivery',
   delivered: 'Delivered',
-  failed: 'Failed',
+  failed: 'Failed Delivery',
   cancelled: 'Cancelled',
 };
 
@@ -59,7 +59,7 @@ const STATUS_LABELS: Record<ParcelStatus, string> = {
   arrived: 'Arrived',
   ready_to_deliver: 'Ready to Deliver',
   sent_for_delivery: 'Sent for Delivery',
-  oov: 'OOV',
+  oov: 'Transit',
   dispatched: 'Dispatched',
   arrived_at_branch: 'Arrived at Branch',
   hold: 'Hold',
@@ -68,6 +68,10 @@ const STATUS_LABELS: Record<ParcelStatus, string> = {
   failed_pickup: 'Failed Pickup',
   failed_delivery: 'Failed Delivery',
   cancelled: 'Cancelled',
+  follow_up: 'Follow Up',
+  ready_to_return: 'Ready to Return',
+  sent_to_vendor: 'Sent to Vendor',
+  returned_to_vendor: 'Returned to Vendor',
 };
 
 const STATUS_TRANSITIONS: Record<ParcelStatus, ParcelStatus[]> = {
@@ -82,10 +86,14 @@ const STATUS_TRANSITIONS: Record<ParcelStatus, ParcelStatus[]> = {
   oov: ['dispatched', 'hold'],
   hold: ['ready_to_deliver', 'oov', 'loss_and_damage'],
   delivered: [],
-  failed_pickup: [],
-  failed_delivery: [],
+  failed_pickup: ['pickup_ordered', 'cancelled'],
+  failed_delivery: ['ready_to_deliver', 'follow_up', 'ready_to_return'],
   cancelled: [],
   loss_and_damage: ['ready_to_deliver', 'arrived_at_branch'],
+  follow_up: ['ready_to_deliver', 'ready_to_return'],
+  ready_to_return: [],
+  sent_to_vendor: [],
+  returned_to_vendor: [],
 };
 
 const MOCK_DISPATCHES: Order[] = [
@@ -421,7 +429,7 @@ const DispatchOperations: React.FC = () => {
 
   return (
     <div className="dispatch-operations-container">
-      <PageHeader title="Dispatch Operations" subtitle="Oversee and monitor your dispatch orders throughout the hub network." />
+      <PageHeader title="Local Dispatch" subtitle="Oversee and monitor your dispatch orders throughout the hub network." />
 
       <SegmentedTabs
         ariaLabel="Dispatch operation filters"

@@ -78,3 +78,8 @@ export const setRemarkStatus = async (
   const response = await api.patch(`/remarks/${id}/status`, { status });
   return response.data;
 };
+
+export const getUnclosedRemarksCount = async (): Promise<{ success: boolean; data: { count: number } }> => {
+  const response = await api.get('/remarks/unclosed/count');
+  return response.data;
+};

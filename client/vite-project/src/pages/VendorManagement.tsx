@@ -7,6 +7,7 @@ import PageHeader from '../components/PageHeader';
 import SegmentedTabs from '../components/SegmentedTabs';
 import StatusChip from '../components/StatusChip';
 import { getVendors } from '../services/users.service';
+import { isAdminSide, hasAnyRole } from '../utils/auth';
 import './VendorManagement.css';
 
 interface VendorUser {
@@ -14,6 +15,7 @@ interface VendorUser {
   sn: number;
   client: string;
   company: string;
+  email: string;
   phone: string;
   location: string;
   orders: {
@@ -29,7 +31,11 @@ interface VendorUser {
 
 const VendorManagement: React.FC = () => {
   const navigate = useNavigate();
-  const [filter, setFilter] = useState<'all' | 'high-volume' | 'active' | 'cod-pending'>('all');
+  // Only admins can edit existing vendors / reset passwords. Sales can onboard
+  // new clients (auto-linked to them) but not edit existing ones.
+  const canManage = isAdminSide();
+  const canCreate = isAdminSide() || hasAnyRole(['sales']);
+  const [filter, setFilter] = useState<'all' | 'high-volume' | 'active'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [activeStatus, setActiveStatus] = useState('all');
   const [companyFilter, setCompanyFilter] = useState('all');
@@ -55,6 +61,7 @@ const VendorManagement: React.FC = () => {
             sn: 1,
             client: 'John Doe',
             company: 'Tech Corp',
+            email: 'john@techcorp.com',
             phone: '9876543210',
             location: 'Kathmandu, Nepal',
             orders: { total: 150, delivered: 140, returned: 10 },
@@ -68,6 +75,7 @@ const VendorManagement: React.FC = () => {
             sn: 2,
             client: 'Jane Smith',
             company: 'Biz Inc',
+            email: 'jane@bizinc.com',
             phone: '9800000000',
             location: 'Lalitpur, Nepal',
             orders: { total: 85, delivered: 80, returned: 5 },
@@ -95,6 +103,7 @@ const VendorManagement: React.FC = () => {
     { header: 'SN', accessor: 'sn' as keyof VendorUser, width: '50px' },
     { header: 'CLIENT', accessor: 'client' as keyof VendorUser },
     { header: 'COMPANY', accessor: 'company' as keyof VendorUser },
+    { header: 'EMAIL', accessor: 'email' as keyof VendorUser },
     { header: 'PHONE', accessor: 'phone' as keyof VendorUser },
     { header: 'LOCATION', accessor: 'location' as keyof VendorUser },
     { 
@@ -121,22 +130,21 @@ const VendorManagement: React.FC = () => {
     },
     { header: 'JOINED', accessor: 'joined' as keyof VendorUser },
     { header: 'LAST ORDERED DATE', accessor: 'lastOrderedDate' as keyof VendorUser },
-    {
-      header: 'ACTION',
-      accessor: (item: VendorUser) => (
-        <TableRowActions
-          onEdit={() => {
-            setActiveVendor(item);
-            setActionMode('edit');
-          }}
-          onUpdatePassword={() => {
-            setActiveVendor(item);
-            setActionMode('password');
-          }}
-        />
-      ),
-      width: '220px',
-    }
+    ...(canManage
+      ? [{
+          header: 'ACTION',
+          accessor: (item: VendorUser) => (
+            <TableRowActions
+              onEdit={() => navigate(`/vendors/${item.id}/edit`)}
+              onUpdatePassword={() => {
+                setActiveVendor(item);
+                setActionMode('password');
+              }}
+            />
+          ),
+          width: '220px',
+        }]
+      : []),
   ];
 
   // Dynamic filter options
@@ -147,12 +155,12 @@ const VendorManagement: React.FC = () => {
     const matchesSearch = searchQuery === '' || 
       vendor.client.toLowerCase().includes(searchQuery.toLowerCase()) ||
       vendor.company.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      vendor.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
       vendor.phone.includes(searchQuery) ||
       vendor.location.toLowerCase().includes(searchQuery.toLowerCase());
     
     const matchesTab = filter === 'all' || 
       (filter === 'active' && vendor.status === 'active') ||
-      (filter === 'cod-pending' && vendor.codDue > 0) ||
       (filter === 'high-volume' && vendor.orders.total > 100);
 
     const matchesStatus = activeStatus === 'all' || vendor.status === activeStatus;
@@ -167,9 +175,9 @@ const VendorManagement: React.FC = () => {
       <PageHeader
         title="VENDOR MANAGEMENT"
         subtitle="Oversee client accounts, delivery statistics, and financial tracking."
-        actionLabel="Add new"
-        actionIcon={<Plus size={16} />}
-        onAction={() => navigate('/vendors/new')}
+        actionLabel={canCreate ? 'Add new' : undefined}
+        actionIcon={canCreate ? <Plus size={16} /> : undefined}
+        onAction={canCreate ? () => navigate('/vendors/new') : undefined}
       />
 
       <div className="vendor-filters">
@@ -182,7 +190,6 @@ const VendorManagement: React.FC = () => {
             { value: 'all', label: 'All' },
             { value: 'high-volume', label: 'High volume client' },
             { value: 'active', label: 'Active client' },
-            { value: 'cod-pending', label: 'Cod pending' },
           ]}
         />
 
