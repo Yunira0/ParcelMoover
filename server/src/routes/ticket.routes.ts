@@ -3,6 +3,8 @@ import { rateLimit, ipKeyGenerator } from "express-rate-limit";
 import { authMiddleware } from "../middlewares/auth.mddleware";
 import { authorizeRoles } from "../middlewares/authorizeRoles.middleware";
 import { csrfProtection } from "../middlewares/csrf.middleware";
+import { validate } from "../middlewares/validate.middleware";
+import { createTicketSchema, listTicketsQuerySchema } from "../validators/ticket.schema";
 import {
   createTicketController,
   listTicketsController,
@@ -39,6 +41,7 @@ ticketRouter.get(
   authMiddleware,
   authorizeRoles("super_admin", "admin"),
   ticketsReadLimiter,
+  validate(listTicketsQuerySchema, "query"),
   listTicketsController,
 );
 
@@ -49,6 +52,7 @@ ticketRouter.post(
   csrfProtection,
   authorizeRoles("super_admin", "admin"),
   createTicketLimiter,
+  validate(createTicketSchema),
   createTicketController,
 );
 

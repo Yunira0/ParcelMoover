@@ -2,6 +2,15 @@ import { Request, Router } from "express";
 import { rateLimit, ipKeyGenerator } from "express-rate-limit";
 import { authMiddleware } from "../middlewares/auth.mddleware";
 import { authorizeRoles } from "../middlewares/authorizeRoles.middleware";
+import { validate } from "../middlewares/validate.middleware";
+import { uuidParamSchema } from "../validators/common";
+import {
+  createOrderSchema,
+  updateOrderStatusSchema,
+  bulkUpdateOrderStatusSchema,
+  listOrdersQuerySchema,
+  addOrderRemarkSchema,
+} from "../validators/order.schema";
 import {
   addOrderRemarkController,
   bulkUpdateOrderStatusController,
@@ -68,6 +77,7 @@ orderRouter.post(
   csrfProtection,
   authorizeRoles("super_admin", "admin", "vendor"),
   createOrderLimiter,
+  validate(createOrderSchema),
   createOrderController,
 );
 
@@ -82,6 +92,7 @@ orderRouter.get(
   "/",
   authMiddleware,
   authorizeRoles("super_admin", "admin", "vendor", "rider"),
+  validate(listOrdersQuerySchema, "query"),
   listOrdersController,
 );
 
@@ -100,6 +111,8 @@ orderRouter.patch(
   csrfProtection,
   authorizeRoles("super_admin", "admin", "rider"),
   statusUpdateLimiter,
+  validate(uuidParamSchema, "params"),
+  validate(updateOrderStatusSchema),
   updateOrderStatusController,
 );
 
@@ -110,6 +123,8 @@ orderRouter.post(
   csrfProtection,
   authorizeRoles("super_admin", "admin", "vendor", "rider"),
   remarkLimiter,
+  validate(uuidParamSchema, "params"),
+  validate(addOrderRemarkSchema),
   addOrderRemarkController,
 );
 
@@ -120,6 +135,7 @@ orderRouter.patch(
   csrfProtection,
   authorizeRoles("super_admin", "admin", "rider"),
   statusUpdateLimiter,
+  validate(bulkUpdateOrderStatusSchema),
   bulkUpdateOrderStatusController,
 );
 

@@ -2,6 +2,9 @@ import { Request, Router } from "express";
 import { rateLimit, ipKeyGenerator } from "express-rate-limit";
 import { authMiddleware } from "../middlewares/auth.mddleware";
 import { authorizeRoles } from "../middlewares/authorizeRoles.middleware";
+import { validate } from "../middlewares/validate.middleware";
+import { listRemarksQuerySchema } from "../validators/remark.schema";
+import { uuidParamSchema } from "../validators/common";
 import { getRemarkByIdController, listRemarksController } from "../controllers/remark.controller";
 import { createRedisRateLimitStore } from "../lib/rateLimitStore";
 
@@ -25,6 +28,7 @@ remarkRouter.get(
   authMiddleware,
   authorizeRoles("super_admin", "admin"),
   remarksReadLimiter,
+  validate(listRemarksQuerySchema, "query"),
   listRemarksController,
 );
 
@@ -34,6 +38,7 @@ remarkRouter.get(
   authMiddleware,
   authorizeRoles("super_admin", "admin"),
   remarksReadLimiter,
+  validate(uuidParamSchema, "params"),
   getRemarkByIdController,
 );
 

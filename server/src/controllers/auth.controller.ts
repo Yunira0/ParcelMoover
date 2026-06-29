@@ -45,6 +45,7 @@ export const registerUserController = async (req: Request, res: Response) => {
       role: result.role,
     });
   } catch (error: any) {
+    console.error("[Register] error:", error.code, error.message);
     if (error.code === "P2002") {
       return res.status(409).json({
         success: false,
@@ -52,7 +53,7 @@ export const registerUserController = async (req: Request, res: Response) => {
         field: error.meta?.target,
       });
     }
-    return res.status(400).json({
+    return res.status(error.statusCode || 400).json({
       success: false,
       message: error.message || "Failed to register user",
     });

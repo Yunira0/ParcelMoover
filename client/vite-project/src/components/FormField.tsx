@@ -30,6 +30,10 @@ interface FormFieldProps {
   gridColumn?: string;
   /** Visible rows for type="textarea". */
   rows?: number;
+  /** Small helper text shown below the input. */
+  hint?: string;
+  /** Inline validation error — replaces hint and turns the border red. */
+  error?: string;
 }
 
 const FormField: React.FC<FormFieldProps> = ({
@@ -52,12 +56,14 @@ const FormField: React.FC<FormFieldProps> = ({
   className,
   gridColumn,
   rows = 3,
+  hint,
+  error,
 }) => {
   const id = useId();
 
   return (
     <div
-      className={`form-group${className ? ` ${className}` : ''}`}
+      className={`form-group${className ? ` ${className}` : ''}${error ? ' has-error' : ''}`}
       style={gridColumn ? { gridColumn } : undefined}
     >
       {label && (
@@ -116,6 +122,10 @@ const FormField: React.FC<FormFieldProps> = ({
           onChange={(e) => onChange(e.target.value)}
         />
       )}
+      {error
+        ? <small className="form-error">{error}</small>
+        : hint && <small className="form-hint">{hint}</small>
+      }
     </div>
   );
 };

@@ -3,6 +3,13 @@ import { rateLimit, ipKeyGenerator } from "express-rate-limit";
 import { authMiddleware } from "../middlewares/auth.mddleware";
 import { authorizeRoles } from "../middlewares/authorizeRoles.middleware";
 import { csrfProtection } from "../middlewares/csrf.middleware";
+import { validate } from "../middlewares/validate.middleware";
+import { uuidParamSchema } from "../validators/common";
+import {
+  upsertDeliveryRateSchema,
+  deliveryQuoteQuerySchema,
+  setDeliveryRateActiveSchema,
+} from "../validators/delivery-rate.schema";
 import {
   getDeliveryQuoteController,
   listDeliveryRatesController,
@@ -52,6 +59,7 @@ deliveryRateRouter.get(
   authMiddleware,
   authorizeRoles("super_admin", "admin", "vendor"),
   quoteLimiter,
+  validate(deliveryQuoteQuerySchema, "query"),
   getDeliveryQuoteController,
 );
 
@@ -71,6 +79,7 @@ deliveryRateRouter.post(
   csrfProtection,
   authorizeRoles("super_admin"),
   ratesWriteLimiter,
+  validate(upsertDeliveryRateSchema),
   upsertDeliveryRateController,
 );
 
@@ -81,6 +90,8 @@ deliveryRateRouter.patch(
   csrfProtection,
   authorizeRoles("super_admin"),
   ratesWriteLimiter,
+  validate(uuidParamSchema, "params"),
+  validate(setDeliveryRateActiveSchema),
   setDeliveryRateActiveController,
 );
 

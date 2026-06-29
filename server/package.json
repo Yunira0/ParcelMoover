@@ -25,7 +25,8 @@
     "ioredis": "^5.11.1",
     "jsonwebtoken": "^9.0.3",
     "pg": "^8.21.0",
-    "rate-limit-redis": "^5.0.0"
+    "rate-limit-redis": "^5.0.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/bcrypt": "^6.0.0",

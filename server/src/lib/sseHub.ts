@@ -12,9 +12,6 @@ function ensureSubscribed() {
   subscribed = true;
 
   const subscriber = createNotificationsSubscriber();
-  subscriber.subscribe(NOTIFICATIONS_CHANNEL).catch((error) => {
-    console.error("[Redis] Failed to subscribe to notifications channel:", error);
-  });
 
   subscriber.on("message", (_channel, message) => {
     let event: NotificationEvent;
@@ -32,6 +29,19 @@ function ensureSubscribed() {
       res.write(payload);
     }
   });
+
+  const doSubscribe = () => {
+    subscriber.subscribe(NOTIFICATIONS_CHANNEL).catch((error) => {
+      console.error("[Redis] Failed to subscribe to notifications channel:", error);
+      subscribed = false; // allow retry on next SSE connection
+    });
+  };
+
+  if (subscriber.status === "ready") {
+    doSubscribe();
+  } else {
+    subscriber.once("ready", doSubscribe);
+  }
 }
 
 export function registerSseConnection(userId: string, res: Response) {

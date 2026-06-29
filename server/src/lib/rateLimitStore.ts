@@ -1,15 +1,24 @@
 import { RedisStore } from "rate-limit-redis";
+import { MemoryStore } from "express-rate-limit";
 import redis from "./redis";
 
-/**
- * express-rate-limit defaults to an in-memory store, which only counts hits
- * seen by the single Node process holding it. Behind multiple instances/PM2
- * workers that makes the limit effectively N times looser than configured.
- * Backing it with Redis gives one shared counter across all instances.
- */
 export function createRedisRateLimitStore(prefix: string) {
-  return new RedisStore({
-    prefix: `ratelimit:${prefix}:`,
-    sendCommand: (...args: string[]) => (redis as any).call(...args) as Promise<any>,
-  });
+  if (redis.status !== "ready") {
+    console.warn(
+      `[RateLimitStore] Redis not ready for prefix '${prefix}', using in-memory store (single-instance only)`,
+    );
+    return new MemoryStore();
+  }
+
+  try {
+    return new RedisStore({
+      prefix: `ratelimit:${prefix}:`,
+      sendCommand: async (...args: string[]) => {
+        return await (redis as any).call(...args);
+      },
+    });
+  } catch (error) {
+    console.error(`[RateLimitStore] Failed to create Redis store for '${prefix}', falling back to memory`, error);
+    return new MemoryStore();
+  }
 }

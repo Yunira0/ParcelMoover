@@ -29,6 +29,14 @@ const defaultFormState = {
   freeWeightKg: '2',
 };
 
+const RATE_FIELD_MAP: Record<string, string> = {
+  originLocationId: 'originLocationId',
+  destinationLocationId: 'destinationLocationId',
+  baseCharge: 'baseCharge',
+  extraWeightPercent: 'extraWeightPercent',
+  freeWeightKg: 'freeWeightKg',
+};
+
 const DeliveryRateSettings: React.FC = () => {
   const currentUser = getCurrentUser();
   const isSuperAdmin = Boolean(currentUser?.roles?.includes('super_admin'));
@@ -38,7 +46,8 @@ const DeliveryRateSettings: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(defaultFormState);
-  const [error, setError] = useState('');
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [generalError, setGeneralError] = useState('');
   const [saving, setSaving] = useState(false);
 
   const loadRates = async () => {
@@ -78,16 +87,19 @@ const DeliveryRateSettings: React.FC = () => {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
-    if (!form.originLocationId || !form.destinationLocationId) {
-      setError('Please select both origin and destination.');
-      return;
-    }
+    setFieldErrors({});
+    setGeneralError('');
+
+    const errors: Record<string, string> = {};
+    if (!form.originLocationId) errors.originLocationId = 'Please select an origin location.';
+    if (!form.destinationLocationId) errors.destinationLocationId = 'Please select a destination location.';
     const baseCharge = Number(form.baseCharge);
-    if (!(baseCharge >= 0)) {
-      setError('Base charge must be a non-negative number.');
+    if (!(baseCharge >= 0) || form.baseCharge === '') errors.baseCharge = 'Base charge must be a non-negative number.';
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
       return;
     }
+
     setSaving(true);
     try {
       await upsertDeliveryRate({
@@ -101,7 +113,20 @@ const DeliveryRateSettings: React.FC = () => {
       setShowForm(false);
       await loadRates();
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to save delivery rate.');
+      const data = err.response?.data;
+      if (data?.errors?.length) {
+        const mapped: Record<string, string> = {};
+        const unmapped: string[] = [];
+        for (const e of data.errors as { field: string; message: string }[]) {
+          const key = RATE_FIELD_MAP[e.field];
+          if (key) mapped[key] = e.message;
+          else unmapped.push(e.message);
+        }
+        setFieldErrors(mapped);
+        if (unmapped.length > 0) setGeneralError(unmapped[0]);
+      } else {
+        setGeneralError(data?.message || 'Failed to save delivery rate.');
+      }
     } finally {
       setSaving(false);
     }
@@ -155,6 +180,7 @@ const DeliveryRateSettings: React.FC = () => {
               value={form.originLocationId}
               onChange={id => setForm(prev => ({ ...prev, originLocationId: id }))}
               placeholder="Select origin"
+              error={fieldErrors.originLocationId}
             />
             <FormField
               label="Destination"
@@ -164,6 +190,7 @@ const DeliveryRateSettings: React.FC = () => {
               value={form.destinationLocationId}
               onChange={id => setForm(prev => ({ ...prev, destinationLocationId: id }))}
               placeholder="Select destination"
+              error={fieldErrors.destinationLocationId}
             />
           </div>
           <div className="delivery-rate-form-row">
@@ -175,6 +202,7 @@ const DeliveryRateSettings: React.FC = () => {
               value={form.baseCharge}
               onChange={value => setForm(prev => ({ ...prev, baseCharge: value }))}
               placeholder="e.g. 100"
+              error={fieldErrors.baseCharge}
             />
             <FormField
               label="Free Weight (kg)"
@@ -183,6 +211,7 @@ const DeliveryRateSettings: React.FC = () => {
               step="0.1"
               value={form.freeWeightKg}
               onChange={value => setForm(prev => ({ ...prev, freeWeightKg: value }))}
+              error={fieldErrors.freeWeightKg}
             />
             <FormField
               label="Extra Weight Surcharge (% of base, per kg)"
@@ -191,9 +220,10 @@ const DeliveryRateSettings: React.FC = () => {
               value={form.extraWeightPercent}
               onChange={value => setForm(prev => ({ ...prev, extraWeightPercent: value }))}
               placeholder="e.g. 10"
+              error={fieldErrors.extraWeightPercent}
             />
           </div>
-          {error && <p className="delivery-rate-error">{error}</p>}
+          {generalError && <p className="delivery-rate-error">{generalError}</p>}
           <div className="delivery-rate-form-actions">
             <Button type="submit" variant="primary" disabled={saving}>
               {saving ? 'Saving...' : 'Save Rate'}

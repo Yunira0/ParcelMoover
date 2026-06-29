@@ -8,13 +8,26 @@ import RemarkRoutes from "./routes/remark.routes"
 import NotificationRoutes from "./routes/notification.routes"
 import FinanceRoutes from "./routes/finance.routes"
 import prisma from "./lib/prisma";
+import redis from "./lib/redis";
 import cookiesParser from "cookie-parser";
 import {authMiddleware} from "./middlewares/auth.mddleware";
+import { errorHandler } from "./middlewares/errorHandler.middleware";
 
 
 import cors from "cors"
 
 config();
+
+// Validate critical environment variables
+if (!process.env.JWT_SECRET) {
+  console.error('🔴 FATAL: JWT_SECRET environment variable is not set');
+  process.exit(1);
+}
+
+if (!process.env.DATABASE_URL) {
+  console.error('🔴 FATAL: DATABASE_URL environment variable is not set');
+  process.exit(1);
+}
 
 const app: Express = express();
 const port = process.env.PORT || 3000;
@@ -83,5 +96,8 @@ const getCurrentUserHandler = async (req: Request, res: Response) => {
 
 app.get('/me', authMiddleware, getCurrentUserHandler);
 app.get('/api/me', authMiddleware, getCurrentUserHandler);
+
+// Global error handler — must be last
+app.use(errorHandler);
 
 export default app;

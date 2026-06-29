@@ -2,6 +2,8 @@ import { Request, Router } from "express";
 import { rateLimit, ipKeyGenerator } from "express-rate-limit";
 import { authMiddleware } from "../middlewares/auth.mddleware";
 import { csrfProtection } from "../middlewares/csrf.middleware";
+import { validate } from "../middlewares/validate.middleware";
+import { uuidParamSchema, paginationQuerySchema } from "../validators/common";
 import { createRedisRateLimitStore } from "../lib/rateLimitStore";
 import {
   getUnreadCountController,
@@ -42,7 +44,13 @@ notificationRouter.get("/stream", authMiddleware, streamNotificationsController)
 notificationRouter.get("/unread-count", authMiddleware, readLimiter, getUnreadCountController);
 
 // GET /api/notifications — paginated notification feed
-notificationRouter.get("/", authMiddleware, readLimiter, listNotificationsController);
+notificationRouter.get(
+  "/",
+  authMiddleware,
+  readLimiter,
+  validate(paginationQuerySchema, "query"),
+  listNotificationsController,
+);
 
 // PATCH /api/notifications/read-all
 notificationRouter.patch(
@@ -59,6 +67,7 @@ notificationRouter.patch(
   authMiddleware,
   csrfProtection,
   writeLimiter,
+  validate(uuidParamSchema, "params"),
   markNotificationReadController,
 );
 
