@@ -55,8 +55,10 @@ export const listKycController = async (req: Request, res: Response) => {
     }
 
     const status = req.query.status as string | undefined;
-    const apps = await listKycApplications(status);
-    return res.status(200).json({ success: true, data: apps });
+    const page = Number.isFinite(Number(req.query.page)) ? Number(req.query.page) : undefined;
+    const pageSize = Number.isFinite(Number(req.query.pageSize)) ? Number(req.query.pageSize) : undefined;
+    const { data, meta } = await listKycApplications(status, page, pageSize);
+    return res.status(200).json({ success: true, data, meta });
   } catch (error: any) {
     return res.status(error.statusCode || 500).json({
       success: false,

@@ -14,6 +14,11 @@ function ensureSubscribed() {
   const subscriber = createNotificationsSubscriber();
   subscriber.subscribe(NOTIFICATIONS_CHANNEL).catch((error) => {
     console.error("[Redis] Failed to subscribe to notifications channel:", error);
+    // Subscribe failed (e.g. Redis was briefly unreachable) - reset the flag so
+    // the next SSE registration retries instead of real-time staying silently
+    // dead for this process until it's restarted.
+    subscribed = false;
+    subscriber.disconnect();
   });
 
   subscriber.on("message", (_channel, message) => {

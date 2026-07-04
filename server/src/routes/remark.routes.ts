@@ -47,6 +47,15 @@ remarkRouter.get(
   listRemarksController,
 );
 
+// GET /api/remarks/unclosed/count — count of unclosed remarks (must be before /:id)
+remarkRouter.get(
+  "/unclosed/count",
+  authMiddleware,
+  authorizeRoles(...CX_ROLES),
+  remarksReadLimiter,
+  getUnclosedRemarksCountController,
+);
+
 // GET /api/remarks/:id — single remark + its conversation thread (viewing a pending one sets it Open)
 remarkRouter.get(
   "/:id",
@@ -64,15 +73,6 @@ remarkRouter.patch(
   authorizeRoles(...CX_ROLES),
   remarksWriteLimiter,
   setRemarkStatusController,
-);
-
-// GET /api/remarks/unclosed/count — count of unclosed remarks
-remarkRouter.get(
-  "/unclosed/count",
-  authMiddleware,
-  authorizeRoles(...CX_ROLES),
-  remarksReadLimiter,
-  getUnclosedRemarksCountController,
 );
 
 export default remarkRouter;

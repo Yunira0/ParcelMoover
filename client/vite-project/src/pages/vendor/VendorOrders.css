@@ -124,6 +124,18 @@
   font-size: var(--font-size-sm);
 }
 
+.vo-load-error {
+  color: var(--color-danger-text);
+  font-size: var(--font-size-sm);
+  margin: 0;
+}
+
+.vo-filter-scope-note {
+  color: var(--color-text-caption);
+  font-size: var(--font-size-sm);
+  margin: 0;
+}
+
 /* Tracking search box ---------------------------------------------------- */
 .vo-search-box {
   align-items: center;

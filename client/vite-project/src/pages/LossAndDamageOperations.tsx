@@ -140,8 +140,9 @@ const LossAndDamageOperations: React.FC = () => {
       // fall back to the currently loaded page
     }
 
-    const headers = ['Date', 'Tracking ID', 'Sender', 'Receiver', 'Weight', 'COD', 'Package', 'Last Updated By', 'Last Updated'];
+    const headers = ['#', 'Date', 'Tracking ID', 'Sender', 'Receiver', 'Weight', 'COD', 'Package', 'Last Updated By', 'Last Updated'];
     const csvRows = rows.map((order) => [
+      `#${order.orderNumber}`,
       order.createdAt,
       order.trackingId,
       order.senderName,
@@ -166,9 +167,9 @@ const LossAndDamageOperations: React.FC = () => {
 
   const columns = useMemo(() => [
     {
-      header: 'SN',
-      accessor: (order: Order) => ((page - 1) * PAGE_SIZE) + visibleOrders.findIndex((row) => row.id === order.id) + 1,
-      width: '34px',
+      header: '#',
+      accessor: (order: Order) => `#${order.orderNumber}`,
+      width: '70px',
       className: 'lossdamage-sn-cell',
     },
     { header: 'DATE', accessor: (order: Order) => order.createdAt || '-', width: '100px' },

@@ -1,5 +1,32 @@
 import prisma from "../lib/prisma";
+import redis, { scanAndDelete } from "../lib/redis";
 import { AppError } from "../utils/AppError";
+
+// getVendorQuote runs on essentially every vendor order creation - same hot,
+// rarely-changes-but-read-constantly shape as the delivery-rate cache, so it
+// gets the same treatment: TTL + invalidate-on-write, fail open on Redis errors.
+const PRICING_SETTINGS_CACHE_KEY = "pricing:settings";
+const PRICING_DEST_CACHE_PREFIX = "pricing:dest:";
+const PRICING_CACHE_TTL_SECONDS = 5 * 60;
+
+export async function invalidatePricingSettingsCache() {
+  try {
+    await redis.del(PRICING_SETTINGS_CACHE_KEY);
+  } catch (error) {
+    console.error("[Redis] Failed to invalidate pricing settings cache:", error);
+  }
+}
+
+// Called from location.service.ts writes too (zone/valley/per-destination-rate
+// live on the locations table) - a flat prefix scan is simpler and safe here
+// since destination pricing config changes rarely and the location count is small.
+export async function invalidateDestinationPricingCache() {
+  try {
+    await scanAndDelete(`${PRICING_DEST_CACHE_PREFIX}*`);
+  } catch (error) {
+    console.error("[Redis] Failed to invalidate destination pricing cache:", error);
+  }
+}
 
 export type RateType = "per_destination" | "zone" | "flat";
 export const RATE_TYPES: RateType[] = ["per_destination", "zone", "flat"];
@@ -21,11 +48,18 @@ export interface DeliveryQuote {
 
 // There is exactly one pricing_settings row; create a blank one on first read.
 export async function getPricingSettings() {
+  try {
+    const cached = await redis.get(PRICING_SETTINGS_CACHE_KEY);
+    if (cached) return JSON.parse(cached);
+  } catch (error) {
+    console.error("[Redis] Failed to read pricing settings cache:", error);
+  }
+
   let settings = await prisma.pricing_settings.findFirst();
   if (!settings) {
     settings = await prisma.pricing_settings.create({ data: {} });
   }
-  return {
+  const result = {
     id: settings.id,
     zoneMajorCities: settings.zone_major_cities === null ? null : Number(settings.zone_major_cities),
     zoneUrbanAreas: settings.zone_urban_areas === null ? null : Number(settings.zone_urban_areas),
@@ -34,6 +68,14 @@ export async function getPricingSettings() {
     flatOutsideValley: settings.flat_outside_valley === null ? null : Number(settings.flat_outside_valley),
     freeWeightKg: Number(settings.free_weight_kg),
   };
+
+  try {
+    await redis.setex(PRICING_SETTINGS_CACHE_KEY, PRICING_CACHE_TTL_SECONDS, JSON.stringify(result));
+  } catch (error) {
+    console.error("[Redis] Failed to write pricing settings cache:", error);
+  }
+
+  return result;
 }
 
 export interface UpdatePricingSettingsInput {
@@ -59,12 +101,21 @@ export async function updatePricingSettings(input: UpdatePricingSettingsInput) {
       updated_at: new Date(),
     },
   });
+  await invalidatePricingSettingsCache();
   return getPricingSettings();
 }
 
 // Resolve the destination's effective pricing fields, falling back to its parent
 // destination when the order targets a covered area that has none of its own.
 async function resolveDestinationPricing(destinationLocationId: string) {
+  const cacheKey = `${PRICING_DEST_CACHE_PREFIX}${destinationLocationId}`;
+  try {
+    const cached = await redis.get(cacheKey);
+    if (cached) return JSON.parse(cached);
+  } catch (error) {
+    console.error("[Redis] Failed to read destination pricing cache:", error);
+  }
+
   const dest = await prisma.locations.findUnique({ where: { id: destinationLocationId } });
   if (!dest) throw new AppError(400, "Destination location not found");
 
@@ -73,7 +124,7 @@ async function resolveDestinationPricing(destinationLocationId: string) {
     parent = await prisma.locations.findUnique({ where: { id: dest.parent_id } });
   }
 
-  return {
+  const result = {
     name: dest.name,
     zone: (dest.zone ?? parent?.zone ?? null) as Zone | null,
     valley: (dest.valley ?? parent?.valley ?? null) as Valley | null,
@@ -84,6 +135,14 @@ async function resolveDestinationPricing(destinationLocationId: string) {
         ? Number(parent.per_destination_rate)
         : null,
   };
+
+  try {
+    await redis.setex(cacheKey, PRICING_CACHE_TTL_SECONDS, JSON.stringify(result));
+  } catch (error) {
+    console.error("[Redis] Failed to write destination pricing cache:", error);
+  }
+
+  return result;
 }
 
 // Per-vendor rate overrides; any null field falls back to the global default.

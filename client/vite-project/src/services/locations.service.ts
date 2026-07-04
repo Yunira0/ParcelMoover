@@ -49,3 +49,34 @@ export const updateLocation = async (id: string, data: Partial<UpsertLocationInp
   const response = await api.patch(`/locations/${id}`, data);
   return response.data;
 };
+
+export const deleteLocation = async (id: string): Promise<{ success: boolean; message: string }> => {
+  const response = await api.delete(`/locations/${id}`);
+  return response.data;
+};
+
+export interface BulkImportDestinationInput {
+  name: string;
+  code?: string;
+  city?: string;
+  district?: string;
+  zone?: string;
+  valley?: string;
+  perDestinationRate?: number | null;
+  areas: string[];
+}
+
+export interface BulkImportResult {
+  destination: string;
+  action: 'created' | 'updated';
+  areasCreated: string[];
+  areasSkipped: string[];
+  error?: string;
+}
+
+export const bulkImportLocations = async (
+  rows: BulkImportDestinationInput[],
+): Promise<{ success: boolean; message: string; data: BulkImportResult[] }> => {
+  const response = await api.post('/locations/bulk-import', rows);
+  return response.data;
+};

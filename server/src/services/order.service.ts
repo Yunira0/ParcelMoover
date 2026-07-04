@@ -8,12 +8,14 @@ import {
   CreateOrderInput,
   ListOrdersQuery,
   OrderPartyInput,
+  OrderSortField,
   ParcelStatus,
   STATUS_TRANSITIONS,
   UpdateParcelStatusInput,
 } from "../types/order.type";
 import { generateTrackingId } from "../utils/trackingId";
 import { generateDispatchNo } from "../utils/dispatchId";
+import { invalidateVendorFinanceCache } from "./finance.service";
 
 type Party = { name: string; phone: string; alternate_phone?: string | null };
 function buildSearchText(trackingId: string, sender: Party, receiver: Party): string {
@@ -101,6 +103,46 @@ async function invalidateOrderCaches() {
     ]);
   } catch (error) {
     console.error("[Redis] Failed to invalidate order caches:", error);
+  }
+}
+
+const PARCEL_STATUS_LOCK_PREFIX = "parcel-status-lock:";
+const PARCEL_STATUS_LOCK_TTL_SECONDS = 15;
+
+// Guards against two concurrent status-change requests for the same parcel(s)
+// both reading the same "current status" and both passing transition
+// validation before either commits (a double-click, or two staff acting at
+// once). Same SET NX EX primitive as idempotency.service.ts, but scoped to
+// the parcel rather than a client-supplied idempotency key, and actively
+// released on completion instead of left to expire. Redis is optional
+// everywhere else in this app, so a Redis outage here degrades to "no lock"
+// rather than blocking status updates entirely.
+async function withParcelStatusLocks<T>(parcelIds: string[], fn: () => Promise<T>): Promise<T> {
+  const uniqueIds = Array.from(new Set(parcelIds));
+  const acquiredKeys: string[] = [];
+  try {
+    for (const id of uniqueIds) {
+      const key = `${PARCEL_STATUS_LOCK_PREFIX}${id}`;
+      let acquired: string | null = "SKIPPED";
+      try {
+        acquired = await redis.set(key, "1", "EX", PARCEL_STATUS_LOCK_TTL_SECONDS, "NX");
+      } catch (error) {
+        console.error("[Redis] Parcel status lock acquisition failed, proceeding without lock:", error);
+      }
+      if (!acquired) {
+        throw new AppError(409, "This order is being updated by another request - please retry.");
+      }
+      acquiredKeys.push(key);
+    }
+    return await fn();
+  } finally {
+    if (acquiredKeys.length) {
+      try {
+        await redis.del(...acquiredKeys);
+      } catch (error) {
+        console.error("[Redis] Failed to release parcel status lock(s):", error);
+      }
+    }
   }
 }
 
@@ -277,6 +319,9 @@ export async function createOrder(actor: OrderActor, data: CreateOrderInput) {
   const parcel = await _createOrderImpl(actor, data);
   // Fire-and-forget: Redis latency should never add to the caller's response time.
   invalidateOrderCaches().catch((err) => console.error("[Redis] cache invalidation failed:", err));
+  if (parcel.vendor_id) {
+    invalidateVendorFinanceCache(parcel.vendor_id).catch((err) => console.error("[Redis] cache invalidation failed:", err));
+  }
   return parcel;
 }
 
@@ -428,6 +473,7 @@ export async function bulkCreateOrders(actor: OrderActor, input: BulkCreateOrder
     | { index: number; success: true; trackingId: string }
     | { index: number; success: false; error: string }
   > = [];
+  const vendorIdsToInvalidate = new Set<string>();
 
   for (let i = 0; i < input.orders.length; i++) {
     const raw = input.orders[i]!;
@@ -457,6 +503,7 @@ export async function bulkCreateOrders(actor: OrderActor, input: BulkCreateOrder
       const parcel = await createOrderCore(actor, orderData);
       results.push({ index: i, success: true, trackingId: parcel.tracking_id });
       created++;
+      if (parcel.vendor_id) vendorIdsToInvalidate.add(parcel.vendor_id);
     } catch (err: any) {
       results.push({ index: i, success: false, error: err.message || "Order creation failed" });
       failed++;
@@ -464,7 +511,10 @@ export async function bulkCreateOrders(actor: OrderActor, input: BulkCreateOrder
   }
 
   // Flush caches once for the whole batch instead of after each individual order.
-  if (created > 0) await invalidateOrderCaches();
+  if (created > 0) {
+    await invalidateOrderCaches();
+    await Promise.all(Array.from(vendorIdsToInvalidate, (id) => invalidateVendorFinanceCache(id)));
+  }
 
   return { created, failed, results };
 }
@@ -540,6 +590,9 @@ export interface ListOrdersResult {
     pageSize: number;
     total: number;
     totalPages: number;
+    // Set when the caller didn't ask for pagination and the result was capped -
+    // lets the UI show "showing 200 of N" instead of silently looking complete.
+    truncated?: boolean;
   };
 }
 
@@ -553,6 +606,7 @@ function mapOrder(
 
   return {
     id: parcel.id,
+    orderNumber: parcel.order_number,
     trackingId: parcel.tracking_id,
     status: parcel.status,
     orderType: parcel.order_type,
@@ -582,12 +636,29 @@ function mapOrder(
   };
 }
 
+// Allow-listed so a client can only sort by a column that's actually indexed
+// or cheap to sort, never an arbitrary/unindexed field.
+const ORDER_SORT_COLUMNS: Record<OrderSortField, keyof Prisma.parcelsOrderByWithRelationInput> = {
+  createdAt: "created_at",
+  codAmount: "cod_amount",
+  deliveryCharge: "delivery_charge",
+  trackingId: "tracking_id",
+  status: "status",
+};
+
+function resolveOrdersOrderBy(query: ListOrdersQuery): Prisma.parcelsOrderByWithRelationInput {
+  const column = query.sortBy ? ORDER_SORT_COLUMNS[query.sortBy] : "created_at";
+  const direction = query.sortDir === "asc" ? "asc" : "desc";
+  return { [column]: direction };
+}
+
 export async function listOrders(
   actor: OrderActor,
   query: ListOrdersQuery = {},
 ): Promise<ListOrdersResult> {
   const { vendorId, vendorIds, riderId } = await getActorScope(actor);
   const where = buildOrdersWhere({ vendorId, vendorIds, riderId }, query);
+  const orderBy = resolveOrdersOrderBy(query);
 
   // Pagination only kicks in when the caller explicitly asks for it, so
   // existing callers that expect a flat array keep working unchanged.
@@ -598,9 +669,11 @@ export async function listOrders(
   // event - that's the only shape worth caching, since filtered/paginated
   // queries have too many distinct combinations to get useful hit rates.
   // Sales scope (vendorIds) is per-account and would collide with the shared
-  // global cache key, so those queries skip the cache.
+  // global cache key, so those queries skip the cache. A custom sort isn't
+  // encoded in the cache key either, so it also has to skip the cache.
   const isDefaultUnfilteredQuery =
-    !paginated && !query.status?.length && !query.orderType && !query.search && vendorIds === undefined;
+    !paginated && !query.status?.length && !query.orderType && !query.search &&
+    !query.sortBy && vendorIds === undefined;
   const cacheKey = isDefaultUnfilteredQuery ? ordersListCacheKey(vendorId, riderId) : null;
 
   if (cacheKey) {
@@ -615,13 +688,26 @@ export async function listOrders(
   }
 
   if (!paginated) {
-    const parcels = await prisma.parcels.findMany({
-      where,
-      include: ORDERS_INCLUDE,
-      orderBy: { created_at: "desc" },
-      take: 200,
-    });
-    const result: ListOrdersResult = { data: parcels.map(mapOrder) };
+    const DEFAULT_LIST_CAP = 200;
+    const [total, parcels] = await Promise.all([
+      prisma.parcels.count({ where }),
+      prisma.parcels.findMany({
+        where,
+        include: ORDERS_INCLUDE,
+        orderBy,
+        take: DEFAULT_LIST_CAP,
+      }),
+    ]);
+    const result: ListOrdersResult = {
+      data: parcels.map(mapOrder),
+      meta: {
+        page: 1,
+        pageSize: DEFAULT_LIST_CAP,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / DEFAULT_LIST_CAP)),
+        truncated: total > DEFAULT_LIST_CAP,
+      },
+    };
 
     if (cacheKey) {
       try {
@@ -642,7 +728,7 @@ export async function listOrders(
     prisma.parcels.findMany({
       where,
       include: ORDERS_INCLUDE,
-      orderBy: { created_at: "desc" },
+      orderBy,
       skip: (page - 1) * pageSize,
       take: pageSize,
     }),
@@ -799,6 +885,7 @@ export async function addOrderRemark(
       parentAuthorId,
       `New reply on order ${parcel.tracking_id}`,
       trimmed.length > 200 ? `${trimmed.slice(0, 200)}…` : trimmed,
+      parcel.tracking_id,
     );
   }
 
@@ -876,6 +963,7 @@ export async function getDashboardSummary(actor: OrderActor) {
     inTransit,
     pendingDeliveries,
     totalDelivered,
+    totalPickedUp,
     totalReturns,
     todaysOrders,
     todaysDelivered,
@@ -883,6 +971,7 @@ export async function getDashboardSummary(actor: OrderActor) {
     todaysRemarks,
     unclosedComments,
     codTotals,
+    pendingCodCount,
     lastSettlement,
     trendCounts,
   ] = await Promise.all([
@@ -905,6 +994,12 @@ export async function getDashboardSummary(actor: OrderActor) {
     }),
     prisma.parcels.count({
       where: { ...parcelWhere, status: "delivered" },
+    }),
+    prisma.parcels.count({
+      where: {
+        ...parcelWhere,
+        status: { notIn: ["pickup_ordered", "rider_assigned", "failed_pickup", "cancelled"] },
+      },
     }),
     prisma.parcels.count({
       where: { ...parcelWhere, order_type: "return" },
@@ -942,6 +1037,9 @@ export async function getDashboardSummary(actor: OrderActor) {
         remitted_amount: true,
         pending_amount: true,
       },
+    }),
+    prisma.cod_collections.count({
+      where: { ...codWhere, payment_status: "pending" },
     }),
     prisma.settlements.findFirst({
       where: settlementWhere,
@@ -994,6 +1092,7 @@ export async function getDashboardSummary(actor: OrderActor) {
       inTransit,
       pendingDeliveries,
       totalDelivered,
+      totalPickedUp,
       totalReturns,
     },
     today: {
@@ -1008,6 +1107,7 @@ export async function getDashboardSummary(actor: OrderActor) {
       totalCod,
       settledCod,
       pendingCod,
+      pendingCodCount,
       progressPercent: totalCod > 0 ? (settledCod / totalCod) * 100 : 0,
       scopedToRider: Boolean(riderId),
       lastAmount: lastSettlement ? moneyToNumber(lastSettlement.amount) : 0,
@@ -1049,10 +1149,19 @@ async function notifyVendorOfStatusChange(
     vendor.user_id,
     `Order ${trackingId} updated`,
     `Status changed to '${newStatus}'.`,
+    trackingId,
   );
 }
 
 export async function updateParcelStatus(
+  actor: OrderActor,
+  parcelId: string,
+  data: UpdateParcelStatusInput,
+) {
+  return withParcelStatusLocks([parcelId], () => _updateParcelStatusImpl(actor, parcelId, data));
+}
+
+async function _updateParcelStatusImpl(
   actor: OrderActor,
   parcelId: string,
   data: UpdateParcelStatusInput,
@@ -1217,6 +1326,14 @@ export async function bulkUpdateParcelStatus(
     throw new AppError(400, `Cannot update more than ${MAX_BULK_IDS} parcels at once`);
   }
 
+  return withParcelStatusLocks(ids, () => _bulkUpdateParcelStatusImpl(actor, ids, data));
+}
+
+async function _bulkUpdateParcelStatusImpl(
+  actor: OrderActor,
+  ids: string[],
+  data: BulkUpdateParcelStatusInput,
+): Promise<BulkUpdateResult> {
   const newStatus = data.status;
   const isAdmin = actor.roles.some((r) => ["super_admin", "admin"].includes(r));
   const isVendorActor =
@@ -1397,7 +1514,9 @@ export async function bulkUpdateParcelStatus(
       })),
     });
 
-    // Close out manifests once none of their parcels are still "dispatched"
+    // Close out manifests once none of their parcels are still "dispatched" -
+    // one groupBy instead of a per-dispatch count()+updateMany() loop, since
+    // the loop was issuing N sequential round trips while holding transaction locks.
     if (newStatus === "arrived_at_branch") {
       const links = await tx.dispatch_parcels.findMany({
         where: { parcel_id: { in: ids } },
@@ -1405,13 +1524,18 @@ export async function bulkUpdateParcelStatus(
         distinct: ["dispatch_id"],
       });
 
-      for (const link of links) {
-        const remainingInTransit = await tx.dispatch_parcels.count({
-          where: { dispatch_id: link.dispatch_id, parcels: { status: "dispatched" } },
+      if (links.length) {
+        const dispatchIds = links.map((link) => link.dispatch_id);
+        const stillInTransit = await tx.dispatch_parcels.groupBy({
+          by: ["dispatch_id"],
+          where: { dispatch_id: { in: dispatchIds }, parcels: { status: "dispatched" } },
         });
-        if (remainingInTransit === 0) {
+        const inTransitIds = new Set(stillInTransit.map((row) => row.dispatch_id));
+        const completedDispatchIds = dispatchIds.filter((id) => !inTransitIds.has(id));
+
+        if (completedDispatchIds.length) {
           await tx.dispatches.updateMany({
-            where: { id: link.dispatch_id, arrived_at: null },
+            where: { id: { in: completedDispatchIds }, arrived_at: null },
             data: { arrived_at: new Date() },
           });
         }
@@ -1447,6 +1571,7 @@ export async function bulkUpdateParcelStatus(
           vendorUserId,
           `Order ${p.tracking_id} updated`,
           `Status changed to '${newStatus}'.`,
+          p.tracking_id,
         );
       }),
     );

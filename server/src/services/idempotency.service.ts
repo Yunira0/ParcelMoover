@@ -4,6 +4,10 @@ import { AppError } from "../utils/AppError";
 
 const LOCK_PREFIX = "idempotency:lock:";
 const RESPONSE_PREFIX = "idempotency:response:";
+// Default lock window. Callers whose handler can run longer than this (e.g.
+// bulk operations processing many rows sequentially) should pass a larger
+// options.lockTtlSeconds, or a slow request's lock can expire mid-flight and
+// let a client's retry re-run the same work concurrently.
 const LOCK_TTL_SECOND = 60;
 const RESPONSE_TTL_SECOND = 24 * 60 * 60;
 
@@ -37,18 +41,34 @@ function hashPayload(body: unknown): string {
  * 6. On success: cache response, let lock expire via TTL (no DEL)
  * 7. On failure: release lock so retry can proceed immediately
  */
+// result and response.body must be the *same* value (or at least the same
+// shape) - withIdempotency returns `result` on a fresh call and `response.body`
+// on a replayed one, so if callers pass different shapes for each, a retried
+// request gets back something different from what the original call returned.
 export async function withIdempotency<T>(
   key: string,
   payload: unknown,
   fn: () => Promise<{ result: T; response: IdempotencyResponse }>,
+  options?: { lockTtlSeconds?: number },
 ): Promise<T> {
   const lockKey = `${LOCK_PREFIX}${key}`;
   const responseKey = `${RESPONSE_PREFIX}${key}`;
   const payloadHash = hashPayload(payload);
+  const lockTtlSeconds = options?.lockTtlSeconds ?? LOCK_TTL_SECOND;
 
   // check if already exist
+  // Redis is optional everywhere else in the app (caches fall back to Postgres
+  // on failure) - idempotency should degrade the same way instead of hard-failing
+  // order create/update endpoints during a Redis outage. A Redis failure here
+  // means we lose duplicate-submission protection for the duration of the
+  // outage, not that the request itself should fail.
+  let cached: string | null = null;
+  try {
+    cached = await redis.get(responseKey);
+  } catch (error) {
+    console.error("[Idempotency] Redis read failed, proceeding without dedup check:", error);
+  }
 
-  const cached = await redis.get(responseKey);
   if (cached) {
     const parsed: CachedResponse = JSON.parse(cached);
 
@@ -57,20 +77,25 @@ export async function withIdempotency<T>(
       throw new AppError(422, "Idempotency key reused with different payload");
     }
 
-    return parsed.body as T; 
+    return parsed.body as T;
   }
 
   //step 2 acquire distributed lock
   // NX -> only set if not exists
   // EX -> Expire after LOCK_TTL_SECONDS auto release if server crashes
 
-  const lockAcquired = await redis.set(
-    lockKey,
-    payloadHash,
-    "EX",
-    LOCK_TTL_SECOND,
-    "NX",
-  );
+  let lockAcquired: string | null = "SKIPPED";
+  try {
+    lockAcquired = await redis.set(
+      lockKey,
+      payloadHash,
+      "EX",
+      lockTtlSeconds,
+      "NX",
+    );
+  } catch (error) {
+    console.error("[Idempotency] Redis lock acquisition failed, proceeding without lock:", error);
+  }
 
   if (!lockAcquired) {
     throw new AppError(
@@ -91,17 +116,25 @@ export async function withIdempotency<T>(
     };
 
     // store response with 24h TTL, release lock immediately
-    await redis.setex(
-      responseKey,
-      RESPONSE_TTL_SECOND,
-      JSON.stringify(cacheData),
-    );
+    try {
+      await redis.setex(
+        responseKey,
+        RESPONSE_TTL_SECOND,
+        JSON.stringify(cacheData),
+      );
+    } catch (error) {
+      console.error("[Idempotency] Redis write failed, result won't be replayable on retry:", error);
+    }
 
     succeeded = true;
     return result;
   } finally {
     if (!succeeded) {
-      await redis.del(lockKey);
+      try {
+        await redis.del(lockKey);
+      } catch (error) {
+        console.error("[Idempotency] Failed to release lock after error:", error);
+      }
     }
   }
 }

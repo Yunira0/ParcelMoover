@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ChevronsLeft, ChevronsRight, Download, FileUp, MessageSquareText, Plus, Printer, Search, X } from 'lucide-react';
 import PageHeader from '../../components/PageHeader';
 import Table from '../../components/Table';
@@ -13,6 +13,8 @@ import {
   getOrders,
   subscribeToOrderStatusChanged,
   type Order,
+  type OrdersPageMeta,
+  type OrderType,
   type ParcelStatus,
 } from '../../services/orders.service';
 import { printLabels } from '../../utils/printLabels';
@@ -47,6 +49,7 @@ const ORDER_TYPE_LABELS: Record<Order['orderType'], string> = {
 };
 
 const PAGE_SIZE = 10;
+const SEARCH_DEBOUNCE_MS = 300;
 
 const getStatusTone = (status: ParcelStatus): StatusChipTone => {
   if (status === 'delivered') return 'success';
@@ -85,83 +88,138 @@ interface VendorOrderFilters {
 
 const EMPTY_FILTERS: VendorOrderFilters = { fromDate: '', toDate: '', orderType: '', hub: '', status: '' };
 
+// Date range isn't a backend query param, so it's applied client-side on top
+// of whatever page the server already returned for the active status/type/search.
+const matchesDateRange = (order: Order, filters: VendorOrderFilters) => {
+  const orderDay = toIsoDay(order.createdAt);
+  return (!filters.fromDate || (orderDay && orderDay >= filters.fromDate)) &&
+    (!filters.toDate || (orderDay && orderDay <= filters.toDate));
+};
+
+// Destination hub also has no backend query param (Order only carries the
+// hub's display name, not its id), so it's applied client-side too.
+const matchesHub = (order: Order, filters: VendorOrderFilters) =>
+  !filters.hub || order.destination === filters.hub;
+
+const filtersFromSearchParams = (searchParams: URLSearchParams): VendorOrderFilters => ({
+  fromDate: searchParams.get('fromDate') || '',
+  toDate: searchParams.get('toDate') || '',
+  orderType: searchParams.get('orderType') || '',
+  hub: searchParams.get('hub') || '',
+  status: searchParams.get('status') || '',
+});
+
 const VendorOrders: React.FC = () => {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [orders, setOrders] = useState<Order[]>([]);
+  const [meta, setMeta] = useState<OrdersPageMeta | null>(null);
+  const [optionsOrders, setOptionsOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   // Draft holds in-progress selections; applied is what actually filters the list,
   // so the Apply/Clear buttons behave the way the order screen leads users to expect.
-  const [draft, setDraft] = useState<VendorOrderFilters>(EMPTY_FILTERS);
-  const [applied, setApplied] = useState<VendorOrderFilters>(EMPTY_FILTERS);
+  const [draft, setDraft] = useState<VendorOrderFilters>(() => filtersFromSearchParams(searchParams));
+  const [applied, setApplied] = useState<VendorOrderFilters>(() => filtersFromSearchParams(searchParams));
   const [page, setPage] = useState(1);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [remarkPopupOrder, setRemarkPopupOrder] = useState<Order | null>(null);
-  const [trackingSearch, setTrackingSearch] = useState('');
+  const [trackingSearch, setTrackingSearch] = useState(() => searchParams.get('search') || '');
+  const [debouncedSearch, setDebouncedSearch] = useState(() => searchParams.get('search') || '');
   const [printWorking, setPrintWorking] = useState(false);
   const [bulkWorking, setBulkWorking] = useState(false);
   const [bulkError, setBulkError] = useState('');
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  const loadOrders = async () => {
+  // Debounce search input so every keystroke doesn't fire a request.
+  useEffect(() => {
+    const handle = setTimeout(() => setDebouncedSearch(trackingSearch.trim()), SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(handle);
+  }, [trackingSearch]);
+
+  const loadOrders = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await getOrders();
+      const res = await getOrders({
+        status: applied.status ? [applied.status as ParcelStatus] : undefined,
+        orderType: (applied.orderType as OrderType) || undefined,
+        search: debouncedSearch || undefined,
+        page,
+        pageSize: PAGE_SIZE,
+      });
       if (res?.success && Array.isArray(res.data)) {
         setOrders(res.data);
-      } else if (Array.isArray(res)) {
-        setOrders(res as unknown as Order[]);
-      } else {
-        setOrders([]);
+        setMeta(res.meta ?? null);
+        setLoadError('');
       }
     } catch {
-      setOrders([]);
+      setLoadError('Failed to load orders. Showing the last loaded data, if any.');
     } finally {
       setLoading(false);
     }
-  };
+  }, [applied.status, applied.orderType, debouncedSearch, page]);
 
-  useEffect(() => { loadOrders(); }, []);
-  useEffect(() => subscribeToOrderStatusChanged(loadOrders), []);
-  useEffect(() => { setPage(1); }, [applied, trackingSearch]);
+  useEffect(() => { loadOrders(); }, [loadOrders]);
+  useEffect(() => subscribeToOrderStatusChanged(loadOrders), [loadOrders]);
+  useEffect(() => { setPage(1); }, [applied, debouncedSearch]);
+
+  // Keep applied filters/search bookmarkable - mirror into the URL (replacing
+  // history, not pushing, so the back button doesn't step through every change).
+  useEffect(() => {
+    const next = new URLSearchParams();
+    if (applied.fromDate) next.set('fromDate', applied.fromDate);
+    if (applied.toDate) next.set('toDate', applied.toDate);
+    if (applied.orderType) next.set('orderType', applied.orderType);
+    if (applied.hub) next.set('hub', applied.hub);
+    if (applied.status) next.set('status', applied.status);
+    if (debouncedSearch) next.set('search', debouncedSearch);
+    setSearchParams(next, { replace: true });
+  }, [applied, debouncedSearch, setSearchParams]);
+
+  // Separate, wider (unpaginated) fetch scoped only by status/type so the hub
+  // dropdown has more than the current 10-row page to derive options from.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await getOrders({
+          status: applied.status ? [applied.status as ParcelStatus] : undefined,
+          orderType: (applied.orderType as OrderType) || undefined,
+        });
+        if (!cancelled && res?.success && Array.isArray(res.data)) {
+          setOptionsOrders(res.data);
+        }
+      } catch {
+        // hub dropdown just won't refresh; not fatal
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [applied.status, applied.orderType]);
 
   const hubOptions = useMemo(
-    () => uniqueValues(orders.map(order => order.destination)),
-    [orders],
+    () => uniqueValues(optionsOrders.map(order => order.destination)),
+    [optionsOrders],
   );
 
-  const filteredOrders = useMemo(() => {
-    const q = trackingSearch.toLowerCase();
-    const terms = q ? q.split(',').map(t => t.trim()).filter(Boolean) : [];
-    return orders.filter(order => {
-      const orderDay = toIsoDay(order.createdAt);
-      const matchesDate =
-        (!applied.fromDate || (orderDay && orderDay >= applied.fromDate)) &&
-        (!applied.toDate || (orderDay && orderDay <= applied.toDate));
-      const matchesSearch = terms.length === 0 || (
-        terms.length > 1
-          ? terms.some(t => order.trackingId.toLowerCase() === t)
-          : (
-              order.trackingId.toLowerCase().includes(terms[0]!) ||
-              order.receiverName.toLowerCase().includes(terms[0]!) ||
-              order.receiverPhone.toLowerCase().includes(terms[0]!)
-            )
-      );
-      return matchesDate && matchesSearch &&
-        (!applied.orderType || order.orderType === applied.orderType) &&
-        (!applied.hub || order.destination === applied.hub) &&
-        (!applied.status || order.status === applied.status);
-    });
-  }, [orders, applied, trackingSearch]);
+  const filteredOrders = useMemo(
+    () => orders.filter(order => matchesDateRange(order, applied) && matchesHub(order, applied)),
+    [orders, applied],
+  );
 
-  const totalPages = Math.max(1, Math.ceil(filteredOrders.length / PAGE_SIZE));
-  const visibleOrders = filteredOrders.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const totalPages = meta?.totalPages ?? 1;
+  const visibleOrders = filteredOrders;
   const visibleOrderIds = visibleOrders.map(order => order.id);
   const allVisibleSelected = visibleOrderIds.length > 0 && visibleOrderIds.every(id => selectedIds.has(id));
   const someVisibleSelected = visibleOrderIds.some(id => selectedIds.has(id));
   const selectedOrders = orders.filter(order => selectedIds.has(order.id));
-  const exportOrders = selectedOrders.length > 0 ? selectedOrders : filteredOrders;
-  const firstResult = filteredOrders.length === 0 ? 0 : ((page - 1) * PAGE_SIZE) + 1;
-  const lastResult = Math.min(page * PAGE_SIZE, filteredOrders.length);
+  const exportOrders = selectedOrders.length > 0 ? selectedOrders : visibleOrders;
+  const hasDateOrHubFilter = Boolean(applied.fromDate || applied.toDate || applied.hub);
+
+  // Selection is scoped to a single loaded page - clear it on page change so
+  // a bulk action never silently drops ids that scrolled out of view.
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [page]);
 
   const applyFilters = () => setApplied(draft);
   const clearFilters = () => {
@@ -219,9 +277,28 @@ const VendorOrders: React.FC = () => {
     }
   };
 
-  const downloadCsv = () => {
-    const headers = ['Order ID', 'Status', 'Customer', 'Phone', 'Order Type', 'Destination Branch', 'COD Amount', 'Service Charge', 'Last Comment'];
-    const rows = exportOrders.map(order => [
+  const downloadCsv = async () => {
+    let rows: Order[] = exportOrders;
+    // No explicit selection: export the full status/type/search-scoped set
+    // (not just the currently loaded page), then narrow by date range/hub.
+    if (selectedOrders.length === 0) {
+      try {
+        const res = await getOrders({
+          status: applied.status ? [applied.status as ParcelStatus] : undefined,
+          orderType: (applied.orderType as OrderType) || undefined,
+          search: debouncedSearch || undefined,
+        });
+        if (res?.success && Array.isArray(res.data)) {
+          rows = res.data.filter(order => matchesDateRange(order, applied) && matchesHub(order, applied));
+        }
+      } catch {
+        // fall back to the currently loaded page
+      }
+    }
+
+    const headers = ['#', 'Order ID', 'Status', 'Customer', 'Phone', 'Order Type', 'Destination Branch', 'COD Amount', 'Service Charge', 'Last Comment'];
+    const csvRows = rows.map(order => [
+      `#${order.orderNumber}`,
       order.trackingId,
       STATUS_LABELS[order.status],
       order.receiverName,
@@ -232,7 +309,7 @@ const VendorOrders: React.FC = () => {
       order.deliveryCharge,
       order.remarks || '',
     ]);
-    const csv = [headers, ...rows]
+    const csv = [headers, ...csvRows]
       .map(row => row.map(value => `"${String(value).replace(/"/g, '""')}"`).join(','))
       .join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -247,6 +324,11 @@ const VendorOrders: React.FC = () => {
   };
 
   const columns = [
+    {
+      header: '#',
+      accessor: (order: Order) => `#${order.orderNumber}`,
+      width: '70px',
+    },
     {
       header: 'Order ID',
       accessor: (order: Order) => (
@@ -342,6 +424,8 @@ const VendorOrders: React.FC = () => {
     <div className="vendor-orders-page">
       <PageHeader title="Orders" subtitle="Track and manage your package orders across all hubs." />
 
+      {loadError && <p className="vo-load-error">{loadError}</p>}
+
       <div className="vo-filter-panel">
         <div className="vo-date-range">
           <span className="vo-field-label">Select Date Range</span>
@@ -395,6 +479,12 @@ const VendorOrders: React.FC = () => {
           <Button variant="outline" onClick={clearFilters}>Clear</Button>
         </div>
       </div>
+
+      {hasDateOrHubFilter && (
+        <p className="vo-filter-scope-note">
+          Date range and hub filters only narrow the current page — use status, order type, or tracking search to find matches across your whole order list.
+        </p>
+      )}
 
       <div className="vo-toolbar">
         <Button variant="primary" onClick={() => navigate('/orders/create')}>
@@ -484,7 +574,11 @@ const VendorOrders: React.FC = () => {
           page={page}
           totalPages={totalPages}
           onPageChange={setPage}
-          summary={`Showing ${firstResult}-${lastResult} of ${filteredOrders.length} results`}
+          summary={meta
+            ? hasDateOrHubFilter
+              ? `${visibleOrders.length} of ${orders.length} on this page match your filters — ${meta.total} total`
+              : `${meta.total} order${meta.total === 1 ? '' : 's'}`
+            : undefined}
         />
       </div>
 

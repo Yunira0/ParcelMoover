@@ -18,11 +18,15 @@ import Pagination from '../components/Pagination';
 import StatusChip, { type StatusChipTone } from '../components/StatusChip';
 import FilterDropdown from '../components/FilterDropdown';
 import QuickRemarkPopup from '../components/QuickRemarkPopup';
+import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react';
 import {
   getOrders,
   subscribeToOrderStatusChanged,
+  ORDER_SORT_FIELDS,
   type CreateOrderInput,
   type Order,
+  type OrdersPageMeta,
+  type OrderSortField,
   type ParcelStatus,
 } from '../services/orders.service';
 import { printLabels } from '../utils/printLabels';
@@ -82,76 +86,8 @@ const TAB_LABELS: Record<FilterTab, string> = {
   cancelled: 'Cancelled',
 };
 
-const MOCK_ORDERS: Order[] = [
-  {
-    id: '1',
-    trackingId: 'TRK-8821932',
-    status: 'delivered',
-    orderType: 'delivery',
-    serviceType: 'dtd',
-    senderName: 'Abishek Thapa',
-    senderPhone: '+977 9841******',
-    receiverName: 'Abishek Thapa',
-    receiverPhone: '+977 9841******',
-    origin: 'KTHMANDU',
-    destination: 'Pokhara Hub',
-    pieces: 1,
-    weightKg: 1,
-    codAmount: 1500,
-    deliveryCharge: 129,
-    riderName: 'Sagar',
-    remarks: 'Fragile',
-    lastUpdatedBy: 'Name',
-    lastUpdatedAt: 'date',
-    createdAt: '2026-06-15',
-  },
-  {
-    id: '2',
-    trackingId: 'TRK-8821932',
-    status: 'arrived',
-    orderType: 'delivery',
-    serviceType: 'btd',
-    senderName: 'Abishek Thapa',
-    senderPhone: '+977 9841******',
-    receiverName: 'Abishek Thapa',
-    receiverPhone: '+977 9841******',
-    origin: 'Lalitpur',
-    destination: 'Butwal',
-    pieces: 1,
-    weightKg: 1,
-    codAmount: 1200,
-    deliveryCharge: 129,
-    riderName: 'Ram',
-    remarks: 'None',
-    lastUpdatedBy: 'Name',
-    lastUpdatedAt: 'date',
-    createdAt: '2026-06-16',
-  },
-  {
-    id: '3',
-    trackingId: 'TRK-8821932',
-    status: 'sent_for_delivery',
-    orderType: 'delivery',
-    serviceType: 'btb',
-    senderName: 'Abishek Thapa',
-    senderPhone: '+977 9841******',
-    receiverName: 'Abishek Thapa',
-    receiverPhone: '+977 9841******',
-    origin: 'Pokhara Hub',
-    destination: 'Pokhara Hub',
-    pieces: 1,
-    weightKg: 1,
-    codAmount: 0,
-    deliveryCharge: 129,
-    riderName: 'sameer',
-    remarks: 'Handle with care',
-    lastUpdatedBy: 'Name',
-    lastUpdatedAt: 'date',
-    createdAt: '2026-06-17',
-  },
-];
-
 const PAGE_SIZE = 10;
+const SEARCH_DEBOUNCE_MS = 300;
 
 const uniqueValues = (values: string[]) =>
   Array.from(new Set(values.filter(Boolean))).sort((a, b) => a.localeCompare(b));
@@ -173,6 +109,51 @@ const getStatusTone = (status: ParcelStatus): StatusChipTone => {
   if (status === 'returned_to_vendor') return 'success';
   if (status === 'cancelled') return 'neutral';
   return 'warning';
+};
+
+interface SecondaryFilters {
+  originHub: string;
+  riderName: string;
+  route: string;
+  destinationHub: string;
+  currentStatus: string;
+  orderType: string;
+  dateRange: string;
+  vendor: string;
+  operationDept: string;
+}
+
+// Filters the backend doesn't have a query param for (origin/rider/route/
+// destination/date range/vendor/department) - applied client-side on top of
+// whatever page the server already returned for the active tab + search.
+const matchesSecondaryFilters = (order: Order, filters: SecondaryFilters) => {
+  const orderRoute = `${order.origin} -> ${order.destination}`;
+  const created = new Date(order.createdAt);
+  const now = new Date();
+  const daysOld = Number.isNaN(created.getTime())
+    ? Number.POSITIVE_INFINITY
+    : Math.floor((now.getTime() - created.getTime()) / 86_400_000);
+
+  const matchesDate =
+    !filters.dateRange ||
+    (filters.dateRange === 'today' && daysOld === 0) ||
+    (filters.dateRange === '7' && daysOld <= 7) ||
+    (filters.dateRange === '30' && daysOld <= 30);
+  const matchesOperation =
+    !filters.operationDept ||
+    (filters.operationDept === 'pickup' && ['pickup_ordered', 'rider_assigned', 'picked_up'].includes(order.status)) ||
+    (filters.operationDept === 'delivery' && ['ready_to_deliver', 'sent_for_delivery', 'delivered', 'failed_delivery'].includes(order.status)) ||
+    (filters.operationDept === 'returns' && order.orderType === 'return');
+
+  return (!filters.originHub || order.origin === filters.originHub) &&
+    (!filters.riderName || order.riderName === filters.riderName) &&
+    (!filters.route || orderRoute === filters.route) &&
+    (!filters.destinationHub || order.destination === filters.destinationHub) &&
+    (!filters.currentStatus || order.status === filters.currentStatus) &&
+    (!filters.orderType || order.orderType === filters.orderType) &&
+    matchesDate &&
+    (!filters.vendor || (order.vendorName || order.senderName) === filters.vendor) &&
+    matchesOperation;
 };
 
 const orderToCreateInput = (order: Order): CreateOrderInput => ({
@@ -197,120 +178,166 @@ const orderToCreateInput = (order: Order): CreateOrderInput => ({
 
 const OrderManagement: React.FC = () => {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [orders, setOrders] = useState<Order[]>([]);
+  const [meta, setMeta] = useState<OrdersPageMeta | null>(null);
+  const [optionsOrders, setOptionsOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<FilterTab>('all');
+  const [loadError, setLoadError] = useState('');
+  const [filter, setFilter] = useState<FilterTab>(() => {
+    const fromUrl = searchParams.get('tab');
+    return fromUrl && fromUrl in TAB_GROUPS ? (fromUrl as FilterTab) : 'all';
+  });
   const [trackingSearch, setTrackingSearch] = useState(() => searchParams.get('search') || '');
-  const [originHub, setOriginHub] = useState('');
-  const [riderName, setRiderName] = useState('');
-  const [route, setRoute] = useState('');
-  const [destinationHub, setDestinationHub] = useState('');
-  const [currentStatus, setCurrentStatus] = useState('');
-  const [orderType, setOrderType] = useState('');
-  const [dateRange, setDateRange] = useState('');
-  const [vendor, setVendor] = useState('');
-  const [operationDept, setOperationDept] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState(trackingSearch);
+  const [originHub, setOriginHub] = useState(() => searchParams.get('originHub') || '');
+  const [riderName, setRiderName] = useState(() => searchParams.get('riderName') || '');
+  const [route, setRoute] = useState(() => searchParams.get('route') || '');
+  const [destinationHub, setDestinationHub] = useState(() => searchParams.get('destinationHub') || '');
+  const [currentStatus, setCurrentStatus] = useState(() => searchParams.get('currentStatus') || '');
+  const [orderType, setOrderType] = useState(() => searchParams.get('orderType') || '');
+  const [dateRange, setDateRange] = useState(() => searchParams.get('dateRange') || '');
+  const [vendor, setVendor] = useState(() => searchParams.get('vendor') || '');
+  const [operationDept, setOperationDept] = useState(() => searchParams.get('operationDept') || '');
   const [page, setPage] = useState(1);
+  const [sortBy, setSortBy] = useState<OrderSortField | undefined>(() => {
+    const fromUrl = searchParams.get('sortBy');
+    return fromUrl && (ORDER_SORT_FIELDS as readonly string[]).includes(fromUrl) ? (fromUrl as OrderSortField) : undefined;
+  });
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>(() => (searchParams.get('sortDir') === 'asc' ? 'asc' : 'desc'));
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [openActionId, setOpenActionId] = useState<string | null>(null);
   const [remarkPopupOrder, setRemarkPopupOrder] = useState<Order | null>(null);
   const [printWorking, setPrintWorking] = useState(false);
 
-  const loadOrders = async () => {
-    setLoading(true);
-    try {
-      const res = await getOrders();
-      if (res?.success && Array.isArray(res.data)) {
-        setOrders(res.data);
-      } else if (Array.isArray(res)) {
-        setOrders(res);
-      } else {
-        setOrders(MOCK_ORDERS);
-      }
-    } catch {
-      setOrders(MOCK_ORDERS);
-    } finally {
-      setLoading(false);
+  const toggleSort = (field: OrderSortField) => {
+    if (sortBy !== field) {
+      setSortBy(field);
+      setSortDir('desc');
+    } else if (sortDir === 'desc') {
+      setSortDir('asc');
+    } else {
+      // Third click clears the sort, back to the default (newest first).
+      setSortBy(undefined);
+      setSortDir('desc');
     }
   };
 
-  useEffect(() => { loadOrders(); }, []);
-  useEffect(() => subscribeToOrderStatusChanged(loadOrders), []);
-  useEffect(() => { setPage(1); }, [filter, trackingSearch, originHub, riderName, route, destinationHub, currentStatus, orderType, dateRange, vendor, operationDept]);
+  const secondaryFilters: SecondaryFilters = {
+    originHub, riderName, route, destinationHub, currentStatus, orderType, dateRange, vendor, operationDept,
+  };
+  const hasSecondaryFilters = Object.values(secondaryFilters).some(Boolean);
+
+  // Debounce search input so every keystroke doesn't fire a request.
+  useEffect(() => {
+    const handle = setTimeout(() => setDebouncedSearch(trackingSearch.trim()), SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(handle);
+  }, [trackingSearch]);
+
+  const loadOrders = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await getOrders({
+        status: TAB_GROUPS[filter],
+        search: debouncedSearch || undefined,
+        page,
+        pageSize: PAGE_SIZE,
+        sortBy,
+        sortDir,
+      });
+      if (res?.success && Array.isArray(res.data)) {
+        setOrders(res.data);
+        setMeta(res.meta ?? null);
+        setLoadError('');
+      }
+    } catch {
+      setLoadError('Failed to load orders. Showing the last loaded data, if any.');
+    } finally {
+      setLoading(false);
+    }
+  }, [filter, debouncedSearch, page, sortBy, sortDir]);
+
+  useEffect(() => { loadOrders(); }, [loadOrders]);
+  useEffect(() => subscribeToOrderStatusChanged(loadOrders), [loadOrders]);
+  useEffect(() => { setPage(1); }, [filter, debouncedSearch, originHub, riderName, route, destinationHub, currentStatus, orderType, dateRange, vendor, operationDept, sortBy, sortDir]);
   // Re-sync when the navbar search re-navigates here with a new ?search= param.
   useEffect(() => {
     const fromUrl = searchParams.get('search');
     if (fromUrl !== null) setTrackingSearch(fromUrl);
   }, [searchParams]);
 
+  // Keep every filter bookmarkable/shareable - mirror them into the URL
+  // (replacing history, not pushing, so the back button doesn't step through
+  // every keystroke/dropdown change).
+  useEffect(() => {
+    const next = new URLSearchParams();
+    if (filter !== 'all') next.set('tab', filter);
+    if (trackingSearch) next.set('search', trackingSearch);
+    if (originHub) next.set('originHub', originHub);
+    if (riderName) next.set('riderName', riderName);
+    if (route) next.set('route', route);
+    if (destinationHub) next.set('destinationHub', destinationHub);
+    if (currentStatus) next.set('currentStatus', currentStatus);
+    if (orderType) next.set('orderType', orderType);
+    if (dateRange) next.set('dateRange', dateRange);
+    if (vendor) next.set('vendor', vendor);
+    if (operationDept) next.set('operationDept', operationDept);
+    if (sortBy) next.set('sortBy', sortBy);
+    if (sortDir !== 'desc') next.set('sortDir', sortDir);
+    setSearchParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filter, trackingSearch, originHub, riderName, route, destinationHub, currentStatus, orderType, dateRange, vendor, operationDept, sortBy, sortDir]);
+
+  // A separate, tab-scoped (unsearched, unpaginated) fetch purely to keep the
+  // filter dropdown option lists representative - the paginated `orders` above
+  // is usually only 10 rows, too few to populate origin/rider/route/etc options from.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await getOrders({ status: TAB_GROUPS[filter] });
+        if (!cancelled && res?.success && Array.isArray(res.data)) {
+          setOptionsOrders(res.data);
+        }
+      } catch {
+        // dropdown options just won't refresh; not fatal
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [filter]);
+
   const filterOptions = useMemo(() => {
-    const routes = orders.map(order => `${order.origin} -> ${order.destination}`);
+    const routes = optionsOrders.map(order => `${order.origin} -> ${order.destination}`);
     return {
-      origins: uniqueValues(orders.map(order => order.origin)),
-      riders: uniqueValues(orders.map(order => order.riderName || '')),
+      origins: uniqueValues(optionsOrders.map(order => order.origin)),
+      riders: uniqueValues(optionsOrders.map(order => order.riderName || '')),
       routes: uniqueValues(routes),
-      destinations: uniqueValues(orders.map(order => order.destination)),
-      vendors: uniqueValues(orders.map(order => order.vendorName || order.senderName)),
+      destinations: uniqueValues(optionsOrders.map(order => order.destination)),
+      vendors: uniqueValues(optionsOrders.map(order => order.vendorName || order.senderName)),
     };
-  }, [orders]);
+  }, [optionsOrders]);
 
-  const filteredOrders = useMemo(() => orders.filter(order => {
-    const tabStatuses = TAB_GROUPS[filter];
-    const q = trackingSearch.toLowerCase();
-    const orderRoute = `${order.origin} -> ${order.destination}`;
-    const created = new Date(order.createdAt);
-    const now = new Date();
-    const daysOld = Number.isNaN(created.getTime())
-      ? Number.POSITIVE_INFINITY
-      : Math.floor((now.getTime() - created.getTime()) / 86_400_000);
+  // Status/search are already applied server-side; only the filters the
+  // backend has no query param for are applied here, on top of the current page.
+  const filteredOrders = useMemo(
+    () => orders.filter(order => matchesSecondaryFilters(order, secondaryFilters)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [orders, originHub, riderName, route, destinationHub, currentStatus, orderType, dateRange, vendor, operationDept],
+  );
 
-    const matchesTab = filter === 'all' || tabStatuses.includes(order.status);
-    const terms = q ? q.split(',').map(t => t.trim()).filter(Boolean) : [];
-    const matchesSearch = terms.length === 0 || (
-      terms.length > 1
-        ? terms.some(t => order.trackingId.toLowerCase() === t)
-        : (
-            order.trackingId.toLowerCase().includes(terms[0]!) ||
-            order.senderName.toLowerCase().includes(terms[0]!) ||
-            order.senderPhone.toLowerCase().includes(terms[0]!) ||
-            order.receiverName.toLowerCase().includes(terms[0]!) ||
-            order.receiverPhone.toLowerCase().includes(terms[0]!)
-          )
-    );
-    const matchesDate =
-      !dateRange ||
-      (dateRange === 'today' && daysOld === 0) ||
-      (dateRange === '7' && daysOld <= 7) ||
-      (dateRange === '30' && daysOld <= 30);
-    const matchesOperation =
-      !operationDept ||
-      (operationDept === 'pickup' && ['pickup_ordered', 'rider_assigned', 'picked_up'].includes(order.status)) ||
-      (operationDept === 'delivery' && ['ready_to_deliver', 'sent_for_delivery', 'delivered', 'failed_delivery'].includes(order.status)) ||
-      (operationDept === 'returns' && order.orderType === 'return');
-
-    return matchesTab &&
-      matchesSearch &&
-      (!originHub || order.origin === originHub) &&
-      (!riderName || order.riderName === riderName) &&
-      (!route || orderRoute === route) &&
-      (!destinationHub || order.destination === destinationHub) &&
-      (!currentStatus || order.status === currentStatus) &&
-      (!orderType || order.orderType === orderType) &&
-      matchesDate &&
-      (!vendor || (order.vendorName || order.senderName) === vendor) &&
-      matchesOperation;
-  }), [orders, filter, trackingSearch, originHub, riderName, route, destinationHub, currentStatus, orderType, dateRange, vendor, operationDept]);
-
-  const totalPages = Math.max(1, Math.ceil(filteredOrders.length / PAGE_SIZE));
-  const visibleOrders = filteredOrders.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const totalPages = meta?.totalPages ?? 1;
+  const visibleOrders = filteredOrders;
   const visibleOrderIds = visibleOrders.map(order => order.id);
   const selectedOrders = orders.filter(order => selectedIds.has(order.id));
-  const selectedExportOrders = selectedOrders.length > 0 ? selectedOrders : filteredOrders;
+  const selectedExportOrders = selectedOrders.length > 0 ? selectedOrders : visibleOrders;
   const allVisibleSelected = visibleOrderIds.length > 0 && visibleOrderIds.every(id => selectedIds.has(id));
   const someVisibleSelected = visibleOrderIds.some(id => selectedIds.has(id));
-  const firstResult = filteredOrders.length === 0 ? 0 : ((page - 1) * PAGE_SIZE) + 1;
-  const lastResult = Math.min(page * PAGE_SIZE, filteredOrders.length);
+
+  // Selection is scoped to a single loaded page - clear it on page/tab change
+  // so a bulk action never silently drops ids that scrolled out of view.
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [filter, page]);
 
   const handlePrintLabels = useCallback(async () => {
     const labelOrders = selectedIds.size > 0
@@ -370,9 +397,24 @@ const OrderManagement: React.FC = () => {
     });
   };
 
-  const downloadCsv = () => {
-    const headers = ['Tracking ID', 'Origin', 'Sender', 'Receiver', 'Destination', 'COD', 'Delivery Charge', 'Weight', 'Status', 'Rider', 'Remarks', 'Last Updated By', 'Last Updated At'];
-    const rows = selectedExportOrders.map(order => [
+  const downloadCsv = async () => {
+    let exportOrders = selectedExportOrders;
+    // No explicit selection: export the full tab+search-scoped set (not just
+    // the currently loaded page), then narrow by the same client-side filters.
+    if (selectedOrders.length === 0) {
+      try {
+        const res = await getOrders({ status: TAB_GROUPS[filter], search: debouncedSearch || undefined });
+        if (res?.success && Array.isArray(res.data)) {
+          exportOrders = res.data.filter(order => matchesSecondaryFilters(order, secondaryFilters));
+        }
+      } catch {
+        // fall back to the currently loaded page
+      }
+    }
+
+    const headers = ['#', 'Tracking ID', 'Origin', 'Sender', 'Receiver', 'Destination', 'COD', 'Delivery Charge', 'Weight', 'Status', 'Rider', 'Remarks', 'Last Updated By', 'Last Updated At'];
+    const rows = exportOrders.map(order => [
+      `#${order.orderNumber}`,
       order.trackingId,
       order.origin,
       order.senderName,
@@ -399,9 +441,23 @@ const OrderManagement: React.FC = () => {
     URL.revokeObjectURL(url);
   };
 
+  const sortableHeader = (label: string, field: OrderSortField) => (
+    <button type="button" className="sortable-column-header" onClick={() => toggleSort(field)}>
+      {label}
+      {sortBy === field
+        ? (sortDir === 'desc' ? <ArrowDown size={12} /> : <ArrowUp size={12} />)
+        : <ArrowUpDown size={12} className="sortable-column-header-idle" />}
+    </button>
+  );
+
   const orderColumns = [
     {
-      header: 'TRACKING ID',
+      header: '#',
+      accessor: (order: Order) => `#${order.orderNumber}`,
+      width: '70px',
+    },
+    {
+      header: sortableHeader('TRACKING ID', 'trackingId'),
       accessor: (order: Order) => (
         <Link to={`/orders/track/${order.trackingId}`} className="tracking-id-link">{order.trackingId}</Link>
       ),
@@ -431,7 +487,7 @@ const OrderManagement: React.FC = () => {
     },
     { header: 'DESTINATION', accessor: (order: Order) => order.destination || '-', width: '150px' },
     {
-      header: 'FINANCE',
+      header: sortableHeader('FINANCE', 'codAmount'),
       accessor: (order: Order) => (
         <div className="finance-cell">
           <span>COD: {formatMoney(order.codAmount)}</span>
@@ -442,7 +498,7 @@ const OrderManagement: React.FC = () => {
     },
     { header: 'WEIGHT', accessor: (order: Order) => (order.weightKg ? `${order.weightKg} Kg` : '-'), width: '120px' },
     {
-      header: 'STATUS',
+      header: sortableHeader('STATUS', 'status'),
       accessor: (order: Order) => (
         <StatusChip tone={getStatusTone(order.status)}>
           {STATUS_LABELS[order.status]}
@@ -512,6 +568,8 @@ const OrderManagement: React.FC = () => {
         onChange={setFilter}
         options={(Object.keys(TAB_GROUPS) as FilterTab[]).map(tab => ({ value: tab, label: TAB_LABELS[tab] }))}
       />
+
+      {loadError && <p className="order-load-error">{loadError}</p>}
 
       <div className="order-filter-panel">
         <FilterDropdown
@@ -594,12 +652,18 @@ const OrderManagement: React.FC = () => {
         </Button>
       </div>
 
+      {hasSecondaryFilters && (
+        <p className="order-filter-scope-note">
+          Origin/rider/route/destination/status/date/vendor/department filters only narrow the current page — use the tabs or tracking search to find matches across the whole list.
+        </p>
+      )}
+
       <div className="order-toolbar">
         <div className="order-toolbar-left">
           <Button variant="primary" onClick={openCreateModal}>
             New Order <Plus size={16} />
           </Button>
-          <Button variant="secondary">Bulk Order</Button>
+          <Button variant="secondary" onClick={() => navigate('/orders/bulk-create')}>Bulk Order</Button>
         </div>
         <div className="order-toolbar-right">
           <Button variant="primary" onClick={downloadCsv}>
@@ -651,7 +715,11 @@ const OrderManagement: React.FC = () => {
         page={page}
         totalPages={totalPages}
         onPageChange={setPage}
-        summary={`showing  ${firstResult} of ${lastResult} of ${filteredOrders.length} results`}
+        summary={meta
+          ? hasSecondaryFilters
+            ? `${visibleOrders.length} of ${orders.length} on this page match your filters — ${meta.total} total in "${TAB_LABELS[filter]}"`
+            : `${meta.total} order${meta.total === 1 ? '' : 's'}`
+          : undefined}
       />
 
       {remarkPopupOrder && (

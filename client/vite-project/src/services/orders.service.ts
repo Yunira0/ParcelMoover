@@ -59,6 +59,7 @@ export interface CreateOrderInput {
 
 export interface Order {
   id: string;
+  orderNumber: number;
   trackingId: string;
   status: ParcelStatus;
   orderType: OrderType;
@@ -81,12 +82,17 @@ export interface Order {
   createdAt: string;
 }
 
+export const ORDER_SORT_FIELDS = ['createdAt', 'codAmount', 'deliveryCharge', 'trackingId', 'status'] as const;
+export type OrderSortField = (typeof ORDER_SORT_FIELDS)[number];
+
 export interface ListOrdersParams {
   status?: ParcelStatus[];
   orderType?: OrderType;
   search?: string;
   page?: number;
   pageSize?: number;
+  sortBy?: OrderSortField;
+  sortDir?: 'asc' | 'desc';
 }
 
 export interface OrdersPageMeta {
@@ -94,6 +100,8 @@ export interface OrdersPageMeta {
   pageSize: number;
   total: number;
   totalPages: number;
+  // Set when the caller didn't request pagination and the result was capped.
+  truncated?: boolean;
 }
 
 export interface OrdersListResponse {
@@ -168,15 +176,17 @@ export const subscribeToOrderStatusChanged = (handler: () => void) => {
   return () => window.removeEventListener(ORDER_STATUS_CHANGED_EVENT, handler);
 };
 
-export const getOrders = async (params?: ListOrdersParams): Promise<OrdersListResponse> => {
+export const getOrders = async (params?: ListOrdersParams, signal?: AbortSignal): Promise<OrdersListResponse> => {
   const query: Record<string, string> = {};
   if (params?.status?.length) query.status = params.status.join(',');
   if (params?.orderType) query.orderType = params.orderType;
   if (params?.search) query.search = params.search;
   if (params?.page !== undefined) query.page = String(params.page);
   if (params?.pageSize !== undefined) query.pageSize = String(params.pageSize);
+  if (params?.sortBy) query.sortBy = params.sortBy;
+  if (params?.sortDir) query.sortDir = params.sortDir;
 
-  const response = await api.get('/orders', { params: query });
+  const response = await api.get('/orders', { params: query, signal });
   return response.data;
 };
 

@@ -5,6 +5,39 @@
   width: 100%;
 }
 
+.order-load-error {
+  color: var(--color-danger-text);
+  font-size: var(--font-size-sm);
+  margin: 0;
+}
+
+.sortable-column-header {
+  align-items: center;
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  gap: var(--space-1);
+  padding: 0;
+  text-transform: inherit;
+}
+
+.sortable-column-header:hover {
+  color: var(--color-text-default);
+}
+
+.sortable-column-header-idle {
+  opacity: 0.4;
+}
+
+.order-filter-scope-note {
+  color: var(--color-text-caption);
+  font-size: var(--font-size-sm);
+  margin: calc(-1 * var(--space-4)) 0 0;
+}
+
 .order-filter-panel {
   background: var(--color-background-surface);
   border: 1px solid var(--color-border-default);

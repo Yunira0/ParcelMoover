@@ -23,6 +23,8 @@ import ReturnOperations from './pages/ReturnOperations'
 import HoldOperations from './pages/HoldOperations'
 import LossAndDamageOperations from './pages/LossAndDamageOperations'
 import CXCenter from './pages/CXCenter'
+import Remarks from './pages/Remarks'
+import UnclosedRemarks from './pages/UnclosedRemarks'
 import RemarkDetail from './pages/RemarkDetail'
 import TicketDetail from './pages/TicketDetail'
 import VendorSettlements from './pages/vendor/VendorSettlements'
@@ -67,7 +69,7 @@ function App() {
           />
           <Route
             path="/orders/bulk-create"
-            element={<RoleGuard allowedRoles={['vendor', 'vendor_staff']}><BulkOrderPage /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'vendor', 'vendor_staff']}><BulkOrderPage /></RoleGuard>}
           />
           <Route path="/orders/track/:trackingId" element={<OrderDetailPage />} />
           <Route
@@ -156,7 +158,11 @@ function App() {
           />
           <Route
             path="/remarks"
-            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'vendor', 'vendor_staff', 'sales']}><CXCenter /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'vendor', 'vendor_staff', 'sales']}><Remarks /></RoleGuard>}
+          />
+          <Route
+            path="/unclosed-remarks"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'vendor', 'vendor_staff', 'sales']}><UnclosedRemarks /></RoleGuard>}
           />
           <Route
             path="/remarks/:id"

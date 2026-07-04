@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   Download,
   Printer,
@@ -14,7 +14,6 @@ import QuickRemarkPopup from '../components/QuickRemarkPopup';
 import {
   bulkUpdateOrderStatus,
   getOrders,
-  notifyOrderStatusChanged,
   subscribeToOrderStatusChanged,
   type Order,
   type OrdersPageMeta,
@@ -82,75 +81,6 @@ const STATUS_TRANSITIONS: Record<ParcelStatus, ParcelStatus[]> = {
   returned_to_vendor: [],
 };
 
-const MOCK_OOV_ORDERS: Order[] = [
-  {
-    id: 'oov-1',
-    trackingId: 'TRK-8821940',
-    status: 'oov',
-    orderType: 'delivery',
-    serviceType: 'btb',
-    senderName: 'Aarav Store',
-    senderPhone: '9811111111',
-    receiverName: 'Mina Shrestha',
-    receiverPhone: '9800000000',
-    origin: 'Kathmandu Hub',
-    destination: 'Pokhara Hub',
-    pieces: 2,
-    weightKg: 3,
-    codAmount: 1200,
-    deliveryCharge: 129,
-    riderName: 'Sagar',
-    remarks: 'Handle with care',
-    lastUpdatedBy: 'Sagar',
-    lastUpdatedAt: '2026-06-19',
-    createdAt: '2026-06-17',
-  },
-  {
-    id: 'oov-2',
-    trackingId: 'TRK-8821941',
-    status: 'dispatched',
-    orderType: 'exchange',
-    serviceType: 'dtd',
-    senderName: 'Nima Retail',
-    senderPhone: '9822222222',
-    receiverName: 'Amit Lama',
-    receiverPhone: '9812345678',
-    origin: 'Lalitpur',
-    destination: 'Bhaktapur',
-    pieces: 1,
-    weightKg: 1,
-    codAmount: 0,
-    deliveryCharge: 99,
-    riderName: 'Ram',
-    remarks: '-',
-    lastUpdatedBy: 'Ram',
-    lastUpdatedAt: '2026-06-20',
-    createdAt: '2026-06-18',
-  },
-  {
-    id: 'oov-3',
-    trackingId: 'TRK-8821942',
-    status: 'arrived_at_branch',
-    orderType: 'delivery',
-    serviceType: 'btd',
-    senderName: 'Parcelmoover Vendor',
-    senderPhone: '9844444444',
-    receiverName: 'Suman Karki',
-    receiverPhone: '9855555555',
-    origin: 'Pokhara Hub',
-    destination: 'Lakeside',
-    pieces: 3,
-    weightKg: 5,
-    codAmount: 2200,
-    deliveryCharge: 149,
-    riderName: 'Sameer',
-    remarks: 'Fragile',
-    lastUpdatedBy: 'Sameer',
-    lastUpdatedAt: '2026-06-21',
-    createdAt: '2026-06-19',
-  },
-];
-
 const createEmptySelections = (): Record<OOVTab, Map<string, Order>> => ({
   oov: new Map(),
   dispatched: new Map(),
@@ -158,23 +88,19 @@ const createEmptySelections = (): Record<OOVTab, Map<string, Order>> => ({
 
 const formatMoney = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 0 });
 
-const matchesSearch = (order: Order, q: string) =>
-  !q ||
-  order.trackingId.toLowerCase().includes(q) ||
-  order.senderName.toLowerCase().includes(q) ||
-  order.receiverName.toLowerCase().includes(q) ||
-  order.destination.toLowerCase().includes(q);
-
 const OOVOperations: React.FC = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [orders, setOrders] = useState<Order[]>([]);
   const [meta, setMeta] = useState<OrdersPageMeta | null>(null);
-  const [mockOrders, setMockOrders] = useState<Order[]>(MOCK_OOV_ORDERS);
-  const [activeTab, setActiveTab] = useState<OOVTab>('oov');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [activeTab, setActiveTab] = useState<OOVTab>(() => {
+    const fromUrl = searchParams.get('tab');
+    return fromUrl && fromUrl in TAB_LABELS ? (fromUrl as OOVTab) : 'oov';
+  });
+  const [searchQuery, setSearchQuery] = useState(() => searchParams.get('search') || '');
+  const [debouncedSearch, setDebouncedSearch] = useState(() => searchParams.get('search') || '');
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
-  const [usingMockData, setUsingMockData] = useState(false);
+  const [loadError, setLoadError] = useState('');
   const [selectionByTab, setSelectionByTab] = useState<Record<OOVTab, Map<string, Order>>>(createEmptySelections);
   const [isActionOpen, setIsActionOpen] = useState(false);
   const [selectedNextStatus, setSelectedNextStatus] = useState<ParcelStatus | ''>('');
@@ -198,6 +124,15 @@ const OOVOperations: React.FC = () => {
     setIsActionOpen(false);
     setActionError('');
   }, [activeTab, debouncedSearch]);
+
+  // Keep tab/search bookmarkable - mirror into the URL (replacing history,
+  // not pushing, so the back button doesn't step through every keystroke).
+  useEffect(() => {
+    const next = new URLSearchParams();
+    if (activeTab !== 'oov') next.set('tab', activeTab);
+    if (debouncedSearch) next.set('search', debouncedSearch);
+    setSearchParams(next, { replace: true });
+  }, [activeTab, debouncedSearch, setSearchParams]);
 
   useEffect(() => {
     (async () => {
@@ -225,12 +160,10 @@ const OOVOperations: React.FC = () => {
       if (res?.success && Array.isArray(res.data)) {
         setOrders(res.data);
         setMeta(res.meta ?? null);
-        setUsingMockData(false);
-      } else {
-        setUsingMockData(true);
+        setLoadError('');
       }
     } catch {
-      setUsingMockData(true);
+      setLoadError('Failed to load orders. Showing the last loaded data, if any.');
     } finally {
       setLoading(false);
     }
@@ -242,23 +175,9 @@ const OOVOperations: React.FC = () => {
 
   useEffect(() => subscribeToOrderStatusChanged(loadOovOrders), [loadOovOrders]);
 
-  const mockFilteredOrders = useMemo(() => {
-    if (!usingMockData) return [];
-    const tabStatuses = TAB_STATUSES[activeTab];
-    const q = debouncedSearch.toLowerCase();
-    return mockOrders
-      .filter(order => tabStatuses.includes(order.status))
-      .filter(order => matchesSearch(order, q));
-  }, [usingMockData, mockOrders, activeTab, debouncedSearch]);
-
-  const visibleOrders = usingMockData
-    ? mockFilteredOrders.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
-    : orders;
-
-  const totalCount = usingMockData ? mockFilteredOrders.length : meta?.total ?? visibleOrders.length;
-  const totalPages = usingMockData
-    ? Math.max(1, Math.ceil(mockFilteredOrders.length / PAGE_SIZE))
-    : meta?.totalPages ?? 1;
+  const visibleOrders = orders;
+  const totalCount = meta?.total ?? visibleOrders.length;
+  const totalPages = meta?.totalPages ?? 1;
 
   const selectionMap = selectionByTab[activeTab];
   const selectedIds = useMemo(() => new Set<string | number>(selectionMap.keys()), [selectionMap]);
@@ -347,18 +266,11 @@ const OOVOperations: React.FC = () => {
     try {
       const ids = selectedOrders.map(order => String(order.id));
 
-      if (!usingMockData) {
-        await bulkUpdateOrderStatus(ids, effectiveNextStatus, {
-          toLocationId: isDispatchAction && dispatchMethod === 'manifest' ? toLocationId : undefined,
-          riderId: isDispatchAction && dispatchMethod === 'manifest' ? riderId || undefined : undefined,
-        });
-        await loadOovOrders();
-      } else {
-        setMockOrders(prev => prev.map(order => (
-          selectedIds.has(order.id) ? { ...order, status: effectiveNextStatus } : order
-        )));
-        notifyOrderStatusChanged();
-      }
+      await bulkUpdateOrderStatus(ids, effectiveNextStatus, {
+        toLocationId: isDispatchAction && dispatchMethod === 'manifest' ? toLocationId : undefined,
+        riderId: isDispatchAction && dispatchMethod === 'manifest' ? riderId || undefined : undefined,
+      });
+      await loadOovOrders();
 
       setSelectionByTab(prev => ({ ...prev, [activeTab]: new Map() }));
       setIsActionOpen(false);
@@ -381,8 +293,9 @@ const OOVOperations: React.FC = () => {
   };
 
   const buildCsv = (rows: Order[]) => {
-    const headers = ['Date', 'Tracking ID', 'Order Type', 'Sender', 'Receiver', 'Location', 'Weight', 'COD', 'Last Updated', 'Remarks'];
+    const headers = ['#', 'Date', 'Tracking ID', 'Order Type', 'Sender', 'Receiver', 'Location', 'Weight', 'COD', 'Last Updated', 'Remarks'];
     const csvRows = rows.map(order => [
+      `#${order.orderNumber}`,
       order.createdAt,
       order.trackingId,
       order.orderType,
@@ -402,17 +315,13 @@ const OOVOperations: React.FC = () => {
   const downloadCsv = async () => {
     let rows: Order[] = visibleOrders;
 
-    if (usingMockData) {
-      rows = mockFilteredOrders;
-    } else {
-      try {
-        const res = await getOrders({ status: TAB_STATUSES[activeTab], search: debouncedSearch || undefined });
-        if (res?.success && Array.isArray(res.data)) {
-          rows = res.data;
-        }
-      } catch {
-        // fall back to the currently loaded page
+    try {
+      const res = await getOrders({ status: TAB_STATUSES[activeTab], search: debouncedSearch || undefined });
+      if (res?.success && Array.isArray(res.data)) {
+        rows = res.data;
       }
+    } catch {
+      // fall back to the currently loaded page
     }
 
     const csv = buildCsv(rows);
@@ -427,9 +336,9 @@ const OOVOperations: React.FC = () => {
 
   const oovColumns = [
     {
-      header: 'SN',
-      accessor: (order: Order) => ((page - 1) * PAGE_SIZE) + visibleOrders.findIndex(row => row.id === order.id) + 1,
-      width: '34px',
+      header: '#',
+      accessor: (order: Order) => `#${order.orderNumber}`,
+      width: '70px',
       className: 'oov-sn-cell',
     },
     { header: 'DATE', accessor: (order: Order) => order.createdAt || '-', width: '100px' },
@@ -501,6 +410,8 @@ const OOVOperations: React.FC = () => {
         onChange={setActiveTab}
         options={(Object.keys(TAB_LABELS) as OOVTab[]).map(tab => ({ value: tab, label: TAB_LABELS[tab] }))}
       />
+
+      {loadError && <p className="oov-action-error">{loadError}</p>}
 
       <div className="oov-toolbar">
         <div />

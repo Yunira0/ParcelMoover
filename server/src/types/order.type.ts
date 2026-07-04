@@ -68,12 +68,17 @@ export interface UpdateParcelStatusInput {
   riderId?: string;
 }
 
+export const ORDER_SORT_FIELDS = ["createdAt", "codAmount", "deliveryCharge", "trackingId", "status"] as const;
+export type OrderSortField = (typeof ORDER_SORT_FIELDS)[number];
+
 export interface ListOrdersQuery {
   status?: ParcelStatus[];
   orderType?: OrderType;
   search?: string;
   page?: number;
   pageSize?: number;
+  sortBy?: OrderSortField;
+  sortDir?: "asc" | "desc";
 }
 
 export interface BulkUpdateParcelStatusInput {

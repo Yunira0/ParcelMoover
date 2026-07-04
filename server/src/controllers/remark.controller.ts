@@ -11,17 +11,21 @@ import { ListRemarksParams } from "../types/remark.type";
 export async function listRemarksController(req: Request, res: Response) {
   try {
     if (!req.user) return res.status(401).json({ success: false, message: "Unauthorized" });
-    const { status, search, fromDate, toDate } = req.query;
+    const { status, unclosed, search, fromDate, toDate, page, pageSize, sortDir } = req.query;
 
     const params: ListRemarksParams = {};
     if (typeof status === "string") params.status = status;
+    if (unclosed === "true") params.unclosed = true;
     if (typeof search === "string") params.search = search;
     if (typeof fromDate === "string") params.fromDate = fromDate;
     if (typeof toDate === "string") params.toDate = toDate;
+    if (typeof page === "string" && Number.isFinite(Number(page))) params.page = Number(page);
+    if (typeof pageSize === "string" && Number.isFinite(Number(pageSize))) params.pageSize = Number(pageSize);
+    if (sortDir === "asc" || sortDir === "desc") params.sortDir = sortDir;
 
-    const remarks = await listRemarks({ id: req.user.id, roles: req.user.roles }, params);
+    const { data, meta } = await listRemarks({ id: req.user.id, roles: req.user.roles }, params);
 
-    return res.status(200).json({ success: true, data: remarks });
+    return res.status(200).json({ success: true, data, meta });
   } catch (error: any) {
     return res.status(error.statusCode || 500).json({
       success: false,

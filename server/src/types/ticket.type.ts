@@ -21,4 +21,8 @@ export interface ListTicketsParams {
   category?: string;
   fromDate?: string;
   toDate?: string;
+  page?: number;
+  pageSize?: number;
+  /** created_at is the only sortable column; defaults to "desc". */
+  sortDir?: "asc" | "desc";
 }

@@ -71,6 +71,20 @@ const bulkCreateLimiter = rateLimit({
   keyGenerator: actorOrIpKey,
 });
 
+// Covers list/dashboard/track — the heaviest GET endpoints in the app
+// (dashboard-summary alone fans out into ~17 aggregate queries on a cache
+// miss), which previously had no rate limiting at all despite every write
+// endpoint in this file being protected.
+const orderReadLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 120,
+  message: { success: false, message: "Too many requests, please slow down" },
+  standardHeaders: true,
+  legacyHeaders: false,
+  store: createRedisRateLimitStore("order-read"),
+  keyGenerator: actorOrIpKey,
+});
+
 // POST /orders/bulk — must be registered before POST /orders to avoid Express matching /bulk as a body param
 orderRouter.post(
   "/bulk",
@@ -94,6 +108,7 @@ orderRouter.get(
   "/dashboard-summary",
   authMiddleware,
   authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider", "sales"),
+  orderReadLimiter,
   dashboardSummaryController,
 );
 
@@ -101,6 +116,7 @@ orderRouter.get(
   "/",
   authMiddleware,
   authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider", "sales"),
+  orderReadLimiter,
   listOrdersController,
 );
 
@@ -109,7 +125,18 @@ orderRouter.get(
   "/track/:trackingId",
   authMiddleware,
   authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider", "sales"),
+  orderReadLimiter,
   getOrderByTrackingIdController,
+);
+
+// PATCH /orders/bulk-status — must be before /:id/status to avoid Express 5 parametric shadowing
+orderRouter.patch(
+  "/bulk-status",
+  authMiddleware,
+  csrfProtection,
+  authorizeRoles("super_admin", "admin", "rider", "vendor", "vendor_staff"),
+  statusUpdateLimiter,
+  bulkUpdateOrderStatusController,
 );
 
 // PATCH /orders/:id/status
@@ -130,16 +157,6 @@ orderRouter.post(
   authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider", "sales"),
   remarkLimiter,
   addOrderRemarkController,
-);
-
-// PATCH /orders/bulk-status — batch transitions; vendors allowed (service enforces valid transitions)
-orderRouter.patch(
-  "/bulk-status",
-  authMiddleware,
-  csrfProtection,
-  authorizeRoles("super_admin", "admin", "rider", "vendor", "vendor_staff"),
-  statusUpdateLimiter,
-  bulkUpdateOrderStatusController,
 );
 
 export default orderRouter;

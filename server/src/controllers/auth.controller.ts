@@ -11,6 +11,7 @@ import { AppError } from "../utils/AppError";
 import { sendSuccess } from "../utils/ApiResponse";
 import jwt from "jsonwebtoken";
 import prisma from "../lib/prisma";
+import { revokeToken } from "../lib/tokenRevocation";
 
 const formatDate = (date?: Date | null) => date ? date.toISOString().slice(0, 10) : "";
 const managedUserTypes = ["admin", "vendor", "rider"] as const;
@@ -23,6 +24,19 @@ const locationLabel = (location?: { name: string; city: string | null; district:
   if (!location) return "";
   return [location.name, location.city || location.district].filter(Boolean).join(", ");
 };
+
+const LIST_DEFAULT_PAGE_SIZE = 20;
+const LIST_MAX_PAGE_SIZE = 100;
+
+function paginationFromQuery(req: Request) {
+  const page = Number.isFinite(Number(req.query.page)) ? Math.max(1, Number(req.query.page)) : 1;
+  const pageSize = Number.isFinite(Number(req.query.pageSize))
+    ? Math.min(LIST_MAX_PAGE_SIZE, Math.max(1, Number(req.query.pageSize)))
+    : LIST_DEFAULT_PAGE_SIZE;
+  return { page, pageSize, skip: (page - 1) * pageSize };
+}
+
+const RETURNED_STATUSES = ["failed_pickup", "failed_delivery", "cancelled"] as const;
 
 export const registerUserController = async (req: Request, res: Response) => {
   try {
@@ -254,29 +268,63 @@ export const getVendorsController = async (req: Request, res: Response) => {
     const roles = req.user?.roles ?? [];
     const isStaff = roles.includes("super_admin") || roles.includes("admin");
     const salesScope = roles.includes("sales") && !isStaff ? { sales_user_id: req.user!.id } : {};
+    const where = { deleted_at: null, ...salesScope };
 
-    const vendors = await prisma.vendors.findMany({
-      where: { deleted_at: null, ...salesScope },
-      include: {
-        locations: true,
-        parcels: {
-          select: { status: true },
-          where: { deleted_at: null },
-        },
-        cod_collections: {
-          select: { pending_amount: true },
-          where: { payment_status: "pending" },
-        },
-      },
-      orderBy: { created_at: "desc" },
-    });
+    const { page, pageSize, skip } = paginationFromQuery(req);
+
+    const [total, vendors] = await Promise.all([
+      prisma.vendors.count({ where }),
+      prisma.vendors.findMany({
+        where,
+        include: { locations: true },
+        orderBy: { created_at: "desc" },
+        skip,
+        take: pageSize,
+      }),
+    ]);
+
+    const vendorIds = vendors.map(v => v.id);
+
+    // Aggregate order counts and pending COD per vendor in the DB instead of
+    // pulling every parcel/cod_collection row for each vendor into memory.
+    const [statusCounts, codSums] = vendorIds.length
+      ? await Promise.all([
+          prisma.parcels.groupBy({
+            by: ["vendor_id", "status"],
+            where: { vendor_id: { in: vendorIds }, deleted_at: null },
+            _count: { _all: true },
+          }),
+          prisma.cod_collections.groupBy({
+            by: ["vendor_id"],
+            where: { vendor_id: { in: vendorIds }, payment_status: "pending" },
+            _sum: { pending_amount: true },
+          }),
+        ])
+      : [[], []];
+
+    const ordersByVendor = new Map<string, { total: number; delivered: number; returned: number }>();
+    for (const row of statusCounts) {
+      const vendorId = row.vendor_id as string | null;
+      if (!vendorId) continue;
+      const entry = ordersByVendor.get(vendorId) ?? { total: 0, delivered: 0, returned: 0 };
+      entry.total += row._count._all;
+      if (row.status === "delivered") entry.delivered += row._count._all;
+      if ((RETURNED_STATUSES as readonly string[]).includes(row.status)) entry.returned += row._count._all;
+      ordersByVendor.set(vendorId, entry);
+    }
+
+    const codByVendor = new Map<string, number>();
+    for (const row of codSums) {
+      if (!row.vendor_id) continue;
+      codByVendor.set(row.vendor_id, Number(row._sum.pending_amount || 0));
+    }
 
     return res.status(200).json({
       success: true,
       data: vendors.map((vendor, index) => ({
         id: vendor.id,
         userId: vendor.user_id,
-        sn: index + 1,
+        sn: skip + index + 1,
         client: vendor.client_name,
         company: vendor.business_name || "",
         email: vendor.email || "",
@@ -286,21 +334,13 @@ export const getVendorsController = async (req: Request, res: Response) => {
         address: vendor.address || "",
         sales: vendor.sales || "",
         salesUserId: vendor.sales_user_id,
-        orders: {
-          total: vendor.parcels.length,
-          delivered: vendor.parcels.filter(parcel => parcel.status === "delivered").length,
-          returned: vendor.parcels.filter(parcel =>
-            ["failed_pickup", "failed_delivery", "cancelled"].includes(parcel.status),
-          ).length,
-        },
-        codDue: vendor.cod_collections.reduce(
-          (sum, collection) => sum + Number(collection.pending_amount || 0),
-          0,
-        ),
+        orders: ordersByVendor.get(vendor.id) ?? { total: 0, delivered: 0, returned: 0 },
+        codDue: codByVendor.get(vendor.id) ?? 0,
         status: vendor.status,
         joined: formatDate(vendor.joined_at),
         lastOrderedDate: formatDate(vendor.last_ordered_at),
       })),
+      meta: { page, pageSize, total, totalPages: Math.max(1, Math.ceil(total / pageSize)) },
     });
   } catch (error: any) {
     return res.status(500).json({
@@ -310,60 +350,120 @@ export const getVendorsController = async (req: Request, res: Response) => {
   }
 };
 
-export const getRidersController = async (_req: Request, res: Response) => {
+export const getRidersController = async (req: Request, res: Response) => {
   try {
-    const riders = await prisma.riders.findMany({
-      where: { deleted_at: null },
-      include: {
-        users: true,
-        locations: true,
-        parcels_parcels_pickup_rider_idToriders: {
-          select: { id: true, status: true },
-          where: { deleted_at: null },
-        },
-        parcels_parcels_delivery_rider_idToriders: {
-          select: { id: true, status: true },
-          where: { deleted_at: null },
-        },
-      },
-      orderBy: { created_at: "desc" },
-    });
+    const where = { deleted_at: null };
+    const { page, pageSize, skip } = paginationFromQuery(req);
+
+    const [total, riders] = await Promise.all([
+      prisma.riders.count({ where }),
+      prisma.riders.findMany({
+        where,
+        include: { users: true, locations: true },
+        orderBy: { created_at: "desc" },
+        skip,
+        take: pageSize,
+      }),
+    ]);
+
+    const riderIds = riders.map(r => r.id);
+
+    // A rider's order count = distinct parcels where they're the pickup OR delivery
+    // rider. Aggregate pickup counts, delivery counts, and the overlap (same rider on
+    // both legs of the same parcel) separately so the overlap can be subtracted once,
+    // instead of pulling every parcel row into memory to dedupe in JS.
+    const [pickupCounts, deliveryCounts, overlapCounts] = riderIds.length
+      ? await Promise.all([
+          prisma.parcels.groupBy({
+            by: ["pickup_rider_id", "status"],
+            where: { pickup_rider_id: { in: riderIds }, deleted_at: null },
+            _count: { _all: true },
+          }),
+          prisma.parcels.groupBy({
+            by: ["delivery_rider_id", "status"],
+            where: { delivery_rider_id: { in: riderIds }, deleted_at: null },
+            _count: { _all: true },
+          }),
+          prisma.parcels.groupBy({
+            by: ["pickup_rider_id", "status"],
+            where: {
+              pickup_rider_id: { in: riderIds },
+              deleted_at: null,
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              delivery_rider_id: { in: riderIds } as any,
+            },
+            _count: { _all: true },
+          }),
+        ])
+      : [[], [], []];
+
+    type Bucket = { total: number; delivered: number; returned: number };
+    const emptyBucket = (): Bucket => ({ total: 0, delivered: 0, returned: 0 });
+    const applyRow = (map: Map<string, Bucket>, riderId: string | null, status: string, count: number, sign: 1 | -1) => {
+      if (!riderId) return;
+      const entry = map.get(riderId) ?? emptyBucket();
+      entry.total += sign * count;
+      if (status === "delivered") entry.delivered += sign * count;
+      if ((RETURNED_STATUSES as readonly string[]).includes(status)) entry.returned += sign * count;
+      map.set(riderId, entry);
+    };
+
+    const ordersByRider = new Map<string, Bucket>();
+    for (const row of pickupCounts) applyRow(ordersByRider, row.pickup_rider_id, row.status, row._count._all, 1);
+    for (const row of deliveryCounts) applyRow(ordersByRider, row.delivery_rider_id, row.status, row._count._all, 1);
+    // overlapCounts rows are counted once by pickupCounts and once by deliveryCounts
+    // above (pickup_rider_id === delivery_rider_id for these rows), so subtract once.
+    for (const row of overlapCounts) applyRow(ordersByRider, row.pickup_rider_id, row.status, row._count._all, -1);
 
     return res.status(200).json({
       success: true,
       data: riders.map((rider, index) => ({
         id: rider.id,
         userId: rider.user_id,
-        sn: index + 1,
+        sn: skip + index + 1,
         name: rider.name,
         email: rider.users?.email || "",
         phone: rider.phone,
         location: locationLabel(rider.locations),
-        orders: (() => {
-          const parcels = [
-            ...rider.parcels_parcels_pickup_rider_idToriders,
-            ...rider.parcels_parcels_delivery_rider_idToriders,
-          ];
-          const uniqueParcels = Array.from(
-            new Map(parcels.map(parcel => [parcel.id, parcel])).values(),
-          );
-          return {
-            total: uniqueParcels.length,
-            delivered: uniqueParcels.filter(parcel => parcel.status === "delivered").length,
-            returned: uniqueParcels.filter(parcel =>
-              ["failed_pickup", "failed_delivery", "cancelled"].includes(parcel.status),
-            ).length,
-          };
-        })(),
+        orders: ordersByRider.get(rider.id) ?? emptyBucket(),
         payment: "COD",
         status: rider.status,
         joined: formatDate(rider.joined_at),
       })),
+      meta: { page, pageSize, total, totalPages: Math.max(1, Math.ceil(total / pageSize)) },
     });
   } catch (error: any) {
     return res.status(500).json({
       success: false,
       message: error.message || "Failed to load riders",
+    });
+  }
+};
+
+export const logoutController = async (req: Request, res: Response) => {
+  try {
+    const authHeader = req.headers.authorization;
+    const token = (authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null) ?? req.cookies.accessToken;
+
+    if (token && process.env.JWT_SECRET) {
+      try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET) as { jti?: string; exp?: number };
+        if (decoded.jti && decoded.exp) {
+          await revokeToken(decoded.jti, decoded.exp);
+        }
+      } catch {
+        // Token was already invalid/expired - nothing to revoke, just clear cookies below.
+      }
+    }
+
+    res.clearCookie("accessToken", { path: "/" });
+    res.clearCookie("csrfToken", { path: "/" });
+
+    return sendSuccess(res, 200, "Logged out successfully");
+  } catch (error: any) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to log out",
     });
   }
 };
@@ -378,7 +478,18 @@ export const changePasswordController = async (req: Request, res: Response) => {
       throw new AppError(400, "currentPassword and newPassword are required");
     }
 
-    await changePassword(userId, currentPassword, newPassword);
+    const { token } = await changePassword(userId, currentPassword, newPassword);
+
+    // Every other session (e.g. a stolen token) was just revoked - reissue a
+    // fresh cookie so this session, which just proved it holds the correct
+    // current password, keeps working.
+    res.cookie("accessToken", token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
 
     return sendSuccess(res, 200, "Password changed successfully");
   } catch (error: any) {

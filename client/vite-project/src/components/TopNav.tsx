@@ -73,6 +73,12 @@ const TopNav: React.FC = () => {
     }
   };
 
+  const resolveTrackingId = (notification: AppNotification): string | null => {
+    if (notification.trackingId) return notification.trackingId;
+    const match = notification.title.match(/PM-[0-9]{6}-[A-Z0-9]{13}-[A-Z0-9]/);
+    return match ? match[0] : null;
+  };
+
   const handleNotificationClick = async (notification: AppNotification) => {
     if (!notification.readAt) {
       setNotifications((prev) =>
@@ -84,6 +90,11 @@ const TopNav: React.FC = () => {
       } catch {
         // best-effort - the unread badge will self-correct on next fetch
       }
+    }
+    const trackingId = resolveTrackingId(notification);
+    if (trackingId) {
+      setIsNotificationsOpen(false);
+      navigate(`/orders/track/${trackingId}`);
     }
   };
 
@@ -127,7 +138,7 @@ const TopNav: React.FC = () => {
         <Button
           variant="outline"
           className="cmt-button"
-          onClick={() => navigate('/remarks?status=pending')}
+          onClick={() => navigate('/unclosed-remarks')}
         >
           Unclosed cmt
           {unclosedCount > 0 && (

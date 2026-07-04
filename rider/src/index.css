@@ -1,0 +1,60 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;0,500;0,600;0,700;0,800&display=swap');
+@import "tailwindcss";
+
+/* ── Tailwind v4 design tokens → real utilities ─────────── */
+@theme {
+  --color-brand:          #f97316;
+  --color-brand-dark:     #ea580c;
+  --color-brand-dim:      rgba(249,115,22,0.15);
+
+  --color-bg:             #0f1117;
+  --color-surface:        #1a1d27;
+  --color-surface-2:      #222536;
+  --color-surface-3:      #2d3148;
+
+  --color-text-primary:   #f1f5f9;
+  --color-text-secondary: #94a3b8;
+  --color-text-muted:     #64748b;
+
+  --color-border:         #2d3148;
+  --color-border-subtle:  #1e2236;
+
+  --color-error:          #ef4444;
+  --color-success:        #22c55e;
+
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 18px;
+  --radius-xl: 24px;
+}
+
+/* ── Global reset ────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+
+html {
+  height: 100%;
+  height: -webkit-fill-available;
+}
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  background: var(--color-bg);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+  color: var(--color-text-primary);
+}
+
+#root {
+  min-height: 100dvh;
+  max-width: 430px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+}
