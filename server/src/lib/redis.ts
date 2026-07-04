@@ -6,18 +6,27 @@ const redis = new Redis({
     host: process.env.REDIS_HOST || "localhost",
     port: parseInt(process.env.REDIS_PORT || "6379"),
     db: parseInt(process.env.REDIS_DB || "0"),
-    maxRetriesPerRequest: 3,
-    lazyConnect: true,
+    maxRetriesPerRequest: null,
+    enableReadyCheck: false,
+    enableOfflineQueue: true,
+    // Must connect eagerly (not lazily): index.ts's startup sequence waits on
+    // this client's "ready"/"error" events before registering any routes, so
+    // the connection attempt needs to start as soon as this module loads.
+    lazyConnect: false,
     connectTimeout: 5000,
-    commandTimeout: 5000,
-    retryStrategy(times) {
-        if (times > 10) return null;
-        return Math.min(times * 500, 30_000);
+    // commandTimeout not set — ioredis v5 treats 0 as a 0ms timeout (fires immediately)
+    retryStrategy: (times) => {
+        const delay = Math.min(times * 50, 2000);
+        return delay;
     },
 });
 
 redis.on("connect", () => {
     console.log("[Redis] Connected successfully");
+});
+
+redis.on("ready", () => {
+    console.log("[Redis] Ready to accept commands");
 });
 
 let _redisErrorLogged = false;
@@ -29,6 +38,9 @@ redis.on("error", (error) => {
 });
 redis.on("connect", () => { _redisErrorLogged = false; });
 
+redis.on("reconnecting", () => {
+    console.log("[Redis] Attempting to reconnect...");
+});
 
 export default redis;
 

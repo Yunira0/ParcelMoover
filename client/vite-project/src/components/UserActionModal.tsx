@@ -36,6 +36,11 @@ const userTypeLabels: Record<ManagedUserType, string> = {
   rider: 'Rider',
 };
 
+const EDIT_FIELD_MAP: Record<string, string> = {
+  fullName: 'fullName', phone: 'phone', position: 'position',
+  clientName: 'clientName', businessName: 'businessName', joinedAt: 'joinedAt',
+};
+
 const initialProfileForm = {
   fullName: '',
   phone: '',
@@ -57,7 +62,8 @@ const UserActionModal: React.FC<UserActionModalProps> = ({
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [generalError, setGeneralError] = useState('');
 
   useEffect(() => {
     if (!isOpen || !target) return;
@@ -72,7 +78,8 @@ const UserActionModal: React.FC<UserActionModalProps> = ({
     });
     setPassword('');
     setConfirmPassword('');
-    setError('');
+    setFieldErrors({});
+    setGeneralError('');
   }, [isOpen, target]);
 
   if (!isOpen || !target) return null;
@@ -103,21 +110,21 @@ const UserActionModal: React.FC<UserActionModalProps> = ({
   };
 
   const handlePasswordSubmit = async () => {
-    if (password.length < 6) {
-      throw new Error('Password must be at least 6 characters long');
+    const errors: Record<string, string> = {};
+    if (password.length < 8) errors.password = 'Password must be at least 8 characters long';
+    if (password !== confirmPassword) errors.confirmPassword = 'Passwords do not match';
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
+      throw new Error('validation');
     }
-
-    if (password !== confirmPassword) {
-      throw new Error('Passwords do not match');
-    }
-
     await updateUserPassword(userType, target.id, password);
   };
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     setLoading(true);
-    setError('');
+    setFieldErrors({});
+    setGeneralError('');
 
     try {
       if (mode === 'edit') {
@@ -129,7 +136,21 @@ const UserActionModal: React.FC<UserActionModalProps> = ({
       onSuccess();
       onClose();
     } catch (err: any) {
-      setError(err.response?.data?.message || err.message || 'Action failed');
+      if (err?.message === 'validation') return;
+      const data = err.response?.data;
+      if (data?.errors?.length) {
+        const mapped: Record<string, string> = {};
+        const unmapped: string[] = [];
+        for (const e of data.errors as { field: string; message: string }[]) {
+          const key = EDIT_FIELD_MAP[e.field];
+          if (key) mapped[key] = e.message;
+          else unmapped.push(e.message);
+        }
+        setFieldErrors(mapped);
+        if (unmapped.length > 0) setGeneralError(unmapped[0]);
+      } else {
+        setGeneralError(data?.message || err.message || 'Action failed');
+      }
     } finally {
       setLoading(false);
     }
@@ -152,12 +173,14 @@ const UserActionModal: React.FC<UserActionModalProps> = ({
                     required
                     value={profileForm.clientName}
                     onChange={(value) => setProfileForm({ ...profileForm, clientName: value })}
+                    error={fieldErrors.clientName}
                   />
                   <FormField
                     label="Business Name"
                     required
                     value={profileForm.businessName}
                     onChange={(value) => setProfileForm({ ...profileForm, businessName: value })}
+                    error={fieldErrors.businessName}
                   />
                 </>
               ) : (
@@ -166,6 +189,7 @@ const UserActionModal: React.FC<UserActionModalProps> = ({
                   required
                   value={profileForm.fullName}
                   onChange={(value) => setProfileForm({ ...profileForm, fullName: value })}
+                  error={fieldErrors.fullName}
                 />
               )}
               <FormField
@@ -173,6 +197,7 @@ const UserActionModal: React.FC<UserActionModalProps> = ({
                 required
                 value={profileForm.phone}
                 onChange={(value) => setProfileForm({ ...profileForm, phone: value })}
+                error={fieldErrors.phone}
               />
               {userType === 'admin' && (
                 <FormField
@@ -180,6 +205,7 @@ const UserActionModal: React.FC<UserActionModalProps> = ({
                   required
                   value={profileForm.position}
                   onChange={(value) => setProfileForm({ ...profileForm, position: value })}
+                  error={fieldErrors.position}
                 />
               )}
               <FormField
@@ -187,6 +213,7 @@ const UserActionModal: React.FC<UserActionModalProps> = ({
                 type="date"
                 value={profileForm.joinedAt}
                 onChange={(value) => setProfileForm({ ...profileForm, joinedAt: value })}
+                error={fieldErrors.joinedAt}
               />
             </div>
           ) : (
@@ -195,21 +222,24 @@ const UserActionModal: React.FC<UserActionModalProps> = ({
                 label="New Password"
                 type="password"
                 required
-                minLength={6}
+                minLength={8}
+                hint="Min. 8 characters"
                 value={password}
                 onChange={setPassword}
+                error={fieldErrors.password}
               />
               <FormField
                 label="Confirm Password"
                 type="password"
                 required
-                minLength={6}
+                minLength={8}
                 value={confirmPassword}
                 onChange={setConfirmPassword}
+                error={fieldErrors.confirmPassword}
               />
             </div>
           )}
-          {error && <p className="error-text">{error}</p>}
+          {generalError && <p className="error-text">{generalError}</p>}
           <div className="modal-footer">
             <Button type="button" variant="secondary" onClick={onClose}>Cancel</Button>
             <Button type="submit" variant="primary" disabled={loading}>

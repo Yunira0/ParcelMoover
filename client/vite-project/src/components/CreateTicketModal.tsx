@@ -181,7 +181,10 @@ const CreateTicketModal: React.FC<CreateTicketModalProps> = ({ isOpen, onClose, 
       onSuccess();
       onClose();
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to create ticket');
+      const data = err.response?.data;
+      const firstErr = data?.errors?.[0];
+      const msg = firstErr?.message || data?.message || 'Failed to create ticket';
+      setError(msg);
     } finally {
       setLoading(false);
     }

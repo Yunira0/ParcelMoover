@@ -10,6 +10,11 @@ interface AddAdminModalProps {
   onSuccess: () => void;
 }
 
+const ADMIN_FIELD_MAP: Record<string, string> = {
+  fullName: 'fullName', email: 'email', password: 'password',
+  phone: 'phone', position: 'position', joinedAt: 'joinedAt',
+};
+
 const AddAdminModal: React.FC<AddAdminModalProps> = ({ isOpen, onClose, onSuccess }) => {
   const [formData, setFormData] = useState<Omit<RegisterUserInput, 'type'>>({
     fullName: '',
@@ -20,21 +25,36 @@ const AddAdminModal: React.FC<AddAdminModalProps> = ({ isOpen, onClose, onSucces
     joinedAt: new Date().toISOString().split('T')[0],
   });
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [generalError, setGeneralError] = useState('');
 
   if (!isOpen) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    setError('');
+    setFieldErrors({});
+    setGeneralError('');
 
     try {
       await registerUser({ ...formData, type: 'admin' });
       onSuccess();
       onClose();
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to add admin');
+      const data = err.response?.data;
+      if (data?.errors?.length) {
+        const mapped: Record<string, string> = {};
+        const unmapped: string[] = [];
+        for (const e of data.errors as { field: string; message: string }[]) {
+          const key = ADMIN_FIELD_MAP[e.field];
+          if (key) mapped[key] = e.message;
+          else unmapped.push(e.message);
+        }
+        setFieldErrors(mapped);
+        if (unmapped.length > 0) setGeneralError(unmapped[0]);
+      } else {
+        setGeneralError(data?.message || 'Failed to add admin');
+      }
     } finally {
       setLoading(false);
     }
@@ -54,6 +74,7 @@ const AddAdminModal: React.FC<AddAdminModalProps> = ({ isOpen, onClose, onSucces
               required
               value={formData.fullName}
               onChange={(value) => setFormData({ ...formData, fullName: value })}
+              error={fieldErrors.fullName}
             />
             <FormField
               label="Email"
@@ -61,33 +82,40 @@ const AddAdminModal: React.FC<AddAdminModalProps> = ({ isOpen, onClose, onSucces
               required
               value={formData.email}
               onChange={(value) => setFormData({ ...formData, email: value })}
+              error={fieldErrors.email}
             />
             <FormField
               label="Password"
               type="password"
               required
+              minLength={8}
+              hint="Min. 8 characters"
               value={formData.password}
               onChange={(value) => setFormData({ ...formData, password: value })}
+              error={fieldErrors.password}
             />
             <FormField
               label="Phone"
               value={formData.phone}
               onChange={(value) => setFormData({ ...formData, phone: value })}
+              error={fieldErrors.phone}
             />
             <FormField
               label="Position"
               required
               value={formData.position}
               onChange={(value) => setFormData({ ...formData, position: value })}
+              error={fieldErrors.position}
             />
             <FormField
               label="Joined At"
               type="date"
               value={formData.joinedAt}
               onChange={(value) => setFormData({ ...formData, joinedAt: value })}
+              error={fieldErrors.joinedAt}
             />
           </div>
-          {error && <p className="error-text">{error}</p>}
+          {generalError && <p className="error-text">{generalError}</p>}
           <div className="modal-footer">
             <Button type="button" variant="secondary" onClick={onClose}>Cancel</Button>
             <Button type="submit" variant="primary" disabled={loading}>

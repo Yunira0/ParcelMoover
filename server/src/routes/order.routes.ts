@@ -3,6 +3,15 @@ import { rateLimit, ipKeyGenerator } from "express-rate-limit";
 import { authMiddleware } from "../middlewares/auth.mddleware";
 import { authorizeRoles } from "../middlewares/authorizeRoles.middleware";
 import { requireStaffPermission } from "../middlewares/staffPermission.middleware";
+import { validate } from "../middlewares/validate.middleware";
+import { uuidParamSchema } from "../validators/common";
+import {
+  createOrderSchema,
+  updateOrderStatusSchema,
+  bulkUpdateOrderStatusSchema,
+  listOrdersQuerySchema,
+  addOrderRemarkSchema,
+} from "../validators/order.schema";
 import {
   addOrderRemarkController,
   bulkCreateOrdersController,
@@ -105,6 +114,7 @@ orderRouter.post(
   authorizeRoles("super_admin", "admin", "vendor", "vendor_staff"),
   requireStaffPermission("ORDER_ACCESS"),
   createOrderLimiter,
+  validate(createOrderSchema),
   createOrderController,
 );
 
@@ -133,6 +143,7 @@ orderRouter.get(
   authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider", "sales"),
   requireStaffPermission("ORDER_ACCESS"),
   orderReadLimiter,
+  validate(listOrdersQuerySchema, "query"),
   listOrdersController,
 );
 
@@ -154,6 +165,7 @@ orderRouter.patch(
   authorizeRoles("super_admin", "admin", "rider", "vendor", "vendor_staff"),
   requireStaffPermission("ORDER_ACCESS"),
   statusUpdateLimiter,
+  validate(bulkUpdateOrderStatusSchema),
   bulkUpdateOrderStatusController,
 );
 
@@ -165,6 +177,8 @@ orderRouter.patch(
   authorizeRoles("super_admin", "admin", "rider", "vendor", "vendor_staff"),
   requireStaffPermission("ORDER_ACCESS"),
   statusUpdateLimiter,
+  validate(uuidParamSchema, "params"),
+  validate(updateOrderStatusSchema),
   updateOrderStatusController,
 );
 
@@ -176,6 +190,8 @@ orderRouter.post(
   authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider", "sales"),
   requireStaffPermission("ORDER_ACCESS"),
   remarkLimiter,
+  validate(uuidParamSchema, "params"),
+  validate(addOrderRemarkSchema),
   addOrderRemarkController,
 );
 

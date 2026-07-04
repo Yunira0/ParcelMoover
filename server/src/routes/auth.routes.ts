@@ -14,6 +14,13 @@ import {
 } from "../controllers/auth.controller";
 import { authMiddleware } from "../middlewares/auth.mddleware";
 import { csrfProtection } from "../middlewares/csrf.middleware";
+import { validate } from "../middlewares/validate.middleware";
+import {
+  loginSchema,
+  registerUserSchema,
+  updateManagedUserSchema,
+  updatePasswordSchema,
+} from "../validators/auth.schema";
 import rateLimit, {ipKeyGenerator} from "express-rate-limit";
 import { createRedisRateLimitStore } from "../lib/rateLimitStore";
 import { sendWelcomeEmail } from "../lib/mailer";
@@ -31,7 +38,7 @@ const loginLimiter = rateLimit({
 
 const authRouter: Router = Router();
 
-authRouter.post("/login", loginLimiter, login);
+authRouter.post("/login", loginLimiter, validate(loginSchema), login);
 authRouter.post("/logout", authMiddleware, csrfProtection, logoutController);
 authRouter.post("/change-password", authMiddleware, csrfProtection, changePasswordController);
 
@@ -54,14 +61,27 @@ authRouter.post(
   authMiddleware,
   csrfProtection,
   registrationUpload,
+  validate(registerUserSchema),
   registerUserController,
 );
 authRouter.get("/users/admins", authMiddleware, getAdminsController);
 authRouter.get("/users/vendors", authMiddleware, getVendorsController);
 authRouter.get("/users/riders", authMiddleware, getRidersController);
 authRouter.get("/users/:type/:id", authMiddleware, getManagedUserController);
-authRouter.patch("/users/:type/:id", authMiddleware, csrfProtection, updateManagedUserController);
-authRouter.patch("/users/:type/:id/password", authMiddleware, csrfProtection, updateManagedUserPasswordController);
+authRouter.patch(
+  "/users/:type/:id",
+  authMiddleware,
+  csrfProtection,
+  validate(updateManagedUserSchema),
+  updateManagedUserController,
+);
+authRouter.patch(
+  "/users/:type/:id/password",
+  authMiddleware,
+  csrfProtection,
+  validate(updatePasswordSchema),
+  updateManagedUserPasswordController,
+);
 authRouter.get("/locations", authMiddleware, getLocationsController);
 
 export default authRouter;

@@ -76,6 +76,7 @@ export const registerUserController = async (req: Request, res: Response) => {
       role: result.role,
     });
   } catch (error: any) {
+    console.error("[Register] error:", error.code, error.message);
     if (error.code === "P2002") {
       return res.status(409).json({
         success: false,

@@ -4,6 +4,13 @@ import { authMiddleware } from "../middlewares/auth.mddleware";
 import { authorizeRoles } from "../middlewares/authorizeRoles.middleware";
 import { requireStaffPermission } from "../middlewares/staffPermission.middleware";
 import { csrfProtection } from "../middlewares/csrf.middleware";
+import { validate } from "../middlewares/validate.middleware";
+import { uuidParamSchema } from "../validators/common";
+import {
+  upsertDeliveryRateSchema,
+  deliveryQuoteQuerySchema,
+  setDeliveryRateActiveSchema,
+} from "../validators/delivery-rate.schema";
 import {
   getDeliveryQuoteController,
   listDeliveryRatesController,
@@ -55,6 +62,7 @@ deliveryRateRouter.get(
   authorizeRoles("super_admin", "admin", "vendor", "vendor_staff"),
   requireStaffPermission("ORDER_ACCESS"),
   quoteLimiter,
+  validate(deliveryQuoteQuerySchema, "query"),
   getDeliveryQuoteController,
 );
 
@@ -79,6 +87,7 @@ deliveryRateRouter.post(
   csrfProtection,
   authorizeRoles("super_admin"),
   ratesWriteLimiter,
+  validate(upsertDeliveryRateSchema),
   upsertDeliveryRateController,
 );
 
@@ -89,6 +98,8 @@ deliveryRateRouter.patch(
   csrfProtection,
   authorizeRoles("super_admin"),
   ratesWriteLimiter,
+  validate(uuidParamSchema, "params"),
+  validate(setDeliveryRateActiveSchema),
   setDeliveryRateActiveController,
 );
 
