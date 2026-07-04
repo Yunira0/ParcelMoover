@@ -8,18 +8,20 @@ const redis = new Redis({
     db: parseInt(process.env.REDIS_DB || "0"),
     maxRetriesPerRequest: null,
     enableReadyCheck: false,
-    enableOfflineQueue: true,
+    // When Redis is down, reject commands immediately instead of queueing
+    // them until commandTimeout fires. Every Redis call site in this app
+    // has a try/catch fallback, so failing fast just means "skip the cache",
+    // whereas queueing meant every request stalled 3s per Redis command
+    // (auth revocation checks + cache read + cache write = 6-9s per request).
+    enableOfflineQueue: false,
     // Must connect eagerly (not lazily): index.ts's startup sequence waits on
     // this client's "ready"/"error" events before registering any routes, so
     // the connection attempt needs to start as soon as this module loads.
     lazyConnect: false,
     connectTimeout: 5000,
-    // Bounds how long a single command (e.g. the login rate-limiter's INCR)
-    // can sit queued waiting for a connection before failing. Without this,
-    // maxRetriesPerRequest: null + enableOfflineQueue: true means a command
-    // issued while Redis is mid-reconnect just queues forever - which,
-    // combined with axios having no request timeout on the client, turns
-    // into a login/request that silently hangs forever with no error.
+    // Bounds how long a single command can run on a live-but-slow connection
+    // (a hung Redis, network stall mid-command). Disconnected-state failures
+    // are handled by enableOfflineQueue: false above, which rejects instantly.
     // NOTE: must be a positive value - ioredis v5 treats 0 as a 0ms timeout
     // (fires immediately), so leaving this unset or at 0 is NOT "no timeout".
     commandTimeout: 3000,

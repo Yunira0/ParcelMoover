@@ -1,0 +1,219 @@
+.runsheet-container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  width: 100%;
+}
+
+.runsheet-stats {
+  display: grid;
+  gap: var(--space-4);
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.runsheet-toolbar {
+  align-items: center;
+  display: flex;
+  gap: var(--space-4);
+  justify-content: space-between;
+}
+
+.runsheet-filters {
+  align-items: center;
+  display: flex;
+  flex: 1;
+  gap: var(--space-3);
+}
+
+.runsheet-rider-filter {
+  max-width: 320px;
+  width: 100%;
+}
+
+.runsheet-date {
+  background: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-default);
+  color: var(--color-text-default);
+  font-family: var(--typography-font-family-default);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-sm);
+  min-height: 36px;
+  padding: var(--space-2);
+}
+
+.runsheet-date:focus-visible {
+  border-color: var(--color-border-primary);
+  box-shadow: 0 0 0 2px rgb(194 65 12 / 12%);
+  outline: none;
+}
+
+.runsheet-toolbar-actions {
+  align-items: center;
+  display: flex;
+  gap: var(--space-4);
+}
+
+.runsheet-selected-count {
+  color: var(--color-text-caption);
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+}
+
+.runsheet-rider-card {
+  background: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-modal);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-4);
+}
+
+.runsheet-rider-header {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  justify-content: space-between;
+}
+
+.runsheet-rider-identity {
+  align-items: center;
+  display: flex;
+  gap: var(--space-3);
+}
+
+.runsheet-rider-avatar {
+  align-items: center;
+  background: var(--color-background-primary-invert-default);
+  border-radius: var(--border-radius-default);
+  color: var(--color-text-primary);
+  display: flex;
+  height: 40px;
+  justify-content: center;
+  width: 40px;
+}
+
+.runsheet-rider-info h2 {
+  color: var(--color-text-default);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semi-bold);
+  line-height: var(--line-height-md);
+  margin: 0;
+}
+
+.runsheet-rider-meta {
+  color: var(--color-text-caption);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: var(--font-size-xs);
+  gap: var(--space-3);
+  line-height: var(--line-height-xs);
+  margin-top: var(--space-1);
+}
+
+.runsheet-rider-meta span {
+  align-items: center;
+  display: inline-flex;
+  gap: var(--space-1);
+}
+
+.runsheet-rider-totals {
+  align-items: center;
+  display: flex;
+  gap: var(--space-2);
+}
+
+.runsheet-table th,
+.runsheet-table td {
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-xs);
+}
+
+.runsheet-table td {
+  padding: var(--space-2);
+  vertical-align: top;
+}
+
+.runsheet-tracking-cell {
+  color: var(--color-text-primary) !important;
+  font-weight: var(--font-weight-semi-bold);
+}
+
+.runsheet-party-cell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.runsheet-party-cell span {
+  color: var(--color-text-default);
+  font-weight: var(--font-weight-semi-bold);
+}
+
+.runsheet-party-cell small {
+  color: var(--color-text-placeholder);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-regular);
+}
+
+.runsheet-datetime {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.runsheet-datetime span {
+  color: var(--color-text-default);
+  font-weight: var(--font-weight-semi-bold);
+}
+
+.runsheet-datetime small {
+  color: var(--color-text-placeholder);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-regular);
+}
+
+.runsheet-row-active td {
+  background: var(--color-background-primary-invert-default);
+}
+
+.runsheet-error {
+  color: var(--color-danger-text);
+  font-size: var(--font-size-sm);
+  margin: 0;
+}
+
+.runsheet-empty {
+  color: var(--color-text-caption);
+  font-size: var(--font-size-sm);
+  margin: 0;
+  padding: var(--space-6) 0;
+  text-align: center;
+}
+
+@media (max-width: 900px) {
+  .runsheet-toolbar,
+  .runsheet-filters {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .runsheet-rider-filter {
+    max-width: none;
+  }
+}
+
+/* Print: the run sheet is a field document - hide chrome, keep the tables. */
+@media print {
+  .runsheet-toolbar,
+  .runsheet-stats {
+    display: none;
+  }
+
+  .runsheet-rider-card {
+    border: 1px solid #000;
+    break-inside: avoid;
+  }
+}

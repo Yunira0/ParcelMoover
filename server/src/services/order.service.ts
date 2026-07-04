@@ -15,6 +15,7 @@ import {
 } from "../types/order.type";
 import { generateTrackingId } from "../utils/trackingId";
 import { generateDispatchNo } from "../utils/dispatchId";
+import { generateRunSheetNo } from "../utils/runSheetNo";
 import { resolveOwnVendorId } from "./vendor-scope.service";
 import { invalidateVendorFinanceCache } from "./finance.service";
 
@@ -274,6 +275,51 @@ async function generateUniqueDispatchNo(
   }
 
   return generateUniqueDispatchNo(tx, retries + 1);
+}
+
+async function generateUniqueRunSheetNo(
+  tx: Prisma.TransactionClient,
+  retries = 0,
+): Promise<string> {
+  const sheetNo = generateRunSheetNo();
+
+  const existing = await tx.run_sheets.findUnique({
+    where: { sheet_no: sheetNo },
+    select: { id: true },
+  });
+
+  if (!existing) {
+    return sheetNo;
+  }
+
+  if (retries >= MAX_TRACKING_ID_RETRIES) {
+    throw new AppError(500, "Failed to generate unique run sheet number");
+  }
+
+  return generateUniqueRunSheetNo(tx, retries + 1);
+}
+
+// One run sheet per hand-off: opened whenever parcels transition to
+// sent_for_delivery with a rider. The sheet freezes what the rider took;
+// delivered/failed progress is later read off the member parcels.
+async function createRunSheet(
+  tx: Prisma.TransactionClient,
+  riderId: string,
+  parcelIds: string[],
+  createdBy: string,
+) {
+  const sheetNo = await generateUniqueRunSheetNo(tx);
+  const sheet = await tx.run_sheets.create({
+    data: {
+      sheet_no: sheetNo,
+      rider_id: riderId,
+      created_by: createdBy,
+    },
+  });
+  await tx.run_sheet_parcels.createMany({
+    data: parcelIds.map((parcelId) => ({ run_sheet_id: sheet.id, parcel_id: parcelId })),
+  });
+  return sheet;
 }
 
 async function findOrCreateParty(
@@ -750,6 +796,134 @@ export async function listOrders(
       total,
       totalPages: Math.max(1, Math.ceil(total / pageSize)),
     },
+  };
+}
+
+// ── Rider run sheet ───────────────────────────────────────────────────────────
+// Run sheets are persisted hand-off records (see createRunSheet): one sheet per
+// batch of parcels sent out for delivery with a rider. This lists the sheets
+// for one Nepal-local day, with delivery progress read off the member parcels.
+
+const RUN_SHEET_PARCEL_INCLUDE = {
+  parties_parcels_receiver_idToparties: true,
+  locations_parcels_destination_location_idTolocations: true,
+  vendors: true,
+} satisfies Prisma.parcelsInclude;
+
+type RunSheetParcel = Prisma.parcelsGetPayload<{ include: typeof RUN_SHEET_PARCEL_INCLUDE }>;
+
+function mapRunSheetParcel(parcel: RunSheetParcel) {
+  const receiver = parcel.parties_parcels_receiver_idToparties;
+  return {
+    id: parcel.id,
+    orderNumber: parcel.order_number,
+    trackingId: parcel.tracking_id,
+    status: parcel.status,
+    receiverName: receiver.name,
+    receiverPhone: receiver.phone,
+    address:
+      receiver.address ||
+      locationName(parcel.locations_parcels_destination_location_idTolocations) ||
+      "",
+    destination:
+      locationName(parcel.locations_parcels_destination_location_idTolocations) ||
+      receiver.address ||
+      "",
+    pieces: parcel.pieces,
+    weightKg: parcel.weight_kg === null ? undefined : Number(parcel.weight_kg),
+    codAmount: Number(parcel.cod_amount),
+    vendorName: parcel.vendors?.business_name || parcel.vendors?.client_name || "",
+    deliveryInstruction: parcel.delivery_instruction || "",
+    deliveredAt: parcel.delivered_at ? parcel.delivered_at.toISOString() : null,
+  };
+}
+
+export type RunSheetParcelDto = ReturnType<typeof mapRunSheetParcel>;
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+// Today's calendar date in Nepal local time (YYYY-MM-DD).
+function nepalToday(): string {
+  return new Date(Date.now() + NEPAL_UTC_OFFSET_MS).toISOString().slice(0, 10);
+}
+
+// UTC instant range covering one Nepal-local calendar day.
+function nepalDayWindow(date: string) {
+  const start = new Date(Date.parse(`${date}T00:00:00Z`) - NEPAL_UTC_OFFSET_MS);
+  return { start, end: new Date(start.getTime() + DAY_MS) };
+}
+
+export async function getRiderRunSheet(
+  query: { riderId?: string; date?: string } = {},
+) {
+  const date = query.date || nepalToday();
+  const { start, end } = nepalDayWindow(date);
+  if (Number.isNaN(start.getTime())) {
+    throw new AppError(400, "Invalid date");
+  }
+
+  const sheets = await prisma.run_sheets.findMany({
+    where: {
+      created_at: { gte: start, lt: end },
+      ...(query.riderId ? { rider_id: query.riderId } : {}),
+    },
+    include: {
+      riders: { include: { locations: true } },
+      run_sheet_parcels: {
+        include: { parcels: { include: RUN_SHEET_PARCEL_INCLUDE } },
+        orderBy: { created_at: "asc" },
+      },
+    },
+    orderBy: { created_at: "desc" },
+    // Safety valve only - one day of hand-offs is inherently small.
+    take: 500,
+  });
+
+  const mapped = sheets.map((sheet) => {
+    const parcels = sheet.run_sheet_parcels.map((link) => mapRunSheetParcel(link.parcels));
+    const delivered = parcels.filter((p) => p.status === "delivered");
+    // Latest movement on the sheet = the newest status change among its parcels.
+    const lastParcelUpdate = sheet.run_sheet_parcels.reduce<Date | null>(
+      (latest, link) =>
+        !latest || link.parcels.updated_at > latest ? link.parcels.updated_at : latest,
+      null,
+    );
+
+    return {
+      id: sheet.id,
+      sheetNo: sheet.sheet_no,
+      rider: {
+        id: sheet.riders.id,
+        name: sheet.riders.name,
+        phone: sheet.riders.phone,
+        vehicleNo: sheet.riders.vehicle_no || "",
+        hub: sheet.riders.locations?.name || sheet.riders.rider_location || "",
+      },
+      createdAt: sheet.created_at.toISOString(),
+      updatedAt: (lastParcelUpdate && lastParcelUpdate > sheet.created_at
+        ? lastParcelUpdate
+        : sheet.created_at
+      ).toISOString(),
+      totalItems: parcels.length,
+      deliveredItems: delivered.length,
+      failedItems: parcels.filter((p) => p.status === "failed_delivery").length,
+      outItems: parcels.filter((p) => p.status === "sent_for_delivery").length,
+      totalCod: parcels.reduce((sum, p) => sum + p.codAmount, 0),
+      codCollected: delivered.reduce((sum, p) => sum + p.codAmount, 0),
+      parcels,
+    };
+  });
+
+  return {
+    date,
+    summary: {
+      totalSheets: mapped.length,
+      totalItems: mapped.reduce((sum, s) => sum + s.totalItems, 0),
+      deliveredItems: mapped.reduce((sum, s) => sum + s.deliveredItems, 0),
+      outItems: mapped.reduce((sum, s) => sum + s.outItems, 0),
+      totalCod: mapped.reduce((sum, s) => sum + s.totalCod, 0),
+    },
+    sheets: mapped,
   };
 }
 
@@ -1300,6 +1474,10 @@ async function _updateParcelStatusImpl(
     if (riderAssignmentField) {
       (updateData as any)[riderAssignmentField] = data.riderId;
     }
+    // Side-effect: a hand-off to a delivery rider opens a run sheet
+    if (newStatus === "sent_for_delivery" && data.riderId) {
+      await createRunSheet(tx, data.riderId, [parcelId], actor.id);
+    }
     // Side-effect: update pickup_task status in sync
     if (parcel.pickup_tasks && ["rider_assigned", "picked_up", "cancelled"].includes(newStatus)) {
       await tx.pickup_tasks.update({
@@ -1530,6 +1708,11 @@ async function _bulkUpdateParcelStatusImpl(
     }
     if (riderAssignmentField && parcelRiderId) {
       (updateData as any)[riderAssignmentField] = parcelRiderId;
+    }
+
+    // A batch hand-off to a delivery rider opens one run sheet for the batch.
+    if (newStatus === "sent_for_delivery" && parcelRiderId) {
+      await createRunSheet(tx, parcelRiderId, ids, actor.id);
     }
 
     await tx.parcels.updateMany({

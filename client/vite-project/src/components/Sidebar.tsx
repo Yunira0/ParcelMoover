@@ -242,6 +242,7 @@ const AdminSidebar: React.FC<{ isSuperAdmin: boolean }> = ({ isSuperAdmin }) => 
         <div className="sidebar-subnav">
           <SubItem to="/pickup" icon={Archive} label="Pickup" />
           <SubItem to="/dispatch" icon={Send} label="Local Dispatch" />
+          <SubItem to="/rider-run-sheet" icon={ClipboardList} label="Rider Run Sheet" />
           <SubItem to="/oov" icon={Route} label="Transit" />
           <SubItem to="/return" icon={RotateCcw} label="Return" />
           <SubItem to="/hold" icon={OctagonMinus} label="Hold" />

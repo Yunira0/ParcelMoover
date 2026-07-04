@@ -11,6 +11,7 @@ import {
   bulkUpdateOrderStatusSchema,
   listOrdersQuerySchema,
   addOrderRemarkSchema,
+  runSheetQuerySchema,
 } from "../validators/order.schema";
 import {
   addOrderRemarkController,
@@ -21,6 +22,7 @@ import {
   getOrderByTrackingIdController,
   getSenderProfileController,
   listOrdersController,
+  riderRunSheetController,
   updateOrderStatusController,
 } from "../controllers/order.controller";
 import { csrfProtection } from "../middlewares/csrf.middleware";
@@ -135,6 +137,17 @@ orderRouter.get(
   authorizeRoles("vendor", "vendor_staff"),
   requireStaffPermission("ORDER_ACCESS"),
   getSenderProfileController,
+);
+
+// GET /orders/run-sheet — parcels currently out for delivery (sent_for_delivery),
+// grouped by the rider carrying them. Admin-side only.
+orderRouter.get(
+  "/run-sheet",
+  authMiddleware,
+  authorizeRoles("super_admin", "admin"),
+  orderReadLimiter,
+  validate(runSheetQuerySchema, "query"),
+  riderRunSheetController,
 );
 
 orderRouter.get(
