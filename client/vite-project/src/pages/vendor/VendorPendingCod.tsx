@@ -2,10 +2,8 @@ import React, { useEffect, useState } from 'react';
 import PageHeader from '../../components/PageHeader';
 import type { PendingCodBill } from '../../services/finance.service';
 import { getPendingCod } from '../../services/finance.service';
+import { formatCurrency } from '../../utils/format';
 import './VendorFinance.css';
-
-const formatCurrency = (value: number) =>
-  `Rs. ${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 const VendorPendingCod: React.FC = () => {
   const [bill, setBill] = useState<PendingCodBill | null>(null);

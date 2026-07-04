@@ -177,6 +177,24 @@ export async function approveKycApplication(id: string, reviewerId: string, note
   const passwordHash = await bcrypt.hash(tempPassword, 12);
 
   await prisma.$transaction(async (tx) => {
+    // Atomically claim the application: the WHERE clause only matches (and the
+    // update only affects a row) if it's still "pending", closing the race
+    // where two concurrent approve/reject requests both pass the earlier
+    // status check before either one commits.
+    const claim = await tx.vendor_kyc_applications.updateMany({
+      where: { id, status: "pending" },
+      data: {
+        status: "approved",
+        reviewed_by: reviewerId,
+        reviewed_at: new Date(),
+        notes: notes?.trim() || null,
+        updated_at: new Date(),
+      },
+    });
+    if (claim.count === 0) {
+      throw new AppError(409, "This application has already been reviewed");
+    }
+
     const user = await tx.users.create({
       data: {
         full_name: app.owner_name,
@@ -204,17 +222,6 @@ export async function approveKycApplication(id: string, reviewerId: string, note
         joined_at: new Date(),
       },
     });
-
-    await tx.vendor_kyc_applications.update({
-      where: { id },
-      data: {
-        status: "approved",
-        reviewed_by: reviewerId,
-        reviewed_at: new Date(),
-        notes: notes?.trim() || null,
-        updated_at: new Date(),
-      },
-    });
   });
 
   sendWelcomeEmail({ to: app.owner_email, name: app.owner_name, password: tempPassword })
@@ -233,8 +240,10 @@ export async function rejectKycApplication(
   if (!app) throw new AppError(404, "KYC application not found");
   if (app.status !== "pending") throw new AppError(400, "Only pending applications can be rejected");
 
-  await prisma.vendor_kyc_applications.update({
-    where: { id },
+  // Atomic compare-and-swap: only updates if still "pending", closing the
+  // race with a concurrent approve/reject on the same application.
+  const claim = await prisma.vendor_kyc_applications.updateMany({
+    where: { id, status: "pending" },
     data: {
       status: "rejected",
       reviewed_by: reviewerId,
@@ -244,4 +253,7 @@ export async function rejectKycApplication(
       updated_at: new Date(),
     },
   });
+  if (claim.count === 0) {
+    throw new AppError(409, "This application has already been reviewed");
+  }
 }

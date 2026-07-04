@@ -268,8 +268,8 @@ export async function updateManagedUserPassword(
 ) {
   await assertCanManageUsers(actorUserId);
 
-  if (!password?.trim() || password.length < 6) {
-    throw new AppError(400, "Password must be at least 6 characters long");
+  if (!password?.trim() || password.length < 8) {
+    throw new AppError(400, "Password must be at least 8 characters long");
   }
 
   const profile = await getManagedProfile(type, id);
@@ -304,10 +304,10 @@ function validateRegisterInput(input: RegisterUserInput) {
     throw new AppError(400, "Email is required");
   }
 
-  if (!input.password.trim() || input.password.length < 6) {
+  if (!input.password.trim() || input.password.length < 8) {
     throw new AppError(
       400,
-      "Password is required and must be at least 6 characters long",
+      "Password is required and must be at least 8 characters long",
     );
   }
 

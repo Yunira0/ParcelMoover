@@ -71,12 +71,10 @@ const formatDate = (value?: string) => {
   return date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: '2-digit' });
 };
 
-// Native <input type="date"> yields a YYYY-MM-DD string; comparing the order's
-// own YYYY-MM-DD slice keeps the range check timezone-safe (no Date parsing).
-const toIsoDay = (value: string) => {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? '' : date.toISOString().slice(0, 10);
-};
+// Native <input type="date"> yields a YYYY-MM-DD string. order.createdAt is
+// already a YYYY-MM-DD day string from the API (Nepal-local), so just take it
+// as-is instead of round-tripping through Date/UTC, which would re-shift it.
+const toIsoDay = (value: string) => (/^\d{4}-\d{2}-\d{2}/.test(value) ? value.slice(0, 10) : '');
 
 interface VendorOrderFilters {
   fromDate: string;

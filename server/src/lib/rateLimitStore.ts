@@ -1,18 +1,28 @@
 import { RedisStore } from "rate-limit-redis";
-import { MemoryStore, Store } from "express-rate-limit";
+import { MemoryStore } from "express-rate-limit";
 import redis from "./redis";
 
-/**
- * Returns a Redis-backed rate-limit store in production (required when running
- * multiple instances/PM2 workers so all share one counter), or an in-memory
- * store in development so Redis is not required locally.
- */
-export function createRedisRateLimitStore(prefix: string): Store {
-  if (process.env.NODE_ENV !== "production") {
+// index.ts's startup sequence already waits for Redis to be ready before
+// registering any routes (and therefore before this is ever called), so the
+// readiness check below only guards a transient Redis blip after startup,
+// not the normal cold-start case.
+export function createRedisRateLimitStore(prefix: string) {
+  if (redis.status !== "ready") {
+    console.warn(
+      `[RateLimitStore] Redis not ready for prefix '${prefix}', using in-memory store (single-instance only)`,
+    );
     return new MemoryStore();
   }
-  return new RedisStore({
-    prefix: `ratelimit:${prefix}:`,
-    sendCommand: (...args: string[]) => (redis as any).call(...args) as Promise<any>,
-  });
+
+  try {
+    return new RedisStore({
+      prefix: `ratelimit:${prefix}:`,
+      sendCommand: async (...args: string[]) => {
+        return await (redis as any).call(...args);
+      },
+    });
+  } catch (error) {
+    console.error(`[RateLimitStore] Failed to create Redis store for '${prefix}', falling back to memory`, error);
+    return new MemoryStore();
+  }
 }

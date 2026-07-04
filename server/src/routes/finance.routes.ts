@@ -2,6 +2,13 @@ import { Request, Router } from "express";
 import { rateLimit, ipKeyGenerator } from "express-rate-limit";
 import { authMiddleware } from "../middlewares/auth.mddleware";
 import { authorizeRoles } from "../middlewares/authorizeRoles.middleware";
+import { requireStaffPermission } from "../middlewares/staffPermission.middleware";
+import { validate } from "../middlewares/validate.middleware";
+import {
+  pendingCodQuerySchema,
+  orderCodQuerySchema,
+  settlementsQuerySchema,
+} from "../validators/finance.schema";
 import { createRedisRateLimitStore } from "../lib/rateLimitStore";
 import {
   getPendingCodController,
@@ -28,8 +35,10 @@ const financeReadLimiter = rateLimit({
 financeRouter.get(
   "/pending-cod",
   authMiddleware,
-  authorizeRoles("super_admin", "admin", "vendor", "sales"),
+  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "sales"),
+  requireStaffPermission("FINANCE_ACCESS"),
   financeReadLimiter,
+  validate(pendingCodQuerySchema, "query"),
   getPendingCodController,
 );
 
@@ -37,8 +46,10 @@ financeRouter.get(
 financeRouter.get(
   "/order-cod",
   authMiddleware,
-  authorizeRoles("super_admin", "admin", "vendor", "sales"),
+  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "sales"),
+  requireStaffPermission("FINANCE_ACCESS"),
   financeReadLimiter,
+  validate(orderCodQuerySchema, "query"),
   listOrderCodController,
 );
 
@@ -46,8 +57,10 @@ financeRouter.get(
 financeRouter.get(
   "/settlements",
   authMiddleware,
-  authorizeRoles("super_admin", "admin", "vendor", "sales"),
+  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "sales"),
+  requireStaffPermission("FINANCE_ACCESS"),
   financeReadLimiter,
+  validate(settlementsQuerySchema, "query"),
   listSettlementsController,
 );
 

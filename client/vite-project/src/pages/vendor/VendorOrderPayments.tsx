@@ -8,13 +8,13 @@ import StatusChip from '../../components/StatusChip';
 import Button from '../../components/Button';
 import type { OrderCodItem, CodPaymentFilter } from '../../services/finance.service';
 import { getOrderCod } from '../../services/finance.service';
+import { formatCurrency as formatCurrencyBase, formatDate } from '../../utils/format';
 import './VendorFinance.css';
 
 type TabValue = 'all' | CodPaymentFilter;
 const PAGE_SIZE = 20;
 
-const formatCurrency = (value: number) => `Rs. ${value.toLocaleString()}`;
-const formatDate = (value: string | null) => (value ? new Date(value).toLocaleDateString() : '-');
+const formatCurrency = (value: number) => formatCurrencyBase(value, 0);
 
 const escapeCsvCell = (value: string) => `"${value.replace(/"/g, '""')}"`;
 

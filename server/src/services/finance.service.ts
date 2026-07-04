@@ -3,6 +3,7 @@ import { payment_status } from "../generated/prisma/enums";
 import prisma from "../lib/prisma";
 import redis, { scanAndDelete } from "../lib/redis";
 import { AppError } from "../utils/AppError";
+import { resolveOwnVendorId } from "./vendor-scope.service";
 import {
   CodPaymentFilter,
   OrderCodItem,
@@ -20,6 +21,12 @@ type Actor = { id: string; roles: string[] };
 
 const MAX_PAGE_SIZE = 100;
 const DEFAULT_PAGE_SIZE = 20;
+
+// Nepal Standard Time is a fixed UTC+5:45 offset (no DST). Shifting by it
+// before truncating to a calendar day keeps the reported settlement day
+// aligned with Nepal local time regardless of the server host's timezone.
+const NEPAL_UTC_OFFSET_MS = (5 * 60 + 45) * 60 * 1000;
+const formatLocalDay = (date: Date) => new Date(date.getTime() + NEPAL_UTC_OFFSET_MS).toISOString().slice(0, 10);
 
 // Same read-heavy, cache-worthy profile as the (already cached) dashboard
 // summary - a short TTL is enough since the only write path that can change
@@ -60,8 +67,6 @@ export async function invalidateVendorFinanceCache(vendorId: string): Promise<vo
 // since this is financial data and an unscoped query would leak across vendors.
 async function resolveVendor(actor: Actor, vendorIdParam?: string) {
   const isStaff = actor.roles.some((r) => ["super_admin", "admin"].includes(r));
-  const isVendor = actor.roles.includes("vendor");
-  const isVendorStaff = actor.roles.includes("vendor_staff");
   const isSales = actor.roles.includes("sales") && !isStaff;
 
   // Sales accounts may view finance for one of their own clients only. They must
@@ -79,21 +84,11 @@ async function resolveVendor(actor: Actor, vendorIdParam?: string) {
     return vendor;
   }
 
-  if (isVendor) {
-    const vendor = await prisma.vendors.findFirst({
-      where: { user_id: actor.id, deleted_at: null, status: "active" },
-    });
-    if (!vendor) throw new AppError(403, "Vendor profile not found or inactive");
-    return vendor;
-  }
-
-  if (isVendorStaff) {
-    const staffRecord = await prisma.vendor_staff.findFirst({
-      where: { user_id: actor.id, deleted_at: null, enabled: true },
-      select: { vendor_id: true },
-    });
-    if (!staffRecord) throw new AppError(403, "Staff profile not found or inactive");
-    const vendor = await prisma.vendors.findFirst({ where: { id: staffRecord.vendor_id } });
+  // Vendor / vendor staff: always resolved to their own vendor, never a
+  // caller-supplied vendorId.
+  const ownVendorId = await resolveOwnVendorId(actor);
+  if (ownVendorId) {
+    const vendor = await prisma.vendors.findFirst({ where: { id: ownVendorId } });
     if (!vendor) throw new AppError(403, "Vendor not found");
     return vendor;
   }
@@ -305,7 +300,7 @@ export async function listSettlements(
   const data: SettlementListItem[] = settlements.map((s) => ({
     id: s.id,
     statementId: s.statement_id,
-    transferDate: s.settlement_date ? s.settlement_date.toISOString().slice(0, 10) : null,
+    transferDate: s.settlement_date ? formatLocalDay(s.settlement_date) : null,
     orderCount: s.settlement_items.length,
     amount: Number(s.payable_amount ?? s.amount),
     status: s.status,

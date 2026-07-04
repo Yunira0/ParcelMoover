@@ -8,6 +8,7 @@ import {
   RateType,
   VendorRateOverrides,
 } from "../services/pricing.service";
+import { isStaffActor, resolveOwnVendorId } from "../services/vendor-scope.service";
 
 export async function getPricingSettingsController(_req: Request, res: Response) {
   try {
@@ -52,14 +53,17 @@ export async function getVendorQuoteController(req: Request, res: Response) {
     } as const;
 
     let vendor = null;
-    const actorIsVendor = req.user?.roles.includes("vendor");
+    // Vendor and vendor_staff actors always resolve to their own vendor —
+    // a caller-supplied vendorId is only honored for staff (admin/super_admin),
+    // otherwise a vendor_staff account could read another vendor's rate overrides.
+    const ownVendorId = await resolveOwnVendorId(req.user!);
 
-    if (actorIsVendor) {
+    if (ownVendorId) {
       vendor = await prisma.vendors.findFirst({
-        where: { user_id: req.user!.id, deleted_at: null },
+        where: { id: ownVendorId, deleted_at: null },
         select: RATE_SELECT,
       });
-    } else if (typeof vendorId === "string" && vendorId) {
+    } else if (isStaffActor(req.user!) && typeof vendorId === "string" && vendorId) {
       vendor = await prisma.vendors.findFirst({
         where: { id: vendorId, deleted_at: null },
         select: RATE_SELECT,

@@ -9,6 +9,9 @@ import {
   setRemarkStatusController,
   getUnclosedRemarksCountController,
 } from "../controllers/remark.controller";
+import { validate } from "../middlewares/validate.middleware";
+import { listRemarksQuerySchema } from "../validators/remark.schema";
+import { uuidParamSchema } from "../validators/common";
 import { createRedisRateLimitStore } from "../lib/rateLimitStore";
 
 const remarkRouter: Router = Router();
@@ -44,6 +47,7 @@ remarkRouter.get(
   authMiddleware,
   authorizeRoles(...CX_ROLES),
   remarksReadLimiter,
+  validate(listRemarksQuerySchema, "query"),
   listRemarksController,
 );
 
@@ -62,6 +66,7 @@ remarkRouter.get(
   authMiddleware,
   authorizeRoles(...CX_ROLES),
   remarksReadLimiter,
+  validate(uuidParamSchema, "params"),
   getRemarkByIdController,
 );
 

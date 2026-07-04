@@ -4,9 +4,9 @@ import { Plus, Ticket, Banknote, Bike, ArrowDownToLine } from 'lucide-react';
 import Button from '../Button';
 import './VendorQuickActions.css';
 
-// Only "Create Order" is wired to a real endpoint today. The rest map to
-// features that don't have a vendor-facing API yet, so they're shown (matching
-// the design) but disabled rather than faked.
+// "Create Order" and "Bulk Import" are wired to real endpoints. The rest map
+// to features that don't have a vendor-facing API yet, so they're shown
+// (matching the design) but disabled rather than faked.
 const VendorQuickActions: React.FC = () => {
   const navigate = useNavigate();
 
@@ -28,7 +28,7 @@ const VendorQuickActions: React.FC = () => {
         Pickup Request
         <Bike size={16} />
       </Button>
-      <Button variant="outline" disabled title="Bulk order import is coming soon">
+      <Button variant="outline" onClick={() => navigate('/orders/bulk-create')}>
         Bulk Import
         <ArrowDownToLine size={16} />
       </Button>

@@ -2,6 +2,16 @@ import { Request, Router } from "express";
 import { rateLimit, ipKeyGenerator } from "express-rate-limit";
 import { authMiddleware } from "../middlewares/auth.mddleware";
 import { authorizeRoles } from "../middlewares/authorizeRoles.middleware";
+import { requireStaffPermission } from "../middlewares/staffPermission.middleware";
+import { validate } from "../middlewares/validate.middleware";
+import { uuidParamSchema } from "../validators/common";
+import {
+  createOrderSchema,
+  updateOrderStatusSchema,
+  bulkUpdateOrderStatusSchema,
+  listOrdersQuerySchema,
+  addOrderRemarkSchema,
+} from "../validators/order.schema";
 import {
   addOrderRemarkController,
   bulkCreateOrdersController,
@@ -9,6 +19,7 @@ import {
   createOrderController,
   dashboardSummaryController,
   getOrderByTrackingIdController,
+  getSenderProfileController,
   listOrdersController,
   updateOrderStatusController,
 } from "../controllers/order.controller";
@@ -91,6 +102,7 @@ orderRouter.post(
   authMiddleware,
   csrfProtection,
   authorizeRoles("super_admin", "admin", "vendor", "vendor_staff"),
+  requireStaffPermission("ORDER_ACCESS"),
   bulkCreateLimiter,
   bulkCreateOrdersController,
 );
@@ -100,7 +112,9 @@ orderRouter.post(
   authMiddleware,
   csrfProtection,
   authorizeRoles("super_admin", "admin", "vendor", "vendor_staff"),
+  requireStaffPermission("ORDER_ACCESS"),
   createOrderLimiter,
+  validate(createOrderSchema),
   createOrderController,
 );
 
@@ -108,15 +122,28 @@ orderRouter.get(
   "/dashboard-summary",
   authMiddleware,
   authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider", "sales"),
+  requireStaffPermission("DASHBOARD_ACCESS"),
   orderReadLimiter,
   dashboardSummaryController,
+);
+
+// GET /orders/sender-profile — the calling vendor/vendor_staff's own business identity,
+// used to auto-fill "sender" on order creation instead of asking them to type it in.
+orderRouter.get(
+  "/sender-profile",
+  authMiddleware,
+  authorizeRoles("vendor", "vendor_staff"),
+  requireStaffPermission("ORDER_ACCESS"),
+  getSenderProfileController,
 );
 
 orderRouter.get(
   "/",
   authMiddleware,
   authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider", "sales"),
+  requireStaffPermission("ORDER_ACCESS"),
   orderReadLimiter,
+  validate(listOrdersQuerySchema, "query"),
   listOrdersController,
 );
 
@@ -125,6 +152,7 @@ orderRouter.get(
   "/track/:trackingId",
   authMiddleware,
   authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider", "sales"),
+  requireStaffPermission("ORDER_ACCESS"),
   orderReadLimiter,
   getOrderByTrackingIdController,
 );
@@ -135,7 +163,9 @@ orderRouter.patch(
   authMiddleware,
   csrfProtection,
   authorizeRoles("super_admin", "admin", "rider", "vendor", "vendor_staff"),
+  requireStaffPermission("ORDER_ACCESS"),
   statusUpdateLimiter,
+  validate(bulkUpdateOrderStatusSchema),
   bulkUpdateOrderStatusController,
 );
 
@@ -145,7 +175,10 @@ orderRouter.patch(
   authMiddleware,
   csrfProtection,
   authorizeRoles("super_admin", "admin", "rider", "vendor", "vendor_staff"),
+  requireStaffPermission("ORDER_ACCESS"),
   statusUpdateLimiter,
+  validate(uuidParamSchema, "params"),
+  validate(updateOrderStatusSchema),
   updateOrderStatusController,
 );
 
@@ -155,7 +188,10 @@ orderRouter.post(
   authMiddleware,
   csrfProtection,
   authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider", "sales"),
+  requireStaffPermission("ORDER_ACCESS"),
   remarkLimiter,
+  validate(uuidParamSchema, "params"),
+  validate(addOrderRemarkSchema),
   addOrderRemarkController,
 );
 

@@ -15,6 +15,7 @@ import {
 } from "../types/order.type";
 import { generateTrackingId } from "../utils/trackingId";
 import { generateDispatchNo } from "../utils/dispatchId";
+import { resolveOwnVendorId } from "./vendor-scope.service";
 import { invalidateVendorFinanceCache } from "./finance.service";
 
 type Party = { name: string; phone: string; alternate_phone?: string | null };
@@ -183,25 +184,27 @@ const locationName = (location?: { name: string; city: string | null; district: 
   return [location.name, location.city || location.district].filter(Boolean).join(", ");
 };
 
-const formatDate = (date?: Date | null) => date ? date.toISOString().slice(0, 10) : "";
+// Nepal Standard Time is a fixed UTC+5:45 offset (no DST). Shifting by it
+// before truncating to a calendar day keeps the reported "day" aligned with
+// Nepal local time regardless of the server host's own timezone - without
+// this, orders created between midnight and 5:45am NPT get bucketed into the
+// previous UTC day, one day off from what a vendor filtering "today" expects.
+const NEPAL_UTC_OFFSET_MS = (5 * 60 + 45) * 60 * 1000;
+const formatDate = (date?: Date | null) =>
+  date ? new Date(date.getTime() + NEPAL_UTC_OFFSET_MS).toISOString().slice(0, 10) : "";
 
 const moneyToNumber = (value?: Prisma.Decimal | null) => value ? Number(value) : 0;
 
 async function getActorScope(actor: OrderActor) {
   const isStaff = actor.roles.includes("super_admin") || actor.roles.includes("admin");
-  const actorIsVendor = actor.roles.includes("vendor");
   const actorIsRider = actor.roles.includes("rider");
-  const actorIsVendorStaff = actor.roles.includes("vendor_staff");
   const actorIsSales = actor.roles.includes("sales");
 
-  // Vendor staff: resolve vendor via their staff record, not the vendors table.
-  if (actorIsVendorStaff) {
-    const staffRecord = await prisma.vendor_staff.findFirst({
-      where: { user_id: actor.id, deleted_at: null, enabled: true },
-      select: { vendor_id: true },
-    });
-    if (!staffRecord) throw new AppError(403, "Staff profile not found or inactive");
-    return { vendorId: staffRecord.vendor_id, vendorIds: undefined, riderId: undefined };
+  // Vendor / vendor staff: resolved through the shared helper so both roles
+  // land on the same vendor-scoping guarantees used elsewhere (finance, pricing).
+  const ownVendorId = await resolveOwnVendorId(actor);
+  if (ownVendorId) {
+    return { vendorId: ownVendorId, vendorIds: undefined, riderId: undefined };
   }
 
   // Sales: scoped to the set of vendors (clients) they own. Staff/super_admin
@@ -214,30 +217,18 @@ async function getActorScope(actor: OrderActor) {
     return { vendorId: undefined, vendorIds: ownedVendors.map((v) => v.id), riderId: undefined };
   }
 
-  const [vendor, rider] = await Promise.all([
-    actorIsVendor
-      ? prisma.vendors.findFirst({
-          where: { user_id: actor.id, deleted_at: null, status: "active" },
-          select: { id: true },
-        })
-      : Promise.resolve(null),
-    actorIsRider
-      ? prisma.riders.findFirst({
-          where: { user_id: actor.id, deleted_at: null, status: "active" },
-          select: { id: true },
-        })
-      : Promise.resolve(null),
-  ]);
-
-  if (actorIsVendor && !vendor) {
-    throw new AppError(403, "Vendor profile not found or inactive");
-  }
+  const rider = actorIsRider
+    ? await prisma.riders.findFirst({
+        where: { user_id: actor.id, deleted_at: null, status: "active" },
+        select: { id: true },
+      })
+    : null;
 
   if (actorIsRider && !rider) {
     throw new AppError(403, "Rider profile not found or inactive");
   }
 
-  return { vendorId: vendor?.id, vendorIds: undefined, riderId: rider?.id };
+  return { vendorId: undefined, vendorIds: undefined, riderId: rider?.id };
 }
 
 async function generateUniqueTrackingId(
@@ -326,13 +317,30 @@ export async function createOrder(actor: OrderActor, data: CreateOrderInput) {
 }
 
 async function _createOrderImpl(actor: OrderActor, data: CreateOrderInput) {
-  const actorIsVendor = actor.roles.includes("vendor");
+  if (data.weightKg !== undefined && (!Number.isFinite(data.weightKg) || data.weightKg <= 0)) {
+    throw new AppError(400, "weightKg must be a positive number");
+  }
+  if (data.codAmount !== undefined && (!Number.isFinite(data.codAmount) || data.codAmount < 0)) {
+    throw new AppError(400, "codAmount cannot be negative");
+  }
+  if (data.deliveryCharge !== undefined && (!Number.isFinite(data.deliveryCharge) || data.deliveryCharge < 0)) {
+    throw new AppError(400, "deliveryCharge cannot be negative");
+  }
+  if (data.pieces !== undefined && (!Number.isInteger(data.pieces) || data.pieces <= 0)) {
+    throw new AppError(400, "pieces must be a positive integer");
+  }
 
-  // Run all three independent reads in parallel instead of sequentially.
+  // Resolves vendor AND vendor_staff actors to their own vendor - previously
+  // only the "vendor" role was auto-resolved here, so orders created by a
+  // vendor_staff account got vendor_id: null (orphaned from their vendor's
+  // order list, COD collections, and settlements).
+  const ownVendorId = await resolveOwnVendorId(actor);
+
+  // Run the remaining two independent reads in parallel.
   const [vendor, originLoc, destinationLoc] = await Promise.all([
-    actorIsVendor
+    ownVendorId
       ? prisma.vendors.findFirst({
-          where: { user_id: actor.id, deleted_at: null, status: "active" },
+          where: { id: ownVendorId, deleted_at: null, status: "active" },
         })
       : data.vendorId
       ? prisma.vendors.findFirst({
@@ -347,8 +355,8 @@ async function _createOrderImpl(actor: OrderActor, data: CreateOrderInput) {
       : Promise.resolve(null),
   ]);
 
-  if (actorIsVendor && !vendor) throw new AppError(403, "Vendor profile not found or inactive");
-  if (!actorIsVendor && data.vendorId && !vendor) throw new AppError(404, "Vendor not found or inactive");
+  if (ownVendorId && !vendor) throw new AppError(403, "Vendor profile not found or inactive");
+  if (!ownVendorId && data.vendorId && !vendor) throw new AppError(404, "Vendor not found or inactive");
   if (data.originLocationId && (!originLoc || !originLoc.is_active))
     throw new AppError(400, "Origin location not found or inactive");
   if (data.destinationLocationId && (!destinationLoc || !destinationLoc.is_active))
@@ -1130,6 +1138,33 @@ export async function getDashboardSummary(actor: OrderActor) {
   return summary;
 }
 
+// The vendor IS the default sender for any order they create - this resolves
+// their own business identity server-side so the client never has to ask a
+// vendor (or their staff) to type in "who is sending this", and can't diverge
+// from the vendor_id the order actually gets attributed to.
+export async function getSenderProfile(actor: OrderActor) {
+  const ownVendorId = await resolveOwnVendorId(actor);
+  if (!ownVendorId) {
+    throw new AppError(403, "Only vendors or their staff have a default sender profile");
+  }
+
+  const vendor = await prisma.vendors.findFirst({
+    where: { id: ownVendorId, deleted_at: null, status: "active" },
+    select: { id: true, business_name: true, client_name: true, phone: true, address: true, location_id: true },
+  });
+  if (!vendor) {
+    throw new AppError(403, "Vendor profile not found or inactive");
+  }
+
+  return {
+    id: vendor.id,
+    name: vendor.business_name || vendor.client_name,
+    phone: vendor.phone,
+    address: vendor.address || "",
+    locationId: vendor.location_id,
+  };
+}
+
 async function notifyVendorOfStatusChange(
   vendorId: string | null,
   trackingId: string,
@@ -1166,15 +1201,32 @@ async function _updateParcelStatusImpl(
   parcelId: string,
   data: UpdateParcelStatusInput,
 ) {
+  // validate role-based permissions of certain transtions
+  const isAdmin = actor.roles.some((r) => ["super_admin", "admin"].includes(r));
+  const isVendorActor = actor.roles.includes("vendor") || actor.roles.includes("vendor_staff");
+  const isRiderActor = actor.roles.includes("rider");
+
+  // Non-admin actors may only update parcels that belong to them: a vendor's
+  // own orders, or a rider's own pickup/delivery leg. Without this, any
+  // vendor/rider could transition any parcel in the system.
+  const { vendorId, riderId } = isVendorActor || isRiderActor
+    ? await getActorScope(actor)
+    : { vendorId: undefined, riderId: undefined };
+
   const parcel = await prisma.parcels.findFirst({
-    where: { id: parcelId, deleted_at: null },
+    where: {
+      id: parcelId,
+      deleted_at: null,
+      ...(vendorId ? { vendor_id: vendorId } : {}),
+      ...(riderId ? { OR: [{ pickup_rider_id: riderId }, { delivery_rider_id: riderId }] } : {}),
+    },
     include: {
       pickup_tasks: true,
     },
   });
 
   if (!parcel) {
-    throw new AppError(404, "Parcel not found");
+    throw new AppError(404, "Parcel not found or does not belong to your account");
   }
 
   const currentStatus = parcel.status as ParcelStatus;
@@ -1198,9 +1250,6 @@ async function _updateParcelStatusImpl(
       `Invalid status transition: '${currentStatus}' → '${newStatus}'. Allowed: [${allowed?.join(", ")}]`,
     );
   }
-
-  // validate role-based permissions of certain transtions
-  const isAdmin = actor.roles.some((r) => ["super_admin", "admin"].includes(r));
 
   //only admin aan cancel
   if (newStatus === "cancelled" && !isAdmin) {
@@ -1338,6 +1387,7 @@ async function _bulkUpdateParcelStatusImpl(
   const isAdmin = actor.roles.some((r) => ["super_admin", "admin"].includes(r));
   const isVendorActor =
     actor.roles.includes("vendor") || actor.roles.includes("vendor_staff");
+  const isRiderActor = actor.roles.includes("rider");
 
   // Hub operations (dispatch, OOV transitions) are admin-only.
   if (HUB_OPERATION_STATUSES.includes(newStatus as parcel_status) && !isAdmin) {
@@ -1353,16 +1403,21 @@ async function _bulkUpdateParcelStatusImpl(
     throw new AppError(403, "Only vendors or admins can cancel orders");
   }
 
-  // Resolve vendor scope so vendors can only act on their own parcels.
-  const { vendorId } = isVendorActor
+  // Resolve vendor/rider scope so non-admin actors can only act on their own parcels.
+  // (Named actorRiderId to avoid colliding with the dispatch-manifest riderId below,
+  // which is a different rider: the one carrying the manifest, not the acting user.)
+  const { vendorId, riderId: actorRiderId } = isVendorActor || isRiderActor
     ? await getActorScope(actor)
-    : { vendorId: undefined };
+    : { vendorId: undefined, riderId: undefined };
 
   const parcels = await prisma.parcels.findMany({
     where: {
       id: { in: ids },
       deleted_at: null,
       ...(vendorId ? { vendor_id: vendorId } : {}),
+      ...(actorRiderId
+        ? { OR: [{ pickup_rider_id: actorRiderId }, { delivery_rider_id: actorRiderId }] }
+        : {}),
     },
     include: { pickup_tasks: true },
   });

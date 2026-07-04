@@ -6,7 +6,6 @@ import {
   rejectKycApplication,
   submitKycApplication,
 } from "../services/kyc.service";
-import { AppError } from "../utils/AppError";
 
 export const submitKycController = async (req: Request, res: Response) => {
   try {
@@ -49,11 +48,6 @@ export const submitKycController = async (req: Request, res: Response) => {
 
 export const listKycController = async (req: Request, res: Response) => {
   try {
-    const roles = req.user?.roles ?? [];
-    if (!roles.includes("super_admin")) {
-      throw new AppError(403, "Forbidden");
-    }
-
     const status = req.query.status as string | undefined;
     const page = Number.isFinite(Number(req.query.page)) ? Number(req.query.page) : undefined;
     const pageSize = Number.isFinite(Number(req.query.pageSize)) ? Number(req.query.pageSize) : undefined;
@@ -69,11 +63,6 @@ export const listKycController = async (req: Request, res: Response) => {
 
 export const getKycController = async (req: Request, res: Response) => {
   try {
-    const roles = req.user?.roles ?? [];
-    if (!roles.includes("super_admin")) {
-      throw new AppError(403, "Forbidden");
-    }
-
     const app = await getKycApplication(req.params.id as string);
     return res.status(200).json({ success: true, data: app });
   } catch (error: any) {
@@ -86,11 +75,6 @@ export const getKycController = async (req: Request, res: Response) => {
 
 export const approveKycController = async (req: Request, res: Response) => {
   try {
-    const roles = req.user?.roles ?? [];
-    if (!roles.includes("super_admin")) {
-      throw new AppError(403, "Only super admins can approve KYC applications");
-    }
-
     await approveKycApplication(req.params.id as string, req.user!.id, req.body.notes);
     return res.status(200).json({ success: true, message: "KYC application approved and vendor account created" });
   } catch (error: any) {
@@ -103,11 +87,6 @@ export const approveKycController = async (req: Request, res: Response) => {
 
 export const rejectKycController = async (req: Request, res: Response) => {
   try {
-    const roles = req.user?.roles ?? [];
-    if (!roles.includes("super_admin")) {
-      throw new AppError(403, "Only super admins can reject KYC applications");
-    }
-
     const { rejectionReason, notes } = req.body;
     await rejectKycApplication(req.params.id as string, req.user!.id, rejectionReason, notes);
     return res.status(200).json({ success: true, message: "KYC application rejected" });

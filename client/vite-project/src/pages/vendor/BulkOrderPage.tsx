@@ -1,12 +1,14 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, CheckCircle2, Download, Upload, XCircle } from 'lucide-react';
 import Button from '../../components/Button';
 import FormField from '../../components/FormField';
 import {
   bulkCreateOrders,
+  getSenderProfile,
   type BulkCreateOrderRow,
   type BulkCreateResult,
+  type SenderProfile,
 } from '../../services/orders.service';
 import './BulkOrderPage.css';
 
@@ -42,36 +44,49 @@ function downloadTemplate() {
   URL.revokeObjectURL(url);
 }
 
+// Single-pass parse (not line-split first) so a quoted field containing a
+// literal newline doesn't get torn into two rows.
 function parseCSV(text: string): string[][] {
   const rows: string[][] = [];
-  for (const rawLine of text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim().split('\n')) {
-    const line = rawLine.trim();
-    if (!line) continue;
-    const cells: string[] = [];
-    let cell = '';
-    let inQuotes = false;
-    for (let i = 0; i < line.length; i++) {
-      const ch = line[i];
-      if (inQuotes) {
-        if (ch === '"' && line[i + 1] === '"') { cell += '"'; i++; }
-        else if (ch === '"') { inQuotes = false; }
-        else { cell += ch; }
-      } else {
-        if (ch === '"') { inQuotes = true; }
-        else if (ch === ',') { cells.push(cell.trim()); cell = ''; }
-        else { cell += ch; }
-      }
+  const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  let row: string[] = [];
+  let cell = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < normalized.length; i++) {
+    const ch = normalized[i];
+    if (inQuotes) {
+      if (ch === '"' && normalized[i + 1] === '"') { cell += '"'; i++; }
+      else if (ch === '"') { inQuotes = false; }
+      else { cell += ch; }
+    } else if (ch === '"') {
+      inQuotes = true;
+    } else if (ch === ',') {
+      row.push(cell.trim());
+      cell = '';
+    } else if (ch === '\n') {
+      row.push(cell.trim());
+      rows.push(row);
+      row = [];
+      cell = '';
+    } else {
+      cell += ch;
     }
-    cells.push(cell.trim());
-    rows.push(cells);
   }
-  return rows;
+  if (cell !== '' || row.length > 0) {
+    row.push(cell.trim());
+    rows.push(row);
+  }
+
+  return rows.filter(r => !(r.length === 1 && r[0] === ''));
 }
 
 interface ParsedRow extends BulkCreateOrderRow {
   _raw: string[];
   _error?: string;
 }
+
+const MAX_ROWS_PER_IMPORT = 100;
 
 function csvToRows(text: string): ParsedRow[] {
   const allRows = parseCSV(text);
@@ -82,7 +97,7 @@ function csvToRows(text: string): ParsedRow[] {
   const isHeader = firstRow.includes('receiver_name') || firstRow.includes('receiver_phone');
   const dataRows = isHeader ? allRows.slice(1) : allRows;
 
-  return dataRows.map((cols): ParsedRow => {
+  return dataRows.map((cols, index): ParsedRow => {
     const [
       receiverName = '',
       receiverPhone = '',
@@ -97,9 +112,24 @@ function csvToRows(text: string): ParsedRow[] {
     const errors: string[] = [];
     if (!receiverName.trim()) errors.push('receiver_name is required');
     if (!receiverPhone.trim()) errors.push('receiver_phone is required');
+    if (index >= MAX_ROWS_PER_IMPORT) errors.push(`exceeds ${MAX_ROWS_PER_IMPORT} order limit per import`);
 
-    const codAmount = parseFloat(codAmountStr) || 0;
-    const weightKg = parseFloat(weightStr) || 1;
+    let codAmount = 0;
+    const codAmountRaw = codAmountStr.trim();
+    if (codAmountRaw !== '') {
+      const parsed = Number(codAmountRaw);
+      if (!Number.isFinite(parsed) || parsed < 0) errors.push('cod_amount must be a non-negative number');
+      else codAmount = parsed;
+    }
+
+    let weightKg = 1;
+    const weightRaw = weightStr.trim();
+    if (weightRaw !== '') {
+      const parsed = Number(weightRaw);
+      if (!Number.isFinite(parsed) || parsed <= 0) errors.push('weight_kg must be a positive number');
+      else weightKg = parsed;
+    }
+
     const validOrderTypes = ['delivery', 'exchange', 'return'] as const;
     const orderType = validOrderTypes.includes(orderTypeStr.trim() as any)
       ? (orderTypeStr.trim() as 'delivery' | 'exchange' | 'return')
@@ -128,13 +158,33 @@ const BulkOrderPage: React.FC = () => {
   const navigate = useNavigate();
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const [senderName, setSenderName] = useState('');
-  const [senderPhone, setSenderPhone] = useState('');
+  // The vendor IS the default sender - no reason to ask them to type in their
+  // own business name/phone. Fetched once and applied to every row in the batch.
+  const [senderProfile, setSenderProfile] = useState<SenderProfile | null>(null);
+  const [senderLoading, setSenderLoading] = useState(true);
+  const [senderError, setSenderError] = useState('');
   const [rows, setRows] = useState<ParsedRow[]>([]);
   const [fileName, setFileName] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [result, setResult] = useState<BulkCreateResult | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await getSenderProfile();
+        if (!cancelled && res?.success) setSenderProfile(res.data);
+      } catch (err: any) {
+        if (!cancelled) {
+          setSenderError(err?.response?.data?.message || 'Failed to load sender details.');
+        }
+      } finally {
+        if (!cancelled) setSenderLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   const validRows = rows.filter(r => !r._error);
   const invalidRows = rows.filter(r => r._error);
@@ -165,8 +215,8 @@ const BulkOrderPage: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!senderName.trim() || !senderPhone.trim()) {
-      setError('Sender name and phone are required.');
+    if (!senderProfile) {
+      setError('Sender details could not be loaded. Please refresh and try again.');
       return;
     }
     if (validRows.length === 0) {
@@ -178,7 +228,11 @@ const BulkOrderPage: React.FC = () => {
     setError('');
     try {
       const res = await bulkCreateOrders({
-        defaultSender: { name: senderName.trim(), phone: senderPhone.trim() },
+        defaultSender: {
+          name: senderProfile.name,
+          phone: senderProfile.phone,
+          address: senderProfile.address || undefined,
+        },
         orders: validRows.map(({ _raw: _r, _error: _e, ...row }) => row),
       });
       setResult(res.data);
@@ -258,27 +312,19 @@ const BulkOrderPage: React.FC = () => {
         {/* ── Sender ── */}
         <section className="bop-section">
           <div className="bop-section-heading">
-            <h2>Default Sender</h2>
-            <p>Applied to all orders in this batch. Can be overridden per row in the CSV.</p>
+            <h2>Sender</h2>
+            <p>Applied to every order in this batch.</p>
           </div>
-          <div className="bop-sender-fields">
-            <FormField
-              label="Sender Name"
-              required
-              value={senderName}
-              onChange={setSenderName}
-              placeholder="Your business name"
-              autoComplete="organization"
-            />
-            <FormField
-              label="Sender Phone"
-              required
-              value={senderPhone}
-              onChange={setSenderPhone}
-              placeholder="98XXXXXXXX"
-              autoComplete="tel"
-            />
-          </div>
+          {senderLoading ? (
+            <p className="bop-empty">Loading sender details…</p>
+          ) : senderError ? (
+            <p role="alert" className="bop-error">{senderError}</p>
+          ) : senderProfile ? (
+            <div className="bop-sender-fields">
+              <FormField label="Sender Name" value={senderProfile.name} onChange={() => {}} disabled />
+              <FormField label="Sender Phone" value={senderProfile.phone} onChange={() => {}} disabled />
+            </div>
+          ) : null}
         </section>
 
         {/* ── Upload ── */}
@@ -390,7 +436,7 @@ const BulkOrderPage: React.FC = () => {
           <Button
             type="submit"
             variant="primary"
-            disabled={submitting || validRows.length === 0}
+            disabled={submitting || validRows.length === 0 || !senderProfile}
           >
             {submitting
               ? 'Submitting…'

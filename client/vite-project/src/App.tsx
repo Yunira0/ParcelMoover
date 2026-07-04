@@ -65,11 +65,14 @@ function App() {
           <Route path="/orders" element={<OrdersRouter />} />
           <Route
             path="/orders/create"
-            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'vendor', 'vendor_staff']}><CreateOrderPage /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'vendor', 'vendor_staff']} requiredPermission="ORDER_ACCESS"><CreateOrderPage /></RoleGuard>}
           />
+          {/* Scoped to vendor/vendor_staff only: BulkOrderPage auto-fills the
+              sender from GET /orders/sender-profile (vendor-only), with no
+              vendor picker for an admin actor to select on behalf of. */}
           <Route
             path="/orders/bulk-create"
-            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'vendor', 'vendor_staff']}><BulkOrderPage /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['vendor', 'vendor_staff']} requiredPermission="ORDER_ACCESS"><BulkOrderPage /></RoleGuard>}
           />
           <Route path="/orders/track/:trackingId" element={<OrderDetailPage />} />
           <Route
@@ -170,15 +173,15 @@ function App() {
           />
           <Route
             path="/finance/settlements"
-            element={<RoleGuard allowedRoles={['vendor', 'vendor_staff']}><VendorSettlements /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['vendor', 'vendor_staff']} requiredPermission="FINANCE_ACCESS"><VendorSettlements /></RoleGuard>}
           />
           <Route
             path="/finance/pending-cod"
-            element={<RoleGuard allowedRoles={['vendor', 'vendor_staff']}><VendorPendingCod /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['vendor', 'vendor_staff']} requiredPermission="FINANCE_ACCESS"><VendorPendingCod /></RoleGuard>}
           />
           <Route
             path="/finance/order-payments"
-            element={<RoleGuard allowedRoles={['vendor', 'vendor_staff']}><VendorOrderPayments /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['vendor', 'vendor_staff']} requiredPermission="FINANCE_ACCESS"><VendorOrderPayments /></RoleGuard>}
           />
           <Route
             path="/user-management"
@@ -194,7 +197,7 @@ function App() {
           />
           <Route
             path="/delivery-charges"
-            element={<RoleGuard allowedRoles={['vendor', 'vendor_staff']}><VendorDeliveryCharges /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['vendor', 'vendor_staff']} requiredPermission="DELIVERY_CHARGES_ACCESS"><VendorDeliveryCharges /></RoleGuard>}
           />
           <Route path="/profile" element={<ProfilePage />} />
         </Route>

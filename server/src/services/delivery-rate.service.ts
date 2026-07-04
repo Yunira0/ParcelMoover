@@ -43,6 +43,12 @@ export async function upsertDeliveryRate(actor: Actor, input: UpsertDeliveryRate
   if (!(input.baseCharge >= 0)) {
     throw new AppError(400, "Base charge must be a non-negative number");
   }
+  if (input.extraWeightPercent !== undefined && !(input.extraWeightPercent >= 0)) {
+    throw new AppError(400, "Extra weight percent must be a non-negative number");
+  }
+  if (input.freeWeightKg !== undefined && !(input.freeWeightKg >= 0)) {
+    throw new AppError(400, "Free weight (kg) must be a non-negative number");
+  }
 
   await Promise.all([
     assertActiveLocation(input.originLocationId, "Origin"),

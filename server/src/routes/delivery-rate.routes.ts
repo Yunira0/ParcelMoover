@@ -2,7 +2,15 @@ import { Request, Router } from "express";
 import { rateLimit, ipKeyGenerator } from "express-rate-limit";
 import { authMiddleware } from "../middlewares/auth.mddleware";
 import { authorizeRoles } from "../middlewares/authorizeRoles.middleware";
+import { requireStaffPermission } from "../middlewares/staffPermission.middleware";
 import { csrfProtection } from "../middlewares/csrf.middleware";
+import { validate } from "../middlewares/validate.middleware";
+import { uuidParamSchema } from "../validators/common";
+import {
+  upsertDeliveryRateSchema,
+  deliveryQuoteQuerySchema,
+  setDeliveryRateActiveSchema,
+} from "../validators/delivery-rate.schema";
 import {
   getDeliveryQuoteController,
   listDeliveryRatesController,
@@ -46,21 +54,28 @@ const ratesWriteLimiter = rateLimit({
   keyGenerator: actorOrIpKey,
 });
 
-// GET /api/delivery-rates/quote — used by the order form to auto-calculate the payable amount
+// GET /api/delivery-rates/quote — used by the order form to auto-calculate the payable amount.
+// Gated by ORDER_ACCESS (not DELIVERY_CHARGES_ACCESS) since it's part of the order-creation flow.
 deliveryRateRouter.get(
   "/quote",
   authMiddleware,
   authorizeRoles("super_admin", "admin", "vendor", "vendor_staff"),
+  requireStaffPermission("ORDER_ACCESS"),
   quoteLimiter,
+  validate(deliveryQuoteQuerySchema, "query"),
   getDeliveryQuoteController,
 );
 
 // GET /api/delivery-rates — list all configured routes
 // Vendors get read-only access so they can see the charges that apply to them.
+// Note: the /quote endpoint above is deliberately NOT gated by
+// DELIVERY_CHARGES_ACCESS - it's also used by the order creation form to
+// auto-price a shipment, which only requires ORDER_ACCESS.
 deliveryRateRouter.get(
   "/",
   authMiddleware,
   authorizeRoles("super_admin", "admin", "vendor", "vendor_staff"),
+  requireStaffPermission("DELIVERY_CHARGES_ACCESS"),
   ratesReadLimiter,
   listDeliveryRatesController,
 );
@@ -72,6 +87,7 @@ deliveryRateRouter.post(
   csrfProtection,
   authorizeRoles("super_admin"),
   ratesWriteLimiter,
+  validate(upsertDeliveryRateSchema),
   upsertDeliveryRateController,
 );
 
@@ -82,6 +98,8 @@ deliveryRateRouter.patch(
   csrfProtection,
   authorizeRoles("super_admin"),
   ratesWriteLimiter,
+  validate(uuidParamSchema, "params"),
+  validate(setDeliveryRateActiveSchema),
   setDeliveryRateActiveController,
 );
 

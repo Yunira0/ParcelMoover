@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Info } from 'lucide-react';
 import FormField from '../components/FormField';
@@ -6,7 +6,7 @@ import PageHeader from '../components/PageHeader';
 import Button from '../components/Button';
 import { getLocations, getVendors } from '../services/users.service';
 import { getVendorQuote } from '../services/pricing.service';
-import { createOrder, type CreateOrderInput, type OrderType, type ServiceType } from '../services/orders.service';
+import { createOrder, getSenderProfile, type CreateOrderInput, type OrderType, type ServiceType } from '../services/orders.service';
 import { isVendorSide } from '../utils/auth';
 import './CreateOrderPage.css';
 
@@ -57,12 +57,22 @@ const defaultFormState = {
 
 type FormState = typeof defaultFormState;
 
-const getCurrentUser = (): { id: string; roles: string[] } | null => {
-  try {
-    return JSON.parse(localStorage.getItem('user') || 'null');
-  } catch {
-    return null;
-  }
+// Maps server-side Zod field paths → form state keys
+const SERVER_FIELD_MAP: Record<string, keyof FormState> = {
+  vendorId: 'vendorId',
+  originLocationId: 'originLocationId',
+  destinationLocationId: 'destinationLocationId',
+  serviceType: 'serviceType',
+  orderType: 'orderType',
+  'receiver.name': 'customerName',
+  'receiver.phone': 'contactNumber',
+  'receiver.alternatePhone': 'alternateNumber',
+  'receiver.address': 'address',
+  'receiver.locationId': 'destinationLocationId',
+  weightKg: 'weightKg',
+  codAmount: 'codAmount',
+  packageType: 'packageType',
+  deliveryInstruction: 'deliveryInstruction',
 };
 
 const CreateOrderPage: React.FC = () => {
@@ -70,37 +80,66 @@ const CreateOrderPage: React.FC = () => {
   const location = useLocation();
   const prefillInitialData = (location.state as { initialData?: CreateOrderInput } | null)?.initialData;
 
-  const currentUser = getCurrentUser();
   const isVendorActor = isVendorSide();
 
   const [vendors, setVendors] = useState<VendorOption[]>([]);
+  // For a vendor/vendor_staff actor, this is their own vendor (fetched via
+  // /orders/sender-profile, which resolves correctly for both roles - unlike
+  // matching the vendors list by userId, which only ever matched the vendor
+  // owner's account, never a staff member's).
+  const [myVendorProfile, setMyVendorProfile] = useState<VendorOption | null>(null);
   const [locationOptions, setLocationOptions] = useState<LocationOption[]>([]);
   const [form, setForm] = useState<FormState>(defaultFormState);
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState('');
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<keyof FormState, string>>>({});
+  const [generalError, setGeneralError] = useState('');
 
   const [quote, setQuote] = useState<{ weightSurcharge: number; baseCharge: number; totalPayable: number } | null>(null);
   const [quoteError, setQuoteError] = useState('');
   const [quoteLoading, setQuoteLoading] = useState(false);
 
   useEffect(() => {
-    (async () => {
-      try {
-        const res = await getVendors();
-        if (res?.success && Array.isArray(res.data)) {
-          setVendors(res.data.map((v: any) => ({
-            id: v.id,
-            userId: v.userId,
-            label: v.company || v.client,
-            phone: v.phone,
-            address: v.address || '',
-            locationId: v.locationId ?? null,
-          })));
+    if (isVendorActor) {
+      // A vendor/vendor_staff actor IS the sender - resolve their own profile
+      // directly instead of fetching every vendor in the system just to find
+      // themselves in the list (which also never worked for vendor_staff,
+      // since their user id isn't the vendor owner's user id).
+      (async () => {
+        try {
+          const res = await getSenderProfile();
+          if (res?.success) {
+            setMyVendorProfile({
+              id: res.data.id,
+              userId: null,
+              label: res.data.name,
+              phone: res.data.phone,
+              address: res.data.address,
+              locationId: res.data.locationId,
+            });
+          }
+        } catch (err) {
+          console.error('Failed to load vendor profile:', err);
         }
-      } catch (err) {
-        console.error('Failed to load vendors:', err);
-      }
-    })();
+      })();
+    } else {
+      (async () => {
+        try {
+          const res = await getVendors();
+          if (res?.success && Array.isArray(res.data)) {
+            setVendors(res.data.map((v: any) => ({
+              id: v.id,
+              userId: v.userId,
+              label: v.company || v.client,
+              phone: v.phone,
+              address: v.address || '',
+              locationId: v.locationId ?? null,
+            })));
+          }
+        } catch (err) {
+          console.error('Failed to load vendors:', err);
+        }
+      })();
+    }
     (async () => {
       try {
         const res = await getLocations();
@@ -111,7 +150,7 @@ const CreateOrderPage: React.FC = () => {
         console.error('Failed to load locations:', err);
       }
     })();
-  }, []);
+  }, [isVendorActor]);
 
   // Prefill from a "copy"/"edit" navigation (replaces the old modal's initialData prop)
   useEffect(() => {
@@ -135,13 +174,9 @@ const CreateOrderPage: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prefillInitialData]);
 
-  // When actor is a vendor, their own sender identity is implicit - no Vendor picker shown.
-  const myVendor = useMemo(
-    () => (isVendorActor ? vendors.find(v => v.userId === currentUser?.id) : undefined),
-    [isVendorActor, vendors, currentUser?.id],
-  );
-
-  const selectedVendor = isVendorActor ? myVendor : vendors.find(v => v.id === form.vendorId);
+  // When actor is a vendor (or vendor_staff), their own sender identity is
+  // implicit - no Vendor picker shown.
+  const selectedVendor = isVendorActor ? myVendorProfile ?? undefined : vendors.find(v => v.id === form.vendorId);
 
   // Default the "From" (origin) location to the selected vendor's current hub/branch.
   // Vendor orders always originate from the vendor's hub (e.g. Imadol for Kathmandu
@@ -190,38 +225,64 @@ const CreateOrderPage: React.FC = () => {
     return () => { cancelled = true; clearTimeout(timer); };
   }, [form.destinationLocationId, weightKgNumber, form.vendorId, selectedVendor?.id, isVendorActor]);
 
-  const setField = <K extends keyof FormState>(key: K, value: FormState[K]) =>
+  const setField = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm(prev => ({ ...prev, [key]: value }));
+    // Clear the inline error for this field as soon as the user edits it
+    setFieldErrors(prev => {
+      if (!(key in prev)) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+    if (generalError) setGeneralError('');
+  };
 
   const resetForm = () => {
     setForm(defaultFormState);
     setQuote(null);
     setQuoteError('');
-    setError('');
+    setFieldErrors({});
+    setGeneralError('');
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
+    setGeneralError('');
+
+    // Validate all fields up-front so every error is shown at once
+    const errors: Partial<Record<keyof FormState, string>> = {};
 
     if (!isVendorActor && !form.vendorId) {
-      setError('Please select a vendor.');
-      return;
+      errors.vendorId = 'Please select a vendor.';
     }
-    if (!form.originLocationId || !form.destinationLocationId) {
-      setError('Please select both From and To locations.');
-      return;
+    if (!form.originLocationId) {
+      errors.originLocationId = 'Please select an origin location.';
     }
-    if (!form.customerName.trim() || !form.contactNumber.trim() || !form.address.trim()) {
-      setError('Customer name, contact number and address are required.');
-      return;
+    if (!form.destinationLocationId) {
+      errors.destinationLocationId = 'Please select a destination location.';
+    }
+    if (!form.customerName.trim()) {
+      errors.customerName = 'Customer name is required.';
+    } else if (!/[a-zA-Z]/.test(form.customerName)) {
+      errors.customerName = 'Customer name must contain letters.';
+    }
+    if (!form.contactNumber.trim()) {
+      errors.contactNumber = 'Contact number is required.';
+    }
+    if (!form.address.trim()) {
+      errors.address = 'Delivery address is required.';
     }
     if (!weightKgNumber) {
-      setError('Please enter the package weight.');
+      errors.weightKg = 'Package weight is required.';
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
       return;
     }
+
     if (!quote) {
-      setError('Charges could not be calculated for this route. Please configure a delivery rate first.');
+      setGeneralError('Charges could not be calculated for this route. Please configure a delivery rate first.');
       return;
     }
 
@@ -256,7 +317,23 @@ const CreateOrderPage: React.FC = () => {
       await createOrder(payload);
       navigate('/orders');
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to create order. Please try again.');
+      const data = err.response?.data;
+      if (data?.errors?.length) {
+        const mapped: Partial<Record<keyof FormState, string>> = {};
+        const unmapped: string[] = [];
+        for (const e of data.errors as { field: string; message: string }[]) {
+          const key = SERVER_FIELD_MAP[e.field];
+          if (key) {
+            mapped[key] = e.message;
+          } else {
+            unmapped.push(e.message);
+          }
+        }
+        setFieldErrors(mapped);
+        if (unmapped.length > 0) setGeneralError(unmapped[0]);
+      } else {
+        setGeneralError(data?.message || 'Failed to create order. Please try again.');
+      }
     } finally {
       setSubmitting(false);
     }
@@ -283,6 +360,7 @@ const CreateOrderPage: React.FC = () => {
                 placeholder="Select vendor"
                 searchPlaceholder="Search vendor by name..."
                 emptyMessage="No vendors found."
+                error={fieldErrors.vendorId}
               />
             </div>
           )}
@@ -297,6 +375,7 @@ const CreateOrderPage: React.FC = () => {
                 options={SERVICE_TYPE_OPTIONS}
                 value={form.serviceType}
                 onChange={value => setField('serviceType', value as ServiceType)}
+                error={fieldErrors.serviceType}
               />
               <FormField
                 label="Order type"
@@ -305,6 +384,7 @@ const CreateOrderPage: React.FC = () => {
                 options={ORDER_TYPE_OPTIONS}
                 value={form.orderType}
                 onChange={value => setField('orderType', value as OrderType)}
+                error={fieldErrors.orderType}
               />
             </div>
           </div>
@@ -322,6 +402,7 @@ const CreateOrderPage: React.FC = () => {
                 placeholder="Enter Origin"
                 searchPlaceholder="Search origin..."
                 emptyMessage="No locations found."
+                error={fieldErrors.originLocationId}
               />
               <FormField
                 label="To"
@@ -333,6 +414,7 @@ const CreateOrderPage: React.FC = () => {
                 placeholder="Enter Destination"
                 searchPlaceholder="Search destination..."
                 emptyMessage="No locations found."
+                error={fieldErrors.destinationLocationId}
               />
             </div>
           </div>
@@ -346,6 +428,7 @@ const CreateOrderPage: React.FC = () => {
                 value={form.customerName}
                 onChange={value => setField('customerName', value)}
                 placeholder="Enter customer name"
+                error={fieldErrors.customerName}
               />
               <FormField
                 label="Contact Number"
@@ -353,12 +436,14 @@ const CreateOrderPage: React.FC = () => {
                 value={form.contactNumber}
                 onChange={value => setField('contactNumber', value)}
                 placeholder="Enter contact number"
+                error={fieldErrors.contactNumber}
               />
               <FormField
                 label="Alternate Number"
                 value={form.alternateNumber}
                 onChange={value => setField('alternateNumber', value)}
                 placeholder="Enter alternate number"
+                error={fieldErrors.alternateNumber}
               />
               <FormField
                 label="Address"
@@ -366,6 +451,7 @@ const CreateOrderPage: React.FC = () => {
                 value={form.address}
                 onChange={value => setField('address', value)}
                 placeholder="Enter address"
+                error={fieldErrors.address}
               />
             </div>
           </div>
@@ -382,6 +468,7 @@ const CreateOrderPage: React.FC = () => {
                 value={form.weightKg}
                 onChange={value => setField('weightKg', value)}
                 placeholder="Enter weight (kg)"
+                error={fieldErrors.weightKg}
               />
               <FormField
                 label="COD Amount"
@@ -391,6 +478,7 @@ const CreateOrderPage: React.FC = () => {
                 value={form.codAmount}
                 onChange={value => setField('codAmount', value)}
                 placeholder="Enter COD amount"
+                error={fieldErrors.codAmount}
               />
               <FormField
                 label="Package Type"
@@ -399,12 +487,14 @@ const CreateOrderPage: React.FC = () => {
                 options={PACKAGE_TYPE_OPTIONS.map(opt => ({ value: opt, label: opt }))}
                 value={form.packageType}
                 onChange={value => setField('packageType', value)}
+                error={fieldErrors.packageType}
               />
               <FormField
                 label="Delivery Instruction"
                 value={form.deliveryInstruction}
                 onChange={value => setField('deliveryInstruction', value)}
                 placeholder="Enter Delivery Instruction"
+                error={fieldErrors.deliveryInstruction}
               />
             </div>
           </div>
@@ -450,7 +540,7 @@ const CreateOrderPage: React.FC = () => {
             </div>
           </div>
 
-          {error && <p className="order-form-error">{error}</p>}
+          {generalError && <p className="order-form-error">{generalError}</p>}
 
           <div className="create-order-actions">
             <Button type="submit" variant="primary" grow disabled={submitting}>

@@ -2,6 +2,7 @@ import { Router } from "express";
 import { rateLimit, ipKeyGenerator } from "express-rate-limit";
 import { authMiddleware } from "../middlewares/auth.mddleware";
 import { authorizeRoles } from "../middlewares/authorizeRoles.middleware";
+import { requireStaffPermission } from "../middlewares/staffPermission.middleware";
 import { csrfProtection } from "../middlewares/csrf.middleware";
 import { createRedisRateLimitStore } from "../lib/rateLimitStore";
 import {
@@ -64,11 +65,13 @@ pricingRouter.put(
   updatePricingSettingsController,
 );
 
-// GET /api/pricing/quote — vendor-aware delivery charge for a destination
+// GET /api/pricing/quote — vendor-aware delivery charge for a destination.
+// Part of the order-creation flow, so gated by ORDER_ACCESS (not a finance/rate permission).
 pricingRouter.get(
   "/quote",
   authMiddleware,
   authorizeRoles("super_admin", "admin", "vendor", "vendor_staff"),
+  requireStaffPermission("ORDER_ACCESS"),
   quoteLimiter,
   getVendorQuoteController,
 );

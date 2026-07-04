@@ -4,10 +4,8 @@ import PageHeader from '../../components/PageHeader';
 import Table from '../../components/Table';
 import StatusChip from '../../components/StatusChip';
 import { listDeliveryRates, type DeliveryRate } from '../../services/deliveryRates.service';
+import { formatCurrency as formatMoney } from '../../utils/format';
 import './VendorDeliveryCharges.css';
-
-const formatMoney = (value: number) =>
-  `Rs. ${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 const VendorDeliveryCharges: React.FC = () => {
   const [rates, setRates] = useState<DeliveryRate[]>([]);

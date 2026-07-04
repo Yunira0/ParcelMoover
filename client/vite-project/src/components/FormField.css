@@ -77,3 +77,34 @@
   opacity: var(--opacity-60);
   cursor: not-allowed;
 }
+
+.form-hint {
+  display: block;
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--color-text-muted, #888);
+}
+
+.form-error {
+  display: block;
+  margin-top: 3px;
+  font-size: 11px;
+  color: #dc2626;
+}
+
+.form-group.has-error input,
+.form-group.has-error select,
+.form-group.has-error textarea {
+  border-color: #dc2626;
+}
+
+.form-group.has-error input:focus,
+.form-group.has-error select:focus,
+.form-group.has-error textarea:focus {
+  border-color: #dc2626;
+  box-shadow: 0 0 0 2px rgb(220 38 38 / 12%);
+}
+
+.form-group.has-error .searchable-select-trigger {
+  border-color: #dc2626;
+}
