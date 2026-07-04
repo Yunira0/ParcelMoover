@@ -1,5 +1,5 @@
 import React from 'react';
-import { User, ArrowRight, Banknote, Truck, Package } from 'lucide-react';
+import { ArrowRight, Banknote, Truck, Package } from 'lucide-react';
 
 interface OrderInfoCardsProps {
   senderName: string;
