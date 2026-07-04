@@ -38,9 +38,17 @@ redis.on("error", (error) => {
 });
 redis.on("connect", () => { _redisErrorLogged = false; });
 
+// Same suppression as the error handler above - without Redis running (e.g.
+// local dev), retryStrategy fires this every ~2s forever and would otherwise
+// flood the console.
+let _redisReconnectingLogged = false;
 redis.on("reconnecting", () => {
-    console.log("[Redis] Attempting to reconnect...");
+    if (!_redisReconnectingLogged) {
+        console.log("[Redis] Attempting to reconnect... (further attempts logged silently)");
+        _redisReconnectingLogged = true;
+    }
 });
+redis.on("connect", () => { _redisReconnectingLogged = false; });
 
 export default redis;
 
