@@ -10,6 +10,7 @@ import {
   createOrderController,
   dashboardSummaryController,
   getOrderByTrackingIdController,
+  getSenderProfileController,
   listOrdersController,
   updateOrderStatusController,
 } from "../controllers/order.controller";
@@ -99,6 +100,16 @@ orderRouter.get(
   authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider", "sales"),
   requireStaffPermission("DASHBOARD_ACCESS"),
   dashboardSummaryController,
+);
+
+// GET /orders/sender-profile — the calling vendor/vendor_staff's own business identity,
+// used to auto-fill "sender" on order creation instead of asking them to type it in.
+orderRouter.get(
+  "/sender-profile",
+  authMiddleware,
+  authorizeRoles("vendor", "vendor_staff"),
+  requireStaffPermission("ORDER_ACCESS"),
+  getSenderProfileController,
 );
 
 orderRouter.get(

@@ -1,12 +1,14 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, CheckCircle2, Download, Upload, XCircle } from 'lucide-react';
 import Button from '../../components/Button';
 import FormField from '../../components/FormField';
 import {
   bulkCreateOrders,
+  getSenderProfile,
   type BulkCreateOrderRow,
   type BulkCreateResult,
+  type SenderProfile,
 } from '../../services/orders.service';
 import './BulkOrderPage.css';
 
@@ -156,13 +158,33 @@ const BulkOrderPage: React.FC = () => {
   const navigate = useNavigate();
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const [senderName, setSenderName] = useState('');
-  const [senderPhone, setSenderPhone] = useState('');
+  // The vendor IS the default sender - no reason to ask them to type in their
+  // own business name/phone. Fetched once and applied to every row in the batch.
+  const [senderProfile, setSenderProfile] = useState<SenderProfile | null>(null);
+  const [senderLoading, setSenderLoading] = useState(true);
+  const [senderError, setSenderError] = useState('');
   const [rows, setRows] = useState<ParsedRow[]>([]);
   const [fileName, setFileName] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [result, setResult] = useState<BulkCreateResult | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await getSenderProfile();
+        if (!cancelled && res?.success) setSenderProfile(res.data);
+      } catch (err: any) {
+        if (!cancelled) {
+          setSenderError(err?.response?.data?.message || 'Failed to load sender details.');
+        }
+      } finally {
+        if (!cancelled) setSenderLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   const validRows = rows.filter(r => !r._error);
   const invalidRows = rows.filter(r => r._error);
@@ -193,8 +215,8 @@ const BulkOrderPage: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!senderName.trim() || !senderPhone.trim()) {
-      setError('Sender name and phone are required.');
+    if (!senderProfile) {
+      setError('Sender details could not be loaded. Please refresh and try again.');
       return;
     }
     if (validRows.length === 0) {
@@ -206,7 +228,11 @@ const BulkOrderPage: React.FC = () => {
     setError('');
     try {
       const res = await bulkCreateOrders({
-        defaultSender: { name: senderName.trim(), phone: senderPhone.trim() },
+        defaultSender: {
+          name: senderProfile.name,
+          phone: senderProfile.phone,
+          address: senderProfile.address || undefined,
+        },
         orders: validRows.map(({ _raw: _r, _error: _e, ...row }) => row),
       });
       setResult(res.data);
@@ -286,27 +312,19 @@ const BulkOrderPage: React.FC = () => {
         {/* ── Sender ── */}
         <section className="bop-section">
           <div className="bop-section-heading">
-            <h2>Default Sender</h2>
-            <p>Applied to all orders in this batch. Can be overridden per row in the CSV.</p>
+            <h2>Sender</h2>
+            <p>Applied to every order in this batch.</p>
           </div>
-          <div className="bop-sender-fields">
-            <FormField
-              label="Sender Name"
-              required
-              value={senderName}
-              onChange={setSenderName}
-              placeholder="Your business name"
-              autoComplete="organization"
-            />
-            <FormField
-              label="Sender Phone"
-              required
-              value={senderPhone}
-              onChange={setSenderPhone}
-              placeholder="98XXXXXXXX"
-              autoComplete="tel"
-            />
-          </div>
+          {senderLoading ? (
+            <p className="bop-empty">Loading sender details…</p>
+          ) : senderError ? (
+            <p role="alert" className="bop-error">{senderError}</p>
+          ) : senderProfile ? (
+            <div className="bop-sender-fields">
+              <FormField label="Sender Name" value={senderProfile.name} onChange={() => {}} disabled />
+              <FormField label="Sender Phone" value={senderProfile.phone} onChange={() => {}} disabled />
+            </div>
+          ) : null}
         </section>
 
         {/* ── Upload ── */}
@@ -418,7 +436,7 @@ const BulkOrderPage: React.FC = () => {
           <Button
             type="submit"
             variant="primary"
-            disabled={submitting || validRows.length === 0}
+            disabled={submitting || validRows.length === 0 || !senderProfile}
           >
             {submitting
               ? 'Submitting…'

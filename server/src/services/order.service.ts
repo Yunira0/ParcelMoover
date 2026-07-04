@@ -285,13 +285,17 @@ async function _createOrderImpl(actor: OrderActor, data: CreateOrderInput) {
     throw new AppError(400, "pieces must be a positive integer");
   }
 
-  const actorIsVendor = actor.roles.includes("vendor");
+  // Resolves vendor AND vendor_staff actors to their own vendor - previously
+  // only the "vendor" role was auto-resolved here, so orders created by a
+  // vendor_staff account got vendor_id: null (orphaned from their vendor's
+  // order list, COD collections, and settlements).
+  const ownVendorId = await resolveOwnVendorId(actor);
 
-  // Run all three independent reads in parallel instead of sequentially.
+  // Run the remaining two independent reads in parallel.
   const [vendor, originLoc, destinationLoc] = await Promise.all([
-    actorIsVendor
+    ownVendorId
       ? prisma.vendors.findFirst({
-          where: { user_id: actor.id, deleted_at: null, status: "active" },
+          where: { id: ownVendorId, deleted_at: null, status: "active" },
         })
       : data.vendorId
       ? prisma.vendors.findFirst({
@@ -306,8 +310,8 @@ async function _createOrderImpl(actor: OrderActor, data: CreateOrderInput) {
       : Promise.resolve(null),
   ]);
 
-  if (actorIsVendor && !vendor) throw new AppError(403, "Vendor profile not found or inactive");
-  if (!actorIsVendor && data.vendorId && !vendor) throw new AppError(404, "Vendor not found or inactive");
+  if (ownVendorId && !vendor) throw new AppError(403, "Vendor profile not found or inactive");
+  if (!ownVendorId && data.vendorId && !vendor) throw new AppError(404, "Vendor not found or inactive");
   if (data.originLocationId && (!originLoc || !originLoc.is_active))
     throw new AppError(400, "Origin location not found or inactive");
   if (data.destinationLocationId && (!destinationLoc || !destinationLoc.is_active))
@@ -1032,6 +1036,33 @@ export async function getDashboardSummary(actor: OrderActor) {
   }
 
   return summary;
+}
+
+// The vendor IS the default sender for any order they create - this resolves
+// their own business identity server-side so the client never has to ask a
+// vendor (or their staff) to type in "who is sending this", and can't diverge
+// from the vendor_id the order actually gets attributed to.
+export async function getSenderProfile(actor: OrderActor) {
+  const ownVendorId = await resolveOwnVendorId(actor);
+  if (!ownVendorId) {
+    throw new AppError(403, "Only vendors or their staff have a default sender profile");
+  }
+
+  const vendor = await prisma.vendors.findFirst({
+    where: { id: ownVendorId, deleted_at: null, status: "active" },
+    select: { id: true, business_name: true, client_name: true, phone: true, address: true, location_id: true },
+  });
+  if (!vendor) {
+    throw new AppError(403, "Vendor profile not found or inactive");
+  }
+
+  return {
+    id: vendor.id,
+    name: vendor.business_name || vendor.client_name,
+    phone: vendor.phone,
+    address: vendor.address || "",
+    locationId: vendor.location_id,
+  };
 }
 
 async function notifyVendorOfStatusChange(

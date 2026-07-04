@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Info } from 'lucide-react';
 import FormField from '../components/FormField';
@@ -6,7 +6,7 @@ import PageHeader from '../components/PageHeader';
 import Button from '../components/Button';
 import { getLocations, getVendors } from '../services/users.service';
 import { getVendorQuote } from '../services/pricing.service';
-import { createOrder, type CreateOrderInput, type OrderType, type ServiceType } from '../services/orders.service';
+import { createOrder, getSenderProfile, type CreateOrderInput, type OrderType, type ServiceType } from '../services/orders.service';
 import { isVendorSide } from '../utils/auth';
 import './CreateOrderPage.css';
 
@@ -57,23 +57,19 @@ const defaultFormState = {
 
 type FormState = typeof defaultFormState;
 
-const getCurrentUser = (): { id: string; roles: string[] } | null => {
-  try {
-    return JSON.parse(localStorage.getItem('user') || 'null');
-  } catch {
-    return null;
-  }
-};
-
 const CreateOrderPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const prefillInitialData = (location.state as { initialData?: CreateOrderInput } | null)?.initialData;
 
-  const currentUser = getCurrentUser();
   const isVendorActor = isVendorSide();
 
   const [vendors, setVendors] = useState<VendorOption[]>([]);
+  // For a vendor/vendor_staff actor, this is their own vendor (fetched via
+  // /orders/sender-profile, which resolves correctly for both roles - unlike
+  // matching the vendors list by userId, which only ever matched the vendor
+  // owner's account, never a staff member's).
+  const [myVendorProfile, setMyVendorProfile] = useState<VendorOption | null>(null);
   const [locationOptions, setLocationOptions] = useState<LocationOption[]>([]);
   const [form, setForm] = useState<FormState>(defaultFormState);
   const [submitting, setSubmitting] = useState(false);
@@ -84,23 +80,47 @@ const CreateOrderPage: React.FC = () => {
   const [quoteLoading, setQuoteLoading] = useState(false);
 
   useEffect(() => {
-    (async () => {
-      try {
-        const res = await getVendors();
-        if (res?.success && Array.isArray(res.data)) {
-          setVendors(res.data.map((v: any) => ({
-            id: v.id,
-            userId: v.userId,
-            label: v.company || v.client,
-            phone: v.phone,
-            address: v.address || '',
-            locationId: v.locationId ?? null,
-          })));
+    if (isVendorActor) {
+      // A vendor/vendor_staff actor IS the sender - resolve their own profile
+      // directly instead of fetching every vendor in the system just to find
+      // themselves in the list (which also never worked for vendor_staff,
+      // since their user id isn't the vendor owner's user id).
+      (async () => {
+        try {
+          const res = await getSenderProfile();
+          if (res?.success) {
+            setMyVendorProfile({
+              id: res.data.id,
+              userId: null,
+              label: res.data.name,
+              phone: res.data.phone,
+              address: res.data.address,
+              locationId: res.data.locationId,
+            });
+          }
+        } catch (err) {
+          console.error('Failed to load vendor profile:', err);
         }
-      } catch (err) {
-        console.error('Failed to load vendors:', err);
-      }
-    })();
+      })();
+    } else {
+      (async () => {
+        try {
+          const res = await getVendors();
+          if (res?.success && Array.isArray(res.data)) {
+            setVendors(res.data.map((v: any) => ({
+              id: v.id,
+              userId: v.userId,
+              label: v.company || v.client,
+              phone: v.phone,
+              address: v.address || '',
+              locationId: v.locationId ?? null,
+            })));
+          }
+        } catch (err) {
+          console.error('Failed to load vendors:', err);
+        }
+      })();
+    }
     (async () => {
       try {
         const res = await getLocations();
@@ -111,7 +131,7 @@ const CreateOrderPage: React.FC = () => {
         console.error('Failed to load locations:', err);
       }
     })();
-  }, []);
+  }, [isVendorActor]);
 
   // Prefill from a "copy"/"edit" navigation (replaces the old modal's initialData prop)
   useEffect(() => {
@@ -135,13 +155,9 @@ const CreateOrderPage: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prefillInitialData]);
 
-  // When actor is a vendor, their own sender identity is implicit - no Vendor picker shown.
-  const myVendor = useMemo(
-    () => (isVendorActor ? vendors.find(v => v.userId === currentUser?.id) : undefined),
-    [isVendorActor, vendors, currentUser?.id],
-  );
-
-  const selectedVendor = isVendorActor ? myVendor : vendors.find(v => v.id === form.vendorId);
+  // When actor is a vendor (or vendor_staff), their own sender identity is
+  // implicit - no Vendor picker shown.
+  const selectedVendor = isVendorActor ? myVendorProfile ?? undefined : vendors.find(v => v.id === form.vendorId);
 
   // Default the "From" (origin) location to the selected vendor's current hub/branch.
   // Vendor orders always originate from the vendor's hub (e.g. Imadol for Kathmandu

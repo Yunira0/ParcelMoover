@@ -6,6 +6,7 @@ import {
   createOrder,
   getDashboardSummary,
   getOrderByTrackingId,
+  getSenderProfile,
   listOrders,
   updateParcelStatus,
 } from "../services/order.service";
@@ -373,6 +374,22 @@ export async function bulkUpdateOrderStatusController(req: Request, res: Respons
     return res.status(error.statusCode || 500).json({
       success: false,
       message: error.message || "Failed to update order statuses",
+    });
+  }
+}
+
+export async function getSenderProfileController(req: Request, res: Response) {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const profile = await getSenderProfile({ id: req.user.id, roles: req.user.roles });
+    return res.status(200).json({ success: true, data: profile });
+  } catch (error: any) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to load sender profile",
     });
   }
 }

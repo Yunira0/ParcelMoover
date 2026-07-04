@@ -185,6 +185,20 @@ export const getDashboardSummary = async () => {
   return response.data;
 };
 
+export interface SenderProfile {
+  id: string;
+  name: string;
+  phone: string;
+  address: string;
+  locationId: string | null;
+}
+
+/** The calling vendor/vendor_staff's own business identity - they ARE the default sender. */
+export const getSenderProfile = async (): Promise<{ success: boolean; data: SenderProfile }> => {
+  const response = await api.get('/orders/sender-profile');
+  return response.data;
+};
+
 export interface OrderRemark {
   id: string;
   remark: string;
