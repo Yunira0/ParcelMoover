@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { Download, Printer, Search } from 'lucide-react';
 import Table from '../components/Table';
 import Button from '../components/Button';
@@ -12,6 +12,7 @@ import {
   bulkUpdateOrderStatus,
   subscribeToOrderStatusChanged,
   type Order,
+  type OrdersPageMeta,
   type ParcelStatus,
 } from '../services/orders.service';
 import RiderAssignModal from '../components/RiderAssignModal';
@@ -66,11 +67,17 @@ const returnStage = (o: Order): ReturnTab | null => {
 const formatMoney = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 0 });
 
 const ReturnOperations: React.FC = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [orders, setOrders] = useState<Order[]>([]);
-  const [activeTab, setActiveTab] = useState<ReturnTab>('follow_up');
-  const [searchQuery, setSearchQuery] = useState('');
+  const [meta, setMeta] = useState<OrdersPageMeta | null>(null);
+  const [activeTab, setActiveTab] = useState<ReturnTab>(() => {
+    const fromUrl = searchParams.get('tab');
+    return fromUrl && fromUrl in TAB_LABELS ? (fromUrl as ReturnTab) : 'follow_up';
+  });
+  const [searchQuery, setSearchQuery] = useState(() => searchParams.get('search') || '');
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [selectedIds, setSelectedIds] = useState<Set<string | number>>(new Set());
   const [actionMsg, setActionMsg] = useState('');
   const [acting, setActing] = useState(false);
@@ -78,6 +85,11 @@ const ReturnOperations: React.FC = () => {
   const [riderModalOpen, setRiderModalOpen] = useState(false);
   const [pendingIds, setPendingIds] = useState<string[]>([]);
 
+  // The follow_up/ready_to_return/sent_to_vendor/returned_to_vendor split
+  // depends on orderType *and* status together (see returnStage below), which
+  // the backend's status[] filter can't express - so this still fetches the
+  // (capped, default) unfiltered list rather than a real server-paginated one.
+  // meta.truncated at least surfaces it honestly instead of claiming completeness.
   const loadReturns = async () => {
     setLoading(true);
     try {
@@ -85,7 +97,11 @@ const ReturnOperations: React.FC = () => {
       if (res?.success && Array.isArray(res.data)) {
         // Both kinds of returns: reverse orders + failed deliveries in the RTO flow.
         setOrders(res.data.filter((order) => returnStage(order) !== null));
+        setMeta(res.meta ?? null);
+        setLoadError('');
       }
+    } catch {
+      setLoadError('Failed to load return orders. Showing the last loaded data, if any.');
     } finally {
       setLoading(false);
     }
@@ -94,6 +110,15 @@ const ReturnOperations: React.FC = () => {
   useEffect(() => { loadReturns(); }, []);
   useEffect(() => subscribeToOrderStatusChanged(loadReturns), []);
   useEffect(() => { setPage(1); setSelectedIds(new Set()); setActionMsg(''); }, [activeTab, searchQuery]);
+
+  // Keep tab/search bookmarkable - mirror into the URL (replacing history,
+  // not pushing, so the back button doesn't step through every keystroke).
+  useEffect(() => {
+    const next = new URLSearchParams();
+    if (activeTab !== 'follow_up') next.set('tab', activeTab);
+    if (searchQuery) next.set('search', searchQuery);
+    setSearchParams(next, { replace: true });
+  }, [activeTab, searchQuery, setSearchParams]);
 
   const filteredOrders = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -187,8 +212,9 @@ const ReturnOperations: React.FC = () => {
   };
 
   const downloadCsv = () => {
-    const headers = ['Tracking ID', 'Type', 'Status', 'Sender', 'Receiver', 'Weight', 'COD'];
+    const headers = ['#', 'Tracking ID', 'Type', 'Status', 'Sender', 'Receiver', 'Weight', 'COD'];
     const rows = filteredOrders.map((order) => [
+      `#${order.orderNumber}`,
       order.trackingId,
       order.orderType === 'return' ? 'Return order' : 'RTO',
       STATUS_LABELS[order.status] || order.status,
@@ -211,9 +237,9 @@ const ReturnOperations: React.FC = () => {
 
   const returnColumns = [
     {
-      header: 'SN',
-      accessor: (order: Order) => ((page - 1) * PAGE_SIZE) + visibleOrders.findIndex((row) => row.id === order.id) + 1,
-      width: '50px',
+      header: '#',
+      accessor: (order: Order) => `#${order.orderNumber}`,
+      width: '70px',
       className: 'return-sn-cell',
     },
     { header: 'DATE', accessor: (order: Order) => order.createdAt || '-', width: '100px' },
@@ -273,6 +299,13 @@ const ReturnOperations: React.FC = () => {
         onChange={setActiveTab}
         options={(Object.keys(TAB_LABELS) as ReturnTab[]).map((tab) => ({ value: tab, label: TAB_LABELS[tab] }))}
       />
+
+      {loadError && <p className="return-action-msg">{loadError}</p>}
+      {meta?.truncated && (
+        <p className="return-action-msg">
+          Showing the most recent {meta.pageSize} of {meta.total} matching orders. Narrow your search to see the rest.
+        </p>
+      )}
 
       <div className="return-toolbar">
         <div className="return-toolbar-actions">

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Plus, MapPin } from 'lucide-react';
+import { Plus, MapPin, Trash2, X } from 'lucide-react';
 import Button from '../../components/Button';
 import FormField from '../../components/FormField';
 import StatusChip from '../../components/StatusChip';
@@ -7,6 +7,7 @@ import {
   listManagedLocations,
   createLocation,
   updateLocation,
+  deleteLocation,
   type Destination,
 } from '../../services/locations.service';
 import './DestinationsSettings.css';
@@ -22,9 +23,12 @@ const DestinationsSettings: React.FC = () => {
   const [destForm, setDestForm] = useState(emptyDest);
   const [savingDest, setSavingDest] = useState(false);
 
-  // Per-destination "add area" input state, keyed by destination id.
   const [areaInputs, setAreaInputs] = useState<Record<string, string>>({});
   const [savingArea, setSavingArea] = useState<string | null>(null);
+
+  // Inline delete confirmation: id of item pending confirm
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -80,11 +84,27 @@ const DestinationsSettings: React.FC = () => {
   };
 
   const toggleActive = async (id: string, isActive: boolean) => {
+    setError('');
     try {
       await updateLocation(id, { isActive: !isActive });
       await load();
     } catch (err: any) {
       setError(err.response?.data?.message || 'Failed to update.');
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    setDeleting(true);
+    setError('');
+    try {
+      await deleteLocation(id);
+      setConfirmDelete(null);
+      await load();
+    } catch (err: any) {
+      setError(err.response?.data?.message || 'Failed to delete.');
+      setConfirmDelete(null);
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -138,11 +158,42 @@ const DestinationsSettings: React.FC = () => {
                   <span>{dest.name}</span>
                   {dest.code && <span className="dest-code">{dest.code}</span>}
                 </div>
-                <button type="button" className="dest-toggle" onClick={() => toggleActive(dest.id, dest.isActive)}>
-                  <StatusChip tone={dest.isActive ? 'success' : 'danger'}>
-                    {dest.isActive ? 'Active' : 'Inactive'}
-                  </StatusChip>
-                </button>
+                <div className="dest-card-actions">
+                  <button type="button" className="dest-toggle" onClick={() => toggleActive(dest.id, dest.isActive)}>
+                    <StatusChip tone={dest.isActive ? 'success' : 'danger'}>
+                      {dest.isActive ? 'Active' : 'Inactive'}
+                    </StatusChip>
+                  </button>
+                  {confirmDelete === dest.id ? (
+                    <div className="dest-confirm-delete">
+                      <span>Delete destination and all its areas?</span>
+                      <button
+                        type="button"
+                        className="dest-confirm-btn dest-confirm-btn--danger"
+                        disabled={deleting}
+                        onClick={() => handleDelete(dest.id)}
+                      >
+                        {deleting ? 'Deleting…' : 'Yes, delete'}
+                      </button>
+                      <button
+                        type="button"
+                        className="dest-confirm-btn"
+                        onClick={() => setConfirmDelete(null)}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      className="dest-delete-btn"
+                      title="Remove destination"
+                      onClick={() => setConfirmDelete(dest.id)}
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  )}
+                </div>
               </div>
 
               <div className="dest-areas">
@@ -150,15 +201,50 @@ const DestinationsSettings: React.FC = () => {
                   <span className="dest-muted">No covered areas yet.</span>
                 ) : (
                   dest.areas.map((area) => (
-                    <button
+                    <span
                       key={area.id}
-                      type="button"
                       className={`dest-area-chip ${area.isActive ? '' : 'dest-area-chip--inactive'}`}
-                      title={area.isActive ? 'Click to deactivate' : 'Click to activate'}
-                      onClick={() => toggleActive(area.id, area.isActive)}
                     >
-                      {area.name}
-                    </button>
+                      {confirmDelete === area.id ? (
+                        <>
+                          <span className="dest-area-confirm-text">Remove "{area.name}"?</span>
+                          <button
+                            type="button"
+                            className="dest-area-confirm-yes"
+                            disabled={deleting}
+                            onClick={() => handleDelete(area.id)}
+                          >
+                            {deleting ? '…' : 'Yes'}
+                          </button>
+                          <button
+                            type="button"
+                            className="dest-area-confirm-no"
+                            onClick={() => setConfirmDelete(null)}
+                          >
+                            No
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            className="dest-area-name-btn"
+                            title={area.isActive ? 'Click to deactivate' : 'Click to activate'}
+                            onClick={() => toggleActive(area.id, area.isActive)}
+                          >
+                            {area.name}
+                          </button>
+                          <button
+                            type="button"
+                            className="dest-area-remove"
+                            title="Remove area"
+                            onClick={() => setConfirmDelete(area.id)}
+                          >
+                            <X size={11} />
+                          </button>
+                        </>
+                      )}
+                    </span>
                   ))
                 )}
               </div>

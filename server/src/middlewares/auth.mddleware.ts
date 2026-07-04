@@ -2,6 +2,7 @@ import { NextFunction, Request, Response } from 'express';
 import jwt, { JwtPayload } from 'jsonwebtoken';
 import prisma from '../lib/prisma';
 import { AppError } from '../utils/AppError';
+import { isIssuedBeforeUserRevocation, isTokenRevoked } from '../lib/tokenRevocation';
 
 
 interface AuthTokenPayload extends JwtPayload {
@@ -41,6 +42,14 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
 
         if (!decoded) {
             throw new AppError(401, 'Invalid token');
+        }
+
+        const [revoked, revokedByUserWide] = await Promise.all([
+            isTokenRevoked(decoded.jti),
+            isIssuedBeforeUserRevocation(decoded.id, decoded.iat),
+        ]);
+        if (revoked || revokedByUserWide) {
+            throw new AppError(401, 'Session has been revoked, please log in again');
         }
 
         const user = await prisma.users.findFirst({

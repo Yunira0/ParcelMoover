@@ -24,6 +24,7 @@ export interface NotificationDTO {
   id: string;
   title: string;
   body: string | null;
+  trackingId: string | null;
   readAt: string | null;
   createdAt: string;
 }
@@ -32,6 +33,7 @@ function mapNotification(notification: {
   id: string;
   title: string;
   body: string | null;
+  tracking_id: string | null;
   read_at: Date | null;
   created_at: Date;
 }): NotificationDTO {
@@ -39,6 +41,7 @@ function mapNotification(notification: {
     id: notification.id,
     title: notification.title,
     body: notification.body,
+    trackingId: notification.tracking_id,
     readAt: notification.read_at ? notification.read_at.toISOString() : null,
     createdAt: notification.created_at.toISOString(),
   };
@@ -51,10 +54,11 @@ export async function createNotification(
   userId: string,
   title: string,
   body?: string | null,
+  trackingId?: string | null,
 ): Promise<void> {
   try {
     const notification = await prisma.notifications.create({
-      data: { user_id: userId, title, body: body ?? null },
+      data: { user_id: userId, title, body: body ?? null, tracking_id: trackingId ?? null },
     });
 
     await invalidateUnreadCount(userId);

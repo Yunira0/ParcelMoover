@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Download,
   PackageCheck,
@@ -14,10 +15,10 @@ import PageHeader from '../components/PageHeader';
 import Pagination from '../components/Pagination';
 import {
   getOrders,
-  notifyOrderStatusChanged,
   subscribeToOrderStatusChanged,
   updateOrderStatus,
   type Order,
+  type OrdersPageMeta,
   type ParcelStatus,
 } from '../services/orders.service';
 import { getRiders } from '../services/users.service';
@@ -26,6 +27,7 @@ import './PickupOperations.css';
 type PickupTab = 'pickup_ordered' | 'rider_assigned' | 'picked_up' | 'arrived' | 'failed' | 'cancelled';
 
 const PAGE_SIZE = 10;
+const SEARCH_DEBOUNCE_MS = 300;
 
 const TAB_LABELS: Record<PickupTab, string> = {
   pickup_ordered: 'Pickup order',
@@ -89,63 +91,6 @@ const STATUS_TRANSITIONS: Record<ParcelStatus, ParcelStatus[]> = {
   returned_to_vendor: [],
 };
 
-const MOCK_PICKUPS: Order[] = [
-  {
-    id: 'pickup-1',
-    trackingId: 'TRK-8821932',
-    status: 'pickup_ordered',
-    orderType: 'delivery',
-    serviceType: 'dtd',
-    senderName: 'Sender name',
-    senderPhone: '970000000',
-    receiverName: 'Receiver name',
-    receiverPhone: '980000000',
-    origin: 'Lalitpur',
-    destination: 'Kathmandu',
-    pieces: 6,
-    codAmount: 0,
-    deliveryCharge: 0,
-    riderName: 'Rider name',
-    createdAt: '2026-06-17',
-  },
-  {
-    id: 'pickup-2',
-    trackingId: 'TRK-8821933',
-    status: 'failed_pickup',
-    orderType: 'return',
-    serviceType: 'btd',
-    senderName: 'Aarav Store',
-    senderPhone: '9811111111',
-    receiverName: 'Receiver name',
-    receiverPhone: '980000000',
-    origin: 'Bhaktapur',
-    destination: 'Kathmandu',
-    pieces: 2,
-    codAmount: 0,
-    deliveryCharge: 0,
-    riderName: 'Sagar',
-    createdAt: '2026-06-17',
-  },
-  {
-    id: 'pickup-3',
-    trackingId: 'TRK-8821934',
-    status: 'rider_assigned',
-    orderType: 'exchange',
-    serviceType: 'dtb',
-    senderName: 'Nima Retail',
-    senderPhone: '9822222222',
-    receiverName: 'Receiver name',
-    receiverPhone: '980000000',
-    origin: 'Lalitpur',
-    destination: 'Pokhara Hub',
-    pieces: 1,
-    codAmount: 0,
-    deliveryCharge: 0,
-    riderName: 'Rider name',
-    createdAt: '2026-06-17',
-  },
-];
-
 const getOrderTypeTone = (order: Order) => {
   if (order.status === 'failed_pickup') return 'danger';
   if (order.status === 'rider_assigned') return 'warning';
@@ -162,12 +107,18 @@ const createEmptyTabSelections = (): Record<PickupTab, Set<string | number>> => 
 });
 
 const PickupOperations: React.FC = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [orders, setOrders] = useState<Order[]>([]);
-  const [activeTab, setActiveTab] = useState<PickupTab>('pickup_ordered');
-  const [searchQuery, setSearchQuery] = useState('');
+  const [meta, setMeta] = useState<OrdersPageMeta | null>(null);
+  const [activeTab, setActiveTab] = useState<PickupTab>(() => {
+    const fromUrl = searchParams.get('tab');
+    return fromUrl && fromUrl in TAB_LABELS ? (fromUrl as PickupTab) : 'pickup_ordered';
+  });
+  const [searchQuery, setSearchQuery] = useState(() => searchParams.get('search') || '');
+  const [debouncedSearch, setDebouncedSearch] = useState(() => searchParams.get('search') || '');
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
-  const [usingMockData, setUsingMockData] = useState(false);
+  const [loadError, setLoadError] = useState('');
   const [selectedIdsByTab, setSelectedIdsByTab] = useState<Record<PickupTab, Set<string | number>>>(createEmptyTabSelections);
   const [isActionOpen, setIsActionOpen] = useState(false);
   const [selectedNextStatus, setSelectedNextStatus] = useState<ParcelStatus | ''>('');
@@ -189,66 +140,66 @@ const PickupOperations: React.FC = () => {
     })();
   }, []);
 
-  const loadPickups = async () => {
+  // Debounce search input so every keystroke doesn't fire a request.
+  useEffect(() => {
+    const handle = setTimeout(() => setDebouncedSearch(searchQuery.trim()), SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(handle);
+  }, [searchQuery]);
+
+  const loadPickups = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await getOrders();
+      const res = await getOrders({
+        status: TAB_STATUSES[activeTab],
+        search: debouncedSearch || undefined,
+        page,
+        pageSize: PAGE_SIZE,
+      });
       if (res?.success && Array.isArray(res.data)) {
         setOrders(res.data);
-        setUsingMockData(false);
-      } else if (Array.isArray(res)) {
-        setOrders(res);
-        setUsingMockData(false);
-      } else {
-        setOrders(MOCK_PICKUPS);
-        setUsingMockData(true);
+        setMeta(res.meta ?? null);
+        setLoadError('');
       }
     } catch {
-      setOrders(MOCK_PICKUPS);
-      setUsingMockData(true);
+      setLoadError('Failed to load pickup orders. Showing the last loaded data, if any.');
     } finally {
       setLoading(false);
     }
-  };
+  }, [activeTab, debouncedSearch, page]);
 
-  useEffect(() => {
-    loadPickups();
-  }, []);
-
-  useEffect(() => subscribeToOrderStatusChanged(loadPickups), []);
+  useEffect(() => { loadPickups(); }, [loadPickups]);
+  useEffect(() => subscribeToOrderStatusChanged(loadPickups), [loadPickups]);
 
   useEffect(() => {
     setPage(1);
     setIsActionOpen(false);
     setActionError('');
     setRiderId('');
-  }, [activeTab, searchQuery]);
+  }, [activeTab, debouncedSearch]);
 
-  const filteredOrders = useMemo(() => {
-    const tabStatuses = TAB_STATUSES[activeTab];
-    const q = searchQuery.trim().toLowerCase();
+  // Keep tab/search bookmarkable - mirror into the URL (replacing history,
+  // not pushing, so the back button doesn't step through every keystroke).
+  useEffect(() => {
+    const next = new URLSearchParams();
+    if (activeTab !== 'pickup_ordered') next.set('tab', activeTab);
+    if (debouncedSearch) next.set('search', debouncedSearch);
+    setSearchParams(next, { replace: true });
+  }, [activeTab, debouncedSearch, setSearchParams]);
 
-    return orders
-      .filter(order => tabStatuses.includes(order.status))
-      .filter(order => {
-        if (!q) return true;
-        return (
-          order.trackingId.toLowerCase().includes(q) ||
-          order.senderName.toLowerCase().includes(q) ||
-          order.senderPhone.toLowerCase().includes(q) ||
-          (order.riderName || '').toLowerCase().includes(q) ||
-          order.origin.toLowerCase().includes(q)
-        );
-      });
-  }, [activeTab, orders, searchQuery]);
+  // Selection is scoped to a single loaded page - clear it when the page or
+  // tab changes so a bulk action never silently drops ids that scrolled out
+  // of the currently-fetched page.
+  useEffect(() => {
+    setSelectedIdsByTab(prev => ({ ...prev, [activeTab]: new Set() }));
+  }, [activeTab, page]);
 
-  const totalPages = Math.max(1, Math.ceil(filteredOrders.length / PAGE_SIZE));
-  const visibleOrders = filteredOrders.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const visibleOrders = orders;
+  const totalPages = meta?.totalPages ?? 1;
   const selectedIds = selectedIdsByTab[activeTab];
   const visibleOrderIds = visibleOrders.map(order => order.id);
   const allVisibleSelected = visibleOrderIds.length > 0 && visibleOrderIds.every(id => selectedIds.has(id));
   const someVisibleSelected = visibleOrderIds.some(id => selectedIds.has(id));
-  const selectedOrders = filteredOrders.filter(order => selectedIds.has(order.id));
+  const selectedOrders = visibleOrders.filter(order => selectedIds.has(order.id));
   const allowedStatusOptions = useMemo(() => {
     if (selectedOrders.length === 0) return [];
 
@@ -327,23 +278,16 @@ const PickupOperations: React.FC = () => {
 
     setStatusUpdating(true);
     try {
-      if (!usingMockData) {
-        await Promise.all(
-          selectedOrders.map(order => updateOrderStatus(
-            order.id,
-            selectedNextStatus,
-            undefined,
-            undefined,
-            isRiderAssignAction ? riderId : undefined,
-          )),
-        );
-        await loadPickups();
-      } else {
-        setOrders(prev => prev.map(order => (
-          selectedIds.has(order.id) ? { ...order, status: selectedNextStatus } : order
-        )));
-        notifyOrderStatusChanged();
-      }
+      await Promise.all(
+        selectedOrders.map(order => updateOrderStatus(
+          order.id,
+          selectedNextStatus,
+          undefined,
+          undefined,
+          isRiderAssignAction ? riderId : undefined,
+        )),
+      );
+      await loadPickups();
 
       setSelectedIdsByTab(prev => ({ ...prev, [activeTab]: new Set() }));
       setIsActionOpen(false);
@@ -399,9 +343,9 @@ const PickupOperations: React.FC = () => {
 
   const pickupColumns = [
     {
-      header: 'SN',
-      accessor: (order: Order) => ((page - 1) * PAGE_SIZE) + visibleOrders.findIndex(row => row.id === order.id) + 1,
-      width: '34px',
+      header: '#',
+      accessor: (order: Order) => `#${order.orderNumber}`,
+      width: '70px',
       className: 'pickup-sn-cell',
     },
     {
@@ -468,6 +412,8 @@ const PickupOperations: React.FC = () => {
         onChange={setActiveTab}
         options={(Object.keys(TAB_LABELS) as PickupTab[]).map(tab => ({ value: tab, label: TAB_LABELS[tab] }))}
       />
+
+      {loadError && <p className="pickup-action-error">{loadError}</p>}
 
       <div className="pickup-toolbar">
         <div />
@@ -577,6 +523,7 @@ const PickupOperations: React.FC = () => {
         page={page}
         totalPages={totalPages}
         onPageChange={setPage}
+        summary={meta ? `${meta.total} order${meta.total === 1 ? '' : 's'}` : undefined}
       />
     </div>
   );

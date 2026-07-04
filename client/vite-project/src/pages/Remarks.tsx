@@ -18,12 +18,13 @@ import './Remarks.css';
 
 const PAGE_SIZE = 10;
 
-type RemarkTab = 'all' | RemarkStatus;
+type RemarkTab = 'all' | 'unclosed' | RemarkStatus;
 
-const TAB_ORDER: RemarkTab[] = ['all', 'open', 'pending', 'closed'];
+const TAB_ORDER: RemarkTab[] = ['all', 'unclosed', 'open', 'pending', 'closed'];
 
 const TAB_LABELS: Record<RemarkTab, string> = {
   all: 'All',
+  unclosed: 'Unclosed',
   ...REMARK_STATUS_LABELS,
 };
 
@@ -60,18 +61,31 @@ const isWithinRange = (createdAt: string, range: DateRange) => {
 
 const Remarks: React.FC = () => {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [remarks, setRemarks] = useState<Remark[]>([]);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState(() => searchParams.get('search') || '');
   // Allow deep-linking to a specific status tab, e.g. /remarks?status=pending
   const statusParam = searchParams.get('status');
   const initialTab: RemarkTab =
     statusParam && (TAB_ORDER as string[]).includes(statusParam) ? (statusParam as RemarkTab) : 'all';
   const [activeTab, setActiveTab] = useState<RemarkTab>(initialTab);
-  const [dateRange, setDateRange] = useState<DateRange>('');
+  const [dateRange, setDateRange] = useState<DateRange>(() => {
+    const fromUrl = searchParams.get('dateRange');
+    return fromUrl && fromUrl in RANGE_DAYS ? (fromUrl as DateRange) : '';
+  });
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [selectedIds, setSelectedIds] = useState<Set<string | number>>(new Set());
+
+  // Keep tab/search/date-range bookmarkable - mirror into the URL (replacing
+  // history, not pushing, so the back button doesn't step through every keystroke).
+  useEffect(() => {
+    const next = new URLSearchParams();
+    if (activeTab !== 'all') next.set('status', activeTab);
+    if (searchQuery) next.set('search', searchQuery);
+    if (dateRange) next.set('dateRange', dateRange);
+    setSearchParams(next, { replace: true });
+  }, [activeTab, searchQuery, dateRange, setSearchParams]);
 
   const loadRemarks = useCallback(async () => {
     setLoading(true);
@@ -98,15 +112,19 @@ const Remarks: React.FC = () => {
   }, [statusParam]);
 
   const statusCounts = useMemo(() => {
-    const counts: Record<RemarkTab, number> = { all: remarks.length, open: 0, pending: 0, closed: 0 };
-    remarks.forEach((remark) => { counts[remark.status] += 1; });
+    const counts: Record<RemarkTab, number> = { all: remarks.length, unclosed: 0, open: 0, pending: 0, closed: 0 };
+    remarks.forEach((remark) => {
+      counts[remark.status] += 1;
+      if (remark.status !== 'closed') counts.unclosed += 1;
+    });
     return counts;
   }, [remarks]);
 
   const filteredRemarks = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     return remarks.filter((remark) => {
-      if (activeTab !== 'all' && remark.status !== activeTab) return false;
+      if (activeTab === 'unclosed' && remark.status === 'closed') return false;
+      if (activeTab !== 'all' && activeTab !== 'unclosed' && remark.status !== activeTab) return false;
       if (!isWithinRange(remark.createdAt, dateRange)) return false;
       if (q && !(
         remark.customerName.toLowerCase().includes(q) ||

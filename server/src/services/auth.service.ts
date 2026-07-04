@@ -1,9 +1,11 @@
+import crypto from "crypto";
 import prisma from "../lib/prisma";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 
 import { AppError } from "../utils/AppError";
 import { sendWelcomeEmail } from "../lib/mailer";
+import { revokeAllUserTokens } from "../lib/tokenRevocation";
 
 import { RegisterUserInput } from "../types/user-registration";
 
@@ -569,7 +571,7 @@ export async function loginUser(data: IuserLoginData) {
     const token = jwt.sign(
       { id: user.id, roles, mustChangePassword },
       process.env.JWT_SECRET,
-      { expiresIn: "7d" },
+      { expiresIn: "7d", jwtid: crypto.randomUUID() },
     );
 
     await prisma.users.update({
@@ -624,4 +626,24 @@ export async function changePassword(
     where: { id: userId },
     data: { password_hash: hash, must_change_password: false, updated_at: new Date() },
   });
+
+  // A password change should kill every other session (e.g. a stolen token) -
+  // but the caller just authenticated with their *current* token to get here,
+  // so reissue a fresh one rather than logging them out too.
+  await revokeAllUserTokens(userId);
+
+  if (!process.env.JWT_SECRET) {
+    throw new AppError(500, "JWT secret not configured");
+  }
+  const roles = (
+    await prisma.user_roles.findMany({ where: { user_id: userId }, include: { roles: true } })
+  ).map((ur) => ur.roles.code);
+
+  const token = jwt.sign(
+    { id: userId, roles, mustChangePassword: false },
+    process.env.JWT_SECRET,
+    { expiresIn: "7d", jwtid: crypto.randomUUID() },
+  );
+
+  return { token };
 }

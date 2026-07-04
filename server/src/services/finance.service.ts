@@ -1,6 +1,7 @@
 import { Prisma } from "../generated/prisma/client";
 import { payment_status } from "../generated/prisma/enums";
 import prisma from "../lib/prisma";
+import redis, { scanAndDelete } from "../lib/redis";
 import { AppError } from "../utils/AppError";
 import { resolveOwnVendorId } from "./vendor-scope.service";
 import {
@@ -26,6 +27,40 @@ const DEFAULT_PAGE_SIZE = 20;
 // aligned with Nepal local time regardless of the server host's timezone.
 const NEPAL_UTC_OFFSET_MS = (5 * 60 + 45) * 60 * 1000;
 const formatLocalDay = (date: Date) => new Date(date.getTime() + NEPAL_UTC_OFFSET_MS).toISOString().slice(0, 10);
+
+// Same read-heavy, cache-worthy profile as the (already cached) dashboard
+// summary - a short TTL is enough since the only write path that can change
+// these is a new cod_collection row at order creation (settlements/payment
+// status have no mutation endpoint yet), which explicitly invalidates below.
+const FINANCE_CACHE_TTL_SECONDS = 30;
+
+async function readFinanceCache<T>(key: string): Promise<T | null> {
+  try {
+    const cached = await redis.get(key);
+    return cached ? (JSON.parse(cached) as T) : null;
+  } catch (error) {
+    console.error("[Redis] Failed to read finance cache:", error);
+    return null;
+  }
+}
+
+async function writeFinanceCache(key: string, value: unknown): Promise<void> {
+  try {
+    await redis.setex(key, FINANCE_CACHE_TTL_SECONDS, JSON.stringify(value));
+  } catch (error) {
+    console.error("[Redis] Failed to write finance cache:", error);
+  }
+}
+
+// Called from order creation (fire-and-forget) whenever a vendor gets a new
+// cod_collection row.
+export async function invalidateVendorFinanceCache(vendorId: string): Promise<void> {
+  try {
+    await scanAndDelete(`finance:${vendorId}:*`);
+  } catch (error) {
+    console.error("[Redis] Failed to invalidate finance cache:", error);
+  }
+}
 
 // Vendors only ever see their own finance records. Staff (admin/super_admin)
 // must explicitly name a vendor - there is no "view everyone's COD" mode here,
@@ -100,6 +135,10 @@ function formatLocation(location?: { name: string; city: string | null; district
 export async function getPendingCodBill(actor: Actor, vendorIdParam?: string): Promise<PendingCodBill> {
   const vendor = await resolveVendor(actor, vendorIdParam);
 
+  const cacheKey = `finance:${vendor.id}:pending-cod`;
+  const cached = await readFinanceCache<PendingCodBill>(cacheKey);
+  if (cached) return cached;
+
   const collections = await prisma.cod_collections.findMany({
     where: { vendor_id: vendor.id, payment_status: payment_status.pending },
     include: {
@@ -129,7 +168,7 @@ export async function getPendingCodBill(actor: Actor, vendorIdParam?: string): P
   const totalCod = items.reduce((sum, item) => sum + item.codAmount, 0);
   const deliveryCharges = items.reduce((sum, item) => sum + item.deliveryCharge, 0);
 
-  return {
+  const result: PendingCodBill = {
     vendor: toBillingProfile(vendor),
     statementDate: new Date().toISOString(),
     items,
@@ -139,6 +178,8 @@ export async function getPendingCodBill(actor: Actor, vendorIdParam?: string): P
       payableAmount: totalCod - deliveryCharges,
     },
   };
+  await writeFinanceCache(cacheKey, result);
+  return result;
 }
 
 export async function listOrderCod(
@@ -153,6 +194,10 @@ export async function listOrderCod(
   const take = Math.min(MAX_PAGE_SIZE, Math.max(1, pageSize));
   const safePage = Math.max(1, page);
   const skip = (safePage - 1) * take;
+
+  const cacheKey = `finance:${vendor.id}:order-cod:${status ?? "all"}:${safePage}:${take}`;
+  const cached = await readFinanceCache<OrderCodListResult>(cacheKey);
+  if (cached) return cached;
 
   const statusFilter =
     status === "settled" ? payment_status.paid : status === "not_settled" ? payment_status.pending : undefined;
@@ -196,7 +241,7 @@ export async function listOrderCod(
     netPayable: Number(c.cod_amount) - Number(c.parcels.delivery_charge),
   }));
 
-  return {
+  const result: OrderCodListResult = {
     data,
     settledCount,
     notSettledCount,
@@ -207,6 +252,8 @@ export async function listOrderCod(
       totalPages: Math.max(1, Math.ceil(total / take)),
     },
   };
+  await writeFinanceCache(cacheKey, result);
+  return result;
 }
 
 export async function listSettlements(
@@ -222,6 +269,10 @@ export async function listSettlements(
   const take = Math.min(MAX_PAGE_SIZE, Math.max(1, pageSize));
   const safePage = Math.max(1, page);
   const skip = (safePage - 1) * take;
+
+  const cacheKey = `finance:${vendor.id}:settlements:${safePage}:${take}:${fromDate?.toISOString() ?? ""}:${toDate?.toISOString() ?? ""}`;
+  const cached = await readFinanceCache<SettlementsListResult>(cacheKey);
+  if (cached) return cached;
 
   const where: Prisma.settlementsWhereInput = {
     vendor_id: vendor.id,
@@ -256,7 +307,7 @@ export async function listSettlements(
     remark: s.remark,
   }));
 
-  return {
+  const result: SettlementsListResult = {
     data,
     meta: {
       page: safePage,
@@ -265,6 +316,8 @@ export async function listSettlements(
       totalPages: Math.max(1, Math.ceil(total / take)),
     },
   };
+  await writeFinanceCache(cacheKey, result);
+  return result;
 }
 
 export async function getUnsettledOrders(
@@ -314,6 +367,13 @@ export async function getUnsettledOrders(
     }
   }
 
+  // Vendor-scoped keys share the `finance:${vendorId}:*` namespace so order
+  // creation can invalidate them; rider-scoped ones are TTL-only (no write
+  // path in this app currently sets cod_collections.rider_id).
+  const cacheKey = vendorId ? `finance:${vendorId}:unsettled` : `finance:rider:${riderId}:unsettled`;
+  const cached = await readFinanceCache<UnsettledOrdersResult>(cacheKey);
+  if (cached) return cached;
+
   const where: Prisma.cod_collectionsWhereInput = {
     payment_status: payment_status.pending,
     ...(riderId ? { rider_id: riderId } : {}),
@@ -355,10 +415,12 @@ export async function getUnsettledOrders(
   const totalCod = items.reduce((sum, item) => sum + item.codAmount, 0);
   const totalDeliveryCharge = items.reduce((sum, item) => sum + item.deliveryCharge, 0);
 
-  return {
+  const result: UnsettledOrdersResult = {
     items,
     totalCod,
     totalDeliveryCharge,
     totalNetPayable: totalCod - totalDeliveryCharge,
   };
+  await writeFinanceCache(cacheKey, result);
+  return result;
 }

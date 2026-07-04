@@ -11,7 +11,7 @@ import {
   updateParcelStatus,
 } from "../services/order.service";
 import { withIdempotency } from "../services/idempotency.service";
-import { OrderType, ParcelStatus, STATUS_TRANSITIONS } from "../types/order.type";
+import { ORDER_SORT_FIELDS, OrderSortField, OrderType, ParcelStatus, STATUS_TRANSITIONS } from "../types/order.type";
 
 // General UUID shape (8-4-4-4-12 hex). Intentionally not strict about the
 // RFC-4122 version/variant nibbles, since seeded/demo records use deterministic
@@ -59,7 +59,10 @@ export async function createOrderController(req: Request, res: Response) {
       });
     }
 
-    const result = await withIdempotency(idempotencyKey, req.body, async () => {
+    // result and response.body must be the same object so a replayed retry
+    // (which returns response.body) gets back exactly what the original
+    // caller received, instead of a differently-shaped payload.
+    const responseBody = await withIdempotency(idempotencyKey, req.body, async () => {
       const order = await createOrder(
         {
           id: req.user!.id,
@@ -68,36 +71,29 @@ export async function createOrderController(req: Request, res: Response) {
         req.body,
       );
 
+      const body = {
+        success: true,
+        message: "Order created successfully",
+        data: {
+          id: order.id,
+          trackingId: order.tracking_id,
+          status: order.status,
+          createdAt: order.created_at,
+        },
+      };
+
       return {
-        result: order,
+        result: body,
         response: {
           statusCode: 201,
-          body: {
-            success: true,
-            message: "Order created successfully",
-            data: {
-              id: order.id,
-              trackingId: order.tracking_id,
-              status: order.status,
-              createdAt: order.created_at,
-            },
-          },
+          body,
           resourceID: order.id,
         },
       };
     });
 
-    return res.status(201).json({
-      success: true,
-      message: "Order created successfully",
-      data: result,
-    });
+    return res.status(201).json(responseBody);
   } catch (error: any) {
-    // Handle idempotency-specific responses
-    if (error.statusCode === 200 && error.meta?._cachedResponse) {
-      // This is a RETRY that already succeeded before
-      return res.status(200).json(error.meta._cachedResponse);
-    }
     if (error.statusCode === 409) {
       return res.status(409).json({
         success: false,
@@ -126,31 +122,25 @@ export async function bulkCreateOrdersController(req: Request, res: Response) {
       return res.status(400).json({ success: false, message: "Valid Idempotency-Key header is required" });
     }
 
-    const result = await withIdempotency(idempotencyKey, req.body, async () => {
+    const responseBody = await withIdempotency(idempotencyKey, req.body, async () => {
       const data = await bulkCreateOrders({ id: req.user!.id, roles: req.user!.roles }, req.body);
+      const body = {
+        success: true,
+        message: `${data.created} order(s) created, ${data.failed} failed`,
+        data,
+      };
       return {
-        result: data,
+        result: body,
         response: {
           statusCode: 207,
-          body: {
-            success: true,
-            message: `${data.created} order(s) created, ${data.failed} failed`,
-            data,
-          },
+          body,
           resourceID: `bulk-${idempotencyKey}`,
         },
       };
     });
 
-    return res.status(207).json({
-      success: true,
-      message: `${result.created} order(s) created, ${result.failed} failed`,
-      data: result,
-    });
+    return res.status(207).json(responseBody);
   } catch (error: any) {
-    if (error.statusCode === 200 && error.meta?._cachedResponse) {
-      return res.status(200).json(error.meta._cachedResponse);
-    }
     return res.status(error.statusCode || 500).json({
       success: false,
       message: error.message || "Bulk order creation failed",
@@ -202,6 +192,25 @@ export async function listOrdersController(req: Request, res: Response) {
       }
     }
 
+    let sortBy: OrderSortField | undefined;
+    if (req.query.sortBy !== undefined) {
+      if (typeof req.query.sortBy !== "string" || !ORDER_SORT_FIELDS.includes(req.query.sortBy as OrderSortField)) {
+        return res.status(400).json({
+          success: false,
+          message: `sortBy must be one of: ${ORDER_SORT_FIELDS.join(", ")}`,
+        });
+      }
+      sortBy = req.query.sortBy as OrderSortField;
+    }
+
+    let sortDir: "asc" | "desc" | undefined;
+    if (req.query.sortDir !== undefined) {
+      if (req.query.sortDir !== "asc" && req.query.sortDir !== "desc") {
+        return res.status(400).json({ success: false, message: "sortDir must be 'asc' or 'desc'" });
+      }
+      sortDir = req.query.sortDir;
+    }
+
     const result = await listOrders(
       { id: req.user.id, roles: req.user.roles },
       {
@@ -210,6 +219,8 @@ export async function listOrdersController(req: Request, res: Response) {
         ...(search ? { search } : {}),
         ...(page !== undefined ? { page } : {}),
         ...(pageSize !== undefined ? { pageSize } : {}),
+        ...(sortBy ? { sortBy } : {}),
+        ...(sortDir ? { sortDir } : {}),
       },
     );
 

@@ -11,7 +11,7 @@ import { ListTicketsParams, TicketStatus, TicketWorkflowStatus } from "../types/
 export async function listTicketsController(req: Request, res: Response) {
   try {
     if (!req.user) return res.status(401).json({ success: false, message: "Unauthorized" });
-    const { status, search, priority, category, fromDate, toDate } = req.query;
+    const { status, search, priority, category, fromDate, toDate, page, pageSize, sortDir } = req.query;
 
     const params: ListTicketsParams = {};
     if (typeof status === "string") params.status = status as TicketStatus;
@@ -20,10 +20,13 @@ export async function listTicketsController(req: Request, res: Response) {
     if (typeof category === "string") params.category = category;
     if (typeof fromDate === "string") params.fromDate = fromDate;
     if (typeof toDate === "string") params.toDate = toDate;
+    if (typeof page === "string" && Number.isFinite(Number(page))) params.page = Number(page);
+    if (typeof pageSize === "string" && Number.isFinite(Number(pageSize))) params.pageSize = Number(pageSize);
+    if (sortDir === "asc" || sortDir === "desc") params.sortDir = sortDir;
 
-    const tickets = await listTickets({ id: req.user.id, roles: req.user.roles }, params);
+    const { data, meta } = await listTickets({ id: req.user.id, roles: req.user.roles }, params);
 
-    return res.status(200).json({ success: true, data: tickets });
+    return res.status(200).json({ success: true, data, meta });
   } catch (error: any) {
     return res.status(error.statusCode || 500).json({
       success: false,

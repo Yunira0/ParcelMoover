@@ -23,6 +23,8 @@ import ReturnOperations from './pages/ReturnOperations'
 import HoldOperations from './pages/HoldOperations'
 import LossAndDamageOperations from './pages/LossAndDamageOperations'
 import CXCenter from './pages/CXCenter'
+import Remarks from './pages/Remarks'
+import UnclosedRemarks from './pages/UnclosedRemarks'
 import RemarkDetail from './pages/RemarkDetail'
 import TicketDetail from './pages/TicketDetail'
 import VendorSettlements from './pages/vendor/VendorSettlements'
@@ -65,6 +67,9 @@ function App() {
             path="/orders/create"
             element={<RoleGuard allowedRoles={['super_admin', 'admin', 'vendor', 'vendor_staff']} requiredPermission="ORDER_ACCESS"><CreateOrderPage /></RoleGuard>}
           />
+          {/* Scoped to vendor/vendor_staff only: BulkOrderPage auto-fills the
+              sender from GET /orders/sender-profile (vendor-only), with no
+              vendor picker for an admin actor to select on behalf of. */}
           <Route
             path="/orders/bulk-create"
             element={<RoleGuard allowedRoles={['vendor', 'vendor_staff']} requiredPermission="ORDER_ACCESS"><BulkOrderPage /></RoleGuard>}
@@ -156,7 +161,11 @@ function App() {
           />
           <Route
             path="/remarks"
-            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'vendor', 'vendor_staff', 'sales']}><CXCenter /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'vendor', 'vendor_staff', 'sales']}><Remarks /></RoleGuard>}
+          />
+          <Route
+            path="/unclosed-remarks"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'vendor', 'vendor_staff', 'sales']}><UnclosedRemarks /></RoleGuard>}
           />
           <Route
             path="/remarks/:id"

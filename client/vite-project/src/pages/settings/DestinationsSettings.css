@@ -80,6 +80,14 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.dest-card-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
 }
 
 .dest-card-title {
@@ -132,6 +140,139 @@
   gap: 8px;
   align-items: center;
 }
+
+/* ── Destination delete ── */
+.dest-delete-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--border-radius-default);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--color-text-caption);
+  cursor: pointer;
+  transition: all 150ms ease;
+  flex-shrink: 0;
+}
+
+.dest-delete-btn:hover {
+  border-color: #fecaca;
+  background: #fef2f2;
+  color: #dc2626;
+}
+
+.dest-confirm-delete {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.dest-confirm-delete span {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-default);
+  white-space: nowrap;
+}
+
+.dest-confirm-btn {
+  padding: 4px 10px;
+  border-radius: var(--border-radius-default);
+  border: 1px solid var(--color-border-default);
+  background: var(--color-background-surface);
+  color: var(--color-text-default);
+  font-family: var(--typography-font-family-default);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition: all 150ms ease;
+  white-space: nowrap;
+}
+
+.dest-confirm-btn:hover { background: var(--color-background-elevated); }
+
+.dest-confirm-btn--danger {
+  border-color: #fca5a5;
+  background: #fef2f2;
+  color: #dc2626;
+}
+
+.dest-confirm-btn--danger:hover {
+  background: #fee2e2;
+}
+
+/* ── Area chip with remove ── */
+.dest-area-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.dest-area-name-btn {
+  background: transparent;
+  border: none;
+  padding: 0;
+  font-size: inherit;
+  color: inherit;
+  cursor: pointer;
+  font-family: var(--typography-font-family-default);
+}
+
+.dest-area-remove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--color-text-placeholder);
+  cursor: pointer;
+  padding: 0;
+  transition: all 120ms ease;
+  flex-shrink: 0;
+}
+
+.dest-area-remove:hover {
+  background: #fca5a5;
+  color: #dc2626;
+}
+
+.dest-area-confirm-text {
+  font-size: 0.75rem;
+  color: var(--color-text-default);
+  white-space: nowrap;
+}
+
+.dest-area-confirm-yes,
+.dest-area-confirm-no {
+  padding: 1px 7px;
+  border-radius: var(--border-radius-full);
+  font-size: 0.72rem;
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+  font-family: var(--typography-font-family-default);
+  border: 1px solid transparent;
+  transition: all 120ms ease;
+}
+
+.dest-area-confirm-yes {
+  background: #fef2f2;
+  color: #dc2626;
+  border-color: #fca5a5;
+}
+
+.dest-area-confirm-yes:hover { background: #fee2e2; }
+
+.dest-area-confirm-no {
+  background: var(--color-background-elevated);
+  color: var(--color-text-caption);
+  border-color: var(--color-border-default);
+}
+
+.dest-area-confirm-no:hover { background: var(--color-background-canvas); }
 
 .dest-add-area input {
   flex: 1;

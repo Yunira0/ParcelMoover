@@ -1,5 +1,6 @@
 import prisma from "../lib/prisma";
 import { AppError } from "../utils/AppError";
+import { invalidateDestinationPricingCache } from "./pricing.service";
 
 export interface UpsertLocationInput {
   name: string;
@@ -108,6 +109,157 @@ export async function createLocation(input: UpsertLocationInput) {
   return mapLocation(loc);
 }
 
+export interface BulkImportDestination {
+  name: string;
+  code?: string;
+  city?: string;
+  district?: string;
+  zone?: string;
+  valley?: string;
+  perDestinationRate?: number | null;
+  areas: string[];
+}
+
+export async function deleteLocation(id: string) {
+  const loc = await prisma.locations.findUnique({
+    where: { id },
+    include: { other_locations: { select: { id: true } } },
+  });
+  if (!loc) throw new AppError(404, "Location not found");
+
+  // Collect IDs that will be removed (destination + all its areas)
+  const idsToCheck = loc.parent_id ? [id] : [id, ...loc.other_locations.map((a) => a.id)];
+
+  const parcelCount = await prisma.parcels.count({
+    where: {
+      deleted_at: null,
+      OR: [
+        { origin_location_id: { in: idsToCheck } },
+        { destination_location_id: { in: idsToCheck } },
+        { current_location_id: { in: idsToCheck } },
+      ],
+    },
+  });
+  if (parcelCount > 0)
+    throw new AppError(409, "Cannot delete: this location is referenced by active orders.");
+
+  const dispatchCount = await prisma.dispatches.count({
+    where: {
+      OR: [
+        { from_location_id: { in: idsToCheck } },
+        { to_location_id: { in: idsToCheck } },
+      ],
+    },
+  });
+  if (dispatchCount > 0)
+    throw new AppError(409, "Cannot delete: this location is referenced by dispatch records.");
+
+  const rateCount = await prisma.delivery_rates.count({
+    where: {
+      OR: [
+        { origin_location_id: { in: idsToCheck } },
+        { destination_location_id: { in: idsToCheck } },
+      ],
+    },
+  });
+  if (rateCount > 0)
+    throw new AppError(409, "Cannot delete: this location has delivery rates. Remove them first.");
+
+  if (!loc.parent_id) {
+    await prisma.locations.deleteMany({ where: { parent_id: id } });
+  }
+  await prisma.locations.delete({ where: { id } });
+  await invalidateDestinationPricingCache();
+}
+
+export async function bulkImportLocations(rows: BulkImportDestination[]) {
+  const results: Array<{
+    destination: string;
+    action: "created" | "updated";
+    areasCreated: string[];
+    areasSkipped: string[];
+    error?: string;
+  }> = [];
+
+  for (const row of rows) {
+    const destName = row.name?.trim();
+    if (!destName) continue;
+
+    try {
+      let dest = await prisma.locations.findFirst({
+        where: { name: { equals: destName, mode: "insensitive" }, parent_id: null },
+      });
+
+      let action: "created" | "updated";
+
+      if (!dest) {
+        dest = await prisma.locations.create({
+          data: {
+            name: destName,
+            code: row.code?.trim() || null,
+            city: row.city?.trim() || null,
+            district: row.district?.trim() || null,
+            is_hub: true,
+            is_active: true,
+            zone: row.zone || null,
+            valley: row.valley || null,
+            per_destination_rate: row.perDestinationRate ?? null,
+          },
+        });
+        action = "created";
+      } else {
+        dest = await prisma.locations.update({
+          where: { id: dest.id },
+          data: {
+            ...(row.code !== undefined ? { code: row.code?.trim() || null } : {}),
+            ...(row.city !== undefined ? { city: row.city?.trim() || null } : {}),
+            ...(row.district !== undefined ? { district: row.district?.trim() || null } : {}),
+            ...(row.zone !== undefined ? { zone: row.zone || null } : {}),
+            ...(row.valley !== undefined ? { valley: row.valley || null } : {}),
+            ...(row.perDestinationRate !== undefined
+              ? { per_destination_rate: row.perDestinationRate }
+              : {}),
+            updated_at: new Date(),
+          },
+        });
+        action = "updated";
+      }
+
+      const areasCreated: string[] = [];
+      const areasSkipped: string[] = [];
+
+      for (const areaName of row.areas) {
+        const trimmed = areaName.trim();
+        if (!trimmed) continue;
+        const exists = await prisma.locations.findFirst({
+          where: { name: { equals: trimmed, mode: "insensitive" }, parent_id: dest.id },
+        });
+        if (exists) {
+          areasSkipped.push(trimmed);
+        } else {
+          await prisma.locations.create({
+            data: { name: trimmed, is_hub: false, is_active: true, parent_id: dest.id },
+          });
+          areasCreated.push(trimmed);
+        }
+      }
+
+      results.push({ destination: destName, action, areasCreated, areasSkipped });
+    } catch (err: any) {
+      results.push({
+        destination: destName,
+        action: "created",
+        areasCreated: [],
+        areasSkipped: [],
+        error: err.message || "Unknown error",
+      });
+    }
+  }
+
+  await invalidateDestinationPricingCache();
+  return results;
+}
+
 export async function updateLocation(id: string, input: Partial<UpsertLocationInput>) {
   const existing = await prisma.locations.findUnique({ where: { id } });
   if (!existing) throw new AppError(404, "Location not found");
@@ -136,5 +288,6 @@ export async function updateLocation(id: string, input: Partial<UpsertLocationIn
     },
   });
 
+  await invalidateDestinationPricingCache();
   return mapLocation(loc);
 }

@@ -9,6 +9,9 @@ type Actor = { id: string; roles: string[] };
 // The workflow only uses these three; legacy values are normalized on read.
 const WORKFLOW_STATUSES: TicketStatus[] = ["open", "pending", "closed"];
 
+const DEFAULT_PAGE_SIZE = 20;
+const MAX_PAGE_SIZE = 100;
+
 const isStaff = (actor: Actor) =>
   actor.roles.includes("admin") || actor.roles.includes("super_admin");
 
@@ -131,13 +134,30 @@ export async function listTickets(actor: Actor, params: ListTicketsParams = {}) 
     ];
   }
 
-  const tickets = await prisma.support_tickets.findMany({
-    where,
-    include: TICKET_INCLUDE,
-    orderBy: { created_at: "desc" },
-  });
+  const take = Math.min(MAX_PAGE_SIZE, Math.max(1, params.pageSize ?? DEFAULT_PAGE_SIZE));
+  const page = Math.max(1, params.page ?? 1);
+  const skip = (page - 1) * take;
 
-  return tickets.map(mapTicket);
+  const [total, tickets] = await Promise.all([
+    prisma.support_tickets.count({ where }),
+    prisma.support_tickets.findMany({
+      where,
+      include: TICKET_INCLUDE,
+      orderBy: { created_at: params.sortDir === "asc" ? "asc" : "desc" },
+      skip,
+      take,
+    }),
+  ]);
+
+  return {
+    data: tickets.map(mapTicket),
+    meta: {
+      page,
+      pageSize: take,
+      total,
+      totalPages: Math.max(1, Math.ceil(total / take)),
+    },
+  };
 }
 
 async function findAccessibleTicket(actor: Actor, id: string) {

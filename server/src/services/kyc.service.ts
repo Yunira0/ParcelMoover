@@ -83,19 +83,31 @@ export async function submitKycApplication(data: KycApplicationInput) {
   });
 }
 
-export async function listKycApplications(status?: string) {
+const DEFAULT_PAGE_SIZE = 20;
+const MAX_PAGE_SIZE = 100;
+
+export async function listKycApplications(status?: string, page = 1, pageSize = DEFAULT_PAGE_SIZE) {
   const where = status && ["pending", "approved", "rejected"].includes(status)
     ? { status: status as "pending" | "approved" | "rejected" }
     : {};
 
-  const apps = await prisma.vendor_kyc_applications.findMany({
-    where,
-    orderBy: { created_at: "desc" },
-  });
+  const take = Math.min(MAX_PAGE_SIZE, Math.max(1, pageSize));
+  const safePage = Math.max(1, page);
+  const skip = (safePage - 1) * take;
 
-  return apps.map((app, index) => ({
+  const [total, apps] = await Promise.all([
+    prisma.vendor_kyc_applications.count({ where }),
+    prisma.vendor_kyc_applications.findMany({
+      where,
+      orderBy: { created_at: "desc" },
+      skip,
+      take,
+    }),
+  ]);
+
+  const data = apps.map((app, index) => ({
     id: app.id,
-    sn: index + 1,
+    sn: skip + index + 1,
     status: app.status,
     onlineBusinessName: app.online_business_name,
     pickupLocation: app.pickup_location,
@@ -119,6 +131,16 @@ export async function listKycApplications(status?: string) {
     reviewedAt: app.reviewed_at,
     createdAt: app.created_at,
   }));
+
+  return {
+    data,
+    meta: {
+      page: safePage,
+      pageSize: take,
+      total,
+      totalPages: Math.max(1, Math.ceil(total / take)),
+    },
+  };
 }
 
 export async function getKycApplication(id: string) {

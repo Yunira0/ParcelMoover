@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   Download,
   Printer,
@@ -15,10 +15,10 @@ import Pagination from '../components/Pagination';
 import StatusChip, { type StatusChipTone } from '../components/StatusChip';
 import {
   getOrders,
-  notifyOrderStatusChanged,
   subscribeToOrderStatusChanged,
   updateOrderStatus,
   type Order,
+  type OrdersPageMeta,
   type ParcelStatus,
 } from '../services/orders.service';
 import { getRiders } from '../services/users.service';
@@ -33,6 +33,7 @@ type DispatchTab =
   | 'cancelled';
 
 const PAGE_SIZE = 10;
+const SEARCH_DEBOUNCE_MS = 300;
 
 const TAB_LABELS: Record<DispatchTab, string> = {
   arrived_at_branch: 'Arrived at branch',
@@ -96,63 +97,6 @@ const STATUS_TRANSITIONS: Record<ParcelStatus, ParcelStatus[]> = {
   returned_to_vendor: [],
 };
 
-const MOCK_DISPATCHES: Order[] = [
-  {
-    id: 'dispatch-1',
-    trackingId: 'TRK-8821935',
-    status: 'arrived_at_branch',
-    orderType: 'delivery',
-    serviceType: 'btb',
-    senderName: 'Aarav Store',
-    senderPhone: '9811111111',
-    receiverName: 'Mina Shrestha',
-    receiverPhone: '9800000000',
-    origin: 'Kathmandu Hub',
-    destination: 'Pokhara Hub',
-    pieces: 2,
-    codAmount: 1200,
-    deliveryCharge: 129,
-    riderName: 'Sagar',
-    createdAt: '2026-06-17',
-  },
-  {
-    id: 'dispatch-2',
-    trackingId: 'TRK-8821936',
-    status: 'ready_to_deliver',
-    orderType: 'exchange',
-    serviceType: 'dtd',
-    senderName: 'Nima Retail',
-    senderPhone: '9822222222',
-    receiverName: 'Amit Lama',
-    receiverPhone: '9812345678',
-    origin: 'Lalitpur',
-    destination: 'Bhaktapur',
-    pieces: 1,
-    codAmount: 0,
-    deliveryCharge: 99,
-    riderName: 'Ram',
-    createdAt: '2026-06-18',
-  },
-  {
-    id: 'dispatch-3',
-    trackingId: 'TRK-8821937',
-    status: 'sent_for_delivery',
-    orderType: 'delivery',
-    serviceType: 'btd',
-    senderName: 'Parcelmoover Vendor',
-    senderPhone: '9844444444',
-    receiverName: 'Suman Karki',
-    receiverPhone: '9855555555',
-    origin: 'Pokhara Hub',
-    destination: 'Lakeside',
-    pieces: 3,
-    codAmount: 2200,
-    deliveryCharge: 149,
-    riderName: 'Sameer',
-    createdAt: '2026-06-19',
-  },
-];
-
 const createEmptyTabSelections = (): Record<DispatchTab, Set<string | number>> => ({
   arrived_at_branch: new Set(),
   ready_to_deliver: new Set(),
@@ -171,12 +115,18 @@ const getStatusTone = (status: ParcelStatus): StatusChipTone => {
 };
 
 const DispatchOperations: React.FC = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [orders, setOrders] = useState<Order[]>([]);
-  const [activeTab, setActiveTab] = useState<DispatchTab>('ready_to_deliver');
-  const [searchQuery, setSearchQuery] = useState('');
+  const [meta, setMeta] = useState<OrdersPageMeta | null>(null);
+  const [activeTab, setActiveTab] = useState<DispatchTab>(() => {
+    const fromUrl = searchParams.get('tab');
+    return fromUrl && fromUrl in TAB_LABELS ? (fromUrl as DispatchTab) : 'ready_to_deliver';
+  });
+  const [searchQuery, setSearchQuery] = useState(() => searchParams.get('search') || '');
+  const [debouncedSearch, setDebouncedSearch] = useState(() => searchParams.get('search') || '');
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
-  const [usingMockData, setUsingMockData] = useState(false);
+  const [loadError, setLoadError] = useState('');
   const [selectedIdsByTab, setSelectedIdsByTab] = useState<Record<DispatchTab, Set<string | number>>>(createEmptyTabSelections);
   const [isActionOpen, setIsActionOpen] = useState(false);
   const [selectedNextStatus, setSelectedNextStatus] = useState<ParcelStatus | ''>('');
@@ -198,59 +148,63 @@ const DispatchOperations: React.FC = () => {
     })();
   }, []);
 
-  const loadDispatches = async () => {
+  // Debounce search input so every keystroke doesn't fire a request.
+  useEffect(() => {
+    const handle = setTimeout(() => setDebouncedSearch(searchQuery.trim()), SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(handle);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [activeTab, debouncedSearch]);
+
+  // Keep tab/search bookmarkable - mirror into the URL (replacing history,
+  // not pushing, so the back button doesn't step through every keystroke).
+  useEffect(() => {
+    const next = new URLSearchParams();
+    if (activeTab !== 'ready_to_deliver') next.set('tab', activeTab);
+    if (debouncedSearch) next.set('search', debouncedSearch);
+    setSearchParams(next, { replace: true });
+  }, [activeTab, debouncedSearch, setSearchParams]);
+
+  const loadDispatches = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await getOrders();
+      const res = await getOrders({
+        status: TAB_STATUSES[activeTab],
+        search: debouncedSearch || undefined,
+        page,
+        pageSize: PAGE_SIZE,
+      });
       if (res?.success && Array.isArray(res.data)) {
         setOrders(res.data);
-        setUsingMockData(false);
-      } else if (Array.isArray(res)) {
-        setOrders(res);
-        setUsingMockData(false);
-      } else {
-        setOrders(MOCK_DISPATCHES);
-        setUsingMockData(true);
+        setMeta(res.meta ?? null);
+        setLoadError('');
       }
     } catch {
-      setOrders(MOCK_DISPATCHES);
-      setUsingMockData(true);
+      setLoadError('Failed to load dispatch orders. Showing the last loaded data, if any.');
     } finally {
       setLoading(false);
     }
-  };
+  }, [activeTab, debouncedSearch, page]);
 
-  useEffect(() => {
-    queueMicrotask(loadDispatches);
-  }, []);
+  useEffect(() => { loadDispatches(); }, [loadDispatches]);
+  useEffect(() => subscribeToOrderStatusChanged(loadDispatches), [loadDispatches]);
 
-  useEffect(() => subscribeToOrderStatusChanged(loadDispatches), []);
-
-  const filteredOrders = useMemo(() => {
-    const tabStatuses = TAB_STATUSES[activeTab];
-    const q = searchQuery.trim().toLowerCase();
-
-    return orders
-      .filter(order => tabStatuses.includes(order.status))
-      .filter(order => {
-        if (!q) return true;
-        return (
-          order.trackingId.toLowerCase().includes(q) ||
-          order.receiverName.toLowerCase().includes(q) ||
-          order.receiverPhone.toLowerCase().includes(q) ||
-          order.destination.toLowerCase().includes(q) ||
-          (order.riderName || '').toLowerCase().includes(q)
-        );
-      });
-  }, [activeTab, orders, searchQuery]);
-
-  const totalPages = Math.max(1, Math.ceil(filteredOrders.length / PAGE_SIZE));
-  const visibleOrders = filteredOrders.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const visibleOrders = orders;
+  const totalPages = meta?.totalPages ?? 1;
   const selectedIds = selectedIdsByTab[activeTab];
   const visibleOrderIds = visibleOrders.map(order => order.id);
   const allVisibleSelected = visibleOrderIds.length > 0 && visibleOrderIds.every(id => selectedIds.has(id));
   const someVisibleSelected = visibleOrderIds.some(id => selectedIds.has(id));
-  const selectedOrders = filteredOrders.filter(order => selectedIds.has(order.id));
+  const selectedOrders = visibleOrders.filter(order => selectedIds.has(order.id));
+
+  // Selection is scoped to a single loaded page - clear it when the page or
+  // tab changes so a bulk action never silently drops ids that scrolled out
+  // of the currently-fetched page.
+  useEffect(() => {
+    setSelectedIdsByTab(prev => ({ ...prev, [activeTab]: new Set() }));
+  }, [activeTab, page]);
   const allowedStatusOptions = useMemo(() => {
     if (selectedOrders.length === 0) return [];
 
@@ -326,23 +280,16 @@ const DispatchOperations: React.FC = () => {
 
     setStatusUpdating(true);
     try {
-      if (!usingMockData) {
-        await Promise.all(
-          selectedOrders.map(order => updateOrderStatus(
-            order.id,
-            effectiveNextStatus,
-            undefined,
-            undefined,
-            isRiderAssignAction ? riderId : undefined,
-          )),
-        );
-        await loadDispatches();
-      } else {
-        setOrders(prev => prev.map(order => (
-          selectedIds.has(order.id) ? { ...order, status: effectiveNextStatus } : order
-        )));
-        notifyOrderStatusChanged();
-      }
+      await Promise.all(
+        selectedOrders.map(order => updateOrderStatus(
+          order.id,
+          effectiveNextStatus,
+          undefined,
+          undefined,
+          isRiderAssignAction ? riderId : undefined,
+        )),
+      );
+      await loadDispatches();
 
       setSelectedIdsByTab(prev => ({ ...prev, [activeTab]: new Set() }));
       setIsActionOpen(false);
@@ -362,9 +309,20 @@ const DispatchOperations: React.FC = () => {
     }
   };
 
-  const downloadCsv = () => {
-    const headers = ['Tracking ID', 'Receiver', 'Destination', 'Pieces', 'Status', 'Rider'];
-    const rows = filteredOrders.map(order => [
+  const downloadCsv = async () => {
+    let rows: Order[] = visibleOrders;
+    try {
+      const res = await getOrders({ status: TAB_STATUSES[activeTab], search: debouncedSearch || undefined });
+      if (res?.success && Array.isArray(res.data)) {
+        rows = res.data;
+      }
+    } catch {
+      // fall back to the currently loaded page
+    }
+
+    const headers = ['#', 'Tracking ID', 'Receiver', 'Destination', 'Pieces', 'Status', 'Rider'];
+    const csvRows = rows.map(order => [
+      `#${order.orderNumber}`,
       order.trackingId,
       order.receiverName,
       order.destination,
@@ -372,7 +330,7 @@ const DispatchOperations: React.FC = () => {
       STATUS_LABELS[order.status],
       order.riderName || '',
     ]);
-    const csv = [headers, ...rows]
+    const csv = [headers, ...csvRows]
       .map(row => row.map(value => `"${String(value).replace(/"/g, '""')}"`).join(','))
       .join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -385,6 +343,11 @@ const DispatchOperations: React.FC = () => {
   };
 
   const dispatchColumns = [
+    {
+      header: '#',
+      accessor: (order: Order) => `#${order.orderNumber}`,
+      width: '70px',
+    },
     {
       header: 'TRACKING ID',
       accessor: (order: Order) => (
@@ -443,6 +406,8 @@ const DispatchOperations: React.FC = () => {
         }}
         options={(Object.keys(TAB_LABELS) as DispatchTab[]).map(tab => ({ value: tab, label: TAB_LABELS[tab] }))}
       />
+
+      {loadError && <p className="dispatch-action-error">{loadError}</p>}
 
       <div className="dispatch-toolbar">
         <div />
@@ -555,6 +520,7 @@ const DispatchOperations: React.FC = () => {
         page={page}
         totalPages={totalPages}
         onPageChange={setPage}
+        summary={meta ? `${meta.total} order${meta.total === 1 ? '' : 's'}` : undefined}
       />
     </div>
   );

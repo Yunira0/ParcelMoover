@@ -7,6 +7,7 @@ import {
   getVendorsController,
   getManagedUserController,
   login,
+  logoutController,
   registerUserController,
   updateManagedUserController,
   updateManagedUserPasswordController,
@@ -31,6 +32,7 @@ const loginLimiter = rateLimit({
 const authRouter: Router = Router();
 
 authRouter.post("/login", loginLimiter, login);
+authRouter.post("/logout", authMiddleware, csrfProtection, logoutController);
 authRouter.post("/change-password", authMiddleware, csrfProtection, changePasswordController);
 
 // Dev-only: POST /auth/test-email  { "to": "someone@example.com" }

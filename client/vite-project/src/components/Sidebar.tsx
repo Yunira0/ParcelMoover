@@ -30,6 +30,7 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import { getCurrentUserRoles, isAdminSide } from '../utils/auth';
 import { useStaffPermissions } from '../context/StaffPermissionsContext';
+import { logout } from '../services/auth.service';
 import './Sidebar.css';
 
 // ── Collapse context ───────────────────────────────────────────────────────────
@@ -77,10 +78,19 @@ const SidebarSection: React.FC<{ label: string }> = ({ label }) => (
 const SidebarLogout: React.FC = () => {
   const navigate = useNavigate();
   const { collapsed } = useSidebarCollapse();
-  const handleLogout = () => {
-    localStorage.removeItem('user');
-    localStorage.removeItem('token');
-    navigate('/login');
+  const handleLogout = async () => {
+    try {
+      // Revokes the session server-side (accessToken is httpOnly, so only the
+      // server can actually clear it) - best-effort, still log out locally
+      // even if this fails (e.g. the token was already expired/invalid).
+      await logout();
+    } catch {
+      // ignore - fall through to local cleanup below regardless
+    } finally {
+      localStorage.removeItem('user');
+      localStorage.removeItem('token');
+      navigate('/login');
+    }
   };
   return (
     <button

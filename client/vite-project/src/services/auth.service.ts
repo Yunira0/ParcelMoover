@@ -6,6 +6,11 @@ export const login = async (credentials: LoginCredentials)=> {
   return response.data;
 };
 
+export const logout = async () => {
+  const response = await api.post('/auth/logout');
+  return response.data;
+};
+
 export const getCurrentUser = async () => {
   const response = await api.get('/me');
   return response.data;

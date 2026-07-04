@@ -4,6 +4,7 @@ export interface AppNotification {
   id: string;
   title: string;
   body: string | null;
+  trackingId: string | null;
   readAt: string | null;
   createdAt: string;
 }
@@ -37,7 +38,7 @@ export const markAllNotificationsRead = async (): Promise<void> => {
 export const subscribeToNotificationStream = (
   onNotification: (notification: AppNotification) => void,
 ): (() => void) => {
-  const baseURL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api') as string;
+  const baseURL = (import.meta.env.VITE_API_URL || '/api') as string;
   const source = new EventSource(`${baseURL}/notifications/stream`, { withCredentials: true });
 
   source.onmessage = (event) => {

@@ -30,7 +30,26 @@
       "Bash(curl -s -X POST http://localhost:3000/api/auth/login -H 'Content-Type: application/json' -d '{\"email\":\"superadmin@parcelmoover.com\",\"password\":\"DemoPass123!\"}')",
       "Bash(ps -o lstart= -p 46889)",
       "Bash(grep \"__iconNode\\\\$9M\" /Users/gyanendrakhatiwada/parcelmoover-beta/client/vite-project/node_modules/lucide-react/dist/cjs/lucide-react.js)",
-      "Bash(xargs cat)"
+      "Bash(xargs cat)",
+      "mcp__claude_ai_Figma__get_screenshot",
+      "Bash(npm create *)",
+      "Bash(curl -s http://localhost:5173)",
+      "Bash(kill %1)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000/api/remarks/unclosed)",
+      "Bash(curl *)",
+      "Bash(lsof -ti:3000)",
+      "Bash(lsof -nP -iTCP:3000 -iTCP:3001 -iTCP:3002)",
+      "Bash(kill 18845 23159 58926 58979)",
+      "Bash(lsof -nP -iTCP:3000)",
+      "Bash(git check-ignore *)",
+      "Bash(echo \"exit: $?\")",
+      "Bash(echo \"EXIT: $?\")",
+      "Bash(echo \"REAL EXIT: $?\")",
+      "Bash(grep -i \"\\\\.env$\")",
+      "Bash(grep -n \"^import\\\\|const loadOovOrders\\\\|useEffect\\(\\(\\) => {$\\\\|loadOovOrders\\(\\);\" src/pages/OOVOperations.tsx)",
+      "Bash(grep -n \"^th,\\\\|^  th\\\\|thead th\\\\| th {\" src/components/Table.css)",
+      "Bash(awk '/^export async function updateParcelStatus\\\\\\(/,0' src/services/order.service.ts)",
+      "Bash(awk '/^async function _bulkUpdateParcelStatusImpl/,/^}/' src/services/order.service.ts)"
     ]
   }
 }

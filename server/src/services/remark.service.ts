@@ -74,10 +74,15 @@ function mapRemark(remark: {
   };
 }
 
+const DEFAULT_PAGE_SIZE = 20;
+const MAX_PAGE_SIZE = 100;
+
 export async function listRemarks(actor: Actor, params: ListRemarksParams = {}) {
   const where: Record<string, unknown> = await scopeWhere(actor);
 
-  if (params.status && WORKFLOW_STATUSES.includes(params.status as RemarkWorkflowStatus)) {
+  if (params.unclosed) {
+    where.workflow_status = { not: "closed" };
+  } else if (params.status && WORKFLOW_STATUSES.includes(params.status as RemarkWorkflowStatus)) {
     where.workflow_status = params.status;
   }
 
@@ -98,21 +103,38 @@ export async function listRemarks(actor: Actor, params: ListRemarksParams = {}) 
     ];
   }
 
-  const remarks = await prisma.parcel_remarks.findMany({
-    where,
-    include: {
-      parcels: {
-        select: {
-          tracking_id: true,
-          parties_parcels_sender_idToparties: { select: { name: true, phone: true } },
-        },
-      },
-      users: { select: { full_name: true } },
-    },
-    orderBy: { created_at: "desc" },
-  });
+  const take = Math.min(MAX_PAGE_SIZE, Math.max(1, params.pageSize ?? DEFAULT_PAGE_SIZE));
+  const page = Math.max(1, params.page ?? 1);
+  const skip = (page - 1) * take;
 
-  return remarks.map(mapRemark);
+  const [total, remarks] = await Promise.all([
+    prisma.parcel_remarks.count({ where }),
+    prisma.parcel_remarks.findMany({
+      where,
+      include: {
+        parcels: {
+          select: {
+            tracking_id: true,
+            parties_parcels_sender_idToparties: { select: { name: true, phone: true } },
+          },
+        },
+        users: { select: { full_name: true } },
+      },
+      orderBy: { created_at: params.sortDir === "asc" ? "asc" : "desc" },
+      skip,
+      take,
+    }),
+  ]);
+
+  return {
+    data: remarks.map(mapRemark),
+    meta: {
+      page,
+      pageSize: take,
+      total,
+      totalPages: Math.max(1, Math.ceil(total / take)),
+    },
+  };
 }
 
 async function findAccessibleRemark(actor: Actor, id: string) {

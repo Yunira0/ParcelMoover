@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
+import axios from 'axios';
 import { Download, Printer, Search } from 'lucide-react';
 import Table from '../components/Table';
 import Button from '../components/Button';
@@ -37,10 +38,11 @@ const ageInDays = (createdAt?: string) => {
 };
 
 const HoldOperations: React.FC = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [orders, setOrders] = useState<Order[]>([]);
   const [meta, setMeta] = useState<OrdersPageMeta | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [searchQuery, setSearchQuery] = useState(() => searchParams.get('search') || '');
+  const [debouncedSearch, setDebouncedSearch] = useState(() => searchParams.get('search') || '');
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [selectedIds, setSelectedIds] = useState<Set<string | number>>(new Set());
@@ -59,7 +61,15 @@ const HoldOperations: React.FC = () => {
     setActionError('');
   }, [debouncedSearch]);
 
-  const loadHoldOrders = useCallback(async () => {
+  // Keep search bookmarkable - mirror into the URL (replacing history, not
+  // pushing, so the back button doesn't step through every keystroke).
+  useEffect(() => {
+    const next = new URLSearchParams();
+    if (debouncedSearch) next.set('search', debouncedSearch);
+    setSearchParams(next, { replace: true });
+  }, [debouncedSearch, setSearchParams]);
+
+  const loadHoldOrders = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
     try {
       const res = await getOrders({
@@ -67,17 +77,25 @@ const HoldOperations: React.FC = () => {
         search: debouncedSearch || undefined,
         page,
         pageSize: PAGE_SIZE,
-      });
+      }, signal);
       if (res?.success && Array.isArray(res.data)) {
         setOrders(res.data);
         setMeta(res.meta ?? null);
       }
+    } catch (err) {
+      if (axios.isCancel(err)) return;
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) setLoading(false);
     }
   }, [debouncedSearch, page]);
 
-  useEffect(() => { loadHoldOrders(); }, [loadHoldOrders]);
+  // Cancel an in-flight fetch when a newer one supersedes it (fast page/search
+  // changes) or the page unmounts, so a stale response can't overwrite fresher data.
+  useEffect(() => {
+    const controller = new AbortController();
+    loadHoldOrders(controller.signal);
+    return () => controller.abort();
+  }, [loadHoldOrders]);
   useEffect(() => subscribeToOrderStatusChanged(loadHoldOrders), [loadHoldOrders]);
 
   const visibleOrders = orders;
@@ -150,8 +168,9 @@ const HoldOperations: React.FC = () => {
       // fall back to the currently loaded page
     }
 
-    const headers = ['Date', 'Tracking ID', 'Sender', 'Receiver', 'Weight', 'COD', 'Age', 'Last Updated By', 'Last Updated', 'Last Remarks'];
+    const headers = ['#', 'Date', 'Tracking ID', 'Sender', 'Receiver', 'Weight', 'COD', 'Age', 'Last Updated By', 'Last Updated', 'Last Remarks'];
     const csvRows = rows.map((order) => [
+      `#${order.orderNumber}`,
       order.createdAt,
       order.trackingId,
       order.senderName,
@@ -177,9 +196,9 @@ const HoldOperations: React.FC = () => {
 
   const holdColumns = useMemo(() => [
     {
-      header: 'SN',
-      accessor: (order: Order) => ((page - 1) * PAGE_SIZE) + visibleOrders.findIndex((row) => row.id === order.id) + 1,
-      width: '34px',
+      header: '#',
+      accessor: (order: Order) => `#${order.orderNumber}`,
+      width: '70px',
       className: 'hold-sn-cell',
     },
     { header: 'DATE', accessor: (order: Order) => order.createdAt || '-', width: '100px' },

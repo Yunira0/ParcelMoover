@@ -4,7 +4,7 @@ import Button from './Button';
 import './Table.css';
 
 interface Column<T> {
-  header: string;
+  header: React.ReactNode;
   accessor: keyof T | ((item: T) => React.ReactNode);
   width?: string;
   className?: string;

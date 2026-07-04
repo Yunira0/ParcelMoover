@@ -1,11 +1,13 @@
 generator client {
-  provider = "prisma-client"
-  output   = "../src/generated/prisma"
+  provider        = "prisma-client"
+  output          = "../src/generated/prisma"
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [pg_trgm]
 }
 
 model admins {
@@ -172,16 +174,18 @@ model locations {
   vendors                                                          vendors[]
 
   @@index([parent_id], map: "idx_locations_parent_id")
+  @@index([name(ops: raw("gin_trgm_ops"))], map: "idx_locations_name_trgm", type: Gin)
 }
 
 model notifications {
-  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  user_id    String    @db.Uuid
-  title      String
-  body       String?
-  read_at    DateTime? @db.Timestamptz(6)
-  created_at DateTime  @default(now()) @db.Timestamptz(6)
-  users      users     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id     String    @db.Uuid
+  title       String
+  body        String?
+  tracking_id String?
+  read_at     DateTime? @db.Timestamptz(6)
+  created_at  DateTime  @default(now()) @db.Timestamptz(6)
+  users       users     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -249,6 +253,7 @@ model parcel_status_history {
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model parcels {
   id                                                   String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  order_number                                         Int                     @default(autoincrement())
   tracking_id                                          String                  @unique
   search_text                                          String?
   vendor_id                                            String?                 @db.Uuid
@@ -303,6 +308,7 @@ model parcels {
   @@index([receiver_id], map: "idx_parcels_receiver_id")
   @@index([sender_id], map: "idx_parcels_sender_id")
   @@index([vendor_id], map: "idx_parcels_vendor_id")
+  @@index([search_text(ops: raw("gin_trgm_ops"))], map: "idx_parcels_search_text", type: Gin)
 }
 
 model parties {
@@ -321,6 +327,7 @@ model parties {
 
   @@index([location_id], map: "idx_parties_location_id")
   @@index([phone], map: "idx_parties_phone")
+  @@index([name(ops: raw("gin_trgm_ops"))], map: "idx_parties_name_trgm", type: Gin)
 }
 
 model pickup_tasks {

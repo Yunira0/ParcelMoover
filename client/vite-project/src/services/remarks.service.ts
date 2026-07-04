@@ -25,11 +25,21 @@ export interface ListRemarksParams {
   search?: string;
   fromDate?: string;
   toDate?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface RemarksPageMeta {
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
 }
 
 export interface RemarksListResponse {
   success: boolean;
   data: Remark[];
+  meta?: RemarksPageMeta;
 }
 
 export interface RemarkThreadEntry {
@@ -61,6 +71,8 @@ export const getRemarks = async (params?: ListRemarksParams): Promise<RemarksLis
   if (params?.search) query.search = params.search;
   if (params?.fromDate) query.fromDate = params.fromDate;
   if (params?.toDate) query.toDate = params.toDate;
+  if (params?.page !== undefined) query.page = String(params.page);
+  if (params?.pageSize !== undefined) query.pageSize = String(params.pageSize);
 
   const response = await api.get('/remarks', { params: query });
   return response.data;
