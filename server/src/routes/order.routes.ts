@@ -2,6 +2,7 @@ import { Request, Router } from "express";
 import { rateLimit, ipKeyGenerator } from "express-rate-limit";
 import { authMiddleware } from "../middlewares/auth.mddleware";
 import { authorizeRoles } from "../middlewares/authorizeRoles.middleware";
+import { requireStaffPermission } from "../middlewares/staffPermission.middleware";
 import {
   addOrderRemarkController,
   bulkCreateOrdersController,
@@ -77,6 +78,7 @@ orderRouter.post(
   authMiddleware,
   csrfProtection,
   authorizeRoles("super_admin", "admin", "vendor", "vendor_staff"),
+  requireStaffPermission("ORDER_ACCESS"),
   bulkCreateLimiter,
   bulkCreateOrdersController,
 );
@@ -86,6 +88,7 @@ orderRouter.post(
   authMiddleware,
   csrfProtection,
   authorizeRoles("super_admin", "admin", "vendor", "vendor_staff"),
+  requireStaffPermission("ORDER_ACCESS"),
   createOrderLimiter,
   createOrderController,
 );
@@ -94,6 +97,7 @@ orderRouter.get(
   "/dashboard-summary",
   authMiddleware,
   authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider", "sales"),
+  requireStaffPermission("DASHBOARD_ACCESS"),
   dashboardSummaryController,
 );
 
@@ -101,6 +105,7 @@ orderRouter.get(
   "/",
   authMiddleware,
   authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider", "sales"),
+  requireStaffPermission("ORDER_ACCESS"),
   listOrdersController,
 );
 
@@ -109,6 +114,7 @@ orderRouter.get(
   "/track/:trackingId",
   authMiddleware,
   authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider", "sales"),
+  requireStaffPermission("ORDER_ACCESS"),
   getOrderByTrackingIdController,
 );
 
@@ -118,6 +124,7 @@ orderRouter.patch(
   authMiddleware,
   csrfProtection,
   authorizeRoles("super_admin", "admin", "rider", "vendor", "vendor_staff"),
+  requireStaffPermission("ORDER_ACCESS"),
   statusUpdateLimiter,
   updateOrderStatusController,
 );
@@ -128,6 +135,7 @@ orderRouter.post(
   authMiddleware,
   csrfProtection,
   authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider", "sales"),
+  requireStaffPermission("ORDER_ACCESS"),
   remarkLimiter,
   addOrderRemarkController,
 );
@@ -138,6 +146,7 @@ orderRouter.patch(
   authMiddleware,
   csrfProtection,
   authorizeRoles("super_admin", "admin", "rider", "vendor", "vendor_staff"),
+  requireStaffPermission("ORDER_ACCESS"),
   statusUpdateLimiter,
   bulkUpdateOrderStatusController,
 );

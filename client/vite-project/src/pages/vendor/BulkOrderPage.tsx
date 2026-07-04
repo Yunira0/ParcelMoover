@@ -42,36 +42,49 @@ function downloadTemplate() {
   URL.revokeObjectURL(url);
 }
 
+// Single-pass parse (not line-split first) so a quoted field containing a
+// literal newline doesn't get torn into two rows.
 function parseCSV(text: string): string[][] {
   const rows: string[][] = [];
-  for (const rawLine of text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim().split('\n')) {
-    const line = rawLine.trim();
-    if (!line) continue;
-    const cells: string[] = [];
-    let cell = '';
-    let inQuotes = false;
-    for (let i = 0; i < line.length; i++) {
-      const ch = line[i];
-      if (inQuotes) {
-        if (ch === '"' && line[i + 1] === '"') { cell += '"'; i++; }
-        else if (ch === '"') { inQuotes = false; }
-        else { cell += ch; }
-      } else {
-        if (ch === '"') { inQuotes = true; }
-        else if (ch === ',') { cells.push(cell.trim()); cell = ''; }
-        else { cell += ch; }
-      }
+  const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  let row: string[] = [];
+  let cell = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < normalized.length; i++) {
+    const ch = normalized[i];
+    if (inQuotes) {
+      if (ch === '"' && normalized[i + 1] === '"') { cell += '"'; i++; }
+      else if (ch === '"') { inQuotes = false; }
+      else { cell += ch; }
+    } else if (ch === '"') {
+      inQuotes = true;
+    } else if (ch === ',') {
+      row.push(cell.trim());
+      cell = '';
+    } else if (ch === '\n') {
+      row.push(cell.trim());
+      rows.push(row);
+      row = [];
+      cell = '';
+    } else {
+      cell += ch;
     }
-    cells.push(cell.trim());
-    rows.push(cells);
   }
-  return rows;
+  if (cell !== '' || row.length > 0) {
+    row.push(cell.trim());
+    rows.push(row);
+  }
+
+  return rows.filter(r => !(r.length === 1 && r[0] === ''));
 }
 
 interface ParsedRow extends BulkCreateOrderRow {
   _raw: string[];
   _error?: string;
 }
+
+const MAX_ROWS_PER_IMPORT = 100;
 
 function csvToRows(text: string): ParsedRow[] {
   const allRows = parseCSV(text);
@@ -82,7 +95,7 @@ function csvToRows(text: string): ParsedRow[] {
   const isHeader = firstRow.includes('receiver_name') || firstRow.includes('receiver_phone');
   const dataRows = isHeader ? allRows.slice(1) : allRows;
 
-  return dataRows.map((cols): ParsedRow => {
+  return dataRows.map((cols, index): ParsedRow => {
     const [
       receiverName = '',
       receiverPhone = '',
@@ -97,9 +110,24 @@ function csvToRows(text: string): ParsedRow[] {
     const errors: string[] = [];
     if (!receiverName.trim()) errors.push('receiver_name is required');
     if (!receiverPhone.trim()) errors.push('receiver_phone is required');
+    if (index >= MAX_ROWS_PER_IMPORT) errors.push(`exceeds ${MAX_ROWS_PER_IMPORT} order limit per import`);
 
-    const codAmount = parseFloat(codAmountStr) || 0;
-    const weightKg = parseFloat(weightStr) || 1;
+    let codAmount = 0;
+    const codAmountRaw = codAmountStr.trim();
+    if (codAmountRaw !== '') {
+      const parsed = Number(codAmountRaw);
+      if (!Number.isFinite(parsed) || parsed < 0) errors.push('cod_amount must be a non-negative number');
+      else codAmount = parsed;
+    }
+
+    let weightKg = 1;
+    const weightRaw = weightStr.trim();
+    if (weightRaw !== '') {
+      const parsed = Number(weightRaw);
+      if (!Number.isFinite(parsed) || parsed <= 0) errors.push('weight_kg must be a positive number');
+      else weightKg = parsed;
+    }
+
     const validOrderTypes = ['delivery', 'exchange', 'return'] as const;
     const orderType = validOrderTypes.includes(orderTypeStr.trim() as any)
       ? (orderTypeStr.trim() as 'delivery' | 'exchange' | 'return')

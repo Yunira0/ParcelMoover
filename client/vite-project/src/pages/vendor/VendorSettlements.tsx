@@ -5,12 +5,12 @@ import Pagination from '../../components/Pagination';
 import StatusChip from '../../components/StatusChip';
 import type { SettlementListItem } from '../../services/finance.service';
 import { getSettlements } from '../../services/finance.service';
+import { formatCurrency as formatCurrencyBase, formatDate } from '../../utils/format';
 import './VendorFinance.css';
 
 const PAGE_SIZE = 20;
 
-const formatCurrency = (value: number) => `Rs. ${value.toLocaleString()}`;
-const formatDate = (value: string | null) => (value ? new Date(value).toLocaleDateString() : '-');
+const formatCurrency = (value: number) => formatCurrencyBase(value, 0);
 
 const VendorSettlements: React.FC = () => {
   const [fromDate, setFromDate] = useState('');

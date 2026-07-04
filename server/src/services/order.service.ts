@@ -14,6 +14,7 @@ import {
 } from "../types/order.type";
 import { generateTrackingId } from "../utils/trackingId";
 import { generateDispatchNo } from "../utils/dispatchId";
+import { resolveOwnVendorId } from "./vendor-scope.service";
 
 type Party = { name: string; phone: string; alternate_phone?: string | null };
 function buildSearchText(trackingId: string, sender: Party, receiver: Party): string {
@@ -141,25 +142,27 @@ const locationName = (location?: { name: string; city: string | null; district: 
   return [location.name, location.city || location.district].filter(Boolean).join(", ");
 };
 
-const formatDate = (date?: Date | null) => date ? date.toISOString().slice(0, 10) : "";
+// Nepal Standard Time is a fixed UTC+5:45 offset (no DST). Shifting by it
+// before truncating to a calendar day keeps the reported "day" aligned with
+// Nepal local time regardless of the server host's own timezone - without
+// this, orders created between midnight and 5:45am NPT get bucketed into the
+// previous UTC day, one day off from what a vendor filtering "today" expects.
+const NEPAL_UTC_OFFSET_MS = (5 * 60 + 45) * 60 * 1000;
+const formatDate = (date?: Date | null) =>
+  date ? new Date(date.getTime() + NEPAL_UTC_OFFSET_MS).toISOString().slice(0, 10) : "";
 
 const moneyToNumber = (value?: Prisma.Decimal | null) => value ? Number(value) : 0;
 
 async function getActorScope(actor: OrderActor) {
   const isStaff = actor.roles.includes("super_admin") || actor.roles.includes("admin");
-  const actorIsVendor = actor.roles.includes("vendor");
   const actorIsRider = actor.roles.includes("rider");
-  const actorIsVendorStaff = actor.roles.includes("vendor_staff");
   const actorIsSales = actor.roles.includes("sales");
 
-  // Vendor staff: resolve vendor via their staff record, not the vendors table.
-  if (actorIsVendorStaff) {
-    const staffRecord = await prisma.vendor_staff.findFirst({
-      where: { user_id: actor.id, deleted_at: null, enabled: true },
-      select: { vendor_id: true },
-    });
-    if (!staffRecord) throw new AppError(403, "Staff profile not found or inactive");
-    return { vendorId: staffRecord.vendor_id, vendorIds: undefined, riderId: undefined };
+  // Vendor / vendor staff: resolved through the shared helper so both roles
+  // land on the same vendor-scoping guarantees used elsewhere (finance, pricing).
+  const ownVendorId = await resolveOwnVendorId(actor);
+  if (ownVendorId) {
+    return { vendorId: ownVendorId, vendorIds: undefined, riderId: undefined };
   }
 
   // Sales: scoped to the set of vendors (clients) they own. Staff/super_admin
@@ -172,30 +175,18 @@ async function getActorScope(actor: OrderActor) {
     return { vendorId: undefined, vendorIds: ownedVendors.map((v) => v.id), riderId: undefined };
   }
 
-  const [vendor, rider] = await Promise.all([
-    actorIsVendor
-      ? prisma.vendors.findFirst({
-          where: { user_id: actor.id, deleted_at: null, status: "active" },
-          select: { id: true },
-        })
-      : Promise.resolve(null),
-    actorIsRider
-      ? prisma.riders.findFirst({
-          where: { user_id: actor.id, deleted_at: null, status: "active" },
-          select: { id: true },
-        })
-      : Promise.resolve(null),
-  ]);
-
-  if (actorIsVendor && !vendor) {
-    throw new AppError(403, "Vendor profile not found or inactive");
-  }
+  const rider = actorIsRider
+    ? await prisma.riders.findFirst({
+        where: { user_id: actor.id, deleted_at: null, status: "active" },
+        select: { id: true },
+      })
+    : null;
 
   if (actorIsRider && !rider) {
     throw new AppError(403, "Rider profile not found or inactive");
   }
 
-  return { vendorId: vendor?.id, vendorIds: undefined, riderId: rider?.id };
+  return { vendorId: undefined, vendorIds: undefined, riderId: rider?.id };
 }
 
 async function generateUniqueTrackingId(
@@ -281,6 +272,19 @@ export async function createOrder(actor: OrderActor, data: CreateOrderInput) {
 }
 
 async function _createOrderImpl(actor: OrderActor, data: CreateOrderInput) {
+  if (data.weightKg !== undefined && (!Number.isFinite(data.weightKg) || data.weightKg <= 0)) {
+    throw new AppError(400, "weightKg must be a positive number");
+  }
+  if (data.codAmount !== undefined && (!Number.isFinite(data.codAmount) || data.codAmount < 0)) {
+    throw new AppError(400, "codAmount cannot be negative");
+  }
+  if (data.deliveryCharge !== undefined && (!Number.isFinite(data.deliveryCharge) || data.deliveryCharge < 0)) {
+    throw new AppError(400, "deliveryCharge cannot be negative");
+  }
+  if (data.pieces !== undefined && (!Number.isInteger(data.pieces) || data.pieces <= 0)) {
+    throw new AppError(400, "pieces must be a positive integer");
+  }
+
   const actorIsVendor = actor.roles.includes("vendor");
 
   // Run all three independent reads in parallel instead of sequentially.
@@ -1057,15 +1061,32 @@ export async function updateParcelStatus(
   parcelId: string,
   data: UpdateParcelStatusInput,
 ) {
+  // validate role-based permissions of certain transtions
+  const isAdmin = actor.roles.some((r) => ["super_admin", "admin"].includes(r));
+  const isVendorActor = actor.roles.includes("vendor") || actor.roles.includes("vendor_staff");
+  const isRiderActor = actor.roles.includes("rider");
+
+  // Non-admin actors may only update parcels that belong to them: a vendor's
+  // own orders, or a rider's own pickup/delivery leg. Without this, any
+  // vendor/rider could transition any parcel in the system.
+  const { vendorId, riderId } = isVendorActor || isRiderActor
+    ? await getActorScope(actor)
+    : { vendorId: undefined, riderId: undefined };
+
   const parcel = await prisma.parcels.findFirst({
-    where: { id: parcelId, deleted_at: null },
+    where: {
+      id: parcelId,
+      deleted_at: null,
+      ...(vendorId ? { vendor_id: vendorId } : {}),
+      ...(riderId ? { OR: [{ pickup_rider_id: riderId }, { delivery_rider_id: riderId }] } : {}),
+    },
     include: {
       pickup_tasks: true,
     },
   });
 
   if (!parcel) {
-    throw new AppError(404, "Parcel not found");
+    throw new AppError(404, "Parcel not found or does not belong to your account");
   }
 
   const currentStatus = parcel.status as ParcelStatus;
@@ -1089,9 +1110,6 @@ export async function updateParcelStatus(
       `Invalid status transition: '${currentStatus}' → '${newStatus}'. Allowed: [${allowed?.join(", ")}]`,
     );
   }
-
-  // validate role-based permissions of certain transtions
-  const isAdmin = actor.roles.some((r) => ["super_admin", "admin"].includes(r));
 
   //only admin aan cancel
   if (newStatus === "cancelled" && !isAdmin) {
@@ -1221,6 +1239,7 @@ export async function bulkUpdateParcelStatus(
   const isAdmin = actor.roles.some((r) => ["super_admin", "admin"].includes(r));
   const isVendorActor =
     actor.roles.includes("vendor") || actor.roles.includes("vendor_staff");
+  const isRiderActor = actor.roles.includes("rider");
 
   // Hub operations (dispatch, OOV transitions) are admin-only.
   if (HUB_OPERATION_STATUSES.includes(newStatus as parcel_status) && !isAdmin) {
@@ -1236,16 +1255,21 @@ export async function bulkUpdateParcelStatus(
     throw new AppError(403, "Only vendors or admins can cancel orders");
   }
 
-  // Resolve vendor scope so vendors can only act on their own parcels.
-  const { vendorId } = isVendorActor
+  // Resolve vendor/rider scope so non-admin actors can only act on their own parcels.
+  // (Named actorRiderId to avoid colliding with the dispatch-manifest riderId below,
+  // which is a different rider: the one carrying the manifest, not the acting user.)
+  const { vendorId, riderId: actorRiderId } = isVendorActor || isRiderActor
     ? await getActorScope(actor)
-    : { vendorId: undefined };
+    : { vendorId: undefined, riderId: undefined };
 
   const parcels = await prisma.parcels.findMany({
     where: {
       id: { in: ids },
       deleted_at: null,
       ...(vendorId ? { vendor_id: vendorId } : {}),
+      ...(actorRiderId
+        ? { OR: [{ pickup_rider_id: actorRiderId }, { delivery_rider_id: actorRiderId }] }
+        : {}),
     },
     include: { pickup_tasks: true },
   });
