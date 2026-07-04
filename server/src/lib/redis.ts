@@ -14,7 +14,15 @@ const redis = new Redis({
     // the connection attempt needs to start as soon as this module loads.
     lazyConnect: false,
     connectTimeout: 5000,
-    // commandTimeout not set — ioredis v5 treats 0 as a 0ms timeout (fires immediately)
+    // Bounds how long a single command (e.g. the login rate-limiter's INCR)
+    // can sit queued waiting for a connection before failing. Without this,
+    // maxRetriesPerRequest: null + enableOfflineQueue: true means a command
+    // issued while Redis is mid-reconnect just queues forever - which,
+    // combined with axios having no request timeout on the client, turns
+    // into a login/request that silently hangs forever with no error.
+    // NOTE: must be a positive value - ioredis v5 treats 0 as a 0ms timeout
+    // (fires immediately), so leaving this unset or at 0 is NOT "no timeout".
+    commandTimeout: 3000,
     retryStrategy: (times) => {
         const delay = Math.min(times * 50, 2000);
         return delay;
