@@ -116,3 +116,12 @@ dist
 *.sln
 *.sw?
 api-test.http
+
+# Local working notes and scratch files
+api.http
+CODE-AUDIT.md
+CODE_REVIEW_ANALYSIS.md
+FORM_VALIDATION_FIX.md
+QUICK_FIXES.md
+REDIS_TIMEOUT_FIX.md
+SESSION_SUMMARY.md
