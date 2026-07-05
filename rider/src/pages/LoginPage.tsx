@@ -1,7 +1,7 @@
 import { useState, useRef, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ChevronLeft, Package, AlertCircle } from 'lucide-react'
-import { loginRider } from '../lib/api'
+import { isAccountInactiveError, loginRider } from '../lib/api'
 import { useAuth } from '../context/AuthContext'
 import Button from '../components/Button'
 import Input from '../components/Input'
@@ -10,7 +10,7 @@ interface FieldErrors { email?: string; password?: string }
 
 export default function LoginPage() {
   const navigate   = useNavigate()
-  const { login }  = useAuth()
+  const { login, markDeactivated } = useAuth()
   const emailRef   = useRef<HTMLInputElement>(null)
 
   const [loading,   setLoading]   = useState(false)
@@ -47,6 +47,12 @@ export default function LoginPage() {
       login(user)
       navigate('/scan', { replace: true })
     } catch (err: any) {
+      // A deactivated account isn't a bad-credentials problem - route to the
+      // dedicated lockout screen instead of showing an inline form error.
+      if (isAccountInactiveError(err)) {
+        markDeactivated()
+        return
+      }
       setFormError(err.message ?? 'Login failed. Please try again.')
     } finally {
       setLoading(false)

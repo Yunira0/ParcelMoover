@@ -21,6 +21,9 @@ interface TableProps<T> {
   onToggleAll?: () => void;
   onSelectionChange?: (selectedIds: Set<string | number>) => void;
   getRowClassName?: (item: T) => string;
+  /** Rows whose expansion panel is open - rendered right below the row, full width. */
+  expandedIds?: Set<string | number>;
+  renderExpandedRow?: (item: T) => React.ReactNode;
   loading?: boolean;
   loadingMessage?: string;
   emptyMessage?: string;
@@ -72,6 +75,8 @@ const Table = <T extends { id: string | number }>({
   onToggleAll,
   onSelectionChange,
   getRowClassName,
+  expandedIds,
+  renderExpandedRow,
   loading = false,
   loadingMessage = 'Loading...',
   emptyMessage = 'No records found.',
@@ -163,31 +168,39 @@ const Table = <T extends { id: string | number }>({
             </tr>
           ) : (
             data.map((item) => (
-              <tr
-                key={item.id}
-                className={[
-                  activeSelectedIds.has(item.id) ? 'selected-row' : '',
-                  getRowClassName?.(item) ?? '',
-                ].filter(Boolean).join(' ')}
-              >
-                {selectable && (
-                  <td className="checkbox-column">
-                    <input
-                      type="checkbox"
-                      checked={activeSelectedIds.has(item.id)}
-                      onChange={() => toggleRow(item.id)}
-                      aria-label={`Select row ${item.id}`}
-                    />
-                  </td>
+              <React.Fragment key={item.id}>
+                <tr
+                  className={[
+                    activeSelectedIds.has(item.id) ? 'selected-row' : '',
+                    getRowClassName?.(item) ?? '',
+                  ].filter(Boolean).join(' ')}
+                >
+                  {selectable && (
+                    <td className="checkbox-column">
+                      <input
+                        type="checkbox"
+                        checked={activeSelectedIds.has(item.id)}
+                        onChange={() => toggleRow(item.id)}
+                        aria-label={`Select row ${item.id}`}
+                      />
+                    </td>
+                  )}
+                  {columns.map((col, colIndex) => (
+                    <td key={colIndex} className={col.className}>
+                      {typeof col.accessor === 'function'
+                        ? col.accessor(item)
+                        : (item[col.accessor] as React.ReactNode)}
+                    </td>
+                  ))}
+                </tr>
+                {renderExpandedRow && expandedIds?.has(item.id) && (
+                  <tr className="table-expanded-row">
+                    <td colSpan={colSpan} className="table-expanded-cell">
+                      {renderExpandedRow(item)}
+                    </td>
+                  </tr>
                 )}
-                {columns.map((col, colIndex) => (
-                  <td key={colIndex} className={col.className}>
-                    {typeof col.accessor === 'function'
-                      ? col.accessor(item)
-                      : (item[col.accessor] as React.ReactNode)}
-                  </td>
-                ))}
-              </tr>
+              </React.Fragment>
             ))
           )}
         </tbody>

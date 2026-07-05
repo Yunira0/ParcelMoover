@@ -714,8 +714,8 @@ const OrderManagement: React.FC = () => {
             {printWorking
               ? 'Preparing…'
               : selectedIds.size > 0
-                ? `Print ${selectedIds.size} Label${selectedIds.size !== 1 ? 's' : ''}`
-                : `Print ${visibleOrders.length} Label${visibleOrders.length !== 1 ? 's' : ''}`}
+                ? `Print ${selectedIds.size} Selected`
+                : `Print All (${visibleOrders.length})`}
           </Button>
         </div>
       </div>

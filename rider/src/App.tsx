@@ -3,10 +3,13 @@ import { Suspense, lazy } from 'react'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { PendingProvider } from './context/PendingContext'
 import BottomNav from './components/BottomNav'
+import OfflineBanner from './components/OfflineBanner'
 import WelcomePage from './pages/WelcomePage'
 import LoginPage from './pages/LoginPage'
+import DeactivatedPage from './pages/DeactivatedPage'
 import DashboardPage from './pages/DashboardPage'
 import PendingPage from './pages/PendingPage'
+import ChangePasswordPage from './pages/ChangePasswordPage'
 
 // Heavy scanner lib (ZXing) is split into its own chunk
 const ScannerPage = lazy(() => import('./pages/ScannerPage'))
@@ -22,9 +25,21 @@ function ScannerFallback() {
 function ProtectedLayout() {
   const { rider } = useAuth()
   if (!rider) return <Navigate to="/welcome" replace />
+  // A pending forced password change blocks every other screen — the backend
+  // rejects every other authenticated call anyway, so there's nothing else
+  // useful to show until this is resolved.
+  if (rider.mustChangePassword) {
+    return (
+      <div className="flex flex-col h-dvh overflow-hidden">
+        <OfflineBanner />
+        <ChangePasswordPage />
+      </div>
+    )
+  }
   return (
     <PendingProvider>
       <div className="flex flex-col h-dvh overflow-hidden">
+        <OfflineBanner />
         <Routes>
           <Route path="/scan"      element={<Suspense fallback={<ScannerFallback />}><ScannerPage /></Suspense>} />
           <Route path="/dashboard" element={<DashboardPage />} />
@@ -42,6 +57,7 @@ function PublicLayout() {
   if (rider) return <Navigate to="/scan" replace />
   return (
     <div className="flex flex-col h-full min-h-dvh">
+      <OfflineBanner />
       <Routes>
         <Route path="/welcome" element={<WelcomePage />} />
         <Route path="/login"   element={<LoginPage />} />
@@ -62,6 +78,9 @@ export default function App() {
 }
 
 function AuthRouter() {
-  const { rider } = useAuth()
+  const { rider, deactivated } = useAuth()
+  // A deactivated account gets no portal at all - not even the login form -
+  // until the rider explicitly leaves this screen via "Back to sign in".
+  if (!rider && deactivated) return <DeactivatedPage />
   return rider ? <ProtectedLayout /> : <PublicLayout />
 }

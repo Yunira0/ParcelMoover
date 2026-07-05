@@ -17,6 +17,7 @@ import {
 } from '../services/orders.service';
 import RiderAssignModal from '../components/RiderAssignModal';
 import { toBsDate } from '../utils/nepaliDate';
+import { printLabels } from '../utils/printLabels';
 import './ReturnOperations.css';
 
 type ReturnTab = 'follow_up' | 'ready_to_return' | 'sent_to_vendor' | 'returned_to_vendor';
@@ -237,6 +238,13 @@ const ReturnOperations: React.FC = () => {
     URL.revokeObjectURL(url);
   };
 
+  const selectedOrders = visibleOrders.filter((o) => selectedIds.has(o.id));
+
+  const handlePrintLabels = () => {
+    const labelOrders = selectedOrders.length > 0 ? selectedOrders : visibleOrders;
+    void printLabels(labelOrders);
+  };
+
   const returnColumns = [
     {
       header: '#',
@@ -334,7 +342,9 @@ const ReturnOperations: React.FC = () => {
         </div>
         <div className="return-toolbar-actions">
           <Button variant="secondary" onClick={downloadCsv}><Download size={14} /> Download</Button>
-          <Button variant="secondary" onClick={() => window.print()}><Printer size={14} /> Print</Button>
+          <Button variant="secondary" onClick={handlePrintLabels} disabled={visibleOrders.length === 0}>
+            <Printer size={14} /> {selectedOrders.length > 0 ? `Print ${selectedOrders.length} Selected` : `Print All (${visibleOrders.length})`}
+          </Button>
         </div>
       </div>
 

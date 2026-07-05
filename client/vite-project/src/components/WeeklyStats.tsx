@@ -1,8 +1,111 @@
-import React from 'react';
+import React, { useMemo, useState } from 'react';
 import { Info, Calendar } from 'lucide-react';
+import type { DashboardTrendDay } from '../services/orders.service';
 import './WeeklyStats.css';
 
-const WeeklyStats: React.FC = () => {
+interface WeeklyStatsProps {
+  data: DashboardTrendDay[];
+  loading: boolean;
+  period: 7 | 30;
+  onPeriodChange: (period: 7 | 30) => void;
+}
+
+type FilterKey = 'all' | 'total' | 'picked' | 'delivered' | 'returned';
+
+interface SeriesDef {
+  key: FilterKey;
+  label: string;
+  dataKey: 'totalOrders' | 'pickedUp' | 'delivered' | 'returned';
+  color: string;
+  dotClass: string;
+}
+
+const SERIES: SeriesDef[] = [
+  { key: 'total', label: 'Total Order', dataKey: 'totalOrders', color: '#c2410c', dotClass: 'total' },
+  { key: 'picked', label: 'Picked Up', dataKey: 'pickedUp', color: '#1e0cc2', dotClass: 'picked' },
+  { key: 'delivered', label: 'Delivered', dataKey: 'delivered', color: '#00bd29', dotClass: 'delivered' },
+  { key: 'returned', label: 'Returned', dataKey: 'returned', color: '#d0c82f', dotClass: 'returned' },
+];
+
+const FILTERS: { key: FilterKey; label: string }[] = [
+  { key: 'all', label: 'All' },
+  { key: 'total', label: 'Order' },
+  { key: 'picked', label: 'Pickup' },
+  { key: 'delivered', label: 'Delivered' },
+  { key: 'returned', label: 'Returned' },
+];
+
+const CHART_W = 700;
+const CHART_H = 260;
+const PAD = { top: 16, right: 12, bottom: 24, left: 34 };
+
+// Round the top of the y-axis up to a readable step (5/10/20/50/100...) so
+// gridlines land on whole numbers instead of an arbitrary max-value fraction.
+function niceCeiling(value: number): number {
+  if (value <= 5) return 5;
+  const magnitude = Math.pow(10, Math.floor(Math.log10(value)));
+  const residual = value / magnitude;
+  const step = residual <= 1 ? 1 : residual <= 2 ? 2 : residual <= 5 ? 5 : 10;
+  return step * magnitude;
+}
+
+const formatDayLabel = (dateStr: string) => {
+  const d = new Date(dateStr);
+  if (Number.isNaN(d.getTime())) return { dow: '', md: '' };
+  return {
+    dow: d.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase(),
+    md: d.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit' }),
+  };
+};
+
+const formatRangeLabel = (data: DashboardTrendDay[]) => {
+  if (data.length === 0) return '';
+  const start = new Date(data[0]!.date);
+  const end = new Date(data[data.length - 1]!.date);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return '';
+  const fmt = (d: Date, withYear: boolean) =>
+    d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: withYear ? 'numeric' : undefined });
+  return `${fmt(start, false)} - ${fmt(end, true)}`;
+};
+
+const WeeklyStats: React.FC<WeeklyStatsProps> = ({ data, loading, period, onPeriodChange }) => {
+  const [activeFilter, setActiveFilter] = useState<FilterKey>('all');
+  const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+
+  const visibleSeries = activeFilter === 'all' ? SERIES : SERIES.filter((s) => s.key === activeFilter);
+
+  const yMax = useMemo(() => {
+    const maxVal = Math.max(1, ...data.flatMap((d) => SERIES.map((s) => d[s.dataKey])));
+    return niceCeiling(maxVal);
+  }, [data]);
+
+  const innerW = CHART_W - PAD.left - PAD.right;
+  const innerH = CHART_H - PAD.top - PAD.bottom;
+  const n = data.length;
+  const xStep = n > 1 ? innerW / (n - 1) : 0;
+  const xAt = (i: number) => PAD.left + (n > 1 ? i * xStep : innerW / 2);
+  const yAt = (v: number) => PAD.top + innerH - (v / yMax) * innerH;
+
+  const linePath = (dataKey: SeriesDef['dataKey']) =>
+    data.map((d, i) => `${i === 0 ? 'M' : 'L'} ${xAt(i)} ${yAt(d[dataKey])}`).join(' ');
+
+  // Show every tick for 7 days; thin out to ~6 labels for 30 to avoid collisions.
+  const labelStride = n <= 10 ? 1 : Math.ceil(n / 6);
+
+  const gridLines = [0, 0.25, 0.5, 0.75, 1];
+
+  const hovered = hoverIndex !== null ? data[hoverIndex] : null;
+  const tooltipLeftPct = hoverIndex !== null ? (xAt(hoverIndex) / CHART_W) * 100 : 0;
+  const tooltipFlip = tooltipLeftPct > 65;
+
+  const handleMove = (e: React.MouseEvent<SVGRectElement>) => {
+    if (n === 0) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const relX = ((e.clientX - rect.left) / rect.width) * CHART_W;
+    const idx = n > 1 ? Math.round((relX - PAD.left) / xStep) : 0;
+    setHoverIndex(Math.min(n - 1, Math.max(0, idx)));
+  };
+
   return (
     <div className="weekly-stats">
       <div className="weekly-stats-header">
@@ -10,61 +113,165 @@ const WeeklyStats: React.FC = () => {
           <h3>Weekly Stats</h3>
           <Info size={16} style={{ color: 'var(--color-text-caption)' }} />
         </div>
-        
+
         <div className="stats-controls">
           <div className="period-tabs">
-            <button className="period-tab active">7D</button>
-            <button className="period-tab">30D</button>
+            <button
+              className={`period-tab ${period === 7 ? 'active' : ''}`}
+              onClick={() => onPeriodChange(7)}
+            >
+              7D
+            </button>
+            <button
+              className={`period-tab ${period === 30 ? 'active' : ''}`}
+              onClick={() => onPeriodChange(30)}
+            >
+              30D
+            </button>
           </div>
-          
+
           <div className="date-picker">
-            <span>20 May - 26 May, 2026</span>
+            <span>{formatRangeLabel(data) || '—'}</span>
             <Calendar size={16} style={{ color: 'var(--color-text-caption)' }} />
           </div>
         </div>
       </div>
-      
+
       <div className="filter-tabs">
-        <button className="filter-tab active">All</button>
-        <button className="filter-tab">Order</button>
-        <button className="filter-tab">Pickup</button>
-        <button className="filter-tab">Delivered</button>
-        <button className="filter-tab">Returned</button>
+        {FILTERS.map((f) => (
+          <button
+            key={f.key}
+            className={`filter-tab ${activeFilter === f.key ? 'active' : ''}`}
+            onClick={() => setActiveFilter(f.key)}
+          >
+            {f.label}
+          </button>
+        ))}
       </div>
-      
+
       <div className="legend">
-        <div className="legend-item">
-          <span className="legend-dot total"></span>
-          <span>Total Order</span>
-        </div>
-        <div className="legend-item">
-          <span className="legend-dot picked"></span>
-          <span>Picked Up</span>
-        </div>
-        <div className="legend-item">
-          <span className="legend-dot delivered"></span>
-          <span>Delivered</span>
-        </div>
-        <div className="legend-item">
-          <span className="legend-dot returned"></span>
-          <span>Returned</span>
-        </div>
+        {SERIES.map((s) => (
+          <div
+            key={s.key}
+            className={`legend-item ${activeFilter !== 'all' && activeFilter !== s.key ? 'legend-item-dim' : ''}`}
+          >
+            <span className={`legend-dot ${s.dotClass}`}></span>
+            <span>{s.label}</span>
+          </div>
+        ))}
       </div>
-      
+
       <div className="graph-placeholder">
-        {/* Graphs and bargraphs left blank as requested */}
-        <div className="empty-chart-area">
-          {/* Chart would go here */}
+        <div className="chart-area">
+          {loading && data.length === 0 ? (
+            <div className="chart-loading">Loading chart…</div>
+          ) : n === 0 ? (
+            <div className="chart-loading">No data for this range.</div>
+          ) : (
+            <>
+              <svg
+                className="chart-svg"
+                viewBox={`0 0 ${CHART_W} ${CHART_H}`}
+                preserveAspectRatio="none"
+                role="img"
+                aria-label="Weekly order trend chart"
+              >
+                {gridLines.map((g) => {
+                  const y = PAD.top + innerH - g * innerH;
+                  return (
+                    <g key={g}>
+                      <line
+                        x1={PAD.left}
+                        x2={CHART_W - PAD.right}
+                        y1={y}
+                        y2={y}
+                        className="chart-gridline"
+                      />
+                      <text x={PAD.left - 6} y={y} className="chart-axis-label" textAnchor="end" dy="3">
+                        {Math.round(g * yMax)}
+                      </text>
+                    </g>
+                  );
+                })}
+
+                {hoverIndex !== null && (
+                  <line
+                    x1={xAt(hoverIndex)}
+                    x2={xAt(hoverIndex)}
+                    y1={PAD.top}
+                    y2={CHART_H - PAD.bottom}
+                    className="chart-crosshair"
+                  />
+                )}
+
+                {visibleSeries.map((s) => (
+                  <path key={s.key} d={linePath(s.dataKey)} className="chart-line" stroke={s.color} />
+                ))}
+
+                {visibleSeries.map((s) =>
+                  data.map((d, i) => (
+                    <circle
+                      key={`${s.key}-${i}`}
+                      cx={xAt(i)}
+                      cy={yAt(d[s.dataKey])}
+                      r={hoverIndex === i ? 4 : 2.5}
+                      fill={s.color}
+                      className="chart-point"
+                    />
+                  )),
+                )}
+
+                <rect
+                  x={PAD.left}
+                  y={PAD.top}
+                  width={innerW}
+                  height={innerH}
+                  fill="transparent"
+                  pointerEvents="all"
+                  onMouseMove={handleMove}
+                  onMouseLeave={() => setHoverIndex(null)}
+                />
+              </svg>
+
+              {hovered && (
+                <div
+                  className="chart-tooltip"
+                  style={{
+                    left: `${tooltipLeftPct}%`,
+                    transform: tooltipFlip ? 'translateX(-100%)' : 'none',
+                  }}
+                >
+                  <div className="chart-tooltip-date">
+                    {new Date(hovered.date).toLocaleDateString('en-US', {
+                      weekday: 'short',
+                      month: 'short',
+                      day: 'numeric',
+                    })}
+                  </div>
+                  {visibleSeries.map((s) => (
+                    <div key={s.key} className="chart-tooltip-row">
+                      <span className={`legend-dot ${s.dotClass}`}></span>
+                      <span className="chart-tooltip-label">{s.label}</span>
+                      <span className="chart-tooltip-value">{hovered[s.dataKey].toLocaleString()}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
         </div>
-        
+
         <div className="chart-labels">
-          <div className="chart-label"><span>SUN</span><span>02-04</span></div>
-          <div className="chart-label"><span>MON</span><span>02-05</span></div>
-          <div className="chart-label"><span>TUE</span><span>02-06</span></div>
-          <div className="chart-label"><span>WED</span><span>02-07</span></div>
-          <div className="chart-label"><span>THU</span><span>02-08</span></div>
-          <div className="chart-label"><span>FRI</span><span>02-09</span></div>
-          <div className="chart-label"><span>SAT</span><span>02-10</span></div>
+          {data.map((d, i) => {
+            const show = i % labelStride === 0 || i === n - 1;
+            const { dow, md } = show ? formatDayLabel(d.date) : { dow: '', md: '' };
+            return (
+              <div className="chart-label" key={d.date}>
+                <span>{dow}</span>
+                <span>{md}</span>
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>

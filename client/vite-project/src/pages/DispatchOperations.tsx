@@ -22,6 +22,7 @@ import {
   type ParcelStatus,
 } from '../services/orders.service';
 import { getRiders } from '../services/users.service';
+import { printLabels } from '../utils/printLabels';
 import './DispatchOperations.css';
 
 type DispatchTab =
@@ -370,6 +371,11 @@ const DispatchOperations: React.FC = () => {
     URL.revokeObjectURL(url);
   };
 
+  const handlePrintLabels = () => {
+    const labelOrders = selectedOrders.length > 0 ? selectedOrders : visibleOrders;
+    void printLabels(labelOrders);
+  };
+
   const dispatchColumns = [
     {
       header: '#',
@@ -539,8 +545,8 @@ const DispatchOperations: React.FC = () => {
           <Button variant="secondary" className="dispatch-outline-btn" onClick={downloadCsv}>
             <Download size={14} /> Download
           </Button>
-          <Button variant="secondary" className="dispatch-outline-btn" onClick={() => window.print()}>
-            <Printer size={14} /> Print
+          <Button variant="secondary" className="dispatch-outline-btn" onClick={handlePrintLabels} disabled={visibleOrders.length === 0}>
+            <Printer size={14} /> {selectedOrders.length > 0 ? `Print ${selectedOrders.length} Selected` : `Print All (${visibleOrders.length})`}
           </Button>
         </div>
       </div>

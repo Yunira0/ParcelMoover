@@ -1,0 +1,40 @@
+.toggle-switch {
+  background: var(--color-border-default);
+  border: none;
+  border-radius: var(--border-radius-full);
+  cursor: pointer;
+  flex-shrink: 0;
+  height: 20px;
+  padding: 2px;
+  position: relative;
+  transition: background 0.15s ease;
+  width: 36px;
+}
+
+.toggle-switch-on {
+  background: var(--color-background-success-default);
+}
+
+.toggle-switch:disabled {
+  cursor: not-allowed;
+  opacity: var(--opacity-50);
+}
+
+.toggle-switch:focus-visible {
+  box-shadow: var(--shadow-focus);
+  outline: none;
+}
+
+.toggle-switch-knob {
+  background: var(--color-background-surface);
+  border-radius: var(--border-radius-full);
+  display: block;
+  height: 16px;
+  transform: translateX(0);
+  transition: transform 0.15s ease;
+  width: 16px;
+}
+
+.toggle-switch-on .toggle-switch-knob {
+  transform: translateX(16px);
+}

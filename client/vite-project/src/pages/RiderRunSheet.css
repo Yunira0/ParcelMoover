@@ -26,13 +26,6 @@
   justify-content: space-between;
 }
 
-.runsheet-toolbar-right {
-  align-items: center;
-  display: flex;
-  gap: var(--space-4);
-  margin-left: auto;
-}
-
 .runsheet-filters {
   align-items: flex-end;
   display: flex;
@@ -68,10 +61,43 @@
   outline: none;
 }
 
-.runsheet-selected-count {
-  color: var(--color-text-caption);
-  font-size: var(--font-size-sm);
-  white-space: nowrap;
+.runsheet-id-link {
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  font-weight: var(--font-weight-semi-bold);
+  padding: 0;
+}
+
+.runsheet-id-link:hover {
+  text-decoration: underline;
+}
+
+/* Run sheet details popup - wide enough for the parcel table. */
+.modal-content.runsheet-modal {
+  display: flex;
+  flex-direction: column;
+  max-height: 88vh;
+  max-width: 94vw;
+  overflow-y: auto;
+  width: 1100px;
+}
+
+.runsheet-modal .modal-header {
+  margin-bottom: var(--space-4);
+}
+
+.runsheet-modal-actions {
+  align-items: center;
+  display: flex;
+  gap: var(--space-2);
+}
+
+.runsheet-modal .runsheet-rider-card {
+  border: none;
+  padding: 0;
 }
 
 .runsheet-rider-card {

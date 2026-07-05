@@ -59,11 +59,12 @@ const Dashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
+  const [trendPeriod, setTrendPeriod] = useState<7 | 30>(7);
 
   const loadSummary = useCallback(async (showRefreshing = false) => {
     if (showRefreshing) setRefreshing(true);
     try {
-      const res = await getDashboardSummary();
+      const res = await getDashboardSummary(trendPeriod);
       if (res?.success && res.data) {
         setSummary(res.data);
         setError('');
@@ -76,7 +77,7 @@ const Dashboard: React.FC = () => {
       setLoading(false);
       if (showRefreshing) setRefreshing(false);
     }
-  }, []);
+  }, [trendPeriod]);
 
   useEffect(() => {
     loadSummary();
@@ -150,7 +151,15 @@ const Dashboard: React.FC = () => {
       
       <div className="dashboard-main-grid">
         <div className="grid-left">
-          <WeeklyStats />
+          <WeeklyStats
+            data={summary.weeklyTrend}
+            loading={loading}
+            period={trendPeriod}
+            onPeriodChange={(p) => {
+              setTrendPeriod(p);
+              setLoading(true);
+            }}
+          />
         </div>
         <div className="grid-right">
           <CODSettlement data={summary.codSettlement} loading={loading} />

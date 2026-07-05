@@ -93,11 +93,17 @@ export const registerUserController = async (req: Request, res: Response) => {
 
 export const getManagedUserController = async (req: Request, res: Response) => {
   try {
+    const actorUserId = req.user?.id;
     const { type, id } = req.params;
+
+    if (!actorUserId) {
+      throw new AppError(401, "Unauthorized");
+    }
+
     if (!isManagedUserType(type) || typeof id !== "string") {
       throw new AppError(400, "Invalid user type");
     }
-    const data = await getManagedUserDetail(type, id);
+    const data = await getManagedUserDetail(actorUserId, type, id);
     return res.status(200).json({ success: true, data });
   } catch (error: any) {
     return res.status(error.statusCode || 500).json({
@@ -222,6 +228,7 @@ export const login = async (req: Request, res: Response) => {
     res.status(error.statusCode || 500).json({
       success: false,
       message: error.message || "Internal Server Error",
+      ...(error instanceof AppError && error.code ? { code: error.code } : {}),
     });
   }
 };
@@ -265,11 +272,24 @@ export const getAdminsController = async (_req: Request, res: Response) => {
 
 export const getVendorsController = async (req: Request, res: Response) => {
   try {
-    // Sales accounts see only the vendors (clients) they own; staff see all.
+    // Sales accounts see only the vendors (clients) they own; a vendor/vendor_staff
+    // actor sees only their own vendor record (needed by CreateOrderPage to look up
+    // its own address/location); staff see all.
     const roles = req.user?.roles ?? [];
     const isStaff = roles.includes("super_admin") || roles.includes("admin");
-    const salesScope = roles.includes("sales") && !isStaff ? { sales_user_id: req.user!.id } : {};
-    const where = { deleted_at: null, ...salesScope };
+    let scope: Record<string, unknown> = {};
+    if (roles.includes("sales") && !isStaff) {
+      scope = { sales_user_id: req.user!.id };
+    } else if (roles.includes("vendor") && !isStaff) {
+      scope = { user_id: req.user!.id };
+    } else if (roles.includes("vendor_staff") && !isStaff) {
+      const staffRecord = await prisma.vendor_staff.findFirst({
+        where: { user_id: req.user!.id, deleted_at: null, enabled: true },
+        select: { vendor_id: true },
+      });
+      scope = { id: staffRecord?.vendor_id ?? "__none__" };
+    }
+    const where = { deleted_at: null, ...scope };
 
     const { page, pageSize, skip } = paginationFromQuery(req);
 

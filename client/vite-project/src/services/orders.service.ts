@@ -75,6 +75,8 @@ export interface Order {
   weightKg?: number;
   codAmount: number;
   deliveryCharge: number;
+  packageType?: string;
+  deliveryInstruction?: string;
   vendorName?: string;
   riderName?: string;
   remarks?: string;
@@ -133,6 +135,8 @@ export interface BulkStatusResult {
 export interface DashboardTrendDay {
   day: string;
   date: string;
+  totalOrders: number;
+  pickedUp: number;
   delivered: number;
   returned: number;
 }
@@ -193,8 +197,8 @@ export const getOrders = async (params?: ListOrdersParams, signal?: AbortSignal)
   return response.data;
 };
 
-export const getDashboardSummary = async () => {
-  const response = await api.get('/orders/dashboard-summary');
+export const getDashboardSummary = async (trendDays: 7 | 30 = 7) => {
+  const response = await api.get('/orders/dashboard-summary', { params: { trendDays } });
   return response.data;
 };
 
@@ -320,7 +324,10 @@ export const addOrderRemark = async (
   remark: string,
   parentRemarkId?: string | null,
 ): Promise<{ success: boolean; data: OrderRemark }> => {
-  const response = await api.post(`/orders/${orderId}/remarks`, { remark, parentRemarkId });
+  const response = await api.post(`/orders/${orderId}/remarks`, {
+    remark,
+    parentRemarkId: parentRemarkId ?? undefined,
+  });
   return response.data;
 };
 

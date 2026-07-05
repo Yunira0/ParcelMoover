@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import {
   X, Package, User, Phone, MapPin, Weight,
-  Banknote, CheckCheck, Truck, Building2, XCircle, RefreshCw, ChevronRight,
+  Banknote, CheckCheck, Truck, XCircle, RefreshCw, ChevronRight,
 } from 'lucide-react'
 import type { Parcel, ParcelStatus } from '../lib/api'
 import { updateParcelStatus, RIDER_TRANSITIONS } from '../lib/api'
@@ -27,8 +27,6 @@ const STATUS_LABELS: Record<ParcelStatus, string> = {
 
 const ACTION_META: Record<string, { label: string; icon: typeof CheckCheck; danger?: boolean; partial?: boolean }> = {
   picked_up:         { label: 'Confirm Pickup',          icon: Truck      },
-  arrived:           { label: 'Mark Arrived at Origin',  icon: Building2  },
-  arrived_at_branch: { label: 'Arrived at Destination',  icon: Building2  },
   delivered:         { label: 'Mark as Delivered',       icon: CheckCheck },
   partially_delivered: { label: 'Mark Partial Delivery', icon: CheckCheck, partial: true },
   failed_pickup:     { label: 'Report Failed Pickup',    icon: XCircle,   danger: true },
@@ -65,6 +63,17 @@ export default function ParcelActionSheet({ parcel, onClose, onDone }: Props) {
   const nextStatuses = RIDER_TRANSITIONS[parcel.status] ?? []
   const pillClass    = STATUS_PILL[parcel.status] ?? 'text-text-secondary bg-surface-2'
 
+  // A re-tap after a timeout/network error is a retry of the same attempt,
+  // not a new one — reuse its idempotency key so the backend can dedupe it,
+  // instead of minting a fresh key that defeats the point of retrying safely.
+  const idempotencyRef = useRef<{ status: ParcelStatus; key: string } | null>(null)
+  function idempotencyKeyFor(status: ParcelStatus): string {
+    if (idempotencyRef.current?.status !== status) {
+      idempotencyRef.current = { status, key: crypto.randomUUID() }
+    }
+    return idempotencyRef.current.key
+  }
+
   async function confirmAction(status: ParcelStatus) {
     setLoading(true)
     setError('')
@@ -86,15 +95,20 @@ export default function ParcelActionSheet({ parcel, onClose, onDone }: Props) {
           setLoading(false)
           return
         }
-        await updateParcelStatus(parcel.id, status, remarks, codValue)
+        await updateParcelStatus(parcel.id, status, remarks, codValue, idempotencyKeyFor(status))
       } else {
-        await updateParcelStatus(parcel.id, status, remarks || undefined)
+        await updateParcelStatus(parcel.id, status, remarks || undefined, undefined, idempotencyKeyFor(status))
       }
+      idempotencyRef.current = null
       setDone(status)
       navigator.vibrate?.(80)
       setTimeout(onDone, 2000)
     } catch (e: any) {
-      setError(e.message ?? 'Update failed. Try again.')
+      setError(
+        !navigator.onLine
+          ? "You're offline — check your connection and try again."
+          : e.message ?? 'Update failed. Try again.'
+      )
     } finally {
       setLoading(false)
     }

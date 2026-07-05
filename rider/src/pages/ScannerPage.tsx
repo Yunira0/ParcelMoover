@@ -447,7 +447,10 @@ export default function ScannerPage() {
           )}
 
           {scanState === 'found' && parcel && (
-            <ParcelActionSheet parcel={parcel} onClose={resetScanner} onDone={resetScanner} />
+            <div className="absolute inset-0 z-10">
+              <div className="absolute inset-0 bg-black/40" onClick={resetScanner} />
+              <ParcelActionSheet parcel={parcel} onClose={resetScanner} onDone={resetScanner} />
+            </div>
           )}
 
           {/* Manual entry sheet */}

@@ -156,6 +156,16 @@ export const updateUserProfile = async (id: string, data: UpdateUserProfileInput
   return response.data;
 };
 
+/** Activate/deactivate an account. Deactivation also blocks the user's login. */
+export const updateUserStatus = async (
+  type: UpdateUserProfileInput['type'],
+  id: string,
+  status: 'active' | 'inactive',
+) => {
+  const response = await api.patch(`/auth/users/${type}/${id}`, { status });
+  return response.data;
+};
+
 export const updateUserPassword = async (
   type: UpdateUserProfileInput['type'],
   id: string,

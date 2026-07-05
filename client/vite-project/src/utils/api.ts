@@ -34,4 +34,31 @@ api.interceptors.request.use(
   }
 );
 
+// The backend now enforces a pending forced password change on every
+// authenticated call (not just at login), so a session whose cached
+// `user.mustChangePassword` is stale (e.g. the flag flipped true after this
+// browser's login/cache was set) would otherwise 403 on every request with no
+// explanation. Catch that specific response, resync the cache, and send the
+// user to the same screen ProtectedRoute already redirects to on fresh logins.
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    const message = error.response?.data?.message;
+    if (error.response?.status === 403 && message === 'Password change required before continuing') {
+      try {
+        const cached = JSON.parse(localStorage.getItem('user') || 'null');
+        if (cached) {
+          localStorage.setItem('user', JSON.stringify({ ...cached, mustChangePassword: true }));
+        }
+      } catch {
+        // Malformed cache - nothing to resync, the redirect below still applies.
+      }
+      if (window.location.pathname !== '/change-password') {
+        window.location.href = '/change-password';
+      }
+    }
+    return Promise.reject(error);
+  }
+);
+
 export default api;

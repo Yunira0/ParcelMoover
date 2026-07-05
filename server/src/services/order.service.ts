@@ -57,9 +57,10 @@ const DELIVERY_PENDING_STATUSES: parcel_status[] = [
   "oov",
 ];
 
-// Hub-level transitions: building/closing a dispatch manifest is a branch
-// operation, not something a delivery rider should be able to trigger.
-const HUB_OPERATION_STATUSES: parcel_status[] = ["dispatched", "arrived_at_branch"];
+// Hub-level transitions: confirming hub arrival and building/closing a
+// dispatch manifest are branch operations for admin/hub staff to perform,
+// not something the picking-up rider should be able to trigger themselves.
+const HUB_OPERATION_STATUSES: parcel_status[] = ["arrived", "dispatched", "arrived_at_branch"];
 
 // Return-to-Origin workflow stages — staff-only, driven from Return Operations.
 const RETURN_WORKFLOW_STATUSES: parcel_status[] = [
@@ -75,6 +76,11 @@ const TERMINAL_STATUSES: parcel_status[] = [
   "returned_to_vendor",
 ];
 
+// Hold / Loss & Damage are only reachable from the ops dashboard's dedicated
+// pages (HoldOperations / LossAndDamageOperations), both admin-gated in the
+// UI — the API must enforce the same restriction, not just hide the buttons.
+const OPS_RESTRICTED_STATUSES: parcel_status[] = ["hold", "loss_and_damage"];
+
 const MAX_PAGE_SIZE = 100;
 const DEFAULT_PAGE_SIZE = 10;
 const MAX_BULK_IDS = 200;
@@ -85,8 +91,8 @@ const DASHBOARD_SUMMARY_TTL_SECONDS = 30;
 const ORDERS_LIST_CACHE_PREFIX = "orders:list:";
 const ORDERS_LIST_TTL_SECONDS = 20;
 
-function dashboardSummaryCacheKey(vendorId?: string, riderId?: string) {
-  return `${DASHBOARD_SUMMARY_CACHE_PREFIX}${vendorId ?? "none"}:${riderId ?? "none"}`;
+function dashboardSummaryCacheKey(vendorId?: string, riderId?: string, trendDays: 7 | 30 = 7) {
+  return `${DASHBOARD_SUMMARY_CACHE_PREFIX}${vendorId ?? "none"}:${riderId ?? "none"}:${trendDays}d`;
 }
 
 // Only the default, unfiltered/unpaginated listOrders() call is cached, so the
@@ -155,6 +161,33 @@ const RIDER_ASSIGNMENT_FIELD: Partial<Record<parcel_status, "pickup_rider_id" | 
   // Sending an RTO parcel back to the vendor needs a rider to carry it.
   sent_to_vendor: "delivery_rider_id",
 };
+
+// Which leg (and therefore which assigned rider column) a given *current*
+// status belongs to. A rider may only progress a parcel that is on the leg
+// they were actually assigned to — pickup_rider_id for pickup-leg statuses,
+// delivery_rider_id for delivery-leg statuses — never someone else's parcel.
+const PICKUP_LEG_STATUSES: parcel_status[] = ["pickup_ordered", "rider_assigned", "picked_up", "failed_pickup"];
+const DELIVERY_LEG_STATUSES: parcel_status[] = ["ready_to_deliver", "sent_for_delivery", "failed_delivery"];
+
+function assertRiderOwnsLeg(
+  currentStatus: parcel_status,
+  parcel: { pickup_rider_id: string | null; delivery_rider_id: string | null },
+  actorRiderId: string,
+): void {
+  if (PICKUP_LEG_STATUSES.includes(currentStatus)) {
+    if (parcel.pickup_rider_id !== actorRiderId) {
+      throw new AppError(403, "You are not the assigned pickup rider for this parcel");
+    }
+    return;
+  }
+  if (DELIVERY_LEG_STATUSES.includes(currentStatus)) {
+    if (parcel.delivery_rider_id !== actorRiderId) {
+      throw new AppError(403, "You are not the assigned delivery rider for this parcel");
+    }
+    return;
+  }
+  throw new AppError(403, "Riders cannot update this parcel from its current status");
+}
 
 async function resolveActiveRider(riderId: string) {
   const rider = await prisma.riders.findFirst({
@@ -653,11 +686,21 @@ export interface ListOrdersResult {
 
 function mapOrder(
   parcel: Prisma.parcelsGetPayload<{ include: typeof ORDERS_INCLUDE }>,
+  isStaff: boolean,
 ) {
   const latestHistory = parcel.parcel_status_history[0];
   const rider =
     parcel.riders_parcels_delivery_rider_idToriders ||
     parcel.riders_parcels_pickup_rider_idToriders;
+  const vendorName = parcel.vendors?.business_name || parcel.vendors?.client_name || "";
+
+  // Staff see who (which user) last changed the status; vendors/riders only
+  // see which branch/company made the change - never an internal staff name
+  // (matches the redaction already applied to getOrderByTrackingId's
+  // statusHistory[].changedBy).
+  const lastUpdatedBy = isStaff
+    ? latestHistory?.users?.full_name || ""
+    : locationName(parcel.locations_parcels_origin_location_idTolocations) || vendorName || "Branch";
 
   return {
     id: parcel.id,
@@ -682,10 +725,12 @@ function mapOrder(
     weightKg: parcel.weight_kg === null ? undefined : Number(parcel.weight_kg),
     codAmount: Number(parcel.cod_amount),
     deliveryCharge: Number(parcel.delivery_charge),
-    vendorName: parcel.vendors?.business_name || parcel.vendors?.client_name || "",
+    packageType: parcel.package_type || "",
+    deliveryInstruction: parcel.delivery_instruction || "",
+    vendorName,
     riderName: rider?.name || "",
     remarks: parcel.parcel_remarks[0]?.remark || "",
-    lastUpdatedBy: latestHistory?.users?.full_name || "",
+    lastUpdatedBy,
     lastUpdatedAt: formatDate(latestHistory?.created_at || parcel.updated_at),
     createdAt: formatDate(parcel.created_at),
   };
@@ -712,6 +757,7 @@ export async function listOrders(
   query: ListOrdersQuery = {},
 ): Promise<ListOrdersResult> {
   const { vendorId, vendorIds, riderId } = await getActorScope(actor);
+  const isStaff = actor.roles.includes("super_admin") || actor.roles.includes("admin");
   const where = buildOrdersWhere({ vendorId, vendorIds, riderId }, query);
   const orderBy = resolveOrdersOrderBy(query);
 
@@ -754,7 +800,7 @@ export async function listOrders(
       }),
     ]);
     const result: ListOrdersResult = {
-      data: parcels.map(mapOrder),
+      data: parcels.map((p) => mapOrder(p, isStaff)),
       meta: {
         page: 1,
         pageSize: DEFAULT_LIST_CAP,
@@ -790,7 +836,7 @@ export async function listOrders(
   ]);
 
   return {
-    data: parcels.map(mapOrder),
+    data: parcels.map((p) => mapOrder(p, isStaff)),
     meta: {
       page,
       pageSize,
@@ -968,7 +1014,7 @@ export async function getOrderByTrackingId(actor: OrderActor, trackingId: string
   const vendorName = parcel.vendors?.business_name || parcel.vendors?.client_name || "";
 
   return {
-    ...mapOrder(parcel),
+    ...mapOrder(parcel, isStaff),
     canChangeStatus: isStaff,
     remarks: parcel.parcel_remarks.map((remark) => ({
       id: remark.id,
@@ -1083,10 +1129,10 @@ export async function addOrderRemark(
   };
 }
 
-export async function getDashboardSummary(actor: OrderActor) {
+export async function getDashboardSummary(actor: OrderActor, trendDays: 7 | 30 = 7) {
   const { vendorId, vendorIds, riderId } = await getActorScope(actor);
   // Sales scope is per-account; skip the shared cache to avoid cross-account leaks.
-  const cacheKey = vendorIds === undefined ? dashboardSummaryCacheKey(vendorId, riderId) : null;
+  const cacheKey = vendorIds === undefined ? dashboardSummaryCacheKey(vendorId, riderId, trendDays) : null;
 
   if (cacheKey) {
     try {
@@ -1129,7 +1175,7 @@ export async function getDashboardSummary(actor: OrderActor) {
     ...(riderId ? { rider_id: riderId } : {}),
   };
 
-  const TREND_DAYS = 7;
+  const TREND_DAYS = trendDays;
   const trendDayRanges = Array.from({ length: TREND_DAYS }, (_, index) => {
     const offset = TREND_DAYS - 1 - index;
     const start = new Date(todayStart);
@@ -1233,6 +1279,12 @@ export async function getDashboardSummary(actor: OrderActor) {
       trendDayRanges.map(({ start, end }) =>
         Promise.all([
           prisma.parcels.count({
+            where: { ...parcelWhere, created_at: { gte: start, lt: end } },
+          }),
+          prisma.parcels.count({
+            where: { ...parcelWhere, picked_up_at: { gte: start, lt: end } },
+          }),
+          prisma.parcels.count({
             where: {
               ...parcelWhere,
               status: "delivered",
@@ -1258,12 +1310,14 @@ export async function getDashboardSummary(actor: OrderActor) {
     : moneyToNumber(codTotals._sum.pending_amount);
 
   const weeklyTrend = trendDayRanges.map(({ start }, index) => {
-    const [delivered, returned] = trendCounts[index] ?? [0, 0];
+    const [dayTotalOrders, dayPickedUp, dayDelivered, dayReturned] = trendCounts[index] ?? [0, 0, 0, 0];
     return {
       day: start.toLocaleDateString("en-US", { weekday: "short" }),
       date: formatDate(start),
-      delivered,
-      returned,
+      totalOrders: dayTotalOrders,
+      pickedUp: dayPickedUp,
+      delivered: dayDelivered,
+      returned: dayReturned,
     };
   });
 
@@ -1376,36 +1430,50 @@ async function _updateParcelStatusImpl(
   parcelId: string,
   data: UpdateParcelStatusInput,
 ) {
-  // validate role-based permissions of certain transtions
-  const isAdmin = actor.roles.some((r) => ["super_admin", "admin"].includes(r));
-  const isVendorActor = actor.roles.includes("vendor") || actor.roles.includes("vendor_staff");
-  const isRiderActor = actor.roles.includes("rider");
-
-  // Non-admin actors may only update parcels that belong to them: a vendor's
-  // own orders, or a rider's own pickup/delivery leg. Without this, any
-  // vendor/rider could transition any parcel in the system.
-  const { vendorId, riderId } = isVendorActor || isRiderActor
-    ? await getActorScope(actor)
-    : { vendorId: undefined, riderId: undefined };
-
   const parcel = await prisma.parcels.findFirst({
-    where: {
-      id: parcelId,
-      deleted_at: null,
-      ...(vendorId ? { vendor_id: vendorId } : {}),
-      ...(riderId ? { OR: [{ pickup_rider_id: riderId }, { delivery_rider_id: riderId }] } : {}),
-    },
+    where: { id: parcelId, deleted_at: null },
     include: {
       pickup_tasks: true,
     },
   });
 
   if (!parcel) {
-    throw new AppError(404, "Parcel not found or does not belong to your account");
+    throw new AppError(404, "Parcel not found");
   }
 
   const currentStatus = parcel.status as ParcelStatus;
   const newStatus = data.status;
+  const isAdmin = actor.roles.some((r) => ["super_admin", "admin"].includes(r));
+
+  // Ownership scoping: vendors/vendor_staff may only touch their own parcels,
+  // and riders may only touch parcels they're actually assigned to, and only
+  // for the leg (pickup vs delivery) they were assigned for.
+  if (!isAdmin) {
+    const isVendorActor = actor.roles.includes("vendor") || actor.roles.includes("vendor_staff");
+    const isRiderActor = actor.roles.includes("rider");
+
+    if (isVendorActor) {
+      const { vendorId } = await getActorScope(actor);
+      if (parcel.vendor_id !== vendorId) {
+        throw new AppError(404, "Parcel not found");
+      }
+    } else if (isRiderActor) {
+      // Assigning a rider to a parcel (rider_assigned / sent_for_delivery /
+      // sent_to_vendor) is an admin/vendor operation done via the ops
+      // dashboard's rider picker — a rider never claims/assigns a parcel to
+      // themselves, so reject this before the leg-ownership check below
+      // (which, on the very first assignment, would otherwise always fail
+      // with a misleading "not your parcel" error instead of the real reason).
+      if (RIDER_ASSIGNMENT_FIELD[newStatus as parcel_status]) {
+        throw new AppError(403, "Assigning a rider to a parcel is an admin/vendor operation");
+      }
+      const scope = await getActorScope(actor);
+      if (!scope.riderId) {
+        throw new AppError(403, "Rider profile not found or inactive");
+      }
+      assertRiderOwnsLeg(currentStatus as parcel_status, parcel, scope.riderId);
+    }
+  }
 
   // cannot transition from a terminal state
   if (TERMINAL_STATUSES.includes(currentStatus as parcel_status)) {
@@ -1441,6 +1509,11 @@ async function _updateParcelStatusImpl(
     throw new AppError(403, "Only admins can manage the return workflow");
   }
 
+  // hold / loss & damage are managed from the ops dashboard, not riders/vendors
+  if (OPS_RESTRICTED_STATUSES.includes(newStatus as parcel_status) && !isAdmin) {
+    throw new AppError(403, "Only admins can manage hold / loss & damage status");
+  }
+
   if (data.locationId) {
     const loc = await prisma.locations.findUnique({
       where: { id: data.locationId },
@@ -1451,6 +1524,7 @@ async function _updateParcelStatusImpl(
   }
 
   // rider_assigned needs a pickup rider, sent_for_delivery needs a delivery rider
+  // (rider actors are already rejected above, before reaching this point)
   const riderAssignmentField = RIDER_ASSIGNMENT_FIELD[newStatus as parcel_status];
   if (riderAssignmentField) {
     if (!data.riderId) {
@@ -1498,6 +1572,15 @@ async function _updateParcelStatusImpl(
     // Side-effect: a hand-off to a delivery rider opens a run sheet
     if (newStatus === "sent_for_delivery" && data.riderId) {
       await createRunSheet(tx, data.riderId, [parcelId], actor.id);
+    }
+    // Side-effect: tag the COD record with whichever rider is now responsible
+    // for collecting it, so rider-scoped COD/finance queries can find it -
+    // nothing else in the app ever sets cod_collections.rider_id otherwise.
+    if (riderAssignmentField === "delivery_rider_id" && data.riderId) {
+      await tx.cod_collections.updateMany({
+        where: { parcel_id: parcelId },
+        data: { rider_id: data.riderId },
+      });
     }
     // Side-effect: update pickup_task status in sync
     if (parcel.pickup_tasks && ["rider_assigned", "picked_up", "cancelled"].includes(newStatus)) {
@@ -1586,7 +1669,7 @@ async function _bulkUpdateParcelStatusImpl(
   const isAdmin = actor.roles.some((r) => ["super_admin", "admin"].includes(r));
   const isVendorActor =
     actor.roles.includes("vendor") || actor.roles.includes("vendor_staff");
-  const isRiderActor = actor.roles.includes("rider");
+  const isRiderActor = actor.roles.includes("rider") && !isAdmin;
 
   // Hub operations (dispatch, OOV transitions) are admin-only.
   if (HUB_OPERATION_STATUSES.includes(newStatus as parcel_status) && !isAdmin) {
@@ -1596,27 +1679,35 @@ async function _bulkUpdateParcelStatusImpl(
   if (RETURN_WORKFLOW_STATUSES.includes(newStatus as parcel_status) && !isAdmin) {
     throw new AppError(403, "Only admins can manage the return workflow");
   }
+  // Hold / loss & damage are managed from the ops dashboard, not riders/vendors.
+  if (OPS_RESTRICTED_STATUSES.includes(newStatus as parcel_status) && !isAdmin) {
+    throw new AppError(403, "Only admins can manage hold / loss & damage status");
+  }
+  // Assigning a rider to a parcel is an admin/vendor operation done via the ops
+  // dashboard's rider picker, never a rider self-service action.
+  if (RIDER_ASSIGNMENT_FIELD[newStatus as parcel_status] && isRiderActor) {
+    throw new AppError(403, "Assigning a rider to a parcel is an admin/vendor operation");
+  }
   // Cancellation is allowed for admins and vendors (vendors may only cancel their own orders,
   // enforced by the vendor_id scope below).
   if (newStatus === "cancelled" && !isAdmin && !isVendorActor) {
     throw new AppError(403, "Only vendors or admins can cancel orders");
   }
 
-  // Resolve vendor/rider scope so non-admin actors can only act on their own parcels.
-  // (Named actorRiderId to avoid colliding with the dispatch-manifest riderId below,
-  // which is a different rider: the one carrying the manifest, not the acting user.)
+  // Resolve vendor/rider scope so non-admins can only act on their own parcels.
   const { vendorId, riderId: actorRiderId } = isVendorActor || isRiderActor
     ? await getActorScope(actor)
     : { vendorId: undefined, riderId: undefined };
+
+  if (isRiderActor && !actorRiderId) {
+    throw new AppError(403, "Rider profile not found or inactive");
+  }
 
   const parcels = await prisma.parcels.findMany({
     where: {
       id: { in: ids },
       deleted_at: null,
       ...(vendorId ? { vendor_id: vendorId } : {}),
-      ...(actorRiderId
-        ? { OR: [{ pickup_rider_id: actorRiderId }, { delivery_rider_id: actorRiderId }] }
-        : {}),
     },
     include: { pickup_tasks: true },
   });
@@ -1641,6 +1732,11 @@ async function _bulkUpdateParcelStatusImpl(
         422,
         `Invalid status transition for ${parcel.tracking_id}: '${currentStatus}' → '${newStatus}'`,
       );
+    }
+    // Riders may only progress parcels they're actually assigned to, and only
+    // for the leg (pickup vs delivery) they were assigned for.
+    if (isRiderActor && actorRiderId) {
+      assertRiderOwnsLeg(currentStatus as parcel_status, parcel, actorRiderId);
     }
   }
 
@@ -1689,6 +1785,7 @@ async function _bulkUpdateParcelStatusImpl(
   }
 
   // rider_assigned needs a pickup rider, sent_for_delivery needs a delivery rider
+  // (rider actors are already rejected above, before reaching this point)
   const riderAssignmentField = RIDER_ASSIGNMENT_FIELD[newStatus as parcel_status];
   let parcelRiderId: string | null = null;
   if (riderAssignmentField) {
@@ -1762,6 +1859,16 @@ async function _bulkUpdateParcelStatusImpl(
       where: { id: { in: ids } },
       data: updateData,
     });
+
+    // Tag the COD record with whichever rider is now responsible for
+    // collecting it, so rider-scoped COD/finance queries can find it -
+    // nothing else in the app ever sets cod_collections.rider_id otherwise.
+    if (riderAssignmentField === "delivery_rider_id" && parcelRiderId) {
+      await tx.cod_collections.updateMany({
+        where: { parcel_id: { in: ids } },
+        data: { rider_id: parcelRiderId },
+      });
+    }
 
     const pickupSyncIds = parcels
       .filter((p) => p.pickup_tasks && ["rider_assigned", "picked_up", "cancelled"].includes(newStatus))

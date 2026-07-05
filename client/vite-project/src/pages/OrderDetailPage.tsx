@@ -13,6 +13,7 @@ import OrderInfoCards from '../components/order-detail/OrderInfoCards';
 import OrderTimeline from '../components/order-detail/OrderTimeline';
 import OrderRemarks from '../components/order-detail/OrderRemarks';
 import OrderRemarkInput from '../components/order-detail/OrderRemarkInput';
+import { printLabels } from '../utils/printLabels';
 import './OrderDetailPage.css';
 
 const OrderDetailPage: React.FC = () => {
@@ -72,6 +73,12 @@ const OrderDetailPage: React.FC = () => {
     setReplyingTo(remark);
   };
 
+  const handlePrint = () => {
+    if (!order) return;
+    const { remarks, statusHistory, canChangeStatus, ...orderFields } = order;
+    void printLabels([orderFields]);
+  };
+
   if (loading) {
     return (
       <div className="od-page">
@@ -122,6 +129,7 @@ const OrderDetailPage: React.FC = () => {
           serviceType={order.serviceType}
           createdAt={order.createdAt}
           orderId={order.id}
+          onPrint={handlePrint}
         />
 
         <OrderInfoCards

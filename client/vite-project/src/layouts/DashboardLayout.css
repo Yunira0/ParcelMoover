@@ -28,3 +28,27 @@
     padding: var(--space-4);
   }
 }
+
+/* window.print() anywhere in the dashboard should print just the page body,
+   not the surrounding chrome - without this every page's Print button printed
+   the top nav and sidebar too. */
+@media print {
+  .dashboard-layout {
+    height: auto;
+    overflow: visible;
+  }
+
+  .dashboard-body {
+    overflow: visible;
+  }
+
+  .dashboard-content {
+    overflow: visible;
+    padding: 0;
+  }
+
+  .top-nav,
+  .sidebar {
+    display: none !important;
+  }
+}

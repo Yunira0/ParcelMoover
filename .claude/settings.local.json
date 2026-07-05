@@ -50,21 +50,9 @@
       "Bash(grep -n \"^th,\\\\|^  th\\\\|thead th\\\\| th {\" src/components/Table.css)",
       "Bash(awk '/^export async function updateParcelStatus\\\\\\(/,0' src/services/order.service.ts)",
       "Bash(awk '/^async function _bulkUpdateParcelStatusImpl/,/^}/' src/services/order.service.ts)",
-      "Bash(cd \"/c/Users/ASUS/Desktop/webproject/init-/.claude/worktrees/eager-germain-259669/server\" && ls node_modules/.bin | grep -i -E \"tsx|ts-node|nodemon\" 2>&1)",
-      "Bash(sed -i 's/migration_name, finished_at, success/migration_name, finished_at, rolled_back_at, applied_steps_count/' _repro4.ts)",
       "Bash(npx ts-node *)",
-      "Bash(cp \"/c/Users/ASUS/Desktop/webproject/init-/.claude/worktrees/eager-germain-259669/server/src/lib/redis.ts\" \"/c/Users/ASUS/Desktop/webproject/init-/server/src/lib/redis.ts\")",
-      "Bash(cp \"/c/Users/ASUS/Desktop/webproject/init-/.claude/worktrees/eager-germain-259669/server/src/lib/redisPubSub.ts\" \"/c/Users/ASUS/Desktop/webproject/init-/server/src/lib/redisPubSub.ts\")",
-      "Read(//c/Users/ASUS/Desktop/webproject/init-/server/src/lib/**)",
-      "PowerShell(Test-NetConnection -ComputerName localhost -Port 6379 -WarningAction SilentlyContinue | Select-Object TcpTestSucceeded; Get-Service | Where-Object { $_.Name -match 'redis|memurai' } | Select-Object Name,Status; try { docker ps -a --filter \"ancestor=redis\" --format \"{{.Names}} {{.Status}}\" } catch { \"docker not available\" })",
-      "PowerShell(wsl -l -v)",
-      "PowerShell(wsl -e sh -c \"which redis-server && redis-server --version\" 2>$null)",
-      "PowerShell(wsl -d Ubuntu -e sh -c \"which redis-server; redis-server --version; service redis-server status\")",
-      "PowerShell($paths = @\\(\"C:\\\\Program Files\\\\Docker\", \"C:\\\\Program Files\\\\Memurai\", \"C:\\\\Program Files\\\\Redis\", \"C:\\\\ProgramData\\\\chocolatey\\\\lib\"\\); foreach \\($p in $paths\\) { if \\(Test-Path $p\\) { \"EXISTS: $p\"; Get-ChildItem $p -ErrorAction SilentlyContinue | Select-Object -First 5 -ExpandProperty Name } }; echo \"---\"; Get-Command redis-server, memurai, docker -ErrorAction SilentlyContinue | Select-Object Name,Source)",
-      "Bash(git -C \"C:/Users/ASUS/Desktop/webproject/init-/.claude/worktrees/eager-germain-259669\" status --short)",
-      "Bash(git -C \"C:/Users/ASUS/Desktop/webproject/init-/.claude/worktrees/eager-germain-259669\" log --oneline -8)",
-      "Bash(git -C \"C:/Users/ASUS/Desktop/webproject/init-/.claude/worktrees/eager-germain-259669\" diff --stat)",
-      "Bash(git -C \"C:/Users/ASUS/Desktop/webproject/init-/.claude/worktrees/eager-germain-259669\" diff -- server/src/lib/redis.ts server/src/lib/redisPubSub.ts)"
+      "Skill(artifact-design)",
+      "Artifact"
     ]
   }
 }

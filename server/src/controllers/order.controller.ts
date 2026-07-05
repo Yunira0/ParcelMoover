@@ -332,6 +332,18 @@ export async function bulkUpdateOrderStatusController(req: Request, res: Respons
         message: "A valid status is required",
       });
     }
+    if (toLocationId !== undefined && (typeof toLocationId !== "string" || !UUID_REGEX.test(toLocationId))) {
+      return res.status(400).json({
+        success: false,
+        message: "toLocationId must be a valid UUID",
+      });
+    }
+    if (riderId !== undefined && (typeof riderId !== "string" || !UUID_REGEX.test(riderId))) {
+      return res.status(400).json({
+        success: false,
+        message: "riderId must be a valid UUID",
+      });
+    }
 
     const idempotencyKey = req.headers["idempotency-key"] as string | undefined;
     if (!idempotencyKey) {
@@ -441,10 +453,14 @@ export async function dashboardSummaryController(req: Request, res: Response) {
       });
     }
 
-    const summary = await getDashboardSummary({
-      id: req.user.id,
-      roles: req.user.roles,
-    });
+    const trendDays = req.query.trendDays === "30" ? 30 : 7;
+    const summary = await getDashboardSummary(
+      {
+        id: req.user.id,
+        roles: req.user.roles,
+      },
+      trendDays,
+    );
 
     return res.status(200).json({
       success: true,
@@ -471,6 +487,18 @@ export async function updateOrderStatusController(req: Request, res: Response) {
       return res.status(400).json({
         success: false,
         message: "Status is required",
+      });
+    }
+    if (locationId !== undefined && (typeof locationId !== "string" || !UUID_REGEX.test(locationId))) {
+      return res.status(400).json({
+        success: false,
+        message: "locationId must be a valid UUID",
+      });
+    }
+    if (riderId !== undefined && (typeof riderId !== "string" || !UUID_REGEX.test(riderId))) {
+      return res.status(400).json({
+        success: false,
+        message: "riderId must be a valid UUID",
       });
     }
 

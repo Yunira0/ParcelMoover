@@ -5,7 +5,7 @@ import {
 } from 'lucide-react'
 import { usePending } from '../context/PendingContext'
 import ParcelActionSheet from '../components/ParcelActionSheet'
-import type { Parcel, ParcelStatus } from '../lib/api'
+import { PENDING_QUEUE_STATUSES, type Parcel, type ParcelStatus } from '../lib/api'
 
 // ── Filter definitions ────────────────────────────────────────────────────
 
@@ -25,7 +25,7 @@ const FILTERS: FilterDef[] = [
   {
     key:      'all',
     label:    'All',
-    statuses: ['rider_assigned', 'picked_up', 'dispatched', 'sent_for_delivery'],
+    statuses: PENDING_QUEUE_STATUSES,
     icon:     Package,
     accent:   'text-text-primary',
     border:   'border-l-border',
@@ -51,7 +51,7 @@ const FILTERS: FilterDef[] = [
   },
   {
     key:      'delivery',
-    label:    'Return',
+    label:    'Deliver',
     statuses: ['sent_for_delivery'],
     icon:     MapPin,
     accent:   'text-brand',

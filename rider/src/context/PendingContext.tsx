@@ -1,5 +1,5 @@
-import { createContext, useContext, useState, useCallback, useRef, type ReactNode } from 'react'
-import { getRiderParcels, RIDER_TRANSITIONS, type Parcel } from '../lib/api'
+import { createContext, useContext, useState, useCallback, useEffect, useRef, type ReactNode } from 'react'
+import { getRiderParcels, PENDING_QUEUE_STATUSES, type Parcel } from '../lib/api'
 
 interface PendingCtx {
   parcels: Parcel[]
@@ -22,9 +22,12 @@ export function PendingProvider({ children }: { children: ReactNode }) {
     setLoading(true)
     setError('')
     try {
-      const all = await getRiderParcels()
-      const actionable = Object.keys(RIDER_TRANSITIONS) as string[]
-      setParcels(all.filter(p => actionable.includes(p.status)))
+      // Ask the backend for just the queue's statuses instead of pulling the
+      // rider's entire order history and filtering client-side - cheaper for
+      // high-volume riders, and immune to the list endpoint's row cap cutting
+      // off actionable parcels behind older delivered/cancelled ones.
+      const parcels = await getRiderParcels(PENDING_QUEUE_STATUSES)
+      setParcels(parcels)
     } catch (e: any) {
       setError(e?.message ?? 'Failed to load parcels')
     } finally {
@@ -32,6 +35,11 @@ export function PendingProvider({ children }: { children: ReactNode }) {
       inFlight.current = false
     }
   }, [])
+
+  // Load the queue as soon as the rider is authenticated, not just when they
+  // happen to visit the Pending tab - otherwise BottomNav's badge count sits
+  // at 0 for however long they stay on Scan/Dashboard after logging in.
+  useEffect(() => { refresh() }, [refresh])
 
   return <Ctx.Provider value={{ parcels, loading, error, refresh }}>{children}</Ctx.Provider>
 }

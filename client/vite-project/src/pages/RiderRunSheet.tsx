@@ -28,6 +28,8 @@ import {
 import { getRiders } from '../services/users.service';
 import { formatCurrency } from '../utils/format';
 import { toBsDate, toNptTime } from '../utils/nepaliDate';
+import { printRunSheet } from '../utils/printRunSheet';
+import '../components/Modal.css';
 import './RiderRunSheet.css';
 
 const ALL_RIDERS = '';
@@ -213,7 +215,7 @@ const RiderRunSheet: React.FC = () => {
   const [riderId, setRiderId] = useState(ALL_RIDERS);
   const [date, setDate] = useState(nepalToday);
   const [expandedSheetId, setExpandedSheetId] = useState('');
-  const [selectedSheetIds, setSelectedSheetIds] = useState<Set<string | number>>(new Set());
+  const [detailSheetId, setDetailSheetId] = useState('');
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
 
@@ -257,6 +259,8 @@ const RiderRunSheet: React.FC = () => {
     [sheets],
   );
   const expandedSheet = sheets.find(sheet => sheet.id === expandedSheetId);
+  // Derived from `sheets` so the popup stays fresh when live status updates reload the list.
+  const detailSheet = sheets.find(sheet => sheet.id === detailSheetId);
 
   const overviewColumns = [
     {
@@ -266,7 +270,15 @@ const RiderRunSheet: React.FC = () => {
     },
     {
       header: 'RUNSHEET ID',
-      accessor: (row: RunSheetRow) => row.sheetNo,
+      accessor: (row: RunSheetRow) => (
+        <button
+          type="button"
+          className="runsheet-id-link"
+          onClick={() => setDetailSheetId(row.id)}
+        >
+          {row.sheetNo}
+        </button>
+      ),
       width: '210px',
       className: 'runsheet-tracking-cell',
     },
@@ -382,16 +394,6 @@ const RiderRunSheet: React.FC = () => {
             />
           </div>
         </div>
-        <div className="runsheet-toolbar-right">
-          {selectedSheetIds.size > 0 && (
-            <span className="runsheet-selected-count">
-              {selectedSheetIds.size} sheet{selectedSheetIds.size === 1 ? '' : 's'} selected
-            </span>
-          )}
-          <Button variant="secondary" onClick={() => window.print()}>
-            <Printer size={14} /> Print
-          </Button>
-        </div>
       </div>
 
       {loadError && <p className="runsheet-error">{loadError}</p>}
@@ -399,7 +401,7 @@ const RiderRunSheet: React.FC = () => {
       <Table
         columns={overviewColumns}
         data={rows}
-        onSelectionChange={setSelectedSheetIds}
+        selectable={false}
         getRowClassName={row => (row.id === expandedSheetId ? 'runsheet-row-active' : '')}
         loading={loading && rows.length === 0}
         loadingMessage="Loading run sheets..."
@@ -409,6 +411,38 @@ const RiderRunSheet: React.FC = () => {
       />
 
       {expandedSheet && <RunSheetDetailCard sheet={expandedSheet} />}
+
+      {detailSheet && (
+        <div className="modal-overlay" onClick={() => setDetailSheetId('')}>
+          <div
+            className="modal-content runsheet-modal"
+            onClick={event => event.stopPropagation()}
+          >
+            <div className="modal-header">
+              <h2>Run Sheet Details</h2>
+              <div className="runsheet-modal-actions">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => printRunSheet(detailSheet, STATUS_LABELS)}
+                >
+                  <Printer size={14} /> Print
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="modal-close-btn"
+                  onClick={() => setDetailSheetId('')}
+                  type="button"
+                >
+                  &times;
+                </Button>
+              </div>
+            </div>
+            <RunSheetDetailCard sheet={detailSheet} />
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -110,7 +110,8 @@ export const updateManagedUserSchema = z.object({
       z.undefined(),
     ])
     .optional(),
-  status: z.enum(["active", "inactive", "suspended"]).optional(),
+  // Must match the DB user_status enum (active | inactive) - Prisma rejects other values.
+  status: z.enum(["active", "inactive"]).optional(),
   // admin-only
   position: optionalAuthString(100),
   // vendor-only

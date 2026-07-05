@@ -19,9 +19,23 @@ declare global {
                 phone: string | null;
                 status: string;
                 roles: string[];
+                mustChangePassword: boolean;
             }
         }
     }
+}
+
+// Endpoints a user with a pending forced password change may still hit -
+// changing the password itself, logging out, and reading (not editing) their
+// own profile so the frontend can identify them and show the forced screen.
+function isPasswordChangeBypass(req: Request): boolean {
+    if (req.originalUrl.startsWith("/api/auth/change-password") || req.originalUrl.startsWith("/api/auth/logout")) {
+        return true;
+    }
+    if ((req.originalUrl === "/me" || req.originalUrl === "/api/me") && req.method === "GET") {
+        return true;
+    }
+    return false;
 }
 
 export async function authMiddleware(req: Request, res: Response, next: NextFunction) {
@@ -56,7 +70,6 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
             where: {
                 id: decoded.id,
                 deleted_at: null,
-                status: 'active',
             },
             include: {
                 user_roles: {
@@ -71,6 +84,16 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
             throw new AppError(401, 'User not found or inactive');
         }
 
+        // Deactivated accounts get a coded 401 so clients (rider PWA) can show
+        // a dedicated "account deactivated" screen instead of a generic logout.
+        if (user.status !== 'active') {
+            throw new AppError(401, 'Your account has been deactivated', 'ACCOUNT_INACTIVE');
+        }
+
+        if (user.must_change_password && !isPasswordChangeBypass(req)) {
+            throw new AppError(403, 'Password change required before continuing');
+        }
+
         req.user = {
             id: user.id,
             fullName: user.full_name,
@@ -78,10 +101,17 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
             phone: user.phone,
             status: user.status,
             roles: user.user_roles.map(ur => ur.roles.code),
+            mustChangePassword: user.must_change_password,
         };
 
         next();
     } catch (error) {
+        if (error instanceof AppError && error.statusCode === 403) {
+            return res.status(403).json({ success: false, message: error.message });
+        }
+        if (error instanceof AppError && error.code) {
+            return res.status(401).json({ success: false, message: error.message, code: error.code });
+        }
         return res.status(401).json({
             success: false,
             message: "Unauthorized"

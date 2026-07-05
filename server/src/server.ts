@@ -16,6 +16,7 @@ import prisma, { pool } from "./lib/prisma";
 import cookiesParser from "cookie-parser";
 import {authMiddleware} from "./middlewares/auth.mddleware";
 import { errorHandler } from "./middlewares/errorHandler.middleware";
+import {authorizeRoles} from "./middlewares/authorizeRoles.middleware";
 
 
 import cors from "cors"
@@ -79,7 +80,14 @@ app.use("/api/locations", LocationRoutes)
 
 app.use("/api/pricing", PricingRoutes)
 
-app.use("/uploads", express.static(path.join(process.cwd(), "uploads")))
+// KYC/registration documents (citizenship, PAN, licence, bank docs) contain
+// sensitive PII — only staff verifying an account should ever be able to open one.
+app.use(
+    "/uploads",
+    authMiddleware,
+    authorizeRoles("super_admin", "admin"),
+    express.static(path.join(process.cwd(), "uploads")),
+)
 
 
 const getCurrentUserHandler = async (req: Request, res: Response) => {
@@ -138,7 +146,10 @@ const updateCurrentUserHandler = async (req: Request, res: Response) => {
       email: updated.email,
       phone: updated.phone,
     });
-  } catch (error) {
+  } catch (error: any) {
+    if (error.code === "P2002") {
+      return res.status(409).json({ error: "Phone number already in use" });
+    }
     console.error("Error updating user profile:", error);
     return res.status(500).json({ error: "Internal server error" });
   }

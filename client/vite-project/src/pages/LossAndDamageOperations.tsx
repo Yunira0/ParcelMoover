@@ -15,6 +15,7 @@ import {
   type ParcelStatus,
 } from '../services/orders.service';
 import { toBsDate } from '../utils/nepaliDate';
+import { printLabels } from '../utils/printLabels';
 import './LossAndDamageOperations.css';
 
 const PAGE_SIZE = 10;
@@ -166,6 +167,13 @@ const LossAndDamageOperations: React.FC = () => {
     URL.revokeObjectURL(url);
   };
 
+  const selectedOrders = orders.filter((order) => selectedIds.has(order.id));
+
+  const handlePrintLabels = () => {
+    const labelOrders = selectedOrders.length > 0 ? selectedOrders : visibleOrders;
+    void printLabels(labelOrders);
+  };
+
   const columns = useMemo(() => [
     {
       header: '#',
@@ -240,8 +248,8 @@ const LossAndDamageOperations: React.FC = () => {
           <Button variant="secondary" onClick={downloadCsv}>
             <Download size={14} /> Download
           </Button>
-          <Button variant="secondary" onClick={() => window.print()}>
-            <Printer size={14} /> Print
+          <Button variant="secondary" onClick={handlePrintLabels} disabled={visibleOrders.length === 0}>
+            <Printer size={14} /> {selectedOrders.length > 0 ? `Print ${selectedOrders.length} Selected` : `Print All (${visibleOrders.length})`}
           </Button>
         </div>
       </div>

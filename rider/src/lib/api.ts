@@ -8,14 +8,69 @@ export const api = axios.create({
   timeout: 12000,
 })
 
-// Attach CSRF token from localStorage on every mutating request
+// The csrfToken cookie is deliberately non-httpOnly (double-submit pattern) so
+// the frontend can read it directly here - no need to also duplicate it into
+// localStorage as a second source of truth that can drift from the cookie.
+function getCsrfCookie(): string | null {
+  const match = document.cookie.match(/(?:^|; )csrfToken=([^;]*)/)
+  return match ? decodeURIComponent(match[1]) : null
+}
+
+// Attach CSRF token on every mutating request
 api.interceptors.request.use((config) => {
-  const csrf = localStorage.getItem('csrfToken')
+  const csrf = getCsrfCookie()
   if (csrf && ['post', 'patch', 'put', 'delete'].includes(config.method ?? '')) {
     config.headers['X-CSRF-Token'] = csrf
   }
   return config
 })
+
+// Set by AuthContext so an expired/revoked session can clear app state and let
+// the router fall back to /welcome, without api.ts needing to know about React.
+// reason 'deactivated' means the account was disabled by an admin, not just an
+// expired session - the app shows the dedicated deactivated screen for it.
+let onUnauthorized: ((reason?: 'deactivated') => void) | null = null
+export function setUnauthorizedHandler(fn: ((reason?: 'deactivated') => void) | null) {
+  onUnauthorized = fn
+}
+
+// Persisted separately from the session cache so a relaunch of the PWA still
+// lands on the deactivated screen instead of the login form.
+const DEACTIVATED_FLAG = 'riderDeactivated'
+export const getDeactivatedFlag = () => localStorage.getItem(DEACTIVATED_FLAG) === '1'
+export const setDeactivatedFlag = () => localStorage.setItem(DEACTIVATED_FLAG, '1')
+export const clearDeactivatedFlag = () => localStorage.removeItem(DEACTIVATED_FLAG)
+
+/** True when the server rejected the request because the account is deactivated. */
+export function isAccountInactiveError(error: unknown): boolean {
+  return (error as any)?.response?.data?.code === 'ACCOUNT_INACTIVE'
+}
+
+api.interceptors.response.use(
+  (res) => res,
+  (error) => {
+    // Surface the backend's actual error message instead of axios's generic
+    // "Request failed with status code NNN" — every failure path in the API
+    // returns { success: false, message } alongside the non-2xx status.
+    const backendMessage = error.response?.data?.message
+    if (backendMessage) error.message = backendMessage
+
+    // Both the auth middleware (401) and the login endpoint (403) tag
+    // deactivated accounts with this code.
+    if (isAccountInactiveError(error)) setDeactivatedFlag()
+
+    // A 401 from /auth/login just means "wrong credentials" — handled inline
+    // by the login form. Anywhere else, it means the session has expired or
+    // been revoked, so clear local state and let the app fall back to login.
+    const isLoginRequest = error.config?.url?.includes('/auth/login')
+    if (error.response?.status === 401 && !isLoginRequest) {
+      localStorage.removeItem('rider')
+      onUnauthorized?.(isAccountInactiveError(error) ? 'deactivated' : undefined)
+    }
+
+    return Promise.reject(error)
+  },
+)
 
 export interface LoginPayload {
   email: string
@@ -40,15 +95,17 @@ export async function loginRider(payload: LoginPayload): Promise<RiderUser> {
     token: string
   }>('/auth/login', payload)
 
-  if (!data.success) throw new Error(data.message)
-
   const roles: string[] = (data.data as any).roles ?? []
   if (!roles.includes('rider')) {
     throw new Error('Access denied. This app is for riders only.')
   }
 
-  localStorage.setItem('csrfToken', data.csrfToken)
+  // The login response's Set-Cookie header already wrote the csrfToken
+  // cookie the request interceptor reads from - only the profile needs a
+  // client-side cache, to hydrate AuthContext without a round trip on boot.
   localStorage.setItem('rider', JSON.stringify(data.data))
+  // A successful login proves the account is active again.
+  clearDeactivatedFlag()
   return data.data
 }
 
@@ -79,13 +136,22 @@ export interface Parcel {
   createdAt: string
 }
 
-// Rider-allowed transitions only
+// Rider-allowed transitions only.
+// Note: "arrived" and "arrived_at_branch" are hub operations confirmed by
+// admin/hub staff, not the rider — never exposed here, since the backend
+// rejects both for a rider actor anyway.
 export const RIDER_TRANSITIONS: Partial<Record<ParcelStatus, ParcelStatus[]>> = {
   rider_assigned:    ['picked_up', 'failed_pickup'],
-  picked_up:         ['arrived'],
-  dispatched:        ['arrived_at_branch'],
   sent_for_delivery: ['delivered', 'partially_delivered', 'failed_delivery'],
 }
+
+// Statuses shown in the rider's "Pending" queue - broader than
+// RIDER_TRANSITIONS (which is only the subset with an actionable button
+// right now). picked_up/dispatched parcels have no rider action to take at
+// that moment but are still worth tracking until they move to the next stage.
+export const PENDING_QUEUE_STATUSES: ParcelStatus[] = [
+  'rider_assigned', 'picked_up', 'dispatched', 'sent_for_delivery',
+]
 
 // ── Dashboard ─────────────────────────────────────────────────────────────
 export interface DashboardSummary {
@@ -121,8 +187,10 @@ export async function getDashboardSummary(): Promise<DashboardSummary> {
   return data.data
 }
 
-export async function getRiderParcels(): Promise<Parcel[]> {
-  const { data } = await api.get<{ success: boolean; data: Parcel[] }>('/orders')
+export async function getRiderParcels(statuses?: ParcelStatus[]): Promise<Parcel[]> {
+  const { data } = await api.get<{ success: boolean; data: Parcel[] }>('/orders', {
+    params: statuses?.length ? { status: statuses.join(',') } : undefined,
+  })
   return data.data ?? []
 }
 
@@ -131,7 +199,6 @@ export async function getParcelByTrackingId(trackingId: string, signal?: AbortSi
     `/orders/track/${trackingId}`,
     { signal },
   )
-  if (!data.success) throw new Error('Parcel not found')
   return data.data
 }
 
@@ -140,19 +207,46 @@ export async function updateParcelStatus(
   status: ParcelStatus,
   remarks?: string,
   codCollected?: number,
+  // Callers that retry the same logical attempt (e.g. a re-tap after a
+  // timeout) should pass the same key back in, so the retry actually dedupes
+  // against a possibly-already-applied change instead of defeating the point
+  // of idempotency by minting a fresh key every call.
+  idempotencyKey: string = crypto.randomUUID(),
 ): Promise<void> {
-  const idempotencyKey = crypto.randomUUID()
-  const { data } = await api.patch<{ success: boolean; message: string }>(
+  await api.patch(
     `/orders/${orderId}/status`,
     { status, remarks, codCollected },
     { headers: { 'Idempotency-Key': idempotencyKey } }
   )
-  if (!data.success) throw new Error(data.message)
+}
+
+// Lightweight session probe. The auth middleware rejects deactivated accounts
+// and revoked sessions with a 401, which the response interceptor above turns
+// into a local logout. Network failures (offline, server down) are swallowed -
+// we can't verify, so the cached session stays until we can reach the server.
+export async function validateSession(): Promise<void> {
+  try {
+    await api.get('/me')
+  } catch {
+    // 401 already handled by the interceptor; anything else keeps the session.
+  }
+}
+
+export async function changeRiderPassword(currentPassword: string, newPassword: string): Promise<void> {
+  await api.post('/auth/change-password', { currentPassword, newPassword })
 }
 
 export async function logoutRider() {
-  localStorage.removeItem('csrfToken')
-  localStorage.removeItem('rider')
+  try {
+    await api.post('/auth/logout')
+  } catch {
+    // Best-effort: even if the server call fails (e.g. offline), still clear
+    // the local session so the app doesn't look logged in.
+  } finally {
+    // The server call above clears the csrfToken/accessToken cookies via
+    // Set-Cookie; only the profile cache is ours to clear here.
+    localStorage.removeItem('rider')
+  }
 }
 
 export function getCachedRider(): RiderUser | null {

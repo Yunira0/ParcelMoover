@@ -21,6 +21,7 @@ interface UpdateManagedUserInput {
   fullName?: string;
   phone?: string;
   email?: string;
+  status?: "active" | "inactive";
   joinedAt?: string;
   locationId?: string;
   address?: string;
@@ -128,11 +129,18 @@ export async function updateManagedUserProfile(
   const profile = await getManagedProfile(data.type, id);
   const userId = getProfileUserId(profile);
 
+  if (data.status && data.status !== "active" && userId === actorUserId) {
+    throw new AppError(400, "You cannot deactivate your own account");
+  }
+
   return prisma.$transaction(async (tx) => {
     const userUpdate: Record<string, unknown> = {};
     if (data.fullName?.trim()) userUpdate.full_name = data.fullName.trim();
     if (data.phone?.trim()) userUpdate.phone = data.phone.trim();
     if (data.email?.trim()) userUpdate.email = data.email.trim();
+    // Gates login and the per-request auth middleware, so deactivation locks
+    // the account out immediately - not just on the next login.
+    if (data.status) userUpdate.status = data.status;
 
     if (Object.keys(userUpdate).length > 0) {
       userUpdate.updated_at = new Date();
@@ -187,6 +195,7 @@ export async function updateManagedUserProfile(
       putRate(u, "zone_urban_areas", data.zoneUrbanAreas);
       putRate(u, "zone_remote_areas", data.zoneRemoteAreas);
       if (joinedAt) u.joined_at = joinedAt;
+      if (data.status) u.status = data.status;
       return tx.vendors.update({ where: { id }, data: u });
     }
 
@@ -204,12 +213,16 @@ export async function updateManagedUserProfile(
     putText(u, "bank_account_holder", data.bankAccountHolder);
     if (data.locationId !== undefined) u.location_id = data.locationId || null;
     if (joinedAt) u.joined_at = joinedAt;
+    if (data.status) u.status = data.status;
     return tx.riders.update({ where: { id }, data: u });
   });
 }
 
 // Full editable profile for the edit form, mapped to the create-form field names.
-export async function getManagedUserDetail(type: ManagedUserType, id: string) {
+// Contains bank/PAN/citizenship-level PII, so only admins may fetch it.
+export async function getManagedUserDetail(actorUserId: string, type: ManagedUserType, id: string) {
+  await assertCanManageUsers(actorUserId);
+
   const num = (v: unknown) => (v === null || v === undefined ? null : Number(v));
   const dateStr = (d: Date | null) => (d ? new Date(d).toISOString().slice(0, 10) : "");
 
@@ -276,10 +289,18 @@ export async function updateManagedUserPassword(
   const userId = getProfileUserId(profile);
   const passwordHash = await bcrypt.hash(password, 12);
 
+  // An admin resetting someone else's password is exactly the "credentials
+  // may be compromised" case revokeAllUserTokens exists for (unlike
+  // self-service changePassword, there's no "current session" to keep
+  // alive here), and the user should have to prove they know the new
+  // password on their very next request rather than being auto-trusted.
+  await revokeAllUserTokens(userId);
+
   return prisma.users.update({
     where: { id: userId },
     data: {
       password_hash: passwordHash,
+      must_change_password: true,
       updated_at: new Date(),
     },
   });
@@ -541,7 +562,7 @@ export async function loginUser(data: IuserLoginData) {
     }
 
     if (user.status !== "active" || user.deleted_at) {
-      throw new AppError(403, "User account is inactive or deleted");
+      throw new AppError(403, "Your account has been deactivated", "ACCOUNT_INACTIVE");
     }
 
     const isValid = await bcrypt.compare(data.password, user.password_hash);

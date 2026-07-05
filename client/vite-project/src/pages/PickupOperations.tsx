@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   Download,
   PackageCheck,
@@ -22,6 +22,8 @@ import {
   type ParcelStatus,
 } from '../services/orders.service';
 import { getRiders } from '../services/users.service';
+import { printLabels } from '../utils/printLabels';
+import { toBsDate, toNptTime } from '../utils/nepaliDate';
 import './PickupOperations.css';
 
 type PickupTab = 'pickup_ordered' | 'rider_assigned' | 'picked_up' | 'arrived' | 'failed' | 'cancelled';
@@ -179,6 +181,25 @@ const PickupOperations: React.FC = () => {
     setRiderId('');
   }, [activeTab, debouncedSearch]);
 
+  // Row expansion ("view details") is per loaded page - collapse everything
+  // when the visible rows change.
+  const [expandedIds, setExpandedIds] = useState<Set<string | number>>(new Set());
+  useEffect(() => {
+    setExpandedIds(new Set());
+  }, [activeTab, debouncedSearch, page]);
+
+  const toggleRowDetails = (orderId: string | number) => {
+    setExpandedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(orderId)) {
+        next.delete(orderId);
+      } else {
+        next.add(orderId);
+      }
+      return next;
+    });
+  };
+
   // Keep tab/search bookmarkable - mirror into the URL (replacing history,
   // not pushing, so the back button doesn't step through every keystroke).
   useEffect(() => {
@@ -302,6 +323,11 @@ const PickupOperations: React.FC = () => {
     }
   };
 
+  const handlePrintLabels = () => {
+    const labelOrders = selectedOrders.length > 0 ? selectedOrders : visibleOrders;
+    void printLabels(labelOrders);
+  };
+
   const moveSelectedStatus = (direction: 1 | -1) => {
     if (allowedStatusOptions.length === 0) return;
 
@@ -395,14 +421,81 @@ const PickupOperations: React.FC = () => {
     },
     {
       header: 'ACTION',
-      accessor: () => (
-        <Button variant="primary" className="pickup-details-btn">
-          view details
+      accessor: (order: Order) => (
+        <Button
+          variant="primary"
+          className="pickup-details-btn"
+          onClick={() => toggleRowDetails(order.id)}
+          aria-expanded={expandedIds.has(order.id)}
+        >
+          {expandedIds.has(order.id) ? 'hide details' : 'view details'}
         </Button>
       ),
       width: '156px',
     },
   ];
+
+  // Inline expansion under a pickup row - the nested parcel detail table from
+  // the Figma table-pickup/Variant2 design.
+  const renderPickupDetails = (order: Order) => (
+    <table className="pickup-detail-table">
+      <thead>
+        <tr>
+          <th className="pickup-detail-check" aria-label="Select" />
+          <th>SN</th>
+          <th>Date</th>
+          <th>Tracking id</th>
+          <th>Sender</th>
+          <th>Receiver</th>
+          <th>Location</th>
+          <th>Weight(KG)</th>
+          <th>Pickup rider</th>
+          <th>Charges</th>
+          <th>COD</th>
+          <th>Order type</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td className="pickup-detail-check">
+            <input
+              type="checkbox"
+              checked={selectedIds.has(order.id)}
+              onChange={() => toggleRowSelection(order.id)}
+              aria-label={`Select order ${order.trackingId}`}
+            />
+          </td>
+          <td>1</td>
+          <td>
+            {toBsDate(order.createdAt)} {toNptTime(order.createdAt, true)}
+          </td>
+          <td>
+            <Link to={`/orders/track/${order.trackingId}`} className="tracking-id-link">
+              {order.trackingId}
+            </Link>
+          </td>
+          <td>
+            <div className="pickup-sender-cell">
+              <span>{order.senderName}</span>
+              <small>{order.senderPhone}</small>
+            </div>
+          </td>
+          <td>
+            <div className="pickup-sender-cell">
+              <span>{order.receiverName}</span>
+              <small>{order.receiverPhone}</small>
+            </div>
+          </td>
+          <td className="pickup-capitalize-cell">{order.destination || '-'}</td>
+          <td>{order.weightKg ?? '-'}</td>
+          <td className="pickup-strong-cell">{order.riderName || '-'}</td>
+          <td className="pickup-strong-cell">{order.deliveryCharge}</td>
+          <td>{order.codAmount > 0 ? order.codAmount : '-'}</td>
+          <td>{order.orderType.toUpperCase()}</td>
+        </tr>
+      </tbody>
+    </table>
+  );
 
   return (
     <div className="pickup-operations-container">
@@ -490,8 +583,8 @@ const PickupOperations: React.FC = () => {
           <Button variant="secondary" className="pickup-outline-btn">
             <Download size={14} /> Download
           </Button>
-          <Button variant="secondary" className="pickup-outline-btn" onClick={() => window.print()}>
-            <Printer size={14} /> Print
+          <Button variant="secondary" className="pickup-outline-btn" onClick={handlePrintLabels} disabled={visibleOrders.length === 0}>
+            <Printer size={14} /> {selectedOrders.length > 0 ? `Print ${selectedOrders.length} Selected` : `Print All (${visibleOrders.length})`}
           </Button>
         </div>
       </div>
@@ -513,6 +606,8 @@ const PickupOperations: React.FC = () => {
         allSelected={allVisibleSelected}
         someSelected={someVisibleSelected}
         onToggleAll={toggleVisibleSelection}
+        expandedIds={expandedIds}
+        renderExpandedRow={renderPickupDetails}
         loading={loading}
         loadingMessage="Loading pickup orders..."
         emptyMessage="No pickup orders found."

@@ -13,6 +13,7 @@ import {
   updateManagedUserPasswordController,
 } from "../controllers/auth.controller";
 import { authMiddleware } from "../middlewares/auth.mddleware";
+import { authorizeRoles } from "../middlewares/authorizeRoles.middleware";
 import { csrfProtection } from "../middlewares/csrf.middleware";
 import { validate } from "../middlewares/validate.middleware";
 import {
@@ -36,11 +37,37 @@ const loginLimiter = rateLimit({
   keyGenerator: (req) => ipKeyGenerator(req.ip ?? "unknown")
 });
 
+const actorOrIpKey = (req: Request) => req.user?.id ?? ipKeyGenerator(req.ip ?? "unknown");
+
+// Covers the user listing/detail GET endpoints — previously the only
+// unlimited routes in this file, which made the IDOR-prone /users/:type/:id
+// lookup trivially scriptable to scrape every account in the system.
+const authReadLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 120,
+  message: { success: false, message: "Too many requests, please slow down" },
+  standardHeaders: true,
+  legacyHeaders: false,
+  store: createRedisRateLimitStore("auth-read"),
+  keyGenerator: actorOrIpKey,
+});
+
+// Covers profile/password mutations and registration.
+const authWriteLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 20,
+  message: { success: false, message: "Too many requests, please slow down" },
+  standardHeaders: true,
+  legacyHeaders: false,
+  store: createRedisRateLimitStore("auth-write"),
+  keyGenerator: actorOrIpKey,
+});
+
 const authRouter: Router = Router();
 
 authRouter.post("/login", loginLimiter, validate(loginSchema), login);
 authRouter.post("/logout", authMiddleware, csrfProtection, logoutController);
-authRouter.post("/change-password", authMiddleware, csrfProtection, changePasswordController);
+authRouter.post("/change-password", authMiddleware, csrfProtection, authWriteLimiter, changePasswordController);
 
 // Dev-only: POST /auth/test-email  { "to": "someone@example.com" }
 if (process.env.NODE_ENV !== "production") {
@@ -60,18 +87,38 @@ authRouter.post(
   "/users/register",
   authMiddleware,
   csrfProtection,
+  authWriteLimiter,
   registrationUpload,
   validate(registerUserSchema),
   registerUserController,
 );
-authRouter.get("/users/admins", authMiddleware, getAdminsController);
-authRouter.get("/users/vendors", authMiddleware, getVendorsController);
-authRouter.get("/users/riders", authMiddleware, getRidersController);
-authRouter.get("/users/:type/:id", authMiddleware, getManagedUserController);
+authRouter.get(
+  "/users/admins",
+  authMiddleware,
+  authorizeRoles("super_admin", "admin"),
+  authReadLimiter,
+  getAdminsController,
+);
+authRouter.get(
+  "/users/vendors",
+  authMiddleware,
+  authorizeRoles("super_admin", "admin", "sales", "vendor", "vendor_staff"),
+  authReadLimiter,
+  getVendorsController,
+);
+authRouter.get(
+  "/users/riders",
+  authMiddleware,
+  authorizeRoles("super_admin", "admin"),
+  authReadLimiter,
+  getRidersController,
+);
+authRouter.get("/users/:type/:id", authMiddleware, authReadLimiter, getManagedUserController);
 authRouter.patch(
   "/users/:type/:id",
   authMiddleware,
   csrfProtection,
+  authWriteLimiter,
   validate(updateManagedUserSchema),
   updateManagedUserController,
 );
@@ -79,9 +126,10 @@ authRouter.patch(
   "/users/:type/:id/password",
   authMiddleware,
   csrfProtection,
+  authWriteLimiter,
   validate(updatePasswordSchema),
   updateManagedUserPasswordController,
 );
-authRouter.get("/locations", authMiddleware, getLocationsController);
+authRouter.get("/locations", authMiddleware, authReadLimiter, getLocationsController);
 
 export default authRouter;

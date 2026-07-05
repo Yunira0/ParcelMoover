@@ -37,18 +37,23 @@ export default defineConfig({
         orientation: 'portrait',
         scope: '/',
         start_url: '/',
+        // These PNGs aren't padded with a maskable safe zone, so they only
+        // declare "any" — claiming "maskable" on an unpadded icon lets
+        // Android crop into the artwork on adaptive-icon home screens.
+        // If adaptive-icon support is wanted, add a separate icon asset
+        // with ~40% safe-zone padding and give it its own "maskable" entry.
         icons: [
           {
             src: 'icons/icon-192.png',
             sizes: '192x192',
             type: 'image/png',
-            purpose: 'any maskable',
+            purpose: 'any',
           },
           {
             src: 'icons/icon-512.png',
             sizes: '512x512',
             type: 'image/png',
-            purpose: 'any maskable',
+            purpose: 'any',
           },
         ],
       },
@@ -56,7 +61,9 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
         runtimeCaching: [
           {
-            urlPattern: /^https:\/\/.*\/api\//,
+            // https and http (e.g. plain-HTTP LAN/self-hosted deployments
+            // without TLS) both resolve /api requests to the current origin.
+            urlPattern: /^https?:\/\/.*\/api\//,
             handler: 'NetworkFirst',
             options: {
               cacheName: 'api-cache',

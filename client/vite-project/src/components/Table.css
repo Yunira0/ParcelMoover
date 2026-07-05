@@ -75,6 +75,14 @@
   cursor: pointer;
 }
 
+/* Full-width expansion panel rendered under a row (see renderExpandedRow). The
+   cell drops its own padding/min-width so nested content (e.g. a detail table)
+   can run edge-to-edge and align with the parent columns. */
+.custom-table .table-expanded-cell {
+  min-width: 0;
+  padding: 0;
+}
+
 .table-empty-cell {
   color: var(--color-text-caption) !important;
   font-weight: var(--font-weight-medium) !important;

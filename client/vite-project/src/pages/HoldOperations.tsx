@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
-import { Download, Printer, Search } from 'lucide-react';
+import { AlertTriangle, Download, Printer, Search } from 'lucide-react';
 import Table from '../components/Table';
 import Button from '../components/Button';
 import PageHeader from '../components/PageHeader';
@@ -17,6 +17,7 @@ import {
   type ParcelStatus,
 } from '../services/orders.service';
 import { toBsDate } from '../utils/nepaliDate';
+import { printLabels } from '../utils/printLabels';
 import './HoldOperations.css';
 
 const PAGE_SIZE = 10;
@@ -131,17 +132,20 @@ const HoldOperations: React.FC = () => {
     });
   };
 
-  const changeToPreviousStatus = async () => {
+  // Held parcels leave this page one of two ways: released back into the
+  // active flow (ready_to_deliver) or written off to Loss & Damage - the only
+  // status the backend accepts loss_and_damage from is hold.
+  const applyStatusToSelection = async (status: ParcelStatus, emptyMessage: string) => {
     setActionError('');
     if (selectedIds.size === 0) {
-      setActionError('Select at least one held order first.');
+      setActionError(emptyMessage);
       return;
     }
 
     setStatusUpdating(true);
     try {
       const ids = Array.from(selectedIds).map(String);
-      await bulkUpdateOrderStatus(ids, REVERT_STATUS);
+      await bulkUpdateOrderStatus(ids, status);
       setSelectedIds(new Set());
       await loadHoldOrders();
     } catch (err: unknown) {
@@ -157,6 +161,12 @@ const HoldOperations: React.FC = () => {
       setStatusUpdating(false);
     }
   };
+
+  const changeToPreviousStatus = () =>
+    applyStatusToSelection(REVERT_STATUS, 'Select at least one held order first.');
+
+  const markLossAndDamage = () =>
+    applyStatusToSelection('loss_and_damage', 'Select at least one held order to mark as loss & damage.');
 
   const downloadCsv = async () => {
     let rows: Order[] = visibleOrders;
@@ -193,6 +203,13 @@ const HoldOperations: React.FC = () => {
     link.download = 'hold-orders.csv';
     link.click();
     URL.revokeObjectURL(url);
+  };
+
+  const selectedOrders = orders.filter((order) => selectedIds.has(order.id));
+
+  const handlePrintLabels = () => {
+    const labelOrders = selectedOrders.length > 0 ? selectedOrders : visibleOrders;
+    void printLabels(labelOrders);
   };
 
   const holdColumns = useMemo(() => [
@@ -278,11 +295,19 @@ const HoldOperations: React.FC = () => {
               ? 'Updating...'
               : `Change to previous status${selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}`}
           </Button>
+          <Button
+            variant="danger"
+            onClick={markLossAndDamage}
+            disabled={selectedIds.size === 0 || statusUpdating}
+          >
+            <AlertTriangle size={14} />
+            {`Mark Loss & Damage${selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}`}
+          </Button>
           <Button variant="secondary" onClick={downloadCsv}>
             <Download size={14} /> Download
           </Button>
-          <Button variant="secondary" onClick={() => window.print()}>
-            <Printer size={14} /> Print
+          <Button variant="secondary" onClick={handlePrintLabels} disabled={visibleOrders.length === 0}>
+            <Printer size={14} /> {selectedOrders.length > 0 ? `Print ${selectedOrders.length} Selected` : `Print All (${visibleOrders.length})`}
           </Button>
         </div>
       </div>

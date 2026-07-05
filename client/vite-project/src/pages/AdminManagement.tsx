@@ -13,6 +13,7 @@ interface AdminUser {
   id: string;
   sn: number;
   name: string;
+  email: string;
   phone: string;
   location: string;
   position: string;
@@ -52,6 +53,7 @@ const AdminManagement: React.FC = () => {
   const columns = [
     { header: 'SN', accessor: 'sn' as keyof AdminUser, width: '50px' },
     { header: 'NAME', accessor: 'name' as keyof AdminUser },
+    { header: 'EMAIL', accessor: 'email' as keyof AdminUser },
     { header: 'PHONE', accessor: 'phone' as keyof AdminUser },
     { header: 'LOCATION', accessor: 'location' as keyof AdminUser },
     { header: 'POSITION', accessor: 'position' as keyof AdminUser },
@@ -81,8 +83,9 @@ const AdminManagement: React.FC = () => {
 
   const filteredAdmins = admins.filter(admin => {
     const matchesFilter = filter === 'all' || admin.status === 'active';
-    const matchesSearch = searchQuery === '' || 
+    const matchesSearch = searchQuery === '' ||
       (admin.name && admin.name.toLowerCase().includes(searchQuery.toLowerCase())) ||
+      (admin.email && admin.email.toLowerCase().includes(searchQuery.toLowerCase())) ||
       (admin.phone && admin.phone.includes(searchQuery)) ||
       (admin.position && admin.position.toLowerCase().includes(searchQuery.toLowerCase())) ||
       (admin.location && admin.location.toLowerCase().includes(searchQuery.toLowerCase()));

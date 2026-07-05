@@ -14,6 +14,7 @@ interface OrderDetailHeaderProps {
   serviceType: ServiceType;
   createdAt: string;
   orderId: string;
+  onPrint: () => void;
 }
 
 const STATUS_TONE_MAP: Record<ParcelStatus, StatusChipTone> = {
@@ -82,6 +83,7 @@ const OrderDetailHeader: React.FC<OrderDetailHeaderProps> = ({
   orderType,
   serviceType,
   createdAt,
+  onPrint,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [copied, setCopied] = useState(false);
@@ -111,10 +113,6 @@ const OrderDetailHeader: React.FC<OrderDetailHeaderProps> = ({
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     }
-  };
-
-  const handlePrint = () => {
-    window.print();
   };
 
   const formattedDate = toBsDateLabel(createdAt);
@@ -168,7 +166,7 @@ const OrderDetailHeader: React.FC<OrderDetailHeaderProps> = ({
         </div>
         <button
           className="od-action-btn"
-          onClick={handlePrint}
+          onClick={onPrint}
           title="Print label"
           aria-label="Print label"
         >
