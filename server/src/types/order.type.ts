@@ -50,6 +50,7 @@ export type ParcelStatus =
   | "hold"
   | "loss_and_damage"
   | "delivered"
+  | "partially_delivered"
   | "failed_pickup"
   | "failed_delivery"
   | "cancelled"
@@ -66,6 +67,8 @@ export interface UpdateParcelStatusInput {
   remarks?: string;
   /** Required when status is "rider_assigned" (pickup rider) or "sent_for_delivery" (delivery rider). */
   riderId?: string;
+  /** Required when status is "partially_delivered". Amount of COD collected, cannot be negative or exceed parcel's total COD. */
+  codCollected?: number;
 }
 
 export const ORDER_SORT_FIELDS = ["createdAt", "codAmount", "deliveryCharge", "trackingId", "status"] as const;
@@ -89,6 +92,8 @@ export interface BulkUpdateParcelStatusInput {
   toLocationId?: string;
   /** Rider/vehicle carrying the manifest. Optional. */
   riderId?: string;
+  /** Required when status is "partially_delivered". Amount of COD collected per parcel. */
+  codCollected?: number;
 }
 
 export interface BulkCreateOrderInput {
@@ -115,10 +120,13 @@ export const STATUS_TRANSITIONS = {
   dispatched:        ["arrived_at_branch"],
   arrived_at_branch: ["ready_to_deliver"],
   ready_to_deliver:  ["sent_for_delivery", "hold"],
-  sent_for_delivery: ["delivered", "failed_delivery"],
+  sent_for_delivery: ["delivered", "partially_delivered", "failed_delivery"],
   oov:               ["dispatched","hold"],
   hold:              ["ready_to_deliver","oov","loss_and_damage"],
   delivered:         [],
+  // A partial delivery can be re-attempted, sent into NDR follow-up, or returned
+  // straight away (Return-to-Origin) when recovery is clearly hopeless.
+  partially_delivered: ["ready_to_deliver", "follow_up", "ready_to_return"],
   failed_pickup:     ["pickup_ordered", "cancelled"],
   // A failed delivery can be re-attempted, sent into NDR follow-up, or returned
   // straight away (Return-to-Origin) when recovery is clearly hopeless.

@@ -17,6 +17,7 @@ import SegmentedTabs from '../components/SegmentedTabs';
 import Pagination from '../components/Pagination';
 import StatusChip, { type StatusChipTone } from '../components/StatusChip';
 import FilterDropdown from '../components/FilterDropdown';
+import MultiFilterDropdown from '../components/MultiFilterDropdown';
 import QuickRemarkPopup from '../components/QuickRemarkPopup';
 import { toBsDate } from '../utils/nepaliDate';
 import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react';
@@ -37,15 +38,16 @@ const STATUS_LABELS: Record<ParcelStatus, string> = {
   pickup_ordered: 'Pickup Ordered',
   rider_assigned: 'Rider Assigned',
   picked_up: 'Picked Up',
-  arrived: 'Arrived',
+  arrived: 'Arrived at Origin',
   ready_to_deliver: 'Ready to Deliver',
   sent_for_delivery: 'In Transit',
   oov: 'Transit',
   dispatched: 'Dispatched',
-  arrived_at_branch: 'Arrived',
+  arrived_at_branch: 'Arrived at Destination',
   hold: 'On Hold',
   loss_and_damage: 'Loss & Damage',
   delivered: 'Delivered',
+  partially_delivered: 'Partially Delivered',
   failed_pickup: 'Failed Pickup',
   failed_delivery: 'Failed Delivery',
   cancelled: 'Cancelled',
@@ -70,7 +72,7 @@ const TAB_GROUPS: Record<FilterTab, ParcelStatus[]> = {
   // Everything still waiting to be picked up: ordered + rider assigned.
   ready_to_pick: ['pickup_ordered', 'rider_assigned'],
   inprogress: ['picked_up', 'arrived', 'ready_to_deliver', 'sent_for_delivery', 'oov', 'dispatched', 'arrived_at_branch', 'hold'],
-  delivered: ['delivered'],
+  delivered: ['delivered', 'partially_delivered'],
   failed: ['failed_pickup', 'failed_delivery', 'loss_and_damage'],
   // Returns still being worked: not yet handed back to the vendor.
   return_process: ['follow_up', 'ready_to_return', 'sent_to_vendor'],
@@ -107,6 +109,7 @@ const formatMoney = (value: number) => value.toLocaleString(undefined, { maximum
 
 const getStatusTone = (status: ParcelStatus): StatusChipTone => {
   if (status === 'delivered') return 'success';
+  if (status === 'partially_delivered') return 'warning';
   if (['arrived', 'arrived_at_branch', 'rider_assigned'].includes(status)) return 'info';
   if (['failed_pickup', 'failed_delivery', 'loss_and_damage'].includes(status)) return 'danger';
   if (status === 'returned_to_vendor') return 'success';
@@ -117,22 +120,43 @@ const getStatusTone = (status: ParcelStatus): StatusChipTone => {
 interface SecondaryFilters {
   originHub: string;
   riderName: string;
-  route: string;
+  /** Free-text: matches a party name or any number (phone/tracking/order #). */
+  keyword: string;
   destinationHub: string;
-  currentStatus: string;
+  /** Multi-select: an order matches if its status is any of these (empty = all). */
+  currentStatus: string[];
   orderType: string;
   /** Inclusive AD dates (YYYY-MM-DD) compared against order.createdAt. */
   dateFrom: string;
   dateTo: string;
-  vendor: string;
+  /** Multi-select: an order matches if its vendor is any of these (empty = all). */
+  vendor: string[];
   operationDept: string;
 }
 
-// Filters the backend doesn't have a query param for (origin/rider/route/
+// Case-insensitive substring match of the keyword against the order's names
+// and numbers, so "ram" finds a sender/receiver and "98" or "TRK" finds a phone,
+// tracking id, or order number.
+const matchesKeyword = (order: Order, keyword: string) => {
+  const needle = keyword.trim().toLowerCase();
+  if (!needle) return true;
+  const haystack = [
+    order.senderName,
+    order.receiverName,
+    order.riderName,
+    order.senderPhone,
+    order.receiverPhone,
+    order.trackingId,
+    `#${order.orderNumber}`,
+    String(order.orderNumber),
+  ];
+  return haystack.some(field => (field || '').toLowerCase().includes(needle));
+};
+
+// Filters the backend doesn't have a query param for (origin/rider/keyword/
 // destination/date range/vendor/department) - applied client-side on top of
 // whatever page the server already returned for the active tab + search.
 const matchesSecondaryFilters = (order: Order, filters: SecondaryFilters) => {
-  const orderRoute = `${order.origin} -> ${order.destination}`;
   // createdAt is a Nepal-local "YYYY-MM-DD" string, so an inclusive range
   // check is a plain lexicographic comparison - no timezone math needed.
   const matchesDateSpan =
@@ -141,17 +165,17 @@ const matchesSecondaryFilters = (order: Order, filters: SecondaryFilters) => {
   const matchesOperation =
     !filters.operationDept ||
     (filters.operationDept === 'pickup' && ['pickup_ordered', 'rider_assigned', 'picked_up'].includes(order.status)) ||
-    (filters.operationDept === 'delivery' && ['ready_to_deliver', 'sent_for_delivery', 'delivered', 'failed_delivery'].includes(order.status)) ||
+    (filters.operationDept === 'delivery' && ['ready_to_deliver', 'sent_for_delivery', 'delivered', 'partially_delivered', 'failed_delivery'].includes(order.status)) ||
     (filters.operationDept === 'returns' && order.orderType === 'return');
 
   return (!filters.originHub || order.origin === filters.originHub) &&
     (!filters.riderName || order.riderName === filters.riderName) &&
-    (!filters.route || orderRoute === filters.route) &&
+    matchesKeyword(order, filters.keyword) &&
     (!filters.destinationHub || order.destination === filters.destinationHub) &&
-    (!filters.currentStatus || order.status === filters.currentStatus) &&
+    (filters.currentStatus.length === 0 || filters.currentStatus.includes(order.status)) &&
     (!filters.orderType || order.orderType === filters.orderType) &&
     matchesDateSpan &&
-    (!filters.vendor || (order.vendorName || order.senderName) === filters.vendor) &&
+    (filters.vendor.length === 0 || filters.vendor.includes(order.vendorName || order.senderName)) &&
     matchesOperation;
 };
 
@@ -191,13 +215,13 @@ const OrderManagement: React.FC = () => {
   const [debouncedSearch, setDebouncedSearch] = useState(trackingSearch);
   const [originHub, setOriginHub] = useState(() => searchParams.get('originHub') || '');
   const [riderName, setRiderName] = useState(() => searchParams.get('riderName') || '');
-  const [route, setRoute] = useState(() => searchParams.get('route') || '');
+  const [keyword, setKeyword] = useState(() => searchParams.get('keyword') || '');
   const [destinationHub, setDestinationHub] = useState(() => searchParams.get('destinationHub') || '');
-  const [currentStatus, setCurrentStatus] = useState(() => searchParams.get('currentStatus') || '');
+  const [currentStatus, setCurrentStatus] = useState<string[]>(() => searchParams.getAll('currentStatus'));
   const [orderType, setOrderType] = useState(() => searchParams.get('orderType') || '');
   const [dateFrom, setDateFrom] = useState(() => searchParams.get('dateFrom') || '');
   const [dateTo, setDateTo] = useState(() => searchParams.get('dateTo') || '');
-  const [vendor, setVendor] = useState(() => searchParams.get('vendor') || '');
+  const [vendor, setVendor] = useState<string[]>(() => searchParams.getAll('vendor'));
   const [operationDept, setOperationDept] = useState(() => searchParams.get('operationDept') || '');
   const [page, setPage] = useState(1);
   const [sortBy, setSortBy] = useState<OrderSortField | undefined>(() => {
@@ -224,9 +248,12 @@ const OrderManagement: React.FC = () => {
   };
 
   const secondaryFilters: SecondaryFilters = {
-    originHub, riderName, route, destinationHub, currentStatus, orderType, dateFrom, dateTo, vendor, operationDept,
+    originHub, riderName, keyword, destinationHub, currentStatus, orderType, dateFrom, dateTo, vendor, operationDept,
   };
-  const hasSecondaryFilters = Object.values(secondaryFilters).some(Boolean);
+  // Arrays are truthy even when empty, so check length for the multi-select filters.
+  const hasSecondaryFilters = Object.values(secondaryFilters).some(v =>
+    Array.isArray(v) ? v.length > 0 : Boolean(v),
+  );
 
   // Debounce search input so every keystroke doesn't fire a request.
   useEffect(() => {
@@ -259,7 +286,7 @@ const OrderManagement: React.FC = () => {
 
   useEffect(() => { loadOrders(); }, [loadOrders]);
   useEffect(() => subscribeToOrderStatusChanged(loadOrders), [loadOrders]);
-  useEffect(() => { setPage(1); }, [filter, debouncedSearch, originHub, riderName, route, destinationHub, currentStatus, orderType, dateFrom, dateTo, vendor, operationDept, sortBy, sortDir]);
+  useEffect(() => { setPage(1); }, [filter, debouncedSearch, originHub, riderName, keyword, destinationHub, currentStatus, orderType, dateFrom, dateTo, vendor, operationDept, sortBy, sortDir]);
   // Re-sync when the navbar search re-navigates here with a new ?search= param.
   useEffect(() => {
     const fromUrl = searchParams.get('search');
@@ -275,23 +302,23 @@ const OrderManagement: React.FC = () => {
     if (trackingSearch) next.set('search', trackingSearch);
     if (originHub) next.set('originHub', originHub);
     if (riderName) next.set('riderName', riderName);
-    if (route) next.set('route', route);
+    if (keyword) next.set('keyword', keyword);
     if (destinationHub) next.set('destinationHub', destinationHub);
-    if (currentStatus) next.set('currentStatus', currentStatus);
+    currentStatus.forEach(value => next.append('currentStatus', value));
     if (orderType) next.set('orderType', orderType);
     if (dateFrom) next.set('dateFrom', dateFrom);
     if (dateTo) next.set('dateTo', dateTo);
-    if (vendor) next.set('vendor', vendor);
+    vendor.forEach(value => next.append('vendor', value));
     if (operationDept) next.set('operationDept', operationDept);
     if (sortBy) next.set('sortBy', sortBy);
     if (sortDir !== 'desc') next.set('sortDir', sortDir);
     setSearchParams(next, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filter, trackingSearch, originHub, riderName, route, destinationHub, currentStatus, orderType, dateFrom, dateTo, vendor, operationDept, sortBy, sortDir]);
+  }, [filter, trackingSearch, originHub, riderName, keyword, destinationHub, currentStatus, orderType, dateFrom, dateTo, vendor, operationDept, sortBy, sortDir]);
 
   // A separate, tab-scoped (unsearched, unpaginated) fetch purely to keep the
   // filter dropdown option lists representative - the paginated `orders` above
-  // is usually only 10 rows, too few to populate origin/rider/route/etc options from.
+  // is usually only 10 rows, too few to populate origin/rider/etc options from.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -308,11 +335,9 @@ const OrderManagement: React.FC = () => {
   }, [filter]);
 
   const filterOptions = useMemo(() => {
-    const routes = optionsOrders.map(order => `${order.origin} -> ${order.destination}`);
     return {
       origins: uniqueValues(optionsOrders.map(order => order.origin)),
       riders: uniqueValues(optionsOrders.map(order => order.riderName || '')),
-      routes: uniqueValues(routes),
       destinations: uniqueValues(optionsOrders.map(order => order.destination)),
       vendors: uniqueValues(optionsOrders.map(order => order.vendorName || order.senderName)),
     };
@@ -323,7 +348,7 @@ const OrderManagement: React.FC = () => {
   const filteredOrders = useMemo(
     () => orders.filter(order => matchesSecondaryFilters(order, secondaryFilters)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [orders, originHub, riderName, route, destinationHub, currentStatus, orderType, dateFrom, dateTo, vendor, operationDept],
+    [orders, originHub, riderName, keyword, destinationHub, currentStatus, orderType, dateFrom, dateTo, vendor, operationDept],
   );
 
   const totalPages = meta?.totalPages ?? 1;
@@ -356,13 +381,13 @@ const OrderManagement: React.FC = () => {
   const clearFilters = () => {
     setOriginHub('');
     setRiderName('');
-    setRoute('');
+    setKeyword('');
     setDestinationHub('');
-    setCurrentStatus('');
+    setCurrentStatus([]);
     setOrderType('');
     setDateFrom('');
     setDateTo('');
-    setVendor('');
+    setVendor([]);
     setOperationDept('');
   };
 
@@ -588,26 +613,22 @@ const OrderManagement: React.FC = () => {
           placeholder="Type name....."
           options={filterOptions.riders.map(value => ({ value, label: value }))}
         />
-        <FilterDropdown
-          label="ROUTE"
-          value={route}
-          onChange={setRoute}
-          placeholder="Select Route"
-          options={filterOptions.routes.map(value => ({ value, label: value }))}
-        />
+        <label aria-label="Keyword filter">
+          <span>KEYWORD</span>
+          <input
+            type="text"
+            className="order-keyword-input"
+            value={keyword}
+            onChange={e => setKeyword(e.target.value)}
+            placeholder="Name or number"
+          />
+        </label>
         <FilterDropdown
           label="DESTINATION HUB"
           value={destinationHub}
           onChange={setDestinationHub}
           placeholder="Select Hub"
           options={filterOptions.destinations.map(value => ({ value, label: value }))}
-        />
-        <FilterDropdown
-          label="CURRENT STATUS"
-          value={currentStatus}
-          onChange={setCurrentStatus}
-          placeholder="Select status"
-          options={(Object.keys(STATUS_LABELS) as ParcelStatus[]).map(value => ({ value, label: STATUS_LABELS[value] }))}
         />
         <FilterDropdown
           label="ORDER TYPE"
@@ -641,13 +662,6 @@ const OrderManagement: React.FC = () => {
           />
         </label>
         <FilterDropdown
-          label="VENDOR"
-          value={vendor}
-          onChange={setVendor}
-          placeholder="All Vendors"
-          options={filterOptions.vendors.map(value => ({ value, label: value }))}
-        />
-        <FilterDropdown
           label="OPERATION DEPT"
           value={operationDept}
           onChange={setOperationDept}
@@ -658,6 +672,21 @@ const OrderManagement: React.FC = () => {
             { value: 'returns', label: 'Returns' },
           ]}
         />
+        <MultiFilterDropdown
+          label="CURRENT STATUS"
+          className="order-filter-span-2"
+          value={currentStatus}
+          onChange={setCurrentStatus}
+          placeholder="Select status"
+          options={(Object.keys(STATUS_LABELS) as ParcelStatus[]).map(value => ({ value, label: STATUS_LABELS[value] }))}
+        />
+        <MultiFilterDropdown
+          label="VENDOR"
+          value={vendor}
+          onChange={setVendor}
+          placeholder="All Vendors"
+          options={filterOptions.vendors.map(value => ({ value, label: value }))}
+        />
         <Button variant="outline" className="clear-filter-btn" onClick={clearFilters}>
           Clear Filters
         </Button>
@@ -665,7 +694,7 @@ const OrderManagement: React.FC = () => {
 
       {hasSecondaryFilters && (
         <p className="order-filter-scope-note">
-          Origin/rider/route/destination/status/date/vendor/department filters only narrow the current page — use the tabs or tracking search to find matches across the whole list.
+          Origin/rider/keyword/destination/status/date/vendor/department filters only narrow the current page — use the tabs or tracking search to find matches across the whole list.
         </p>
       )}
 

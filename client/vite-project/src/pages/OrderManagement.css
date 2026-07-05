@@ -44,8 +44,13 @@
   border-radius: var(--border-radius-modal);
   display: grid;
   gap: var(--space-4);
-  grid-template-columns: repeat(5, minmax(150px, 1fr));
+  grid-template-columns: repeat(4, minmax(150px, 1fr));
   padding: var(--space-4);
+}
+
+/* Status and Vendor sit alone on the last filter row, each taking half of it. */
+.order-filter-span-2 {
+  grid-column: span 2;
 }
 
 .order-filter-panel label {
@@ -68,9 +73,10 @@
   box-shadow: 0 0 0 2px rgb(194 65 12 / 12%);
 }
 
+/* Sits in the last column, beside the Vendor filter, bottom-aligned to it. */
 .clear-filter-btn {
   align-self: end;
-  justify-self: start;
+  justify-self: stretch;
 }
 
 .order-toolbar {
@@ -257,6 +263,16 @@
     grid-template-columns: 1fr;
   }
 
+  /* Single column: multi-selects and the clear button can't span two tracks. */
+  .order-filter-span-2,
+  .clear-filter-btn {
+    grid-column: auto;
+  }
+
+  .clear-filter-btn {
+    justify-self: start;
+  }
+
   .order-toolbar {
     align-items: stretch;
     flex-direction: column;
@@ -275,7 +291,8 @@
   }
 }
 
-.order-date-input {
+.order-date-input,
+.order-keyword-input {
   background: var(--color-background-surface);
   border: 1px solid var(--color-border-default);
   border-radius: var(--border-radius-default);
@@ -288,7 +305,8 @@
   width: 100%;
 }
 
-.order-date-input:focus-visible {
+.order-date-input:focus-visible,
+.order-keyword-input:focus-visible {
   border-color: var(--color-border-primary);
   box-shadow: 0 0 0 2px rgb(194 65 12 / 12%);
   outline: none;

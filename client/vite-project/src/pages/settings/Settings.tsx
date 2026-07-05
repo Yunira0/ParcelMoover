@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Upload } from 'lucide-react';
+import { ArrowLeft, Upload } from 'lucide-react';
 import PageHeader from '../../components/PageHeader';
 import SegmentedTabs from '../../components/SegmentedTabs';
 import Button from '../../components/Button';
@@ -46,15 +46,21 @@ const Settings: React.FC = () => {
           ]}
         />
         <Button
-          variant="primary"
+          variant={showImport ? 'secondary' : 'primary'}
           onClick={() => setShowImport((v) => !v)}
         >
-          <Upload size={15} /> Import
+          {showImport ? (
+            <><ArrowLeft size={15} /> Back to {tab === 'rates' ? 'Rate Setup' : 'Destinations'}</>
+          ) : (
+            <><Upload size={15} /> Import</>
+          )}
         </Button>
       </div>
 
       <div className="settings-body">
         {showImport ? (
+          // One flat sheet sets both the destination branch and its rate
+          // (per-destination rate, zone, valley), so a single import serves both tabs.
           <DestinationsImport />
         ) : (
           <>

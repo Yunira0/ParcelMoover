@@ -72,6 +72,20 @@
   z-index: 20;
 }
 
+/* Multi-select panels hold more options, so give them a taller, slightly wider
+   dropdown than the single-select default. Drop it a little lower beneath the
+   trigger and let it grow tall so the full list of matches is visible without a
+   cramped scroll; min-width keeps it readable in a narrow filter-grid column. */
+.searchable-select-panel--multi {
+  margin-top: var(--space-5);
+  max-height: min(560px, 70vh);
+  min-width: 260px;
+}
+
+.searchable-select-options--multi {
+  max-height: min(500px, 62vh);
+}
+
 .searchable-select-panel .searchable-select-search {
   align-items: center;
   flex-direction: row;
@@ -120,6 +134,23 @@
 
 .searchable-select-option:hover {
   background: var(--color-background-primary-invert-default);
+}
+
+/* Multi-select rows lay the checkmark and label out in a row instead of stacking. */
+.searchable-select-option--multi {
+  align-items: center;
+  flex-direction: row;
+  gap: var(--space-2);
+}
+
+.searchable-select-check {
+  align-items: center;
+  color: var(--color-background-primary-default);
+  display: inline-flex;
+  flex-shrink: 0;
+  height: 16px;
+  justify-content: center;
+  width: 16px;
 }
 
 .searchable-select-options .searchable-select-option span {

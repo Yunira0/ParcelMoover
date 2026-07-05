@@ -57,7 +57,7 @@ export type ParcelStatus =
   | 'pickup_ordered' | 'rider_assigned' | 'picked_up' | 'arrived'
   | 'ready_to_deliver' | 'sent_for_delivery' | 'oov' | 'dispatched'
   | 'arrived_at_branch' | 'hold' | 'loss_and_damage'
-  | 'delivered' | 'failed_pickup' | 'failed_delivery' | 'cancelled'
+  | 'delivered' | 'partially_delivered' | 'failed_pickup' | 'failed_delivery' | 'cancelled'
 
 export interface Parcel {
   id: string
@@ -84,7 +84,7 @@ export const RIDER_TRANSITIONS: Partial<Record<ParcelStatus, ParcelStatus[]>> = 
   rider_assigned:    ['picked_up', 'failed_pickup'],
   picked_up:         ['arrived'],
   dispatched:        ['arrived_at_branch'],
-  sent_for_delivery: ['delivered', 'failed_delivery'],
+  sent_for_delivery: ['delivered', 'partially_delivered', 'failed_delivery'],
 }
 
 // ── Dashboard ─────────────────────────────────────────────────────────────
@@ -138,12 +138,13 @@ export async function getParcelByTrackingId(trackingId: string, signal?: AbortSi
 export async function updateParcelStatus(
   orderId: string,
   status: ParcelStatus,
-  remarks?: string
+  remarks?: string,
+  codCollected?: number,
 ): Promise<void> {
   const idempotencyKey = crypto.randomUUID()
   const { data } = await api.patch<{ success: boolean; message: string }>(
     `/orders/${orderId}/status`,
-    { status, remarks },
+    { status, remarks, codCollected },
     { headers: { 'Idempotency-Key': idempotencyKey } }
   )
   if (!data.success) throw new Error(data.message)

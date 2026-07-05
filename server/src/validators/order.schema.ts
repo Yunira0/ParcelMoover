@@ -26,6 +26,7 @@ export const PARCEL_STATUSES = [
   "hold",
   "loss_and_damage",
   "delivered",
+  "partially_delivered",
   "failed_pickup",
   "failed_delivery",
   "cancelled",
@@ -99,7 +100,24 @@ export const updateOrderStatusSchema = z.object({
   locationId: optionalUuidSchema,
   remarks: z.string().max(500).optional(),
   riderId: optionalUuidSchema,
-});
+  codCollected: z.number().min(0, "COD collected must be non-negative").optional(),
+}).refine(
+  (data) => {
+    if (data.status === "partially_delivered") {
+      return data.remarks !== undefined && data.remarks.trim().length > 0;
+    }
+    return true;
+  },
+  { message: "Remarks are required when status is partially_delivered", path: ["remarks"] },
+).refine(
+  (data) => {
+    if (data.status === "partially_delivered") {
+      return data.codCollected !== undefined && data.codCollected >= 0;
+    }
+    return true;
+  },
+  { message: "COD collected is required and must be non-negative when status is partially_delivered", path: ["codCollected"] },
+);
 
 export type UpdateOrderStatusInput = z.infer<typeof updateOrderStatusSchema>;
 
@@ -116,7 +134,24 @@ export const bulkUpdateOrderStatusSchema = z.object({
   remarks: z.string().max(500).optional(),
   toLocationId: optionalUuidSchema,
   riderId: optionalUuidSchema,
-});
+  codCollected: z.number().min(0, "COD collected must be non-negative").optional(),
+}).refine(
+  (data) => {
+    if (data.status === "partially_delivered") {
+      return data.remarks !== undefined && data.remarks.trim().length > 0;
+    }
+    return true;
+  },
+  { message: "Remarks are required when status is partially_delivered", path: ["remarks"] },
+).refine(
+  (data) => {
+    if (data.status === "partially_delivered") {
+      return data.codCollected !== undefined && data.codCollected >= 0;
+    }
+    return true;
+  },
+  { message: "COD collected is required and must be non-negative when status is partially_delivered", path: ["codCollected"] },
+);
 
 export type BulkUpdateOrderStatusInput = z.infer<typeof bulkUpdateOrderStatusSchema>;
 

@@ -29,19 +29,19 @@ type DispatchTab =
   | 'ready_to_deliver'
   | 'sent_for_delivery'
   | 'delivered'
-  | 'failed'
-  | 'cancelled';
+  | 'partially_delivered'
+  | 'failed';
 
 const PAGE_SIZE = 10;
 const SEARCH_DEBOUNCE_MS = 300;
 
 const TAB_LABELS: Record<DispatchTab, string> = {
-  arrived_at_branch: 'Arrived at branch',
+  arrived_at_branch: 'Arrived at Destination',
   ready_to_deliver: 'Ready for delivery',
   sent_for_delivery: 'Sent for delivery',
   delivered: 'Delivered',
+  partially_delivered: 'Partially Delivered',
   failed: 'Failed Delivery',
-  cancelled: 'Cancelled',
 };
 
 const TAB_STATUSES: Record<DispatchTab, ParcelStatus[]> = {
@@ -49,23 +49,24 @@ const TAB_STATUSES: Record<DispatchTab, ParcelStatus[]> = {
   ready_to_deliver: ['ready_to_deliver'],
   sent_for_delivery: ['sent_for_delivery'],
   delivered: ['delivered'],
+  partially_delivered: ['partially_delivered'],
   failed: ['failed_delivery'],
-  cancelled: ['cancelled'],
 };
 
 const STATUS_LABELS: Record<ParcelStatus, string> = {
   pickup_ordered: 'Pickup Ordered',
   rider_assigned: 'Rider Assigned',
   picked_up: 'Pickup Completed',
-  arrived: 'Arrived',
+  arrived: 'Arrived at Origin',
   ready_to_deliver: 'Ready to Deliver',
   sent_for_delivery: 'Sent for Delivery',
   oov: 'Transit',
   dispatched: 'Dispatched',
-  arrived_at_branch: 'Arrived at Branch',
+  arrived_at_branch: 'Arrived at Destination',
   hold: 'Hold',
   loss_and_damage: 'Loss and Damage',
   delivered: 'Delivered',
+  partially_delivered: 'Partially Delivered',
   failed_pickup: 'Failed Pickup',
   failed_delivery: 'Failed Delivery',
   cancelled: 'Cancelled',
@@ -83,10 +84,11 @@ const STATUS_TRANSITIONS: Record<ParcelStatus, ParcelStatus[]> = {
   dispatched: ['arrived_at_branch'],
   arrived_at_branch: ['ready_to_deliver'],
   ready_to_deliver: ['sent_for_delivery', 'hold'],
-  sent_for_delivery: ['delivered', 'failed_delivery'],
+  sent_for_delivery: ['delivered', 'partially_delivered', 'failed_delivery'],
   oov: ['dispatched', 'hold'],
   hold: ['ready_to_deliver', 'oov', 'loss_and_damage'],
   delivered: [],
+  partially_delivered: ['ready_to_deliver', 'follow_up', 'ready_to_return'],
   failed_pickup: ['pickup_ordered', 'cancelled'],
   failed_delivery: ['ready_to_deliver', 'follow_up', 'ready_to_return'],
   cancelled: [],
@@ -102,12 +104,13 @@ const createEmptyTabSelections = (): Record<DispatchTab, Set<string | number>> =
   ready_to_deliver: new Set(),
   sent_for_delivery: new Set(),
   delivered: new Set(),
+  partially_delivered: new Set(),
   failed: new Set(),
-  cancelled: new Set(),
 });
 
 const getStatusTone = (status: ParcelStatus): StatusChipTone => {
   if (status === 'delivered') return 'success';
+  if (status === 'partially_delivered') return 'warning';
   if (['failed_delivery', 'failed_pickup', 'loss_and_damage'].includes(status)) return 'danger';
   if (status === 'cancelled') return 'neutral';
   if (['sent_for_delivery', 'ready_to_deliver'].includes(status)) return 'info';
@@ -134,6 +137,8 @@ const DispatchOperations: React.FC = () => {
   const [actionError, setActionError] = useState('');
   const [riders, setRiders] = useState<{ id: string; name: string }[]>([]);
   const [riderId, setRiderId] = useState('');
+  const [partialRemarks, setPartialRemarks] = useState('');
+  const [partialCodCollected, setPartialCodCollected] = useState('');
 
   useEffect(() => {
     (async () => {
@@ -222,6 +227,7 @@ const DispatchOperations: React.FC = () => {
       : allowedStatusOptions[0] || '';
 
   const isRiderAssignAction = effectiveNextStatus === 'sent_for_delivery';
+  const isPartialDeliveryAction = effectiveNextStatus === 'partially_delivered';
 
   const toggleRowSelection = (orderId: string | number) => {
     setSelectedIdsByTab(prev => {
@@ -278,15 +284,36 @@ const DispatchOperations: React.FC = () => {
       return;
     }
 
+    if (isPartialDeliveryAction) {
+      if (!partialRemarks.trim()) {
+        setActionError('Remarks are required for partial delivery.');
+        return;
+      }
+      const codValue = parseFloat(partialCodCollected);
+      if (isNaN(codValue) || codValue < 0) {
+        setActionError('COD collected must be non-negative.');
+        return;
+      }
+      // Validate COD doesn't exceed any selected parcel's total COD
+      for (const order of selectedOrders) {
+        if (codValue > order.codAmount) {
+          setActionError(`COD collected (${codValue}) cannot exceed parcel ${order.trackingId}'s total COD (${order.codAmount}).`);
+          return;
+        }
+      }
+    }
+
     setStatusUpdating(true);
     try {
-      // One bulk call instead of N singles: the whole selection succeeds or
-      // fails together, and a rider hand-off opens a single run sheet for the
-      // batch rather than one sheet per parcel.
+      const options = isRiderAssignAction
+        ? { riderId }
+        : isPartialDeliveryAction
+          ? { remarks: partialRemarks, codCollected: parseFloat(partialCodCollected) }
+          : undefined;
       await bulkUpdateOrderStatus(
         selectedOrders.map(order => order.id),
         effectiveNextStatus,
-        isRiderAssignAction ? { riderId } : undefined,
+        options,
       );
       await loadDispatches();
 
@@ -294,6 +321,8 @@ const DispatchOperations: React.FC = () => {
       setIsActionOpen(false);
       setSelectedNextStatus('');
       setRiderId('');
+      setPartialRemarks('');
+      setPartialCodCollected('');
     } catch (err: unknown) {
       const message =
         typeof err === 'object' &&
@@ -458,6 +487,38 @@ const DispatchOperations: React.FC = () => {
                     )
                   ))}
                 </div>
+                {isPartialDeliveryAction && (
+                  <div className="dispatch-partial-form">
+                    <div className="dispatch-partial-field">
+                      <label className="dispatch-partial-label">
+                        Remarks <span className="dispatch-partial-required">*</span>
+                      </label>
+                      <textarea
+                        rows={2}
+                        value={partialRemarks}
+                        onChange={e => setPartialRemarks(e.target.value)}
+                        placeholder="Reason for partial delivery..."
+                        className="dispatch-partial-textarea"
+                        disabled={statusUpdating}
+                      />
+                    </div>
+                    <div className="dispatch-partial-field">
+                      <label className="dispatch-partial-label">
+                        COD Collected <span className="dispatch-partial-required">*</span>
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={partialCodCollected}
+                        onChange={e => setPartialCodCollected(e.target.value)}
+                        placeholder="Amount collected"
+                        className="dispatch-partial-input"
+                        disabled={statusUpdating}
+                      />
+                    </div>
+                  </div>
+                )}
                 {actionError && <p className="dispatch-action-error">{actionError}</p>}
                 <div className="dispatch-status-submit-row">
                   <Button variant="secondary" className="dispatch-outline-btn" onClick={() => { setIsActionOpen(false); setRiderId(''); }}>
@@ -467,7 +528,7 @@ const DispatchOperations: React.FC = () => {
                     variant="primary"
                     className="dispatch-apply-btn"
                     onClick={applyStatusChange}
-                    disabled={statusUpdating || !effectiveNextStatus || (isRiderAssignAction && !riderId)}
+                    disabled={statusUpdating || !effectiveNextStatus || (isRiderAssignAction && !riderId) || (isPartialDeliveryAction && (!partialRemarks.trim() || !partialCodCollected))}
                   >
                     {statusUpdating ? 'Applying...' : 'Submit'}
                   </Button>

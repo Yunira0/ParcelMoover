@@ -28,6 +28,7 @@ const formatStatusLabel = (status: ParcelStatus) =>
 
 const getStatusTone = (status: ParcelStatus): StatusChipTone => {
   if (status === 'delivered') return 'success';
+  if (status === 'partially_delivered') return 'warning';
   if (['arrived', 'arrived_at_branch', 'rider_assigned'].includes(status)) return 'info';
   if (['failed_pickup', 'failed_delivery', 'loss_and_damage'].includes(status)) return 'danger';
   if (status === 'cancelled') return 'neutral';

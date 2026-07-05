@@ -274,6 +274,8 @@ model parcels {
   package_type                                         String?
   delivery_instruction                                 String?
   attempt_count                                        Int                     @default(0)
+  partial_delivery_remarks                             String?
+  partial_cod_collected                                Decimal?                @db.Decimal(12, 2)
   created_by                                           String?                 @db.Uuid
   created_at                                           DateTime                @default(now()) @db.Timestamptz(6)
   picked_up_at                                         DateTime?               @db.Timestamptz(6)
@@ -616,6 +618,7 @@ enum parcel_status {
   hold
   loss_and_damage
   delivered
+  partially_delivered
   failed_pickup
   failed_delivery
   cancelled
