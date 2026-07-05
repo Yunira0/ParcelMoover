@@ -28,6 +28,7 @@ import {
 } from '../services/orders.service';
 import { getRiders } from '../services/users.service';
 import { formatCurrency } from '../utils/format';
+import { toBsDate, toNptTime } from '../utils/nepaliDate';
 import './RiderRunSheet.css';
 
 const ALL_RIDERS = '';
@@ -71,11 +72,10 @@ type RunSheetRow = RunSheet & { sn: number };
 
 const DateTimeCell: React.FC<{ iso: string | null }> = ({ iso }) => {
   if (!iso) return <>-</>;
-  const at = new Date(iso);
   return (
     <div className="runsheet-datetime">
-      <span>{at.toLocaleDateString('en-CA')}</span>
-      <small>{at.toLocaleTimeString('en-GB')}</small>
+      <span>{toBsDate(iso)}</span>
+      <small>{toNptTime(iso, true)}</small>
     </div>
   );
 };

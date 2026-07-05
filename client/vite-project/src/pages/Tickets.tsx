@@ -19,6 +19,7 @@ import {
   type TicketPriority,
   type TicketStatus,
 } from '../services/tickets.service';
+import { toBsDate } from '../utils/nepaliDate';
 import './Tickets.css';
 
 type TicketTab = 'all' | TicketStatus;
@@ -200,7 +201,7 @@ const Tickets: React.FC = () => {
       width: '120px',
     },
     { header: 'ASSIGNED TO', accessor: (ticket: Ticket) => ticket.assignedTo, width: '120px' },
-    { header: 'CREATED AT', accessor: (ticket: Ticket) => ticket.createdAt, width: '110px' },
+    { header: 'CREATED AT', accessor: (ticket: Ticket) => toBsDate(ticket.createdAt), width: '110px' },
     {
       header: 'ACTION',
       accessor: (ticket: Ticket) => (

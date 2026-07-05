@@ -14,6 +14,7 @@ import {
   type OrdersPageMeta,
   type ParcelStatus,
 } from '../services/orders.service';
+import { toBsDate } from '../utils/nepaliDate';
 import './LossAndDamageOperations.css';
 
 const PAGE_SIZE = 10;
@@ -143,7 +144,7 @@ const LossAndDamageOperations: React.FC = () => {
     const headers = ['#', 'Date', 'Tracking ID', 'Sender', 'Receiver', 'Weight', 'COD', 'Package', 'Last Updated By', 'Last Updated'];
     const csvRows = rows.map((order) => [
       `#${order.orderNumber}`,
-      order.createdAt,
+      toBsDate(order.createdAt),
       order.trackingId,
       order.senderName,
       order.receiverName,
@@ -151,7 +152,7 @@ const LossAndDamageOperations: React.FC = () => {
       order.codAmount,
       `${order.pieces} pcs`,
       order.lastUpdatedBy || '',
-      order.lastUpdatedAt || '',
+      toBsDate(order.lastUpdatedAt) || '',
     ]);
     const csv = [headers, ...csvRows]
       .map((row) => row.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(','))
@@ -172,7 +173,7 @@ const LossAndDamageOperations: React.FC = () => {
       width: '70px',
       className: 'lossdamage-sn-cell',
     },
-    { header: 'DATE', accessor: (order: Order) => order.createdAt || '-', width: '100px' },
+    { header: 'DATE', accessor: (order: Order) => toBsDate(order.createdAt) || '-', width: '100px' },
     {
       header: 'TRACKING ID',
       accessor: (order: Order) => (
@@ -214,7 +215,7 @@ const LossAndDamageOperations: React.FC = () => {
       accessor: (order: Order) => order.lastUpdatedBy || '-',
       width: '155px',
     },
-    { header: 'LAST UPDATED', accessor: (order: Order) => order.lastUpdatedAt || '-', width: '155px' },
+    { header: 'LAST UPDATED', accessor: (order: Order) => toBsDate(order.lastUpdatedAt) || '-', width: '155px' },
   ], [page, visibleOrders]);
 
   return (

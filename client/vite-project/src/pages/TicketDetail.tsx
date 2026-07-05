@@ -13,6 +13,7 @@ import {
   type TicketDetail as TicketDetailType,
 } from '../services/tickets.service';
 import './RemarkDetail.css';
+import { toBsDate } from '../utils/nepaliDate';
 import './TicketDetail.css';
 
 const STATUS_TONE: Record<TicketDetailType['status'], StatusChipTone> = {
@@ -40,7 +41,7 @@ const formatRelativeTime = (dateStr: string) => {
   if (diffHours < 24) return `${diffHours}h ago`;
   const diffDays = Math.floor(diffHours / 24);
   if (diffDays < 7) return `${diffDays}d ago`;
-  return date.toLocaleDateString(undefined, { dateStyle: 'medium' });
+  return toBsDate(date);
 };
 
 const TicketDetail: React.FC = () => {
@@ -187,7 +188,7 @@ const TicketDetail: React.FC = () => {
                       <div className="rd-chat-body">
                         <div className="rd-chat-sender-row">
                           <span className="rd-chat-name">{ticket.customerName || 'Customer'}</span>
-                          <span className="rd-chat-time">{ticket.createdAt}</span>
+                          <span className="rd-chat-time">{toBsDate(ticket.createdAt)}</span>
                         </div>
                         <div className="rd-chat-bubble"><p>{ticket.description}</p></div>
                       </div>

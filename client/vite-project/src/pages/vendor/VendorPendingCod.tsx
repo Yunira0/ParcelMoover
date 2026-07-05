@@ -3,6 +3,7 @@ import PageHeader from '../../components/PageHeader';
 import type { PendingCodBill } from '../../services/finance.service';
 import { getPendingCod } from '../../services/finance.service';
 import { formatCurrency } from '../../utils/format';
+import { toBsDate } from '../../utils/nepaliDate';
 import './VendorFinance.css';
 
 const VendorPendingCod: React.FC = () => {
@@ -57,7 +58,7 @@ const VendorPendingCod: React.FC = () => {
             <div className="cod-bill-meta">
               <div>
                 <span>Statement date</span>
-                <span>{new Date(bill.statementDate).toLocaleDateString()}</span>
+                <span>{toBsDate(bill.statementDate)}</span>
               </div>
               <div>
                 <span>Payment status</span>

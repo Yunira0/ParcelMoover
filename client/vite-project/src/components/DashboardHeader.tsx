@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { getCurrentUser } from '../services/auth.service';
+import { toBsDateLabel } from '../utils/nepaliDate';
 import './DashboardHeader.css';
 
 type DashboardHeaderProps = {
@@ -11,7 +12,7 @@ const formatTime = (date: Date) => {
 };
 
 const formatDate = (date: Date) => {
-  return date.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' });
+  return `${date.toLocaleDateString(undefined, { weekday: 'long' })}, ${toBsDateLabel(date)}`;
 };
 
 const getGreeting = (hour: number) => {

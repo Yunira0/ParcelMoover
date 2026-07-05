@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import {
+  bulkImportDeliveryRates,
   getDeliveryQuote,
   listDeliveryRates,
   setDeliveryRateActive,
@@ -50,6 +51,33 @@ export async function upsertDeliveryRateController(req: Request, res: Response) 
     return res.status(error.statusCode || 500).json({
       success: false,
       message: error.message || "Failed to save delivery rate",
+    });
+  }
+}
+
+export async function bulkImportDeliveryRatesController(req: Request, res: Response) {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const results = await bulkImportDeliveryRates(
+      { id: req.user.id, roles: req.user.roles },
+      req.body.rows,
+    );
+
+    const imported = results.filter((r) => !r.error).length;
+    const failed = results.length - imported;
+
+    return res.status(200).json({
+      success: true,
+      message: `${imported} rate(s) imported, ${failed} failed`,
+      data: results,
+    });
+  } catch (error: any) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to import delivery rates",
     });
   }
 }

@@ -274,3 +274,22 @@
     justify-content: space-between;
   }
 }
+
+.order-date-input {
+  background: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-default);
+  color: var(--color-text-default);
+  font-family: var(--typography-font-family-default);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-sm);
+  min-height: 36px;
+  padding: var(--space-2);
+  width: 100%;
+}
+
+.order-date-input:focus-visible {
+  border-color: var(--color-border-primary);
+  box-shadow: 0 0 0 2px rgb(194 65 12 / 12%);
+  outline: none;
+}

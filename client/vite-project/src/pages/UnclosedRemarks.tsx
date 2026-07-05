@@ -12,6 +12,7 @@ import {
   type Remark,
   type RemarkStatus,
 } from '../services/remarks.service';
+import { toBsDate } from '../utils/nepaliDate';
 import './UnclosedRemarks.css';
 
 const PAGE_SIZE = 10;
@@ -113,7 +114,7 @@ const UnclosedRemarks: React.FC = () => {
         width: '120px',
       },
       { header: 'ADDED BY', accessor: (r: Remark) => r.addedBy, width: '140px' },
-      { header: 'CREATED AT', accessor: (r: Remark) => r.createdAt, width: '110px' },
+      { header: 'CREATED AT', accessor: (r: Remark) => toBsDate(r.createdAt), width: '110px' },
       {
         header: 'ACTION',
         accessor: (r: Remark) => (

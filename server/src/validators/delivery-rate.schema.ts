@@ -19,6 +19,31 @@ export const upsertDeliveryRateSchema = z.object({
 
 export type UpsertDeliveryRateInput = z.infer<typeof upsertDeliveryRateSchema>;
 
+// ── Bulk import delivery rates (from an Excel/CSV upload) ────────────────────
+// Rows reference locations by NAME (what a spreadsheet naturally contains);
+// the service resolves them to hub location ids case-insensitively.
+
+export const bulkImportDeliveryRatesSchema = z.object({
+  rows: z
+    .array(
+      z.object({
+        origin: z.string().trim().min(1, "origin is required").max(100),
+        destination: z.string().trim().min(1, "destination is required").max(100),
+        baseCharge: z.coerce.number().min(0, "baseCharge cannot be negative"),
+        extraWeightPercent: z.coerce
+          .number()
+          .min(0)
+          .max(100, "extraWeightPercent must be between 0 and 100")
+          .optional(),
+        freeWeightKg: z.coerce.number().min(0, "freeWeightKg cannot be negative").optional(),
+      }),
+    )
+    .min(1, "rows must be a non-empty array")
+    .max(500, "Cannot import more than 500 rates at once"),
+});
+
+export type BulkImportDeliveryRatesInput = z.infer<typeof bulkImportDeliveryRatesSchema>;
+
 // ── Get delivery quote (query params) ────────────────────────────────────────
 
 export const deliveryQuoteQuerySchema = z.object({

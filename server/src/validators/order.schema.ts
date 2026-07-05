@@ -29,6 +29,12 @@ export const PARCEL_STATUSES = [
   "failed_pickup",
   "failed_delivery",
   "cancelled",
+  // Return-to-vendor workflow stages — must stay in sync with the parcel_status
+  // DB enum and STATUS_TRANSITIONS, or the RTO pages get 400s from validation.
+  "follow_up",
+  "ready_to_return",
+  "sent_to_vendor",
+  "returned_to_vendor",
 ] as const;
 
 // ── Sub-schemas ───────────────────────────────────────────────────────────────

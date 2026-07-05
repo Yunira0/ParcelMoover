@@ -16,6 +16,7 @@ import {
   type ParcelStatus,
 } from '../services/orders.service';
 import RiderAssignModal from '../components/RiderAssignModal';
+import { toBsDate } from '../utils/nepaliDate';
 import './ReturnOperations.css';
 
 type ReturnTab = 'follow_up' | 'ready_to_return' | 'sent_to_vendor' | 'returned_to_vendor';
@@ -242,7 +243,7 @@ const ReturnOperations: React.FC = () => {
       width: '70px',
       className: 'return-sn-cell',
     },
-    { header: 'DATE', accessor: (order: Order) => order.createdAt || '-', width: '100px' },
+    { header: 'DATE', accessor: (order: Order) => toBsDate(order.createdAt) || '-', width: '100px' },
     {
       header: 'TRACKING ID',
       accessor: (order: Order) => (

@@ -1,6 +1,7 @@
 import React from 'react';
 import { Package, CheckCircle, XCircle, AlertTriangle, Clock, Truck, MapPin, ArrowRight } from 'lucide-react';
 import type { OrderStatusHistoryEntry, ParcelStatus } from '../../services/orders.service';
+import { toBsDateLabel, toNptTime } from '../../utils/nepaliDate';
 
 interface OrderTimelineProps {
   statusHistory: OrderStatusHistoryEntry[];
@@ -72,15 +73,11 @@ function getTimelineClass(entry: OrderStatusHistoryEntry): string {
 
 function formatTimelineTime(dateStr: string): string {
   if (!dateStr) return '';
+  // Server sends date-only strings like "2024-01-15" (no time component)
   if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
-    return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-US', {
-      month: 'short', day: 'numeric', year: 'numeric',
-    });
+    return toBsDateLabel(dateStr);
   }
-  const date = new Date(dateStr);
-  return date.toLocaleDateString('en-US', {
-    month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
-  });
+  return `${toBsDateLabel(dateStr)}, ${toNptTime(dateStr)}`;
 }
 
 const OrderTimeline: React.FC<OrderTimelineProps> = ({ statusHistory }) => {

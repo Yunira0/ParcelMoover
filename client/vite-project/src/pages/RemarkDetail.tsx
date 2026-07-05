@@ -13,6 +13,7 @@ import {
 } from '../services/remarks.service';
 import { addOrderRemark } from '../services/orders.service';
 import './RemarkDetail.css';
+import { toBsDate } from '../utils/nepaliDate';
 import './TicketDetail.css';
 
 const STATUS_TONE: Record<RemarkStatus, StatusChipTone> = {
@@ -43,7 +44,7 @@ const formatRelativeTime = (dateStr: string) => {
   if (diffMins < 60) return `${diffMins}m ago`;
   if (diffHours < 24) return `${diffHours}h ago`;
   if (diffDays < 7) return `${diffDays}d ago`;
-  return date.toLocaleDateString(undefined, { dateStyle: 'medium' });
+  return toBsDate(date);
 };
 
 const buildTree = (thread: RemarkThreadEntry[]) => {

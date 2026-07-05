@@ -10,8 +10,10 @@ import {
   upsertDeliveryRateSchema,
   deliveryQuoteQuerySchema,
   setDeliveryRateActiveSchema,
+  bulkImportDeliveryRatesSchema,
 } from "../validators/delivery-rate.schema";
 import {
+  bulkImportDeliveryRatesController,
   getDeliveryQuoteController,
   listDeliveryRatesController,
   setDeliveryRateActiveController,
@@ -89,6 +91,29 @@ deliveryRateRouter.post(
   ratesWriteLimiter,
   validate(upsertDeliveryRateSchema),
   upsertDeliveryRateController,
+);
+
+// Bulk import handles a whole spreadsheet at once, so it gets a tighter cap
+// than ordinary single-row writes.
+const ratesBulkImportLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 5,
+  message: { success: false, message: "Too many requests, please slow down" },
+  standardHeaders: true,
+  legacyHeaders: false,
+  store: createRedisRateLimitStore("delivery-rate-bulk-import"),
+  keyGenerator: actorOrIpKey,
+});
+
+// POST /api/delivery-rates/bulk-import — upsert route rates from an Excel/CSV upload
+deliveryRateRouter.post(
+  "/bulk-import",
+  authMiddleware,
+  csrfProtection,
+  authorizeRoles("super_admin"),
+  ratesBulkImportLimiter,
+  validate(bulkImportDeliveryRatesSchema),
+  bulkImportDeliveryRatesController,
 );
 
 // PATCH /api/delivery-rates/:id/active — enable/disable a route's rate

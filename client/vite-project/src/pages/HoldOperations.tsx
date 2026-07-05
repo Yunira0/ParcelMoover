@@ -16,6 +16,7 @@ import {
   type OrdersPageMeta,
   type ParcelStatus,
 } from '../services/orders.service';
+import { toBsDate } from '../utils/nepaliDate';
 import './HoldOperations.css';
 
 const PAGE_SIZE = 10;
@@ -171,7 +172,7 @@ const HoldOperations: React.FC = () => {
     const headers = ['#', 'Date', 'Tracking ID', 'Sender', 'Receiver', 'Weight', 'COD', 'Age', 'Last Updated By', 'Last Updated', 'Last Remarks'];
     const csvRows = rows.map((order) => [
       `#${order.orderNumber}`,
-      order.createdAt,
+      toBsDate(order.createdAt),
       order.trackingId,
       order.senderName,
       order.receiverName,
@@ -179,7 +180,7 @@ const HoldOperations: React.FC = () => {
       order.codAmount,
       ageInDays(order.createdAt),
       order.lastUpdatedBy || '',
-      order.lastUpdatedAt || '',
+      toBsDate(order.lastUpdatedAt) || '',
       order.remarks || '',
     ]);
     const csv = [headers, ...csvRows]
@@ -201,7 +202,7 @@ const HoldOperations: React.FC = () => {
       width: '70px',
       className: 'hold-sn-cell',
     },
-    { header: 'DATE', accessor: (order: Order) => order.createdAt || '-', width: '100px' },
+    { header: 'DATE', accessor: (order: Order) => toBsDate(order.createdAt) || '-', width: '100px' },
     {
       header: 'TRACKING ID',
       accessor: (order: Order) => (
@@ -243,7 +244,7 @@ const HoldOperations: React.FC = () => {
       accessor: (order: Order) => order.lastUpdatedBy || '-',
       width: '155px',
     },
-    { header: 'LAST UPDATED', accessor: (order: Order) => order.lastUpdatedAt || '-', width: '155px' },
+    { header: 'LAST UPDATED', accessor: (order: Order) => toBsDate(order.lastUpdatedAt) || '-', width: '155px' },
     {
       header: 'LAST REMARKS',
       accessor: (order: Order) => (

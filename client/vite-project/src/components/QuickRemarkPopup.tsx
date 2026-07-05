@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { MessageSquare, RefreshCw, Send, X } from 'lucide-react';
 import Button from './Button';
 import { getOrderByTrackingId, addOrderRemark, type OrderRemark } from '../services/orders.service';
+import { toBsDate } from '../utils/nepaliDate';
 import './QuickRemarkPopup.css';
 
 interface QuickRemarkPopupProps {
@@ -33,7 +34,7 @@ const formatRelativeTime = (dateStr: string) => {
   if (diffMins < 60) return `${diffMins}m ago`;
   if (diffHours < 24) return `${diffHours}h ago`;
   if (diffDays < 7) return `${diffDays}d ago`;
-  return date.toLocaleDateString(undefined, { dateStyle: 'medium' });
+  return toBsDate(date);
 };
 
 const buildTree = (remarks: OrderRemark[]) => {

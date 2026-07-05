@@ -1,4 +1,5 @@
 import React from 'react';
+import { toBsDateLabel } from '../../utils/nepaliDate';
 import './VendorTodayPanel.css';
 
 interface VendorTodayPanelProps {
@@ -18,11 +19,7 @@ const VendorTodayPanel: React.FC<VendorTodayPanelProps> = ({
 }) => {
   const display = (v: number) => (loading ? '—' : v.toLocaleString());
 
-  const dateLabel = new Date().toLocaleDateString(undefined, {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  });
+  const dateLabel = toBsDateLabel(new Date());
 
   const rows: { label: string; value: string; tone: 'default' | 'success' | 'info' | 'warning' }[] = [
     { label: "Today's Orders",       value: display(orders),   tone: 'default' },

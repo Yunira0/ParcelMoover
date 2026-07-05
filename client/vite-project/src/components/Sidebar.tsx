@@ -7,7 +7,6 @@ import {
   Store,
   Bike,
   Wallet,
-  HelpCircle,
   Archive,
   Send,
   Route,
@@ -145,7 +144,6 @@ const VendorSidebar: React.FC = () => {
       </div>
 
       <div className="sidebar-footer">
-        <SidebarItem to="/help" icon={HelpCircle} label="Help & Support" />
         <SidebarLogout />
       </div>
     </aside>
@@ -185,7 +183,6 @@ const VendorStaffSidebar: React.FC = () => {
       </div>
 
       <div className="sidebar-footer">
-        <SidebarItem to="/help" icon={HelpCircle} label="Help & Support" />
         <SidebarLogout />
       </div>
     </aside>
@@ -213,7 +210,6 @@ const SalesSidebar: React.FC = () => {
       </div>
 
       <div className="sidebar-footer">
-        <SidebarItem to="/help" icon={HelpCircle} label="Help & Support" />
         <SidebarLogout />
       </div>
     </aside>
@@ -257,7 +253,6 @@ const AdminSidebar: React.FC<{ isSuperAdmin: boolean }> = ({ isSuperAdmin }) => 
       </div>
 
       <div className="sidebar-footer">
-        <SidebarItem to="/help" icon={HelpCircle} label="Help & Support" />
         <SidebarLogout />
       </div>
     </aside>
