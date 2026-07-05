@@ -341,6 +341,12 @@ const CreateOrderPage: React.FC = () => {
 
   const locationSelectOptions = locationOptions.map(l => ({ id: l.id, label: l.name }));
 
+  // Vendors never pick their own origin - it's always their hub (e.g. Imadol),
+  // so "From" is shown read-only instead of an editable dropdown.
+  const originHubName = isVendorActor
+    ? locationOptions.find(l => l.id === selectedVendor?.locationId)?.name
+    : undefined;
+
   return (
     <div className="create-order-page">
       <PageHeader title="Create Order" subtitle="Set up and submit new package orders through the system." />
@@ -392,18 +398,28 @@ const CreateOrderPage: React.FC = () => {
           <div className="order-card">
             <h2>Route Details</h2>
             <div className="order-field-row">
-              <FormField
-                label="From"
-                required
-                type="searchable-select"
-                searchableOptions={locationSelectOptions}
-                value={form.originLocationId}
-                onChange={id => setField('originLocationId', id)}
-                placeholder="Enter Origin"
-                searchPlaceholder="Search origin..."
-                emptyMessage="No locations found."
-                error={fieldErrors.originLocationId}
-              />
+              {isVendorActor ? (
+                <FormField
+                  label="From"
+                  value={originHubName || 'No hub assigned - contact an admin'}
+                  onChange={() => {}}
+                  disabled
+                  error={fieldErrors.originLocationId}
+                />
+              ) : (
+                <FormField
+                  label="From"
+                  required
+                  type="searchable-select"
+                  searchableOptions={locationSelectOptions}
+                  value={form.originLocationId}
+                  onChange={id => setField('originLocationId', id)}
+                  placeholder="Enter Origin"
+                  searchPlaceholder="Search origin..."
+                  emptyMessage="No locations found."
+                  error={fieldErrors.originLocationId}
+                />
+              )}
               <FormField
                 label="To"
                 required

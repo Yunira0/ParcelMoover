@@ -44,6 +44,31 @@ export const setDeliveryRateActive = async (id: string, isActive: boolean) => {
   return response.data;
 };
 
+// ── Bulk import (Excel/CSV upload) ───────────────────────────────────────────
+// Rows reference locations by name; the server resolves them to hub ids.
+
+export interface BulkImportRateRow {
+  origin: string;
+  destination: string;
+  baseCharge: number;
+  extraWeightPercent?: number;
+  freeWeightKg?: number;
+}
+
+export interface BulkImportRateResult {
+  origin: string;
+  destination: string;
+  action?: 'created' | 'updated';
+  error?: string;
+}
+
+export const bulkImportDeliveryRates = async (
+  rows: BulkImportRateRow[],
+): Promise<{ success: boolean; message: string; data: BulkImportRateResult[] }> => {
+  const response = await api.post('/delivery-rates/bulk-import', { rows });
+  return response.data;
+};
+
 export const getDeliveryQuote = async (
   originLocationId: string,
   destinationLocationId: string,

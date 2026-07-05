@@ -195,6 +195,74 @@ export const getDashboardSummary = async () => {
   return response.data;
 };
 
+// ── Rider run sheet ───────────────────────────────────────────────────────────
+// Run sheets are persisted hand-off records: one numbered sheet per batch of
+// parcels sent out for delivery with a rider.
+
+export interface RunSheetParcel {
+  id: string;
+  orderNumber: number;
+  trackingId: string;
+  status: ParcelStatus;
+  receiverName: string;
+  receiverPhone: string;
+  address: string;
+  destination: string;
+  pieces: number;
+  weightKg?: number;
+  codAmount: number;
+  vendorName: string;
+  deliveryInstruction: string;
+  deliveredAt: string | null;
+}
+
+export interface RunSheet {
+  id: string;
+  sheetNo: string;
+  rider: {
+    id: string;
+    name: string;
+    phone: string;
+    vehicleNo: string;
+    hub: string;
+  };
+  createdAt: string;
+  updatedAt: string;
+  totalItems: number;
+  deliveredItems: number;
+  failedItems: number;
+  outItems: number;
+  totalCod: number;
+  codCollected: number;
+  parcels: RunSheetParcel[];
+}
+
+export interface RunSheetResponse {
+  success: boolean;
+  data: {
+    date: string;
+    summary: {
+      totalSheets: number;
+      totalItems: number;
+      deliveredItems: number;
+      outItems: number;
+      totalCod: number;
+    };
+    sheets: RunSheet[];
+  };
+}
+
+/** Run sheets for one day (defaults to today), optionally for a single rider. Admin-side only. */
+export const getRiderRunSheet = async (
+  params?: { riderId?: string; date?: string },
+): Promise<RunSheetResponse> => {
+  const query: Record<string, string> = {};
+  if (params?.riderId) query.riderId = params.riderId;
+  if (params?.date) query.date = params.date;
+  const response = await api.get('/orders/run-sheet', { params: query });
+  return response.data;
+};
+
 export interface SenderProfile {
   id: string;
   name: string;

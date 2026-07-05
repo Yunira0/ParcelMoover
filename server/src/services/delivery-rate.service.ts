@@ -106,6 +106,112 @@ export async function listDeliveryRates() {
   }));
 }
 
+export interface BulkImportRateRow {
+  origin: string;
+  destination: string;
+  baseCharge: number;
+  extraWeightPercent?: number;
+  freeWeightKg?: number;
+}
+
+export interface BulkImportRateResult {
+  origin: string;
+  destination: string;
+  action?: "created" | "updated";
+  error?: string;
+}
+
+// Spreadsheet rows reference destinations by name; resolve them against the
+// hub (top-level) locations once, then upsert row by row so one bad row
+// doesn't sink the rest of the file.
+export async function bulkImportDeliveryRates(
+  actor: Actor,
+  rows: BulkImportRateRow[],
+): Promise<BulkImportRateResult[]> {
+  const hubs = await prisma.locations.findMany({
+    where: { parent_id: null, is_active: true },
+    select: { id: true, name: true, code: true },
+  });
+  const hubByKey = new Map<string, { id: string; name: string }>();
+  for (const hub of hubs) {
+    hubByKey.set(hub.name.trim().toLowerCase(), hub);
+    if (hub.code) hubByKey.set(hub.code.trim().toLowerCase(), hub);
+  }
+
+  const results: BulkImportRateResult[] = [];
+
+  for (const row of rows) {
+    const originHub = hubByKey.get(row.origin.trim().toLowerCase());
+    const destinationHub = hubByKey.get(row.destination.trim().toLowerCase());
+
+    const errors: string[] = [];
+    if (!originHub) errors.push(`origin '${row.origin}' does not match any active destination`);
+    if (!destinationHub) {
+      errors.push(`destination '${row.destination}' does not match any active destination`);
+    }
+    if (originHub && destinationHub && originHub.id === destinationHub.id) {
+      errors.push("origin and destination must be different");
+    }
+    if (!(row.baseCharge >= 0)) errors.push("baseCharge must be a non-negative number");
+
+    if (errors.length) {
+      results.push({ origin: row.origin, destination: row.destination, error: errors.join("; ") });
+      continue;
+    }
+
+    try {
+      const existing = await prisma.delivery_rates.findUnique({
+        where: {
+          origin_location_id_destination_location_id: {
+            origin_location_id: originHub!.id,
+            destination_location_id: destinationHub!.id,
+          },
+        },
+        select: { id: true },
+      });
+
+      const data = {
+        base_charge: row.baseCharge,
+        extra_weight_percent: row.extraWeightPercent ?? 0,
+        free_weight_kg: row.freeWeightKg ?? 2,
+        is_active: true,
+      };
+
+      await prisma.delivery_rates.upsert({
+        where: {
+          origin_location_id_destination_location_id: {
+            origin_location_id: originHub!.id,
+            destination_location_id: destinationHub!.id,
+          },
+        },
+        update: data,
+        create: {
+          ...data,
+          origin_location_id: originHub!.id,
+          destination_location_id: destinationHub!.id,
+          created_by: actor.id,
+        },
+      });
+
+      await invalidateRateCache(originHub!.id, destinationHub!.id);
+
+      results.push({
+        origin: originHub!.name,
+        destination: destinationHub!.name,
+        action: existing ? "updated" : "created",
+      });
+    } catch (error: any) {
+      results.push({
+        origin: row.origin,
+        destination: row.destination,
+        error: error?.message || "Failed to save rate",
+      });
+    }
+  }
+
+  return results;
+}
+
 export async function setDeliveryRateActive(id: string, isActive: boolean) {
   const rate = await prisma.delivery_rates.findUnique({ where: { id } });
   if (!rate) {

@@ -6,6 +6,7 @@ import {
   createOrder,
   getDashboardSummary,
   getOrderByTrackingId,
+  getRiderRunSheet,
   getSenderProfile,
   listOrders,
   updateParcelStatus,
@@ -401,6 +402,32 @@ export async function getSenderProfileController(req: Request, res: Response) {
     return res.status(error.statusCode || 500).json({
       success: false,
       message: error.message || "Failed to load sender profile",
+    });
+  }
+}
+
+export async function riderRunSheetController(req: Request, res: Response) {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const riderId =
+      typeof req.query.riderId === "string" && req.query.riderId
+        ? req.query.riderId
+        : undefined;
+    const date =
+      typeof req.query.date === "string" && req.query.date ? req.query.date : undefined;
+
+    const data = await getRiderRunSheet({
+      ...(riderId ? { riderId } : {}),
+      ...(date ? { date } : {}),
+    });
+    return res.status(200).json({ success: true, data });
+  } catch (error: any) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to load rider run sheet",
     });
   }
 }

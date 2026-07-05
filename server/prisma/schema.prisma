@@ -295,6 +295,7 @@ model parcels {
   parties_parcels_sender_idToparties                   parties                 @relation("parcels_sender_idToparties", fields: [sender_id], references: [id], onUpdate: NoAction)
   vendors                                              vendors?                @relation(fields: [vendor_id], references: [id], onUpdate: NoAction)
   pickup_tasks                                         pickup_tasks?
+  run_sheet_parcels                                    run_sheet_parcels[]
   support_tickets                                      support_tickets[]
 
   @@index([created_at(sort: Desc)], map: "idx_parcels_created_at")
@@ -375,11 +376,40 @@ model riders {
   parcels_parcels_delivery_rider_idToriders parcels[]         @relation("parcels_delivery_rider_idToriders")
   parcels_parcels_pickup_rider_idToriders   parcels[]         @relation("parcels_pickup_rider_idToriders")
   pickup_tasks                              pickup_tasks[]
+  run_sheets                                run_sheets[]
   locations                                 locations?        @relation(fields: [location_id], references: [id], onUpdate: NoAction)
   users                                     users?            @relation(fields: [user_id], references: [id], onUpdate: NoAction)
   settlements                               settlements[]
 
   @@index([location_id], map: "idx_riders_location_id")
+}
+
+// One run sheet = one hand-off batch: created when staff send a set of parcels
+// out for delivery with a rider. Mirrors the dispatches/dispatch_parcels pattern.
+model run_sheets {
+  id                String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sheet_no          String              @unique
+  rider_id          String              @db.Uuid
+  created_by        String?             @db.Uuid
+  created_at        DateTime            @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime            @default(now()) @db.Timestamptz(6)
+  run_sheet_parcels run_sheet_parcels[]
+  riders            riders              @relation(fields: [rider_id], references: [id], onUpdate: NoAction)
+  users             users?              @relation(fields: [created_by], references: [id], onUpdate: NoAction)
+
+  @@index([rider_id, created_at(sort: Desc)], map: "idx_run_sheets_rider_created")
+  @@index([created_at(sort: Desc)], map: "idx_run_sheets_created_at")
+}
+
+model run_sheet_parcels {
+  run_sheet_id String     @db.Uuid
+  parcel_id    String     @db.Uuid
+  created_at   DateTime   @default(now()) @db.Timestamptz(6)
+  run_sheets   run_sheets @relation(fields: [run_sheet_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  parcels      parcels    @relation(fields: [parcel_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([run_sheet_id, parcel_id])
+  @@index([parcel_id], map: "idx_run_sheet_parcels_parcel_id")
 }
 
 model roles {
@@ -492,6 +522,7 @@ model users {
   parcel_status_history                                  parcel_status_history[]
   parcels                                                parcels[]
   riders                                                 riders?
+  run_sheets                                             run_sheets[]
   settlements_settlements_approved_byTousers             settlements[]           @relation("settlements_approved_byTousers")
   settlements_settlements_settled_byTousers              settlements[]           @relation("settlements_settled_byTousers")
   support_tickets_support_tickets_assigned_toTousers     support_tickets[]       @relation("support_tickets_assigned_toTousers")

@@ -4,6 +4,7 @@ import { Copy, Check, Printer } from 'lucide-react';
 import StatusChip from '../StatusChip';
 import type { StatusChipTone } from '../StatusChip';
 import type { ParcelStatus, OrderType, ServiceType } from '../../services/orders.service';
+import { toBsDateLabel, toNptTime } from '../../utils/nepaliDate';
 
 interface OrderDetailHeaderProps {
   trackingId: string;
@@ -114,16 +115,8 @@ const OrderDetailHeader: React.FC<OrderDetailHeaderProps> = ({
     window.print();
   };
 
-  const formattedDate = new Date(createdAt).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  });
-
-  const formattedTime = new Date(createdAt).toLocaleTimeString('en-US', {
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  const formattedDate = toBsDateLabel(createdAt);
+  const formattedTime = toNptTime(createdAt);
 
   return (
     <div className="od-header">

@@ -22,6 +22,7 @@ import OOVOperations from './pages/OOVOperations'
 import ReturnOperations from './pages/ReturnOperations'
 import HoldOperations from './pages/HoldOperations'
 import LossAndDamageOperations from './pages/LossAndDamageOperations'
+import RiderRunSheet from './pages/RiderRunSheet'
 import CXCenter from './pages/CXCenter'
 import Remarks from './pages/Remarks'
 import UnclosedRemarks from './pages/UnclosedRemarks'
@@ -150,6 +151,10 @@ function App() {
           <Route
             path="/loss-and-damage"
             element={<RoleGuard allowedRoles={['super_admin', 'admin']}><LossAndDamageOperations /></RoleGuard>}
+          />
+          <Route
+            path="/rider-run-sheet"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']}><RiderRunSheet /></RoleGuard>}
           />
           <Route
             path="/tickets"

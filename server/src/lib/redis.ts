@@ -8,13 +8,23 @@ const redis = new Redis({
     db: parseInt(process.env.REDIS_DB || "0"),
     maxRetriesPerRequest: null,
     enableReadyCheck: false,
-    enableOfflineQueue: true,
+    // When Redis is down, reject commands immediately instead of queueing
+    // them until commandTimeout fires. Every Redis call site in this app
+    // has a try/catch fallback, so failing fast just means "skip the cache",
+    // whereas queueing meant every request stalled 3s per Redis command
+    // (auth revocation checks + cache read + cache write = 6-9s per request).
+    enableOfflineQueue: false,
     // Must connect eagerly (not lazily): index.ts's startup sequence waits on
     // this client's "ready"/"error" events before registering any routes, so
     // the connection attempt needs to start as soon as this module loads.
     lazyConnect: false,
     connectTimeout: 5000,
-    // commandTimeout not set — ioredis v5 treats 0 as a 0ms timeout (fires immediately)
+    // Bounds how long a single command can run on a live-but-slow connection
+    // (a hung Redis, network stall mid-command). Disconnected-state failures
+    // are handled by enableOfflineQueue: false above, which rejects instantly.
+    // NOTE: must be a positive value - ioredis v5 treats 0 as a 0ms timeout
+    // (fires immediately), so leaving this unset or at 0 is NOT "no timeout".
+    commandTimeout: 3000,
     retryStrategy: (times) => {
         const delay = Math.min(times * 50, 2000);
         return delay;
@@ -38,9 +48,17 @@ redis.on("error", (error) => {
 });
 redis.on("connect", () => { _redisErrorLogged = false; });
 
+// Same suppression as the error handler above - without Redis running (e.g.
+// local dev), retryStrategy fires this every ~2s forever and would otherwise
+// flood the console.
+let _redisReconnectingLogged = false;
 redis.on("reconnecting", () => {
-    console.log("[Redis] Attempting to reconnect...");
+    if (!_redisReconnectingLogged) {
+        console.log("[Redis] Attempting to reconnect... (further attempts logged silently)");
+        _redisReconnectingLogged = true;
+    }
 });
+redis.on("connect", () => { _redisReconnectingLogged = false; });
 
 export default redis;
 

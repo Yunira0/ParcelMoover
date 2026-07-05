@@ -27,8 +27,15 @@ export async function publishNotification(event: NotificationEvent) {
 // SSE hub needs its own connection instead of sharing the main `redis` client.
 export function createNotificationsSubscriber() {
   const subscriber = redis.duplicate();
+  // Same one-shot suppression as the main client in redis.ts - without Redis
+  // running, the retry loop would otherwise log this every ~2s forever.
+  let errorLogged = false;
   subscriber.on("error", (error) => {
-    console.error("[Redis] Notifications subscriber error:", error.message);
+    if (!errorLogged) {
+      console.error("[Redis] Notifications subscriber error (further errors suppressed):", error.message);
+      errorLogged = true;
+    }
   });
+  subscriber.on("connect", () => { errorLogged = false; });
   return subscriber;
 }

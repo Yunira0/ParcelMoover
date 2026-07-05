@@ -20,6 +20,7 @@ import {
   type ParcelStatus,
 } from '../services/orders.service';
 import { getLocations, getRiders } from '../services/users.service';
+import { toBsDate } from '../utils/nepaliDate';
 import './OOVOperations.css';
 
 type OOVTab = 'oov' | 'dispatched';
@@ -296,7 +297,7 @@ const OOVOperations: React.FC = () => {
     const headers = ['#', 'Date', 'Tracking ID', 'Order Type', 'Sender', 'Receiver', 'Location', 'Weight', 'COD', 'Last Updated', 'Remarks'];
     const csvRows = rows.map(order => [
       `#${order.orderNumber}`,
-      order.createdAt,
+      toBsDate(order.createdAt),
       order.trackingId,
       order.orderType,
       order.senderName,
@@ -304,7 +305,7 @@ const OOVOperations: React.FC = () => {
       order.destination,
       order.weightKg ? `${order.weightKg} Kg` : '',
       order.codAmount,
-      order.lastUpdatedAt || '',
+      toBsDate(order.lastUpdatedAt) || '',
       order.remarks || '',
     ]);
     return [headers, ...csvRows]
@@ -341,7 +342,7 @@ const OOVOperations: React.FC = () => {
       width: '70px',
       className: 'oov-sn-cell',
     },
-    { header: 'DATE', accessor: (order: Order) => order.createdAt || '-', width: '100px' },
+    { header: 'DATE', accessor: (order: Order) => toBsDate(order.createdAt) || '-', width: '100px' },
     {
       header: 'TRACKING ID',
       accessor: (order: Order) => (
@@ -383,7 +384,7 @@ const OOVOperations: React.FC = () => {
       accessor: (order: Order) => (
         <div className="oov-updated-cell">
           <span>{order.lastUpdatedBy || '-'}</span>
-          <span>{order.lastUpdatedAt || '-'}</span>
+          <span>{toBsDate(order.lastUpdatedAt) || '-'}</span>
         </div>
       ),
       width: '155px',

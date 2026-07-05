@@ -1,34 +1,29 @@
 import React, { useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 import { CheckCircle2, Download, Upload, XCircle } from 'lucide-react';
-import Button from '../../components/Button';
+import Button from '../components/Button';
 import {
-  bulkImportLocations,
-  type BulkImportDestinationInput,
-  type BulkImportResult,
-} from '../../services/locations.service';
-import './DestinationsImport.css';
+  bulkImportDeliveryRates,
+  type BulkImportRateResult,
+  type BulkImportRateRow,
+} from '../services/deliveryRates.service';
+import './settings/DestinationsImport.css';
 
 // ── Column definitions ────────────────────────────────────────────────────────
 
 const COLUMNS = [
-  'destination_name',
-  'destination_code',
-  'district',
-  'covered_areas',
-  'zone',
-  'valley',
-  'per_destination_rate',
+  'origin',
+  'destination',
+  'base_charge',
+  'extra_weight_percent',
+  'free_weight_kg',
 ] as const;
 
-const ZONE_VALUES = ['major_cities', 'urban_areas', 'remote_areas'];
-const VALLEY_VALUES = ['inside', 'outside'];
-
 const SAMPLE_ROWS = [
-  ['Imadol', 'IMD', 'Lalitpur', 'Sanagaun, Gwarko, Lubhu', 'major_cities', 'inside', '100'],
-  ['Kathmandu', 'KTM', 'Kathmandu', 'Thamel, Baneshwor, New Road', 'major_cities', 'inside', '100'],
-  ['Pokhara', 'PKR', 'Kaski', 'Lakeside, Prithvi Chowk', 'urban_areas', 'outside', '150'],
-  ['Butwal', 'BTW', 'Rupandehi', 'Devinagar, Golpark', 'remote_areas', 'outside', '200'],
+  ['Kathmandu', 'Pokhara', '150', '10', '2'],
+  ['Kathmandu', 'Butwal', '200', '10', '2'],
+  ['Pokhara', 'Kathmandu', '150', '', ''],
+  ['Butwal', 'Kathmandu', '200', '15', '3'],
 ];
 
 // ── Template download ─────────────────────────────────────────────────────────
@@ -37,142 +32,107 @@ function downloadTemplate() {
   const wb = XLSX.utils.book_new();
   const data = [COLUMNS as unknown as string[], ...SAMPLE_ROWS];
   const ws = XLSX.utils.aoa_to_sheet(data);
+  ws['!cols'] = [{ wch: 22 }, { wch: 22 }, { wch: 14 }, { wch: 20 }, { wch: 16 }];
+  XLSX.utils.book_append_sheet(wb, ws, 'Delivery Rates');
 
-  // Set column widths
-  ws['!cols'] = [
-    { wch: 22 }, { wch: 18 }, { wch: 16 },
-    { wch: 40 }, { wch: 18 }, { wch: 12 }, { wch: 22 },
-  ];
-
-  XLSX.utils.book_append_sheet(wb, ws, 'Destinations');
-
-  // Add a Notes sheet
   const notes = XLSX.utils.aoa_to_sheet([
     ['Column', 'Required', 'Allowed values / Notes'],
-    ['destination_name', 'YES', 'Name of the hub/branch, e.g. Imadol.'],
-    ['destination_code', 'no', 'Short code, e.g. IMD.'],
-    ['district', 'no', 'District of the destination.'],
-    ['covered_areas', 'no', 'Areas this branch covers, separated by commas - e.g. "Sanagaun, Gwarko, Lubhu".'],
-    ['zone', 'no', `Pricing zone: ${ZONE_VALUES.join(' | ')}.`],
-    ['valley', 'no', `Valley side: ${VALLEY_VALUES.join(' | ')}.`],
-    ['per_destination_rate', 'no', 'Delivery rate in NPR. Numeric only.'],
+    ['origin', 'YES', 'Destination name (or code) exactly as it appears in Settings > Destinations.'],
+    ['destination', 'YES', 'Destination name (or code). Must differ from origin.'],
+    ['base_charge', 'YES', 'Delivery charge in NPR for the route. Numeric, covers the free weight.'],
+    ['extra_weight_percent', 'no', 'Surcharge per extra kg as % of base charge (0-100). Defaults to 0.'],
+    ['free_weight_kg', 'no', 'Weight included in the base charge. Defaults to 2.'],
   ]);
   notes['!cols'] = [{ wch: 22 }, { wch: 10 }, { wch: 70 }];
   XLSX.utils.book_append_sheet(wb, notes, 'Notes');
 
-  XLSX.writeFile(wb, 'destinations_template.xlsx');
+  XLSX.writeFile(wb, 'delivery_rates_template.xlsx');
 }
 
 // ── Parser ────────────────────────────────────────────────────────────────────
 
 interface ParsedRow {
-  destinationName: string;
-  destinationCode: string;
-  district: string;
-  coveredAreas: string;
-  zone: string;
-  valley: string;
-  perDestinationRate: string;
+  origin: string;
+  destination: string;
+  baseCharge: string;
+  extraWeightPercent: string;
+  freeWeightKg: string;
   _rowIndex: number;
   _error?: string;
-}
-
-// "Sanagaun, Gwarko, Lubhu" → ["Sanagaun", "Gwarko", "Lubhu"]
-function splitAreas(value: string): string[] {
-  return value
-    .split(/[,;]/)
-    .map((a) => a.trim())
-    .filter(Boolean);
 }
 
 function parseSheet(raw: string[][]): ParsedRow[] {
   if (raw.length === 0) return [];
 
-  // Detect header row
   const firstRow = raw[0].map((c) => String(c ?? '').toLowerCase().replace(/[\s-]+/g, '_'));
-  const isHeader =
-    firstRow.includes('destination_name') || firstRow.some((h) => h.includes('destination'));
+  const isHeader = firstRow.includes('origin') || firstRow.includes('base_charge');
   const dataRows = isHeader ? raw.slice(1) : raw;
 
   return dataRows
     .map((cols, i): ParsedRow => {
       const get = (idx: number) => String(cols[idx] ?? '').trim();
       const errors: string[] = [];
-      const destName = get(0);
-      if (!destName) errors.push('destination_name is required');
 
-      const zone = get(4);
-      if (zone && !ZONE_VALUES.includes(zone)) {
-        errors.push(`zone must be one of: ${ZONE_VALUES.join(', ')}`);
+      const origin = get(0);
+      const destination = get(1);
+      if (!origin) errors.push('origin is required');
+      if (!destination) errors.push('destination is required');
+      if (origin && destination && origin.toLowerCase() === destination.toLowerCase()) {
+        errors.push('origin and destination must be different');
       }
-      const valley = get(5);
-      if (valley && !VALLEY_VALUES.includes(valley)) {
-        errors.push(`valley must be one of: ${VALLEY_VALUES.join(', ')}`);
+
+      const baseCharge = get(2);
+      if (!baseCharge) errors.push('base_charge is required');
+      else if (isNaN(Number(baseCharge)) || Number(baseCharge) < 0) {
+        errors.push('base_charge must be a non-negative number');
       }
-      const rateStr = get(6);
-      if (rateStr && isNaN(Number(rateStr))) {
-        errors.push('per_destination_rate must be a number');
+
+      const extraPercent = get(3);
+      if (extraPercent && (isNaN(Number(extraPercent)) || Number(extraPercent) < 0 || Number(extraPercent) > 100)) {
+        errors.push('extra_weight_percent must be a number between 0 and 100');
+      }
+      const freeWeight = get(4);
+      if (freeWeight && (isNaN(Number(freeWeight)) || Number(freeWeight) < 0)) {
+        errors.push('free_weight_kg must be a non-negative number');
       }
 
       return {
-        destinationName: destName,
-        destinationCode: get(1),
-        district: get(2),
-        coveredAreas: get(3),
-        zone,
-        valley,
-        perDestinationRate: rateStr,
+        origin,
+        destination,
+        baseCharge,
+        extraWeightPercent: extraPercent,
+        freeWeightKg: freeWeight,
         _rowIndex: i + (isHeader ? 2 : 1),
         _error: errors.length ? errors.join('; ') : undefined,
       };
     })
-    .filter((r) => r.destinationName || r._error);
+    .filter((r) => r.origin || r.destination || r._error);
 }
 
-function groupRows(rows: ParsedRow[]): BulkImportDestinationInput[] {
-  const map = new Map<string, BulkImportDestinationInput>();
-
-  for (const row of rows) {
-    if (row._error) continue;
-    const key = row.destinationName.toLowerCase();
-
-    if (!map.has(key)) {
-      map.set(key, {
-        name: row.destinationName,
-        code: row.destinationCode || undefined,
-        district: row.district || undefined,
-        zone: row.zone || undefined,
-        valley: row.valley || undefined,
-        perDestinationRate: row.perDestinationRate ? Number(row.perDestinationRate) : undefined,
-        areas: [],
-      });
-    }
-
-    // Duplicate rows for the same destination still merge their areas.
-    for (const area of splitAreas(row.coveredAreas)) {
-      const dest = map.get(key)!;
-      if (!dest.areas.some((a) => a.toLowerCase() === area.toLowerCase())) {
-        dest.areas.push(area);
-      }
-    }
-  }
-
-  return Array.from(map.values());
+function toApiRows(rows: ParsedRow[]): BulkImportRateRow[] {
+  return rows
+    .filter((r) => !r._error)
+    .map((r) => ({
+      origin: r.origin,
+      destination: r.destination,
+      baseCharge: Number(r.baseCharge),
+      ...(r.extraWeightPercent ? { extraWeightPercent: Number(r.extraWeightPercent) } : {}),
+      ...(r.freeWeightKg ? { freeWeightKg: Number(r.freeWeightKg) } : {}),
+    }));
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-const DestinationsImport: React.FC = () => {
+const DeliveryRatesImport: React.FC<{ onImported?: () => void }> = ({ onImported }) => {
   const fileRef = useRef<HTMLInputElement>(null);
   const [fileName, setFileName] = useState('');
   const [parsedRows, setParsedRows] = useState<ParsedRow[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
-  const [results, setResults] = useState<BulkImportResult[] | null>(null);
+  const [results, setResults] = useState<BulkImportRateResult[] | null>(null);
 
   const validRows = parsedRows.filter((r) => !r._error);
   const invalidRows = parsedRows.filter((r) => r._error);
-  const grouped = groupRows(validRows);
 
   const handleFile = (file: File) => {
     setFileName(file.name);
@@ -207,12 +167,14 @@ const DestinationsImport: React.FC = () => {
   };
 
   const handleSubmit = async () => {
-    if (grouped.length === 0) { setError('No valid destinations to import.'); return; }
+    const rows = toApiRows(validRows);
+    if (rows.length === 0) { setError('No valid rates to import.'); return; }
     setSubmitting(true);
     setError('');
     try {
-      const res = await bulkImportLocations(grouped);
+      const res = await bulkImportDeliveryRates(rows);
       setResults(res.data);
+      onImported?.();
     } catch (err: any) {
       setError(err?.response?.data?.message || err?.message || 'Import failed.');
     } finally {
@@ -225,7 +187,6 @@ const DestinationsImport: React.FC = () => {
     const created = results.filter((r) => r.action === 'created' && !r.error).length;
     const updated = results.filter((r) => r.action === 'updated' && !r.error).length;
     const errored = results.filter((r) => r.error).length;
-    const totalAreasCreated = results.reduce((s, r) => s + r.areasCreated.length, 0);
 
     return (
       <div className="di-result">
@@ -233,17 +194,12 @@ const DestinationsImport: React.FC = () => {
           <div className="di-stat di-stat--success">
             <CheckCircle2 size={26} />
             <span className="di-stat-num">{created}</span>
-            <span className="di-stat-label">Destinations created</span>
+            <span className="di-stat-label">Rates created</span>
           </div>
           <div className="di-stat di-stat--info">
             <CheckCircle2 size={26} />
             <span className="di-stat-num">{updated}</span>
-            <span className="di-stat-label">Destinations updated</span>
-          </div>
-          <div className="di-stat di-stat--success">
-            <CheckCircle2 size={26} />
-            <span className="di-stat-num">{totalAreasCreated}</span>
-            <span className="di-stat-label">Areas added</span>
+            <span className="di-stat-label">Rates updated</span>
           </div>
           {errored > 0 && (
             <div className="di-stat di-stat--fail">
@@ -257,15 +213,14 @@ const DestinationsImport: React.FC = () => {
         <div className="di-result-table-wrap">
           <table className="di-result-table">
             <thead>
-              <tr><th>Destination</th><th>Action</th><th>Areas added</th><th>Areas skipped</th><th>Error</th></tr>
+              <tr><th>Origin</th><th>Destination</th><th>Action</th><th>Error</th></tr>
             </thead>
             <tbody>
               {results.map((r, i) => (
                 <tr key={i} className={r.error ? 'di-row--error' : ''}>
+                  <td>{r.origin}</td>
                   <td>{r.destination}</td>
                   <td>{r.error ? '—' : r.action}</td>
-                  <td>{r.areasCreated.join(', ') || '—'}</td>
-                  <td className="di-muted">{r.areasSkipped.join(', ') || '—'}</td>
                   <td className="di-error-msg">{r.error || '—'}</td>
                 </tr>
               ))}
@@ -287,8 +242,8 @@ const DestinationsImport: React.FC = () => {
     <div className="di-container">
       <div className="di-head">
         <div>
-          <h2>Import Destinations &amp; Rates</h2>
-          <p>Upload an Excel or CSV file to bulk-create destinations, their covered areas, and delivery rates.</p>
+          <h2>Import Delivery Rates</h2>
+          <p>Upload an Excel or CSV file to bulk-create or update route rates. Rows reference destinations by name.</p>
         </div>
         <Button variant="outline" onClick={downloadTemplate}>
           <Download size={15} /> Download Template
@@ -328,11 +283,7 @@ const DestinationsImport: React.FC = () => {
           <div className="di-preview-head">
             <div>
               <h3>Sample file format</h3>
-              <p>
-                One row per branch. List everything the branch covers in <strong>covered_areas</strong>,
-                separated by commas — e.g. Imadol covers Sanagaun, Gwarko, Lubhu. The template comes
-                pre-filled with these example rows.
-              </p>
+              <p>First row is the header. The template comes pre-filled with these example rows.</p>
             </div>
           </div>
           <div className="di-preview-wrap">
@@ -360,8 +311,7 @@ const DestinationsImport: React.FC = () => {
             <div>
               <h3>Preview</h3>
               <p>
-                {parsedRows.length} row(s) — {validRows.length} valid, {invalidRows.length} with errors,
-                {' '}{grouped.length} unique destination(s)
+                {parsedRows.length} row(s) — {validRows.length} valid, {invalidRows.length} with errors
               </p>
             </div>
             {invalidRows.length > 0 && (
@@ -374,12 +324,11 @@ const DestinationsImport: React.FC = () => {
               <thead>
                 <tr>
                   <th>#</th>
+                  <th>Origin</th>
                   <th>Destination</th>
-                  <th>Code</th>
-                  <th>Covered Areas</th>
-                  <th>Zone</th>
-                  <th>Valley</th>
-                  <th>Rate</th>
+                  <th>Base Charge</th>
+                  <th>Extra %</th>
+                  <th>Free kg</th>
                   <th>Status</th>
                 </tr>
               </thead>
@@ -387,12 +336,11 @@ const DestinationsImport: React.FC = () => {
                 {parsedRows.map((row, i) => (
                   <tr key={i} className={row._error ? 'di-row--error' : 'di-row--ok'}>
                     <td className="di-cell-num">{row._rowIndex}</td>
-                    <td>{row.destinationName || <span className="di-empty">—</span>}</td>
-                    <td>{row.destinationCode || <span className="di-empty">—</span>}</td>
-                    <td>{splitAreas(row.coveredAreas).join(', ') || <span className="di-empty">—</span>}</td>
-                    <td>{row.zone || <span className="di-empty">—</span>}</td>
-                    <td>{row.valley || <span className="di-empty">—</span>}</td>
-                    <td>{row.perDestinationRate || <span className="di-empty">—</span>}</td>
+                    <td>{row.origin || <span className="di-empty">—</span>}</td>
+                    <td>{row.destination || <span className="di-empty">—</span>}</td>
+                    <td>{row.baseCharge || <span className="di-empty">—</span>}</td>
+                    <td>{row.extraWeightPercent || <span className="di-empty">—</span>}</td>
+                    <td>{row.freeWeightKg || <span className="di-empty">—</span>}</td>
                     <td>
                       {row._error ? (
                         <span className="di-status di-status--error" title={row._error}>
@@ -417,16 +365,16 @@ const DestinationsImport: React.FC = () => {
       <div className="di-actions">
         <Button
           variant="primary"
-          disabled={submitting || grouped.length === 0}
+          disabled={submitting || validRows.length === 0}
           onClick={handleSubmit}
         >
           {submitting
             ? 'Importing…'
-            : `Import ${grouped.length} Destination${grouped.length !== 1 ? 's' : ''}`}
+            : `Import ${validRows.length} Rate${validRows.length !== 1 ? 's' : ''}`}
         </Button>
       </div>
     </div>
   );
 };
 
-export default DestinationsImport;
+export default DeliveryRatesImport;

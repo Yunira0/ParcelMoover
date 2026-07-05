@@ -6,6 +6,7 @@ import Table from '../Table';
 import StatusChip, { type StatusChipTone } from '../StatusChip';
 import type { Order, ParcelStatus } from '../../services/orders.service';
 import { getOrders } from '../../services/orders.service';
+import { toBsDateLabel } from '../../utils/nepaliDate';
 import './VendorOrderDetails.css';
 
 type DetailsTab = 'all' | 'delivered' | 'return';
@@ -16,7 +17,7 @@ const formatMoney = (value: number) => `Rs. ${value.toLocaleString(undefined, { 
 const formatDate = (value: string) => {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' });
+  return toBsDateLabel(date);
 };
 
 const formatStatusLabel = (status: ParcelStatus) =>

@@ -1,6 +1,7 @@
 import React, { useRef, useEffect } from 'react';
 import { MessageSquare, Reply } from 'lucide-react';
 import type { OrderRemark } from '../../services/orders.service';
+import { toBsDate } from '../../utils/nepaliDate';
 
 interface OrderRemarksProps {
   remarks: OrderRemark[];
@@ -33,9 +34,7 @@ function formatTime(dateStr: string): string {
   if (!dateStr) return '';
   // Server sends date-only strings like "2024-01-15" (no time component)
   if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
-    return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-US', {
-      month: 'short', day: 'numeric', year: 'numeric',
-    });
+    return toBsDate(dateStr);
   }
   const date = new Date(dateStr);
   const now = new Date();
@@ -48,7 +47,7 @@ function formatTime(dateStr: string): string {
   if (diffMins < 60) return `${diffMins}m ago`;
   if (diffHours < 24) return `${diffHours}h ago`;
   if (diffDays < 7) return `${diffDays}d ago`;
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return toBsDate(date);
 }
 
 const OrderRemarks: React.FC<OrderRemarksProps> = ({ remarks, onReply, highlightedRemarkId }) => {

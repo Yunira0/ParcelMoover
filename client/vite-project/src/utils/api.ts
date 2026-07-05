@@ -11,6 +11,10 @@ function getCookie(name: string): string | null {
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || '/api',
   withCredentials: true,
+  // Without this, axios waits forever by default - a stuck backend request
+  // (e.g. a rate-limit check hanging on an unreachable Redis) would leave the
+  // UI spinning indefinitely with no error ever surfacing.
+  timeout: 20000,
   headers: {
     'Content-Type': 'application/json',
   },

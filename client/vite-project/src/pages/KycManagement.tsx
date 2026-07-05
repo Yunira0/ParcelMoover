@@ -11,6 +11,7 @@ import {
   rejectKyc,
   type KycApplication,
 } from '../services/kyc.service';
+import { toBsDate } from '../utils/nepaliDate';
 import './KycManagement.css';
 
 type StatusFilter = 'all' | 'pending' | 'approved' | 'rejected';
@@ -139,7 +140,7 @@ const KycManagement: React.FC = () => {
         {a.status.charAt(0).toUpperCase() + a.status.slice(1)}
       </StatusChip>
     ), width: '100px' },
-    { header: 'Submitted', accessor: (a: KycApplication) => new Date(a.createdAt).toLocaleDateString(), width: '110px' },
+    { header: 'Submitted', accessor: (a: KycApplication) => toBsDate(a.createdAt), width: '110px' },
     { header: '', accessor: (a: KycApplication) => (
       <button className="kyc-view-btn" onClick={() => openDetail(a)} title="View details">
         <Eye size={15} />

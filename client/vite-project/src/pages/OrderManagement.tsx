@@ -18,6 +18,7 @@ import Pagination from '../components/Pagination';
 import StatusChip, { type StatusChipTone } from '../components/StatusChip';
 import FilterDropdown from '../components/FilterDropdown';
 import QuickRemarkPopup from '../components/QuickRemarkPopup';
+import { toBsDate } from '../utils/nepaliDate';
 import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react';
 import {
   getOrders,
@@ -56,32 +57,34 @@ const STATUS_LABELS: Record<ParcelStatus, string> = {
 
 type FilterTab =
   | 'all'
-  | 'pickup_order'
   | 'ready_to_pick'
   | 'inprogress'
   | 'delivered'
   | 'failed'
+  | 'return_process'
   | 'rtv'
   | 'cancelled';
 
 const TAB_GROUPS: Record<FilterTab, ParcelStatus[]> = {
   all: [],
-  pickup_order: ['pickup_ordered'],
-  ready_to_pick: ['rider_assigned'],
+  // Everything still waiting to be picked up: ordered + rider assigned.
+  ready_to_pick: ['pickup_ordered', 'rider_assigned'],
   inprogress: ['picked_up', 'arrived', 'ready_to_deliver', 'sent_for_delivery', 'oov', 'dispatched', 'arrived_at_branch', 'hold'],
   delivered: ['delivered'],
   failed: ['failed_pickup', 'failed_delivery', 'loss_and_damage'],
+  // Returns still being worked: not yet handed back to the vendor.
+  return_process: ['follow_up', 'ready_to_return', 'sent_to_vendor'],
   rtv: ['failed_delivery', 'follow_up', 'ready_to_return', 'sent_to_vendor', 'returned_to_vendor'],
   cancelled: ['cancelled'],
 };
 
 const TAB_LABELS: Record<FilterTab, string> = {
   all: 'All',
-  pickup_order: 'Pickup order',
   ready_to_pick: 'Ready to pick',
   inprogress: 'Inprogress',
   delivered: 'Delivered',
   failed: 'Failed',
+  return_process: 'Return process',
   rtv: 'RTV',
   cancelled: 'Cancelled',
 };
@@ -118,7 +121,9 @@ interface SecondaryFilters {
   destinationHub: string;
   currentStatus: string;
   orderType: string;
-  dateRange: string;
+  /** Inclusive AD dates (YYYY-MM-DD) compared against order.createdAt. */
+  dateFrom: string;
+  dateTo: string;
   vendor: string;
   operationDept: string;
 }
@@ -128,17 +133,11 @@ interface SecondaryFilters {
 // whatever page the server already returned for the active tab + search.
 const matchesSecondaryFilters = (order: Order, filters: SecondaryFilters) => {
   const orderRoute = `${order.origin} -> ${order.destination}`;
-  const created = new Date(order.createdAt);
-  const now = new Date();
-  const daysOld = Number.isNaN(created.getTime())
-    ? Number.POSITIVE_INFINITY
-    : Math.floor((now.getTime() - created.getTime()) / 86_400_000);
-
-  const matchesDate =
-    !filters.dateRange ||
-    (filters.dateRange === 'today' && daysOld === 0) ||
-    (filters.dateRange === '7' && daysOld <= 7) ||
-    (filters.dateRange === '30' && daysOld <= 30);
+  // createdAt is a Nepal-local "YYYY-MM-DD" string, so an inclusive range
+  // check is a plain lexicographic comparison - no timezone math needed.
+  const matchesDateSpan =
+    (!filters.dateFrom || order.createdAt >= filters.dateFrom) &&
+    (!filters.dateTo || order.createdAt <= filters.dateTo);
   const matchesOperation =
     !filters.operationDept ||
     (filters.operationDept === 'pickup' && ['pickup_ordered', 'rider_assigned', 'picked_up'].includes(order.status)) ||
@@ -151,7 +150,7 @@ const matchesSecondaryFilters = (order: Order, filters: SecondaryFilters) => {
     (!filters.destinationHub || order.destination === filters.destinationHub) &&
     (!filters.currentStatus || order.status === filters.currentStatus) &&
     (!filters.orderType || order.orderType === filters.orderType) &&
-    matchesDate &&
+    matchesDateSpan &&
     (!filters.vendor || (order.vendorName || order.senderName) === filters.vendor) &&
     matchesOperation;
 };
@@ -196,7 +195,8 @@ const OrderManagement: React.FC = () => {
   const [destinationHub, setDestinationHub] = useState(() => searchParams.get('destinationHub') || '');
   const [currentStatus, setCurrentStatus] = useState(() => searchParams.get('currentStatus') || '');
   const [orderType, setOrderType] = useState(() => searchParams.get('orderType') || '');
-  const [dateRange, setDateRange] = useState(() => searchParams.get('dateRange') || '');
+  const [dateFrom, setDateFrom] = useState(() => searchParams.get('dateFrom') || '');
+  const [dateTo, setDateTo] = useState(() => searchParams.get('dateTo') || '');
   const [vendor, setVendor] = useState(() => searchParams.get('vendor') || '');
   const [operationDept, setOperationDept] = useState(() => searchParams.get('operationDept') || '');
   const [page, setPage] = useState(1);
@@ -224,7 +224,7 @@ const OrderManagement: React.FC = () => {
   };
 
   const secondaryFilters: SecondaryFilters = {
-    originHub, riderName, route, destinationHub, currentStatus, orderType, dateRange, vendor, operationDept,
+    originHub, riderName, route, destinationHub, currentStatus, orderType, dateFrom, dateTo, vendor, operationDept,
   };
   const hasSecondaryFilters = Object.values(secondaryFilters).some(Boolean);
 
@@ -259,7 +259,7 @@ const OrderManagement: React.FC = () => {
 
   useEffect(() => { loadOrders(); }, [loadOrders]);
   useEffect(() => subscribeToOrderStatusChanged(loadOrders), [loadOrders]);
-  useEffect(() => { setPage(1); }, [filter, debouncedSearch, originHub, riderName, route, destinationHub, currentStatus, orderType, dateRange, vendor, operationDept, sortBy, sortDir]);
+  useEffect(() => { setPage(1); }, [filter, debouncedSearch, originHub, riderName, route, destinationHub, currentStatus, orderType, dateFrom, dateTo, vendor, operationDept, sortBy, sortDir]);
   // Re-sync when the navbar search re-navigates here with a new ?search= param.
   useEffect(() => {
     const fromUrl = searchParams.get('search');
@@ -279,14 +279,15 @@ const OrderManagement: React.FC = () => {
     if (destinationHub) next.set('destinationHub', destinationHub);
     if (currentStatus) next.set('currentStatus', currentStatus);
     if (orderType) next.set('orderType', orderType);
-    if (dateRange) next.set('dateRange', dateRange);
+    if (dateFrom) next.set('dateFrom', dateFrom);
+    if (dateTo) next.set('dateTo', dateTo);
     if (vendor) next.set('vendor', vendor);
     if (operationDept) next.set('operationDept', operationDept);
     if (sortBy) next.set('sortBy', sortBy);
     if (sortDir !== 'desc') next.set('sortDir', sortDir);
     setSearchParams(next, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filter, trackingSearch, originHub, riderName, route, destinationHub, currentStatus, orderType, dateRange, vendor, operationDept, sortBy, sortDir]);
+  }, [filter, trackingSearch, originHub, riderName, route, destinationHub, currentStatus, orderType, dateFrom, dateTo, vendor, operationDept, sortBy, sortDir]);
 
   // A separate, tab-scoped (unsearched, unpaginated) fetch purely to keep the
   // filter dropdown option lists representative - the paginated `orders` above
@@ -322,7 +323,7 @@ const OrderManagement: React.FC = () => {
   const filteredOrders = useMemo(
     () => orders.filter(order => matchesSecondaryFilters(order, secondaryFilters)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [orders, originHub, riderName, route, destinationHub, currentStatus, orderType, dateRange, vendor, operationDept],
+    [orders, originHub, riderName, route, destinationHub, currentStatus, orderType, dateFrom, dateTo, vendor, operationDept],
   );
 
   const totalPages = meta?.totalPages ?? 1;
@@ -359,7 +360,8 @@ const OrderManagement: React.FC = () => {
     setDestinationHub('');
     setCurrentStatus('');
     setOrderType('');
-    setDateRange('');
+    setDateFrom('');
+    setDateTo('');
     setVendor('');
     setOperationDept('');
   };
@@ -427,7 +429,7 @@ const OrderManagement: React.FC = () => {
       order.riderName || '',
       order.remarks || '',
       order.lastUpdatedBy || '',
-      order.lastUpdatedAt || '',
+      toBsDate(order.lastUpdatedAt) || '',
     ]);
     const csv = [headers, ...rows]
       .map(row => row.map(value => `"${String(value).replace(/"/g, '""')}"`).join(','))
@@ -522,7 +524,7 @@ const OrderManagement: React.FC = () => {
       accessor: (order: Order) => (
         <div className="updated-cell">
           <span>{order.lastUpdatedBy || 'Name'}</span>
-          <span>{order.lastUpdatedAt || 'date'}</span>
+          <span>{toBsDate(order.lastUpdatedAt) || 'date'}</span>
         </div>
       ),
       width: '160px',
@@ -618,17 +620,26 @@ const OrderManagement: React.FC = () => {
             { value: 'return', label: 'Return' },
           ]}
         />
-        <FilterDropdown
-          label="DATE RANGE"
-          value={dateRange}
-          onChange={setDateRange}
-          placeholder="17/05/2026"
-          options={[
-            { value: 'today', label: 'Today' },
-            { value: '7', label: 'Last 7 days' },
-            { value: '30', label: 'Last 30 days' },
-          ]}
-        />
+        <label aria-label="Created from date">
+          <span>FROM DATE</span>
+          <input
+            type="date"
+            className="order-date-input"
+            value={dateFrom}
+            max={dateTo || undefined}
+            onChange={e => setDateFrom(e.target.value)}
+          />
+        </label>
+        <label aria-label="Created to date">
+          <span>TO DATE</span>
+          <input
+            type="date"
+            className="order-date-input"
+            value={dateTo}
+            min={dateFrom || undefined}
+            onChange={e => setDateTo(e.target.value)}
+          />
+        </label>
         <FilterDropdown
           label="VENDOR"
           value={vendor}

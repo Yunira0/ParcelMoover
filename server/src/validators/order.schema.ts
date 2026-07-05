@@ -29,6 +29,12 @@ export const PARCEL_STATUSES = [
   "failed_pickup",
   "failed_delivery",
   "cancelled",
+  // Return-to-vendor workflow stages — must stay in sync with the parcel_status
+  // DB enum and STATUS_TRANSITIONS, or the RTO pages get 400s from validation.
+  "follow_up",
+  "ready_to_return",
+  "sent_to_vendor",
+  "returned_to_vendor",
 ] as const;
 
 // ── Sub-schemas ───────────────────────────────────────────────────────────────
@@ -129,6 +135,20 @@ export const listOrdersQuerySchema = paginationQuerySchema.extend({
 });
 
 export type ListOrdersQuery = z.infer<typeof listOrdersQuerySchema>;
+
+// ── Rider run sheet (query params) ───────────────────────────────────────────
+
+export const runSheetQuerySchema = z.object({
+  // Optional: narrow the list to a single rider.
+  riderId: optionalUuidSchema,
+  // Optional: which Nepal-local day to list sheets for (defaults to today).
+  date: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "date must be in YYYY-MM-DD format")
+    .optional(),
+});
+
+export type RunSheetQuery = z.infer<typeof runSheetQuerySchema>;
 
 // ── Add remark to an order ────────────────────────────────────────────────────
 

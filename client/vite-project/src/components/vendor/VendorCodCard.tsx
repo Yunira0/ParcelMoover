@@ -1,6 +1,7 @@
 import React from 'react';
 import { Banknote } from 'lucide-react';
 import type { DashboardSummary } from '../../services/orders.service';
+import { toBsDateLabel } from '../../utils/nepaliDate';
 import './VendorCodCard.css';
 
 interface VendorCodCardProps {
@@ -14,7 +15,7 @@ const formatSettledDate = (value: string | null) => {
   if (!value) return 'No settlements yet';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+  return `${date.toLocaleDateString(undefined, { weekday: 'short' })}, ${toBsDateLabel(date)}`;
 };
 
 const VendorCodCard: React.FC<VendorCodCardProps> = ({ data, loading = false }) => (

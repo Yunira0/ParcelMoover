@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Plus } from 'lucide-react';
+import { Plus, Upload } from 'lucide-react';
+import DeliveryRatesImport from './DeliveryRatesImport';
 import Table from '../components/Table';
 import FormField from '../components/FormField';
 import PageHeader from '../components/PageHeader';
@@ -45,6 +46,7 @@ const DeliveryRateSettings: React.FC = () => {
   const [locations, setLocations] = useState<{ id: string; name: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const [form, setForm] = useState(defaultFormState);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [generalError, setGeneralError] = useState('');
@@ -166,10 +168,21 @@ const DeliveryRateSettings: React.FC = () => {
         subtitle="Configure the base delivery charge and extra-weight surcharge per route."
         actionLabel="Add Rate"
         actionIcon={<Plus size={16} />}
-        onAction={() => setShowForm(v => !v)}
+        onAction={() => { setShowForm(v => !v); setShowImport(false); }}
       />
 
-      {showForm && (
+      <div className="delivery-rate-toolbar">
+        <Button
+          variant={showImport ? 'primary' : 'secondary'}
+          onClick={() => { setShowImport(v => !v); setShowForm(false); }}
+        >
+          <Upload size={15} /> {showImport ? 'Close Import' : 'Import from Excel'}
+        </Button>
+      </div>
+
+      {showImport && <DeliveryRatesImport onImported={loadRates} />}
+
+      {!showImport && showForm && (
         <form className="delivery-rate-form" onSubmit={handleSave}>
           <div className="delivery-rate-form-row">
             <FormField
@@ -232,14 +245,16 @@ const DeliveryRateSettings: React.FC = () => {
         </form>
       )}
 
-      <Table
-        columns={columns}
-        data={rates}
-        selectable={false}
-        loading={loading}
-        loadingMessage="Loading delivery rates..."
-        emptyMessage="No delivery rates configured yet."
-      />
+      {!showImport && (
+        <Table
+          columns={columns}
+          data={rates}
+          selectable={false}
+          loading={loading}
+          loadingMessage="Loading delivery rates..."
+          emptyMessage="No delivery rates configured yet."
+        />
+      )}
     </div>
   );
 };

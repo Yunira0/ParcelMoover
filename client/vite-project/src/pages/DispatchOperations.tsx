@@ -14,9 +14,9 @@ import PageHeader from '../components/PageHeader';
 import Pagination from '../components/Pagination';
 import StatusChip, { type StatusChipTone } from '../components/StatusChip';
 import {
+  bulkUpdateOrderStatus,
   getOrders,
   subscribeToOrderStatusChanged,
-  updateOrderStatus,
   type Order,
   type OrdersPageMeta,
   type ParcelStatus,
@@ -280,14 +280,13 @@ const DispatchOperations: React.FC = () => {
 
     setStatusUpdating(true);
     try {
-      await Promise.all(
-        selectedOrders.map(order => updateOrderStatus(
-          order.id,
-          effectiveNextStatus,
-          undefined,
-          undefined,
-          isRiderAssignAction ? riderId : undefined,
-        )),
+      // One bulk call instead of N singles: the whole selection succeeds or
+      // fails together, and a rider hand-off opens a single run sheet for the
+      // batch rather than one sheet per parcel.
+      await bulkUpdateOrderStatus(
+        selectedOrders.map(order => order.id),
+        effectiveNextStatus,
+        isRiderAssignAction ? { riderId } : undefined,
       );
       await loadDispatches();
 

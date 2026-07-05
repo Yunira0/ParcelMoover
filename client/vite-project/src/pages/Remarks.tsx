@@ -14,6 +14,7 @@ import {
   type Remark,
   type RemarkStatus,
 } from '../services/remarks.service';
+import { toBsDate } from '../utils/nepaliDate';
 import './Remarks.css';
 
 const PAGE_SIZE = 10;
@@ -204,7 +205,7 @@ const Remarks: React.FC = () => {
       width: '140px',
     },
     { header: 'ADDED BY', accessor: (remark: Remark) => remark.addedBy, width: '140px' },
-    { header: 'CREATED AT', accessor: (remark: Remark) => remark.createdAt, width: '110px' },
+    { header: 'CREATED AT', accessor: (remark: Remark) => toBsDate(remark.createdAt), width: '110px' },
     {
       header: 'ACTION',
       accessor: (remark: Remark) => (
