@@ -306,7 +306,7 @@ export async function bulkUpdateOrderStatusController(req: Request, res: Respons
       });
     }
 
-    const { ids, status, remarks, toLocationId, riderId } = req.body;
+    const { ids, status, remarks, toLocationId, riderId, codCollected } = req.body;
 
     if (!Array.isArray(ids) || ids.length === 0) {
       return res.status(400).json({
@@ -355,7 +355,7 @@ export async function bulkUpdateOrderStatusController(req: Request, res: Respons
       async () => {
         const result = await bulkUpdateParcelStatus(
           { id: req.user!.id, roles: req.user!.roles },
-          { ids, status: status as ParcelStatus, remarks, toLocationId, riderId },
+          { ids, status: status as ParcelStatus, remarks, toLocationId, riderId, codCollected },
         );
 
         const responseBody = {
@@ -466,7 +466,7 @@ export async function updateOrderStatusController(req: Request, res: Response) {
         message: "Unauthorized",
       });
     }
-    const { status, locationId, remarks, riderId } = req.body;
+    const { status, locationId, remarks, riderId, codCollected } = req.body;
     if (!status) {
       return res.status(400).json({
         success: false,
@@ -506,7 +506,7 @@ export async function updateOrderStatusController(req: Request, res: Response) {
         const parcel = await updateParcelStatus(
           { id: req.user!.id, roles: req.user!.roles },
           rawId,
-          { status, locationId, remarks, riderId },
+          { status, locationId, remarks, riderId, codCollected },
         );
 
         const responseBody = {

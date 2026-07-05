@@ -173,6 +173,7 @@ const OPEN_STATUSES: parcel_status[] = [
   "arrived",
   "ready_to_deliver",
   "sent_for_delivery",
+  "partially_delivered",
   "oov",
   "dispatched",
   "arrived_at_branch",
@@ -881,7 +882,7 @@ export async function getRiderRunSheet(
 
   const mapped = sheets.map((sheet) => {
     const parcels = sheet.run_sheet_parcels.map((link) => mapRunSheetParcel(link.parcels));
-    const delivered = parcels.filter((p) => p.status === "delivered");
+    const delivered = parcels.filter((p) => p.status === "delivered" || p.status === "partially_delivered");
     // Latest movement on the sheet = the newest status change among its parcels.
     const lastParcelUpdate = sheet.run_sheet_parcels.reduce<Date | null>(
       (latest, link) =>
@@ -1175,7 +1176,7 @@ export async function getDashboardSummary(actor: OrderActor) {
       where: { ...parcelWhere, status: { in: DELIVERY_PENDING_STATUSES } },
     }),
     prisma.parcels.count({
-      where: { ...parcelWhere, status: "delivered" },
+      where: { ...parcelWhere, status: { in: ["delivered", "partially_delivered"] } },
     }),
     prisma.parcels.count({
       where: {
@@ -1192,7 +1193,7 @@ export async function getDashboardSummary(actor: OrderActor) {
     prisma.parcels.count({
       where: {
         ...parcelWhere,
-        status: "delivered",
+        status: { in: ["delivered", "partially_delivered"] },
         delivered_at: { gte: todayStart },
       },
     }),
@@ -1458,6 +1459,20 @@ async function _updateParcelStatusImpl(
     await resolveActiveRider(data.riderId);
   }
 
+  // Validate partially_delivered requirements
+  if (newStatus === "partially_delivered") {
+    if (!data.remarks || data.remarks.trim().length === 0) {
+      throw new AppError(400, "Remarks are required when status is partially_delivered");
+    }
+    if (data.codCollected === undefined || data.codCollected < 0) {
+      throw new AppError(400, "COD collected is required and must be non-negative when status is partially_delivered");
+    }
+    const totalCod = Number(parcel.cod_amount);
+    if (data.codCollected > totalCod) {
+      throw new AppError(400, `COD collected (${data.codCollected}) cannot exceed parcel's total COD (${totalCod})`);
+    }
+  }
+
   const updatedParcel = await prisma.$transaction(async (tx) => {
     const updateData: Prisma.parcelsUpdateInput = {
       status: newStatus as parcel_status,
@@ -1465,6 +1480,12 @@ async function _updateParcelStatusImpl(
     // Side-effect: set delivered_at timestamp
     if (newStatus === "delivered") {
       (updateData as any).delivered_at = new Date();
+    }
+    // Side-effect: set delivered_at and store partial delivery data
+    if (newStatus === "partially_delivered") {
+      (updateData as any).delivered_at = new Date();
+      (updateData as any).partial_delivery_remarks = data.remarks || null;
+      (updateData as any).partial_cod_collected = data.codCollected ?? 0;
     }
     // Side-effect: update current_location_id
     if (data.locationId) {
@@ -1678,6 +1699,23 @@ async function _bulkUpdateParcelStatusImpl(
     parcelRiderId = rider.id;
   }
 
+  // Validate partially_delivered requirements
+  if (newStatus === "partially_delivered") {
+    if (!data.remarks || data.remarks.trim().length === 0) {
+      throw new AppError(400, "Remarks are required when status is partially_delivered");
+    }
+    if (data.codCollected === undefined || data.codCollected < 0) {
+      throw new AppError(400, "COD collected is required and must be non-negative when status is partially_delivered");
+    }
+    // Validate codCollected doesn't exceed any parcel's total COD
+    for (const parcel of parcels) {
+      const totalCod = Number(parcel.cod_amount);
+      if (data.codCollected > totalCod) {
+        throw new AppError(400, `COD collected (${data.codCollected}) cannot exceed parcel ${parcel.tracking_id}'s total COD (${totalCod})`);
+      }
+    }
+  }
+
   const result = await prisma.$transaction(async (tx) => {
     let dispatch: { id: string; dispatch_no: string } | null = null;
 
@@ -1700,6 +1738,11 @@ async function _bulkUpdateParcelStatusImpl(
     const updateData: Prisma.parcelsUpdateInput = { status: newStatus as parcel_status };
     if (newStatus === "delivered") {
       (updateData as any).delivered_at = new Date();
+    }
+    if (newStatus === "partially_delivered") {
+      (updateData as any).delivered_at = new Date();
+      (updateData as any).partial_delivery_remarks = data.remarks || null;
+      (updateData as any).partial_cod_collected = data.codCollected ?? 0;
     }
     if (toLocationId) {
       (updateData as any).current_location_id = toLocationId;

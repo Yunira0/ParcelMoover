@@ -10,31 +10,34 @@ const STATUS_LABELS: Record<ParcelStatus, string> = {
   pickup_ordered:    'Pickup Ordered',
   rider_assigned:    'Rider Assigned',
   picked_up:         'Picked Up',
-  arrived:           'Arrived at Hub',
+  arrived:           'Arrived at Origin',
   ready_to_deliver:  'Ready to Deliver',
   sent_for_delivery: 'Out for Delivery',
   oov:               'Out of Vicinity',
   dispatched:        'Dispatched',
-  arrived_at_branch: 'Arrived at Branch',
+  arrived_at_branch: 'Arrived at Destination',
   hold:              'On Hold',
   loss_and_damage:   'Loss & Damage',
   delivered:         'Delivered',
+  partially_delivered: 'Partially Delivered',
   failed_pickup:     'Failed Pickup',
   failed_delivery:   'Failed Delivery',
   cancelled:         'Cancelled',
 }
 
-const ACTION_META: Record<string, { label: string; icon: typeof CheckCheck; danger?: boolean }> = {
+const ACTION_META: Record<string, { label: string; icon: typeof CheckCheck; danger?: boolean; partial?: boolean }> = {
   picked_up:         { label: 'Confirm Pickup',          icon: Truck      },
-  arrived:           { label: 'Mark Arrived at Hub',     icon: Building2  },
-  arrived_at_branch: { label: 'Arrived at Branch',       icon: Building2  },
+  arrived:           { label: 'Mark Arrived at Origin',  icon: Building2  },
+  arrived_at_branch: { label: 'Arrived at Destination',  icon: Building2  },
   delivered:         { label: 'Mark as Delivered',       icon: CheckCheck },
+  partially_delivered: { label: 'Mark Partial Delivery', icon: CheckCheck, partial: true },
   failed_pickup:     { label: 'Report Failed Pickup',    icon: XCircle,   danger: true },
   failed_delivery:   { label: 'Report Failed Delivery',  icon: XCircle,   danger: true },
 }
 
 const STATUS_PILL: Record<string, string> = {
   delivered:         'text-success bg-success/10',
+  partially_delivered: 'text-yellow-400 bg-yellow-400/10',
   picked_up:         'text-brand bg-brand-dim',
   arrived:           'text-blue-400 bg-blue-400/10',
   arrived_at_branch: 'text-blue-400 bg-blue-400/10',
@@ -57,6 +60,7 @@ export default function ParcelActionSheet({ parcel, onClose, onDone }: Props) {
   const [loading,    setLoading]    = useState(false)
   const [done,       setDone]       = useState<ParcelStatus | null>(null)
   const [error,      setError]      = useState('')
+  const [partialCodCollected, setPartialCodCollected] = useState('')
 
   const nextStatuses = RIDER_TRANSITIONS[parcel.status] ?? []
   const pillClass    = STATUS_PILL[parcel.status] ?? 'text-text-secondary bg-surface-2'
@@ -65,7 +69,27 @@ export default function ParcelActionSheet({ parcel, onClose, onDone }: Props) {
     setLoading(true)
     setError('')
     try {
-      await updateParcelStatus(parcel.id, status, remarks || undefined)
+      if (status === 'partially_delivered') {
+        if (!remarks.trim()) {
+          setError('Remarks are required for partial delivery.')
+          setLoading(false)
+          return
+        }
+        const codValue = parseFloat(partialCodCollected)
+        if (isNaN(codValue) || codValue < 0) {
+          setError('COD collected must be non-negative.')
+          setLoading(false)
+          return
+        }
+        if (parcel.codAmount && codValue > parcel.codAmount) {
+          setError(`COD collected (${codValue}) cannot exceed parcel COD (${parcel.codAmount}).`)
+          setLoading(false)
+          return
+        }
+        await updateParcelStatus(parcel.id, status, remarks, codValue)
+      } else {
+        await updateParcelStatus(parcel.id, status, remarks || undefined)
+      }
       setDone(status)
       navigator.vibrate?.(80)
       setTimeout(onDone, 2000)
@@ -190,7 +214,7 @@ export default function ParcelActionSheet({ parcel, onClose, onDone }: Props) {
         )}
 
         {/* Remarks input for destructive actions */}
-        {remarksFor && !done && (
+        {remarksFor && !done && remarksFor !== 'partially_delivered' && (
           <div className="flex flex-col gap-2">
             <label className="text-sm font-medium text-text-secondary">
               Remarks <span className="text-text-muted">(optional)</span>
@@ -205,6 +229,46 @@ export default function ParcelActionSheet({ parcel, onClose, onDone }: Props) {
           </div>
         )}
 
+        {/* Partial delivery form */}
+        {remarksFor === 'partially_delivered' && !done && (
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-1.5">
+              <label className="text-sm font-medium text-text-secondary">
+                Remarks <span className="text-error">*</span>
+              </label>
+              <textarea
+                rows={3}
+                value={remarks}
+                onChange={e => setRemarks(e.target.value)}
+                placeholder="Reason for partial delivery…"
+                className="w-full bg-surface-2 border border-border rounded-2xl px-4 py-3 text-sm text-text-primary placeholder:text-text-muted outline-none focus:ring-2 focus:ring-brand/40 focus:border-brand resize-none"
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-sm font-medium text-text-secondary">
+                COD Collected <span className="text-error">*</span>
+              </label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={partialCodCollected}
+                onChange={e => setPartialCodCollected(e.target.value)}
+                placeholder="Amount collected"
+                className="w-full bg-surface-2 border border-border rounded-2xl px-4 py-3 text-sm text-text-primary placeholder:text-text-muted outline-none focus:ring-2 focus:ring-brand/40 focus:border-brand"
+              />
+            </div>
+            <button
+              onClick={() => confirmAction('partially_delivered')}
+              disabled={loading || !remarks.trim() || !partialCodCollected}
+              style={{ touchAction: 'manipulation' }}
+              className="flex items-center justify-center gap-2 h-12 rounded-2xl bg-yellow-500 text-white text-sm font-semibold cursor-pointer active:opacity-80 disabled:opacity-50"
+            >
+              {loading ? <RefreshCw size={16} className="animate-spin" /> : <><CheckCheck size={16} /> Confirm Partial Delivery</>}
+            </button>
+          </div>
+        )}
+
         {/* Action buttons */}
         {!done && nextStatuses.length > 0 && (
           <div className="flex flex-col gap-3 pt-1">
@@ -213,7 +277,28 @@ export default function ParcelActionSheet({ parcel, onClose, onDone }: Props) {
               if (!meta) return null
               const Icon     = meta.icon
               const isDanger = !!meta.danger
+              const isPartial = !!meta.partial
               const selected = remarksFor === status
+
+              // Skip partial delivery here - it has its own form above
+              if (isPartial) {
+                if (!selected) {
+                  return (
+                    <button key={status}
+                      onClick={() => { setRemarksFor(status as ParcelStatus); setError('') }}
+                      style={{ touchAction: 'manipulation' }}
+                      className="flex items-center justify-between h-12 rounded-2xl px-4 border border-yellow-500/30 bg-yellow-500/8 text-yellow-500 cursor-pointer active:opacity-70 transition-opacity"
+                    >
+                      <div className="flex items-center gap-3">
+                        <Icon size={17} />
+                        <span className="text-sm font-semibold">{meta.label}</span>
+                      </div>
+                      <ChevronRight size={15} className="opacity-50" />
+                    </button>
+                  )
+                }
+                return null // Form is rendered above
+              }
 
               if (isDanger && !selected) {
                 return (

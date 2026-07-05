@@ -34,14 +34,15 @@ const STATUS_LABELS: Partial<Record<ParcelStatus, string>> = {
   pickup_ordered: 'Pickup Ordered',
   rider_assigned: 'Rider Assigned',
   picked_up: 'Picked Up',
-  arrived: 'Arrived',
+  arrived: 'Arrived at Origin',
   ready_to_deliver: 'Ready to Deliver',
   sent_for_delivery: 'In Transit',
   oov: 'Transit',
   dispatched: 'Dispatched',
-  arrived_at_branch: 'Arrived',
+  arrived_at_branch: 'Arrived at Destination',
   hold: 'On Hold',
   delivered: 'Delivered',
+  partially_delivered: 'Partially Delivered',
   failed_delivery: 'Failed Delivery',
   follow_up: 'Follow Up',
   ready_to_return: 'Ready to Return',
@@ -53,7 +54,7 @@ const STATUS_LABELS: Partial<Record<ParcelStatus, string>> = {
 // Type 2 (RTO of a failed delivery) maps by its real status; Type 1 (an
 // order_type='return' reverse shipment) maps by where it is in its lifecycle.
 const returnStage = (o: Order): ReturnTab | null => {
-  if (o.status === 'failed_delivery' || o.status === 'follow_up') return 'follow_up';
+  if (o.status === 'failed_delivery' || o.status === 'follow_up' || o.status === 'partially_delivered') return 'follow_up';
   if (o.status === 'ready_to_return') return 'ready_to_return';
   if (o.status === 'sent_to_vendor') return 'sent_to_vendor';
   if (o.status === 'returned_to_vendor') return 'returned_to_vendor';

@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import Table from '../components/Table';
 import Button from '../components/Button';
+import SearchableSelect from '../components/SearchableSelect';
 import SegmentedTabs from '../components/SegmentedTabs';
 import PageHeader from '../components/PageHeader';
 import Pagination from '../components/Pagination';
@@ -42,15 +43,16 @@ const STATUS_LABELS: Record<ParcelStatus, string> = {
   pickup_ordered: 'Pickup Ordered',
   rider_assigned: 'Rider Assigned',
   picked_up: 'Pickup Completed',
-  arrived: 'Arrived',
+  arrived: 'Arrived at Origin',
   ready_to_deliver: 'Ready to Deliver',
   sent_for_delivery: 'Sent for Delivery',
   oov: 'Transit',
   dispatched: 'In Transit',
-  arrived_at_branch: 'Arrived at Branch',
+  arrived_at_branch: 'Arrived at Destination',
   hold: 'Hold',
   loss_and_damage: 'Loss and Damage',
   delivered: 'Delivered',
+  partially_delivered: 'Partially Delivered',
   failed_pickup: 'Failed Pickup',
   failed_delivery: 'Failed Delivery',
   cancelled: 'Cancelled',
@@ -68,10 +70,11 @@ const STATUS_TRANSITIONS: Record<ParcelStatus, ParcelStatus[]> = {
   dispatched: ['arrived_at_branch'],
   arrived_at_branch: ['ready_to_deliver'],
   ready_to_deliver: ['sent_for_delivery', 'hold'],
-  sent_for_delivery: ['delivered', 'failed_delivery'],
+  sent_for_delivery: ['delivered', 'partially_delivered', 'failed_delivery'],
   oov: ['dispatched', 'hold'],
   hold: ['ready_to_deliver', 'oov', 'loss_and_damage'],
   delivered: [],
+  partially_delivered: ['ready_to_deliver', 'follow_up', 'ready_to_return'],
   failed_pickup: ['pickup_ordered', 'cancelled'],
   failed_delivery: ['ready_to_deliver', 'follow_up', 'ready_to_return'],
   cancelled: [],
@@ -415,8 +418,20 @@ const OOVOperations: React.FC = () => {
       {loadError && <p className="oov-action-error">{loadError}</p>}
 
       <div className="oov-toolbar">
-        <div />
+        <label className="oov-search">
+          <Search size={16} />
+          <input
+            value={searchQuery}
+            onChange={event => setSearchQuery(event.target.value)}
+            placeholder="Search tracking id"
+          />
+        </label>
         <div className="oov-toolbar-actions">
+          {selectedIds.size > 0 && (
+            <span className="oov-selected-count">
+              {selectedIds.size} order{selectedIds.size === 1 ? '' : 's'} selected
+            </span>
+          )}
           <div className="oov-action-anchor">
             <Button variant="secondary" className="oov-outline-btn" onClick={openStatusAction}>
               Action{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
@@ -472,32 +487,33 @@ const OOVOperations: React.FC = () => {
                 )}
                 {isDispatchAction && dispatchMethod === 'manifest' && (
                   <div className="oov-manifest-fields">
-                    <label>
-                      Destination hub
-                      <select
+                    <div className="oov-manifest-field">
+                      <span>Destination hub</span>
+                      <SearchableSelect
+                        options={locations.map(loc => ({ id: loc.id, label: loc.name }))}
                         value={toLocationId}
-                        onChange={event => setToLocationId(event.target.value)}
+                        onChange={setToLocationId}
+                        placeholder="Select destination hub"
+                        searchPlaceholder="Search hub..."
+                        emptyMessage="No hubs found."
                         disabled={statusUpdating}
-                      >
-                        <option value="">Select destination hub</option>
-                        {locations.map(loc => (
-                          <option key={loc.id} value={loc.id}>{loc.name}</option>
-                        ))}
-                      </select>
-                    </label>
-                    <label>
-                      Rider / vehicle (optional)
-                      <select
+                      />
+                    </div>
+                    <div className="oov-manifest-field">
+                      <span>Rider / vehicle (optional)</span>
+                      <SearchableSelect
+                        options={[
+                          { id: '', label: 'Unassigned' },
+                          ...riders.map(rider => ({ id: rider.id, label: rider.name })),
+                        ]}
                         value={riderId}
-                        onChange={event => setRiderId(event.target.value)}
+                        onChange={setRiderId}
+                        placeholder="Unassigned"
+                        searchPlaceholder="Search rider by name..."
+                        emptyMessage="No active riders found."
                         disabled={statusUpdating}
-                      >
-                        <option value="">Unassigned</option>
-                        {riders.map(rider => (
-                          <option key={rider.id} value={rider.id}>{rider.name}</option>
-                        ))}
-                      </select>
-                    </label>
+                      />
+                    </div>
                   </div>
                 )}
                 {actionError && <p className="oov-action-error">{actionError}</p>}
@@ -525,15 +541,6 @@ const OOVOperations: React.FC = () => {
           </Button>
         </div>
       </div>
-
-      <label className="oov-search">
-        <Search size={16} />
-        <input
-          value={searchQuery}
-          onChange={event => setSearchQuery(event.target.value)}
-          placeholder="Search tracking id"
-        />
-      </label>
 
       <Table
         columns={oovColumns}

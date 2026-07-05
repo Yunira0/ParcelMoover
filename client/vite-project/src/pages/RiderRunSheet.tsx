@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom';
 import {
   Banknote,
   Bike,
-  ClipboardList,
   Eye,
   EyeOff,
   MapPin,
@@ -37,15 +36,16 @@ const STATUS_LABELS: Record<ParcelStatus, string> = {
   pickup_ordered: 'Pickup Ordered',
   rider_assigned: 'Rider Assigned',
   picked_up: 'Pickup Completed',
-  arrived: 'Arrived',
+  arrived: 'Arrived at Origin',
   ready_to_deliver: 'Ready to Deliver',
   sent_for_delivery: 'Sent for Delivery',
   oov: 'Transit',
   dispatched: 'Dispatched',
-  arrived_at_branch: 'Arrived at Branch',
+  arrived_at_branch: 'Arrived at Destination',
   hold: 'Hold',
   loss_and_damage: 'Loss and Damage',
   delivered: 'Delivered',
+  partially_delivered: 'Partially Delivered',
   failed_pickup: 'Failed Pickup',
   failed_delivery: 'Failed Delivery',
   cancelled: 'Cancelled',
@@ -57,6 +57,7 @@ const STATUS_LABELS: Record<ParcelStatus, string> = {
 
 const getStatusTone = (status: ParcelStatus): StatusChipTone => {
   if (status === 'delivered') return 'success';
+  if (status === 'partially_delivered') return 'warning';
   if (['failed_delivery', 'failed_pickup', 'loss_and_damage'].includes(status)) return 'danger';
   if (status === 'cancelled') return 'neutral';
   if (['sent_for_delivery', 'ready_to_deliver'].includes(status)) return 'info';
@@ -137,8 +138,17 @@ const parcelColumns = [
   },
 ];
 
-const RunSheetDetailCard: React.FC<{ sheet: RunSheet }> = ({ sheet }) => (
-  <section className="runsheet-rider-card">
+const RunSheetDetailCard: React.FC<{ sheet: RunSheet }> = ({ sheet }) => {
+  const cardRef = React.useRef<HTMLElement>(null);
+
+  // The card renders below the overview table, off-screen when there are many
+  // sheets - bring it into view so "View" visibly does something.
+  useEffect(() => {
+    cardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, [sheet.id]);
+
+  return (
+  <section ref={cardRef} className="runsheet-rider-card">
     <header className="runsheet-rider-header">
       <div className="runsheet-rider-identity">
         <div className="runsheet-rider-avatar">
@@ -187,7 +197,8 @@ const RunSheetDetailCard: React.FC<{ sheet: RunSheet }> = ({ sheet }) => (
       emptyMessage="This run sheet has no parcels."
     />
   </section>
-);
+  );
+};
 
 const RiderRunSheet: React.FC = () => {
   const [sheets, setSheets] = useState<RunSheet[]>([]);
@@ -339,43 +350,39 @@ const RiderRunSheet: React.FC = () => {
       />
 
       <div className="runsheet-stats">
-        <StatCard icon={ClipboardList} label="Run Sheets" value={summary.totalSheets} />
         <StatCard icon={Package} label="Total Items" value={summary.totalItems} />
+        <StatCard icon={Truck} label="Out for Delivery" value={summary.outItems} />
         <StatCard icon={PackageCheck} label="Delivered" value={summary.deliveredItems} />
         <StatCard icon={Banknote} label="COD on Sheets" value={formatCurrency(summary.totalCod, 0)} />
       </div>
 
       <div className="runsheet-toolbar">
         <div className="runsheet-filters">
-          <div className="runsheet-rider-filter">
+          <div className="runsheet-filter-group">
+            <label className="runsheet-filter-label">Rider</label>
             <SearchableSelect
               options={[
-                { id: ALL_RIDERS, label: 'All riders' },
+                { id: ALL_RIDERS, label: 'All Riders' },
                 ...riders.map(r => ({ id: r.id, label: r.name })),
               ]}
               value={riderId}
-              onChange={id => {
-                setRiderId(id);
-                setExpandedSheetId('');
-              }}
-              placeholder="All riders"
+              onChange={setRiderId}
+              placeholder="All Riders"
               searchPlaceholder="Search rider by name..."
               emptyMessage="No active riders found."
             />
           </div>
-          <input
-            type="date"
-            className="runsheet-date"
-            value={date}
-            max={nepalToday()}
-            onChange={event => {
-              setDate(event.target.value);
-              setExpandedSheetId('');
-            }}
-            aria-label="Run sheet date"
-          />
+          <div className="runsheet-filter-group">
+            <label className="runsheet-filter-label">Date</label>
+            <input
+              type="date"
+              value={date}
+              onChange={e => setDate(e.target.value)}
+              className="runsheet-date-input"
+            />
+          </div>
         </div>
-        <div className="runsheet-toolbar-actions">
+        <div className="runsheet-toolbar-right">
           {selectedSheetIds.size > 0 && (
             <span className="runsheet-selected-count">
               {selectedSheetIds.size} sheet{selectedSheetIds.size === 1 ? '' : 's'} selected
@@ -396,7 +403,7 @@ const RiderRunSheet: React.FC = () => {
         getRowClassName={row => (row.id === expandedSheetId ? 'runsheet-row-active' : '')}
         loading={loading && rows.length === 0}
         loadingMessage="Loading run sheets..."
-        emptyMessage={`No run sheets on ${date}${riderId ? ' for the selected rider' : ''}.`}
+        emptyMessage={`No run sheets on ${date}.`}
         minWidth="1420px"
         tableClassName="runsheet-table"
       />

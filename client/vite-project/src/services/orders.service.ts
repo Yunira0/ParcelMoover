@@ -14,6 +14,7 @@ export type ParcelStatus =
   | 'hold'
   | 'loss_and_damage'
   | 'delivered'
+  | 'partially_delivered'
   | 'failed_pickup'
   | 'failed_delivery'
   | 'cancelled'
@@ -115,6 +116,8 @@ export interface BulkStatusOptions {
   /** Destination hub for the manifest. Required when status === 'dispatched'. */
   toLocationId?: string;
   riderId?: string;
+  /** Required when status === 'partially_delivered'. Amount of COD collected. */
+  codCollected?: number;
 }
 
 export interface BulkStatusResult {
@@ -402,6 +405,7 @@ export const bulkUpdateOrderStatus = async (
       remarks: options?.remarks,
       toLocationId: options?.toLocationId,
       riderId: options?.riderId,
+      codCollected: options?.codCollected,
     },
     { headers: { 'Idempotency-Key': idempotencyKey } },
   );

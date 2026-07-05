@@ -5,53 +5,67 @@
   width: 100%;
 }
 
+/* Dashboard-style boxes (same alignment and fonts), shrunk a little. */
 .runsheet-stats {
   display: grid;
   gap: var(--space-4);
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+}
+
+.runsheet-stats .stat-card {
+  height: 112px;
+  min-width: 0;
+  padding: var(--space-3);
 }
 
 .runsheet-toolbar {
   align-items: center;
   display: flex;
+  flex-wrap: wrap;
   gap: var(--space-4);
   justify-content: space-between;
 }
 
-.runsheet-filters {
-  align-items: center;
-  display: flex;
-  flex: 1;
-  gap: var(--space-3);
-}
-
-.runsheet-rider-filter {
-  max-width: 320px;
-  width: 100%;
-}
-
-.runsheet-date {
-  background: var(--color-background-surface);
-  border: 1px solid var(--color-border-default);
-  border-radius: var(--border-radius-default);
-  color: var(--color-text-default);
-  font-family: var(--typography-font-family-default);
-  font-size: var(--font-size-sm);
-  line-height: var(--line-height-sm);
-  min-height: 36px;
-  padding: var(--space-2);
-}
-
-.runsheet-date:focus-visible {
-  border-color: var(--color-border-primary);
-  box-shadow: 0 0 0 2px rgb(194 65 12 / 12%);
-  outline: none;
-}
-
-.runsheet-toolbar-actions {
+.runsheet-toolbar-right {
   align-items: center;
   display: flex;
   gap: var(--space-4);
+  margin-left: auto;
+}
+
+.runsheet-filters {
+  align-items: flex-end;
+  display: flex;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.runsheet-filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 180px;
+}
+
+.runsheet-filter-label {
+  color: var(--color-text-caption);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  line-height: var(--line-height-xs);
+}
+
+.runsheet-date-input {
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-default);
+  color: var(--color-text-default);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-sm);
+  padding: var(--space-2) var(--space-3);
+}
+
+.runsheet-date-input:focus {
+  border-color: var(--color-border-focus);
+  outline: none;
 }
 
 .runsheet-selected-count {
@@ -191,18 +205,6 @@
   margin: 0;
   padding: var(--space-6) 0;
   text-align: center;
-}
-
-@media (max-width: 900px) {
-  .runsheet-toolbar,
-  .runsheet-filters {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .runsheet-rider-filter {
-    max-width: none;
-  }
 }
 
 /* Print: the run sheet is a field document - hide chrome, keep the tables. */
