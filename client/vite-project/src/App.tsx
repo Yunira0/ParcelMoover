@@ -80,13 +80,16 @@ function App() {
             path="/admin"
             element={<RoleGuard allowedRoles={['super_admin', 'admin']}><AdminManagement /></RoleGuard>}
           />
+          {/* Creating/editing fellow admin accounts needs the delegated
+              MANAGE_USERS permission (rider/vendor management stays open to
+              every admin, matching the server-side rules). */}
           <Route
             path="/admin/new"
-            element={<RoleGuard allowedRoles={['super_admin', 'admin']}><AdminFormPage /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']} adminPermission="MANAGE_USERS"><AdminFormPage /></RoleGuard>}
           />
           <Route
             path="/admin/:id/edit"
-            element={<RoleGuard allowedRoles={['super_admin', 'admin']}><AdminFormPage /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']} adminPermission="MANAGE_USERS"><AdminFormPage /></RoleGuard>}
           />
           <Route
             path="/vendors"
@@ -122,11 +125,11 @@ function App() {
           />
           <Route
             path="/settings"
-            element={<RoleGuard allowedRoles={['super_admin']}><Settings /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']} adminPermission="SETTINGS_ACCESS"><Settings /></RoleGuard>}
           />
           <Route
             path="/settings/delivery-rates"
-            element={<RoleGuard allowedRoles={['super_admin']}><DeliveryRateSettings /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']} adminPermission="SETTINGS_ACCESS"><DeliveryRateSettings /></RoleGuard>}
           />
           <Route
             path="/pickup"

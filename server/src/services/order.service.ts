@@ -458,6 +458,7 @@ async function _createOrderImpl(actor: OrderActor, data: CreateOrderInput) {
       zoneMajorCities: vendor.zone_major_cities === null ? null : Number(vendor.zone_major_cities),
       zoneUrbanAreas: vendor.zone_urban_areas === null ? null : Number(vendor.zone_urban_areas),
       zoneRemoteAreas: vendor.zone_remote_areas === null ? null : Number(vendor.zone_remote_areas),
+      extraWeightPercent: vendor.extra_weight_percent === null ? null : Number(vendor.extra_weight_percent),
     });
     deliveryCharge = quote.totalPayable;
   } else if (resolvedOriginLocationId && resolvedDestinationLocationId) {
@@ -1444,6 +1445,9 @@ async function _updateParcelStatusImpl(
   const currentStatus = parcel.status as ParcelStatus;
   const newStatus = data.status;
   const isAdmin = actor.roles.some((r) => ["super_admin", "admin"].includes(r));
+  // A super_admin may force any status from any status (including out of a
+  // terminal state) - the transition map only constrains everyone else.
+  const isSuperAdmin = actor.roles.includes("super_admin");
 
   // Ownership scoping: vendors/vendor_staff may only touch their own parcels,
   // and riders may only touch parcels they're actually assigned to, and only
@@ -1476,7 +1480,7 @@ async function _updateParcelStatusImpl(
   }
 
   // cannot transition from a terminal state
-  if (TERMINAL_STATUSES.includes(currentStatus as parcel_status)) {
+  if (!isSuperAdmin && TERMINAL_STATUSES.includes(currentStatus as parcel_status)) {
     throw new AppError(
       409,
       `Cannot update status: parcel id already '${currentStatus}' (terminal state)`,
@@ -1484,14 +1488,16 @@ async function _updateParcelStatusImpl(
   }
 
   // validate the transition is allowed
-  const allowed = STATUS_TRANSITIONS[
-    currentStatus as keyof typeof STATUS_TRANSITIONS
-  ] as readonly ParcelStatus[];
-  if (!allowed || !allowed.includes(newStatus)) {
-    throw new AppError(
-      422,
-      `Invalid status transition: '${currentStatus}' → '${newStatus}'. Allowed: [${allowed?.join(", ")}]`,
-    );
+  if (!isSuperAdmin) {
+    const allowed = STATUS_TRANSITIONS[
+      currentStatus as keyof typeof STATUS_TRANSITIONS
+    ] as readonly ParcelStatus[];
+    if (!allowed || !allowed.includes(newStatus)) {
+      throw new AppError(
+        422,
+        `Invalid status transition: '${currentStatus}' → '${newStatus}'. Allowed: [${allowed?.join(", ")}]`,
+      );
+    }
   }
 
   //only admin aan cancel
@@ -1667,6 +1673,9 @@ async function _bulkUpdateParcelStatusImpl(
 ): Promise<BulkUpdateResult> {
   const newStatus = data.status;
   const isAdmin = actor.roles.some((r) => ["super_admin", "admin"].includes(r));
+  // A super_admin may force any status from any status (including out of a
+  // terminal state) - the transition map only constrains everyone else.
+  const isSuperAdmin = actor.roles.includes("super_admin");
   const isVendorActor =
     actor.roles.includes("vendor") || actor.roles.includes("vendor_staff");
   const isRiderActor = actor.roles.includes("rider") && !isAdmin;
@@ -1718,20 +1727,22 @@ async function _bulkUpdateParcelStatusImpl(
 
   for (const parcel of parcels) {
     const currentStatus = parcel.status as ParcelStatus;
-    if (TERMINAL_STATUSES.includes(currentStatus as parcel_status)) {
+    if (!isSuperAdmin && TERMINAL_STATUSES.includes(currentStatus as parcel_status)) {
       throw new AppError(
         409,
         `Parcel ${parcel.tracking_id} is already '${currentStatus}' (terminal state)`,
       );
     }
-    const allowed = STATUS_TRANSITIONS[
-      currentStatus as keyof typeof STATUS_TRANSITIONS
-    ] as readonly ParcelStatus[];
-    if (!allowed || !allowed.includes(newStatus)) {
-      throw new AppError(
-        422,
-        `Invalid status transition for ${parcel.tracking_id}: '${currentStatus}' → '${newStatus}'`,
-      );
+    if (!isSuperAdmin) {
+      const allowed = STATUS_TRANSITIONS[
+        currentStatus as keyof typeof STATUS_TRANSITIONS
+      ] as readonly ParcelStatus[];
+      if (!allowed || !allowed.includes(newStatus)) {
+        throw new AppError(
+          422,
+          `Invalid status transition for ${parcel.tracking_id}: '${currentStatus}' → '${newStatus}'`,
+        );
+      }
     }
     // Riders may only progress parcels they're actually assigned to, and only
     // for the leg (pickup vs delivery) they were assigned for.

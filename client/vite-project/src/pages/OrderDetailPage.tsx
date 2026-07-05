@@ -1,20 +1,32 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Package } from 'lucide-react';
+import { ArrowLeft, Package, ShieldAlert } from 'lucide-react';
 import {
   getOrderByTrackingId,
   addOrderRemark,
   subscribeToOrderStatusChanged,
+  updateOrderStatus,
   type OrderDetail,
   type OrderRemark,
+  type ParcelStatus,
 } from '../services/orders.service';
-import OrderDetailHeader from '../components/order-detail/OrderDetailHeader';
+import OrderDetailHeader, { STATUS_LABEL } from '../components/order-detail/OrderDetailHeader';
+import { getCurrentUserRoles } from '../utils/auth';
 import OrderInfoCards from '../components/order-detail/OrderInfoCards';
 import OrderTimeline from '../components/order-detail/OrderTimeline';
 import OrderRemarks from '../components/order-detail/OrderRemarks';
 import OrderRemarkInput from '../components/order-detail/OrderRemarkInput';
 import { printLabels } from '../utils/printLabels';
 import './OrderDetailPage.css';
+
+// Statuses whose transition needs structured extra data (a rider pick, COD
+// amounts, a destination hub) - those keep their dedicated ops flows and are
+// left out of the raw super_admin override dropdown.
+const OVERRIDE_EXCLUDED: ParcelStatus[] = [
+  'rider_assigned',
+  'sent_for_delivery',
+  'partially_delivered',
+];
 
 const OrderDetailPage: React.FC = () => {
   const { trackingId } = useParams<{ trackingId: string }>();
@@ -24,6 +36,14 @@ const OrderDetailPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [replyingTo, setReplyingTo] = useState<OrderRemark | null>(null);
   const [highlightedRemarkId, setHighlightedRemarkId] = useState<string | null>(null);
+
+  // super_admin only: force the parcel into any status, ignoring the
+  // transition map (the server grants the same bypass to super_admin actors).
+  const isSuperAdmin = getCurrentUserRoles().includes('super_admin');
+  const [overrideStatus, setOverrideStatus] = useState<ParcelStatus | ''>('');
+  const [overrideRemarks, setOverrideRemarks] = useState('');
+  const [overrideSaving, setOverrideSaving] = useState(false);
+  const [overrideError, setOverrideError] = useState('');
 
   const fetchOrder = useCallback(async () => {
     if (!trackingId) return;
@@ -79,6 +99,22 @@ const OrderDetailPage: React.FC = () => {
     void printLabels([orderFields]);
   };
 
+  const handleOverrideStatus = async () => {
+    if (!order || !overrideStatus || overrideStatus === order.status) return;
+    try {
+      setOverrideSaving(true);
+      setOverrideError('');
+      await updateOrderStatus(order.id, overrideStatus, overrideRemarks.trim() || undefined);
+      setOverrideStatus('');
+      setOverrideRemarks('');
+      await fetchOrder();
+    } catch (err: any) {
+      setOverrideError(err?.response?.data?.message ?? 'Failed to update status');
+    } finally {
+      setOverrideSaving(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="od-page">
@@ -131,6 +167,47 @@ const OrderDetailPage: React.FC = () => {
           orderId={order.id}
           onPrint={handlePrint}
         />
+
+        {isSuperAdmin && (
+          <div className="od-override">
+            <div className="od-override-title">
+              <ShieldAlert size={15} />
+              <span>Super admin: force status</span>
+            </div>
+            <div className="od-override-controls">
+              <select
+                className="od-override-select"
+                value={overrideStatus}
+                onChange={(e) => setOverrideStatus(e.target.value as ParcelStatus | '')}
+                disabled={overrideSaving}
+                aria-label="New status"
+              >
+                <option value="">Select new status...</option>
+                {(Object.keys(STATUS_LABEL) as ParcelStatus[])
+                  .filter((s) => s !== order.status && !OVERRIDE_EXCLUDED.includes(s))
+                  .map((s) => (
+                    <option key={s} value={s}>{STATUS_LABEL[s]}</option>
+                  ))}
+              </select>
+              <input
+                className="od-override-remarks"
+                type="text"
+                placeholder="Remarks (optional)"
+                value={overrideRemarks}
+                onChange={(e) => setOverrideRemarks(e.target.value)}
+                disabled={overrideSaving}
+              />
+              <button
+                className="od-override-apply"
+                onClick={handleOverrideStatus}
+                disabled={overrideSaving || !overrideStatus}
+              >
+                {overrideSaving ? 'Applying...' : 'Apply'}
+              </button>
+            </div>
+            {overrideError && <p className="od-override-error">{overrideError}</p>}
+          </div>
+        )}
 
         <OrderInfoCards
           senderName={order.senderName}

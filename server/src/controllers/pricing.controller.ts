@@ -50,6 +50,7 @@ export async function getVendorQuoteController(req: Request, res: Response) {
       zone_major_cities: true,
       zone_urban_areas: true,
       zone_remote_areas: true,
+      extra_weight_percent: true,
     } as const;
 
     let vendor = null;
@@ -81,6 +82,7 @@ export async function getVendorQuoteController(req: Request, res: Response) {
       zoneMajorCities: vendor!.zone_major_cities === null ? null : Number(vendor!.zone_major_cities),
       zoneUrbanAreas: vendor!.zone_urban_areas === null ? null : Number(vendor!.zone_urban_areas),
       zoneRemoteAreas: vendor!.zone_remote_areas === null ? null : Number(vendor!.zone_remote_areas),
+      extraWeightPercent: vendor!.extra_weight_percent === null ? null : Number(vendor!.extra_weight_percent),
     };
 
     const weight = weightKg !== undefined ? Number(weightKg) : 1;

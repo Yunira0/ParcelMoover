@@ -8,6 +8,7 @@ import { sendWelcomeEmail } from "../lib/mailer";
 import { revokeAllUserTokens } from "../lib/tokenRevocation";
 
 import { RegisterUserInput } from "../types/user-registration";
+import { ADMIN_PERMISSIONS, AdminPermission } from "../types/adminPermission.type";
 
 interface IuserLoginData {
   email: string;
@@ -51,6 +52,7 @@ interface UpdateManagedUserInput {
   zoneMajorCities?: string | number;
   zoneUrbanAreas?: string | number;
   zoneRemoteAreas?: string | number;
+  extraWeightPercent?: string | number;
   pickupLandmark?: string;
   billingBusinessName?: string;
   registrationNo?: string;
@@ -73,7 +75,7 @@ function putRate(obj: Record<string, unknown>, key: string, val: string | number
   obj[key] = Number.isFinite(n) ? n : null;
 }
 
-async function assertCanManageUsers(userId: string) {
+async function assertCanManageUsers(userId: string, targetType?: ManagedUserType) {
   const user = await prisma.users.findUnique({
     where: { id: userId },
     include: {
@@ -82,6 +84,7 @@ async function assertCanManageUsers(userId: string) {
           roles: true,
         },
       },
+      admins: { select: { permissions: true } },
     },
   });
 
@@ -92,6 +95,32 @@ async function assertCanManageUsers(userId: string) {
   const roles = user.user_roles.map((userRole) => userRole.roles.code);
   if (!roles.includes("super_admin") && !roles.includes("admin")) {
     throw new AppError(403, "Unauthorized");
+  }
+
+  // Managing fellow admin accounts is a super_admin privilege; a plain admin
+  // needs the delegated MANAGE_USERS permission for it.
+  if (
+    targetType === "admin" &&
+    !roles.includes("super_admin") &&
+    !(user.admins?.permissions ?? []).includes("MANAGE_USERS")
+  ) {
+    throw new AppError(403, "Managing admin accounts requires the MANAGE_USERS permission");
+  }
+
+  return { roles };
+}
+
+// Nobody but a super_admin may touch a super_admin's account - not even an
+// admin holding MANAGE_USERS.
+async function assertTargetNotProtected(actorRoles: string[], targetUserId: string) {
+  if (actorRoles.includes("super_admin")) return;
+
+  const targetRoles = await prisma.user_roles.findMany({
+    where: { user_id: targetUserId },
+    include: { roles: true },
+  });
+  if (targetRoles.some((tr) => tr.roles.code === "super_admin")) {
+    throw new AppError(403, "Only a super admin can modify a super admin account");
   }
 }
 
@@ -124,10 +153,11 @@ export async function updateManagedUserProfile(
   id: string,
   data: UpdateManagedUserInput,
 ) {
-  await assertCanManageUsers(actorUserId);
+  const { roles: actorRoles } = await assertCanManageUsers(actorUserId, data.type);
 
   const profile = await getManagedProfile(data.type, id);
   const userId = getProfileUserId(profile);
+  await assertTargetNotProtected(actorRoles, userId);
 
   if (data.status && data.status !== "active" && userId === actorUserId) {
     throw new AppError(400, "You cannot deactivate your own account");
@@ -194,6 +224,7 @@ export async function updateManagedUserProfile(
       putRate(u, "zone_major_cities", data.zoneMajorCities);
       putRate(u, "zone_urban_areas", data.zoneUrbanAreas);
       putRate(u, "zone_remote_areas", data.zoneRemoteAreas);
+      putRate(u, "extra_weight_percent", data.extraWeightPercent);
       if (joinedAt) u.joined_at = joinedAt;
       if (data.status) u.status = data.status;
       return tx.vendors.update({ where: { id }, data: u });
@@ -221,7 +252,7 @@ export async function updateManagedUserProfile(
 // Full editable profile for the edit form, mapped to the create-form field names.
 // Contains bank/PAN/citizenship-level PII, so only admins may fetch it.
 export async function getManagedUserDetail(actorUserId: string, type: ManagedUserType, id: string) {
-  await assertCanManageUsers(actorUserId);
+  await assertCanManageUsers(actorUserId, type);
 
   const num = (v: unknown) => (v === null || v === undefined ? null : Number(v));
   const dateStr = (d: Date | null) => (d ? new Date(d).toISOString().slice(0, 10) : "");
@@ -237,6 +268,7 @@ export async function getManagedUserDetail(actorUserId: string, type: ManagedUse
       flatInsideValley: num(v.flat_inside_valley), flatOutsideValley: num(v.flat_outside_valley),
       zoneMajorCities: num(v.zone_major_cities), zoneUrbanAreas: num(v.zone_urban_areas),
       zoneRemoteAreas: num(v.zone_remote_areas),
+      extraWeightPercent: num(v.extra_weight_percent),
       pickupLandmark: v.pickup_landmark, billingBusinessName: v.billing_business_name,
       registrationNo: v.registration_no, panVatNo: v.pan_vat_no,
       bankName: v.bank_name, bankAccountNo: v.bank_account_no, bankAccountHolder: v.bank_account_holder,
@@ -279,7 +311,7 @@ export async function updateManagedUserPassword(
   id: string,
   password: string,
 ) {
-  await assertCanManageUsers(actorUserId);
+  const { roles: actorRoles } = await assertCanManageUsers(actorUserId, type);
 
   if (!password?.trim() || password.length < 8) {
     throw new AppError(400, "Password must be at least 8 characters long");
@@ -287,6 +319,7 @@ export async function updateManagedUserPassword(
 
   const profile = await getManagedProfile(type, id);
   const userId = getProfileUserId(profile);
+  await assertTargetNotProtected(actorRoles, userId);
   const passwordHash = await bcrypt.hash(password, 12);
 
   // An admin resetting someone else's password is exactly the "credentials
@@ -304,6 +337,50 @@ export async function updateManagedUserPassword(
       updated_at: new Date(),
     },
   });
+}
+
+// Super-admin only: set the delegated permission list on an admin (staff)
+// account. Replaces the whole list, so revoking is just saving without a code.
+export async function updateAdminPermissions(
+  actorUserId: string,
+  adminId: string,
+  permissions: string[],
+) {
+  const actor = await prisma.users.findUnique({
+    where: { id: actorUserId },
+    include: { user_roles: { include: { roles: true } } },
+  });
+  const actorRoles = actor?.user_roles.map((ur) => ur.roles.code) ?? [];
+  if (!actorRoles.includes("super_admin")) {
+    throw new AppError(403, "Only a super admin can grant admin permissions");
+  }
+
+  const invalid = permissions.filter(
+    (p) => !ADMIN_PERMISSIONS.includes(p as AdminPermission),
+  );
+  if (invalid.length > 0) {
+    throw new AppError(400, `Unknown permission(s): ${invalid.join(", ")}`);
+  }
+
+  const admin = await prisma.admins.findUnique({
+    where: { id: adminId },
+    include: { users: { include: { user_roles: { include: { roles: true } } } } },
+  });
+  if (!admin) {
+    throw new AppError(404, "Admin not found");
+  }
+  const targetRoles = admin.users.user_roles.map((ur) => ur.roles.code);
+  if (targetRoles.includes("super_admin")) {
+    throw new AppError(400, "A super admin already holds every permission");
+  }
+
+  const updated = await prisma.admins.update({
+    where: { id: adminId },
+    data: { permissions: [...new Set(permissions)], updated_at: new Date() },
+    select: { id: true, permissions: true },
+  });
+
+  return updated;
 }
 
 
@@ -381,6 +458,7 @@ export async function registerUserBySuperAdmin(
           roles: true,
         },
       },
+      admins: { select: { permissions: true } },
     },
   });
   if (!superAdmin) {
@@ -388,16 +466,19 @@ export async function registerUserBySuperAdmin(
   }
 
   const creatorRoles = superAdmin?.user_roles.map((userRole) => userRole.roles.code);
-  
+
   const isSuperAdmin = creatorRoles.includes("super_admin");
   const isAdmin = creatorRoles.includes("admin");
   const isSales = creatorRoles.includes("sales");
+  // Delegated by a super_admin: lets a plain admin create every account type.
+  const canManageUsers =
+    isSuperAdmin || (superAdmin.admins?.permissions ?? []).includes("MANAGE_USERS");
 
   if (!isSuperAdmin && !isAdmin && !isSales) {
     throw new AppError(403, "Unauthorized");
   }
 
-  if (!isSuperAdmin && isAdmin && !["rider", "vendor"].includes(data.type)) {
+  if (!canManageUsers && isAdmin && !["rider", "vendor"].includes(data.type)) {
     throw new AppError(403, "Admins can only create vendor or rider accounts");
   }
 
@@ -495,6 +576,7 @@ export async function registerUserBySuperAdmin(
           zone_major_cities: parseRate(data.zoneMajorCities),
           zone_urban_areas: parseRate(data.zoneUrbanAreas),
           zone_remote_areas: parseRate(data.zoneRemoteAreas),
+          extra_weight_percent: parseRate(data.extraWeightPercent),
           pickup_landmark: data.pickupLandmark ?? null,
           billing_business_name: data.billingBusinessName ?? null,
           registration_no: data.registrationNo ?? null,
@@ -576,8 +658,8 @@ export async function loginUser(data: IuserLoginData) {
 
     const roles = user.user_roles.map((url) => url.roles.code);
 
-    // For vendor_staff, surface their permission list so the frontend can
-    // render only the nav items they're allowed to access.
+    // For vendor_staff and plain admins, surface their permission list so the
+    // frontend can render only the nav items they're allowed to access.
     let staffPermissions: string[] | undefined;
     if (roles.includes("vendor_staff")) {
       const staffRecord = await prisma.vendor_staff.findFirst({
@@ -585,6 +667,12 @@ export async function loginUser(data: IuserLoginData) {
         select: { permissions: true },
       });
       staffPermissions = (staffRecord?.permissions ?? []) as string[];
+    } else if (roles.includes("admin") && !roles.includes("super_admin")) {
+      const adminRecord = await prisma.admins.findFirst({
+        where: { user_id: user.id },
+        select: { permissions: true },
+      });
+      staffPermissions = adminRecord?.permissions ?? [];
     }
 
     const mustChangePassword = user.must_change_password;

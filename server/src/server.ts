@@ -114,6 +114,8 @@ const getCurrentUserHandler = async (req: Request, res: Response) => {
         roles: user.user_roles.map(userRole => userRole.roles.code),
         hubId: user.admins?.location_id ?? null,
         hubName: user.admins?.locations?.name ?? null,
+        // Delegated permissions for plain admin accounts (super_admin holds all).
+        permissions: user.admins?.permissions ?? [],
     });
    } catch(error) {
     console.error("Error fetching user profile:", error);

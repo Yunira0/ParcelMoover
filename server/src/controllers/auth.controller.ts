@@ -3,6 +3,7 @@ import {
   changePassword,
   loginUser,
   registerUserBySuperAdmin,
+  updateAdminPermissions,
   updateManagedUserPassword,
   updateManagedUserProfile,
   getManagedUserDetail,
@@ -178,6 +179,31 @@ export const updateManagedUserPasswordController = async (req: Request, res: Res
   }
 };
 
+export const updateAdminPermissionsController = async (req: Request, res: Response) => {
+  try {
+    const actorUserId = req.user?.id;
+    const { id } = req.params;
+    const { permissions } = req.body;
+
+    if (!actorUserId) {
+      throw new AppError(401, "Unauthorized");
+    }
+
+    if (typeof id !== "string") {
+      throw new AppError(400, "Invalid admin id");
+    }
+
+    const updated = await updateAdminPermissions(actorUserId, id, permissions);
+
+    return sendSuccess(res, 200, "Permissions updated successfully", updated);
+  } catch (error: any) {
+    return res.status(error.statusCode || 400).json({
+      success: false,
+      message: error.message || "Failed to update permissions",
+    });
+  }
+};
+
 export const login = async (req: Request, res: Response) => {
   try {
     //fetch data from request body
@@ -203,7 +229,11 @@ export const login = async (req: Request, res: Response) => {
     res.cookie("accessToken", result.token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
+      // "none" is required for the frontend/backend to sit on different
+      // origins (e.g. two separate Railway services) - "lax" silently drops
+      // the cookie on cross-site XHR/fetch. Browsers only allow "none" when
+      // secure is also true, which holds in production (HTTPS).
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
       path: "/",
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     });
@@ -211,7 +241,7 @@ export const login = async (req: Request, res: Response) => {
     res.cookie("csrfToken", csrfToken, {
       httpOnly: false,
       secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
       path: "/",
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
@@ -260,6 +290,7 @@ export const getAdminsController = async (_req: Request, res: Response) => {
         department: admin.department || "",
         joined: formatDate(admin.joined_at),
         status: admin.users.status,
+        permissions: admin.permissions,
       })),
     });
   } catch (error: any) {
@@ -507,7 +538,7 @@ export const changePasswordController = async (req: Request, res: Response) => {
     res.cookie("accessToken", token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
       path: "/",
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });

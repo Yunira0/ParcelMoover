@@ -2,6 +2,7 @@ import { Router } from "express";
 import { rateLimit, ipKeyGenerator } from "express-rate-limit";
 import { authMiddleware } from "../middlewares/auth.mddleware";
 import { authorizeRoles } from "../middlewares/authorizeRoles.middleware";
+import { requireAdminPermission } from "../middlewares/adminPermission.middleware";
 import { csrfProtection } from "../middlewares/csrf.middleware";
 import { createRedisRateLimitStore } from "../lib/rateLimitStore";
 import {
@@ -60,7 +61,8 @@ locationRouter.post(
   "/",
   authMiddleware,
   csrfProtection,
-  authorizeRoles("super_admin"),
+  authorizeRoles("super_admin", "admin"),
+  requireAdminPermission("SETTINGS_ACCESS"),
   locationsWriteLimiter,
   createLocationController,
 );
@@ -70,7 +72,8 @@ locationRouter.post(
   "/bulk-import",
   authMiddleware,
   csrfProtection,
-  authorizeRoles("super_admin"),
+  authorizeRoles("super_admin", "admin"),
+  requireAdminPermission("SETTINGS_ACCESS"),
   locationsBulkImportLimiter,
   bulkImportLocationsController,
 );
@@ -80,7 +83,8 @@ locationRouter.patch(
   "/:id",
   authMiddleware,
   csrfProtection,
-  authorizeRoles("super_admin"),
+  authorizeRoles("super_admin", "admin"),
+  requireAdminPermission("SETTINGS_ACCESS"),
   locationsWriteLimiter,
   updateLocationController,
 );
@@ -90,7 +94,8 @@ locationRouter.delete(
   "/:id",
   authMiddleware,
   csrfProtection,
-  authorizeRoles("super_admin"),
+  authorizeRoles("super_admin", "admin"),
+  requireAdminPermission("SETTINGS_ACCESS"),
   locationsWriteLimiter,
   deleteLocationController,
 );

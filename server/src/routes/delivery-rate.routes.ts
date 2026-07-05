@@ -2,6 +2,7 @@ import { Request, Router } from "express";
 import { rateLimit, ipKeyGenerator } from "express-rate-limit";
 import { authMiddleware } from "../middlewares/auth.mddleware";
 import { authorizeRoles } from "../middlewares/authorizeRoles.middleware";
+import { requireAdminPermission } from "../middlewares/adminPermission.middleware";
 import { requireStaffPermission } from "../middlewares/staffPermission.middleware";
 import { csrfProtection } from "../middlewares/csrf.middleware";
 import { validate } from "../middlewares/validate.middleware";
@@ -87,7 +88,8 @@ deliveryRateRouter.post(
   "/",
   authMiddleware,
   csrfProtection,
-  authorizeRoles("super_admin"),
+  authorizeRoles("super_admin", "admin"),
+  requireAdminPermission("SETTINGS_ACCESS"),
   ratesWriteLimiter,
   validate(upsertDeliveryRateSchema),
   upsertDeliveryRateController,
@@ -110,7 +112,8 @@ deliveryRateRouter.post(
   "/bulk-import",
   authMiddleware,
   csrfProtection,
-  authorizeRoles("super_admin"),
+  authorizeRoles("super_admin", "admin"),
+  requireAdminPermission("SETTINGS_ACCESS"),
   ratesBulkImportLimiter,
   validate(bulkImportDeliveryRatesSchema),
   bulkImportDeliveryRatesController,
@@ -121,7 +124,8 @@ deliveryRateRouter.patch(
   "/:id/active",
   authMiddleware,
   csrfProtection,
-  authorizeRoles("super_admin"),
+  authorizeRoles("super_admin", "admin"),
+  requireAdminPermission("SETTINGS_ACCESS"),
   ratesWriteLimiter,
   validate(uuidParamSchema, "params"),
   validate(setDeliveryRateActiveSchema),

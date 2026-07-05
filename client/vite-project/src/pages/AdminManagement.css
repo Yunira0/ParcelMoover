@@ -49,3 +49,53 @@
   border: 1px solid var(--color-border-default);
   border-radius: var(--border-radius-modal);
 }
+
+/* ── Delegated permissions modal (super_admin only) ─────────────────────── */
+
+.admin-permission-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.admin-permission-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-bottom: var(--space-5);
+}
+
+.admin-permission-row {
+  align-items: center;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-default);
+  display: flex;
+  gap: var(--space-4);
+  justify-content: space-between;
+  padding: var(--space-3) var(--space-4);
+}
+
+.admin-permission-name {
+  color: var(--color-text-default);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semi-bold);
+}
+
+.admin-permission-desc {
+  color: var(--color-text-caption);
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-xs);
+  margin-top: 2px;
+}
+
+.admin-permission-error {
+  color: var(--color-text-danger, #dc2626);
+  font-size: var(--font-size-sm);
+  margin-bottom: var(--space-4);
+}
+
+.admin-permission-actions {
+  display: flex;
+  gap: var(--space-3);
+  justify-content: flex-end;
+}

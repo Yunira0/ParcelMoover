@@ -130,3 +130,11 @@ export const updatePasswordSchema = z.object({
 });
 
 export type UpdatePasswordInput = z.infer<typeof updatePasswordSchema>;
+
+// ── Delegated admin permissions ───────────────────────────────────────────────
+
+export const updateAdminPermissionsSchema = z.object({
+  permissions: z.array(z.enum(["MANAGE_USERS", "SETTINGS_ACCESS"])).max(10),
+});
+
+export type UpdateAdminPermissionsInput = z.infer<typeof updateAdminPermissionsSchema>;

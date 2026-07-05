@@ -7,23 +7,24 @@ import Button from '../../components/Button';
 import DestinationsSettings from './DestinationsSettings';
 import DestinationsImport from './DestinationsImport';
 import RateSetup from './RateSetup';
-import { getCurrentUserRoles } from '../../utils/auth';
+import { hasAdminPermission } from '../../utils/auth';
 import './Settings.css';
 
 type Tab = 'destinations' | 'rates';
 
 const Settings: React.FC = () => {
-  const isSuperAdmin = getCurrentUserRoles().includes('super_admin');
+  // super_admin, or an admin the super_admin granted SETTINGS_ACCESS to.
+  const canConfigure = hasAdminPermission('SETTINGS_ACCESS');
   const [searchParams] = useSearchParams();
   const tabParam = searchParams.get('tab') as Tab | null;
   const initialTab: Tab = tabParam === 'rates' ? 'rates' : 'destinations';
   const [tab, setTab] = useState<Tab>(initialTab);
   const [showImport, setShowImport] = useState(false);
 
-  if (!isSuperAdmin) {
+  if (!canConfigure) {
     return (
       <div className="settings-page">
-        <PageHeader title="Settings" subtitle="Configuration is only available to super admins." />
+        <PageHeader title="Settings" subtitle="Configuration is only available to super admins or admins granted settings access." />
       </div>
     );
   }

@@ -2,6 +2,7 @@ import { Router } from "express";
 import { rateLimit, ipKeyGenerator } from "express-rate-limit";
 import { authMiddleware } from "../middlewares/auth.mddleware";
 import { authorizeRoles } from "../middlewares/authorizeRoles.middleware";
+import { requireAdminPermission } from "../middlewares/adminPermission.middleware";
 import { requireStaffPermission } from "../middlewares/staffPermission.middleware";
 import { csrfProtection } from "../middlewares/csrf.middleware";
 import { createRedisRateLimitStore } from "../lib/rateLimitStore";
@@ -60,7 +61,8 @@ pricingRouter.put(
   "/settings",
   authMiddleware,
   csrfProtection,
-  authorizeRoles("super_admin"),
+  authorizeRoles("super_admin", "admin"),
+  requireAdminPermission("SETTINGS_ACCESS"),
   pricingWriteLimiter,
   updatePricingSettingsController,
 );

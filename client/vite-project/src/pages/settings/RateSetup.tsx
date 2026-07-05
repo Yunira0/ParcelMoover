@@ -96,6 +96,7 @@ const RateSetup: React.FC = () => {
         zoneRemoteAreas: settings.zoneRemoteAreas,
         flatInsideValley: settings.flatInsideValley,
         flatOutsideValley: settings.flatOutsideValley,
+        extraWeightPercent: settings.extraWeightPercent,
         freeWeightKg: settings.freeWeightKg,
       });
       setMsg('Rates saved.');
@@ -144,6 +145,10 @@ const RateSetup: React.FC = () => {
           <label>Free weight (kg)
             <input type="number" min={0} step="0.1" value={settings.freeWeightKg ?? ''}
               onChange={(e) => setSetting('freeWeightKg', e.target.value)} />
+          </label>
+          <label>Extra weight surcharge (%)
+            <input type="number" min={0} max={100} step="0.1" value={settings.extraWeightPercent ?? ''}
+              onChange={(e) => setSetting('extraWeightPercent', e.target.value)} />
           </label>
         </div>
 

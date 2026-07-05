@@ -66,6 +66,7 @@ export async function getPricingSettings() {
     zoneRemoteAreas: settings.zone_remote_areas === null ? null : Number(settings.zone_remote_areas),
     flatInsideValley: settings.flat_inside_valley === null ? null : Number(settings.flat_inside_valley),
     flatOutsideValley: settings.flat_outside_valley === null ? null : Number(settings.flat_outside_valley),
+    extraWeightPercent: settings.extra_weight_percent === null ? null : Number(settings.extra_weight_percent),
     freeWeightKg: Number(settings.free_weight_kg),
   };
 
@@ -84,6 +85,7 @@ export interface UpdatePricingSettingsInput {
   zoneRemoteAreas?: number | null;
   flatInsideValley?: number | null;
   flatOutsideValley?: number | null;
+  extraWeightPercent?: number | null;
   freeWeightKg?: number;
 }
 
@@ -97,6 +99,7 @@ export async function updatePricingSettings(input: UpdatePricingSettingsInput) {
       ...(input.zoneRemoteAreas !== undefined ? { zone_remote_areas: input.zoneRemoteAreas } : {}),
       ...(input.flatInsideValley !== undefined ? { flat_inside_valley: input.flatInsideValley } : {}),
       ...(input.flatOutsideValley !== undefined ? { flat_outside_valley: input.flatOutsideValley } : {}),
+      ...(input.extraWeightPercent !== undefined ? { extra_weight_percent: input.extraWeightPercent } : {}),
       ...(input.freeWeightKg !== undefined ? { free_weight_kg: input.freeWeightKg } : {}),
       updated_at: new Date(),
     },
@@ -152,6 +155,7 @@ export interface VendorRateOverrides {
   zoneMajorCities?: number | null;
   zoneUrbanAreas?: number | null;
   zoneRemoteAreas?: number | null;
+  extraWeightPercent?: number | null;
 }
 
 // Computes the delivery charge for a vendor's chosen rate model to a destination,
@@ -159,7 +163,7 @@ export interface VendorRateOverrides {
 export async function getVendorQuote(
   rateType: RateType,
   destinationLocationId: string,
-  _weightKg = 1,
+  weightKg = 1,
   overrides: VendorRateOverrides = {},
 ): Promise<DeliveryQuote> {
   const settings = await getPricingSettings();
@@ -195,12 +199,18 @@ export async function getVendorQuote(
     if (rate === null) throw new AppError(404, `No flat rate set for ${dest.valley} valley`);
   }
 
-  // Flat per type — no extra-weight surcharge in this model.
+  // Weight surcharge: extra kg beyond freeWeightKg charged as a percent of the base rate.
+  const freeWeightKg = settings.freeWeightKg;
+  const extraWeightPercent = pick(overrides.extraWeightPercent, settings.extraWeightPercent) ?? 0;
+  const extraKg = Math.max(0, weightKg - freeWeightKg);
+  const weightSurcharge = extraKg * (rate * (extraWeightPercent / 100));
+  const totalPayable = rate + weightSurcharge;
+
   return {
     baseCharge: rate,
-    weightSurcharge: 0,
-    totalPayable: rate,
-    freeWeightKg: settings.freeWeightKg,
+    weightSurcharge,
+    totalPayable,
+    freeWeightKg,
     rateType,
     basis,
   };

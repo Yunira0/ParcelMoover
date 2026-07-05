@@ -9,6 +9,7 @@ import {
   login,
   logoutController,
   registerUserController,
+  updateAdminPermissionsController,
   updateManagedUserController,
   updateManagedUserPasswordController,
 } from "../controllers/auth.controller";
@@ -19,6 +20,7 @@ import { validate } from "../middlewares/validate.middleware";
 import {
   loginSchema,
   registerUserSchema,
+  updateAdminPermissionsSchema,
   updateManagedUserSchema,
   updatePasswordSchema,
 } from "../validators/auth.schema";
@@ -129,6 +131,16 @@ authRouter.patch(
   authWriteLimiter,
   validate(updatePasswordSchema),
   updateManagedUserPasswordController,
+);
+// Super-admin only: delegate MANAGE_USERS / SETTINGS_ACCESS to an admin account.
+authRouter.patch(
+  "/users/admins/:id/permissions",
+  authMiddleware,
+  csrfProtection,
+  authorizeRoles("super_admin"),
+  authWriteLimiter,
+  validate(updateAdminPermissionsSchema),
+  updateAdminPermissionsController,
 );
 authRouter.get("/locations", authMiddleware, authReadLimiter, getLocationsController);
 

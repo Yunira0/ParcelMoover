@@ -5,7 +5,10 @@ export interface CurrentUser {
   roles: string[];
   /** True when the user logged in with a temporary password and must set a new one. */
   mustChangePassword?: boolean;
-  /** Present only for vendor_staff — the permission codes granted by their vendor. */
+  /**
+   * Present for vendor_staff (codes granted by their vendor) and for plain
+   * admins (codes delegated by a super_admin, e.g. MANAGE_USERS).
+   */
   permissions?: string[];
 }
 
@@ -45,4 +48,16 @@ export function getStaffPermissions(): string[] {
 
 export function hasStaffPermission(permission: string): boolean {
   return getStaffPermissions().includes(permission);
+}
+
+/**
+ * Delegated admin privileges (MANAGE_USERS, SETTINGS_ACCESS). A super_admin
+ * implicitly holds all of them; a plain admin only what a super_admin granted.
+ */
+export function hasAdminPermission(permission: string): boolean {
+  const roles = getCurrentUserRoles();
+  if (roles.includes('super_admin')) return true;
+  if (!roles.includes('admin')) return false;
+  const p = getCurrentUser()?.permissions;
+  return Array.isArray(p) && p.includes(permission);
 }

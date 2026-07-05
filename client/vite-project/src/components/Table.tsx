@@ -212,9 +212,12 @@ const Table = <T extends { id: string | number }>({
 export const TableRowActions = ({
   onEdit,
   onUpdatePassword,
+  children,
 }: {
   onEdit: () => void;
   onUpdatePassword: () => void;
+  /** Extra row-level action buttons rendered after the built-in pair. */
+  children?: React.ReactNode;
 }) => (
   <div className="action-buttons">
     <Button variant="outline" size="sm" onClick={onEdit}>
@@ -225,6 +228,7 @@ export const TableRowActions = ({
       <KeyRound size={14} />
       Update password
     </Button>
+    {children}
   </div>
 );
 

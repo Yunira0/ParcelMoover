@@ -7,6 +7,7 @@ export interface PricingSettings {
   zoneRemoteAreas: number | null;
   flatInsideValley: number | null;
   flatOutsideValley: number | null;
+  extraWeightPercent: number | null;
   freeWeightKg: number;
 }
 

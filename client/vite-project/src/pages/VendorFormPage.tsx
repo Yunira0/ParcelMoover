@@ -24,6 +24,7 @@ interface VendorFormInput {
   zoneMajorCities: string;
   zoneUrbanAreas: string;
   zoneRemoteAreas: string;
+  extraWeightPercent: string;
   billingBusinessName: string;
   registeredAddress: string;
   registrationNo: string;
@@ -54,6 +55,7 @@ const emptyForm: VendorFormInput = {
   zoneMajorCities: '',
   zoneUrbanAreas: '',
   zoneRemoteAreas: '',
+  extraWeightPercent: '',
   billingBusinessName: '',
   registeredAddress: '',
   registrationNo: '',
@@ -206,6 +208,7 @@ const VendorFormPage: React.FC = () => {
           zoneMajorCities: prev.zoneMajorCities || str(d.zoneMajorCities),
           zoneUrbanAreas: prev.zoneUrbanAreas || str(d.zoneUrbanAreas),
           zoneRemoteAreas: prev.zoneRemoteAreas || str(d.zoneRemoteAreas),
+          extraWeightPercent: prev.extraWeightPercent || str(d.extraWeightPercent),
         }));
       })
       .catch(() => {});
@@ -236,6 +239,7 @@ const VendorFormPage: React.FC = () => {
           zoneMajorCities: s(d.zoneMajorCities),
           zoneUrbanAreas: s(d.zoneUrbanAreas),
           zoneRemoteAreas: s(d.zoneRemoteAreas),
+          extraWeightPercent: s(d.extraWeightPercent),
           pickupLandmark: s(d.pickupLandmark),
           billingBusinessName: s(d.billingBusinessName),
           registrationNo: s(d.registrationNo),
@@ -341,14 +345,18 @@ const VendorFormPage: React.FC = () => {
         rateType: form.rateType,
         // Only send the override fields relevant to the chosen model.
         ...(form.rateType === 'flat'
-          ? { flatInsideValley: form.flatInsideValley, flatOutsideValley: form.flatOutsideValley }
+          ? { flatInsideValley: form.flatInsideValley, flatOutsideValley: form.flatOutsideValley, extraWeightPercent: form.extraWeightPercent }
           : {}),
         ...(form.rateType === 'zone'
           ? {
               zoneMajorCities: form.zoneMajorCities,
               zoneUrbanAreas: form.zoneUrbanAreas,
               zoneRemoteAreas: form.zoneRemoteAreas,
+              extraWeightPercent: form.extraWeightPercent,
             }
+          : {}),
+        ...(form.rateType === 'per_destination'
+          ? { extraWeightPercent: form.extraWeightPercent }
           : {}),
         pickupLandmark: form.pickupLandmark,
         billingBusinessName: form.billingBusinessName,
@@ -662,6 +670,8 @@ const VendorFormPage: React.FC = () => {
                       value={form.flatInsideValley} onChange={set('flatInsideValley')} placeholder="e.g. 120" />
                     <FormField label="Outside valley (Rs.)" type="number" min={0}
                       value={form.flatOutsideValley} onChange={set('flatOutsideValley')} placeholder="e.g. 250" />
+                    <FormField label="Extra weight surcharge (%)" type="number" min={0} max={100}
+                      value={form.extraWeightPercent} onChange={set('extraWeightPercent')} placeholder="e.g. 10" />
                   </div>
                 </div>
               )}
@@ -675,13 +685,21 @@ const VendorFormPage: React.FC = () => {
                       value={form.zoneUrbanAreas} onChange={set('zoneUrbanAreas')} placeholder="e.g. 350" />
                     <FormField label="Remote areas (Rs.)" type="number" min={0}
                       value={form.zoneRemoteAreas} onChange={set('zoneRemoteAreas')} placeholder="e.g. 500" />
+                    <FormField label="Extra weight surcharge (%)" type="number" min={0} max={100}
+                      value={form.extraWeightPercent} onChange={set('extraWeightPercent')} placeholder="e.g. 10" />
                   </div>
                 </div>
               )}
               {form.rateType === 'per_destination' && (
-                <p className="vfp-rate-note">
-                  Charged by each destination’s own rate, configured in Settings → Rate Setup.
-                </p>
+                <div className="vfp-rate-fields">
+                  <p className="vfp-rate-note">
+                    Charged by each destination's own rate, configured in Settings → Rate Setup.
+                  </p>
+                  <div className="vfp-fields">
+                    <FormField label="Extra weight surcharge (%)" type="number" min={0} max={100}
+                      value={form.extraWeightPercent} onChange={set('extraWeightPercent')} placeholder="e.g. 10" />
+                  </div>
+                </div>
               )}
               {isSuperAdmin && (form.rateType === 'zone' || form.rateType === 'flat') && (
                 <button

@@ -12,15 +12,8 @@ import {
   upsertDeliveryRate,
   type DeliveryRate,
 } from '../services/deliveryRates.service';
+import { hasAdminPermission } from '../utils/auth';
 import './DeliveryRateSettings.css';
-
-const getCurrentUser = (): { roles: string[] } | null => {
-  try {
-    return JSON.parse(localStorage.getItem('user') || 'null');
-  } catch {
-    return null;
-  }
-};
 
 const defaultFormState = {
   originLocationId: '',
@@ -39,8 +32,8 @@ const RATE_FIELD_MAP: Record<string, string> = {
 };
 
 const DeliveryRateSettings: React.FC = () => {
-  const currentUser = getCurrentUser();
-  const isSuperAdmin = Boolean(currentUser?.roles?.includes('super_admin'));
+  // super_admin, or an admin the super_admin granted SETTINGS_ACCESS to.
+  const canConfigure = hasAdminPermission('SETTINGS_ACCESS');
 
   const [rates, setRates] = useState<DeliveryRate[]>([]);
   const [locations, setLocations] = useState<{ id: string; name: string }[]>([]);
@@ -63,7 +56,7 @@ const DeliveryRateSettings: React.FC = () => {
   };
 
   useEffect(() => {
-    if (!isSuperAdmin) return;
+    if (!canConfigure) return;
     loadRates();
     (async () => {
       try {
@@ -76,13 +69,13 @@ const DeliveryRateSettings: React.FC = () => {
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isSuperAdmin]);
+  }, [canConfigure]);
 
-  if (!isSuperAdmin) {
+  if (!canConfigure) {
     return (
       <div className="delivery-rate-settings-page">
         <h1>Access restricted</h1>
-        <p>Delivery rate settings are only available to super admins.</p>
+        <p>Delivery rate settings are only available to super admins or admins granted settings access.</p>
       </div>
     );
   }

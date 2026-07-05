@@ -174,3 +174,19 @@ export const updateUserPassword = async (
   const response = await api.patch(`/auth/users/${type}/${id}/password`, { password });
   return response.data;
 };
+
+// ── Delegated admin permissions (super_admin only) ────────────────────────────
+
+/** Privileges a super_admin can delegate to an admin account. */
+export const ADMIN_PERMISSIONS = [
+  { code: 'MANAGE_USERS', label: 'User Management', description: 'Create and manage every account type, including other admins.' },
+  { code: 'SETTINGS_ACCESS', label: 'Settings', description: 'Access the Settings section: destinations, rate setup and delivery rates.' },
+] as const;
+
+export type AdminPermissionCode = (typeof ADMIN_PERMISSIONS)[number]['code'];
+
+/** Replaces the admin's whole delegated-permission list. */
+export const updateAdminPermissions = async (adminId: string, permissions: string[]) => {
+  const response = await api.patch(`/auth/users/admins/${adminId}/permissions`, { permissions });
+  return response.data;
+};

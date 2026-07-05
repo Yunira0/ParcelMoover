@@ -40,7 +40,7 @@ const STATUS_TONE_MAP: Record<ParcelStatus, StatusChipTone> = {
   returned_to_vendor: 'neutral',
 };
 
-const STATUS_LABEL: Record<ParcelStatus, string> = {
+export const STATUS_LABEL: Record<ParcelStatus, string> = {
   pickup_ordered: 'Pickup Ordered',
   rider_assigned: 'Rider Assigned',
   picked_up: 'Picked Up',

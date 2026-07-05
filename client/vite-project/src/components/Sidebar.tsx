@@ -27,7 +27,7 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { getCurrentUserRoles, isAdminSide } from '../utils/auth';
+import { getCurrentUserRoles, hasAdminPermission, isAdminSide } from '../utils/auth';
 import { useStaffPermissions } from '../context/StaffPermissionsContext';
 import { logout } from '../services/auth.service';
 import './Sidebar.css';
@@ -232,7 +232,7 @@ const AdminSidebar: React.FC<{ isSuperAdmin: boolean }> = ({ isSuperAdmin }) => 
         {isSuperAdmin && <SidebarItem to="/kyc-applications" icon={ClipboardCheck} label="KYC Applications" />}
         <SidebarItem to="/riders" icon={Bike} label="Rider Management" />
         <SidebarItem to="/finance" icon={Wallet} label="COD Management" />
-        {isSuperAdmin && <SidebarItem to="/settings" icon={Settings} label="Settings" />}
+        {(isSuperAdmin || hasAdminPermission('SETTINGS_ACCESS')) && <SidebarItem to="/settings" icon={Settings} label="Settings" />}
 
         <SidebarSection label="Operations" />
         <div className="sidebar-subnav">
