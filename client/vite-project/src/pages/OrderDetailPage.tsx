@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Package } from 'lucide-react';
 import {
@@ -23,6 +23,13 @@ const OrderDetailPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [replyingTo, setReplyingTo] = useState<OrderRemark | null>(null);
   const [highlightedRemarkId, setHighlightedRemarkId] = useState<string | null>(null);
+  const highlightTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (highlightTimeoutRef.current) clearTimeout(highlightTimeoutRef.current);
+    };
+  }, []);
 
   const fetchOrder = useCallback(async () => {
     if (!trackingId) return;
@@ -63,7 +70,8 @@ const OrderDetailPage: React.FC = () => {
         return { ...prev, remarks: [...prev.remarks, newRemark] };
       });
       setHighlightedRemarkId(newRemark.id);
-      setTimeout(() => setHighlightedRemarkId(null), 2500);
+      if (highlightTimeoutRef.current) clearTimeout(highlightTimeoutRef.current);
+      highlightTimeoutRef.current = setTimeout(() => setHighlightedRemarkId(null), 2500);
       setReplyingTo(null);
     }
   };

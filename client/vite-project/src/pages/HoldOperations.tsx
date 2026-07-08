@@ -16,6 +16,7 @@ import {
   type OrdersPageMeta,
   type ParcelStatus,
 } from '../services/orders.service';
+import { useCursorPagination } from '../hooks/useCursorPagination';
 import { toBsDate } from '../utils/nepaliDate';
 import './HoldOperations.css';
 
@@ -44,7 +45,7 @@ const HoldOperations: React.FC = () => {
   const [meta, setMeta] = useState<OrdersPageMeta | null>(null);
   const [searchQuery, setSearchQuery] = useState(() => searchParams.get('search') || '');
   const [debouncedSearch, setDebouncedSearch] = useState(() => searchParams.get('search') || '');
-  const [page, setPage] = useState(1);
+  const pager = useCursorPagination();
   const [loading, setLoading] = useState(true);
   const [selectedIds, setSelectedIds] = useState<Set<string | number>>(new Set());
   const [statusUpdating, setStatusUpdating] = useState(false);
@@ -58,9 +59,9 @@ const HoldOperations: React.FC = () => {
   }, [searchQuery]);
 
   useEffect(() => {
-    setPage(1);
+    pager.reset();
     setActionError('');
-  }, [debouncedSearch]);
+  }, [debouncedSearch, pager.reset]);
 
   // Keep search bookmarkable - mirror into the URL (replacing history, not
   // pushing, so the back button doesn't step through every keystroke).
@@ -76,8 +77,9 @@ const HoldOperations: React.FC = () => {
       const res = await getOrders({
         status: ['hold'],
         search: debouncedSearch || undefined,
-        page,
         pageSize: PAGE_SIZE,
+        cursor: pager.request.cursor,
+        dir: pager.request.dir,
       }, signal);
       if (res?.success && Array.isArray(res.data)) {
         setOrders(res.data);
@@ -88,7 +90,7 @@ const HoldOperations: React.FC = () => {
     } finally {
       if (!signal?.aborted) setLoading(false);
     }
-  }, [debouncedSearch, page]);
+  }, [debouncedSearch, pager.request]);
 
   // Cancel an in-flight fetch when a newer one supersedes it (fast page/search
   // changes) or the page unmounts, so a stale response can't overwrite fresher data.
@@ -260,7 +262,7 @@ const HoldOperations: React.FC = () => {
       width: '155px',
       className: 'hold-remarks-cell',
     },
-  ], [page, visibleOrders]);
+  ], [pager.request, visibleOrders]);
 
   return (
     <div className="hold-operations-container">
@@ -315,9 +317,9 @@ const HoldOperations: React.FC = () => {
 
       <Pagination
         ariaLabel="Hold pagination"
-        page={page}
+        page={pager.page}
         totalPages={totalPages}
-        onPageChange={setPage}
+        cursor={pager.controls(meta)}
         summary={`${totalCount} order${totalCount === 1 ? '' : 's'}`}
       />
 

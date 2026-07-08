@@ -3,6 +3,7 @@ import { Suspense, lazy } from 'react'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { PendingProvider } from './context/PendingContext'
 import BottomNav from './components/BottomNav'
+import OfflineBanner from './components/OfflineBanner'
 import WelcomePage from './pages/WelcomePage'
 import LoginPage from './pages/LoginPage'
 import DashboardPage from './pages/DashboardPage'
@@ -55,6 +56,7 @@ export default function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
+        <OfflineBanner />
         <AuthRouter />
       </BrowserRouter>
     </AuthProvider>

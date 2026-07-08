@@ -6,7 +6,7 @@ import {
   rejectKycController,
   submitKycController,
 } from "../controllers/kyc.controller";
-import { authMiddleware } from "../middlewares/auth.mddleware";
+import { authMiddleware } from "../middlewares/auth.middleware";
 import { authorizeRoles } from "../middlewares/authorizeRoles.middleware";
 import { csrfProtection } from "../middlewares/csrf.middleware";
 import rateLimit, { ipKeyGenerator } from "express-rate-limit";

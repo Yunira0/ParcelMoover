@@ -6,6 +6,7 @@ import WeeklyStats from '../components/WeeklyStats';
 import DashboardHeader from '../components/DashboardHeader';
 import Button from '../components/Button';
 import { getDashboardSummary, type DashboardSummary } from '../services/orders.service';
+import { getCurrentUser } from '../utils/auth';
 import { 
   ClipboardList, 
   RefreshCw,
@@ -118,8 +119,8 @@ const Dashboard: React.FC = () => {
   return (
     <div className="dashboard-container">
       
-      <DashboardHeader 
-      user= "sandip"
+      <DashboardHeader
+        user={getCurrentUser()?.fullName || ''}
       />
       
       <div className="overview-section">

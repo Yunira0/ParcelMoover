@@ -132,6 +132,10 @@ export const listOrdersQuerySchema = paginationQuerySchema.extend({
     .optional(),
   orderType: z.enum(ORDER_TYPES).optional(),
   search: z.string().max(100).optional(),
+  // Keyset pagination: opaque cursor + walk direction. A malformed cursor is
+  // treated as "no cursor" by the service, so only the length is bounded here.
+  cursor: z.string().max(400).optional(),
+  dir: z.enum(["next", "prev"]).optional(),
 });
 
 export type ListOrdersQuery = z.infer<typeof listOrdersQuerySchema>;

@@ -1,5 +1,6 @@
 import prisma from "../lib/prisma";
 import bcrypt from "bcrypt";
+import { randomInt } from "crypto";
 import { AppError } from "../utils/AppError";
 import { sendWelcomeEmail } from "../lib/mailer";
 
@@ -32,13 +33,45 @@ export interface KycApplicationInput {
   businessCertDocPath?: string | undefined;
 }
 
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const MAX_SHORT_FIELD_LENGTH = 200;
+const MAX_LONG_FIELD_LENGTH = 1000;
+
+// This endpoint is public/unauthenticated, so it can't lean on the trust
+// internal endpoints get - every free-text field gets a length cap and the
+// email gets format-checked instead of just a truthy check.
 function validateKycInput(input: KycApplicationInput) {
   if (!input.onlineBusinessName?.trim()) throw new AppError(400, "Online business name is required");
   if (!input.pickupLocation?.trim()) throw new AppError(400, "Pickup location is required");
   if (!input.businessContact?.trim()) throw new AppError(400, "Business contact number is required");
   if (!input.ownerName?.trim()) throw new AppError(400, "Owner name is required");
   if (!input.ownerEmail?.trim()) throw new AppError(400, "Owner email is required");
+  if (!EMAIL_REGEX.test(input.ownerEmail.trim())) throw new AppError(400, "Invalid owner email address");
   if (!input.ownerContact?.trim()) throw new AppError(400, "Owner contact number is required");
+
+  const shortFields: Array<[string, string | undefined]> = [
+    ["Online business name", input.onlineBusinessName],
+    ["Pickup location", input.pickupLocation],
+    ["Pickup landmark", input.pickupLandmark],
+    ["Business contact", input.businessContact],
+    ["Owner name", input.ownerName],
+    ["Owner email", input.ownerEmail],
+    ["Owner contact", input.ownerContact],
+    ["Billing business name", input.billingBusinessName],
+    ["Registration no.", input.registrationNo],
+    ["PAN/VAT no.", input.panVatNo],
+    ["Bank name", input.bankName],
+    ["Bank account no.", input.bankAccountNo],
+    ["Bank account holder", input.bankAccountHolder],
+  ];
+  for (const [label, value] of shortFields) {
+    if (value && value.trim().length > MAX_SHORT_FIELD_LENGTH) {
+      throw new AppError(400, `${label} must be ${MAX_SHORT_FIELD_LENGTH} characters or fewer`);
+    }
+  }
+  if (input.registeredAddress && input.registeredAddress.trim().length > MAX_LONG_FIELD_LENGTH) {
+    throw new AppError(400, `Registered address must be ${MAX_LONG_FIELD_LENGTH} characters or fewer`);
+  }
 }
 
 export async function submitKycApplication(data: KycApplicationInput) {
@@ -153,7 +186,7 @@ function generateTempPassword(): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
   let pwd = "";
   for (let i = 0; i < 12; i++) {
-    pwd += chars.charAt(Math.floor(Math.random() * chars.length));
+    pwd += chars.charAt(randomInt(chars.length));
   }
   return pwd;
 }
@@ -218,6 +251,16 @@ export async function approveKycApplication(id: string, reviewerId: string, note
         phone: app.owner_contact,
         email: app.owner_email,
         address: app.pickup_location,
+        pickup_landmark: app.pickup_landmark,
+        billing_business_name: app.billing_business_name,
+        registration_no: app.registration_no,
+        pan_vat_no: app.pan_vat_no,
+        citizenship_doc: app.citizenship_doc,
+        pan_vat_doc: app.pan_vat_doc,
+        business_cert_doc: app.business_cert_doc,
+        bank_name: app.bank_name,
+        bank_account_no: app.bank_account_no,
+        bank_account_holder: app.bank_account_holder,
         status: "active",
         joined_at: new Date(),
       },

@@ -97,12 +97,16 @@ export function streamNotificationsController(req: Request, res: Response) {
 
   const userId = req.user.id;
 
+  if (!registerSseConnection(userId, res)) {
+    res.status(429).json({ success: false, message: "Too many open notification streams" });
+    return;
+  }
+
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache, no-transform");
   res.setHeader("Connection", "keep-alive");
   res.flushHeaders();
 
-  registerSseConnection(userId, res);
   res.write(": connected\n\n");
 
   // Keeps intermediary proxies/load balancers from timing out the idle connection.

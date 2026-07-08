@@ -29,10 +29,15 @@ function sanitizePermissions(permissions: unknown): StaffPermission[] {
   return Array.from(new Set(cleaned));
 }
 
+const MAX_NAME_LENGTH = 100;
+const MAX_EMAIL_LENGTH = 255;
+
 function validateInput(input: StaffInput) {
   if (!input.name?.trim()) throw new AppError(400, "Name is required");
+  if (input.name.trim().length > MAX_NAME_LENGTH) throw new AppError(400, `Name must be ${MAX_NAME_LENGTH} characters or fewer`);
   if (!input.email?.trim()) throw new AppError(400, "Email is required");
   const email = input.email.trim().toLowerCase();
+  if (email.length > MAX_EMAIL_LENGTH) throw new AppError(400, `Email must be ${MAX_EMAIL_LENGTH} characters or fewer`);
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new AppError(400, "Invalid email address");
   return {
     name: input.name.trim(),

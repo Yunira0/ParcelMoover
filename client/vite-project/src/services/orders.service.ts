@@ -89,8 +89,12 @@ export interface ListOrdersParams {
   status?: ParcelStatus[];
   orderType?: OrderType;
   search?: string;
+  /** Display-only page hint echoed back in meta; position comes from the cursor. */
   page?: number;
   pageSize?: number;
+  /** Opaque keyset cursor from meta.nextCursor/prevCursor. Omitted = first page ('next') or last page ('prev'). */
+  cursor?: string;
+  dir?: 'next' | 'prev';
   sortBy?: OrderSortField;
   sortDir?: 'asc' | 'desc';
 }
@@ -102,6 +106,11 @@ export interface OrdersPageMeta {
   totalPages: number;
   // Set when the caller didn't request pagination and the result was capped.
   truncated?: boolean;
+  // Keyset navigation - present on paginated queries.
+  hasNextPage?: boolean;
+  hasPrevPage?: boolean;
+  nextCursor?: string | null;
+  prevCursor?: string | null;
 }
 
 export interface OrdersListResponse {
@@ -183,6 +192,8 @@ export const getOrders = async (params?: ListOrdersParams, signal?: AbortSignal)
   if (params?.search) query.search = params.search;
   if (params?.page !== undefined) query.page = String(params.page);
   if (params?.pageSize !== undefined) query.pageSize = String(params.pageSize);
+  if (params?.cursor !== undefined) query.cursor = params.cursor;
+  if (params?.dir !== undefined) query.dir = params.dir;
   if (params?.sortBy) query.sortBy = params.sortBy;
   if (params?.sortDir) query.sortDir = params.sortDir;
 

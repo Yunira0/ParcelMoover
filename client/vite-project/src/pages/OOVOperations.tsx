@@ -21,6 +21,7 @@ import {
 } from '../services/orders.service';
 import { getLocations, getRiders } from '../services/users.service';
 import { toBsDate } from '../utils/nepaliDate';
+import { useCursorPagination } from '../hooks/useCursorPagination';
 import './OOVOperations.css';
 
 type OOVTab = 'oov' | 'dispatched';
@@ -99,7 +100,7 @@ const OOVOperations: React.FC = () => {
   });
   const [searchQuery, setSearchQuery] = useState(() => searchParams.get('search') || '');
   const [debouncedSearch, setDebouncedSearch] = useState(() => searchParams.get('search') || '');
-  const [page, setPage] = useState(1);
+  const pager = useCursorPagination();
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [selectionByTab, setSelectionByTab] = useState<Record<OOVTab, Map<string, Order>>>(createEmptySelections);
@@ -121,10 +122,10 @@ const OOVOperations: React.FC = () => {
   }, [searchQuery]);
 
   useEffect(() => {
-    setPage(1);
+    pager.reset();
     setIsActionOpen(false);
     setActionError('');
-  }, [activeTab, debouncedSearch]);
+  }, [activeTab, debouncedSearch, pager.reset]);
 
   // Keep tab/search bookmarkable - mirror into the URL (replacing history,
   // not pushing, so the back button doesn't step through every keystroke).
@@ -155,8 +156,9 @@ const OOVOperations: React.FC = () => {
       const res = await getOrders({
         status: TAB_STATUSES[activeTab],
         search: debouncedSearch || undefined,
-        page,
         pageSize: PAGE_SIZE,
+        cursor: pager.request.cursor,
+        dir: pager.request.dir,
       });
       if (res?.success && Array.isArray(res.data)) {
         setOrders(res.data);
@@ -168,7 +170,7 @@ const OOVOperations: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [activeTab, debouncedSearch, page]);
+  }, [activeTab, debouncedSearch, pager.request]);
 
   useEffect(() => {
     loadOovOrders();
@@ -552,9 +554,9 @@ const OOVOperations: React.FC = () => {
 
       <Pagination
         ariaLabel="OOV pagination"
-        page={page}
+        page={pager.page}
         totalPages={totalPages}
-        onPageChange={setPage}
+        cursor={pager.controls(meta)}
         summary={`${totalCount} order${totalCount === 1 ? '' : 's'}`}
       />
 

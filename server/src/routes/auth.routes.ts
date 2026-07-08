@@ -12,7 +12,8 @@ import {
   updateManagedUserController,
   updateManagedUserPasswordController,
 } from "../controllers/auth.controller";
-import { authMiddleware } from "../middlewares/auth.mddleware";
+import { authMiddleware } from "../middlewares/auth.middleware";
+import { authorizeRoles } from "../middlewares/authorizeRoles.middleware";
 import { csrfProtection } from "../middlewares/csrf.middleware";
 import { validate } from "../middlewares/validate.middleware";
 import {
@@ -28,7 +29,7 @@ import { registrationUpload } from "../lib/registrationUpload";
 
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 500,
+  max: 10,
   message: { success: false, message: "Too many login attempts" },
   standardHeaders: true,
   legacyHeaders: false,
@@ -43,18 +44,27 @@ authRouter.post("/logout", authMiddleware, csrfProtection, logoutController);
 authRouter.post("/change-password", authMiddleware, csrfProtection, changePasswordController);
 
 // Dev-only: POST /auth/test-email  { "to": "someone@example.com" }
-if (process.env.NODE_ENV !== "production") {
-  authRouter.post("/test-email", async (req: Request, res: Response) => {
-    const to = req.body?.to as string;
-    if (!to) return res.status(400).json({ success: false, message: "to is required" });
-    try {
-      await sendWelcomeEmail({ to, name: "Test User", password: "TempPass123!" });
-      return res.json({ success: true, message: `Test email sent to ${to}` });
-    } catch (err: any) {
-      console.error("[test-email]", err);
-      return res.status(500).json({ success: false, message: err.message });
-    }
-  });
+// Gated on NODE_ENV so it never registers in production, and further
+// requires an authenticated admin so it can't be used as an open mail
+// relay / error-message oracle if a non-production deployment is
+// reachable over the network.
+if (process.env.NODE_ENV === "development") {
+  authRouter.post(
+    "/test-email",
+    authMiddleware,
+    authorizeRoles("super_admin", "admin"),
+    async (req: Request, res: Response) => {
+      const to = req.body?.to as string;
+      if (!to) return res.status(400).json({ success: false, message: "to is required" });
+      try {
+        await sendWelcomeEmail({ to, name: "Test User", password: "TempPass123!" });
+        return res.json({ success: true, message: `Test email sent to ${to}` });
+      } catch (err: any) {
+        console.error("[test-email]", err);
+        return res.status(500).json({ success: false, message: "Failed to send test email" });
+      }
+    },
+  );
 }
 authRouter.post(
   "/users/register",

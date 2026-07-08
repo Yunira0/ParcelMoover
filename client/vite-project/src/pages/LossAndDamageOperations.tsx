@@ -15,6 +15,7 @@ import {
   type ParcelStatus,
 } from '../services/orders.service';
 import { toBsDate } from '../utils/nepaliDate';
+import { useCursorPagination } from '../hooks/useCursorPagination';
 import './LossAndDamageOperations.css';
 
 const PAGE_SIZE = 10;
@@ -33,7 +34,7 @@ const LossAndDamageOperations: React.FC = () => {
   const [meta, setMeta] = useState<OrdersPageMeta | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [page, setPage] = useState(1);
+  const pager = useCursorPagination();
   const [loading, setLoading] = useState(true);
   const [selectedIds, setSelectedIds] = useState<Set<string | number>>(new Set());
   const [statusUpdating, setStatusUpdating] = useState(false);
@@ -46,9 +47,9 @@ const LossAndDamageOperations: React.FC = () => {
   }, [searchQuery]);
 
   useEffect(() => {
-    setPage(1);
+    pager.reset();
     setActionError('');
-  }, [debouncedSearch]);
+  }, [debouncedSearch, pager.reset]);
 
   const loadOrders = useCallback(async () => {
     setLoading(true);
@@ -56,8 +57,9 @@ const LossAndDamageOperations: React.FC = () => {
       const res = await getOrders({
         status: ['loss_and_damage'],
         search: debouncedSearch || undefined,
-        page,
         pageSize: PAGE_SIZE,
+        cursor: pager.request.cursor,
+        dir: pager.request.dir,
       });
       if (res?.success && Array.isArray(res.data)) {
         setOrders(res.data);
@@ -66,7 +68,7 @@ const LossAndDamageOperations: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [debouncedSearch, page]);
+  }, [debouncedSearch, pager.request]);
 
   useEffect(() => { loadOrders(); }, [loadOrders]);
   useEffect(() => subscribeToOrderStatusChanged(loadOrders), [loadOrders]);
@@ -216,7 +218,7 @@ const LossAndDamageOperations: React.FC = () => {
       width: '155px',
     },
     { header: 'LAST UPDATED', accessor: (order: Order) => toBsDate(order.lastUpdatedAt) || '-', width: '155px' },
-  ], [page, visibleOrders]);
+  ], [pager.request, visibleOrders]);
 
   return (
     <div className="lossdamage-operations-container">
@@ -274,9 +276,9 @@ const LossAndDamageOperations: React.FC = () => {
 
       <Pagination
         ariaLabel="Loss and damage pagination"
-        page={page}
+        page={pager.page}
         totalPages={totalPages}
-        onPageChange={setPage}
+        cursor={pager.controls(meta)}
         summary={`${totalCount} order${totalCount === 1 ? '' : 's'}`}
       />
     </div>

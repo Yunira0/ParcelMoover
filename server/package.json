@@ -4,15 +4,22 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "build": "tsc",
     "start": "node src/index.js",
-    "dev": "nodemon -L ./src/index.ts"
+    "dev": "nodemon -L ./src/index.ts",
+    "seed:delivery-rates": "ts-node --transpile-only prisma/seed-delivery-rates.ts",
+    "seed:demo-users": "ts-node --transpile-only prisma/seed-demo-users.ts",
+    "seed:sales-orders": "ts-node --transpile-only prisma/seed-sales-orders.ts"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
+  "prisma": {
+    "seed": "ts-node --transpile-only prisma/seed.ts"
+  },
   "dependencies": {
     "@prisma/adapter-pg": "^6.19.3",
     "@prisma/client": "6.19.3",
@@ -24,6 +31,7 @@
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "express-rate-limit": "^8.5.2",
+    "helmet": "^8.2.0",
     "ioredis": "^5.11.1",
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.2.0",
@@ -40,9 +48,12 @@
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^25.9.1",
     "@types/pg": "^8.20.0",
+    "@types/supertest": "^7.2.0",
     "nodemon": "^3.1.14",
     "prisma": "6.19.3",
+    "supertest": "^7.2.2",
     "ts-node": "^10.9.2",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.10"
   }
 }

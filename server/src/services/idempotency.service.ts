@@ -23,7 +23,7 @@ interface CachedResponse extends IdempotencyResponse {
 
 /**
  * Hash the request payload to detect tampering
- * If client sends kaey with different vody -> reject.
+ * If client sends key with different body -> reject.
  */
 function hashPayload(body: unknown): string {
   return crypto.createHash("sha256").update(JSON.stringify(body)).digest("hex");

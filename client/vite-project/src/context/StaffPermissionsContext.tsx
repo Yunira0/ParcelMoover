@@ -22,7 +22,9 @@ export const StaffPermissionsProvider: React.FC<{ children: React.ReactNode }> =
           localStorage.setItem('user', JSON.stringify({ ...stored, permissions: perms }));
         }
       })
-      .catch(() => {});
+      .catch((err) => {
+        console.error('Failed to refresh staff permissions:', err);
+      });
   }, [isStaff]);
 
   return (

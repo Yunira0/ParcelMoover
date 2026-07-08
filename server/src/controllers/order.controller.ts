@@ -193,6 +193,22 @@ export async function listOrdersController(req: Request, res: Response) {
       }
     }
 
+    let cursor: string | undefined;
+    if (req.query.cursor !== undefined) {
+      if (typeof req.query.cursor !== "string" || req.query.cursor.length > 400) {
+        return res.status(400).json({ success: false, message: "cursor must be a string of at most 400 characters" });
+      }
+      cursor = req.query.cursor;
+    }
+
+    let dir: "next" | "prev" | undefined;
+    if (req.query.dir !== undefined) {
+      if (req.query.dir !== "next" && req.query.dir !== "prev") {
+        return res.status(400).json({ success: false, message: "dir must be 'next' or 'prev'" });
+      }
+      dir = req.query.dir;
+    }
+
     let sortBy: OrderSortField | undefined;
     if (req.query.sortBy !== undefined) {
       if (typeof req.query.sortBy !== "string" || !ORDER_SORT_FIELDS.includes(req.query.sortBy as OrderSortField)) {
@@ -220,6 +236,8 @@ export async function listOrdersController(req: Request, res: Response) {
         ...(search ? { search } : {}),
         ...(page !== undefined ? { page } : {}),
         ...(pageSize !== undefined ? { pageSize } : {}),
+        ...(cursor !== undefined ? { cursor } : {}),
+        ...(dir !== undefined ? { dir } : {}),
         ...(sortBy ? { sortBy } : {}),
         ...(sortDir ? { sortDir } : {}),
       },

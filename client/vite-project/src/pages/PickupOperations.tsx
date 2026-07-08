@@ -22,6 +22,7 @@ import {
   type ParcelStatus,
 } from '../services/orders.service';
 import { getRiders } from '../services/users.service';
+import { useCursorPagination } from '../hooks/useCursorPagination';
 import './PickupOperations.css';
 
 type PickupTab = 'pickup_ordered' | 'rider_assigned' | 'picked_up' | 'arrived' | 'failed' | 'cancelled';
@@ -116,7 +117,7 @@ const PickupOperations: React.FC = () => {
   });
   const [searchQuery, setSearchQuery] = useState(() => searchParams.get('search') || '');
   const [debouncedSearch, setDebouncedSearch] = useState(() => searchParams.get('search') || '');
-  const [page, setPage] = useState(1);
+  const pager = useCursorPagination();
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [selectedIdsByTab, setSelectedIdsByTab] = useState<Record<PickupTab, Set<string | number>>>(createEmptyTabSelections);
@@ -152,8 +153,9 @@ const PickupOperations: React.FC = () => {
       const res = await getOrders({
         status: TAB_STATUSES[activeTab],
         search: debouncedSearch || undefined,
-        page,
         pageSize: PAGE_SIZE,
+        cursor: pager.request.cursor,
+        dir: pager.request.dir,
       });
       if (res?.success && Array.isArray(res.data)) {
         setOrders(res.data);
@@ -165,17 +167,17 @@ const PickupOperations: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [activeTab, debouncedSearch, page]);
+  }, [activeTab, debouncedSearch, pager.request]);
 
   useEffect(() => { loadPickups(); }, [loadPickups]);
   useEffect(() => subscribeToOrderStatusChanged(loadPickups), [loadPickups]);
 
   useEffect(() => {
-    setPage(1);
+    pager.reset();
     setIsActionOpen(false);
     setActionError('');
     setRiderId('');
-  }, [activeTab, debouncedSearch]);
+  }, [activeTab, debouncedSearch, pager.reset]);
 
   // Keep tab/search bookmarkable - mirror into the URL (replacing history,
   // not pushing, so the back button doesn't step through every keystroke).
@@ -191,7 +193,7 @@ const PickupOperations: React.FC = () => {
   // of the currently-fetched page.
   useEffect(() => {
     setSelectedIdsByTab(prev => ({ ...prev, [activeTab]: new Set() }));
-  }, [activeTab, page]);
+  }, [activeTab, pager.request]);
 
   const visibleOrders = orders;
   const totalPages = meta?.totalPages ?? 1;
@@ -520,9 +522,9 @@ const PickupOperations: React.FC = () => {
 
       <Pagination
         ariaLabel="Pickup pagination"
-        page={page}
+        page={pager.page}
         totalPages={totalPages}
-        onPageChange={setPage}
+        cursor={pager.controls(meta)}
         summary={meta ? `${meta.total} order${meta.total === 1 ? '' : 's'}` : undefined}
       />
     </div>

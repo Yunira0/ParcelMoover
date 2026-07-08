@@ -18,6 +18,7 @@ import {
   type ParcelStatus,
 } from '../../services/orders.service';
 import { printLabels } from '../../utils/printLabels';
+import { useCursorPagination } from '../../hooks/useCursorPagination';
 import './VendorOrders.css';
 
 const STATUS_LABELS: Record<ParcelStatus, string> = {
@@ -119,7 +120,7 @@ const VendorOrders: React.FC = () => {
   // so the Apply/Clear buttons behave the way the order screen leads users to expect.
   const [draft, setDraft] = useState<VendorOrderFilters>(() => filtersFromSearchParams(searchParams));
   const [applied, setApplied] = useState<VendorOrderFilters>(() => filtersFromSearchParams(searchParams));
-  const [page, setPage] = useState(1);
+  const pager = useCursorPagination();
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [remarkPopupOrder, setRemarkPopupOrder] = useState<Order | null>(null);
   const [trackingSearch, setTrackingSearch] = useState(() => searchParams.get('search') || '');
@@ -142,8 +143,9 @@ const VendorOrders: React.FC = () => {
         status: applied.status ? [applied.status as ParcelStatus] : undefined,
         orderType: (applied.orderType as OrderType) || undefined,
         search: debouncedSearch || undefined,
-        page,
         pageSize: PAGE_SIZE,
+        cursor: pager.request.cursor,
+        dir: pager.request.dir,
       });
       if (res?.success && Array.isArray(res.data)) {
         setOrders(res.data);
@@ -155,11 +157,11 @@ const VendorOrders: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [applied.status, applied.orderType, debouncedSearch, page]);
+  }, [applied.status, applied.orderType, debouncedSearch, pager.request]);
 
   useEffect(() => { loadOrders(); }, [loadOrders]);
   useEffect(() => subscribeToOrderStatusChanged(loadOrders), [loadOrders]);
-  useEffect(() => { setPage(1); }, [applied, debouncedSearch]);
+  useEffect(() => { pager.reset(); }, [applied, debouncedSearch, pager.reset]);
 
   // Keep applied filters/search bookmarkable - mirror into the URL (replacing
   // history, not pushing, so the back button doesn't step through every change).
@@ -217,7 +219,7 @@ const VendorOrders: React.FC = () => {
   // a bulk action never silently drops ids that scrolled out of view.
   useEffect(() => {
     setSelectedIds(new Set());
-  }, [page]);
+  }, [pager.request]);
 
   const applyFilters = () => setApplied(draft);
   const clearFilters = () => {
@@ -569,9 +571,9 @@ const VendorOrders: React.FC = () => {
 
         <Pagination
           ariaLabel="Orders pagination"
-          page={page}
+          page={pager.page}
           totalPages={totalPages}
-          onPageChange={setPage}
+          cursor={pager.controls(meta)}
           summary={meta
             ? hasDateOrHubFilter
               ? `${visibleOrders.length} of ${orders.length} on this page match your filters — ${meta.total} total`

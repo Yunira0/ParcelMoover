@@ -1,6 +1,6 @@
 import { Request, Router } from "express";
 import { rateLimit, ipKeyGenerator } from "express-rate-limit";
-import { authMiddleware } from "../middlewares/auth.mddleware";
+import { authMiddleware } from "../middlewares/auth.middleware";
 import { authorizeRoles } from "../middlewares/authorizeRoles.middleware";
 import { requireStaffPermission } from "../middlewares/staffPermission.middleware";
 import { validate } from "../middlewares/validate.middleware";
@@ -69,6 +69,7 @@ financeRouter.get(
   "/unsettled-orders",
   authMiddleware,
   authorizeRoles("super_admin", "admin", "vendor", "rider", "sales"),
+  requireStaffPermission("FINANCE_ACCESS"),
   financeReadLimiter,
   getUnsettledOrdersController,
 );

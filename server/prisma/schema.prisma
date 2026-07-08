@@ -36,7 +36,7 @@ model admins {
   bank_account_holder String?
   joined_at   DateTime?  @db.Date
   created_at  DateTime   @default(now()) @db.Timestamptz(6)
-  updated_at  DateTime   @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime   @default(now()) @updatedAt @db.Timestamptz(6)
   locations   locations? @relation(fields: [location_id], references: [id], onUpdate: NoAction)
   users       users      @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
@@ -75,7 +75,7 @@ model cod_collections {
   payment_status   payment_status     @default(pending)
   collected_at     DateTime?          @db.Timestamptz(6)
   created_at       DateTime           @default(now()) @db.Timestamptz(6)
-  updated_at       DateTime           @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime           @default(now()) @updatedAt @db.Timestamptz(6)
   parcels          parcels            @relation(fields: [parcel_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   riders           riders?            @relation(fields: [rider_id], references: [id], onUpdate: NoAction)
   vendors          vendors?           @relation(fields: [vendor_id], references: [id], onUpdate: NoAction)
@@ -106,7 +106,7 @@ model delivery_rates {
   is_active                                                   Boolean   @default(true)
   created_by                                                  String?   @db.Uuid
   created_at                                                  DateTime  @default(now()) @db.Timestamptz(6)
-  updated_at                                                  DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at                                                  DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
   users                                                       users?    @relation(fields: [created_by], references: [id], onUpdate: NoAction)
   locations_delivery_rates_origin_location_idTolocations      locations @relation("delivery_rates_origin_location_idTolocations", fields: [origin_location_id], references: [id], onUpdate: NoAction)
   locations_delivery_rates_destination_location_idTolocations locations @relation("delivery_rates_destination_location_idTolocations", fields: [destination_location_id], references: [id], onUpdate: NoAction)
@@ -125,7 +125,7 @@ model dispatches {
   arrived_at                                       DateTime?          @db.Timestamptz(6)
   remarks                                          String?
   created_at                                       DateTime           @default(now()) @db.Timestamptz(6)
-  updated_at                                       DateTime           @default(now()) @db.Timestamptz(6)
+  updated_at                                       DateTime           @default(now()) @updatedAt @db.Timestamptz(6)
   dispatch_parcels                                 dispatch_parcels[]
   riders                                           riders?            @relation(fields: [delivery_rider_id], references: [id], onUpdate: NoAction)
   users                                            users?             @relation(fields: [dispatched_by], references: [id], onUpdate: NoAction)
@@ -156,7 +156,7 @@ model locations {
   valley                                                           String?                 // inside | outside
   per_destination_rate                                             Decimal?                @db.Decimal(12, 2)
   created_at                                                       DateTime                @default(now()) @db.Timestamptz(6)
-  updated_at                                                       DateTime                @default(now()) @db.Timestamptz(6)
+  updated_at                                                       DateTime                @default(now()) @updatedAt @db.Timestamptz(6)
   admins                                                           admins[]
   delivery_rates_delivery_rates_origin_location_idTolocations      delivery_rates[]        @relation("delivery_rates_origin_location_idTolocations")
   delivery_rates_delivery_rates_destination_location_idTolocations delivery_rates[]        @relation("delivery_rates_destination_location_idTolocations")
@@ -186,6 +186,8 @@ model notifications {
   read_at     DateTime? @db.Timestamptz(6)
   created_at  DateTime  @default(now()) @db.Timestamptz(6)
   users       users     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([user_id, read_at], map: "idx_notifications_user_read")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -278,7 +280,7 @@ model parcels {
   created_at                                           DateTime                @default(now()) @db.Timestamptz(6)
   picked_up_at                                         DateTime?               @db.Timestamptz(6)
   delivered_at                                         DateTime?               @db.Timestamptz(6)
-  updated_at                                           DateTime                @default(now()) @db.Timestamptz(6)
+  updated_at                                           DateTime                @default(now()) @updatedAt @db.Timestamptz(6)
   deleted_at                                           DateTime?               @db.Timestamptz(6)
   cod_collections                                      cod_collections?
   dispatch_parcels                                     dispatch_parcels[]
@@ -299,6 +301,7 @@ model parcels {
   support_tickets                                      support_tickets[]
 
   @@index([created_at(sort: Desc)], map: "idx_parcels_created_at")
+  @@index([order_number(sort: Desc), id(sort: Desc)], map: "idx_parcels_order_number_id")
   @@index([created_by], map: "idx_parcels_created_by")
   @@index([current_location_id], map: "idx_parcels_current_location")
   @@index([delivered_at(sort: Desc)], map: "idx_parcels_delivered_at")
@@ -309,6 +312,7 @@ model parcels {
   @@index([receiver_id], map: "idx_parcels_receiver_id")
   @@index([sender_id], map: "idx_parcels_sender_id")
   @@index([vendor_id], map: "idx_parcels_vendor_id")
+  @@index([status], map: "idx_parcels_status")
   @@index([search_text(ops: raw("gin_trgm_ops"))], map: "idx_parcels_search_text", type: Gin)
 }
 
@@ -321,7 +325,7 @@ model parties {
   address                              String?
   location_id                          String?    @db.Uuid
   created_at                           DateTime   @default(now()) @db.Timestamptz(6)
-  updated_at                           DateTime   @default(now()) @db.Timestamptz(6)
+  updated_at                           DateTime   @default(now()) @updatedAt @db.Timestamptz(6)
   parcels_parcels_receiver_idToparties parcels[]  @relation("parcels_receiver_idToparties")
   parcels_parcels_sender_idToparties   parcels[]  @relation("parcels_sender_idToparties")
   locations                            locations? @relation(fields: [location_id], references: [id], onUpdate: NoAction)
@@ -340,7 +344,7 @@ model pickup_tasks {
   completed_at   DateTime?     @db.Timestamptz(6)
   status         parcel_status @default(pickup_ordered)
   created_at     DateTime      @default(now()) @db.Timestamptz(6)
-  updated_at     DateTime      @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime      @default(now()) @updatedAt @db.Timestamptz(6)
   parcels        parcels       @relation(fields: [parcel_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   riders         riders?       @relation(fields: [rider_id], references: [id], onUpdate: NoAction)
 
@@ -369,7 +373,7 @@ model riders {
   status                                    user_status       @default(active)
   joined_at                                 DateTime?         @db.Date
   created_at                                DateTime          @default(now()) @db.Timestamptz(6)
-  updated_at                                DateTime          @default(now()) @db.Timestamptz(6)
+  updated_at                                DateTime          @default(now()) @updatedAt @db.Timestamptz(6)
   deleted_at                                DateTime?         @db.Timestamptz(6)
   cod_collections                           cod_collections[]
   dispatches                                dispatches[]
@@ -392,7 +396,7 @@ model run_sheets {
   rider_id          String              @db.Uuid
   created_by        String?             @db.Uuid
   created_at        DateTime            @default(now()) @db.Timestamptz(6)
-  updated_at        DateTime            @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime            @default(now()) @updatedAt @db.Timestamptz(6)
   run_sheet_parcels run_sheet_parcels[]
   riders            riders              @relation(fields: [rider_id], references: [id], onUpdate: NoAction)
   users             users?              @relation(fields: [created_by], references: [id], onUpdate: NoAction)
@@ -418,7 +422,7 @@ model roles {
   name        String
   description String?
   created_at  DateTime     @default(now()) @db.Timestamptz(6)
-  updated_at  DateTime     @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime     @default(now()) @updatedAt @db.Timestamptz(6)
   user_roles  user_roles[]
 }
 
@@ -428,7 +432,7 @@ model settlement_items {
   cod_collection_id String          @db.Uuid
   amount            Decimal         @db.Decimal(12, 2)
   created_at        DateTime        @default(now()) @db.Timestamptz(6)
-  cod_collections   cod_collections @relation(fields: [cod_collection_id], references: [id], onUpdate: NoAction)
+  cod_collections   cod_collections @relation(fields: [cod_collection_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   settlements       settlements     @relation(fields: [settlement_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@id([settlement_id, cod_collection_id])
@@ -449,7 +453,7 @@ model settlements {
   approved_by                          String?            @db.Uuid
   settled_by                           String?            @db.Uuid
   created_at                           DateTime           @default(now()) @db.Timestamptz(6)
-  updated_at                           DateTime           @default(now()) @db.Timestamptz(6)
+  updated_at                           DateTime           @default(now()) @updatedAt @db.Timestamptz(6)
   settlement_items                     settlement_items[]
   users_settlements_approved_byTousers users?             @relation("settlements_approved_byTousers", fields: [approved_by], references: [id], onUpdate: NoAction)
   riders                               riders?            @relation(fields: [rider_id], references: [id], onUpdate: NoAction)
@@ -476,7 +480,7 @@ model support_tickets {
   assigned_to                              String?       @db.Uuid
   created_by                               String?       @db.Uuid
   created_at                               DateTime      @default(now()) @db.Timestamptz(6)
-  updated_at                               DateTime      @default(now()) @db.Timestamptz(6)
+  updated_at                               DateTime      @default(now()) @updatedAt @db.Timestamptz(6)
   closed_at                                DateTime?     @db.Timestamptz(6)
   users_support_tickets_assigned_toTousers users?        @relation("support_tickets_assigned_toTousers", fields: [assigned_to], references: [id], onUpdate: NoAction)
   users_support_tickets_created_byTousers  users?        @relation("support_tickets_created_byTousers", fields: [created_by], references: [id], onUpdate: NoAction)
@@ -509,7 +513,7 @@ model users {
   must_change_password                                   Boolean                 @default(false)
   last_login_at                                          DateTime?               @db.Timestamptz(6)
   created_at                                             DateTime                @default(now()) @db.Timestamptz(6)
-  updated_at                                             DateTime                @default(now()) @db.Timestamptz(6)
+  updated_at                                             DateTime                @default(now()) @updatedAt @db.Timestamptz(6)
   deleted_at                                             DateTime?               @db.Timestamptz(6)
   admins                                                 admins?
   audit_logs                                             audit_logs[]
@@ -565,7 +569,7 @@ model vendors {
   joined_at       DateTime?         @db.Date
   last_ordered_at DateTime?         @db.Timestamptz(6)
   created_at      DateTime          @default(now()) @db.Timestamptz(6)
-  updated_at      DateTime          @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime          @default(now()) @updatedAt @db.Timestamptz(6)
   deleted_at      DateTime?         @db.Timestamptz(6)
   cod_collections cod_collections[]
   parcels         parcels[]
@@ -588,7 +592,7 @@ model pricing_settings {
   flat_outside_valley Decimal? @db.Decimal(12, 2)
   free_weight_kg      Decimal  @default(2) @db.Decimal(10, 3)
   created_at          DateTime @default(now()) @db.Timestamptz(6)
-  updated_at          DateTime @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime @default(now()) @updatedAt @db.Timestamptz(6)
 }
 
 enum exception_status {
@@ -698,7 +702,7 @@ model vendor_kyc_applications {
   rejection_reason     String?
   notes                String?
   created_at           DateTime  @default(now()) @db.Timestamptz(6)
-  updated_at           DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
 
   @@index([status], map: "idx_kyc_status")
   @@index([created_at(sort: Desc)], map: "idx_kyc_created_at")
@@ -731,7 +735,7 @@ model vendor_staff {
   enabled     Boolean   @default(true)
   created_by  String?   @db.Uuid
   created_at  DateTime  @default(now()) @db.Timestamptz(6)
-  updated_at  DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
   deleted_at  DateTime? @db.Timestamptz(6)
   users       users?    @relation(fields: [user_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
