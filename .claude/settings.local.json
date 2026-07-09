@@ -98,7 +98,17 @@
       "Bash(rm verify-dashboard-consolidation.ts.bak)",
       "Bash(rm /Users/gyanendrakhatiwada/parcelmoover-beta/server/verify-dashboard-consolidation.ts)",
       "Bash(rm /private/tmp/claude-501/-Users-gyanendrakhatiwada-parcelmoover-beta/a2de7200-f129-48be-933f-cec9de6649aa/scratchpad/verify-dashboard-consolidation.ts)",
-      "mcp__visualize__show_widget"
+      "mcp__visualize__show_widget",
+      "Bash(git merge *)",
+      "Bash(grep -c '\\\\$')",
+      "Bash(git add *)",
+      "Bash(grep -rn \"'/me'\\\\|\\\\\"/me\\\\\"\\\\|axios.get\\(\\\\`.*\\\\/me\\\\`\\\\|fetch\\(\\\\`.*\\\\/me\\\\`\" client/vite-project/src rider/src --include=\"*.ts\" --include=\"*.tsx\")",
+      "Bash(git log *)",
+      "Bash(git rev-list *)",
+      "Bash(git show *)",
+      "Bash(echo \"exit code was: $?\")",
+      "Bash(npx vitest *)",
+      "Bash(cd *)"
     ]
   },
   "skillOverrides": {}
