@@ -34,17 +34,32 @@ api.interceptors.request.use(
   }
 );
 
-// The backend now enforces a pending forced password change on every
-// authenticated call (not just at login), so a session whose cached
-// `user.mustChangePassword` is stale (e.g. the flag flipped true after this
-// browser's login/cache was set) would otherwise 403 on every request with no
-// explanation. Catch that specific response, resync the cache, and send the
-// user to the same screen ProtectedRoute already redirects to on fresh logins.
+// Guard so concurrent 401s (e.g. a dashboard firing several requests at once)
+// only trigger a single cleanup + redirect.
+let isHandlingSessionExpiry = false;
+
+// Response interceptor: handles two session-level failure modes.
+// 1) The backend enforces a pending forced password change on every
+//    authenticated call (not just at login), so a session whose cached
+//    `user.mustChangePassword` is stale (e.g. the flag flipped true after
+//    this browser's login/cache was set) would otherwise 403 on every
+//    request with no explanation. Resync the cache and send the user to the
+//    same screen ProtectedRoute already redirects to on fresh logins.
+// 2) When the session is no longer valid (401), clear the local session and
+//    send the user to the login screen instead of leaving them stuck on a
+//    confusing error state.
+//
+// NOTE: we intentionally do NOT treat other 403s as a session-expiry. In this
+// app 403 is also returned for legitimate authorization denials (CSRF, role
+// checks) where logging the user out would be wrong.
 api.interceptors.response.use(
   (response) => response,
   (error) => {
+    const status = error.response?.status;
     const message = error.response?.data?.message;
-    if (error.response?.status === 403 && message === 'Password change required before continuing') {
+    const requestUrl: string = error.config?.url ?? '';
+
+    if (status === 403 && message === 'Password change required before continuing') {
       try {
         const cached = JSON.parse(localStorage.getItem('user') || 'null');
         if (cached) {
@@ -57,6 +72,22 @@ api.interceptors.response.use(
         window.location.href = '/change-password';
       }
     }
+
+    // A 401 on the login request means "wrong credentials" — let the Login page
+    // display that; don't redirect (there's nothing to log out of).
+    const isLoginRequest = requestUrl.includes('/auth/login');
+
+    if (status === 401 && !isLoginRequest && !isHandlingSessionExpiry) {
+      isHandlingSessionExpiry = true;
+      localStorage.removeItem('user');
+
+      if (window.location.pathname !== '/login') {
+        // Full-page redirect: this interceptor lives outside React Router, so we
+        // can't use navigate() here.
+        window.location.assign('/login?expired=1');
+      }
+    }
+
     return Promise.reject(error);
   }
 );

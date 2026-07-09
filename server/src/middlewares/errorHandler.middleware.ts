@@ -82,17 +82,20 @@ export function errorHandler(
         return;
 
       default:
+        console.error("[Unhandled Prisma Error]", err.code, err.meta);
         res.status(400).json({
           success: false,
           message: "Database operation failed",
-          code: err.code,
         });
         return;
     }
   }
 
-  // 4. Unexpected errors — log server-side, never expose internals to the client
-  const isDev = process.env.NODE_ENV !== "production";
+  // 4. Unexpected errors — log server-side, never expose internals to the client.
+  // Fail safe: only show stack traces when NODE_ENV is explicitly "development",
+  // not merely "not production" (an unset/misconfigured NODE_ENV must never
+  // default to the verbose/leaky behavior).
+  const isDev = process.env.NODE_ENV === "development";
 
   if (isDev) {
     console.error("[Unhandled Error]", err);

@@ -47,22 +47,8 @@ const RiderManagement: React.FC = () => {
       } else if (Array.isArray(res)) {
         setRiders(res);
       } else {
-        // Mock data based on Figma design (fallback if needed)
-        const mockRiders: RiderUser[] = [
-          {
-            id: '1',
-            sn: 1,
-            name: 'Rider One',
-            email: 'rider.one@parcelmoover.com',
-            phone: '9800000001',
-            location: 'Kathmandu, Nepal',
-            orders: { total: 2, delivered: 1, returned: 0 },
-            payment: 'COD',
-            status: 'active',
-            joined: '2026-05-01'
-          }
-        ];
-        if (riders.length === 0) setRiders(mockRiders);
+        console.error('Unexpected riders response shape:', res);
+        setRiders([]);
       }
     } catch (err) {
       console.error('Failed to load riders:', err);

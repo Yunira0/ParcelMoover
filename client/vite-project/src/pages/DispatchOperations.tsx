@@ -23,6 +23,7 @@ import {
 } from '../services/orders.service';
 import { getRiders } from '../services/users.service';
 import { printLabels } from '../utils/printLabels';
+import { useCursorPagination } from '../hooks/useCursorPagination';
 import './DispatchOperations.css';
 
 type DispatchTab =
@@ -128,7 +129,7 @@ const DispatchOperations: React.FC = () => {
   });
   const [searchQuery, setSearchQuery] = useState(() => searchParams.get('search') || '');
   const [debouncedSearch, setDebouncedSearch] = useState(() => searchParams.get('search') || '');
-  const [page, setPage] = useState(1);
+  const pager = useCursorPagination();
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [selectedIdsByTab, setSelectedIdsByTab] = useState<Record<DispatchTab, Set<string | number>>>(createEmptyTabSelections);
@@ -161,8 +162,8 @@ const DispatchOperations: React.FC = () => {
   }, [searchQuery]);
 
   useEffect(() => {
-    setPage(1);
-  }, [activeTab, debouncedSearch]);
+    pager.reset();
+  }, [activeTab, debouncedSearch, pager.reset]);
 
   // Keep tab/search bookmarkable - mirror into the URL (replacing history,
   // not pushing, so the back button doesn't step through every keystroke).
@@ -179,8 +180,9 @@ const DispatchOperations: React.FC = () => {
       const res = await getOrders({
         status: TAB_STATUSES[activeTab],
         search: debouncedSearch || undefined,
-        page,
         pageSize: PAGE_SIZE,
+        cursor: pager.request.cursor,
+        dir: pager.request.dir,
       });
       if (res?.success && Array.isArray(res.data)) {
         setOrders(res.data);
@@ -192,7 +194,7 @@ const DispatchOperations: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [activeTab, debouncedSearch, page]);
+  }, [activeTab, debouncedSearch, pager.request]);
 
   useEffect(() => { loadDispatches(); }, [loadDispatches]);
   useEffect(() => subscribeToOrderStatusChanged(loadDispatches), [loadDispatches]);
@@ -210,7 +212,7 @@ const DispatchOperations: React.FC = () => {
   // of the currently-fetched page.
   useEffect(() => {
     setSelectedIdsByTab(prev => ({ ...prev, [activeTab]: new Set() }));
-  }, [activeTab, page]);
+  }, [activeTab, pager.request]);
   const allowedStatusOptions = useMemo(() => {
     if (selectedOrders.length === 0) return [];
 
@@ -433,7 +435,7 @@ const DispatchOperations: React.FC = () => {
         value={activeTab}
         onChange={(tab) => {
           setActiveTab(tab);
-          setPage(1);
+          pager.reset();
           setIsActionOpen(false);
           setActionError('');
           setRiderId('');
@@ -557,7 +559,7 @@ const DispatchOperations: React.FC = () => {
           value={searchQuery}
           onChange={event => {
             setSearchQuery(event.target.value);
-            setPage(1);
+            pager.reset();
             setIsActionOpen(false);
             setActionError('');
             setRiderId('');
@@ -583,9 +585,9 @@ const DispatchOperations: React.FC = () => {
 
       <Pagination
         ariaLabel="Dispatch pagination"
-        page={page}
+        page={pager.page}
         totalPages={totalPages}
-        onPageChange={setPage}
+        cursor={pager.controls(meta)}
         summary={meta ? `${meta.total} order${meta.total === 1 ? '' : 's'}` : undefined}
       />
     </div>

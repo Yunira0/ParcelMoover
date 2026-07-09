@@ -14,8 +14,11 @@ export default defineConfig({
         changeOrigin: true,
         configure: (proxy) => {
           proxy.on('proxyReq', (proxyReq) => {
-            // Rewrite origin so server CORS accepts it regardless of ngrok URL
-            proxyReq.setHeader('Origin', 'http://localhost:5200')
+            // Rewrite origin so server CORS accepts it regardless of ngrok URL.
+            // Dev-server-only: never spoof the Origin header outside local development.
+            if (process.env.NODE_ENV === 'development') {
+              proxyReq.setHeader('Origin', 'http://localhost:5200')
+            }
           })
         },
       },
@@ -64,6 +67,13 @@ export default defineConfig({
             // https and http (e.g. plain-HTTP LAN/self-hosted deployments
             // without TLS) both resolve /api requests to the current origin.
             urlPattern: /^https?:\/\/.*\/api\//,
+            // Explicit on purpose: NetworkFirst must never intercept mutating
+            // requests (POST/PATCH/PUT/DELETE) - a stale cached response
+            // being served for e.g. a status update would tell the rider it
+            // succeeded when it never reached the server. Workbox defaults
+            // this to GET when unset, but that's an implicit default one
+            // config edit away from silently changing.
+            method: 'GET',
             handler: 'NetworkFirst',
             options: {
               cacheName: 'api-cache',

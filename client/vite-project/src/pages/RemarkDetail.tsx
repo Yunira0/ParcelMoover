@@ -96,6 +96,16 @@ const RemarkDetail: React.FC = () => {
       const res = await getRemarkById(id);
       if (res?.success && res.data) {
         setRemark(res.data);
+        // Viewing a pending remark acknowledges it — moved here (an explicit
+        // status-change call) instead of being a side effect of the GET itself.
+        if (res.data.status === 'pending') {
+          try {
+            await setRemarkStatus(id, 'open');
+            setRemark((prev) => (prev ? { ...prev, status: 'open' } : prev));
+          } catch {
+            // Non-fatal: the remark still loaded fine, just didn't auto-open.
+          }
+        }
       }
     } catch (err: any) {
       setError(err.response?.data?.message || 'Failed to load remark');

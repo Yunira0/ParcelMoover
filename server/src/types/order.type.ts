@@ -78,8 +78,14 @@ export interface ListOrdersQuery {
   status?: ParcelStatus[];
   orderType?: OrderType;
   search?: string;
+  // Display-only page hint echoed back in meta; the actual position comes
+  // from the keyset cursor, never from a row offset.
   page?: number;
   pageSize?: number;
+  // Opaque keyset cursor (base64url of the boundary row's sort value + id).
+  // Omitted = first page ("next") or last page ("prev").
+  cursor?: string;
+  dir?: "next" | "prev";
   sortBy?: OrderSortField;
   sortDir?: "asc" | "desc";
 }

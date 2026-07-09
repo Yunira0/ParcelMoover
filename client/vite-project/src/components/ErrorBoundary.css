@@ -1,0 +1,23 @@
+.error-boundary {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  padding: var(--space-12) var(--space-6);
+  text-align: center;
+  color: var(--color-text-caption);
+}
+
+.error-boundary h1 {
+  margin: 0;
+  font-size: var(--font-size-2xl);
+  font-weight: 800;
+  color: var(--color-text-default);
+}
+
+.error-boundary p {
+  margin: 0 0 var(--space-3);
+  color: var(--color-text-caption);
+}

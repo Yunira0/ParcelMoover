@@ -13,6 +13,7 @@ import { sendSuccess } from "../utils/ApiResponse";
 import jwt from "jsonwebtoken";
 import prisma from "../lib/prisma";
 import { revokeToken } from "../lib/tokenRevocation";
+import { ACCESS_TOKEN_AUDIENCE, CSRF_TOKEN_AUDIENCE, JWT_ALGORITHM, JWT_ISSUER } from "../utils/jwtConfig";
 
 const formatDate = (date?: Date | null) => date ? date.toISOString().slice(0, 10) : "";
 const managedUserTypes = ["admin", "vendor", "rider"] as const;
@@ -224,6 +225,9 @@ export const login = async (req: Request, res: Response) => {
 
     const csrfToken = jwt.sign({ sub: result.user.id }, secret, {
       expiresIn: "7d",
+      algorithm: JWT_ALGORITHM,
+      issuer: JWT_ISSUER,
+      audience: CSRF_TOKEN_AUDIENCE,
     });
 
     res.cookie("accessToken", result.token, {
@@ -251,10 +255,9 @@ export const login = async (req: Request, res: Response) => {
       message: "Login successful",
       data: result.user,
       csrfToken,
-      token: result.token,
     });
   } catch (error: any) {
-    console.log("Error in login controller:", error);
+    console.error("Error in login controller:", error);
     res.status(error.statusCode || 500).json({
       success: false,
       message: error.message || "Internal Server Error",
@@ -262,6 +265,12 @@ export const login = async (req: Request, res: Response) => {
     });
   }
 };
+
+// No page/pageSize params here (unlike getVendorsController/getRidersController) -
+// the admin list UI (AdminManagement.tsx) renders the full list client-side with
+// no pagination controls. This cap is just a defensive ceiling against unbounded
+// growth, not real pagination; adding that would need a matching frontend change.
+const ADMINS_LIST_CAP = 500;
 
 export const getAdminsController = async (_req: Request, res: Response) => {
   try {
@@ -274,6 +283,7 @@ export const getAdminsController = async (_req: Request, res: Response) => {
         locations: true,
       },
       orderBy: { created_at: "desc" },
+      take: ADMINS_LIST_CAP,
     });
 
     return res.status(200).json({
@@ -499,7 +509,11 @@ export const logoutController = async (req: Request, res: Response) => {
 
     if (token && process.env.JWT_SECRET) {
       try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET) as { jti?: string; exp?: number };
+        const decoded = jwt.verify(token, process.env.JWT_SECRET, {
+          algorithms: ["HS256"],
+          issuer: JWT_ISSUER,
+          audience: ACCESS_TOKEN_AUDIENCE,
+        }) as { jti?: string; exp?: number };
         if (decoded.jti && decoded.exp) {
           await revokeToken(decoded.jti, decoded.exp);
         }

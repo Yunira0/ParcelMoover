@@ -11,36 +11,36 @@ datasource db {
 }
 
 model admins {
-  id          String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  user_id     String     @unique @db.Uuid
-  location_id String?    @db.Uuid
-  position    String?
+  id                    String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id               String     @unique @db.Uuid
+  location_id           String?    @db.Uuid
+  position              String?
   /// Extra privileges granted by a super_admin (see ADMIN_PERMISSIONS).
-  permissions String[]   @default([])
-  department          String?
-  address             String?
-  citizenship_no      String?
-  pan                 String?
-  father_name         String?
-  mother_name         String?
-  grandfather_name    String?
-  permanent_address   String?
-  current_address     String?
-  experience          String?
-  id_document_type    String?
-  id_document_number  String?
-  id_document         String?
-  citizenship_doc     String?
-  pan_doc             String?
+  permissions           String[]   @default([])
+  department            String?
+  address               String?
+  citizenship_no        String?
+  pan                   String?
+  father_name           String?
+  mother_name           String?
+  grandfather_name      String?
+  permanent_address     String?
+  current_address       String?
+  experience            String?
+  id_document_type      String?
+  id_document_number    String?
+  id_document           String?
+  citizenship_doc       String?
+  pan_doc               String?
   experience_letter_doc String?
-  bank_name           String?
-  bank_account_no     String?
-  bank_account_holder String?
-  joined_at   DateTime?  @db.Date
-  created_at  DateTime   @default(now()) @db.Timestamptz(6)
-  updated_at  DateTime   @default(now()) @db.Timestamptz(6)
-  locations   locations? @relation(fields: [location_id], references: [id], onUpdate: NoAction)
-  users       users      @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  bank_name             String?
+  bank_account_no       String?
+  bank_account_holder   String?
+  joined_at             DateTime?  @db.Date
+  created_at            DateTime   @default(now()) @db.Timestamptz(6)
+  updated_at            DateTime   @default(now()) @updatedAt @db.Timestamptz(6)
+  locations             locations? @relation(fields: [location_id], references: [id], onUpdate: NoAction)
+  users                 users      @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([location_id], map: "idx_admins_location_id")
 }
@@ -77,7 +77,7 @@ model cod_collections {
   payment_status   payment_status     @default(pending)
   collected_at     DateTime?          @db.Timestamptz(6)
   created_at       DateTime           @default(now()) @db.Timestamptz(6)
-  updated_at       DateTime           @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime           @default(now()) @updatedAt @db.Timestamptz(6)
   parcels          parcels            @relation(fields: [parcel_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   riders           riders?            @relation(fields: [rider_id], references: [id], onUpdate: NoAction)
   vendors          vendors?           @relation(fields: [vendor_id], references: [id], onUpdate: NoAction)
@@ -108,7 +108,7 @@ model delivery_rates {
   is_active                                                   Boolean   @default(true)
   created_by                                                  String?   @db.Uuid
   created_at                                                  DateTime  @default(now()) @db.Timestamptz(6)
-  updated_at                                                  DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at                                                  DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
   users                                                       users?    @relation(fields: [created_by], references: [id], onUpdate: NoAction)
   locations_delivery_rates_origin_location_idTolocations      locations @relation("delivery_rates_origin_location_idTolocations", fields: [origin_location_id], references: [id], onUpdate: NoAction)
   locations_delivery_rates_destination_location_idTolocations locations @relation("delivery_rates_destination_location_idTolocations", fields: [destination_location_id], references: [id], onUpdate: NoAction)
@@ -127,7 +127,7 @@ model dispatches {
   arrived_at                                       DateTime?          @db.Timestamptz(6)
   remarks                                          String?
   created_at                                       DateTime           @default(now()) @db.Timestamptz(6)
-  updated_at                                       DateTime           @default(now()) @db.Timestamptz(6)
+  updated_at                                       DateTime           @default(now()) @updatedAt @db.Timestamptz(6)
   dispatch_parcels                                 dispatch_parcels[]
   riders                                           riders?            @relation(fields: [delivery_rider_id], references: [id], onUpdate: NoAction)
   users                                            users?             @relation(fields: [dispatched_by], references: [id], onUpdate: NoAction)
@@ -154,11 +154,11 @@ model locations {
   longitude                                                        Decimal?                @db.Decimal(10, 7)
   is_hub                                                           Boolean                 @default(false)
   is_active                                                        Boolean                 @default(true)
-  zone                                                             String?                 // major_cities | urban_areas | remote_areas
-  valley                                                           String?                 // inside | outside
+  zone                                                             String? // major_cities | urban_areas | remote_areas
+  valley                                                           String? // inside | outside
   per_destination_rate                                             Decimal?                @db.Decimal(12, 2)
   created_at                                                       DateTime                @default(now()) @db.Timestamptz(6)
-  updated_at                                                       DateTime                @default(now()) @db.Timestamptz(6)
+  updated_at                                                       DateTime                @default(now()) @updatedAt @db.Timestamptz(6)
   admins                                                           admins[]
   delivery_rates_delivery_rates_origin_location_idTolocations      delivery_rates[]        @relation("delivery_rates_origin_location_idTolocations")
   delivery_rates_delivery_rates_destination_location_idTolocations delivery_rates[]        @relation("delivery_rates_destination_location_idTolocations")
@@ -188,6 +188,8 @@ model notifications {
   read_at     DateTime? @db.Timestamptz(6)
   created_at  DateTime  @default(now()) @db.Timestamptz(6)
   users       users     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([user_id, read_at], map: "idx_notifications_user_read")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -215,19 +217,19 @@ model parcel_exceptions {
 }
 
 model parcel_remarks {
-  id                String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  parcel_id         String           @db.Uuid
-  user_id           String?          @db.Uuid
-  location_id       String?          @db.Uuid
-  remark            String
-  created_at        DateTime         @default(now()) @db.Timestamptz(6)
-  parent_remark_id  String?          @db.Uuid
-  workflow_status   String?          @default("pending")
-  locations         locations?       @relation(fields: [location_id], references: [id], onUpdate: NoAction)
-  parcels           parcels          @relation(fields: [parcel_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  users             users?           @relation(fields: [user_id], references: [id], onUpdate: NoAction)
-  parent_remark     parcel_remarks?  @relation("parcel_remark_replies", fields: [parent_remark_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  replies           parcel_remarks[] @relation("parcel_remark_replies")
+  id               String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  parcel_id        String           @db.Uuid
+  user_id          String?          @db.Uuid
+  location_id      String?          @db.Uuid
+  remark           String
+  created_at       DateTime         @default(now()) @db.Timestamptz(6)
+  parent_remark_id String?          @db.Uuid
+  workflow_status  String?          @default("pending")
+  locations        locations?       @relation(fields: [location_id], references: [id], onUpdate: NoAction)
+  parcels          parcels          @relation(fields: [parcel_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users            users?           @relation(fields: [user_id], references: [id], onUpdate: NoAction)
+  parent_remark    parcel_remarks?  @relation("parcel_remark_replies", fields: [parent_remark_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  replies          parcel_remarks[] @relation("parcel_remark_replies")
 
   @@index([location_id], map: "idx_parcel_remarks_location_id")
   @@index([parcel_id, created_at(sort: Desc)], map: "idx_parcel_remarks_parcel_id")
@@ -282,7 +284,7 @@ model parcels {
   created_at                                           DateTime                @default(now()) @db.Timestamptz(6)
   picked_up_at                                         DateTime?               @db.Timestamptz(6)
   delivered_at                                         DateTime?               @db.Timestamptz(6)
-  updated_at                                           DateTime                @default(now()) @db.Timestamptz(6)
+  updated_at                                           DateTime                @default(now()) @updatedAt @db.Timestamptz(6)
   deleted_at                                           DateTime?               @db.Timestamptz(6)
   cod_collections                                      cod_collections?
   dispatch_parcels                                     dispatch_parcels[]
@@ -303,6 +305,7 @@ model parcels {
   support_tickets                                      support_tickets[]
 
   @@index([created_at(sort: Desc)], map: "idx_parcels_created_at")
+  @@index([order_number(sort: Desc), id(sort: Desc)], map: "idx_parcels_order_number_id")
   @@index([created_by], map: "idx_parcels_created_by")
   @@index([current_location_id], map: "idx_parcels_current_location")
   @@index([delivered_at(sort: Desc)], map: "idx_parcels_delivered_at")
@@ -313,6 +316,7 @@ model parcels {
   @@index([receiver_id], map: "idx_parcels_receiver_id")
   @@index([sender_id], map: "idx_parcels_sender_id")
   @@index([vendor_id], map: "idx_parcels_vendor_id")
+  @@index([status], map: "idx_parcels_status")
   @@index([search_text(ops: raw("gin_trgm_ops"))], map: "idx_parcels_search_text", type: Gin)
 }
 
@@ -325,7 +329,7 @@ model parties {
   address                              String?
   location_id                          String?    @db.Uuid
   created_at                           DateTime   @default(now()) @db.Timestamptz(6)
-  updated_at                           DateTime   @default(now()) @db.Timestamptz(6)
+  updated_at                           DateTime   @default(now()) @updatedAt @db.Timestamptz(6)
   parcels_parcels_receiver_idToparties parcels[]  @relation("parcels_receiver_idToparties")
   parcels_parcels_sender_idToparties   parcels[]  @relation("parcels_sender_idToparties")
   locations                            locations? @relation(fields: [location_id], references: [id], onUpdate: NoAction)
@@ -344,7 +348,7 @@ model pickup_tasks {
   completed_at   DateTime?     @db.Timestamptz(6)
   status         parcel_status @default(pickup_ordered)
   created_at     DateTime      @default(now()) @db.Timestamptz(6)
-  updated_at     DateTime      @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime      @default(now()) @updatedAt @db.Timestamptz(6)
   parcels        parcels       @relation(fields: [parcel_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   riders         riders?       @relation(fields: [rider_id], references: [id], onUpdate: NoAction)
 
@@ -373,7 +377,7 @@ model riders {
   status                                    user_status       @default(active)
   joined_at                                 DateTime?         @db.Date
   created_at                                DateTime          @default(now()) @db.Timestamptz(6)
-  updated_at                                DateTime          @default(now()) @db.Timestamptz(6)
+  updated_at                                DateTime          @default(now()) @updatedAt @db.Timestamptz(6)
   deleted_at                                DateTime?         @db.Timestamptz(6)
   cod_collections                           cod_collections[]
   dispatches                                dispatches[]
@@ -396,7 +400,7 @@ model run_sheets {
   rider_id          String              @db.Uuid
   created_by        String?             @db.Uuid
   created_at        DateTime            @default(now()) @db.Timestamptz(6)
-  updated_at        DateTime            @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime            @default(now()) @updatedAt @db.Timestamptz(6)
   run_sheet_parcels run_sheet_parcels[]
   riders            riders              @relation(fields: [rider_id], references: [id], onUpdate: NoAction)
   users             users?              @relation(fields: [created_by], references: [id], onUpdate: NoAction)
@@ -422,7 +426,7 @@ model roles {
   name        String
   description String?
   created_at  DateTime     @default(now()) @db.Timestamptz(6)
-  updated_at  DateTime     @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime     @default(now()) @updatedAt @db.Timestamptz(6)
   user_roles  user_roles[]
 }
 
@@ -432,7 +436,7 @@ model settlement_items {
   cod_collection_id String          @db.Uuid
   amount            Decimal         @db.Decimal(12, 2)
   created_at        DateTime        @default(now()) @db.Timestamptz(6)
-  cod_collections   cod_collections @relation(fields: [cod_collection_id], references: [id], onUpdate: NoAction)
+  cod_collections   cod_collections @relation(fields: [cod_collection_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   settlements       settlements     @relation(fields: [settlement_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@id([settlement_id, cod_collection_id])
@@ -453,7 +457,7 @@ model settlements {
   approved_by                          String?            @db.Uuid
   settled_by                           String?            @db.Uuid
   created_at                           DateTime           @default(now()) @db.Timestamptz(6)
-  updated_at                           DateTime           @default(now()) @db.Timestamptz(6)
+  updated_at                           DateTime           @default(now()) @updatedAt @db.Timestamptz(6)
   settlement_items                     settlement_items[]
   users_settlements_approved_byTousers users?             @relation("settlements_approved_byTousers", fields: [approved_by], references: [id], onUpdate: NoAction)
   riders                               riders?            @relation(fields: [rider_id], references: [id], onUpdate: NoAction)
@@ -480,7 +484,7 @@ model support_tickets {
   assigned_to                              String?       @db.Uuid
   created_by                               String?       @db.Uuid
   created_at                               DateTime      @default(now()) @db.Timestamptz(6)
-  updated_at                               DateTime      @default(now()) @db.Timestamptz(6)
+  updated_at                               DateTime      @default(now()) @updatedAt @db.Timestamptz(6)
   closed_at                                DateTime?     @db.Timestamptz(6)
   users_support_tickets_assigned_toTousers users?        @relation("support_tickets_assigned_toTousers", fields: [assigned_to], references: [id], onUpdate: NoAction)
   users_support_tickets_created_byTousers  users?        @relation("support_tickets_created_byTousers", fields: [created_by], references: [id], onUpdate: NoAction)
@@ -513,7 +517,7 @@ model users {
   must_change_password                                   Boolean                 @default(false)
   last_login_at                                          DateTime?               @db.Timestamptz(6)
   created_at                                             DateTime                @default(now()) @db.Timestamptz(6)
-  updated_at                                             DateTime                @default(now()) @db.Timestamptz(6)
+  updated_at                                             DateTime                @default(now()) @updatedAt @db.Timestamptz(6)
   deleted_at                                             DateTime?               @db.Timestamptz(6)
   admins                                                 admins?
   audit_logs                                             audit_logs[]
@@ -538,46 +542,46 @@ model users {
 }
 
 model vendors {
-  id              String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  user_id         String?           @unique @db.Uuid
-  sales_user_id   String?           @db.Uuid
-  rate_type       String            @default("flat") // per_destination | zone | flat
+  id                    String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id               String?           @unique @db.Uuid
+  sales_user_id         String?           @db.Uuid
+  rate_type             String            @default("flat") // per_destination | zone | flat
   // Per-vendor rate overrides; null falls back to the global pricing_settings.
-  flat_inside_valley  Decimal?      @db.Decimal(12, 2)
-  flat_outside_valley Decimal?      @db.Decimal(12, 2)
-  zone_major_cities   Decimal?      @db.Decimal(12, 2)
-  zone_urban_areas    Decimal?      @db.Decimal(12, 2)
-  zone_remote_areas   Decimal?      @db.Decimal(12, 2)
-  extra_weight_percent Decimal?     @db.Decimal(5, 2)
-  client_name     String
-  business_name   String?
-  phone           String
-  email           String?
-  location_id     String?           @db.Uuid
-  address         String?
+  flat_inside_valley    Decimal?          @db.Decimal(12, 2)
+  flat_outside_valley   Decimal?          @db.Decimal(12, 2)
+  zone_major_cities     Decimal?          @db.Decimal(12, 2)
+  zone_urban_areas      Decimal?          @db.Decimal(12, 2)
+  zone_remote_areas     Decimal?          @db.Decimal(12, 2)
+  extra_weight_percent  Decimal?          @db.Decimal(5, 2)
+  client_name           String
+  business_name         String?
+  phone                 String
+  email                 String?
+  location_id           String?           @db.Uuid
+  address               String?
   sales                 String?
   pickup_landmark       String?
   billing_business_name String?
   registration_no       String?
   pan_vat_no            String?
   citizenship_doc       String?
-  pan_vat_doc          String?
-  business_cert_doc    String?
-  bank_name            String?
-  bank_account_no      String?
-  bank_account_holder  String?
-  status          user_status       @default(active)
-  joined_at       DateTime?         @db.Date
-  last_ordered_at DateTime?         @db.Timestamptz(6)
-  created_at      DateTime          @default(now()) @db.Timestamptz(6)
-  updated_at      DateTime          @default(now()) @db.Timestamptz(6)
-  deleted_at      DateTime?         @db.Timestamptz(6)
-  cod_collections cod_collections[]
-  parcels         parcels[]
-  settlements     settlements[]
-  locations       locations?        @relation(fields: [location_id], references: [id], onUpdate: NoAction)
-  users           users?            @relation("vendor_owner", fields: [user_id], references: [id], onUpdate: NoAction)
-  sales_user      users?            @relation("vendor_sales_user", fields: [sales_user_id], references: [id], onUpdate: NoAction)
+  pan_vat_doc           String?
+  business_cert_doc     String?
+  bank_name             String?
+  bank_account_no       String?
+  bank_account_holder   String?
+  status                user_status       @default(active)
+  joined_at             DateTime?         @db.Date
+  last_ordered_at       DateTime?         @db.Timestamptz(6)
+  created_at            DateTime          @default(now()) @db.Timestamptz(6)
+  updated_at            DateTime          @default(now()) @updatedAt @db.Timestamptz(6)
+  deleted_at            DateTime?         @db.Timestamptz(6)
+  cod_collections       cod_collections[]
+  parcels               parcels[]
+  settlements           settlements[]
+  locations             locations?        @relation(fields: [location_id], references: [id], onUpdate: NoAction)
+  users                 users?            @relation("vendor_owner", fields: [user_id], references: [id], onUpdate: NoAction)
+  sales_user            users?            @relation("vendor_sales_user", fields: [sales_user_id], references: [id], onUpdate: NoAction)
 
   @@index([location_id], map: "idx_vendors_location_id")
   @@index([sales_user_id], map: "idx_vendors_sales_user_id")
@@ -585,16 +589,16 @@ model vendors {
 
 // Single-row global pricing config for zone-based and flat (valley) rate types.
 model pricing_settings {
-  id                  String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  zone_major_cities   Decimal? @db.Decimal(12, 2)
-  zone_urban_areas    Decimal? @db.Decimal(12, 2)
-  zone_remote_areas   Decimal? @db.Decimal(12, 2)
-  flat_inside_valley  Decimal? @db.Decimal(12, 2)
-  flat_outside_valley Decimal?      @db.Decimal(12, 2)
-  extra_weight_percent Decimal?     @db.Decimal(5, 2)
-  free_weight_kg      Decimal  @default(2) @db.Decimal(10, 3)
-  created_at          DateTime @default(now()) @db.Timestamptz(6)
-  updated_at          DateTime @default(now()) @db.Timestamptz(6)
+  id                   String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  zone_major_cities    Decimal? @db.Decimal(12, 2)
+  zone_urban_areas     Decimal? @db.Decimal(12, 2)
+  zone_remote_areas    Decimal? @db.Decimal(12, 2)
+  flat_inside_valley   Decimal? @db.Decimal(12, 2)
+  flat_outside_valley  Decimal? @db.Decimal(12, 2)
+  extra_weight_percent Decimal? @db.Decimal(5, 2)
+  free_weight_kg       Decimal  @default(2) @db.Decimal(10, 3)
+  created_at           DateTime @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime @default(now()) @updatedAt @db.Timestamptz(6)
 }
 
 enum exception_status {
@@ -669,8 +673,8 @@ enum kyc_status {
 }
 
 model vendor_kyc_applications {
-  id                   String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  status               kyc_status @default(pending)
+  id     String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  status kyc_status @default(pending)
 
   // Business Details
   online_business_name String
@@ -679,9 +683,9 @@ model vendor_kyc_applications {
   business_contact     String
 
   // Owner / Contact Person
-  owner_name           String
-  owner_email          String
-  owner_contact        String
+  owner_name    String
+  owner_email   String
+  owner_contact String
 
   // Billing Details
   billing_business_name String?
@@ -690,22 +694,22 @@ model vendor_kyc_applications {
   pan_vat_no            String?
 
   // Documents (stored file paths)
-  citizenship_doc      String?
-  pan_vat_doc          String?
-  business_cert_doc    String?
+  citizenship_doc   String?
+  pan_vat_doc       String?
+  business_cert_doc String?
 
   // Bank Details
-  bank_name            String?
-  bank_account_no      String?
-  bank_account_holder  String?
+  bank_name           String?
+  bank_account_no     String?
+  bank_account_holder String?
 
   // Review metadata
-  reviewed_by          String?   @db.Uuid
-  reviewed_at          DateTime? @db.Timestamptz(6)
-  rejection_reason     String?
-  notes                String?
-  created_at           DateTime  @default(now()) @db.Timestamptz(6)
-  updated_at           DateTime  @default(now()) @db.Timestamptz(6)
+  reviewed_by      String?   @db.Uuid
+  reviewed_at      DateTime? @db.Timestamptz(6)
+  rejection_reason String?
+  notes            String?
+  created_at       DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
 
   @@index([status], map: "idx_kyc_status")
   @@index([created_at(sort: Desc)], map: "idx_kyc_created_at")
@@ -738,7 +742,7 @@ model vendor_staff {
   enabled     Boolean   @default(true)
   created_by  String?   @db.Uuid
   created_at  DateTime  @default(now()) @db.Timestamptz(6)
-  updated_at  DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
   deleted_at  DateTime? @db.Timestamptz(6)
   users       users?    @relation(fields: [user_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
 

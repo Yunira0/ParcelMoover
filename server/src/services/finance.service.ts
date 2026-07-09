@@ -3,6 +3,7 @@ import { payment_status } from "../generated/prisma/enums";
 import prisma from "../lib/prisma";
 import redis, { scanAndDelete } from "../lib/redis";
 import { AppError } from "../utils/AppError";
+import { formatNepalDate } from "../utils/nepalTime";
 import { resolveOwnVendorId } from "./vendor-scope.service";
 import {
   CodPaymentFilter,
@@ -21,12 +22,6 @@ type Actor = { id: string; roles: string[] };
 
 const MAX_PAGE_SIZE = 100;
 const DEFAULT_PAGE_SIZE = 20;
-
-// Nepal Standard Time is a fixed UTC+5:45 offset (no DST). Shifting by it
-// before truncating to a calendar day keeps the reported settlement day
-// aligned with Nepal local time regardless of the server host's timezone.
-const NEPAL_UTC_OFFSET_MS = (5 * 60 + 45) * 60 * 1000;
-const formatLocalDay = (date: Date) => new Date(date.getTime() + NEPAL_UTC_OFFSET_MS).toISOString().slice(0, 10);
 
 // Same read-heavy, cache-worthy profile as the (already cached) dashboard
 // summary - a short TTL is enough since the only write path that can change
@@ -300,7 +295,7 @@ export async function listSettlements(
   const data: SettlementListItem[] = settlements.map((s) => ({
     id: s.id,
     statementId: s.statement_id,
-    transferDate: s.settlement_date ? formatLocalDay(s.settlement_date) : null,
+    transferDate: s.settlement_date ? formatNepalDate(s.settlement_date) : null,
     orderCount: s.settlement_items.length,
     amount: Number(s.payable_amount ?? s.amount),
     status: s.status,

@@ -1,6 +1,8 @@
 import multer from "multer";
 import path from "path";
 import fs from "fs";
+import { randomBytes } from "crypto";
+import { safeUploadExtension } from "./uploadExtension";
 
 const UPLOAD_DIR = path.join(process.cwd(), "uploads", "registration");
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -11,8 +13,8 @@ const MAX_SIZE_MB = 5;
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, UPLOAD_DIR),
   filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname);
-    cb(null, `${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`);
+    const ext = safeUploadExtension(file.mimetype);
+    cb(null, `${Date.now()}-${randomBytes(8).toString("hex")}${ext}`);
   },
 });
 

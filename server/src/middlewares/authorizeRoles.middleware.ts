@@ -17,7 +17,7 @@ export function authorizeRoles(...allowedRoles: string[]) {
     if (!hasAllowedRole) {
       return res.status(403).json({
         success: false,
-        message: "Forbidden: Insuffucient Privilege",
+        message: "Forbidden: Insufficient Privilege",
       });
     }
     next();

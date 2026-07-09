@@ -1,6 +1,9 @@
 import { WifiOff } from 'lucide-react'
 import { useOnlineStatus } from '../lib/useOnlineStatus'
 
+// Riders work in areas with spotty connectivity - without this, a lost
+// connection just shows up as failed requests with no explanation. This only
+// surfaces connectivity state; it doesn't change how any request behaves.
 export default function OfflineBanner() {
   const online = useOnlineStatus()
   if (online) return null

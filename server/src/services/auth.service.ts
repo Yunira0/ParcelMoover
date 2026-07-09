@@ -6,6 +6,7 @@ import jwt from "jsonwebtoken";
 import { AppError } from "../utils/AppError";
 import { sendWelcomeEmail } from "../lib/mailer";
 import { revokeAllUserTokens } from "../lib/tokenRevocation";
+import { ACCESS_TOKEN_AUDIENCE, JWT_ALGORITHM, JWT_ISSUER } from "../utils/jwtConfig";
 
 import { RegisterUserInput } from "../types/user-registration";
 import { ADMIN_PERMISSIONS, AdminPermission } from "../types/adminPermission.type";
@@ -629,9 +630,6 @@ export async function registerUserBySuperAdmin(
 
   return result;
 }
-/** 
- * this is a cool function
- */
 export async function loginUser(data: IuserLoginData) {
   try {
     const user = await prisma.users.findUnique({
@@ -680,7 +678,13 @@ export async function loginUser(data: IuserLoginData) {
     const token = jwt.sign(
       { id: user.id, roles, mustChangePassword },
       process.env.JWT_SECRET,
-      { expiresIn: "7d", jwtid: crypto.randomUUID() },
+      {
+        expiresIn: "7d",
+        jwtid: crypto.randomUUID(),
+        algorithm: JWT_ALGORITHM,
+        issuer: JWT_ISSUER,
+        audience: ACCESS_TOKEN_AUDIENCE,
+      },
     );
 
     await prisma.users.update({
@@ -751,8 +755,65 @@ export async function changePassword(
   const token = jwt.sign(
     { id: userId, roles, mustChangePassword: false },
     process.env.JWT_SECRET,
-    { expiresIn: "7d", jwtid: crypto.randomUUID() },
+    {
+      expiresIn: "7d",
+      jwtid: crypto.randomUUID(),
+      algorithm: JWT_ALGORITHM,
+      issuer: JWT_ISSUER,
+      audience: ACCESS_TOKEN_AUDIENCE,
+    },
   );
 
   return { token };
+}
+
+export async function getCurrentUserProfile(userId: string) {
+  const user = await prisma.users.findUnique({
+    where: { id: userId },
+    include: {
+      user_roles: { include: { roles: true } },
+      admins: { include: { locations: true } },
+    },
+  });
+  if (!user) throw new AppError(404, "User not found");
+
+  return {
+    id: user.id,
+    fullName: user.full_name,
+    email: user.email,
+    phone: user.phone,
+    status: user.status,
+    roles: user.user_roles.map((userRole) => userRole.roles.code),
+    hubId: user.admins?.location_id ?? null,
+    hubName: user.admins?.locations?.name ?? null,
+    // Delegated permissions for plain admin accounts (super_admin holds all).
+    permissions: user.admins?.permissions ?? [],
+  };
+}
+
+export async function updateCurrentUserProfile(userId: string, input: { fullName?: string; phone?: string }) {
+  if (!input.fullName?.trim()) throw new AppError(400, "Full name is required");
+
+  try {
+    const updated = await prisma.users.update({
+      where: { id: userId },
+      data: {
+        full_name: input.fullName.trim(),
+        phone: input.phone?.trim() || null,
+        updated_at: new Date(),
+      },
+    });
+
+    return {
+      id: updated.id,
+      fullName: updated.full_name,
+      email: updated.email,
+      phone: updated.phone,
+    };
+  } catch (error: any) {
+    if (error.code === "P2002") {
+      throw new AppError(409, "Phone number already in use");
+    }
+    throw error;
+  }
 }

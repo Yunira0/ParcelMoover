@@ -1,6 +1,6 @@
 import { Request, Router } from "express";
 import { rateLimit, ipKeyGenerator } from "express-rate-limit";
-import { authMiddleware } from "../middlewares/auth.mddleware";
+import { authMiddleware } from "../middlewares/auth.middleware";
 import { authorizeRoles } from "../middlewares/authorizeRoles.middleware";
 import { requireStaffPermission } from "../middlewares/staffPermission.middleware";
 import { validate } from "../middlewares/validate.middleware";
@@ -45,7 +45,7 @@ const actorOrIpKey = (req: Request) => req.user?.id ?? ipKeyGenerator(req.ip ?? 
 
 const createOrderLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
-  max: 30, //. 100 orders per minute per IP
+  max: 30, // 30 orders per minute per IP
   message: { success: false, message: "Too many order creation attempts" },
   standardHeaders: true,
   legacyHeaders: false,

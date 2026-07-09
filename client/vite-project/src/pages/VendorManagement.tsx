@@ -54,38 +54,8 @@ const VendorManagement: React.FC = () => {
       } else if (Array.isArray(res)) {
         setVendors(res);
       } else {
-        // Mock data fallback if backend is empty
-        const mockVendors: VendorUser[] = [
-          {
-            id: '1',
-            sn: 1,
-            client: 'John Doe',
-            company: 'Tech Corp',
-            email: 'john@techcorp.com',
-            phone: '9876543210',
-            location: 'Kathmandu, Nepal',
-            orders: { total: 150, delivered: 140, returned: 10 },
-            codDue: 5000,
-            status: 'active',
-            joined: '2026-01-15',
-            lastOrderedDate: '2026-06-01'
-          },
-          {
-            id: '2',
-            sn: 2,
-            client: 'Jane Smith',
-            company: 'Biz Inc',
-            email: 'jane@bizinc.com',
-            phone: '9800000000',
-            location: 'Lalitpur, Nepal',
-            orders: { total: 85, delivered: 80, returned: 5 },
-            codDue: 0,
-            status: 'active',
-            joined: '2026-02-20',
-            lastOrderedDate: '2026-05-30'
-          }
-        ];
-        setVendors(mockVendors);
+        console.error('Unexpected vendors response shape:', res);
+        setVendors([]);
       }
     } catch (err) {
       console.error('Failed to load vendors:', err);

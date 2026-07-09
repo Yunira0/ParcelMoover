@@ -8,17 +8,19 @@ export const api = axios.create({
   timeout: 12000,
 })
 
-// The csrfToken cookie is deliberately non-httpOnly (double-submit pattern) so
-// the frontend can read it directly here - no need to also duplicate it into
-// localStorage as a second source of truth that can drift from the cookie.
-function getCsrfCookie(): string | null {
-  const match = document.cookie.match(/(?:^|; )csrfToken=([^;]*)/)
+// The server already sets csrfToken as a non-httpOnly cookie on login (it has
+// to be JS-readable for the double-submit pattern below to work at all) - so
+// reading it from there instead of keeping a second copy in localStorage adds
+// no XSS exposure beyond what already exists, while avoiding a manually
+// managed, easily-stale duplicate of the same value.
+function getCookie(name: string): string | null {
+  const match = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`))
   return match ? decodeURIComponent(match[1]) : null
 }
 
-// Attach CSRF token on every mutating request
+// Attach CSRF token from the cookie on every mutating request
 api.interceptors.request.use((config) => {
-  const csrf = getCsrfCookie()
+  const csrf = getCookie('csrfToken')
   if (csrf && ['post', 'patch', 'put', 'delete'].includes(config.method ?? '')) {
     config.headers['X-CSRF-Token'] = csrf
   }
@@ -92,7 +94,6 @@ export async function loginRider(payload: LoginPayload): Promise<RiderUser> {
     message: string
     data: RiderUser
     csrfToken: string
-    token: string
   }>('/auth/login', payload)
 
   const roles: string[] = (data.data as any).roles ?? []
@@ -239,9 +240,10 @@ export async function changeRiderPassword(currentPassword: string, newPassword: 
 export async function logoutRider() {
   try {
     await api.post('/auth/logout')
-  } catch {
+  } catch (err) {
     // Best-effort: even if the server call fails (e.g. offline), still clear
     // the local session so the app doesn't look logged in.
+    console.error('Failed to revoke session on logout:', err)
   } finally {
     // The server call above clears the csrfToken/accessToken cookies via
     // Set-Cookie; only the profile cache is ours to clear here.

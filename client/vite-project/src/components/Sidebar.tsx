@@ -87,7 +87,6 @@ const SidebarLogout: React.FC = () => {
       // ignore - fall through to local cleanup below regardless
     } finally {
       localStorage.removeItem('user');
-      localStorage.removeItem('token');
       navigate('/login');
     }
   };

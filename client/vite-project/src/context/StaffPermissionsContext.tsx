@@ -27,13 +27,17 @@ export const StaffPermissionsProvider: React.FC<{ children: React.ReactNode }> =
     };
 
     if (isStaff) {
-      getMyPermissions().then(persist).catch(() => {});
+      getMyPermissions().then(persist).catch((err) => {
+        console.error('Failed to refresh staff permissions:', err);
+      });
     } else if (isPlainAdmin) {
       // /me returns the admin's current delegated permission list, so a grant
       // made by the super_admin lands on the next page load, not next login.
       fetchMe()
         .then((me) => persist(Array.isArray(me?.permissions) ? me.permissions : []))
-        .catch(() => {});
+        .catch((err) => {
+          console.error('Failed to refresh admin permissions:', err);
+        });
     }
   }, [isStaff, isPlainAdmin]);
 

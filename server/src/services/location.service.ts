@@ -1,6 +1,6 @@
 import prisma from "../lib/prisma";
 import { AppError } from "../utils/AppError";
-import { invalidateDestinationPricingCache } from "./pricing.service";
+import { invalidateDestinationPricingCache, ZONES, VALLEYS } from "./pricing.service";
 
 export interface UpsertLocationInput {
   name: string;
@@ -165,6 +165,18 @@ export async function deleteLocation(id: string) {
   if (rateCount > 0)
     throw new AppError(409, "Cannot delete: this location has delivery rates. Remove them first.");
 
+  const vendorCount = await prisma.vendors.count({ where: { location_id: { in: idsToCheck } } });
+  if (vendorCount > 0)
+    throw new AppError(409, "Cannot delete: this location is assigned to one or more vendors.");
+
+  const riderCount = await prisma.riders.count({ where: { location_id: { in: idsToCheck } } });
+  if (riderCount > 0)
+    throw new AppError(409, "Cannot delete: this location is assigned to one or more riders.");
+
+  const adminCount = await prisma.admins.count({ where: { location_id: { in: idsToCheck } } });
+  if (adminCount > 0)
+    throw new AppError(409, "Cannot delete: this location is assigned to one or more admins.");
+
   if (!loc.parent_id) {
     await prisma.locations.deleteMany({ where: { parent_id: id } });
   }
@@ -183,7 +195,38 @@ export async function bulkImportLocations(rows: BulkImportDestination[]) {
 
   for (const row of rows) {
     const destName = row.name?.trim();
-    if (!destName) continue;
+    if (!destName) {
+      results.push({
+        destination: row.name || "(blank)",
+        action: "created",
+        areasCreated: [],
+        areasSkipped: [],
+        error: "Row skipped: destination name is required",
+      });
+      continue;
+    }
+
+    if (row.zone !== undefined && row.zone !== null && !ZONES.includes(row.zone as (typeof ZONES)[number])) {
+      results.push({
+        destination: destName,
+        action: "created",
+        areasCreated: [],
+        areasSkipped: [],
+        error: `Row skipped: zone must be one of ${ZONES.join(", ")}`,
+      });
+      continue;
+    }
+
+    if (row.valley !== undefined && row.valley !== null && !VALLEYS.includes(row.valley as (typeof VALLEYS)[number])) {
+      results.push({
+        destination: destName,
+        action: "created",
+        areasCreated: [],
+        areasSkipped: [],
+        error: `Row skipped: valley must be one of ${VALLEYS.join(", ")}`,
+      });
+      continue;
+    }
 
     try {
       let dest = await prisma.locations.findFirst({

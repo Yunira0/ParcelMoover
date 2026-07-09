@@ -32,6 +32,7 @@ import {
   type ParcelStatus,
 } from '../services/orders.service';
 import { printLabels } from '../utils/printLabels';
+import { useCursorPagination } from '../hooks/useCursorPagination';
 import './OrderManagement.css';
 
 const STATUS_LABELS: Record<ParcelStatus, string> = {
@@ -223,7 +224,7 @@ const OrderManagement: React.FC = () => {
   const [dateTo, setDateTo] = useState(() => searchParams.get('dateTo') || '');
   const [vendor, setVendor] = useState<string[]>(() => searchParams.getAll('vendor'));
   const [operationDept, setOperationDept] = useState(() => searchParams.get('operationDept') || '');
-  const [page, setPage] = useState(1);
+  const pager = useCursorPagination();
   const [sortBy, setSortBy] = useState<OrderSortField | undefined>(() => {
     const fromUrl = searchParams.get('sortBy');
     return fromUrl && (ORDER_SORT_FIELDS as readonly string[]).includes(fromUrl) ? (fromUrl as OrderSortField) : undefined;
@@ -267,8 +268,9 @@ const OrderManagement: React.FC = () => {
       const res = await getOrders({
         status: TAB_GROUPS[filter],
         search: debouncedSearch || undefined,
-        page,
         pageSize: PAGE_SIZE,
+        cursor: pager.request.cursor,
+        dir: pager.request.dir,
         sortBy,
         sortDir,
       });
@@ -282,11 +284,11 @@ const OrderManagement: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [filter, debouncedSearch, page, sortBy, sortDir]);
+  }, [filter, debouncedSearch, pager.request, sortBy, sortDir]);
 
   useEffect(() => { loadOrders(); }, [loadOrders]);
   useEffect(() => subscribeToOrderStatusChanged(loadOrders), [loadOrders]);
-  useEffect(() => { setPage(1); }, [filter, debouncedSearch, originHub, riderName, keyword, destinationHub, currentStatus, orderType, dateFrom, dateTo, vendor, operationDept, sortBy, sortDir]);
+  useEffect(() => { pager.reset(); }, [filter, debouncedSearch, originHub, riderName, keyword, destinationHub, currentStatus, orderType, dateFrom, dateTo, vendor, operationDept, sortBy, sortDir, pager.reset]);
   // Re-sync when the navbar search re-navigates here with a new ?search= param.
   useEffect(() => {
     const fromUrl = searchParams.get('search');
@@ -363,7 +365,7 @@ const OrderManagement: React.FC = () => {
   // so a bulk action never silently drops ids that scrolled out of view.
   useEffect(() => {
     setSelectedIds(new Set());
-  }, [filter, page]);
+  }, [filter, pager.request]);
 
   const handlePrintLabels = useCallback(async () => {
     const labelOrders = selectedIds.size > 0
@@ -752,9 +754,9 @@ const OrderManagement: React.FC = () => {
 
       <Pagination
         ariaLabel="Orders pagination"
-        page={page}
+        page={pager.page}
         totalPages={totalPages}
-        onPageChange={setPage}
+        cursor={pager.controls(meta)}
         summary={meta
           ? hasSecondaryFilters
             ? `${visibleOrders.length} of ${orders.length} on this page match your filters — ${meta.total} total in "${TAB_LABELS[filter]}"`

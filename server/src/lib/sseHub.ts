@@ -5,11 +5,16 @@ import { createNotificationsSubscriber, NOTIFICATIONS_CHANNEL, NotificationEvent
 // to the same Redis channel and only writes to the local connections it holds,
 // which is what makes this work correctly behind multiple Node processes/PM2 workers.
 const connectionsByUser = new Map<string, Set<Response>>();
-let subscribed = false;
+
+// Caps how many concurrent streams one user can hold open, so a runaway client
+// (tab-spam, retry loop with no backoff) can't exhaust server memory/FDs.
+const MAX_CONNECTIONS_PER_USER = 5;
+
+let subscriberStarted = false;
 
 function ensureSubscribed() {
-  if (subscribed) return;
-  subscribed = true;
+  if (subscriberStarted) return;
+  subscriberStarted = true;
 
   const subscriber = createNotificationsSubscriber();
 
@@ -26,32 +31,46 @@ function ensureSubscribed() {
 
     const payload = `data: ${JSON.stringify(event.notification)}\n\n`;
     for (const res of connections) {
-      res.write(payload);
+      try {
+        res.write(payload);
+      } catch (error) {
+        console.error("[SSE] Failed to write to a connection, dropping it:", error);
+        connections.delete(res);
+      }
+    }
+    if (connections.size === 0) {
+      connectionsByUser.delete(event.userId);
     }
   });
 
   const doSubscribe = () => {
     subscriber.subscribe(NOTIFICATIONS_CHANNEL).catch((error) => {
       console.error("[Redis] Failed to subscribe to notifications channel:", error);
-      subscribed = false; // allow retry on next SSE connection
     });
   };
 
+  // ioredis drops subscriptions on disconnect and re-emits "ready" on every
+  // reconnect, so a persistent listener (not .once) is what keeps this
+  // resubscribed across Redis blips - and it reuses the same connection
+  // instead of ever creating another one, so no connection ever leaks.
+  subscriber.on("ready", doSubscribe);
   if (subscriber.status === "ready") {
     doSubscribe();
-  } else {
-    subscriber.once("ready", doSubscribe);
   }
 }
 
-export function registerSseConnection(userId: string, res: Response) {
+export function registerSseConnection(userId: string, res: Response): boolean {
   ensureSubscribed();
   let connections = connectionsByUser.get(userId);
   if (!connections) {
     connections = new Set();
     connectionsByUser.set(userId, connections);
   }
+  if (connections.size >= MAX_CONNECTIONS_PER_USER) {
+    return false;
+  }
   connections.add(res);
+  return true;
 }
 
 export function unregisterSseConnection(userId: string, res: Response) {

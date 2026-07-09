@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { User, Lock, Check, LogOut } from 'lucide-react';
 import FormField from '../components/FormField';
 import Button from '../components/Button';
-import { getCurrentUser as fetchMe, changePassword, updateMe } from '../services/auth.service';
+import { getCurrentUser as fetchMe, changePassword, logout, updateMe } from '../services/auth.service';
 import { getCurrentUser, getCurrentUserRoles } from '../utils/auth';
 import './ProfilePage.css';
 
@@ -22,10 +22,18 @@ const ProfilePage: React.FC = () => {
   const cached = getCurrentUser();
   const [tab, setTab] = useState<Tab>('info');
 
-  const handleLogout = () => {
-    localStorage.removeItem('user');
-    localStorage.removeItem('token');
-    navigate('/login');
+  const handleLogout = async () => {
+    try {
+      // Best-effort: revoke the server-side session so the httpOnly cookie
+      // can't be replayed. Still clean up locally below even if this fails
+      // (e.g. the token was already expired/invalid).
+      await logout();
+    } catch {
+      // ignore
+    } finally {
+      localStorage.removeItem('user');
+      navigate('/login');
+    }
   };
 
   // Profile fields

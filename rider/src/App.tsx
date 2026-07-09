@@ -71,6 +71,7 @@ export default function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
+        <OfflineBanner />
         <AuthRouter />
       </BrowserRouter>
     </AuthProvider>

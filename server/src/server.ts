@@ -1,6 +1,8 @@
-import express, {Express, Request, Response} from 'express';
+import express, {Express} from 'express';
 import path from 'path';
+import helmet from 'helmet';
 import {config} from 'dotenv';
+import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 import routes from "./routes/auth.routes";
 import OrderRoutes from "./routes/order.routes"
 import DeliveryRateRoutes from "./routes/delivery-rate.routes"
@@ -13,11 +15,14 @@ import KycRoutes from "./routes/kyc.routes"
 import LocationRoutes from "./routes/location.routes"
 import PricingRoutes from "./routes/pricing.routes"
 import NcmRoutes from "./routes/ncm.routes"
+import MeRoutes from "./routes/me.routes"
 import prisma, { pool } from "./lib/prisma";
 import cookiesParser from "cookie-parser";
-import {authMiddleware} from "./middlewares/auth.mddleware";
+import {authMiddleware} from "./middlewares/auth.middleware";
 import { errorHandler } from "./middlewares/errorHandler.middleware";
+import { requestId } from "./middlewares/requestId.middleware";
 import {authorizeRoles} from "./middlewares/authorizeRoles.middleware";
+import { createRedisRateLimitStore } from "./lib/rateLimitStore";
 
 
 import cors from "cors"
@@ -35,15 +40,49 @@ if (!process.env.DATABASE_URL) {
   process.exit(1);
 }
 
+if (!process.env.CSRF_SECRET) {
+  console.error('🔴 FATAL: CSRF_SECRET environment variable is not set');
+  process.exit(1);
+}
+
 const app: Express = express();
 const port = process.env.PORT || 3000;
 
+app.use(requestId);
+app.use(helmet());
 app.use(cors({
     origin: process.env.ALLOWED_ORIGINS?.split(",") || ["http://localhost:5173"],
     credentials: true,
 }));
-app.use(express.json());
+app.use(express.json({ limit: "1mb" }));
 app.use(cookiesParser());
+
+// Liveness/readiness probe for load balancers and container orchestration -
+// deliberately ahead of rate limiting/auth so it's always fast and unthrottled.
+// Checks the database since the app can't do anything useful without it.
+app.get("/health", async (_req, res) => {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    res.status(200).json({ status: "ok" });
+  } catch (error) {
+    console.error("[Health] Database check failed:", error);
+    res.status(503).json({ status: "error" });
+  }
+});
+
+// Baseline defense-in-depth cap applied to every route. Sensitive/write
+// routes layer their own stricter, actor-aware limiter on top of this one -
+// this just ensures no route is ever left with zero rate limiting at all.
+const globalLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 300,
+  message: { success: false, message: "Too many requests, please slow down" },
+  standardHeaders: true,
+  legacyHeaders: false,
+  store: createRedisRateLimitStore("global"),
+  keyGenerator: (req) => ipKeyGenerator(req.ip ?? "unknown"),
+});
+app.use(globalLimiter);
 
 // Trust proxy configuration: only enable in production with a known trusted proxy.
 // In development, proxy trust is disabled to prevent IP spoofing.
@@ -93,75 +132,7 @@ app.use(
     express.static(path.join(process.cwd(), "uploads")),
 )
 
-
-const getCurrentUserHandler = async (req: Request, res: Response) => {
-   try{
-     if(!req.user?.id) {
-        return res.status(401).json({ error: "Unauthorized" });
-    }
-    const user = await prisma.users.findUnique({
-        where: { id: req.user?.id },
-        include: {
-            user_roles: { include: { roles: true } },
-            admins: { include: { locations: true } },
-        },
-    });
-    if(!user) {
-        return res.status(404).json({ error: "User not found" });
-    }
-    return res.json({
-        id: user.id,
-        fullName: user.full_name,
-        email: user.email,
-        phone: user.phone,
-        status: user.status,
-        roles: user.user_roles.map(userRole => userRole.roles.code),
-        hubId: user.admins?.location_id ?? null,
-        hubName: user.admins?.locations?.name ?? null,
-        // Delegated permissions for plain admin accounts (super_admin holds all).
-        permissions: user.admins?.permissions ?? [],
-    });
-   } catch(error) {
-    console.error("Error fetching user profile:", error);
-    return res.status(500).json({ error: "Internal server error" });
-   }
-};
-
-app.get('/me', authMiddleware, getCurrentUserHandler);
-app.get('/api/me', authMiddleware, getCurrentUserHandler);
-
-const updateCurrentUserHandler = async (req: Request, res: Response) => {
-  try {
-    if (!req.user?.id) return res.status(401).json({ error: "Unauthorized" });
-
-    const { fullName, phone } = req.body;
-    if (!fullName?.trim()) return res.status(400).json({ error: "Full name is required" });
-
-    const updated = await prisma.users.update({
-      where: { id: req.user.id },
-      data: {
-        full_name: fullName.trim(),
-        phone: phone?.trim() || null,
-        updated_at: new Date(),
-      },
-    });
-
-    return res.json({
-      id: updated.id,
-      fullName: updated.full_name,
-      email: updated.email,
-      phone: updated.phone,
-    });
-  } catch (error: any) {
-    if (error.code === "P2002") {
-      return res.status(409).json({ error: "Phone number already in use" });
-    }
-    console.error("Error updating user profile:", error);
-    return res.status(500).json({ error: "Internal server error" });
-  }
-};
-
-app.patch('/api/me', authMiddleware, updateCurrentUserHandler);
+app.use("/api/me", MeRoutes);
 
 // Global error handler — must be last
 app.use(errorHandler);

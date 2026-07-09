@@ -144,13 +144,8 @@ async function findAccessibleRemark(actor: Actor, id: string) {
   return remark;
 }
 
-// Viewing a pending remark moves it to "open".
 export async function getRemarkById(actor: Actor, id: string) {
-  const accessible = await findAccessibleRemark(actor, id);
-
-  if (normalizeStatus(accessible.workflow_status) === "pending") {
-    await prisma.parcel_remarks.update({ where: { id }, data: { workflow_status: "open" } });
-  }
+  await findAccessibleRemark(actor, id);
 
   const remark = await prisma.parcel_remarks.findUnique({
     where: { id },

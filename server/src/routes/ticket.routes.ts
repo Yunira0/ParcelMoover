@@ -1,6 +1,6 @@
 import { Request, Router } from "express";
 import { rateLimit, ipKeyGenerator } from "express-rate-limit";
-import { authMiddleware } from "../middlewares/auth.mddleware";
+import { authMiddleware } from "../middlewares/auth.middleware";
 import { authorizeRoles } from "../middlewares/authorizeRoles.middleware";
 import { csrfProtection } from "../middlewares/csrf.middleware";
 import { validate } from "../middlewares/validate.middleware";

@@ -16,6 +16,7 @@ import {
 import { generateTrackingId } from "../utils/trackingId";
 import { generateDispatchNo } from "../utils/dispatchId";
 import { generateRunSheetNo } from "../utils/runSheetNo";
+import { NEPAL_UTC_OFFSET_MS, formatNepalDate as formatDate } from "../utils/nepalTime";
 import { resolveOwnVendorId } from "./vendor-scope.service";
 import { invalidateVendorFinanceCache } from "./finance.service";
 
@@ -37,7 +38,6 @@ type OrderActor = {
 };
 
 const MAX_TRACKING_ID_RETRIES = 5;
-const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000; // 24 hrs
 
 const PICKUP_PENDING_STATUSES: parcel_status[] = ["pickup_ordered", "rider_assigned"];
 
@@ -249,15 +249,6 @@ const locationName = (location?: { name: string; city: string | null; district: 
   if (!location) return "";
   return [location.name, location.city || location.district].filter(Boolean).join(", ");
 };
-
-// Nepal Standard Time is a fixed UTC+5:45 offset (no DST). Shifting by it
-// before truncating to a calendar day keeps the reported "day" aligned with
-// Nepal local time regardless of the server host's own timezone - without
-// this, orders created between midnight and 5:45am NPT get bucketed into the
-// previous UTC day, one day off from what a vendor filtering "today" expects.
-const NEPAL_UTC_OFFSET_MS = (5 * 60 + 45) * 60 * 1000;
-const formatDate = (date?: Date | null) =>
-  date ? new Date(date.getTime() + NEPAL_UTC_OFFSET_MS).toISOString().slice(0, 10) : "";
 
 const moneyToNumber = (value?: Prisma.Decimal | null) => value ? Number(value) : 0;
 
@@ -579,6 +570,14 @@ async function _createOrderImpl(actor: OrderActor, data: CreateOrderInput) {
 
 const BULK_CREATE_MAX = 100;
 
+// Each order runs its own multi-query transaction (tracking id, party lookup,
+// rate quote, parcel + 4 secondary writes). Running all of them fully
+// sequentially serializes ~12+ round trips per order across the whole batch,
+// which risks request timeouts at BULK_CREATE_MAX. Capped concurrency keeps
+// orders isolated (one failing order still can't affect another) while
+// staying well under the DB pool's connection limit (see lib/prisma.ts).
+const BULK_CREATE_CONCURRENCY = 5;
+
 export async function bulkCreateOrders(actor: OrderActor, input: BulkCreateOrderInput, signal?: AbortSignal) {
   if (!Array.isArray(input.orders) || input.orders.length === 0) {
     throw new AppError(400, "orders must be a non-empty array");
@@ -592,10 +591,38 @@ export async function bulkCreateOrders(actor: OrderActor, input: BulkCreateOrder
   const results: Array<
     | { index: number; success: true; trackingId: string }
     | { index: number; success: false; error: string }
-  > = [];
+  > = new Array(input.orders.length);
   const vendorIdsToInvalidate = new Set<string>();
 
+  // Cheap, DB-free validation happens up front and in original order;
+  // only orders that pass it hit the database.
+  const toCreate: Array<{ index: number; data: CreateOrderInput }> = [];
+
   for (let i = 0; i < input.orders.length; i++) {
+    const raw = input.orders[i]!;
+    // Merge defaultSender only when the order doesn't supply its own sender.
+    const resolvedSender: OrderPartyInput | undefined =
+      raw.sender?.phone ? raw.sender : input.defaultSender;
+
+    if (!resolvedSender?.name || !resolvedSender?.phone) {
+      results[i] = { index: i, success: false, error: "Sender name and phone are required" };
+      failed++;
+      continue;
+    }
+
+    if (!raw.receiver?.name || !raw.receiver?.phone) {
+      results[i] = { index: i, success: false, error: "Receiver name and phone are required" };
+      failed++;
+      continue;
+    }
+
+    toCreate.push({
+      index: i,
+      data: { ...raw, sender: resolvedSender, receiver: raw.receiver },
+    });
+  }
+
+  for (let start = 0; start < toCreate.length; start += BULK_CREATE_CONCURRENCY) {
     if (signal?.aborted) {
       // Client disconnected - stop opening new transactions for orders it'll
       // never see the result of. Record the remainder as not-processed
@@ -603,45 +630,32 @@ export async function bulkCreateOrders(actor: OrderActor, input: BulkCreateOrder
       // it's not an error) response stays honest about what happened; a
       // genuinely new attempt needs a fresh Idempotency-Key, not a retry of
       // this one, since some of this batch already committed.
-      for (let j = i; j < input.orders.length; j++) {
-        results.push({ index: j, success: false, error: "Not processed - request was cancelled by the client" });
+      for (let j = start; j < toCreate.length; j++) {
+        const { index } = toCreate[j]!;
+        results[index] = { index, success: false, error: "Not processed - request was cancelled by the client" };
         failed++;
       }
       break;
     }
 
-    const raw = input.orders[i]!;
-    // Merge defaultSender only when the order doesn't supply its own sender.
-    const resolvedSender: OrderPartyInput | undefined =
-      raw.sender?.phone ? raw.sender : input.defaultSender;
+    const chunk = toCreate.slice(start, start + BULK_CREATE_CONCURRENCY);
+    const settled = await Promise.allSettled(
+      chunk.map(({ data }) => createOrderCore(actor, data)),
+    );
 
-    if (!resolvedSender?.name || !resolvedSender?.phone) {
-      results.push({ index: i, success: false, error: "Sender name and phone are required" });
-      failed++;
-      continue;
-    }
-
-    if (!raw.receiver?.name || !raw.receiver?.phone) {
-      results.push({ index: i, success: false, error: "Receiver name and phone are required" });
-      failed++;
-      continue;
-    }
-
-    const orderData: CreateOrderInput = {
-      ...raw,
-      sender: resolvedSender,
-      receiver: raw.receiver,
-    };
-
-    try {
-      const parcel = await createOrderCore(actor, orderData);
-      results.push({ index: i, success: true, trackingId: parcel.tracking_id });
-      created++;
-      if (parcel.vendor_id) vendorIdsToInvalidate.add(parcel.vendor_id);
-    } catch (err: any) {
-      results.push({ index: i, success: false, error: err.message || "Order creation failed" });
-      failed++;
-    }
+    settled.forEach((outcome, offset) => {
+      const { index } = chunk[offset]!;
+      if (outcome.status === "fulfilled") {
+        const parcel = outcome.value;
+        results[index] = { index, success: true, trackingId: parcel.tracking_id };
+        created++;
+        if (parcel.vendor_id) vendorIdsToInvalidate.add(parcel.vendor_id);
+      } else {
+        const err = outcome.reason as any;
+        results[index] = { index, success: false, error: err?.message || "Order creation failed" };
+        failed++;
+      }
+    });
   }
 
   // Flush caches once for the whole batch instead of after each individual order.
@@ -720,6 +734,8 @@ const ORDERS_INCLUDE = {
 export interface ListOrdersResult {
   data: ReturnType<typeof mapOrder>[];
   meta?: {
+    // Display hint only under keyset pagination - the client tracks its own
+    // page counter; the server just clamps it into [1, totalPages].
     page: number;
     pageSize: number;
     total: number;
@@ -727,6 +743,11 @@ export interface ListOrdersResult {
     // Set when the caller didn't ask for pagination and the result was capped -
     // lets the UI show "showing 200 of N" instead of silently looking complete.
     truncated?: boolean;
+    // Keyset navigation - present on paginated queries.
+    hasNextPage?: boolean;
+    hasPrevPage?: boolean;
+    nextCursor?: string | null;
+    prevCursor?: string | null;
   };
 }
 
@@ -784,18 +805,140 @@ function mapOrder(
 
 // Allow-listed so a client can only sort by a column that's actually indexed
 // or cheap to sort, never an arbitrary/unindexed field.
-const ORDER_SORT_COLUMNS: Record<OrderSortField, keyof Prisma.parcelsOrderByWithRelationInput> = {
-  createdAt: "created_at",
+// "createdAt" maps to order_number, not created_at: the column is
+// timestamptz(6) but JS Dates only carry milliseconds, so a created_at keyset
+// cursor would be lossy and could skip rows sharing a millisecond. The
+// autoincrement order_number has identical ordering semantics and round-trips
+// exactly through a cursor.
+const ORDER_SORT_COLUMNS = {
+  createdAt: "order_number",
   codAmount: "cod_amount",
   deliveryCharge: "delivery_charge",
   trackingId: "tracking_id",
   status: "status",
-};
+} as const satisfies Record<OrderSortField, keyof Prisma.parcelsOrderByWithRelationInput>;
 
-function resolveOrdersOrderBy(query: ListOrdersQuery): Prisma.parcelsOrderByWithRelationInput {
-  const column = query.sortBy ? ORDER_SORT_COLUMNS[query.sortBy] : "created_at";
-  const direction = query.sortDir === "asc" ? "asc" : "desc";
-  return { [column]: direction };
+type OrderSortColumn = (typeof ORDER_SORT_COLUMNS)[OrderSortField];
+type SortDirection = "asc" | "desc";
+
+function resolveSortColumn(query: ListOrdersQuery): OrderSortColumn {
+  return query.sortBy ? ORDER_SORT_COLUMNS[query.sortBy] : "order_number";
+}
+
+// The id tiebreaker makes the sort total, so keyset cursors are unambiguous
+// even when the sort column has duplicate values.
+function buildOrdersOrderBy(
+  column: OrderSortColumn,
+  direction: SortDirection,
+): Prisma.parcelsOrderByWithRelationInput[] {
+  // Cast: TS widens a computed union key to an index signature, but column is
+  // allow-listed via ORDER_SORT_COLUMNS so the shape is guaranteed valid.
+  return [{ [column]: direction } as Prisma.parcelsOrderByWithRelationInput, { id: direction }];
+}
+
+// ── Keyset (cursor) pagination ───────────────────────────────────────────────
+// OFFSET pagination reads and discards every skipped row (page 500 scans 5 000
+// rows) and skips/duplicates rows when data shifts between requests. A keyset
+// cursor instead pins the boundary row's (sort value, id) and each page seeks
+// straight to it through the index.
+
+interface OrdersCursor {
+  // Sort-column value serialized as a string (exact for ints, decimals,
+  // strings and enum labels - see ORDER_SORT_COLUMNS for why timestamps are
+  // never used here).
+  v: string;
+  id: string;
+}
+
+function encodeOrdersCursor(cursor: OrdersCursor): string {
+  return Buffer.from(JSON.stringify(cursor), "utf8").toString("base64url");
+}
+
+// Malformed or tampered cursors degrade to "no cursor" (first page), never a 500.
+function decodeOrdersCursor(raw: string | undefined): OrdersCursor | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(Buffer.from(raw, "base64url").toString("utf8"));
+    if (parsed && typeof parsed.v === "string" && typeof parsed.id === "string") {
+      return { v: parsed.v, id: parsed.id };
+    }
+  } catch {
+    // fall through
+  }
+  return null;
+}
+
+function serializeSortValue(
+  parcel: { order_number: number; cod_amount: Prisma.Decimal; delivery_charge: Prisma.Decimal; tracking_id: string; status: parcel_status },
+  column: OrderSortColumn,
+): string {
+  switch (column) {
+    case "order_number":
+      return String(parcel.order_number);
+    case "cod_amount":
+      return parcel.cod_amount.toString();
+    case "delivery_charge":
+      return parcel.delivery_charge.toString();
+    case "tracking_id":
+      return parcel.tracking_id;
+    case "status":
+      return parcel.status;
+  }
+}
+
+// Postgres orders enum columns by their definition order, which the generated
+// parcel_status object preserves - so "values after X" is a slice of this list.
+const STATUS_ENUM_ORDER = Object.values(parcel_status);
+
+// Row-value comparison expanded for Prisma: (col, id) > (v, id) becomes
+// col > v OR (col = v AND id > id). Returns null when the cursor value can't
+// be interpreted for this column (e.g. sort changed since it was issued).
+function buildKeysetCondition(
+  column: OrderSortColumn,
+  direction: SortDirection,
+  cursor: OrdersCursor,
+): Prisma.parcelsWhereInput | null {
+  const idTie: Prisma.parcelsWhereInput =
+    direction === "asc" ? { id: { gt: cursor.id } } : { id: { lt: cursor.id } };
+
+  if (column === "status") {
+    const index = STATUS_ENUM_ORDER.indexOf(cursor.v as parcel_status);
+    if (index === -1) return null;
+    const beyond =
+      direction === "asc"
+        ? STATUS_ENUM_ORDER.slice(index + 1)
+        : STATUS_ENUM_ORDER.slice(0, index);
+    return {
+      OR: [
+        ...(beyond.length ? [{ status: { in: beyond } }] : []),
+        { AND: [{ status: cursor.v as parcel_status }, idTie] },
+      ],
+    };
+  }
+
+  let value: number | string;
+  if (column === "order_number") {
+    value = Number(cursor.v);
+    if (!Number.isSafeInteger(value)) return null;
+  } else if (column === "cod_amount" || column === "delivery_charge") {
+    // Decimal columns accept their exact string form, but reject anything
+    // non-numeric (e.g. a stale cursor issued under a different sort).
+    if (!/^-?\d+(\.\d+)?$/.test(cursor.v)) return null;
+    value = cursor.v;
+  } else {
+    value = cursor.v;
+  }
+
+  // Casts: TS widens computed union keys to index signatures; column is
+  // allow-listed via ORDER_SORT_COLUMNS so the shapes are guaranteed valid.
+  const strict = {
+    [column]: direction === "asc" ? { gt: value } : { lt: value },
+  } as Prisma.parcelsWhereInput;
+  const equal = { [column]: value } as Prisma.parcelsWhereInput;
+
+  return {
+    OR: [strict, { AND: [equal, idTie] }],
+  };
 }
 
 export async function listOrders(
@@ -805,11 +948,15 @@ export async function listOrders(
   const { vendorId, vendorIds, riderId } = await getActorScope(actor);
   const isStaff = actor.roles.includes("super_admin") || actor.roles.includes("admin");
   const where = buildOrdersWhere({ vendorId, vendorIds, riderId }, query);
-  const orderBy = resolveOrdersOrderBy(query);
+  const sortColumn = resolveSortColumn(query);
+  const sortDirection: SortDirection = query.sortDir === "asc" ? "asc" : "desc";
+  const orderBy = buildOrdersOrderBy(sortColumn, sortDirection);
 
   // Pagination only kicks in when the caller explicitly asks for it, so
   // existing callers that expect a flat array keep working unchanged.
-  const paginated = query.page !== undefined || query.pageSize !== undefined;
+  const paginated =
+    query.page !== undefined || query.pageSize !== undefined ||
+    query.cursor !== undefined || query.dir !== undefined;
 
   // Most pages (OrderManagement, DispatchOperations, PickupOperations, ...)
   // call listOrders() with no filters at all and reload on every status-change
@@ -867,27 +1014,85 @@ export async function listOrders(
     return result;
   }
 
-  const page = Math.max(1, query.page || 1);
   const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, query.pageSize || DEFAULT_PAGE_SIZE));
+  const dir: "next" | "prev" = query.dir === "prev" ? "prev" : "next";
+  const cursor = decodeOrdersCursor(query.cursor);
 
-  const [total, parcels] = await Promise.all([
-    prisma.parcels.count({ where }),
-    prisma.parcels.findMany({
-      where,
+  // Walking backwards ("prev") flips the sort for the fetch and un-flips the
+  // rows afterwards; "prev with no cursor" means jump to the last page.
+  const fetchDirection: SortDirection =
+    dir === "prev" ? (sortDirection === "asc" ? "desc" : "asc") : sortDirection;
+  const fetchOrderBy = buildOrdersOrderBy(sortColumn, fetchDirection);
+
+  const keysetCondition = cursor
+    ? buildKeysetCondition(sortColumn, fetchDirection, cursor)
+    : null;
+  const effectiveCursor = keysetCondition ? cursor : null;
+  const keysetWhere: Prisma.parcelsWhereInput = keysetCondition
+    ? { AND: [where, keysetCondition] }
+    : where;
+
+  let total: number;
+  let parcels: Prisma.parcelsGetPayload<{ include: typeof ORDERS_INCLUDE }>[];
+  let hasMore: boolean;
+
+  if (dir === "prev" && !effectiveCursor) {
+    // Last-page jump: fetch from the end, sized so page boundaries stay
+    // aligned with forward navigation (needs the count first).
+    total = await prisma.parcels.count({ where });
+    const lastPageSize = total % pageSize || pageSize;
+    parcels = await prisma.parcels.findMany({
+      where: keysetWhere,
       include: ORDERS_INCLUDE,
-      orderBy,
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-    }),
-  ]);
+      orderBy: fetchOrderBy,
+      take: lastPageSize,
+    });
+    hasMore = total > parcels.length;
+  } else {
+    // Fetch one extra row purely to learn whether another page exists.
+    [total, parcels] = await Promise.all([
+      prisma.parcels.count({ where }),
+      prisma.parcels.findMany({
+        where: keysetWhere,
+        include: ORDERS_INCLUDE,
+        orderBy: fetchOrderBy,
+        take: pageSize + 1,
+      }),
+    ]);
+    hasMore = parcels.length > pageSize;
+    if (hasMore) parcels = parcels.slice(0, pageSize);
+  }
+
+  if (fetchDirection !== sortDirection) parcels.reverse();
+
+  const hasNextPage = dir === "next" ? hasMore : effectiveCursor !== null;
+  const hasPrevPage = dir === "prev" ? hasMore : effectiveCursor !== null;
+
+  const firstRow = parcels[0];
+  const lastRow = parcels[parcels.length - 1];
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const pageHint =
+    dir === "prev" && !effectiveCursor
+      ? totalPages
+      : Math.min(totalPages, Math.max(1, query.page || 1));
 
   return {
     data: parcels.map((p) => mapOrder(p, isStaff)),
     meta: {
-      page,
+      page: pageHint,
       pageSize,
       total,
-      totalPages: Math.max(1, Math.ceil(total / pageSize)),
+      totalPages,
+      hasNextPage,
+      hasPrevPage,
+      nextCursor:
+        hasNextPage && lastRow
+          ? encodeOrdersCursor({ v: serializeSortValue(lastRow, sortColumn), id: lastRow.id })
+          : null,
+      prevCursor:
+        hasPrevPage && firstRow
+          ? encodeOrdersCursor({ v: serializeSortValue(firstRow, sortColumn), id: firstRow.id })
+          : null,
     },
   };
 }
@@ -1509,8 +1714,8 @@ async function _updateParcelStatusImpl(
   // Ownership scoping: vendors/vendor_staff may only touch their own parcels,
   // and riders may only touch parcels they're actually assigned to, and only
   // for the leg (pickup vs delivery) they were assigned for.
+  const isVendorActor = actor.roles.includes("vendor") || actor.roles.includes("vendor_staff");
   if (!isAdmin) {
-    const isVendorActor = actor.roles.includes("vendor") || actor.roles.includes("vendor_staff");
     const isRiderActor = actor.roles.includes("rider");
 
     if (isVendorActor) {
@@ -1557,9 +1762,11 @@ async function _updateParcelStatusImpl(
     }
   }
 
-  //only admin aan cancel
-  if (newStatus === "cancelled" && !isAdmin) {
-    throw new AppError(403, "Only admins can cancel an order");
+  // Cancellation is allowed for admins and vendors (vendors may only cancel their own
+  // orders, enforced by the vendor_id scope on the parcel lookup above) — kept in sync
+  // with the bulk-update rule in _bulkUpdateParcelStatusImpl.
+  if (newStatus === "cancelled" && !isAdmin && !isVendorActor) {
+    throw new AppError(403, "Only vendors or admins can cancel orders");
   }
 
   // building/closing a dispatch manifest is a branch operation

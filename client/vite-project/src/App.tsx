@@ -39,6 +39,7 @@ import ForceChangePasswordPage from './pages/ForceChangePasswordPage'
 import KycApplicationPage from './pages/KycApplicationPage'
 import KycManagement from './pages/KycManagement'
 import ProfilePage from './pages/ProfilePage'
+import NotFound from './pages/NotFound'
 import ProtectedRoute from './components/ProtectedRoute'
 import RoleGuard from './components/RoleGuard'
 import './App.css'
@@ -75,7 +76,15 @@ function App() {
             path="/orders/bulk-create"
             element={<RoleGuard allowedRoles={['vendor', 'vendor_staff']} requiredPermission="ORDER_ACCESS"><BulkOrderPage /></RoleGuard>}
           />
-          <Route path="/orders/track/:trackingId" element={<OrderDetailPage />} />
+          {/* Every known role can legitimately track some subset of orders - the
+              backend (getOrderByTrackingId) already scopes which specific orders
+              each actor can see. This RoleGuard exists to keep the allowlist
+              explicit (matching every other route) rather than silently open to
+              any future role added to the system. */}
+          <Route
+            path="/orders/track/:trackingId"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'vendor', 'vendor_staff', 'sales', 'rider']}><OrderDetailPage /></RoleGuard>}
+          />
           <Route
             path="/admin"
             element={<RoleGuard allowedRoles={['super_admin', 'admin']}><AdminManagement /></RoleGuard>}
@@ -210,7 +219,7 @@ function App() {
           <Route path="/profile" element={<ProfilePage />} />
         </Route>
         {/* Catch-all */}
-
+        <Route path="*" element={<MainLayout><NotFound /></MainLayout>} />
       </Routes>
     </Router>
   )

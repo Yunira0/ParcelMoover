@@ -3,11 +3,21 @@ import jwt, { JwtPayload } from 'jsonwebtoken';
 import prisma from '../lib/prisma';
 import { AppError } from '../utils/AppError';
 import { isIssuedBeforeUserRevocation, isTokenRevoked } from '../lib/tokenRevocation';
+import { ACCESS_TOKEN_AUDIENCE, JWT_ISSUER } from '../utils/jwtConfig';
 
 
 interface AuthTokenPayload extends JwtPayload {
     id: string;
+    mustChangePassword?: boolean;
 }
+
+// When a user must change their password, the only endpoints they may reach are
+// the ones needed to complete (or abandon) that flow. Everything else is blocked.
+const PASSWORD_CHANGE_ALLOWLIST = new Set<string>([
+    "/api/auth/change-password",
+    "/api/auth/logout",
+    "/api/me",
+]);
 
 declare global {
     namespace Express {
@@ -52,7 +62,11 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
             throw new AppError(500, 'JWT secret not configured');
         }
 
-        const decoded = jwt.verify(token, process.env.JWT_SECRET) as AuthTokenPayload;
+        const decoded = jwt.verify(token, process.env.JWT_SECRET, {
+            algorithms: ["HS256"],
+            issuer: JWT_ISSUER,
+            audience: ACCESS_TOKEN_AUDIENCE,
+        }) as AuthTokenPayload;
 
         if (!decoded) {
             throw new AppError(401, 'Invalid token');
@@ -104,17 +118,35 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
             mustChangePassword: user.must_change_password,
         };
 
+        // Enforce mandatory password change: users flagged with mustChangePassword
+        // may only reach the change-password / logout / self-profile endpoints.
+        if (decoded.mustChangePassword) {
+            const path = req.originalUrl.split("?")[0] ?? req.originalUrl;
+            if (!PASSWORD_CHANGE_ALLOWLIST.has(path)) {
+                throw new AppError(403, "You must change your password before continuing");
+            }
+        }
+
         next();
     } catch (error) {
-        if (error instanceof AppError && error.statusCode === 403) {
-            return res.status(403).json({ success: false, message: error.message });
+        // Genuine authentication failures → 401.
+        // JWT verification errors (invalid/expired/malformed token) and 401-level AppErrors.
+        // Preserve any machine-readable code (e.g. ACCOUNT_INACTIVE) so clients
+        // like the rider PWA can branch on it.
+        if (
+            error instanceof jwt.JsonWebTokenError ||
+            (error instanceof AppError && error.statusCode === 401)
+        ) {
+            return res.status(401).json({
+                success: false,
+                message: error instanceof AppError ? error.message : "Unauthorized",
+                ...(error instanceof AppError && error.code ? { code: error.code } : {}),
+            });
         }
-        if (error instanceof AppError && error.code) {
-            return res.status(401).json({ success: false, message: error.message, code: error.code });
-        }
-        return res.status(401).json({
-            success: false,
-            message: "Unauthorized"
-        })
+
+        // Everything else (403 "must change password", missing JWT_SECRET,
+        // database/Redis failures, unexpected errors) must surface — forward
+        // to the global error handler instead of masking as 401.
+        return next(error);
     }
 }

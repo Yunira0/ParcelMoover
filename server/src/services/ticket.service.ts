@@ -169,11 +169,9 @@ async function findAccessibleTicket(actor: Actor, id: string) {
   return ticket;
 }
 
-export async function getTicketById(actor: Actor, id: string) {
-  const ticket = await findAccessibleTicket(actor, id);
-
+async function buildTicketDetail(ticket: Awaited<ReturnType<typeof findAccessibleTicket>>) {
   const replies = await prisma.ticket_replies.findMany({
-    where: { ticket_id: id },
+    where: { ticket_id: ticket.id },
     orderBy: { created_at: "asc" },
   });
 
@@ -188,32 +186,40 @@ export async function getTicketById(actor: Actor, id: string) {
   };
 }
 
+export async function getTicketById(actor: Actor, id: string) {
+  const ticket = await findAccessibleTicket(actor, id);
+  return buildTicketDetail(ticket);
+}
+
 // Staff reply → "pending" (waiting for vendor); vendor reply → "open" (needs staff attention).
 export async function addTicketReply(actor: Actor, id: string, message: string) {
   if (!message?.trim()) throw new AppError(400, "Message is required");
-  await findAccessibleTicket(actor, id);
+  const ticket = await findAccessibleTicket(actor, id);
 
   const user = await prisma.users.findUnique({
     where: { id: actor.id },
     select: { full_name: true },
   });
 
-  await prisma.ticket_replies.create({
-    data: {
-      ticket_id: id,
-      author_id: actor.id,
-      author_name: user?.full_name || "Unknown",
-      message: message.trim(),
-    },
-  });
-
   const newStatus = isStaff(actor) ? "pending" : "open";
-  await prisma.support_tickets.update({
-    where: { id },
-    data: { status: newStatus, updated_at: new Date() },
-  });
+  await prisma.$transaction([
+    prisma.ticket_replies.create({
+      data: {
+        ticket_id: id,
+        author_id: actor.id,
+        author_name: user?.full_name || "Unknown",
+        message: message.trim(),
+      },
+    }),
+    prisma.support_tickets.update({
+      where: { id },
+      data: { status: newStatus, updated_at: new Date() },
+    }),
+  ]);
 
-  return getTicketById(actor, id);
+  // Access was already verified above and only `status` changed by this
+  // call - reuse the fetched ticket instead of re-querying it.
+  return buildTicketDetail({ ...ticket, status: newStatus });
 }
 
 export async function setTicketStatus(actor: Actor, id: string, status: TicketStatus) {
