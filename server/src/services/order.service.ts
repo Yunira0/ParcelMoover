@@ -95,6 +95,37 @@ function dashboardSummaryCacheKey(vendorId?: string, riderId?: string, trendDays
   return `${DASHBOARD_SUMMARY_CACHE_PREFIX}${vendorId ?? "none"}:${riderId ?? "none"}:${trendDays}d`;
 }
 
+// Sales accounts are scoped to the set of vendors (clients) they own rather
+// than a single vendor/rider id. Keying on the sorted id set is still safe
+// to share: two sales accounts only ever collide on this key if they own
+// the exact same client list, in which case sharing the cached result is
+// correct, not a leak.
+function salesDashboardSummaryCacheKey(vendorIds: string[], trendDays: 7 | 30 = 7) {
+  return `${DASHBOARD_SUMMARY_CACHE_PREFIX}sales:${vendorIds.slice().sort().join(",")}:${trendDays}d`;
+}
+
+// Coalesces concurrent cache-miss computations that share a cache key so a
+// burst of requests hitting the same expired entry (e.g. thousands of users
+// backed by the same few hundred accounts, all polling on a similar cycle)
+// triggers the expensive aggregation once instead of once per request. Each
+// dashboard-summary miss fans out into ~17 queries - without this, a stampede
+// of simultaneous misses is what exhausts the DB connection pool, not the
+// steady-state read rate.
+const inFlightComputations = new Map<string, Promise<unknown>>();
+
+async function dedupeInFlight<T>(key: string | null, compute: () => Promise<T>): Promise<T> {
+  if (!key) return compute();
+
+  const existing = inFlightComputations.get(key);
+  if (existing) return existing as Promise<T>;
+
+  const promise = compute().finally(() => {
+    inFlightComputations.delete(key);
+  });
+  inFlightComputations.set(key, promise);
+  return promise;
+}
+
 // Only the default, unfiltered/unpaginated listOrders() call is cached, so the
 // scope (vendor/rider) is all that distinguishes one cached list from another.
 function ordersListCacheKey(vendorId?: string, riderId?: string) {
@@ -103,7 +134,7 @@ function ordersListCacheKey(vendorId?: string, riderId?: string) {
 
 // Best-effort: a Redis hiccup should never block a status update or fall
 // back to a 503 - the dashboard/list just serve a stale value until the TTL expires.
-async function invalidateOrderCaches() {
+export async function invalidateOrderCaches() {
   try {
     await Promise.all([
       scanAndDelete(`${DASHBOARD_SUMMARY_CACHE_PREFIX}*`),
@@ -548,7 +579,7 @@ async function _createOrderImpl(actor: OrderActor, data: CreateOrderInput) {
 
 const BULK_CREATE_MAX = 100;
 
-export async function bulkCreateOrders(actor: OrderActor, input: BulkCreateOrderInput) {
+export async function bulkCreateOrders(actor: OrderActor, input: BulkCreateOrderInput, signal?: AbortSignal) {
   if (!Array.isArray(input.orders) || input.orders.length === 0) {
     throw new AppError(400, "orders must be a non-empty array");
   }
@@ -565,6 +596,20 @@ export async function bulkCreateOrders(actor: OrderActor, input: BulkCreateOrder
   const vendorIdsToInvalidate = new Set<string>();
 
   for (let i = 0; i < input.orders.length; i++) {
+    if (signal?.aborted) {
+      // Client disconnected - stop opening new transactions for orders it'll
+      // never see the result of. Record the remainder as not-processed
+      // rather than silently omitting them, so this (still-cached, since
+      // it's not an error) response stays honest about what happened; a
+      // genuinely new attempt needs a fresh Idempotency-Key, not a retry of
+      // this one, since some of this batch already committed.
+      for (let j = i; j < input.orders.length; j++) {
+        results.push({ index: j, success: false, error: "Not processed - request was cancelled by the client" });
+        failed++;
+      }
+      break;
+    }
+
     const raw = input.orders[i]!;
     // Merge defaultSender only when the order doesn't supply its own sender.
     const resolvedSender: OrderPartyInput | undefined =
@@ -1119,6 +1164,14 @@ export async function addOrderRemark(
     );
   }
 
+  // Fire-and-forget: dynamic import avoids a static circular dependency with
+  // ncm.service.ts (which itself imports from this file), and syncRemarkToNcm
+  // is best-effort/self-catching, so a slow or unreachable NCM must never
+  // delay this response.
+  void import("./ncm.service").then(({ syncRemarkToNcm }) =>
+    syncRemarkToNcm(parcel.id, `${remark.users?.full_name || "Staff"}: ${trimmed}`),
+  );
+
   return {
     id: remark.id,
     remark: remark.remark,
@@ -1132,8 +1185,12 @@ export async function addOrderRemark(
 
 export async function getDashboardSummary(actor: OrderActor, trendDays: 7 | 30 = 7) {
   const { vendorId, vendorIds, riderId } = await getActorScope(actor);
-  // Sales scope is per-account; skip the shared cache to avoid cross-account leaks.
-  const cacheKey = vendorIds === undefined ? dashboardSummaryCacheKey(vendorId, riderId, trendDays) : null;
+  const cacheKey =
+    vendorIds === undefined
+      ? dashboardSummaryCacheKey(vendorId, riderId, trendDays)
+      : vendorIds.length > 0
+      ? salesDashboardSummaryCacheKey(vendorIds, trendDays)
+      : null;
 
   if (cacheKey) {
     try {
@@ -1146,6 +1203,16 @@ export async function getDashboardSummary(actor: OrderActor, trendDays: 7 | 30 =
     }
   }
 
+  return dedupeInFlight(cacheKey, () => computeDashboardSummary(trendDays, vendorId, vendorIds, riderId, cacheKey));
+}
+
+async function computeDashboardSummary(
+  trendDays: 7 | 30,
+  vendorId: string | undefined,
+  vendorIds: string[] | undefined,
+  riderId: string | undefined,
+  cacheKey: string | null,
+) {
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
 
@@ -1186,71 +1253,87 @@ export async function getDashboardSummary(actor: OrderActor, trendDays: 7 | 30 =
     return { start, end };
   });
 
-  const [
-    totalOrders,
-    pendingPickups,
-    pendingReturns,
-    inTransit,
-    pendingDeliveries,
-    totalDelivered,
-    totalPickedUp,
-    totalReturns,
-    todaysOrders,
-    todaysDelivered,
-    todaysReturns,
-    todaysRemarks,
-    unclosedComments,
-    codTotals,
-    pendingCodCount,
-    lastSettlement,
-    trendCounts,
-  ] = await Promise.all([
-    prisma.parcels.count({ where: parcelWhere }),
-    prisma.parcels.count({
-      where: { ...parcelWhere, status: { in: PICKUP_PENDING_STATUSES } },
-    }),
-    prisma.parcels.count({
-      where: {
-        ...parcelWhere,
-        order_type: "return",
-        status: { in: OPEN_STATUSES },
-      },
-    }),
-    prisma.parcels.count({
-      where: { ...parcelWhere, status: { in: IN_TRANSIT_STATUSES } },
-    }),
-    prisma.parcels.count({
-      where: { ...parcelWhere, status: { in: DELIVERY_PENDING_STATUSES } },
-    }),
-    prisma.parcels.count({
-      where: { ...parcelWhere, status: { in: ["delivered", "partially_delivered"] } },
-    }),
-    prisma.parcels.count({
-      where: {
-        ...parcelWhere,
-        status: { notIn: ["pickup_ordered", "rider_assigned", "failed_pickup", "cancelled"] },
-      },
-    }),
-    prisma.parcels.count({
-      where: { ...parcelWhere, order_type: "return" },
-    }),
-    prisma.parcels.count({
-      where: { ...parcelWhere, created_at: { gte: todayStart } },
-    }),
-    prisma.parcels.count({
-      where: {
-        ...parcelWhere,
-        status: { in: ["delivered", "partially_delivered"] },
-        delivered_at: { gte: todayStart },
-      },
-    }),
-    prisma.parcels.count({
-      where: {
-        ...parcelWhere,
-        order_type: "return",
-        created_at: { gte: todayStart },
-      },
-    }),
+  // Same scope (vendor/rider/none) as parcelWhere above, expressed as raw SQL so
+  // it can be reused across both consolidated queries below. Casting the enum
+  // columns to text and comparing against plain string arrays sidesteps
+  // Postgres enum-array parameter binding, which $queryRaw doesn't infer well.
+  const parcelScopeSql: Prisma.Sql = vendorId
+    ? Prisma.sql`AND vendor_id = ${vendorId}::uuid`
+    : vendorIds
+    ? Prisma.sql`AND vendor_id = ANY(${vendorIds}::uuid[])`
+    : riderId
+    ? Prisma.sql`AND (pickup_rider_id = ${riderId}::uuid OR delivery_rider_id = ${riderId}::uuid)`
+    : Prisma.empty;
+
+  // The 11 overview/today metrics below all count the same `parcels` table
+  // under the same scope, differing only in which status/date predicate
+  // applies - conditional aggregation collapses them into one round trip
+  // instead of 11. (Previously the single biggest contributor to this
+  // endpoint's ~17-query fan-out under load - see server/loadtest/README.md.)
+  const [overviewRow] = await prisma.$queryRaw<
+    Array<{
+      total_orders: bigint;
+      pending_pickups: bigint;
+      pending_returns: bigint;
+      in_transit: bigint;
+      pending_deliveries: bigint;
+      total_delivered: bigint;
+      total_picked_up: bigint;
+      total_returns: bigint;
+      todays_orders: bigint;
+      todays_delivered: bigint;
+      todays_returns: bigint;
+    }>
+  >(Prisma.sql`
+    SELECT
+      COUNT(*) AS total_orders,
+      COUNT(*) FILTER (WHERE status::text = ANY(${PICKUP_PENDING_STATUSES})) AS pending_pickups,
+      COUNT(*) FILTER (WHERE order_type::text = 'return' AND status::text = ANY(${OPEN_STATUSES})) AS pending_returns,
+      COUNT(*) FILTER (WHERE status::text = ANY(${IN_TRANSIT_STATUSES})) AS in_transit,
+      COUNT(*) FILTER (WHERE status::text = ANY(${DELIVERY_PENDING_STATUSES})) AS pending_deliveries,
+      COUNT(*) FILTER (WHERE status::text = ANY(ARRAY['delivered','partially_delivered'])) AS total_delivered,
+      COUNT(*) FILTER (WHERE status::text NOT IN ('pickup_ordered','rider_assigned','failed_pickup','cancelled')) AS total_picked_up,
+      COUNT(*) FILTER (WHERE order_type::text = 'return') AS total_returns,
+      COUNT(*) FILTER (WHERE created_at >= ${todayStart}) AS todays_orders,
+      COUNT(*) FILTER (WHERE status::text = ANY(ARRAY['delivered','partially_delivered']) AND delivered_at >= ${todayStart}) AS todays_delivered,
+      COUNT(*) FILTER (WHERE order_type::text = 'return' AND created_at >= ${todayStart}) AS todays_returns
+    FROM parcels
+    WHERE deleted_at IS NULL ${parcelScopeSql}
+  `);
+
+  const totalOrders = Number(overviewRow!.total_orders);
+  const pendingPickups = Number(overviewRow!.pending_pickups);
+  const pendingReturns = Number(overviewRow!.pending_returns);
+  const inTransit = Number(overviewRow!.in_transit);
+  const pendingDeliveries = Number(overviewRow!.pending_deliveries);
+  const totalDelivered = Number(overviewRow!.total_delivered);
+  const totalPickedUp = Number(overviewRow!.total_picked_up);
+  const totalReturns = Number(overviewRow!.total_returns);
+  const todaysOrders = Number(overviewRow!.todays_orders);
+  const todaysDelivered = Number(overviewRow!.todays_delivered);
+  const todaysReturns = Number(overviewRow!.todays_returns);
+
+  // Same consolidation for the weekly/monthly trend: previously 4 queries per
+  // day (up to 120 for the 30-day view), now one query with 4 conditional
+  // aggregates per day. Column aliases are loop-index-derived, never
+  // user-supplied, so Prisma.raw here isn't an injection risk.
+  const trendSelects = trendDayRanges.map(({ start, end }, i) => Prisma.sql`
+    COUNT(*) FILTER (WHERE created_at >= ${start} AND created_at < ${end}) AS ${Prisma.raw(`d${i}_total`)},
+    COUNT(*) FILTER (WHERE picked_up_at >= ${start} AND picked_up_at < ${end}) AS ${Prisma.raw(`d${i}_picked_up`)},
+    COUNT(*) FILTER (WHERE status::text = 'delivered' AND delivered_at >= ${start} AND delivered_at < ${end}) AS ${Prisma.raw(`d${i}_delivered`)},
+    COUNT(*) FILTER (WHERE order_type::text = 'return' AND created_at >= ${start} AND created_at < ${end}) AS ${Prisma.raw(`d${i}_returned`)}
+  `);
+  const [trendRow] = await prisma.$queryRaw<Array<Record<string, bigint>>>(Prisma.sql`
+    SELECT ${Prisma.join(trendSelects, ",")} FROM parcels WHERE deleted_at IS NULL ${parcelScopeSql}
+  `);
+  const trendCounts = trendDayRanges.map((_, i) => [
+    Number(trendRow![`d${i}_total`]),
+    Number(trendRow![`d${i}_picked_up`]),
+    Number(trendRow![`d${i}_delivered`]),
+    Number(trendRow![`d${i}_returned`]),
+  ]);
+
+  const [todaysRemarks, unclosedComments, codTotals, pendingCodCount, lastSettlement] = await Promise.all([
     prisma.parcel_remarks.count({
       where: { created_at: { gte: todayStart }, parcels: parcelWhere },
     }),
@@ -1276,32 +1359,6 @@ export async function getDashboardSummary(actor: OrderActor, trendDays: 7 | 30 =
       orderBy: [{ settlement_date: "desc" }, { created_at: "desc" }],
       select: { amount: true, settlement_date: true, created_at: true },
     }),
-    Promise.all(
-      trendDayRanges.map(({ start, end }) =>
-        Promise.all([
-          prisma.parcels.count({
-            where: { ...parcelWhere, created_at: { gte: start, lt: end } },
-          }),
-          prisma.parcels.count({
-            where: { ...parcelWhere, picked_up_at: { gte: start, lt: end } },
-          }),
-          prisma.parcels.count({
-            where: {
-              ...parcelWhere,
-              status: "delivered",
-              delivered_at: { gte: start, lt: end },
-            },
-          }),
-          prisma.parcels.count({
-            where: {
-              ...parcelWhere,
-              order_type: "return",
-              created_at: { gte: start, lt: end },
-            },
-          }),
-        ]),
-      ),
-    ),
   ]);
 
   const totalCod = moneyToNumber(codTotals._sum.cod_amount);
@@ -1395,7 +1452,7 @@ export async function getSenderProfile(actor: OrderActor) {
   };
 }
 
-async function notifyVendorOfStatusChange(
+export async function notifyVendorOfStatusChange(
   vendorId: string | null,
   trackingId: string,
   newStatus: ParcelStatus,
@@ -1977,4 +2034,89 @@ async function _bulkUpdateParcelStatusImpl(
   }
 
   return result;
+}
+
+// ── External-carrier (3PL) status updates ────────────────────────────────────
+
+// The outside-valley leg a 3PL carrier drives on our behalf, in lifecycle
+// order. Carrier events may only move a parcel *forward* along this sequence;
+// anything else (duplicates, out-of-order webhooks, a parcel that ops moved to
+// hold/loss_and_damage in the meantime) is skipped rather than fought.
+const CARRIER_LEG_SEQUENCE: parcel_status[] = [
+  "oov",
+  "dispatched",
+  "arrived_at_branch",
+  "sent_for_delivery",
+  "delivered",
+];
+
+export type CarrierStatusResult = { applied: boolean; reason?: string };
+
+/**
+ * Applies a status reported by an external carrier (webhook/reconciliation).
+ * Deliberately bypasses the actor-driven transition machinery: there is no
+ * internal rider, run sheet, or dispatch manifest on a 3PL-carried leg, so
+ * this writes the parcel status + history/audit rows directly, under the same
+ * per-parcel lock the normal paths use.
+ */
+export async function applyExternalCarrierStatus(
+  parcelId: string,
+  targetStatus: parcel_status,
+  remarks: string,
+): Promise<CarrierStatusResult> {
+  return withParcelStatusLocks([parcelId], async (): Promise<CarrierStatusResult> => {
+    const parcel = await prisma.parcels.findFirst({
+      where: { id: parcelId, deleted_at: null },
+    });
+    if (!parcel) return { applied: false, reason: "Parcel not found" };
+
+    const targetIdx = CARRIER_LEG_SEQUENCE.indexOf(targetStatus);
+    if (targetIdx === -1) {
+      return { applied: false, reason: `'${targetStatus}' is not a carrier-leg status` };
+    }
+    const currentIdx = CARRIER_LEG_SEQUENCE.indexOf(parcel.status);
+    if (currentIdx === -1) {
+      return { applied: false, reason: `Parcel is '${parcel.status}', not on the carrier leg` };
+    }
+    if (targetIdx <= currentIdx) {
+      return { applied: false, reason: `Parcel is already '${parcel.status}'` };
+    }
+
+    await prisma.$transaction(async (tx) => {
+      const updateData: Prisma.parcelsUpdateInput = { status: targetStatus };
+      if (targetStatus === "delivered") {
+        (updateData as any).delivered_at = new Date();
+      }
+      await tx.parcels.update({ where: { id: parcelId }, data: updateData });
+      await tx.parcel_status_history.create({
+        data: {
+          parcel_id: parcelId,
+          old_status: parcel.status,
+          new_status: targetStatus,
+          location_id: parcel.current_location_id,
+          changed_by: null,
+          remarks,
+        },
+      });
+      await tx.audit_logs.create({
+        data: {
+          actor_id: null,
+          entity_type: "parcel",
+          entity_id: parcelId,
+          action: "CARRIER_UPDATE_STATUS",
+          old_data: { status: parcel.status },
+          new_data: { status: targetStatus, remarks },
+        },
+      });
+    });
+
+    await invalidateOrderCaches();
+    if (targetStatus === "delivered" && parcel.vendor_id) {
+      invalidateVendorFinanceCache(parcel.vendor_id).catch((err) =>
+        console.error("[Redis] cache invalidation failed:", err),
+      );
+    }
+    await notifyVendorOfStatusChange(parcel.vendor_id, parcel.tracking_id, targetStatus, "");
+    return { applied: true };
+  });
 }

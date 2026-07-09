@@ -11,6 +11,7 @@ import {
   listOrders,
   updateParcelStatus,
 } from "../services/order.service";
+import { syncRemarkToNcm } from "../services/ncm.service";
 import { withIdempotency } from "../services/idempotency.service";
 import { ORDER_SORT_FIELDS, OrderSortField, OrderType, ParcelStatus, STATUS_TRANSITIONS } from "../types/order.type";
 
@@ -123,8 +124,19 @@ export async function bulkCreateOrdersController(req: Request, res: Response) {
       return res.status(400).json({ success: false, message: "Valid Idempotency-Key header is required" });
     }
 
+    // A client that gives up waiting (timeout, retry storm) shouldn't leave
+    // the server grinding through the rest of a 100-order batch alone - load
+    // testing under extreme write overload found abandoned batches were a
+    // real contributor to Postgres connections piling up. This only stops
+    // the loop from *starting* further orders; whichever one is already
+    // mid-transaction when the client disconnects is left to finish cleanly.
+    const abortController = new AbortController();
+    res.on("close", () => {
+      if (!res.writableEnded) abortController.abort();
+    });
+
     const responseBody = await withIdempotency(idempotencyKey, req.body, async () => {
-      const data = await bulkCreateOrders({ id: req.user!.id, roles: req.user!.roles }, req.body);
+      const data = await bulkCreateOrders({ id: req.user!.id, roles: req.user!.roles }, req.body, abortController.signal);
       const body = {
         success: true,
         message: `${data.created} order(s) created, ${data.failed} failed`,
@@ -287,6 +299,11 @@ export async function addOrderRemarkController(req: Request, res: Response) {
       remark,
       typeof parentRemarkId === "string" ? parentRemarkId : null,
     );
+
+    // Fire-and-forget: pushes to NCM as a comment if this parcel was handed
+    // off to them, so their portal shows the same context we do. Never blocks
+    // or fails the remark itself - syncRemarkToNcm already swallows its own errors.
+    void syncRemarkToNcm(id, created.remark);
 
     return res.status(201).json({ success: true, data: created });
   } catch (error: any) {

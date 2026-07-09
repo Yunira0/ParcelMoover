@@ -9,3 +9,6 @@ dump.rdb
 /uploads
 .agents
 skills-lock.json
+
+# Load-test session tokens (minted by seed-load-test-users.ts) - live API credentials
+loadtest/k6/pool.json

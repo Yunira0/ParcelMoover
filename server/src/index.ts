@@ -41,7 +41,57 @@ async function startServer() {
     console.log(`[Startup] Server is running on port ${port}`);
     console.log(generateTrackingId());
     verifyMailer();
+    startNcmReconciliation();
   });
+}
+
+// NCM never retries a failed webhook, so in-flight NCM parcels are swept
+// periodically for statuses a lost webhook missed. The Redis NX lock keeps
+// one process per interval doing the sweep when multiple instances run
+// against the same NCM account.
+const NCM_RECONCILE_INTERVAL_MS = 30 * 60 * 1000;
+const NCM_RECONCILE_LOCK_KEY = "ncm:reconcile-lock";
+
+function startNcmReconciliation() {
+  if (!process.env.NCM_BASE_URL || !process.env.NCM_API_TOKEN) return;
+
+  setInterval(async () => {
+    try {
+      const acquired = await redis.set(
+        NCM_RECONCILE_LOCK_KEY,
+        "1",
+        "EX",
+        Math.floor(NCM_RECONCILE_INTERVAL_MS / 1000) - 60,
+        "NX",
+      );
+      if (!acquired) return;
+    } catch {
+      // Redis down — run anyway; reconciliation is idempotent.
+    }
+    try {
+      const { reconcileNcmStatuses, flushPendingNcmComments, syncNcmCommentsToParcels } = await import(
+        "./services/ncm.service"
+      );
+      const result = await reconcileNcmStatuses();
+      if (result.checked > 0) {
+        console.log(`[NCM] reconciliation: checked ${result.checked}, applied ${result.applied}`);
+      }
+      // Spaced out, not back-to-back: firing all three sweep steps at once is
+      // itself enough to trip NCM's demo-host per-minute throttle.
+      await new Promise((r) => setTimeout(r, 1000));
+      const comments = await flushPendingNcmComments();
+      if (comments.attempted > 0) {
+        console.log(`[NCM] pending comments: attempted ${comments.attempted}, delivered ${comments.delivered}`);
+      }
+      await new Promise((r) => setTimeout(r, 1000));
+      const inbound = await syncNcmCommentsToParcels();
+      if (inbound.ingested > 0) {
+        console.log(`[NCM] inbound comments: checked ${inbound.checked}, ingested ${inbound.ingested}`);
+      }
+    } catch (error) {
+      console.error("[NCM] reconciliation sweep failed:", error);
+    }
+  }, NCM_RECONCILE_INTERVAL_MS).unref();
 }
 
 startServer().catch((error) => {

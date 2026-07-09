@@ -49,6 +49,8 @@ const createOrderLimiter = rateLimit({
   message: { success: false, message: "Too many order creation attempts" },
   standardHeaders: true,
   legacyHeaders: false,
+  // Fail open (skip limiting), not 500, if Redis is unreachable mid-request.
+  passOnStoreError: true,
   store: createRedisRateLimitStore("create-order"),
   keyGenerator: actorOrIpKey,
 });
@@ -59,6 +61,7 @@ const statusUpdateLimiter = rateLimit({
   message: { success: false, message: "Too many status update attempts" },
   standardHeaders: true,
   legacyHeaders: false,
+  passOnStoreError: true,
   store: createRedisRateLimitStore("order-status"),
   keyGenerator: actorOrIpKey,
 });
@@ -69,6 +72,7 @@ const remarkLimiter = rateLimit({
   message: { success: false, message: "Too many remarks added" },
   standardHeaders: true,
   legacyHeaders: false,
+  passOnStoreError: true,
   store: createRedisRateLimitStore("order-remark"),
   keyGenerator: actorOrIpKey,
 });
@@ -80,6 +84,7 @@ const bulkCreateLimiter = rateLimit({
   message: { success: false, message: "Too many bulk order requests, please slow down" },
   standardHeaders: true,
   legacyHeaders: false,
+  passOnStoreError: true,
   store: createRedisRateLimitStore("bulk-create-order"),
   keyGenerator: actorOrIpKey,
 });
@@ -94,6 +99,7 @@ const orderReadLimiter = rateLimit({
   message: { success: false, message: "Too many requests, please slow down" },
   standardHeaders: true,
   legacyHeaders: false,
+  passOnStoreError: true,
   store: createRedisRateLimitStore("order-read"),
   keyGenerator: actorOrIpKey,
 });

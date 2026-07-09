@@ -238,7 +238,14 @@ const CreateOrderPage: React.FC = () => {
   };
 
   const resetForm = () => {
-    setForm(defaultFormState);
+    // For a vendor actor, origin is always their own hub and the field is
+    // disabled - the effect that fills it from myVendorProfile only re-runs
+    // when selectedVendor?.locationId changes, which it doesn't on reset, so
+    // it must be restored here or the form is stuck with a required-but-unfixable field.
+    setForm({
+      ...defaultFormState,
+      originLocationId: isVendorActor ? myVendorProfile?.locationId ?? '' : '',
+    });
     setQuote(null);
     setQuoteError('');
     setFieldErrors({});

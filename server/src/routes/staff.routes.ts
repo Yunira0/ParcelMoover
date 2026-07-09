@@ -20,6 +20,8 @@ const staffReadLimiter = rateLimit({
   message: { success: false, message: "Too many requests, please slow down" },
   standardHeaders: true,
   legacyHeaders: false,
+  // Fail open (skip limiting), not 500, if Redis is unreachable mid-request.
+  passOnStoreError: true,
   store: createRedisRateLimitStore("staff-read"),
   keyGenerator: (req) => req.user?.id ?? ipKeyGenerator(req.ip ?? ""),
 });
@@ -30,6 +32,7 @@ const staffWriteLimiter = rateLimit({
   message: { success: false, message: "Too many requests, please slow down" },
   standardHeaders: true,
   legacyHeaders: false,
+  passOnStoreError: true,
   store: createRedisRateLimitStore("staff-write"),
   keyGenerator: (req) => req.user?.id ?? ipKeyGenerator(req.ip ?? ""),
 });

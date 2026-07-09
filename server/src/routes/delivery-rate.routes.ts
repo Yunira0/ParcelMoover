@@ -33,6 +33,8 @@ const quoteLimiter = rateLimit({
   message: { success: false, message: "Too many quote requests, please slow down" },
   standardHeaders: true,
   legacyHeaders: false,
+  // Fail open (skip limiting), not 500, if Redis is unreachable mid-request.
+  passOnStoreError: true,
   store: createRedisRateLimitStore("delivery-rate-quote"),
   keyGenerator: actorOrIpKey,
 });
@@ -43,6 +45,7 @@ const ratesReadLimiter = rateLimit({
   message: { success: false, message: "Too many requests, please slow down" },
   standardHeaders: true,
   legacyHeaders: false,
+  passOnStoreError: true,
   store: createRedisRateLimitStore("delivery-rate-read"),
   keyGenerator: actorOrIpKey,
 });
@@ -53,6 +56,7 @@ const ratesWriteLimiter = rateLimit({
   message: { success: false, message: "Too many rate changes, please slow down" },
   standardHeaders: true,
   legacyHeaders: false,
+  passOnStoreError: true,
   store: createRedisRateLimitStore("delivery-rate-write"),
   keyGenerator: actorOrIpKey,
 });
@@ -103,6 +107,7 @@ const ratesBulkImportLimiter = rateLimit({
   message: { success: false, message: "Too many requests, please slow down" },
   standardHeaders: true,
   legacyHeaders: false,
+  passOnStoreError: true,
   store: createRedisRateLimitStore("delivery-rate-bulk-import"),
   keyGenerator: actorOrIpKey,
 });

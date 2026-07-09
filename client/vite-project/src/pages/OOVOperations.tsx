@@ -21,6 +21,7 @@ import {
   type ParcelStatus,
 } from '../services/orders.service';
 import { getLocations, getRiders } from '../services/users.service';
+import { getNcmBranches, handoffToNcm, type NcmBranch } from '../services/ncm.service';
 import { toBsDate } from '../utils/nepaliDate';
 import { printLabels } from '../utils/printLabels';
 import './OOVOperations.css';
@@ -117,6 +118,9 @@ const OOVOperations: React.FC = () => {
   const [riders, setRiders] = useState<{ id: string; name: string }[]>([]);
   const [toLocationId, setToLocationId] = useState('');
   const [riderId, setRiderId] = useState('');
+  const [ncmBranches, setNcmBranches] = useState<NcmBranch[]>([]);
+  const [ncmBranchesError, setNcmBranchesError] = useState('');
+  const [ncmBranch, setNcmBranch] = useState('');
 
   // Debounce search input so every keystroke doesn't fire a request.
   useEffect(() => {
@@ -209,6 +213,28 @@ const OOVOperations: React.FC = () => {
 
   const isDispatchAction = effectiveNextStatus === 'dispatched';
 
+  // NCM branch list is only needed once the 3PL method is picked — and the
+  // fetch fails cleanly when the NCM integration isn't configured.
+  useEffect(() => {
+    if (dispatchMethod !== 'tpl' || ncmBranches.length > 0) return;
+    (async () => {
+      try {
+        const res = await getNcmBranches();
+        if (res?.success && Array.isArray(res.data)) {
+          setNcmBranches(res.data);
+          setNcmBranchesError('');
+        }
+      } catch (err: unknown) {
+        const message =
+          typeof err === 'object' && err !== null && 'response' in err &&
+          typeof (err as { response?: { data?: { message?: unknown } } }).response?.data?.message === 'string'
+            ? (err as { response: { data: { message: string } } }).response.data.message
+            : 'Failed to load NCM branches.';
+        setNcmBranchesError(message);
+      }
+    })();
+  }, [dispatchMethod, ncmBranches.length]);
+
   const toggleRowSelection = (orderId: string | number) => {
     const order = visibleOrders.find(o => o.id === orderId);
     if (!order) return;
@@ -267,14 +293,33 @@ const OOVOperations: React.FC = () => {
       return;
     }
 
+    if (isDispatchAction && dispatchMethod === 'tpl' && !ncmBranch) {
+      setActionError('Select the NCM destination branch for this handoff.');
+      return;
+    }
+
     setStatusUpdating(true);
     try {
       const ids = selectedOrders.map(order => String(order.id));
 
-      await bulkUpdateOrderStatus(ids, effectiveNextStatus, {
-        toLocationId: isDispatchAction && dispatchMethod === 'manifest' ? toLocationId : undefined,
-        riderId: isDispatchAction && dispatchMethod === 'manifest' ? riderId || undefined : undefined,
-      });
+      if (isDispatchAction && dispatchMethod === 'tpl') {
+        // Hand off to NCM: creates the NCM orders; parcels stay in Transit
+        // until NCM's pickup webhook moves them to In Transit.
+        const res = await handoffToNcm(ids, ncmBranch);
+        const failed = (res.data ?? []).filter(item => !item.success);
+        if (failed.length > 0) {
+          setActionError(
+            failed.map(item => `${item.trackingId}: ${item.error || 'failed'}`).join(' · '),
+          );
+          await loadOovOrders();
+          return;
+        }
+      } else {
+        await bulkUpdateOrderStatus(ids, effectiveNextStatus, {
+          toLocationId: isDispatchAction && dispatchMethod === 'manifest' ? toLocationId : undefined,
+          riderId: isDispatchAction && dispatchMethod === 'manifest' ? riderId || undefined : undefined,
+        });
+      }
       await loadOovOrders();
 
       setSelectionByTab(prev => ({ ...prev, [activeTab]: new Map() }));
@@ -282,6 +327,7 @@ const OOVOperations: React.FC = () => {
       setSelectedNextStatus('');
       setToLocationId('');
       setRiderId('');
+      setNcmBranch('');
       setDispatchMethod('manifest');
     } catch (err: unknown) {
       const message =
@@ -487,8 +533,30 @@ const OOVOperations: React.FC = () => {
                         onChange={() => setDispatchMethod('tpl')}
                         disabled={statusUpdating}
                       />
-                      <span>Via 3PL</span>
+                      <span>Via 3PL (NCM)</span>
                     </label>
+                  </div>
+                )}
+                {isDispatchAction && dispatchMethod === 'tpl' && (
+                  <div className="oov-manifest-fields">
+                    <div className="oov-manifest-field">
+                      <span>NCM destination branch</span>
+                      <SearchableSelect
+                        options={ncmBranches.map(branch => ({
+                          id: branch.name,
+                          label: branch.district ? `${branch.name} (${branch.district})` : branch.name,
+                        }))}
+                        value={ncmBranch}
+                        onChange={setNcmBranch}
+                        placeholder="Select NCM branch"
+                        searchPlaceholder="Search branch..."
+                        emptyMessage={ncmBranchesError || 'No NCM branches found.'}
+                        disabled={statusUpdating}
+                      />
+                    </div>
+                    <p className="oov-status-empty">
+                      Orders stay in Transit until NCM confirms pickup, then follow NCM tracking automatically.
+                    </p>
                   </div>
                 )}
                 {isDispatchAction && dispatchMethod === 'manifest' && (

@@ -23,6 +23,8 @@ const readLimiter = rateLimit({
   message: { success: false, message: "Too many requests, please slow down" },
   standardHeaders: true,
   legacyHeaders: false,
+  // Fail open (skip limiting), not 500, if Redis is unreachable mid-request.
+  passOnStoreError: true,
   store: createRedisRateLimitStore("notifications-read"),
   keyGenerator: actorOrIpKey,
 });
@@ -33,6 +35,7 @@ const writeLimiter = rateLimit({
   message: { success: false, message: "Too many requests, please slow down" },
   standardHeaders: true,
   legacyHeaders: false,
+  passOnStoreError: true,
   store: createRedisRateLimitStore("notifications-write"),
   keyGenerator: actorOrIpKey,
 });

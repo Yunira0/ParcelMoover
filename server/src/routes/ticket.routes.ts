@@ -24,6 +24,8 @@ const ticketsReadLimiter = rateLimit({
   message: { success: false, message: "Too many requests, please slow down" },
   standardHeaders: true,
   legacyHeaders: false,
+  // Fail open (skip limiting), not 500, if Redis is unreachable mid-request.
+  passOnStoreError: true,
   store: createRedisRateLimitStore("tickets-read"),
   keyGenerator: actorOrIpKey,
 });
@@ -34,6 +36,7 @@ const createTicketLimiter = rateLimit({
   message: { success: false, message: "Too many tickets created, please slow down" },
   standardHeaders: true,
   legacyHeaders: false,
+  passOnStoreError: true,
   store: createRedisRateLimitStore("tickets-create"),
   keyGenerator: actorOrIpKey,
 });
@@ -44,6 +47,7 @@ const ticketsWriteLimiter = rateLimit({
   message: { success: false, message: "Too many requests, please slow down" },
   standardHeaders: true,
   legacyHeaders: false,
+  passOnStoreError: true,
   store: createRedisRateLimitStore("tickets-write"),
   keyGenerator: actorOrIpKey,
 });

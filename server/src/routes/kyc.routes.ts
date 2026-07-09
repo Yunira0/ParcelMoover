@@ -21,6 +21,8 @@ const kycSubmitLimiter = rateLimit({
   message: { success: false, message: "Too many KYC submissions. Please try again later." },
   standardHeaders: true,
   legacyHeaders: false,
+  // Fail open (skip limiting), not 500, if Redis is unreachable mid-request.
+  passOnStoreError: true,
   store: createRedisRateLimitStore("kyc_submit"),
   keyGenerator: (req) => ipKeyGenerator(req.ip ?? "unknown"),
 });
@@ -34,6 +36,7 @@ const kycReviewLimiter = rateLimit({
   message: { success: false, message: "Too many KYC review actions, please slow down" },
   standardHeaders: true,
   legacyHeaders: false,
+  passOnStoreError: true,
   store: createRedisRateLimitStore("kyc-review"),
   keyGenerator: actorOrIpKey,
 });

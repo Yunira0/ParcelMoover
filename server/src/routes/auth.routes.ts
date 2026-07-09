@@ -35,6 +35,8 @@ const loginLimiter = rateLimit({
   message: { success: false, message: "Too many login attempts" },
   standardHeaders: true,
   legacyHeaders: false,
+  // Fail open (skip limiting), not 500, if Redis is unreachable mid-request.
+  passOnStoreError: true,
   store: createRedisRateLimitStore("login"),
   keyGenerator: (req) => ipKeyGenerator(req.ip ?? "unknown")
 });
@@ -50,6 +52,7 @@ const authReadLimiter = rateLimit({
   message: { success: false, message: "Too many requests, please slow down" },
   standardHeaders: true,
   legacyHeaders: false,
+  passOnStoreError: true,
   store: createRedisRateLimitStore("auth-read"),
   keyGenerator: actorOrIpKey,
 });
@@ -61,6 +64,7 @@ const authWriteLimiter = rateLimit({
   message: { success: false, message: "Too many requests, please slow down" },
   standardHeaders: true,
   legacyHeaders: false,
+  passOnStoreError: true,
   store: createRedisRateLimitStore("auth-write"),
   keyGenerator: actorOrIpKey,
 });
