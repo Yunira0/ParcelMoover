@@ -110,7 +110,9 @@
       "Bash(npx vitest *)",
       "Bash(cd *)",
       "Bash(git commit *)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "Bash(pkill -f \"vite\")",
+      "Bash(rm -f /tmp/vite-dev.log)"
     ]
   },
   "skillOverrides": {}

@@ -1,52 +1,57 @@
+import { lazy, Suspense } from 'react'
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import MainLayout from './layouts/MainLayout'
 import DashboardLayout from './layouts/DashboardLayout'
 import Home from './pages/Home'
 import Login from './pages/Login'
-import DashboardRouter from './pages/DashboardRouter'
-import OrdersRouter from './pages/OrdersRouter'
-import CreateOrderPage from './pages/CreateOrderPage'
-import OrderDetailPage from './pages/OrderDetailPage'
-import AdminManagement from './pages/AdminManagement'
-import AdminFormPage from './pages/AdminFormPage'
-import VendorManagement from './pages/VendorManagement'
-import VendorFormPage from './pages/VendorFormPage'
-import RiderManagement from './pages/RiderManagement'
-import RiderFormPage from './pages/RiderFormPage'
-import FinanceManagement from './pages/FinanceManagement'
-import DeliveryRateSettings from './pages/DeliveryRateSettings'
-import Settings from './pages/settings/Settings'
-import PickupOperations from './pages/PickupOperations'
-import DispatchOperations from './pages/DispatchOperations'
-import OOVOperations from './pages/OOVOperations'
-import ReturnOperations from './pages/ReturnOperations'
-import HoldOperations from './pages/HoldOperations'
-import LossAndDamageOperations from './pages/LossAndDamageOperations'
-import RiderRunSheet from './pages/RiderRunSheet'
-import CXCenter from './pages/CXCenter'
-import Remarks from './pages/Remarks'
-import UnclosedRemarks from './pages/UnclosedRemarks'
-import RemarkDetail from './pages/RemarkDetail'
-import TicketDetail from './pages/TicketDetail'
-import VendorSettlements from './pages/vendor/VendorSettlements'
-import VendorPendingCod from './pages/vendor/VendorPendingCod'
-import VendorOrderPayments from './pages/vendor/VendorOrderPayments'
-import VendorUserManagement from './pages/vendor/VendorUserManagement'
-import StaffFormPage from './pages/vendor/StaffFormPage'
-import BulkOrderPage from './pages/vendor/BulkOrderPage'
-import VendorDeliveryCharges from './pages/vendor/VendorDeliveryCharges'
-import ForceChangePasswordPage from './pages/ForceChangePasswordPage'
-import KycApplicationPage from './pages/KycApplicationPage'
-import KycManagement from './pages/KycManagement'
-import ProfilePage from './pages/ProfilePage'
 import NotFound from './pages/NotFound'
 import ProtectedRoute from './components/ProtectedRoute'
 import RoleGuard from './components/RoleGuard'
+import PageLoader from './components/PageLoader'
 import './App.css'
+
+const DashboardRouter = lazy(() => import('./pages/DashboardRouter'))
+const OrdersRouter = lazy(() => import('./pages/OrdersRouter'))
+const CreateOrderPage = lazy(() => import('./pages/CreateOrderPage'))
+const OrderDetailPage = lazy(() => import('./pages/OrderDetailPage'))
+const AdminManagement = lazy(() => import('./pages/AdminManagement'))
+const AdminFormPage = lazy(() => import('./pages/AdminFormPage'))
+const VendorManagement = lazy(() => import('./pages/VendorManagement'))
+const VendorFormPage = lazy(() => import('./pages/VendorFormPage'))
+const RiderManagement = lazy(() => import('./pages/RiderManagement'))
+const RiderFormPage = lazy(() => import('./pages/RiderFormPage'))
+const FinanceManagement = lazy(() => import('./pages/FinanceManagement'))
+const DeliveryRateSettings = lazy(() => import('./pages/DeliveryRateSettings'))
+const Settings = lazy(() => import('./pages/settings/Settings'))
+const PickupOperations = lazy(() => import('./pages/PickupOperations'))
+const DispatchOperations = lazy(() => import('./pages/DispatchOperations'))
+const OOVOperations = lazy(() => import('./pages/OOVOperations'))
+const ReturnOperations = lazy(() => import('./pages/ReturnOperations'))
+const HoldOperations = lazy(() => import('./pages/HoldOperations'))
+const LossAndDamageOperations = lazy(() => import('./pages/LossAndDamageOperations'))
+const RiderRunSheet = lazy(() => import('./pages/RiderRunSheet'))
+const CXCenter = lazy(() => import('./pages/CXCenter'))
+const Remarks = lazy(() => import('./pages/Remarks'))
+const UnclosedRemarks = lazy(() => import('./pages/UnclosedRemarks'))
+const RemarkDetail = lazy(() => import('./pages/RemarkDetail'))
+const TicketDetail = lazy(() => import('./pages/TicketDetail'))
+const VendorSettlements = lazy(() => import('./pages/vendor/VendorSettlements'))
+const VendorPendingCod = lazy(() => import('./pages/vendor/VendorPendingCod'))
+const VendorOrderPayments = lazy(() => import('./pages/vendor/VendorOrderPayments'))
+const VendorUserManagement = lazy(() => import('./pages/vendor/VendorUserManagement'))
+const StaffFormPage = lazy(() => import('./pages/vendor/StaffFormPage'))
+const BulkOrderPage = lazy(() => import('./pages/vendor/BulkOrderPage'))
+const VendorDeliveryCharges = lazy(() => import('./pages/vendor/VendorDeliveryCharges'))
+const ForceChangePasswordPage = lazy(() => import('./pages/ForceChangePasswordPage'))
+const KycApplicationPage = lazy(() => import('./pages/KycApplicationPage'))
+const KycManagement = lazy(() => import('./pages/KycManagement'))
+const ProfilePage = lazy(() => import('./pages/ProfilePage'))
+
 function App() {
 
   return (
     <Router>
+      <Suspense fallback={<PageLoader />}>
       <Routes>
         {/* Public Routes */}
         <Route path="/" element={<MainLayout><Home /></MainLayout>} />
@@ -221,6 +226,7 @@ function App() {
         {/* Catch-all */}
         <Route path="*" element={<MainLayout><NotFound /></MainLayout>} />
       </Routes>
+      </Suspense>
     </Router>
   )
 }
