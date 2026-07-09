@@ -108,7 +108,9 @@
       "Bash(git show *)",
       "Bash(echo \"exit code was: $?\")",
       "Bash(npx vitest *)",
-      "Bash(cd *)"
+      "Bash(cd *)",
+      "Bash(git commit *)",
+      "Bash(git push *)"
     ]
   },
   "skillOverrides": {}

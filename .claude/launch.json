@@ -5,7 +5,7 @@
       "name": "client",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
-      "cwd": "client/vite-project",
+      "cwd": "client",
       "port": 5173
     },
     {
