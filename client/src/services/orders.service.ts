@@ -69,20 +69,25 @@ export interface Order {
   senderPhone: string;
   receiverName: string;
   receiverPhone: string;
+  receiverAddress: string;
   origin: string;
   destination: string;
   pieces: number;
   weightKg?: number;
+  attemptCount: number;
   codAmount: number;
   deliveryCharge: number;
   packageType?: string;
   deliveryInstruction?: string;
+  vendorId: string | null;
   vendorName?: string;
+  vendorLocation?: string;
   riderName?: string;
   remarks?: string;
   lastUpdatedBy?: string;
   lastUpdatedAt?: string;
   createdAt: string;
+  createdAtRaw: string;
 }
 
 export const ORDER_SORT_FIELDS = ['createdAt', 'codAmount', 'deliveryCharge', 'trackingId', 'status'] as const;

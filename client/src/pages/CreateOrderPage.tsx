@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 import { Info } from 'lucide-react';
 import FormField from '../components/FormField';
 import PageHeader from '../components/PageHeader';
@@ -37,7 +37,17 @@ const ORDER_TYPE_OPTIONS: { value: OrderType; label: string }[] = [
   { value: 'return', label: 'Return' },
 ];
 
-const PACKAGE_TYPE_OPTIONS = ['Document', 'Parcel', 'Fragile', 'Other'];
+const PACKAGE_TYPE_OPTIONS = ['Parcel', 'Document', 'Fragile', 'Other'];
+const OTHER_PACKAGE_TYPE = 'Other';
+
+const DELIVERY_INSTRUCTION_OPTIONS = [
+  'Cannot open the parcel',
+  'Can open the parcel',
+  'Call before delivery',
+  'Handle with care',
+  'Other',
+];
+const OTHER_DELIVERY_INSTRUCTION = 'Other';
 
 const defaultFormState = {
   vendorId: '',
@@ -51,8 +61,10 @@ const defaultFormState = {
   address: '',
   weightKg: '',
   codAmount: '',
-  packageType: '',
-  deliveryInstruction: '',
+  packageType: 'Parcel',
+  packageTypeOther: '',
+  deliveryInstruction: 'Cannot open the parcel',
+  deliveryInstructionOther: '',
 };
 
 type FormState = typeof defaultFormState;
@@ -76,7 +88,6 @@ const SERVER_FIELD_MAP: Record<string, keyof FormState> = {
 };
 
 const CreateOrderPage: React.FC = () => {
-  const navigate = useNavigate();
   const location = useLocation();
   const prefillInitialData = (location.state as { initialData?: CreateOrderInput } | null)?.initialData;
 
@@ -93,6 +104,7 @@ const CreateOrderPage: React.FC = () => {
   const [submitting, setSubmitting] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<keyof FormState, string>>>({});
   const [generalError, setGeneralError] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
 
   const [quote, setQuote] = useState<{ weightSurcharge: number; baseCharge: number; totalPayable: number } | null>(null);
   const [quoteError, setQuoteError] = useState('');
@@ -155,6 +167,13 @@ const CreateOrderPage: React.FC = () => {
   // Prefill from a "copy"/"edit" navigation (replaces the old modal's initialData prop)
   useEffect(() => {
     if (!prefillInitialData) return;
+    // A copied order's packageType/deliveryInstruction may be free text that
+    // predates these presets - fall back to "Other" + the raw text so nothing
+    // silently gets dropped.
+    const incomingPackageType = prefillInitialData.packageType || 'Parcel';
+    const isKnownPackageType = PACKAGE_TYPE_OPTIONS.includes(incomingPackageType);
+    const incomingInstruction = prefillInitialData.deliveryInstruction || '';
+    const isKnownInstruction = DELIVERY_INSTRUCTION_OPTIONS.includes(incomingInstruction);
     setForm(prev => ({
       ...prev,
       vendorId: prefillInitialData.vendorId || '',
@@ -168,8 +187,12 @@ const CreateOrderPage: React.FC = () => {
       address: prefillInitialData.receiver?.address || '',
       weightKg: prefillInitialData.weightKg !== undefined ? String(prefillInitialData.weightKg) : '',
       codAmount: prefillInitialData.codAmount !== undefined ? String(prefillInitialData.codAmount) : '',
-      packageType: prefillInitialData.packageType || '',
-      deliveryInstruction: prefillInitialData.deliveryInstruction || '',
+      packageType: isKnownPackageType ? incomingPackageType : OTHER_PACKAGE_TYPE,
+      packageTypeOther: isKnownPackageType ? '' : incomingPackageType,
+      deliveryInstruction: incomingInstruction
+        ? (isKnownInstruction ? incomingInstruction : OTHER_DELIVERY_INSTRUCTION)
+        : 'Cannot open the parcel',
+      deliveryInstructionOther: incomingInstruction && !isKnownInstruction ? incomingInstruction : '',
     }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prefillInitialData]);
@@ -235,6 +258,7 @@ const CreateOrderPage: React.FC = () => {
       return next;
     });
     if (generalError) setGeneralError('');
+    if (successMessage) setSuccessMessage('');
   };
 
   const resetForm = () => {
@@ -250,6 +274,7 @@ const CreateOrderPage: React.FC = () => {
     setQuoteError('');
     setFieldErrors({});
     setGeneralError('');
+    setSuccessMessage('');
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -282,6 +307,12 @@ const CreateOrderPage: React.FC = () => {
     if (!weightKgNumber) {
       errors.weightKg = 'Package weight is required.';
     }
+    if (form.packageType === OTHER_PACKAGE_TYPE && !form.packageTypeOther.trim()) {
+      errors.packageTypeOther = 'Please specify the package type.';
+    }
+    if (form.deliveryInstruction === OTHER_DELIVERY_INSTRUCTION && !form.deliveryInstructionOther.trim()) {
+      errors.deliveryInstructionOther = 'Please specify the delivery instruction.';
+    }
 
     if (Object.keys(errors).length > 0) {
       setFieldErrors(errors);
@@ -296,6 +327,13 @@ const CreateOrderPage: React.FC = () => {
     const sender = selectedVendor
       ? { name: selectedVendor.label, phone: selectedVendor.phone, address: selectedVendor.address }
       : { name: form.customerName, phone: form.contactNumber, address: form.address };
+
+    const effectivePackageType = form.packageType === OTHER_PACKAGE_TYPE
+      ? form.packageTypeOther.trim()
+      : form.packageType;
+    const effectiveDeliveryInstruction = form.deliveryInstruction === OTHER_DELIVERY_INSTRUCTION
+      ? form.deliveryInstructionOther.trim()
+      : form.deliveryInstruction;
 
     const payload: CreateOrderInput = {
       vendorId: isVendorActor ? undefined : form.vendorId,
@@ -314,15 +352,16 @@ const CreateOrderPage: React.FC = () => {
       pieces: 1,
       weightKg: weightKgNumber,
       codAmount: Number(form.codAmount) || 0,
-      packageType: form.packageType || undefined,
-      deliveryInstruction: form.deliveryInstruction.trim() || undefined,
+      packageType: effectivePackageType || undefined,
+      deliveryInstruction: effectiveDeliveryInstruction || undefined,
       pickupAddress: selectedVendor?.address || undefined,
     };
 
     setSubmitting(true);
     try {
-      await createOrder(payload);
-      navigate('/orders');
+      const res = await createOrder(payload);
+      resetForm();
+      setSuccessMessage(`Order ${res.data.trackingId} created successfully. You can create another order below.`);
     } catch (err: any) {
       const data = err.response?.data;
       if (data?.errors?.length) {
@@ -506,19 +545,42 @@ const CreateOrderPage: React.FC = () => {
               <FormField
                 label="Package Type"
                 type="select"
-                placeholder="Select package type"
                 options={PACKAGE_TYPE_OPTIONS.map(opt => ({ value: opt, label: opt }))}
                 value={form.packageType}
                 onChange={value => setField('packageType', value)}
                 error={fieldErrors.packageType}
               />
+              {form.packageType === OTHER_PACKAGE_TYPE && (
+                <FormField
+                  label="Specify Package Type"
+                  required
+                  value={form.packageTypeOther}
+                  onChange={value => setField('packageTypeOther', value)}
+                  placeholder="Enter package type"
+                  error={fieldErrors.packageTypeOther}
+                  gridColumn="span 2"
+                />
+              )}
               <FormField
                 label="Delivery Instruction"
+                type="select"
+                placeholder="Select delivery instruction"
+                options={DELIVERY_INSTRUCTION_OPTIONS.map(opt => ({ value: opt, label: opt }))}
                 value={form.deliveryInstruction}
                 onChange={value => setField('deliveryInstruction', value)}
-                placeholder="Enter Delivery Instruction"
                 error={fieldErrors.deliveryInstruction}
               />
+              {form.deliveryInstruction === OTHER_DELIVERY_INSTRUCTION && (
+                <FormField
+                  label="Specify Delivery Instruction"
+                  required
+                  value={form.deliveryInstructionOther}
+                  onChange={value => setField('deliveryInstructionOther', value)}
+                  placeholder="Enter delivery instruction"
+                  error={fieldErrors.deliveryInstructionOther}
+                  gridColumn="span 2"
+                />
+              )}
             </div>
           </div>
         </div>
@@ -542,12 +604,18 @@ const CreateOrderPage: React.FC = () => {
             <h2>Order Summary</h2>
             <div className="order-summary-row">
               <span>Weight</span>
-              <span>{quote ? quote.weightSurcharge.toLocaleString(undefined, { maximumFractionDigits: 2 }) : '-'}</span>
+              <span>{weightKgNumber ? `${weightKgNumber.toLocaleString(undefined, { maximumFractionDigits: 2 })} kg` : '-'}</span>
             </div>
             <div className="order-summary-row">
-              <span>Delivery Charge</span>
+              <span>Base Charge</span>
               <span>{quote ? quote.baseCharge.toLocaleString(undefined, { maximumFractionDigits: 2 }) : '-'}</span>
             </div>
+            {quote !== null && quote.weightSurcharge > 0 && (
+              <div className="order-summary-row">
+                <span>Weight Surcharge</span>
+                <span>{quote.weightSurcharge.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+              </div>
+            )}
             <div className="order-summary-divider" />
             <div className="order-summary-row order-summary-total">
               <span>Total Payable</span>
@@ -563,6 +631,7 @@ const CreateOrderPage: React.FC = () => {
             </div>
           </div>
 
+          {successMessage && <p className="order-form-success">{successMessage}</p>}
           {generalError && <p className="order-form-error">{generalError}</p>}
 
           <div className="create-order-actions">

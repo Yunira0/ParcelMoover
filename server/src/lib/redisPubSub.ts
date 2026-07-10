@@ -6,6 +6,9 @@ export interface NotificationPayload {
   id: string;
   title: string;
   body: string | null;
+  trackingId: string | null;
+  type: string;
+  link: string | null;
   readAt: string | null;
   createdAt: string;
 }

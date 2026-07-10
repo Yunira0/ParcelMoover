@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
+  ChevronDown,
+  ChevronUp,
   Download,
   PackageCheck,
   Printer,
@@ -10,8 +12,10 @@ import {
 import Table from '../components/Table';
 import SearchableSelect from '../components/SearchableSelect';
 import Button from '../components/Button';
+import QuickRemarkPopup from '../components/QuickRemarkPopup';
 import SegmentedTabs from '../components/SegmentedTabs';
 import PageHeader from '../components/PageHeader';
+import TicketCategoryButton from '../components/TicketCategoryButton';
 import Pagination from '../components/Pagination';
 import {
   getOrders,
@@ -25,6 +29,7 @@ import { getRiders } from '../services/users.service';
 import { printLabels } from '../utils/printLabels';
 import { toBsDate, toNptTime } from '../utils/nepaliDate';
 import { useCursorPagination } from '../hooks/useCursorPagination';
+import { formatCurrency } from '../utils/format';
 import './PickupOperations.css';
 
 type PickupTab = 'pickup_ordered' | 'rider_assigned' | 'picked_up' | 'arrived' | 'failed' | 'cancelled';
@@ -111,6 +116,185 @@ const createEmptyTabSelections = (): Record<PickupTab, Set<string | number>> => 
   cancelled: new Set(),
 });
 
+const SERVICE_TYPE_FULL_LABELS: Record<Order['serviceType'], string> = {
+  dtd: 'Door to Door Delivery',
+  btd: 'Branch to Door Delivery',
+  btb: 'Branch to Branch Delivery',
+  dtb: 'Door to Branch Delivery',
+};
+
+const ORDER_TYPE_LABELS: Record<Order['orderType'], string> = {
+  delivery: 'Delivery Order',
+  exchange: 'Exchange Order',
+  return: 'Return Order',
+};
+
+// A vendor often hands over several parcels for pickup in one trip - group
+// them into a single row instead of listing every parcel separately. Orders
+// with no vendor (legacy/no-vendor flows) fall back to sender identity so
+// they still group sensibly rather than colliding into one bucket.
+interface PickupGroup {
+  id: string;
+  sn: number;
+  senderName: string;
+  senderPhone: string;
+  location: string;
+  orderType: Order['orderType'];
+  mixedOrderType: boolean;
+  serviceType: Order['serviceType'];
+  mixedServiceType: boolean;
+  riderName: string;
+  totalPieces: number;
+  orders: Order[];
+}
+
+const groupOrdersByVendor = (orders: Order[]): PickupGroup[] => {
+  const groups = new Map<string, Order[]>();
+  for (const order of orders) {
+    const key = order.vendorId || `sender:${order.senderName}|${order.senderPhone}`;
+    const bucket = groups.get(key);
+    if (bucket) bucket.push(order);
+    else groups.set(key, [order]);
+  }
+
+  return Array.from(groups.entries()).map(([id, groupOrders], index) => {
+    const first = groupOrders[0]!;
+    const orderTypes = new Set(groupOrders.map(o => o.orderType));
+    const serviceTypes = new Set(groupOrders.map(o => o.serviceType));
+    const riders = new Set(groupOrders.map(o => o.riderName || ''));
+
+    return {
+      id,
+      sn: index + 1,
+      senderName: first.senderName,
+      senderPhone: first.senderPhone,
+      // Every order in a group shares one vendor (grouping key is vendorId),
+      // so the vendor's own pickup Location - not the order's destination -
+      // is what a rider actually needs to find the sender.
+      location: first.vendorLocation || first.origin || '-',
+      orderType: first.orderType,
+      mixedOrderType: orderTypes.size > 1,
+      serviceType: first.serviceType,
+      mixedServiceType: serviceTypes.size > 1,
+      riderName: riders.size === 1 ? first.riderName || '' : 'Mixed',
+      totalPieces: groupOrders.reduce((sum, o) => sum + o.pieces, 0),
+      orders: groupOrders,
+    };
+  });
+};
+
+const DateTimeCell: React.FC<{ iso: string }> = ({ iso }) => (
+  <div className="pickup-datetime">
+    <span>{toBsDate(iso)}</span>
+    <small>{toNptTime(iso, true)}</small>
+  </div>
+);
+
+const groupDetailColumns = (group: PickupGroup, onRemarkClick: (order: Order) => void) => [
+  {
+    header: 'SN',
+    accessor: (order: Order) => `${group.sn}.${group.orders.indexOf(order) + 1}`,
+    width: '60px',
+  },
+  {
+    header: 'DATE & TIME',
+    accessor: (order: Order) => <DateTimeCell iso={order.createdAtRaw} />,
+    width: '110px',
+  },
+  {
+    header: 'SENDER DETAILS',
+    accessor: (order: Order) => (
+      <div className="pickup-group-cell">
+        <span>{order.senderName}</span>
+        <small>{order.senderPhone}</small>
+      </div>
+    ),
+    width: '170px',
+  },
+  {
+    header: 'RECEIVER DETAILS',
+    accessor: (order: Order) => (
+      <div className="pickup-group-cell">
+        <span>{order.receiverName}</span>
+        {order.receiverAddress && <small>{order.receiverAddress}</small>}
+        <small>{order.receiverPhone}</small>
+      </div>
+    ),
+    width: '200px',
+  },
+  { header: 'PICKUP RIDER', accessor: (order: Order) => order.riderName || '-', width: '120px' },
+  {
+    header: 'TRACKING CODE',
+    accessor: (order: Order) => (
+      <Link to={`/orders/track/${order.trackingId}`} className="tracking-id-link">{order.trackingId}</Link>
+    ),
+    width: '170px',
+    className: 'pickup-group-tracking-cell',
+  },
+  { header: 'WEIGHT (KG)', accessor: (order: Order) => order.weightKg ?? '-', width: '100px' },
+  {
+    header: 'HUB/LOCATION',
+    accessor: (order: Order) => (
+      <div className="pickup-group-cell">
+        <span>{order.origin || '-'}</span>
+        <small>{order.destination || '-'}</small>
+      </div>
+    ),
+    width: '170px',
+  },
+  { header: 'DELIVERY CHARGE', accessor: (order: Order) => formatCurrency(order.deliveryCharge, 0), width: '130px' },
+  { header: 'COD AMOUNT', accessor: (order: Order) => formatCurrency(order.codAmount, 0), width: '120px' },
+  { header: 'LAST HANDLE BY', accessor: (order: Order) => order.lastUpdatedBy || '-', width: '140px' },
+  { header: 'ORDER TYPE', accessor: (order: Order) => ORDER_TYPE_LABELS[order.orderType], width: '130px' },
+  {
+    header: 'REMARKS',
+    accessor: (order: Order) => (
+      <button
+        type="button"
+        className="pickup-remarks-cell-btn"
+        onClick={() => onRemarkClick(order)}
+        title={order.remarks || 'Add remark'}
+      >
+        {order.remarks || '-'}
+      </button>
+    ),
+    width: '160px',
+    className: 'pickup-remarks-cell',
+  },
+];
+
+// Rendered inline as the expanded row of the outer Table (via renderExpandedRow) -
+// a drill-down panel within the same table, not a separate one. Row checkboxes
+// here toggle the exact same order-scoped selection the outer group checkbox
+// and bulk "Action" bar use, so a specific order can be picked out of a
+// multi-order pickup instead of only ever selecting the whole group.
+const PickupGroupDetailPanel: React.FC<{
+  group: PickupGroup;
+  selectedIds: Set<string | number>;
+  onToggleOrder: (orderId: string | number) => void;
+  onToggleAll: () => void;
+  onRemarkClick: (order: Order) => void;
+}> = ({ group, selectedIds, onToggleOrder, onToggleAll, onRemarkClick }) => {
+  const columns = useMemo(() => groupDetailColumns(group, onRemarkClick), [group, onRemarkClick]);
+  const allSelected = group.orders.every(order => selectedIds.has(order.id));
+  const someSelected = group.orders.some(order => selectedIds.has(order.id));
+
+  return (
+    <Table
+      columns={columns}
+      data={group.orders}
+      selectedIds={selectedIds}
+      onToggleRow={onToggleOrder}
+      allSelected={allSelected}
+      someSelected={someSelected}
+      onToggleAll={onToggleAll}
+      minWidth="1650px"
+      tableClassName="pickup-group-table"
+      emptyMessage="No orders in this pickup."
+    />
+  );
+};
+
 const PickupOperations: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const [orders, setOrders] = useState<Order[]>([]);
@@ -131,6 +315,8 @@ const PickupOperations: React.FC = () => {
   const [actionError, setActionError] = useState('');
   const [riders, setRiders] = useState<{ id: string; name: string }[]>([]);
   const [riderId, setRiderId] = useState('');
+  const [expandedGroupId, setExpandedGroupId] = useState('');
+  const [remarkPopupOrder, setRemarkPopupOrder] = useState<Order | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -183,25 +369,6 @@ const PickupOperations: React.FC = () => {
     setRiderId('');
   }, [activeTab, debouncedSearch, pager.reset]);
 
-  // Row expansion ("view details") is per loaded page - collapse everything
-  // when the visible rows change.
-  const [expandedIds, setExpandedIds] = useState<Set<string | number>>(new Set());
-  useEffect(() => {
-    setExpandedIds(new Set());
-  }, [activeTab, debouncedSearch, pager.page]);
-
-  const toggleRowDetails = (orderId: string | number) => {
-    setExpandedIds(prev => {
-      const next = new Set(prev);
-      if (next.has(orderId)) {
-        next.delete(orderId);
-      } else {
-        next.add(orderId);
-      }
-      return next;
-    });
-  };
-
   // Keep tab/search bookmarkable - mirror into the URL (replacing history,
   // not pushing, so the back button doesn't step through every keystroke).
   useEffect(() => {
@@ -221,9 +388,15 @@ const PickupOperations: React.FC = () => {
   const visibleOrders = orders;
   const totalPages = meta?.totalPages ?? 1;
   const selectedIds = selectedIdsByTab[activeTab];
-  const visibleOrderIds = visibleOrders.map(order => order.id);
-  const allVisibleSelected = visibleOrderIds.length > 0 && visibleOrderIds.every(id => selectedIds.has(id));
-  const someVisibleSelected = visibleOrderIds.some(id => selectedIds.has(id));
+  const groups = useMemo(() => groupOrdersByVendor(visibleOrders), [visibleOrders]);
+  // A group's row checkbox reads as checked only once every order inside it
+  // is selected - the underlying selection stays order-scoped so bulk status
+  // changes keep applying per-order exactly as before grouping was added.
+  const checkedGroupIds = new Set(
+    groups.filter(group => group.orders.every(order => selectedIds.has(order.id))).map(group => group.id),
+  );
+  const allGroupsSelected = groups.length > 0 && groups.every(group => checkedGroupIds.has(group.id));
+  const someGroupsSelected = groups.some(group => group.orders.some(order => selectedIds.has(order.id)));
   const selectedOrders = visibleOrders.filter(order => selectedIds.has(order.id));
   const allowedStatusOptions = useMemo(() => {
     if (selectedOrders.length === 0) return [];
@@ -246,26 +419,36 @@ const PickupOperations: React.FC = () => {
 
   const isRiderAssignAction = selectedNextStatus === 'rider_assigned';
 
-  const toggleRowSelection = (orderId: string | number) => {
+  const toggleGroupSelection = (groupId: string | number) => {
+    const group = groups.find(g => g.id === groupId);
+    if (!group) return;
+    const groupIsFullySelected = group.orders.every(order => selectedIds.has(order.id));
     setSelectedIdsByTab(prev => {
       const next = new Set(prev[activeTab]);
-      if (next.has(orderId)) {
-        next.delete(orderId);
-      } else {
-        next.add(orderId);
-      }
+      group.orders.forEach(order => {
+        if (groupIsFullySelected) next.delete(order.id);
+        else next.add(order.id);
+      });
       return { ...prev, [activeTab]: next };
     });
   };
 
-  const toggleVisibleSelection = () => {
+  const toggleAllGroups = () => {
     setSelectedIdsByTab(prev => {
       const next = new Set(prev[activeTab]);
-      if (allVisibleSelected) {
-        visibleOrderIds.forEach(id => next.delete(id));
-      } else {
-        visibleOrderIds.forEach(id => next.add(id));
-      }
+      groups.forEach(group => group.orders.forEach(order => {
+        if (allGroupsSelected) next.delete(order.id);
+        else next.add(order.id);
+      }));
+      return { ...prev, [activeTab]: next };
+    });
+  };
+
+  const toggleOrderSelection = (orderId: string | number) => {
+    setSelectedIdsByTab(prev => {
+      const next = new Set(prev[activeTab]);
+      if (next.has(orderId)) next.delete(orderId);
+      else next.add(orderId);
       return { ...prev, [activeTab]: next };
     });
   };
@@ -371,137 +554,78 @@ const PickupOperations: React.FC = () => {
     }
   };
 
+  const toggleGroupExpanded = (groupId: string) =>
+    setExpandedGroupId(current => (current === groupId ? '' : groupId));
+
   const pickupColumns = [
     {
-      header: '#',
-      accessor: (order: Order) => `#${order.orderNumber}`,
-      width: '70px',
+      header: 'SN',
+      accessor: (group: PickupGroup) => group.sn,
+      width: '50px',
       className: 'pickup-sn-cell',
     },
     {
       header: 'ORDER TYPE',
-      accessor: (order: Order) => (
-        <span className={`pickup-order-type ${getOrderTypeTone(order)}`}>
-          {order.orderType === 'return' ? <Truck size={18} /> : <PackageCheck size={18} />}
+      accessor: (group: PickupGroup) => (
+        <span
+          className={`pickup-order-type ${getOrderTypeTone(group.orders[0]!)}`}
+          title={group.mixedOrderType ? 'Mixed order types in this pickup' : undefined}
+        >
+          {group.orderType === 'return' ? <Truck size={18} /> : <PackageCheck size={18} />}
         </span>
       ),
       width: '100px',
     },
     {
       header: 'SERVICE TYPE',
-      accessor: (order: Order) => order.serviceType.toUpperCase(),
-      width: '168px',
+      accessor: (group: PickupGroup) =>
+        group.mixedServiceType ? 'Mixed' : SERVICE_TYPE_FULL_LABELS[group.serviceType],
+      width: '190px',
       className: 'pickup-strong-cell',
     },
     {
       header: 'SENDER',
-      accessor: (order: Order) => (
+      accessor: (group: PickupGroup) => (
         <div className="pickup-sender-cell">
-          <span>{order.senderName}</span>
-          <small>{order.senderPhone}</small>
+          <span>{group.senderName}</span>
+          <small>{group.senderPhone}</small>
         </div>
       ),
-      width: '246px',
+      width: '220px',
     },
-    {
-      header: 'ADDRESS',
-      accessor: (order: Order) => order.origin || '-',
-      width: '165px',
-      className: 'pickup-strong-cell pickup-capitalize-cell',
-    },
+    { header: 'LOCATION', accessor: (group: PickupGroup) => group.location, width: '150px', className: 'pickup-strong-cell' },
     {
       header: 'PIECES',
-      accessor: (order: Order) => order.pieces,
+      accessor: (group: PickupGroup) => `${group.totalPieces}/${group.orders.length}`,
       width: '80px',
       className: 'pickup-strong-cell',
     },
     {
       header: 'PICKUP RIDER',
-      accessor: (order: Order) => order.riderName || '-',
-      width: '155px',
+      accessor: (group: PickupGroup) => group.riderName || '-',
+      width: '140px',
       className: 'pickup-strong-cell',
     },
     {
       header: 'ACTION',
-      accessor: (order: Order) => (
+      accessor: (group: PickupGroup) => (
         <Button
           variant="primary"
           className="pickup-details-btn"
-          onClick={() => toggleRowDetails(order.id)}
-          aria-expanded={expandedIds.has(order.id)}
+          onClick={() => toggleGroupExpanded(group.id)}
         >
-          {expandedIds.has(order.id) ? 'hide details' : 'view details'}
+          {expandedGroupId === group.id ? <><ChevronUp size={14} /> Details</> : <><ChevronDown size={14} /> Details</>}
         </Button>
       ),
-      width: '156px',
+      width: '130px',
     },
   ];
 
-  // Inline expansion under a pickup row - the nested parcel detail table from
-  // the Figma table-pickup/Variant2 design.
-  const renderPickupDetails = (order: Order) => (
-    <table className="pickup-detail-table">
-      <thead>
-        <tr>
-          <th className="pickup-detail-check" aria-label="Select" />
-          <th>SN</th>
-          <th>Date</th>
-          <th>Tracking id</th>
-          <th>Sender</th>
-          <th>Receiver</th>
-          <th>Location</th>
-          <th>Weight(KG)</th>
-          <th>Pickup rider</th>
-          <th>Charges</th>
-          <th>COD</th>
-          <th>Order type</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td className="pickup-detail-check">
-            <input
-              type="checkbox"
-              checked={selectedIds.has(order.id)}
-              onChange={() => toggleRowSelection(order.id)}
-              aria-label={`Select order ${order.trackingId}`}
-            />
-          </td>
-          <td>1</td>
-          <td>
-            {toBsDate(order.createdAt)} {toNptTime(order.createdAt, true)}
-          </td>
-          <td>
-            <Link to={`/orders/track/${order.trackingId}`} className="tracking-id-link">
-              {order.trackingId}
-            </Link>
-          </td>
-          <td>
-            <div className="pickup-sender-cell">
-              <span>{order.senderName}</span>
-              <small>{order.senderPhone}</small>
-            </div>
-          </td>
-          <td>
-            <div className="pickup-sender-cell">
-              <span>{order.receiverName}</span>
-              <small>{order.receiverPhone}</small>
-            </div>
-          </td>
-          <td className="pickup-capitalize-cell">{order.destination || '-'}</td>
-          <td>{order.weightKg ?? '-'}</td>
-          <td className="pickup-strong-cell">{order.riderName || '-'}</td>
-          <td className="pickup-strong-cell">{order.deliveryCharge}</td>
-          <td>{order.codAmount > 0 ? order.codAmount : '-'}</td>
-          <td>{order.orderType.toUpperCase()}</td>
-        </tr>
-      </tbody>
-    </table>
-  );
-
   return (
     <div className="pickup-operations-container">
-      <PageHeader title="Pickup Operations" subtitle="Manage and track your pickup orders across the hub network." />
+      <PageHeader title="Pickup Operations" subtitle="Manage and track your pickup orders across the hub network.">
+        <TicketCategoryButton category="pickup" notificationType="pickup" />
+      </PageHeader>
 
       <SegmentedTabs
         ariaLabel="Pickup operation filters"
@@ -602,19 +726,28 @@ const PickupOperations: React.FC = () => {
 
       <Table
         columns={pickupColumns}
-        data={visibleOrders}
-        selectedIds={selectedIds}
-        onToggleRow={toggleRowSelection}
-        allSelected={allVisibleSelected}
-        someSelected={someVisibleSelected}
-        onToggleAll={toggleVisibleSelection}
-        expandedIds={expandedIds}
-        renderExpandedRow={renderPickupDetails}
+        data={groups}
+        selectedIds={checkedGroupIds}
+        onToggleRow={toggleGroupSelection}
+        allSelected={allGroupsSelected}
+        someSelected={someGroupsSelected}
+        onToggleAll={toggleAllGroups}
+        getRowClassName={group => (group.id === expandedGroupId ? 'pickup-row-active' : '')}
         loading={loading}
         loadingMessage="Loading pickup orders..."
         emptyMessage="No pickup orders found."
-        minWidth="1122px"
+        minWidth="1300px"
         tableClassName="pickup-table"
+        expandedRowId={expandedGroupId}
+        renderExpandedRow={group => (
+          <PickupGroupDetailPanel
+            group={group}
+            selectedIds={selectedIds}
+            onToggleOrder={toggleOrderSelection}
+            onToggleAll={() => toggleGroupSelection(group.id)}
+            onRemarkClick={setRemarkPopupOrder}
+          />
+        )}
       />
 
       <Pagination
@@ -624,6 +757,14 @@ const PickupOperations: React.FC = () => {
         cursor={pager.controls(meta)}
         summary={meta ? `${meta.total} order${meta.total === 1 ? '' : 's'}` : undefined}
       />
+
+      {remarkPopupOrder && (
+        <QuickRemarkPopup
+          orderId={remarkPopupOrder.id}
+          trackingId={remarkPopupOrder.trackingId}
+          onClose={() => setRemarkPopupOrder(null)}
+        />
+      )}
     </div>
   );
 };

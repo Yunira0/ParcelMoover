@@ -5,6 +5,8 @@ export interface AppNotification {
   title: string;
   body: string | null;
   trackingId: string | null;
+  type: string;
+  link: string | null;
   readAt: string | null;
   createdAt: string;
 }
@@ -25,12 +27,24 @@ export const getUnreadNotificationCount = async (): Promise<number> => {
   return response.data.data.count;
 };
 
+export const getUnreadNotificationCountByType = async (): Promise<Record<string, number>> => {
+  const response = await api.get('/notifications/unread-count-by-type');
+  return response.data.data;
+};
+
 export const markNotificationRead = async (id: string): Promise<void> => {
   await api.patch(`/notifications/${id}/read`);
 };
 
 export const markAllNotificationsRead = async (): Promise<void> => {
   await api.patch('/notifications/read-all');
+};
+
+// Marks every unread notification tied to one entity (e.g. a ticket id) read
+// at once - used when the user opens the related record directly, without
+// ever clicking the notification itself.
+export const markNotificationsReadByTrackingId = async (trackingId: string): Promise<void> => {
+  await api.patch(`/notifications/by-tracking/${trackingId}/read`);
 };
 
 // EventSource only sends cookies cross-origin when withCredentials is set, which

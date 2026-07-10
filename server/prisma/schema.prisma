@@ -66,25 +66,31 @@ model audit_logs {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model cod_collections {
-  id               String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  parcel_id        String             @unique @db.Uuid
-  vendor_id        String?            @db.Uuid
-  rider_id         String?            @db.Uuid
-  cod_amount       Decimal            @db.Decimal(12, 2)
-  collected_amount Decimal            @default(0) @db.Decimal(12, 2)
-  remitted_amount  Decimal            @default(0) @db.Decimal(12, 2)
-  pending_amount   Decimal?           @default(dbgenerated("(\"cod_amount\" - \"remitted_amount\")")) @db.Decimal(12, 2)
-  payment_status   payment_status     @default(pending)
-  collected_at     DateTime?          @db.Timestamptz(6)
-  created_at       DateTime           @default(now()) @db.Timestamptz(6)
-  updated_at       DateTime           @default(now()) @updatedAt @db.Timestamptz(6)
-  parcels          parcels            @relation(fields: [parcel_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  riders           riders?            @relation(fields: [rider_id], references: [id], onUpdate: NoAction)
-  vendors          vendors?           @relation(fields: [vendor_id], references: [id], onUpdate: NoAction)
-  settlement_items settlement_items[]
+  id                    String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  parcel_id             String             @unique @db.Uuid
+  vendor_id             String?            @db.Uuid
+  rider_id              String?            @db.Uuid
+  cod_amount            Decimal            @db.Decimal(12, 2)
+  // Vendor leg (office -> vendor payout).
+  collected_amount      Decimal            @default(0) @db.Decimal(12, 2)
+  remitted_amount       Decimal            @default(0) @db.Decimal(12, 2)
+  pending_amount        Decimal?           @default(dbgenerated("(\"cod_amount\" - \"remitted_amount\")")) @db.Decimal(12, 2)
+  payment_status        payment_status     @default(pending)
+  collected_at          DateTime?          @db.Timestamptz(6)
+  // Rider leg (rider -> office remittance), independent of the vendor leg above.
+  rider_remitted_amount Decimal            @default(0) @db.Decimal(12, 2)
+  rider_payment_status  payment_status     @default(pending)
+  rider_settled_at      DateTime?          @db.Timestamptz(6)
+  created_at            DateTime           @default(now()) @db.Timestamptz(6)
+  updated_at            DateTime           @default(now()) @updatedAt @db.Timestamptz(6)
+  parcels               parcels            @relation(fields: [parcel_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  riders                riders?            @relation(fields: [rider_id], references: [id], onUpdate: NoAction)
+  vendors               vendors?           @relation(fields: [vendor_id], references: [id], onUpdate: NoAction)
+  settlement_items      settlement_items[]
 
   @@index([rider_id, payment_status], map: "idx_cod_collections_rider_status")
   @@index([vendor_id, payment_status], map: "idx_cod_collections_vendor_status")
+  @@index([rider_id, rider_payment_status], map: "idx_cod_collections_rider_payment_status")
 }
 
 model dispatch_parcels {
@@ -185,6 +191,8 @@ model notifications {
   title       String
   body        String?
   tracking_id String?
+  type        String    @default("general")
+  link        String?
   read_at     DateTime? @db.Timestamptz(6)
   created_at  DateTime  @default(now()) @db.Timestamptz(6)
   users       users     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
@@ -454,6 +462,8 @@ model settlements {
   settlement_date                      DateTime?          @db.Date
   status                               settlement_status  @default(pending)
   remark                               String?
+  payment_method                       String?
+  payments                             Json?
   approved_by                          String?            @db.Uuid
   settled_by                           String?            @db.Uuid
   created_at                           DateTime           @default(now()) @db.Timestamptz(6)

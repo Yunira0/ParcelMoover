@@ -122,7 +122,7 @@ const CreateTicketModal: React.FC<CreateTicketModalProps> = ({ isOpen, onClose, 
       return { payload: { category, priority, subject: subject.trim(), description: description.trim() } };
     }
 
-    if (category === 'billing') {
+    if (category === 'cod_settlement') {
       const { bankName, accountNumber, accountName } = form;
       if (!bankName.trim() || !accountNumber.trim() || !accountName.trim() || !description.trim()) {
         return { error: 'Please fill in all fields.' };
@@ -134,7 +134,7 @@ const CreateTicketModal: React.FC<CreateTicketModalProps> = ({ isOpen, onClose, 
         '',
         description.trim(),
       ].join('\n');
-      return { payload: { category, priority, subject: 'Billing issue', description: composed } };
+      return { payload: { category, priority, subject: 'COD Settlement request', description: composed } };
     }
 
     if (category === 'pickup') {
@@ -220,7 +220,7 @@ const CreateTicketModal: React.FC<CreateTicketModalProps> = ({ isOpen, onClose, 
               />
             )}
 
-            {form.category === 'billing' && (
+            {form.category === 'cod_settlement' && (
               <>
                 <FormField
                   label="Bank Name"

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import PageHeader from '../../components/PageHeader';
 import Table from '../../components/Table';
 import Pagination from '../../components/Pagination';
@@ -13,6 +14,7 @@ const PAGE_SIZE = 20;
 const formatCurrency = (value: number) => formatCurrencyBase(value, 0);
 
 const VendorSettlements: React.FC = () => {
+  const navigate = useNavigate();
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
   const [page, setPage] = useState(1);
@@ -30,7 +32,7 @@ const VendorSettlements: React.FC = () => {
     setLoading(true);
     setError('');
 
-    getSettlements(page, PAGE_SIZE, fromDate || undefined, toDate || undefined)
+    getSettlements('vendor', undefined, page, PAGE_SIZE, fromDate || undefined, toDate || undefined)
       .then((res) => {
         if (!active) return;
         setItems(res.data);
@@ -53,7 +55,26 @@ const VendorSettlements: React.FC = () => {
 
   const columns = [
     { header: 'SN', accessor: 'sn' as const, width: '60px' },
-    { header: 'COD ID', accessor: 'statementId' as const },
+    {
+      header: 'COD ID',
+      accessor: (item: SettlementListItem) => (
+        <button
+          type="button"
+          onClick={() => navigate(`/finance/settlements/${item.id}`)}
+          style={{
+            background: 'none',
+            border: 'none',
+            padding: 0,
+            color: 'var(--color-primary)',
+            textDecoration: 'underline',
+            cursor: 'pointer',
+            font: 'inherit',
+          }}
+        >
+          {item.statementId}
+        </button>
+      ),
+    },
     { header: 'TRANSFER DATE', accessor: (item: SettlementListItem) => formatDate(item.transferDate) },
     { header: 'ORDERS', accessor: (item: SettlementListItem) => `${item.orderCount} order(s)` },
     { header: 'AMOUNT', accessor: (item: SettlementListItem) => formatCurrency(item.amount) },

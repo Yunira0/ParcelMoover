@@ -60,6 +60,79 @@
   font-weight: var(--font-weight-semi-bold);
 }
 
+.pickup-row-active td {
+  background: var(--color-background-primary-invert-default);
+}
+
+.pickup-datetime {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pickup-datetime small {
+  color: var(--color-text-placeholder);
+  font-size: var(--font-size-xs);
+}
+
+.pickup-group-table {
+  border: none;
+}
+
+.pickup-group-table th,
+.pickup-group-table td {
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-xs);
+}
+
+.pickup-group-table th {
+  background-color: var(--color-background-surface);
+}
+
+.pickup-group-tracking-cell {
+  color: var(--color-text-primary) !important;
+  font-weight: var(--font-weight-semi-bold);
+}
+
+.tracking-id-link {
+  color: inherit;
+  cursor: pointer;
+  font-weight: var(--font-weight-semi-bold);
+  text-decoration: none;
+}
+
+.tracking-id-link:hover {
+  text-decoration: underline;
+}
+
+.pickup-remarks-cell {
+  max-width: 160px;
+  white-space: normal;
+  word-break: break-word;
+}
+
+.pickup-remarks-cell-btn {
+  background: none;
+  border: none;
+  border-bottom: 1px dashed var(--color-border-default);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  display: block;
+  font: inherit;
+  max-width: 100%;
+  overflow: hidden;
+  padding: 0;
+  text-align: left;
+  text-overflow: ellipsis;
+  transition: all 150ms ease;
+  white-space: nowrap;
+}
+
+.pickup-remarks-cell-btn:hover {
+  border-bottom-color: var(--color-background-primary-default);
+  color: var(--color-background-primary-default);
+}
+
 .pickup-capitalize-cell {
   text-transform: capitalize;
 }
@@ -103,6 +176,23 @@
 }
 
 .pickup-sender-cell small {
+  color: var(--color-text-placeholder);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-regular);
+}
+
+.pickup-group-cell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.pickup-group-cell span {
+  color: var(--color-text-default);
+  font-weight: var(--font-weight-semi-bold);
+}
+
+.pickup-group-cell small {
   color: var(--color-text-placeholder);
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-regular);

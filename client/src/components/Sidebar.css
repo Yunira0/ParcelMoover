@@ -252,3 +252,21 @@
   background-color: var(--color-danger-surface);
   color: var(--color-danger-default);
 }
+
+/* ── Notification badge on sidebar items ─────────────────────────────────── */
+.sidebar-badge {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--color-background-primary-default, #ef4444);
+  color: #fff;
+  border-radius: 9px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  flex-shrink: 0;
+  margin-left: auto;
+}

@@ -10,6 +10,7 @@ import DeactivatedPage from './pages/DeactivatedPage'
 import DashboardPage from './pages/DashboardPage'
 import PendingPage from './pages/PendingPage'
 import ChangePasswordPage from './pages/ChangePasswordPage'
+import SettlementsPage from './pages/SettlementsPage'
 
 // Heavy scanner lib (ZXing) is split into its own chunk
 const ScannerPage = lazy(() => import('./pages/ScannerPage'))
@@ -44,6 +45,7 @@ function ProtectedLayout() {
           <Route path="/scan"      element={<Suspense fallback={<ScannerFallback />}><ScannerPage /></Suspense>} />
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/pending"   element={<PendingPage />} />
+          <Route path="/settlements" element={<SettlementsPage />} />
           <Route path="*"          element={<Navigate to="/scan" replace />} />
         </Routes>
         <BottomNav />

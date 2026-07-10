@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Eye, Plus, Search, X } from 'lucide-react';
 import Table from '../components/Table';
 import Button from '../components/Button';
@@ -73,11 +73,16 @@ const isWithinRange = (createdAt: string, range: DateRange) => {
 
 const Tickets: React.FC = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [activeTab, setActiveTab] = useState<TicketTab>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [priorityFilter, setPriorityFilter] = useState<TicketPriority | ''>('');
-  const [categoryFilter, setCategoryFilter] = useState<TicketCategory | ''>('');
+  // Deep-linked from a module's "Ticket" button, e.g. /tickets?category=pickup
+  const [categoryFilter, setCategoryFilter] = useState<TicketCategory | ''>(() => {
+    const fromUrl = searchParams.get('category');
+    return fromUrl && fromUrl in TICKET_CATEGORY_LABELS ? (fromUrl as TicketCategory) : '';
+  });
   const [dateRange, setDateRange] = useState<DateRange>('');
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);

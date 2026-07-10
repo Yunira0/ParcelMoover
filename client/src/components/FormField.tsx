@@ -139,6 +139,10 @@ const FormField: React.FC<FormFieldProps> = ({
           autoComplete={autoComplete}
           value={value ?? ''}
           onChange={(e) => onChange(e.target.value)}
+          // Trackpad/mouse-wheel scroll over a focused number input silently
+          // increments/decrements it - blur on wheel so scrolling just scrolls
+          // the page. Up/Down arrow keys still work as the only way to step.
+          onWheel={type === 'number' ? (e) => e.currentTarget.blur() : undefined}
         />
       )}
       {error

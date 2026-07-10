@@ -565,6 +565,28 @@ async function _createOrderImpl(actor: OrderActor, data: CreateOrderInput) {
     return parcel;
   });
 
+  // Notify admins about new pickup ticket
+  notifyAdmins(
+    `New Pickup Ticket: ${parcel.tracking_id}`,
+    `A new order is ready for pickup.`,
+    parcel.tracking_id,
+    "pickup",
+    `/orders/track/${parcel.tracking_id}`,
+    actor.id,
+  ).catch(() => {});
+
+  // Notify admins about new COD settlement request if order has COD
+  if (Number(parcel.cod_amount) > 0) {
+    notifyAdmins(
+      `COD Settlement: ${parcel.tracking_id}`,
+      `New COD order of Rs. ${Number(parcel.cod_amount)} requires settlement.`,
+      parcel.tracking_id,
+      "cod_settlement",
+      `/finance`,
+      actor.id,
+    ).catch(() => {});
+  }
+
   return parcel;
 }
 
@@ -593,6 +615,7 @@ export async function bulkCreateOrders(actor: OrderActor, input: BulkCreateOrder
     | { index: number; success: false; error: string }
   > = new Array(input.orders.length);
   const vendorIdsToInvalidate = new Set<string>();
+  const createdParcels: { trackingId: string; vendorId: string | null; codAmount: number }[] = [];
 
   // Cheap, DB-free validation happens up front and in original order;
   // only orders that pass it hit the database.
@@ -650,6 +673,11 @@ export async function bulkCreateOrders(actor: OrderActor, input: BulkCreateOrder
         results[index] = { index, success: true, trackingId: parcel.tracking_id };
         created++;
         if (parcel.vendor_id) vendorIdsToInvalidate.add(parcel.vendor_id);
+        createdParcels.push({
+          trackingId: parcel.tracking_id,
+          vendorId: parcel.vendor_id,
+          codAmount: Number(parcel.cod_amount),
+        });
       } else {
         const err = outcome.reason as any;
         results[index] = { index, success: false, error: err?.message || "Order creation failed" };
@@ -662,6 +690,34 @@ export async function bulkCreateOrders(actor: OrderActor, input: BulkCreateOrder
   if (created > 0) {
     await invalidateOrderCaches();
     await Promise.all(Array.from(vendorIdsToInvalidate, (id) => invalidateVendorFinanceCache(id)));
+  }
+
+  // Send notifications after all tickets are raised
+  if (createdParcels.length > 0) {
+    // Notify admins about new pickup tickets
+    for (const p of createdParcels) {
+      notifyAdmins(
+        `New Pickup Ticket: ${p.trackingId}`,
+        `A new order is ready for pickup.`,
+        p.trackingId,
+        "pickup",
+        `/orders/track/${p.trackingId}`,
+        actor.id,
+      ).catch(() => {});
+    }
+
+    // Notify admins about new COD settlement requests
+    for (const p of createdParcels) {
+      if (p.codAmount <= 0) continue;
+      notifyAdmins(
+        `COD Settlement: ${p.trackingId}`,
+        `New COD order of Rs. ${p.codAmount} requires settlement.`,
+        p.trackingId,
+        "cod_settlement",
+        `/finance`,
+        actor.id,
+      ).catch(() => {});
+    }
   }
 
   return { created, failed, results };
@@ -780,6 +836,7 @@ function mapOrder(
     senderPhone: parcel.parties_parcels_sender_idToparties.phone,
     receiverName: parcel.parties_parcels_receiver_idToparties.name,
     receiverPhone: parcel.parties_parcels_receiver_idToparties.phone,
+    receiverAddress: parcel.parties_parcels_receiver_idToparties.address || "",
     origin:
       locationName(parcel.locations_parcels_origin_location_idTolocations) ||
       parcel.parties_parcels_sender_idToparties.address ||
@@ -790,16 +847,20 @@ function mapOrder(
       "",
     pieces: parcel.pieces,
     weightKg: parcel.weight_kg === null ? undefined : Number(parcel.weight_kg),
+    attemptCount: parcel.attempt_count,
     codAmount: Number(parcel.cod_amount),
     deliveryCharge: Number(parcel.delivery_charge),
     packageType: parcel.package_type || "",
     deliveryInstruction: parcel.delivery_instruction || "",
+    vendorId: parcel.vendor_id,
     vendorName,
+    vendorLocation: parcel.vendors?.pickup_landmark || "",
     riderName: rider?.name || "",
     remarks: parcel.parcel_remarks[0]?.remark || "",
     lastUpdatedBy,
     lastUpdatedAt: formatDate(latestHistory?.created_at || parcel.updated_at),
     createdAt: formatDate(parcel.created_at),
+    createdAtRaw: parcel.created_at.toISOString(),
   };
 }
 
@@ -1366,6 +1427,8 @@ export async function addOrderRemark(
       `New reply on order ${parcel.tracking_id}`,
       trimmed.length > 200 ? `${trimmed.slice(0, 200)}…` : trimmed,
       parcel.tracking_id,
+      "general",
+      `/orders/track/${parcel.tracking_id}`,
     );
   }
 
@@ -1554,10 +1617,14 @@ async function computeDashboardSummary(
         cod_amount: true,
         remitted_amount: true,
         pending_amount: true,
+        collected_amount: true,
+        rider_remitted_amount: true,
       },
     }),
     prisma.cod_collections.count({
-      where: { ...codWhere, payment_status: "pending" },
+      where: riderId
+        ? { ...codWhere, rider_payment_status: "pending", collected_amount: { gt: 0 } }
+        : { ...codWhere, payment_status: "pending" },
     }),
     prisma.settlements.findFirst({
       where: settlementWhere,
@@ -1566,11 +1633,20 @@ async function computeDashboardSummary(
     }),
   ]);
 
-  const totalCod = moneyToNumber(codTotals._sum.cod_amount);
-  const settledCod = moneyToNumber(codTotals._sum.remitted_amount);
-  const pendingCod = codTotals._sum.pending_amount === null
+  // Rider scope reports the rider leg (cash collected vs. remitted to
+  // office); vendor/staff scope reports the vendor leg (COD vs. paid out) -
+  // the two legs are tracked independently on cod_collections.
+  const totalCod = riderId
+    ? moneyToNumber(codTotals._sum.collected_amount)
+    : moneyToNumber(codTotals._sum.cod_amount);
+  const settledCod = riderId
+    ? moneyToNumber(codTotals._sum.rider_remitted_amount)
+    : moneyToNumber(codTotals._sum.remitted_amount);
+  const pendingCod = riderId
     ? Math.max(totalCod - settledCod, 0)
-    : moneyToNumber(codTotals._sum.pending_amount);
+    : codTotals._sum.pending_amount === null
+      ? Math.max(totalCod - settledCod, 0)
+      : moneyToNumber(codTotals._sum.pending_amount);
 
   const weeklyTrend = trendDayRanges.map(({ start }, index) => {
     const [dayTotalOrders, dayPickedUp, dayDelivered, dayReturned] = trendCounts[index] ?? [0, 0, 0, 0];
@@ -1642,7 +1718,7 @@ export async function getSenderProfile(actor: OrderActor) {
 
   const vendor = await prisma.vendors.findFirst({
     where: { id: ownVendorId, deleted_at: null, status: "active" },
-    select: { id: true, business_name: true, client_name: true, phone: true, address: true, location_id: true },
+    select: { id: true, business_name: true, client_name: true, phone: true, address: true, pickup_landmark: true, location_id: true },
   });
   if (!vendor) {
     throw new AppError(403, "Vendor profile not found or inactive");
@@ -1652,7 +1728,10 @@ export async function getSenderProfile(actor: OrderActor) {
     id: vendor.id,
     name: vendor.business_name || vendor.client_name,
     phone: vendor.phone,
-    address: vendor.address || "",
+    // The vendor's pickup Location (set at vendor creation) is what a rider
+    // actually needs to find the sender - prefer it over the registered/
+    // billing address, which may be a different legal address entirely.
+    address: vendor.pickup_landmark || vendor.address || "",
     locationId: vendor.location_id,
   };
 }
@@ -1677,7 +1756,45 @@ export async function notifyVendorOfStatusChange(
     `Order ${trackingId} updated`,
     `Status changed to '${newStatus}'.`,
     trackingId,
+    "general",
+    `/orders/track/${trackingId}`,
   );
+}
+
+// Notify all active admin/super_admin users (fire-and-forget).
+export async function notifyAdmins(
+  title: string,
+  body: string | null,
+  trackingId: string | null,
+  type: string,
+  link: string | null,
+  excludeUserId?: string,
+) {
+  try {
+    const adminRoles = await prisma.roles.findMany({
+      where: { code: { in: ["super_admin", "admin"] } },
+      select: { id: true },
+    });
+    const roleIds = adminRoles.map((r) => r.id);
+    if (roleIds.length === 0) return;
+
+    const adminUsers = await prisma.user_roles.findMany({
+      where: { role_id: { in: roleIds } },
+      select: { user_id: true },
+    });
+    const userIds = [...new Set(adminUsers.map((ur) => ur.user_id))].filter(
+      (id) => id !== excludeUserId,
+    );
+    if (userIds.length === 0) return;
+
+    await Promise.all(
+      userIds.map((userId) =>
+        createNotification(userId, title, body, trackingId, type, link),
+      ),
+    );
+  } catch (error) {
+    console.error("[Notifications] Failed to notify admins:", error);
+  }
 }
 
 export async function updateParcelStatus(
@@ -1839,6 +1956,10 @@ async function _updateParcelStatusImpl(
     if (riderAssignmentField) {
       (updateData as any)[riderAssignmentField] = data.riderId;
     }
+    // Side-effect: each hand-off to a delivery rider counts as one delivery attempt
+    if (newStatus === "sent_for_delivery") {
+      (updateData as any).attempt_count = { increment: 1 };
+    }
     // Side-effect: a hand-off to a delivery rider opens a run sheet
     if (newStatus === "sent_for_delivery" && data.riderId) {
       await createRunSheet(tx, data.riderId, [parcelId], actor.id);
@@ -1851,6 +1972,33 @@ async function _updateParcelStatusImpl(
         where: { parcel_id: parcelId },
         data: { rider_id: data.riderId },
       });
+    }
+    // Side-effect: record what the rider actually collected on delivery, so
+    // the COD settlement ledger (cod_collections) reflects real cash in hand
+    // instead of staying at its order-creation defaults forever.
+    if ((newStatus === "delivered" || newStatus === "partially_delivered") && parcel.delivery_rider_id) {
+      const collectedAmount = newStatus === "delivered" ? Number(parcel.cod_amount) : (data.codCollected ?? 0);
+      if (collectedAmount > 0) {
+        // upsert, not update: a cod_collections row should always exist (created
+        // atomically at order creation), but this must never block the delivery
+        // transition itself if some legacy/drifted parcel is missing one.
+        await tx.cod_collections.upsert({
+          where: { parcel_id: parcel.id },
+          create: {
+            parcel_id: parcel.id,
+            vendor_id: parcel.vendor_id,
+            rider_id: parcel.delivery_rider_id,
+            cod_amount: parcel.cod_amount,
+            collected_amount: collectedAmount,
+            collected_at: new Date(),
+          },
+          update: {
+            rider_id: parcel.delivery_rider_id,
+            collected_amount: collectedAmount,
+            collected_at: new Date(),
+          },
+        });
+      }
     }
     // Side-effect: update pickup_task status in sync
     if (parcel.pickup_tasks && ["rider_assigned", "picked_up", "cancelled"].includes(newStatus)) {
@@ -1891,6 +2039,31 @@ async function _updateParcelStatusImpl(
 
   await invalidateOrderCaches();
   await notifyVendorOfStatusChange(parcel.vendor_id, parcel.tracking_id, newStatus, actor.id);
+
+  // Notify admins about new delivery ticket when parcel arrives at branch
+  if (newStatus === "arrived_at_branch") {
+    notifyAdmins(
+      `New Delivery Ticket: ${parcel.tracking_id}`,
+      `Parcel has arrived at branch and is ready for delivery.`,
+      parcel.tracking_id,
+      "dispatch",
+      `/orders/track/${parcel.tracking_id}`,
+      actor.id,
+    ).catch(() => {});
+  }
+
+  // Notify admins about COD settlement when parcel is delivered with COD
+  if (newStatus === "delivered" && Number(parcel.cod_amount) > 0) {
+    notifyAdmins(
+      `COD Settlement: ${parcel.tracking_id}`,
+      `COD of Rs. ${Number(parcel.cod_amount)} collected on delivery.`,
+      parcel.tracking_id,
+      "cod_settlement",
+      `/finance`,
+      actor.id,
+    ).catch(() => {});
+  }
+
   return updatedParcel;
 }
 
@@ -2124,6 +2297,10 @@ async function _bulkUpdateParcelStatusImpl(
     if (riderAssignmentField && parcelRiderId) {
       (updateData as any)[riderAssignmentField] = parcelRiderId;
     }
+    // Each hand-off to a delivery rider counts as one delivery attempt.
+    if (newStatus === "sent_for_delivery") {
+      (updateData as any).attempt_count = { increment: 1 };
+    }
 
     // A batch hand-off to a delivery rider opens one run sheet for the batch.
     if (newStatus === "sent_for_delivery" && parcelRiderId) {
@@ -2143,6 +2320,39 @@ async function _bulkUpdateParcelStatusImpl(
         where: { parcel_id: { in: ids } },
         data: { rider_id: parcelRiderId },
       });
+    }
+
+    // Side-effect: record what each rider actually collected on delivery, so
+    // the COD settlement ledger (cod_collections) reflects real cash in hand
+    // instead of staying at its order-creation defaults forever. Amounts can
+    // differ per parcel (full cod_amount vs the shared partial codCollected),
+    // so this can't be a single updateMany.
+    if (newStatus === "delivered" || newStatus === "partially_delivered") {
+      const collectedAt = new Date();
+      await Promise.all(
+        parcels
+          .filter((p) => p.delivery_rider_id)
+          .map((p) => {
+            const collectedAmount = newStatus === "delivered" ? Number(p.cod_amount) : (data.codCollected ?? 0);
+            if (collectedAmount <= 0) return Promise.resolve();
+            return tx.cod_collections.upsert({
+              where: { parcel_id: p.id },
+              create: {
+                parcel_id: p.id,
+                vendor_id: p.vendor_id,
+                rider_id: p.delivery_rider_id,
+                cod_amount: p.cod_amount,
+                collected_amount: collectedAmount,
+                collected_at: collectedAt,
+              },
+              update: {
+                rider_id: p.delivery_rider_id,
+                collected_amount: collectedAmount,
+                collected_at: collectedAt,
+              },
+            });
+          }),
+      );
     }
 
     const pickupSyncIds = parcels
@@ -2235,9 +2445,43 @@ async function _bulkUpdateParcelStatusImpl(
           `Order ${p.tracking_id} updated`,
           `Status changed to '${newStatus}'.`,
           p.tracking_id,
+          "general",
+          `/orders/track/${p.tracking_id}`,
         );
       }),
     );
+  }
+
+  // Notify admins about new delivery tickets when parcels arrive at branch
+  if (newStatus === "arrived_at_branch") {
+    const arrivedParcels = parcels.filter((p) => p.status !== "arrived_at_branch");
+    for (const p of arrivedParcels) {
+      notifyAdmins(
+        `New Delivery Ticket: ${p.tracking_id}`,
+        `Parcel has arrived at branch and is ready for delivery.`,
+        p.tracking_id,
+        "dispatch",
+        `/orders/track/${p.tracking_id}`,
+        actor.id,
+      ).catch(() => {});
+    }
+  }
+
+  // Notify admins about COD settlement when parcels are delivered with COD
+  if (newStatus === "delivered") {
+    const codParcels = parcels.filter(
+      (p) => Number(p.cod_amount) > 0 && p.status !== "delivered",
+    );
+    for (const p of codParcels) {
+      notifyAdmins(
+        `COD Settlement: ${p.tracking_id}`,
+        `COD of Rs. ${Number(p.cod_amount)} collected on delivery.`,
+        p.tracking_id,
+        "cod_settlement",
+        `/finance`,
+        actor.id,
+      ).catch(() => {});
+    }
   }
 
   return result;

@@ -29,6 +29,8 @@ interface TableProps<T> {
   emptyMessage?: string;
   minWidth?: string;
   tableClassName?: string;
+  /** Renders an inline full-width row directly below the matching row's `id` - an accordion/drill-down panel within the same table instead of a separate one. */
+  expandedRowId?: string | number;
 }
 
 // Columns that don't all specify a width need content-based sizing, or
@@ -82,6 +84,7 @@ const Table = <T extends { id: string | number }>({
   emptyMessage = 'No records found.',
   minWidth,
   tableClassName = '',
+  expandedRowId,
 }: TableProps<T>) => {
   const [internalSelectedIds, setInternalSelectedIds] = useState<Set<string | number>>(new Set());
   const isSelectionControlled = selectedIds !== undefined;
@@ -193,7 +196,7 @@ const Table = <T extends { id: string | number }>({
                     </td>
                   ))}
                 </tr>
-                {renderExpandedRow && expandedIds?.has(item.id) && (
+                {renderExpandedRow && (expandedIds?.has(item.id) || expandedRowId === item.id) && (
                   <tr className="table-expanded-row">
                     <td colSpan={colSpan} className="table-expanded-cell">
                       {renderExpandedRow(item)}
