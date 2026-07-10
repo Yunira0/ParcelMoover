@@ -25,6 +25,8 @@ export interface NotificationDTO {
   title: string;
   body: string | null;
   trackingId: string | null;
+  type: string;
+  link: string | null;
   readAt: string | null;
   createdAt: string;
 }
@@ -34,6 +36,8 @@ function mapNotification(notification: {
   title: string;
   body: string | null;
   tracking_id: string | null;
+  type: string;
+  link: string | null;
   read_at: Date | null;
   created_at: Date;
 }): NotificationDTO {
@@ -42,6 +46,8 @@ function mapNotification(notification: {
     title: notification.title,
     body: notification.body,
     trackingId: notification.tracking_id,
+    type: notification.type,
+    link: notification.link,
     readAt: notification.read_at ? notification.read_at.toISOString() : null,
     createdAt: notification.created_at.toISOString(),
   };
@@ -55,10 +61,19 @@ export async function createNotification(
   title: string,
   body?: string | null,
   trackingId?: string | null,
+  type?: string,
+  link?: string | null,
 ): Promise<void> {
   try {
     const notification = await prisma.notifications.create({
-      data: { user_id: userId, title, body: body ?? null, tracking_id: trackingId ?? null },
+      data: {
+        user_id: userId,
+        title,
+        body: body ?? null,
+        tracking_id: trackingId ?? null,
+        type: type ?? "general",
+        link: link ?? null,
+      },
     });
 
     await invalidateUnreadCount(userId);
@@ -141,6 +156,18 @@ export async function markAsRead(userId: string, notificationId: string): Promis
   await invalidateUnreadCount(userId);
 }
 
+// Marks every unread notification pointing at one entity (e.g. a ticket, via
+// its id stored as trackingId) as read in one go - used when the user opens
+// the related record directly, without ever clicking the notification itself.
+export async function markAsReadByTrackingId(userId: string, trackingId: string): Promise<void> {
+  await prisma.notifications.updateMany({
+    where: { user_id: userId, tracking_id: trackingId, read_at: null },
+    data: { read_at: new Date() },
+  });
+
+  await invalidateUnreadCount(userId);
+}
+
 export async function markAllAsRead(userId: string): Promise<void> {
   await prisma.notifications.updateMany({
     where: { user_id: userId, read_at: null },
@@ -148,4 +175,18 @@ export async function markAllAsRead(userId: string): Promise<void> {
   });
 
   await invalidateUnreadCount(userId);
+}
+
+export async function getUnreadCountByType(userId: string): Promise<Record<string, number>> {
+  const rows = await prisma.notifications.groupBy({
+    by: ["type"],
+    where: { user_id: userId, read_at: null },
+    _count: { id: true },
+  });
+
+  const result: Record<string, number> = {};
+  for (const row of rows) {
+    result[row.type] = row._count.id;
+  }
+  return result;
 }

@@ -38,9 +38,9 @@ const SidebarCollapseContext = createContext<CollapseCtx>({ collapsed: false, to
 const useSidebarCollapse = () => useContext(SidebarCollapseContext);
 
 // ── Shared atoms ───────────────────────────────────────────────────────────────
-interface SidebarItemProps { to: string; icon: LucideIcon; label: string }
+interface SidebarItemProps { to: string; icon: LucideIcon; label: string; badge?: number }
 
-const SidebarItem: React.FC<SidebarItemProps> = ({ to, icon: Icon, label }) => {
+const SidebarItem: React.FC<SidebarItemProps> = ({ to, icon: Icon, label, badge }) => {
   const { collapsed } = useSidebarCollapse();
   return (
     <NavLink
@@ -50,13 +50,18 @@ const SidebarItem: React.FC<SidebarItemProps> = ({ to, icon: Icon, label }) => {
     >
       <Icon className="sidebar-icon" size={18} />
       <span className="sidebar-label">{label}</span>
+      {badge != null && badge > 0 && (
+        <span className="sidebar-badge" aria-label={`${badge} unread`}>
+          {badge > 99 ? '99+' : badge}
+        </span>
+      )}
     </NavLink>
   );
 };
 
-interface SubItemProps { to: string; icon: LucideIcon; label: string }
+interface SubItemProps { to: string; icon: LucideIcon; label: string; badge?: number }
 
-const SubItem: React.FC<SubItemProps> = ({ to, icon: Icon, label }) => {
+const SubItem: React.FC<SubItemProps> = ({ to, icon: Icon, label, badge }) => {
   const { collapsed } = useSidebarCollapse();
   return (
     <NavLink
@@ -66,6 +71,11 @@ const SubItem: React.FC<SubItemProps> = ({ to, icon: Icon, label }) => {
     >
       <Icon size={15} style={{ flexShrink: 0 }} />
       <span className="sidebar-label">{label}</span>
+      {badge != null && badge > 0 && (
+        <span className="sidebar-badge" aria-label={`${badge} unread`}>
+          {badge > 99 ? '99+' : badge}
+        </span>
+      )}
     </NavLink>
   );
 };

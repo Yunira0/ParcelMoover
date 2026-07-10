@@ -332,7 +332,10 @@ export const getVendorsController = async (req: Request, res: Response) => {
         phone: vendor.phone,
         location: locationLabel(vendor.locations),
         locationId: vendor.location_id,
-        address: vendor.address || "",
+        // Prefer the vendor's pickup Location over the registered/billing
+        // address - it's what actually gets used as the sender's address
+        // when staff create an order on this vendor's behalf.
+        address: vendor.pickup_landmark || vendor.address || "",
         sales: vendor.sales || "",
         salesUserId: vendor.sales_user_id,
         orders: ordersByVendor.get(vendor.id) ?? { total: 0, delivered: 0, returned: 0 },

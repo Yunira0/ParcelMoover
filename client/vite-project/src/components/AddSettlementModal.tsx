@@ -1,27 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import './Modal.css';
 import Button from './Button';
-import { getUnsettledOrders, type UnsettledOrderItem } from '../services/finance.service';
+import { getUnsettledOrders, createSettlement, type UnsettledOrderItem } from '../services/finance.service';
 import { getRiders, getVendors } from '../services/users.service';
 
 interface AddSettlementModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSuccess: (settlement: {
-    id: string;
-    sn: number;
-    statementId: string;
-    name: string;
-    amount: number;
-    settlementDate: string;
-    remark: string;
-    status: 'pending' | 'settled' | 'review';
-    type: 'rider' | 'vendor';
-    phone: string;
-    email: string;
-  }) => void;
+  onSuccess: () => void;
   defaultType: 'rider' | 'vendor';
-  existingCount: number;
 }
 
 const AddSettlementModal: React.FC<AddSettlementModalProps> = ({
@@ -29,28 +16,29 @@ const AddSettlementModal: React.FC<AddSettlementModalProps> = ({
   onClose,
   onSuccess,
   defaultType,
-  existingCount,
 }) => {
   const [entityOptions, setEntityOptions] = useState<Array<{ value: string; label: string }>>([]);
   const [selectedEntityId, setSelectedEntityId] = useState('');
-  const [selectedEntityName, setSelectedEntityName] = useState('');
   const [orders, setOrders] = useState<UnsettledOrderItem[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(false);
   const [fetchingOrders, setFetchingOrders] = useState(false);
   const [settlementDate, setSettlementDate] = useState(new Date().toISOString().split('T')[0]);
-  const [remark, setRemark] = useState('');
   const [error, setError] = useState('');
+
+  // Clears stale selection whenever the target type changes, even while the
+  // modal is closed - otherwise reopening after switching RIDER/VENDOR tabs
+  // fires one fetch with the previous type's leftover selectedEntityId.
+  useEffect(() => {
+    setSelectedEntityId('');
+    setSelected(new Set());
+    setOrders([]);
+  }, [defaultType]);
 
   useEffect(() => {
     if (!isOpen) return;
-    setSelectedEntityId('');
-    setSelectedEntityName('');
-    setSelected(new Set());
-    setOrders([]);
     setSettlementDate(new Date().toISOString().split('T')[0]);
-    setRemark('');
     setError('');
 
     const fetchEntities = async () => {
@@ -109,16 +97,11 @@ const AddSettlementModal: React.FC<AddSettlementModalProps> = ({
 
   if (!isOpen) return null;
 
-  const prefix = defaultType === 'rider' ? 'STM-R' : 'STM-V';
-  const year = new Date().getFullYear();
-  const nextNum = String(existingCount + 1).padStart(3, '0');
-  const autoId = `${prefix}-${year}-${nextNum}`;
-
-  const toggleOrder = (id: string) => {
+  const toggleOrder = (codCollectionId: string) => {
     setSelected((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+      if (next.has(codCollectionId)) next.delete(codCollectionId);
+      else next.add(codCollectionId);
       return next;
     });
   };
@@ -127,48 +110,43 @@ const AddSettlementModal: React.FC<AddSettlementModalProps> = ({
     if (selected.size === orders.length) {
       setSelected(new Set());
     } else {
-      setSelected(new Set(orders.map((o) => o.id)));
+      setSelected(new Set(orders.map((o) => o.codCollectionId)));
     }
   };
 
-  const selectedOrders = orders.filter((o) => selected.has(o.id));
-  const totalAmount = defaultType === 'vendor'
-    ? selectedOrders.reduce((sum, o) => sum + o.netPayable, 0)
-    : selectedOrders.reduce((sum, o) => sum + o.codAmount, 0);
+  const selectedOrders = orders.filter((o) => selected.has(o.codCollectionId));
+  const totalAmount = selectedOrders.reduce((sum, o) => sum + o.netPayable, 0);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
     setError('');
 
     if (!selectedEntityId) {
       setError(`Please select a ${defaultType}.`);
-      setLoading(false);
       return;
     }
 
     if (selected.size === 0) {
       setError('Please select at least one order.');
-      setLoading(false);
       return;
     }
 
-    onSuccess({
-      id: `${prefix}-${year}-${Date.now()}`,
-      sn: 0,
-      statementId: autoId,
-      name: selectedEntityName,
-      amount: totalAmount,
-      settlementDate,
-      remark: remark.trim(),
-      status: 'pending',
-      type: defaultType,
-      phone: '',
-      email: '',
-    });
-
-    setLoading(false);
-    onClose();
+    setLoading(true);
+    try {
+      await createSettlement({
+        payeeType: defaultType,
+        targetId: selectedEntityId,
+        codCollectionIds: Array.from(selected),
+        settlementDate,
+      });
+      onSuccess();
+      onClose();
+    } catch (err: any) {
+      const data = err.response?.data;
+      setError(data?.message || 'Failed to create settlement');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -192,8 +170,6 @@ const AddSettlementModal: React.FC<AddSettlementModalProps> = ({
                 onChange={(e) => {
                   const id = e.target.value;
                   setSelectedEntityId(id);
-                  const opt = entityOptions.find((o) => o.value === id);
-                  setSelectedEntityName(opt?.label || '');
                   setSelected(new Set());
                 }}
                 disabled={fetching}
@@ -203,10 +179,6 @@ const AddSettlementModal: React.FC<AddSettlementModalProps> = ({
                   <option key={opt.value} value={opt.value}>{opt.label}</option>
                 ))}
               </select>
-            </div>
-            <div className="form-group" style={{ flex: '1 1 160px' }}>
-              <label>Statement ID</label>
-              <input type="text" value={autoId} disabled style={{ opacity: 0.7 }} />
             </div>
             <div className="form-group" style={{ flex: '1 1 160px' }}>
               <label>Settlement Date</label>
@@ -253,26 +225,26 @@ const AddSettlementModal: React.FC<AddSettlementModalProps> = ({
                           <th style={{ padding: '8px 12px', textAlign: 'right' }}>Delivery Charge</th>
                         )}
                         <th style={{ padding: '8px 12px', textAlign: 'right' }}>
-                          {defaultType === 'vendor' ? 'Net Payable' : 'Amount'}
+                          {defaultType === 'vendor' ? 'Net Payable' : 'Collected'}
                         </th>
                       </tr>
                     </thead>
                     <tbody>
                       {orders.map((order) => (
                         <tr
-                          key={order.id}
+                          key={order.codCollectionId}
                           style={{
                             borderTop: '1px solid var(--color-border)',
                             cursor: 'pointer',
-                            background: selected.has(order.id) ? 'var(--color-primary-bg)' : 'transparent',
+                            background: selected.has(order.codCollectionId) ? 'var(--color-primary-bg)' : 'transparent',
                           }}
-                          onClick={() => toggleOrder(order.id)}
+                          onClick={() => toggleOrder(order.codCollectionId)}
                         >
                           <td style={{ padding: '8px 12px' }}>
                             <input
                               type="checkbox"
-                              checked={selected.has(order.id)}
-                              onChange={() => toggleOrder(order.id)}
+                              checked={selected.has(order.codCollectionId)}
+                              onChange={() => toggleOrder(order.codCollectionId)}
                               onClick={(e) => e.stopPropagation()}
                             />
                           </td>
@@ -289,7 +261,7 @@ const AddSettlementModal: React.FC<AddSettlementModalProps> = ({
                             </td>
                           )}
                           <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 600 }}>
-                            Rs. {(defaultType === 'vendor' ? order.netPayable : order.codAmount).toLocaleString()}
+                            Rs. {order.netPayable.toLocaleString()}
                           </td>
                         </tr>
                       ))}
@@ -308,16 +280,6 @@ const AddSettlementModal: React.FC<AddSettlementModalProps> = ({
               </span>
             </div>
           )}
-
-          <div className="form-group" style={{ marginBottom: '16px' }}>
-            <label>Remark</label>
-            <input
-              type="text"
-              value={remark}
-              onChange={(e) => setRemark(e.target.value)}
-              placeholder="Optional note"
-            />
-          </div>
 
           {error && <p className="error-text">{error}</p>}
 

@@ -14,6 +14,7 @@ import VendorFormPage from './pages/VendorFormPage'
 import RiderManagement from './pages/RiderManagement'
 import RiderFormPage from './pages/RiderFormPage'
 import FinanceManagement from './pages/FinanceManagement'
+import SettlementDetailPage from './pages/SettlementDetailPage'
 import DeliveryRateSettings from './pages/DeliveryRateSettings'
 import Settings from './pages/settings/Settings'
 import PickupOperations from './pages/PickupOperations'
@@ -175,6 +176,10 @@ function App() {
           <Route
             path="/remarks/:id"
             element={<RoleGuard allowedRoles={['super_admin', 'admin', 'vendor', 'vendor_staff', 'sales']}><RemarkDetail /></RoleGuard>}
+          />
+          <Route
+            path="/finance/settlements/:id"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'vendor', 'vendor_staff', 'sales']} requiredPermission="FINANCE_ACCESS"><SettlementDetailPage /></RoleGuard>}
           />
           <Route
             path="/finance/settlements"

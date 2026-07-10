@@ -5,6 +5,12 @@
   gap: var(--space-4);
 }
 
+.page-header-actions {
+  align-items: center;
+  display: flex;
+  gap: var(--space-3);
+}
+
 .page-header-info h1 {
   font-family: var(--typography-font-family-default);
   font-size: var(--font-size-2xl);

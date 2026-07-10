@@ -150,6 +150,87 @@ export async function updateParcelStatus(
   if (!data.success) throw new Error(data.message)
 }
 
+// ── COD settlement ────────────────────────────────────────────────────────
+export interface PendingCodOrder {
+  id: string
+  codCollectionId: string
+  trackingId: string
+  receiverName: string
+  destination: string
+  codAmount: number
+  deliveryCharge: number
+  netPayable: number
+}
+
+export interface PendingCodResult {
+  items: PendingCodOrder[]
+  totalCod: number
+  totalDeliveryCharge: number
+  totalNetPayable: number
+}
+
+export async function getMyPendingCod(): Promise<PendingCodResult> {
+  const { data } = await api.get<{ success: boolean; data: PendingCodResult }>(
+    '/finance/unsettled-orders',
+    { params: { type: 'rider' } },
+  )
+  return data.data
+}
+
+export interface SettlementStatement {
+  id: string
+  statementId: string
+  transferDate: string | null
+  orderCount: number
+  amount: number
+  status: 'pending' | 'settled'
+  remark: string | null
+}
+
+export interface SettlementsPage {
+  data: SettlementStatement[]
+  meta: { page: number; pageSize: number; total: number; totalPages: number }
+}
+
+export async function getMySettlements(page = 1, pageSize = 20): Promise<SettlementsPage> {
+  const { data } = await api.get<{ success: boolean } & SettlementsPage>(
+    '/finance/settlements',
+    { params: { payeeType: 'rider', page, pageSize } },
+  )
+  return { data: data.data, meta: data.meta }
+}
+
+export interface SettlementDetailOrder {
+  trackingId: string
+  receiverName: string
+  receiverPhone: string
+  destination: string
+  codAmount: number
+  deliveryCharge: number
+  settledAmount: number
+  deliveredAt: string | null
+}
+
+export interface SettlementDetail {
+  id: string
+  statementId: string
+  payeeName: string
+  payeePhone: string
+  transferDate: string | null
+  amount: number
+  payableAmount: number
+  status: 'pending' | 'settled'
+  remark: string | null
+  items: SettlementDetailOrder[]
+}
+
+export async function getSettlementDetail(id: string): Promise<SettlementDetail> {
+  const { data } = await api.get<{ success: boolean; data: SettlementDetail }>(
+    `/finance/settlements/${id}`,
+  )
+  return data.data
+}
+
 export async function logoutRider() {
   localStorage.removeItem('csrfToken')
   localStorage.removeItem('rider')

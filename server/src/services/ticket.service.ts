@@ -3,8 +3,18 @@ import { AppError } from "../utils/AppError";
 import { getDatePart, randomBase32 } from "../utils/trackingId";
 import { CreateTicketInput, ListTicketsParams, TicketStatus } from "../types/ticket.type";
 import { createNotification } from "./notification.service";
+import { notifyAdmins } from "./order.service";
 
 type Actor = { id: string; roles: string[] };
+
+// Vendor-raised tickets in these categories page a specific admin module -
+// mirrors the notification `type` strings the sidebar badges/bell already
+// key off of (see order.service.ts's pickup/dispatch/cod_settlement events).
+const TICKET_CATEGORY_NOTIFICATIONS: Record<string, { type: string; label: string }> = {
+  pickup: { type: "pickup", label: "Pickup" },
+  delivery: { type: "dispatch", label: "Delivery" },
+  cod_settlement: { type: "cod_settlement", label: "COD Settlement" },
+};
 
 // The workflow only uses these three; legacy values are normalized on read.
 const WORKFLOW_STATUSES: TicketStatus[] = ["open", "pending", "closed"];
@@ -102,6 +112,24 @@ export async function createTicket(actor: Actor, input: CreateTicketInput) {
       ticket.assigned_to,
       `Ticket ${ticket.ticket_no} assigned to you`,
       ticket.subject,
+      null,
+      "general",
+      `/tickets`,
+    );
+  }
+
+  // Event-driven fan-out: a vendor-raised Pickup/Delivery/COD Settlement
+  // ticket immediately notifies every admin, badging the matching module
+  // (Pickup Operations / Local Dispatch / COD Management) in real time.
+  const isVendorActor = actor.roles.includes("vendor") || actor.roles.includes("vendor_staff");
+  const target = ticket.category ? TICKET_CATEGORY_NOTIFICATIONS[ticket.category] : undefined;
+  if (isVendorActor && target) {
+    await notifyAdmins(
+      `New ${target.label} ticket: ${ticket.ticket_no}`,
+      ticket.subject,
+      ticket.id,
+      target.type,
+      `/tickets/${ticket.id}`,
     );
   }
 

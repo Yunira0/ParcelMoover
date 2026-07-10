@@ -2,7 +2,7 @@ import api from '../utils/api';
 
 export type TicketStatus = 'open' | 'pending' | 'closed';
 export type TicketPriority = 'low' | 'medium' | 'high' | 'urgent';
-export type TicketCategory = 'delivery' | 'billing' | 'pickup' | 'general';
+export type TicketCategory = 'delivery' | 'cod_settlement' | 'pickup' | 'general';
 
 export interface Ticket {
   id: string;
@@ -44,7 +44,7 @@ export const TICKET_PRIORITY_LABELS: Record<TicketPriority, string> = {
 
 export const TICKET_CATEGORY_LABELS: Record<TicketCategory, string> = {
   delivery: 'Delivery',
-  billing: 'Billing',
+  cod_settlement: 'COD Settlement',
   pickup: 'Pickup',
   general: 'General',
 };

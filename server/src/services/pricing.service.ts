@@ -67,6 +67,7 @@ export async function getPricingSettings() {
     flatInsideValley: settings.flat_inside_valley === null ? null : Number(settings.flat_inside_valley),
     flatOutsideValley: settings.flat_outside_valley === null ? null : Number(settings.flat_outside_valley),
     freeWeightKg: Number(settings.free_weight_kg),
+    extraWeightPercent: Number(settings.extra_weight_percent),
   };
 
   try {
@@ -85,6 +86,7 @@ export interface UpdatePricingSettingsInput {
   flatInsideValley?: number | null;
   flatOutsideValley?: number | null;
   freeWeightKg?: number;
+  extraWeightPercent?: number;
 }
 
 export async function updatePricingSettings(input: UpdatePricingSettingsInput) {
@@ -98,6 +100,7 @@ export async function updatePricingSettings(input: UpdatePricingSettingsInput) {
       ...(input.flatInsideValley !== undefined ? { flat_inside_valley: input.flatInsideValley } : {}),
       ...(input.flatOutsideValley !== undefined ? { flat_outside_valley: input.flatOutsideValley } : {}),
       ...(input.freeWeightKg !== undefined ? { free_weight_kg: input.freeWeightKg } : {}),
+      ...(input.extraWeightPercent !== undefined ? { extra_weight_percent: input.extraWeightPercent } : {}),
       updated_at: new Date(),
     },
   });
@@ -159,7 +162,7 @@ export interface VendorRateOverrides {
 export async function getVendorQuote(
   rateType: RateType,
   destinationLocationId: string,
-  _weightKg = 1,
+  weightKg = 1,
   overrides: VendorRateOverrides = {},
 ): Promise<DeliveryQuote> {
   const settings = await getPricingSettings();
@@ -195,11 +198,16 @@ export async function getVendorQuote(
     if (rate === null) throw new AppError(404, `No flat rate set for ${dest.valley} valley`);
   }
 
-  // Flat per type — no extra-weight surcharge in this model.
+  // Extra weight above the free allowance is surcharged as a percentage of
+  // the base rate — same shape as the origin/destination delivery_rates model.
+  const extraKg = Math.max(0, weightKg - settings.freeWeightKg);
+  const weightSurcharge = extraKg * (rate * (settings.extraWeightPercent / 100));
+  const totalPayable = rate + weightSurcharge;
+
   return {
     baseCharge: rate,
-    weightSurcharge: 0,
-    totalPayable: rate,
+    weightSurcharge,
+    totalPayable,
     freeWeightKg: settings.freeWeightKg,
     rateType,
     basis,

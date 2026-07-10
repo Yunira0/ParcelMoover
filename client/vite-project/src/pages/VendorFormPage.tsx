@@ -266,6 +266,7 @@ const VendorFormPage: React.FC = () => {
     const errors: Record<string, string> = {};
     if (!form.onlineBusinessName.trim()) errors.onlineBusinessName = 'Business name is required';
     if (!form.pickupLocation.trim()) errors.pickupLocation = 'Hub is required';
+    if (!form.pickupLandmark.trim()) errors.pickupLandmark = 'Location is required';
     if (!form.businessContact.trim()) errors.businessContact = 'Contact number is required';
     if (!form.sales.trim()) errors.sales = 'Sales is required';
     if (!form.ownerName.trim()) errors.ownerName = 'Owner name is required';
@@ -443,11 +444,15 @@ const VendorFormPage: React.FC = () => {
                   <span className="vfp-field-error">{fieldErrors.pickupLocation}</span>
                 )}
                 <FormField
-                  label="Landmark"
+                  label="Location"
+                  required
                   value={form.pickupLandmark}
                   onChange={set('pickupLandmark')}
-                  placeholder="Nearby landmark"
+                  placeholder="Pickup location details"
                 />
+                {fieldErrors.pickupLandmark && (
+                  <span className="vfp-field-error">{fieldErrors.pickupLandmark}</span>
+                )}
                 <FormField
                   label="Contact No."
                   required

@@ -11,8 +11,9 @@ import SearchableSelect from '../components/SearchableSelect';
 import Button from '../components/Button';
 import SegmentedTabs from '../components/SegmentedTabs';
 import PageHeader from '../components/PageHeader';
+import TicketCategoryButton from '../components/TicketCategoryButton';
 import Pagination from '../components/Pagination';
-import StatusChip, { type StatusChipTone } from '../components/StatusChip';
+import QuickRemarkPopup from '../components/QuickRemarkPopup';
 import {
   bulkUpdateOrderStatus,
   getOrders,
@@ -22,7 +23,10 @@ import {
   type ParcelStatus,
 } from '../services/orders.service';
 import { getRiders } from '../services/users.service';
+import { toBsDate } from '../utils/nepaliDate';
 import './DispatchOperations.css';
+
+const formatMoney = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 0 });
 
 type DispatchTab =
   | 'arrived_at_branch'
@@ -108,15 +112,6 @@ const createEmptyTabSelections = (): Record<DispatchTab, Set<string | number>> =
   failed: new Set(),
 });
 
-const getStatusTone = (status: ParcelStatus): StatusChipTone => {
-  if (status === 'delivered') return 'success';
-  if (status === 'partially_delivered') return 'warning';
-  if (['failed_delivery', 'failed_pickup', 'loss_and_damage'].includes(status)) return 'danger';
-  if (status === 'cancelled') return 'neutral';
-  if (['sent_for_delivery', 'ready_to_deliver'].includes(status)) return 'info';
-  return 'warning';
-};
-
 const DispatchOperations: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const [orders, setOrders] = useState<Order[]>([]);
@@ -139,6 +134,7 @@ const DispatchOperations: React.FC = () => {
   const [riderId, setRiderId] = useState('');
   const [partialRemarks, setPartialRemarks] = useState('');
   const [partialCodCollected, setPartialCodCollected] = useState('');
+  const [remarkPopupOrder, setRemarkPopupOrder] = useState<Order | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -348,15 +344,21 @@ const DispatchOperations: React.FC = () => {
       // fall back to the currently loaded page
     }
 
-    const headers = ['#', 'Tracking ID', 'Receiver', 'Destination', 'Pieces', 'Status', 'Rider'];
+    const headers = ['SN', 'Date', 'Tracking ID', 'Order Type', 'Sender', 'Receiver', 'Location', 'Weight', 'COD', 'Attempt', 'Delivery Rider', 'Last Updated', 'Remarks'];
     const csvRows = rows.map(order => [
       `#${order.orderNumber}`,
+      toBsDate(order.createdAt) || '',
       order.trackingId,
+      order.orderType,
+      order.senderName,
       order.receiverName,
       order.destination,
-      order.pieces,
-      STATUS_LABELS[order.status],
+      order.weightKg ? `${order.weightKg} Kg` : '',
+      formatMoney(order.codAmount),
+      order.attemptCount,
       order.riderName || '',
+      toBsDate(order.lastUpdatedAt) || '',
+      order.remarks || '',
     ]);
     const csv = [headers, ...csvRows]
       .map(row => row.map(value => `"${String(value).replace(/"/g, '""')}"`).join(','))
@@ -372,16 +374,17 @@ const DispatchOperations: React.FC = () => {
 
   const dispatchColumns = [
     {
-      header: '#',
+      header: 'SN',
       accessor: (order: Order) => `#${order.orderNumber}`,
       width: '70px',
     },
+    { header: 'DATE', accessor: (order: Order) => toBsDate(order.createdAt) || '-', width: '95px' },
     {
       header: 'TRACKING ID',
       accessor: (order: Order) => (
         <Link to={`/orders/track/${order.trackingId}`} className="tracking-id-link">{order.trackingId}</Link>
       ),
-      width: '160px',
+      width: '140px',
       className: 'dispatch-tracking-cell',
     },
     {
@@ -392,7 +395,17 @@ const DispatchOperations: React.FC = () => {
           {order.orderType}
         </span>
       ),
-      width: '150px',
+      width: '130px',
+    },
+    {
+      header: 'SENDER',
+      accessor: (order: Order) => (
+        <div className="dispatch-party-cell">
+          <span>{order.senderName}</span>
+          <small>{order.senderPhone}</small>
+        </div>
+      ),
+      width: '170px',
     },
     {
       header: 'RECEIVER',
@@ -402,25 +415,36 @@ const DispatchOperations: React.FC = () => {
           <small>{order.receiverPhone}</small>
         </div>
       ),
-      width: '220px',
-    },
-    { header: 'DESTINATION', accessor: (order: Order) => order.destination || '-', width: '180px' },
-    { header: 'PIECES', accessor: (order: Order) => order.pieces, width: '90px' },
-    {
-      header: 'STATUS',
-      accessor: (order: Order) => (
-        <StatusChip tone={getStatusTone(order.status)}>
-          {STATUS_LABELS[order.status]}
-        </StatusChip>
-      ),
       width: '170px',
     },
-    { header: 'RIDER', accessor: (order: Order) => order.riderName || '-', width: '140px' },
+    { header: 'LOCATION', accessor: (order: Order) => order.destination || '-', width: '140px' },
+    { header: 'WEIGHT', accessor: (order: Order) => (order.weightKg ? `${order.weightKg} Kg` : '-'), width: '90px' },
+    { header: 'COD', accessor: (order: Order) => formatMoney(order.codAmount), width: '100px' },
+    { header: 'ATTEMPT', accessor: (order: Order) => order.attemptCount, width: '90px' },
+    { header: 'DELIVERY RIDER', accessor: (order: Order) => order.riderName || '-', width: '150px' },
+    { header: 'LAST UPDATED', accessor: (order: Order) => toBsDate(order.lastUpdatedAt) || '-', width: '135px' },
+    {
+      header: 'REMARKS',
+      accessor: (order: Order) => (
+        <button
+          type="button"
+          className="dispatch-remarks-cell-btn"
+          onClick={() => setRemarkPopupOrder(order)}
+          title={order.remarks || 'Add remark'}
+        >
+          {order.remarks || '-'}
+        </button>
+      ),
+      width: '160px',
+      className: 'dispatch-remarks-cell',
+    },
   ];
 
   return (
     <div className="dispatch-operations-container">
-      <PageHeader title="Local Dispatch" subtitle="Oversee and monitor your dispatch orders throughout the hub network." />
+      <PageHeader title="Local Dispatch" subtitle="Oversee and monitor your dispatch orders throughout the hub network.">
+        <TicketCategoryButton category="delivery" notificationType="dispatch" />
+      </PageHeader>
 
       <SegmentedTabs
         ariaLabel="Dispatch operation filters"
@@ -571,7 +595,7 @@ const DispatchOperations: React.FC = () => {
         loading={loading}
         loadingMessage="Loading dispatch orders..."
         emptyMessage="No dispatch orders found."
-        minWidth="1130px"
+        minWidth="1680px"
         tableClassName="dispatch-table"
       />
 
@@ -582,6 +606,14 @@ const DispatchOperations: React.FC = () => {
         onPageChange={setPage}
         summary={meta ? `${meta.total} order${meta.total === 1 ? '' : 's'}` : undefined}
       />
+
+      {remarkPopupOrder && (
+        <QuickRemarkPopup
+          orderId={remarkPopupOrder.id}
+          trackingId={remarkPopupOrder.trackingId}
+          onClose={() => setRemarkPopupOrder(null)}
+        />
+      )}
     </div>
   );
 };

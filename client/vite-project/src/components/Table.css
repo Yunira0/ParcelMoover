@@ -75,6 +75,20 @@
   cursor: pointer;
 }
 
+.table-expanded-cell {
+  background-color: var(--color-background-elevated);
+  padding: 0 !important;
+}
+
+/* A table nested inside an expanded row is a drill-down panel, not a
+   second standalone table - drop its own border/background so it reads
+   as part of the same table rather than a box within a box. */
+.table-expanded-cell > .table-container {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+}
+
 .table-empty-cell {
   color: var(--color-text-caption) !important;
   font-weight: var(--font-weight-medium) !important;

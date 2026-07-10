@@ -35,6 +35,11 @@
   color: var(--color-text-placeholder);
 }
 
+.finance-error {
+  color: var(--color-danger-text);
+  font-size: var(--font-size-sm);
+}
+
 .loading-state {
   padding: var(--space-6);
   text-align: center;

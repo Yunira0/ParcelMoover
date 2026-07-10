@@ -97,6 +97,7 @@ const RateSetup: React.FC = () => {
         flatInsideValley: settings.flatInsideValley,
         flatOutsideValley: settings.flatOutsideValley,
         freeWeightKg: settings.freeWeightKg,
+        extraWeightPercent: settings.extraWeightPercent,
       });
       setMsg('Rates saved.');
       setTimeout(() => setMsg(''), 2000);
@@ -144,6 +145,10 @@ const RateSetup: React.FC = () => {
           <label>Free weight (kg)
             <input type="number" min={0} step="0.1" value={settings.freeWeightKg ?? ''}
               onChange={(e) => setSetting('freeWeightKg', e.target.value)} />
+          </label>
+          <label>Extra weight charge (%)
+            <input type="number" min={0} step="0.1" value={settings.extraWeightPercent ?? ''}
+              onChange={(e) => setSetting('extraWeightPercent', e.target.value)} />
           </label>
         </div>
 

@@ -1,0 +1,18 @@
+.settlement-detail-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.settlement-detail-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.settlement-detail-actions {
+  display: flex;
+  gap: var(--space-2);
+}

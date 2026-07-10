@@ -1,9 +1,11 @@
 import { Request, Response } from "express";
 import {
   getUnreadCount,
+  getUnreadCountByType,
   listNotifications,
   markAllAsRead,
   markAsRead,
+  markAsReadByTrackingId,
 } from "../services/notification.service";
 import { registerSseConnection, unregisterSseConnection } from "../lib/sseHub";
 
@@ -72,6 +74,25 @@ export async function markNotificationReadController(req: Request, res: Response
   }
 }
 
+export async function markNotificationsReadByTrackingIdController(req: Request, res: Response) {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+    const { trackingId } = req.params;
+    if (typeof trackingId !== "string" || !trackingId) {
+      return res.status(400).json({ success: false, message: "Invalid tracking id" });
+    }
+    await markAsReadByTrackingId(req.user.id, trackingId);
+    return res.status(200).json({ success: true });
+  } catch (error: any) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to mark notifications as read",
+    });
+  }
+}
+
 export async function markAllNotificationsReadController(req: Request, res: Response) {
   try {
     if (!req.user) {
@@ -83,6 +104,21 @@ export async function markAllNotificationsReadController(req: Request, res: Resp
     return res.status(error.statusCode || 500).json({
       success: false,
       message: error.message || "Failed to mark notifications as read",
+    });
+  }
+}
+
+export async function getUnreadCountByTypeController(req: Request, res: Response) {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+    const counts = await getUnreadCountByType(req.user.id);
+    return res.status(200).json({ success: true, data: counts });
+  } catch (error: any) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to load unread notification counts by type",
     });
   }
 }

@@ -105,6 +105,34 @@
   font-weight: var(--font-weight-regular);
 }
 
+.dispatch-remarks-cell {
+  max-width: 160px;
+  white-space: normal;
+  word-break: break-word;
+}
+
+.dispatch-remarks-cell-btn {
+  background: none;
+  border: none;
+  border-bottom: 1px dashed var(--color-border-default);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  display: block;
+  font: inherit;
+  max-width: 100%;
+  overflow: hidden;
+  padding: 0;
+  text-align: left;
+  text-overflow: ellipsis;
+  transition: all 150ms ease;
+  white-space: nowrap;
+}
+
+.dispatch-remarks-cell-btn:hover {
+  border-bottom-color: var(--color-background-primary-default);
+  color: var(--color-background-primary-default);
+}
+
 .dispatch-action-anchor {
   position: relative;
 }

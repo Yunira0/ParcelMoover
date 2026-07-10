@@ -26,6 +26,9 @@ interface TableProps<T> {
   emptyMessage?: string;
   minWidth?: string;
   tableClassName?: string;
+  /** Renders an inline full-width row directly below the matching row's `id` - an accordion/drill-down panel within the same table instead of a separate one. */
+  expandedRowId?: string | number;
+  renderExpandedRow?: (item: T) => React.ReactNode;
 }
 
 // Columns that don't all specify a width need content-based sizing, or
@@ -77,6 +80,8 @@ const Table = <T extends { id: string | number }>({
   emptyMessage = 'No records found.',
   minWidth,
   tableClassName = '',
+  expandedRowId,
+  renderExpandedRow,
 }: TableProps<T>) => {
   const [internalSelectedIds, setInternalSelectedIds] = useState<Set<string | number>>(new Set());
   const isSelectionControlled = selectedIds !== undefined;
@@ -163,31 +168,39 @@ const Table = <T extends { id: string | number }>({
             </tr>
           ) : (
             data.map((item) => (
-              <tr
-                key={item.id}
-                className={[
-                  activeSelectedIds.has(item.id) ? 'selected-row' : '',
-                  getRowClassName?.(item) ?? '',
-                ].filter(Boolean).join(' ')}
-              >
-                {selectable && (
-                  <td className="checkbox-column">
-                    <input
-                      type="checkbox"
-                      checked={activeSelectedIds.has(item.id)}
-                      onChange={() => toggleRow(item.id)}
-                      aria-label={`Select row ${item.id}`}
-                    />
-                  </td>
+              <React.Fragment key={item.id}>
+                <tr
+                  className={[
+                    activeSelectedIds.has(item.id) ? 'selected-row' : '',
+                    getRowClassName?.(item) ?? '',
+                  ].filter(Boolean).join(' ')}
+                >
+                  {selectable && (
+                    <td className="checkbox-column">
+                      <input
+                        type="checkbox"
+                        checked={activeSelectedIds.has(item.id)}
+                        onChange={() => toggleRow(item.id)}
+                        aria-label={`Select row ${item.id}`}
+                      />
+                    </td>
+                  )}
+                  {columns.map((col, colIndex) => (
+                    <td key={colIndex} className={col.className}>
+                      {typeof col.accessor === 'function'
+                        ? col.accessor(item)
+                        : (item[col.accessor] as React.ReactNode)}
+                    </td>
+                  ))}
+                </tr>
+                {expandedRowId === item.id && renderExpandedRow && (
+                  <tr className="table-expanded-row">
+                    <td colSpan={colSpan} className="table-expanded-cell">
+                      {renderExpandedRow(item)}
+                    </td>
+                  </tr>
                 )}
-                {columns.map((col, colIndex) => (
-                  <td key={colIndex} className={col.className}>
-                    {typeof col.accessor === 'function'
-                      ? col.accessor(item)
-                      : (item[col.accessor] as React.ReactNode)}
-                  </td>
-                ))}
-              </tr>
+              </React.Fragment>
             ))
           )}
         </tbody>

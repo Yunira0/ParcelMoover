@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
-import { getPendingCodBill, listOrderCod, listSettlements, getUnsettledOrders } from "../services/finance.service";
-import { CodPaymentFilter } from "../types/finance.type";
+import { getPendingCodBill, listOrderCod, listSettlements, getUnsettledOrders, createSettlement, payForSettlement, getSettlementDetail } from "../services/finance.service";
+import { CodPaymentFilter, CreateSettlementInput, PaySettlementInput } from "../types/finance.type";
 
 // General UUID shape — not strict about RFC-4122 version/variant nibbles, so
 // seeded/demo ids (e.g. 55555555-0000-0000-0000-000000000002) are accepted.
@@ -118,15 +118,25 @@ function parseDateParam(raw: unknown, label: string): { error?: string; date?: D
   return { date };
 }
 
+const VALID_PAYEE_TYPES = ["rider", "vendor"];
+
 export async function listSettlementsController(req: Request, res: Response) {
   try {
     if (!req.user) {
       return res.status(401).json({ success: false, message: "Unauthorized" });
     }
 
-    const { error: vendorError, vendorId } = parseVendorIdParam(req);
-    if (vendorError) {
-      return res.status(400).json({ success: false, message: vendorError });
+    const payeeType = req.query.payeeType;
+    if (typeof payeeType !== "string" || !VALID_PAYEE_TYPES.includes(payeeType)) {
+      return res.status(400).json({
+        success: false,
+        message: `payeeType must be one of: ${VALID_PAYEE_TYPES.join(", ")}`,
+      });
+    }
+
+    const targetId = req.query.targetId;
+    if (targetId !== undefined && (typeof targetId !== "string" || !UUID_REGEX.test(targetId))) {
+      return res.status(400).json({ success: false, message: "targetId must be a valid UUID" });
     }
 
     const { error: pageError, page, pageSize } = parsePagination(req);
@@ -148,7 +158,8 @@ export async function listSettlementsController(req: Request, res: Response) {
 
     const result = await listSettlements(
       { id: req.user.id, roles: req.user.roles },
-      vendorId,
+      payeeType as "rider" | "vendor",
+      targetId as string | undefined,
       page,
       pageSize,
       fromDate,
@@ -159,6 +170,47 @@ export async function listSettlementsController(req: Request, res: Response) {
     return res.status(error.statusCode || 500).json({
       success: false,
       message: error.message || "Failed to load settlements",
+    });
+  }
+}
+
+export async function createSettlementController(req: Request, res: Response) {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const input = req.body as CreateSettlementInput;
+    const settlement = await createSettlement({ id: req.user.id, roles: req.user.roles }, input);
+
+    return res.status(201).json({ success: true, message: "Settlement created", data: settlement });
+  } catch (error: any) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to create settlement",
+    });
+  }
+}
+
+export async function payForSettlementController(req: Request, res: Response) {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const { id } = req.params;
+    if (typeof id !== "string" || !UUID_REGEX.test(id)) {
+      return res.status(400).json({ success: false, message: "Invalid settlement id" });
+    }
+
+    const input = req.body as PaySettlementInput;
+    const settlement = await payForSettlement({ id: req.user.id, roles: req.user.roles }, id, input);
+
+    return res.status(200).json({ success: true, message: "Payment recorded", data: settlement });
+  } catch (error: any) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to record payment",
     });
   }
 }
@@ -194,6 +246,27 @@ export async function getUnsettledOrdersController(req: Request, res: Response) 
     return res.status(error.statusCode || 500).json({
       success: false,
       message: error.message || "Failed to load unsettled orders",
+    });
+  }
+}
+
+export async function getSettlementDetailController(req: Request, res: Response) {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const { id } = req.params;
+    if (typeof id !== "string" || !UUID_REGEX.test(id)) {
+      return res.status(400).json({ success: false, message: "Invalid settlement id" });
+    }
+
+    const detail = await getSettlementDetail({ id: req.user.id, roles: req.user.roles }, id);
+    return res.status(200).json({ success: true, data: detail });
+  } catch (error: any) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to load settlement detail",
     });
   }
 }

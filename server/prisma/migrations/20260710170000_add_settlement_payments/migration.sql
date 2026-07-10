@@ -1,0 +1,1 @@
+ALTER TABLE "settlements" ADD COLUMN IF NOT EXISTS "payments" JSONB;

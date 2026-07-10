@@ -6,10 +6,12 @@ import { validate } from "../middlewares/validate.middleware";
 import { uuidParamSchema, paginationQuerySchema } from "../validators/common";
 import { createRedisRateLimitStore } from "../lib/rateLimitStore";
 import {
+  getUnreadCountByTypeController,
   getUnreadCountController,
   listNotificationsController,
   markAllNotificationsReadController,
   markNotificationReadController,
+  markNotificationsReadByTrackingIdController,
   streamNotificationsController,
 } from "../controllers/notification.controller";
 
@@ -43,6 +45,9 @@ notificationRouter.get("/stream", authMiddleware, streamNotificationsController)
 // GET /api/notifications/unread-count — cheap polling fallback / badge refresh
 notificationRouter.get("/unread-count", authMiddleware, readLimiter, getUnreadCountController);
 
+// GET /api/notifications/unread-count-by-type — per-module badge counts
+notificationRouter.get("/unread-count-by-type", authMiddleware, readLimiter, getUnreadCountByTypeController);
+
 // GET /api/notifications — paginated notification feed
 notificationRouter.get(
   "/",
@@ -69,6 +74,17 @@ notificationRouter.patch(
   writeLimiter,
   validate(uuidParamSchema, "params"),
   markNotificationReadController,
+);
+
+// PATCH /api/notifications/by-tracking/:trackingId/read — marks every unread
+// notification for one entity (e.g. all notifications for a ticket id) read
+// at once, used when the user opens the related record directly.
+notificationRouter.patch(
+  "/by-tracking/:trackingId/read",
+  authMiddleware,
+  csrfProtection,
+  writeLimiter,
+  markNotificationsReadByTrackingIdController,
 );
 
 export default notificationRouter;

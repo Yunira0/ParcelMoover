@@ -3,13 +3,21 @@ import { payment_status } from "../generated/prisma/enums";
 import prisma from "../lib/prisma";
 import redis, { scanAndDelete } from "../lib/redis";
 import { AppError } from "../utils/AppError";
+import { getDatePart, randomBase32 } from "../utils/trackingId";
 import { resolveOwnVendorId } from "./vendor-scope.service";
+import { createNotification } from "./notification.service";
 import {
   CodPaymentFilter,
+  CreateSettlementInput,
+  CreateSettlementResult,
+  PaySettlementInput,
+  SettlementPaymentInput,
   OrderCodItem,
   OrderCodListResult,
   PendingCodBill,
   PendingCodItem,
+  SettlementDetailItem,
+  SettlementDetailResult,
   SettlementListItem,
   SettlementsListResult,
   UnsettledOrderItem,
@@ -57,6 +65,19 @@ async function writeFinanceCache(key: string, value: unknown): Promise<void> {
 export async function invalidateVendorFinanceCache(vendorId: string): Promise<void> {
   try {
     await scanAndDelete(`finance:${vendorId}:*`);
+    // The admin "all vendors" settlements list is cached under a separate
+    // scope key, so it must be cleared too or a new statement won't appear.
+    await scanAndDelete(`finance:all:vendor:*`);
+  } catch (error) {
+    console.error("[Redis] Failed to invalidate finance cache:", error);
+  }
+}
+
+// Called after a rider settlement is created, mirroring invalidateVendorFinanceCache.
+export async function invalidateRiderFinanceCache(riderId: string): Promise<void> {
+  try {
+    await scanAndDelete(`finance:rider:${riderId}:*`);
+    await scanAndDelete(`finance:all:rider:*`);
   } catch (error) {
     console.error("[Redis] Failed to invalidate finance cache:", error);
   }
@@ -108,6 +129,38 @@ async function resolveVendor(actor: Actor, vendorIdParam?: string) {
     throw new AppError(404, "Vendor not found");
   }
   return vendor;
+}
+
+// Riders only ever see their own settlements. Staff must explicitly name a
+// rider - mirrors resolveVendor's "no unscoped view" rule for the same
+// financial-data-leak reason. Sales accounts have no rider visibility at all
+// (matches getUnsettledOrders below).
+async function resolveRider(actor: Actor, riderIdParam?: string) {
+  const isStaff = actor.roles.some((r) => ["super_admin", "admin"].includes(r));
+
+  if (actor.roles.includes("rider")) {
+    const rider = await prisma.riders.findFirst({
+      where: { user_id: actor.id, deleted_at: null },
+    });
+    if (!rider) throw new AppError(403, "Rider profile not found");
+    return rider;
+  }
+
+  if (!isStaff) {
+    throw new AppError(403, "Not authorized to view rider settlement records");
+  }
+
+  if (!riderIdParam) {
+    throw new AppError(400, "riderId is required");
+  }
+
+  const rider = await prisma.riders.findFirst({
+    where: { id: riderIdParam, deleted_at: null },
+  });
+  if (!rider) {
+    throw new AppError(404, "Rider not found");
+  }
+  return rider;
 }
 
 function toBillingProfile(vendor: {
@@ -258,24 +311,65 @@ export async function listOrderCod(
 
 export async function listSettlements(
   actor: Actor,
-  vendorIdParam: string | undefined,
+  payeeType: "rider" | "vendor",
+  targetId: string | undefined,
   page = 1,
   pageSize = DEFAULT_PAGE_SIZE,
   fromDate?: Date,
   toDate?: Date,
 ): Promise<SettlementsListResult> {
-  const vendor = await resolveVendor(actor, vendorIdParam);
+  const isStaff = actor.roles.some((r) => ["super_admin", "admin"].includes(r));
+  const isSales = actor.roles.includes("sales") && !isStaff;
+
+  let vendorId: string | undefined;
+  let riderId: string | undefined;
+
+  if (payeeType === "vendor") {
+    if (isSales) {
+      if (!targetId) throw new AppError(400, "vendorId is required");
+      const owned = await prisma.vendors.findFirst({
+        where: { id: targetId, sales_user_id: actor.id, deleted_at: null },
+        select: { id: true },
+      });
+      if (!owned) throw new AppError(403, "Not authorized to view this client's records");
+      vendorId = owned.id;
+    } else if (isStaff) {
+      // No targetId means "all vendors" - staff-only, matches the admin
+      // COD Management view which lists every statement of a type at once.
+      vendorId = targetId;
+    } else {
+      const ownVendorId = await resolveOwnVendorId(actor);
+      if (!ownVendorId) throw new AppError(403, "Not authorized to view finance records");
+      vendorId = ownVendorId;
+    }
+  } else {
+    if (isSales) {
+      throw new AppError(403, "Not authorized to view rider settlements");
+    }
+    if (isStaff) {
+      riderId = targetId;
+    } else {
+      const rider = await prisma.riders.findFirst({
+        where: { user_id: actor.id, deleted_at: null },
+      });
+      if (!rider) throw new AppError(403, "Rider profile not found");
+      riderId = rider.id;
+    }
+  }
 
   const take = Math.min(MAX_PAGE_SIZE, Math.max(1, pageSize));
   const safePage = Math.max(1, page);
   const skip = (safePage - 1) * take;
 
-  const cacheKey = `finance:${vendor.id}:settlements:${safePage}:${take}:${fromDate?.toISOString() ?? ""}:${toDate?.toISOString() ?? ""}`;
+  const scopeKey = vendorId ? vendorId : riderId ? `rider:${riderId}` : `all:${payeeType}`;
+  const cacheKey = `finance:${scopeKey}:settlements:${safePage}:${take}:${fromDate?.toISOString() ?? ""}:${toDate?.toISOString() ?? ""}`;
   const cached = await readFinanceCache<SettlementsListResult>(cacheKey);
   if (cached) return cached;
 
   const where: Prisma.settlementsWhereInput = {
-    vendor_id: vendor.id,
+    payee_type: payeeType,
+    ...(vendorId ? { vendor_id: vendorId } : {}),
+    ...(riderId ? { rider_id: riderId } : {}),
     ...(fromDate || toDate
       ? {
           settlement_date: {
@@ -290,22 +384,48 @@ export async function listSettlements(
     prisma.settlements.count({ where }),
     prisma.settlements.findMany({
       where,
-      include: { settlement_items: { select: { cod_collection_id: true } } },
+      include: {
+        settlement_items: { select: { cod_collection_id: true } },
+        riders: { select: { name: true, phone: true, bank_name: true, bank_account_no: true, bank_account_holder: true } },
+        vendors: {
+          select: {
+            client_name: true,
+            business_name: true,
+            phone: true,
+            bank_name: true,
+            bank_account_no: true,
+            bank_account_holder: true,
+          },
+        },
+      },
       orderBy: { created_at: "desc" },
       skip,
       take,
     }),
   ]);
 
-  const data: SettlementListItem[] = settlements.map((s) => ({
-    id: s.id,
-    statementId: s.statement_id,
-    transferDate: s.settlement_date ? formatLocalDay(s.settlement_date) : null,
-    orderCount: s.settlement_items.length,
-    amount: Number(s.payable_amount ?? s.amount),
-    status: s.status,
-    remark: s.remark,
-  }));
+  const data: SettlementListItem[] = settlements.map((s) => {
+    const payeeName = s.riders?.name || s.vendors?.business_name || s.vendors?.client_name || "";
+    const payeePhone = s.riders?.phone || s.vendors?.phone || "";
+    const bankName = s.riders?.bank_name ?? s.vendors?.bank_name ?? null;
+    const bankAccountNo = s.riders?.bank_account_no ?? s.vendors?.bank_account_no ?? null;
+    const bankAccountHolder = s.riders?.bank_account_holder ?? s.vendors?.bank_account_holder ?? null;
+    return {
+      id: s.id,
+      statementId: s.statement_id,
+      payeeType: payeeType,
+      payeeName,
+      payeePhone,
+      bankName,
+      bankAccountNo,
+      bankAccountHolder,
+      transferDate: s.settlement_date ? formatLocalDay(s.settlement_date) : null,
+      orderCount: s.settlement_items.length,
+      amount: Number(s.payable_amount ?? s.amount),
+      status: s.status,
+      remark: s.remark,
+    };
+  });
 
   const result: SettlementsListResult = {
     data,
@@ -368,17 +488,19 @@ export async function getUnsettledOrders(
   }
 
   // Vendor-scoped keys share the `finance:${vendorId}:*` namespace so order
-  // creation can invalidate them; rider-scoped ones are TTL-only (no write
-  // path in this app currently sets cod_collections.rider_id).
+  // creation and settlement creation can invalidate them; rider-scoped ones
+  // share `finance:rider:${riderId}:*`, invalidated by createSettlement.
   const cacheKey = vendorId ? `finance:${vendorId}:unsettled` : `finance:rider:${riderId}:unsettled`;
   const cached = await readFinanceCache<UnsettledOrdersResult>(cacheKey);
   if (cached) return cached;
 
-  const where: Prisma.cod_collectionsWhereInput = {
-    payment_status: payment_status.pending,
-    ...(riderId ? { rider_id: riderId } : {}),
-    ...(vendorId ? { vendor_id: vendorId } : {}),
-  };
+  // Rider leg (cash collected but not yet remitted to office) is tracked
+  // independently of the vendor leg (payment_status) - see cod_collections
+  // schema comment. Only orders where the rider actually collected cash are
+  // eligible.
+  const where: Prisma.cod_collectionsWhereInput = riderId
+    ? { rider_id: riderId, rider_payment_status: payment_status.pending, collected_amount: { gt: 0 } }
+    : { ...(vendorId ? { vendor_id: vendorId } : {}), payment_status: payment_status.pending };
 
   const collections = await prisma.cod_collections.findMany({
     where,
@@ -400,6 +522,9 @@ export async function getUnsettledOrders(
   const items: UnsettledOrderItem[] = collections.map((c) => {
     const codAmount = Number(c.cod_amount);
     const deliveryCharge = Number(c.parcels.delivery_charge);
+    // Vendor leg owes (COD - delivery charge); rider leg owes exactly what
+    // they collected (may be less than codAmount for a partial delivery).
+    const netPayable = riderId ? Number(c.collected_amount) : codAmount - deliveryCharge;
     return {
       id: c.parcel_id,
       codCollectionId: c.id,
@@ -408,19 +533,380 @@ export async function getUnsettledOrders(
       destination: formatLocation(c.parcels.locations_parcels_destination_location_idTolocations),
       codAmount,
       deliveryCharge,
-      netPayable: codAmount - deliveryCharge,
+      netPayable,
     };
   });
 
   const totalCod = items.reduce((sum, item) => sum + item.codAmount, 0);
   const totalDeliveryCharge = items.reduce((sum, item) => sum + item.deliveryCharge, 0);
+  const totalNetPayable = items.reduce((sum, item) => sum + item.netPayable, 0);
 
   const result: UnsettledOrdersResult = {
     items,
     totalCod,
     totalDeliveryCharge,
-    totalNetPayable: totalCod - totalDeliveryCharge,
+    totalNetPayable,
   };
   await writeFinanceCache(cacheKey, result);
   return result;
+}
+
+function generateStatementId(payeeType: "rider" | "vendor", date = new Date()) {
+  const prefix = payeeType === "rider" ? "STM-R" : "STM-V";
+  return `${prefix}-${getDatePart(date)}-${randomBase32(6)}`;
+}
+
+// Admin-only: bundles a rider's or vendor's selected pending cod_collections
+// into a settlement statement and immediately marks them settled - there is
+// no separate "confirm paid" step elsewhere in the app, so creating a
+// settlement here *is* the settling action.
+export async function createSettlement(
+  actor: Actor,
+  input: CreateSettlementInput,
+): Promise<CreateSettlementResult> {
+  const { payeeType, targetId, codCollectionIds, settlementDate } = input;
+
+  if (!codCollectionIds || codCollectionIds.length === 0) {
+    throw new AppError(400, "At least one order must be selected");
+  }
+  const parsedDate = new Date(settlementDate);
+  if (Number.isNaN(parsedDate.getTime())) {
+    throw new AppError(400, "settlementDate must be a valid date");
+  }
+
+  const target =
+    payeeType === "rider" ? await resolveRider(actor, targetId) : await resolveVendor(actor, targetId);
+
+  const eligibleWhere: Prisma.cod_collectionsWhereInput =
+    payeeType === "rider"
+      ? {
+          id: { in: codCollectionIds },
+          rider_id: target.id,
+          rider_payment_status: payment_status.pending,
+          collected_amount: { gt: 0 },
+        }
+      : {
+          id: { in: codCollectionIds },
+          vendor_id: target.id,
+          payment_status: payment_status.pending,
+        };
+
+  const collections = await prisma.cod_collections.findMany({
+    where: eligibleWhere,
+    include: { parcels: { select: { delivery_charge: true } } },
+  });
+
+  if (collections.length !== codCollectionIds.length) {
+    throw new AppError(
+      400,
+      "One or more selected orders are not eligible for settlement (already settled or do not belong to this account)",
+    );
+  }
+
+  const grossAmount = collections.reduce((sum, c) => sum + Number(c.cod_amount), 0);
+  const payableAmount =
+    payeeType === "rider"
+      ? collections.reduce((sum, c) => sum + Number(c.collected_amount), 0)
+      : collections.reduce((sum, c) => sum + Number(c.cod_amount) - Number(c.parcels.delivery_charge), 0);
+  const statementId = generateStatementId(payeeType);
+
+  const settlement = await prisma.$transaction(async (tx) => {
+    const created = await tx.settlements.create({
+      data: {
+        statement_id: statementId,
+        payee_type: payeeType,
+        rider_id: payeeType === "rider" ? target.id : null,
+        vendor_id: payeeType === "vendor" ? target.id : null,
+        amount: grossAmount,
+        payable_amount: payableAmount,
+        settlement_date: parsedDate,
+        status: "pending",
+        settled_by: actor.id,
+      },
+    });
+
+    await tx.settlement_items.createMany({
+      data: collections.map((c) => ({
+        settlement_id: created.id,
+        cod_collection_id: c.id,
+        amount: payeeType === "rider" ? Number(c.collected_amount) : Number(c.cod_amount) - Number(c.parcels.delivery_charge),
+      })),
+    });
+
+    // rider_remitted_amount / vendor remitted_amount vary per row (equal to
+    // that row's collected_amount / cod_amount), so this can't be a single
+    // shared updateMany.
+    if (payeeType === "rider") {
+      const settledAt = new Date();
+      await Promise.all(
+        collections.map((c) =>
+          tx.cod_collections.update({
+            where: { id: c.id },
+            data: {
+              rider_payment_status: payment_status.paid,
+              rider_remitted_amount: c.collected_amount,
+              rider_settled_at: settledAt,
+            },
+          }),
+        ),
+      );
+    } else {
+      await Promise.all(
+        collections.map((c) =>
+          tx.cod_collections.update({
+            where: { id: c.id },
+            data: { payment_status: payment_status.paid, remitted_amount: c.cod_amount },
+          }),
+        ),
+      );
+    }
+
+    await tx.audit_logs.create({
+      data: {
+        actor_id: actor.id,
+        entity_type: "settlement",
+        entity_id: created.id,
+        action: "CREATE_SETTLEMENT",
+        new_data: { statementId, payeeType, targetId: target.id, amount: grossAmount, payableAmount },
+      },
+    });
+
+    return created;
+  });
+
+  if (payeeType === "rider") {
+    await invalidateRiderFinanceCache(target.id);
+  } else {
+    await invalidateVendorFinanceCache(target.id);
+  }
+
+  const targetUserId = target.user_id;
+  if (targetUserId && targetUserId !== actor.id) {
+    await createNotification(
+      targetUserId,
+      `COD Statement ${statementId} created`,
+      `A statement of Rs. ${payableAmount} across ${collections.length} order(s) is pending payment.`,
+      null,
+      "cod_settlement",
+      payeeType === "rider" ? "/finance" : "/finance/settlements",
+    );
+  }
+
+  return {
+    id: settlement.id,
+    statementId: settlement.statement_id,
+    payeeType,
+    amount: grossAmount,
+    payableAmount,
+    settlementDate: settlement.settlement_date ? formatLocalDay(settlement.settlement_date) : null,
+    status: settlement.status,
+    paymentMethod: settlement.payment_method,
+    payments: [],
+    remark: settlement.remark,
+  };
+}
+
+// Admin-only: records payment against a pending statement and flips it to
+// settled. Payments may be split across methods (e.g. part cash, part online)
+// but the total must match exactly what's payable - no under/over payment.
+export async function payForSettlement(
+  actor: Actor,
+  settlementId: string,
+  input: PaySettlementInput,
+): Promise<CreateSettlementResult> {
+  const { payments, remark } = input;
+
+  if (!payments || payments.length === 0) {
+    throw new AppError(400, "At least one payment is required");
+  }
+  if (!remark || !remark.trim()) {
+    throw new AppError(400, "Remark is required");
+  }
+  for (const p of payments) {
+    if (p.method !== "cash" && p.method !== "online") {
+      throw new AppError(400, "Payment method must be 'cash' or 'online'");
+    }
+    if (!(p.amount > 0)) {
+      throw new AppError(400, "Payment amount must be greater than 0");
+    }
+  }
+
+  const settlement = await prisma.settlements.findUnique({ where: { id: settlementId } });
+  if (!settlement) {
+    throw new AppError(404, "Settlement not found");
+  }
+  if (settlement.status === "settled") {
+    throw new AppError(400, "This settlement has already been paid");
+  }
+
+  const payableAmount = Number(settlement.payable_amount ?? settlement.amount);
+  const paidTotal = payments.reduce((sum, p) => sum + p.amount, 0);
+  if (Math.round(paidTotal * 100) !== Math.round(payableAmount * 100)) {
+    throw new AppError(
+      400,
+      `Payment total (Rs. ${paidTotal}) must equal the payable amount (Rs. ${payableAmount})`,
+    );
+  }
+  const paymentMethodSummary = Array.from(new Set(payments.map((p) => p.method))).join(", ");
+
+  const updated = await prisma.$transaction(async (tx) => {
+    const result = await tx.settlements.update({
+      where: { id: settlementId },
+      data: {
+        status: "settled",
+        payment_method: paymentMethodSummary,
+        payments: payments as unknown as Prisma.InputJsonValue,
+        remark: remark.trim(),
+        settled_by: actor.id,
+      },
+    });
+
+    await tx.audit_logs.create({
+      data: {
+        actor_id: actor.id,
+        entity_type: "settlement",
+        entity_id: settlementId,
+        action: "PAY_SETTLEMENT",
+        new_data: { statementId: result.statement_id, paymentMethod: paymentMethodSummary, payableAmount },
+      },
+    });
+
+    return result;
+  });
+
+  if (settlement.rider_id) {
+    await invalidateRiderFinanceCache(settlement.rider_id);
+  } else if (settlement.vendor_id) {
+    await invalidateVendorFinanceCache(settlement.vendor_id);
+  }
+
+  return {
+    id: updated.id,
+    statementId: updated.statement_id,
+    payeeType: updated.payee_type as "rider" | "vendor",
+    amount: Number(updated.amount),
+    payableAmount,
+    settlementDate: updated.settlement_date ? formatLocalDay(updated.settlement_date) : null,
+    status: updated.status,
+    paymentMethod: updated.payment_method,
+    payments,
+    remark: updated.remark,
+  };
+}
+
+// Line-item breakdown of a single settlement statement - which orders were
+// bundled into it and how much of each was settled. Authorization mirrors
+// listSettlements: staff see any statement, vendor/rider/sales are confined
+// to their own.
+export async function getSettlementDetail(actor: Actor, settlementId: string): Promise<SettlementDetailResult> {
+  const settlement = await prisma.settlements.findUnique({
+    where: { id: settlementId },
+    include: {
+      settlement_items: {
+        include: {
+          cod_collections: {
+            include: {
+              parcels: {
+                select: {
+                  tracking_id: true,
+                  delivery_charge: true,
+                  delivered_at: true,
+                  order_type: true,
+                  pieces: true,
+                  weight_kg: true,
+                  parties_parcels_receiver_idToparties: { select: { name: true, phone: true } },
+                  locations_parcels_destination_location_idTolocations: {
+                    select: { name: true, city: true, district: true },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      riders: { select: { name: true, phone: true, user_id: true } },
+      vendors: {
+        select: {
+          client_name: true,
+          business_name: true,
+          phone: true,
+          email: true,
+          address: true,
+          user_id: true,
+          sales_user_id: true,
+        },
+      },
+    },
+  });
+
+  if (!settlement) {
+    throw new AppError(404, "Settlement not found");
+  }
+
+  const isStaff = actor.roles.some((r) => ["super_admin", "admin"].includes(r));
+  const isSales = actor.roles.includes("sales") && !isStaff;
+
+  if (!isStaff) {
+    if (settlement.payee_type === "rider") {
+      if (isSales) throw new AppError(403, "Not authorized to view rider settlements");
+      const rider = await prisma.riders.findFirst({ where: { user_id: actor.id, deleted_at: null } });
+      if (!rider || rider.id !== settlement.rider_id) {
+        throw new AppError(403, "Not authorized to view this settlement");
+      }
+    } else {
+      if (isSales) {
+        if (settlement.vendors?.sales_user_id !== actor.id) {
+          throw new AppError(403, "Not authorized to view this client's records");
+        }
+      } else {
+        const ownVendorId = await resolveOwnVendorId(actor);
+        if (!ownVendorId || ownVendorId !== settlement.vendor_id) {
+          throw new AppError(403, "Not authorized to view this settlement");
+        }
+      }
+    }
+  }
+
+  const payeeName = settlement.riders?.name || settlement.vendors?.business_name || settlement.vendors?.client_name || "";
+  const payeePhone = settlement.riders?.phone || settlement.vendors?.phone || "";
+  const payeeEmail = settlement.vendors?.email ?? null;
+  const payeeAddress = settlement.vendors?.address ?? null;
+
+  const items: SettlementDetailItem[] = settlement.settlement_items.map((si) => {
+    const parcel = si.cod_collections.parcels;
+    return {
+      trackingId: parcel.tracking_id,
+      reference: null,
+      receiverName: parcel.parties_parcels_receiver_idToparties.name,
+      receiverPhone: parcel.parties_parcels_receiver_idToparties.phone,
+      destination: formatLocation(parcel.locations_parcels_destination_location_idTolocations),
+      orderType: parcel.order_type,
+      pieces: parcel.pieces,
+      weightKg: parcel.weight_kg === null ? null : Number(parcel.weight_kg),
+      codAmount: Number(si.cod_collections.cod_amount),
+      deliveryCharge: Number(parcel.delivery_charge),
+      settledAmount: Number(si.amount),
+      deliveredAt: parcel.delivered_at ? parcel.delivered_at.toISOString() : null,
+    };
+  });
+
+  return {
+    id: settlement.id,
+    statementId: settlement.statement_id,
+    payeeType: settlement.payee_type as "rider" | "vendor",
+    payeeName,
+    payeePhone,
+    payeeEmail,
+    payeeAddress,
+    transferDate: settlement.settlement_date ? formatLocalDay(settlement.settlement_date) : null,
+    amount: Number(settlement.amount),
+    payableAmount: Number(settlement.payable_amount ?? settlement.amount),
+    status: settlement.status,
+    paymentMethod: settlement.payment_method,
+    payments: Array.isArray(settlement.payments)
+      ? (settlement.payments as unknown as SettlementPaymentInput[])
+      : [],
+    remark: settlement.remark,
+    items,
+  };
 }

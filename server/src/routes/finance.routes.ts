@@ -3,11 +3,14 @@ import { rateLimit, ipKeyGenerator } from "express-rate-limit";
 import { authMiddleware } from "../middlewares/auth.mddleware";
 import { authorizeRoles } from "../middlewares/authorizeRoles.middleware";
 import { requireStaffPermission } from "../middlewares/staffPermission.middleware";
+import { csrfProtection } from "../middlewares/csrf.middleware";
 import { validate } from "../middlewares/validate.middleware";
 import {
   pendingCodQuerySchema,
   orderCodQuerySchema,
   settlementsQuerySchema,
+  createSettlementSchema,
+  paySettlementSchema,
 } from "../validators/finance.schema";
 import { createRedisRateLimitStore } from "../lib/rateLimitStore";
 import {
@@ -15,6 +18,9 @@ import {
   listOrderCodController,
   listSettlementsController,
   getUnsettledOrdersController,
+  createSettlementController,
+  payForSettlementController,
+  getSettlementDetailController,
 } from "../controllers/finance.controller";
 
 const financeRouter: Router = Router();
@@ -28,6 +34,16 @@ const financeReadLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   store: createRedisRateLimitStore("finance-read"),
+  keyGenerator: actorOrIpKey,
+});
+
+const settlementCreateLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 20,
+  message: { success: false, message: "Too many settlements created, please slow down" },
+  standardHeaders: true,
+  legacyHeaders: false,
+  store: createRedisRateLimitStore("finance-settlement-create"),
   keyGenerator: actorOrIpKey,
 });
 
@@ -53,15 +69,49 @@ financeRouter.get(
   listOrderCodController,
 );
 
-// GET /api/finance/settlements — historical settlement statements
+// GET /api/finance/settlements — historical settlement statements (rider or vendor)
 financeRouter.get(
   "/settlements",
   authMiddleware,
-  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "sales"),
+  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider", "sales"),
   requireStaffPermission("FINANCE_ACCESS"),
   financeReadLimiter,
   validate(settlementsQuerySchema, "query"),
   listSettlementsController,
+);
+
+// GET /api/finance/settlements/:id — line-item detail (orders) for one statement
+financeRouter.get(
+  "/settlements/:id",
+  authMiddleware,
+  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider", "sales"),
+  requireStaffPermission("FINANCE_ACCESS"),
+  financeReadLimiter,
+  getSettlementDetailController,
+);
+
+// POST /api/finance/settlements — create + immediately settle a statement
+// bundling selected pending cod_collections for a rider or vendor
+financeRouter.post(
+  "/settlements",
+  authMiddleware,
+  csrfProtection,
+  authorizeRoles("super_admin", "admin"),
+  settlementCreateLimiter,
+  validate(createSettlementSchema),
+  createSettlementController,
+);
+
+// POST /api/finance/settlements/:id/pay — record payment against a pending
+// statement and flip it to settled
+financeRouter.post(
+  "/settlements/:id/pay",
+  authMiddleware,
+  csrfProtection,
+  authorizeRoles("super_admin", "admin"),
+  settlementCreateLimiter,
+  validate(paySettlementSchema),
+  payForSettlementController,
 );
 
 // GET /api/finance/unsettled-orders — unsettled COD orders for rider or vendor

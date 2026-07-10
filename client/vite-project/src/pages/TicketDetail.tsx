@@ -12,6 +12,7 @@ import {
   TICKET_STATUS_LABELS,
   type TicketDetail as TicketDetailType,
 } from '../services/tickets.service';
+import { markNotificationsReadByTrackingId } from '../services/notifications.service';
 import './RemarkDetail.css';
 import { toBsDate } from '../utils/nepaliDate';
 import './TicketDetail.css';
@@ -71,6 +72,14 @@ const TicketDetail: React.FC = () => {
   }, [id]);
 
   useEffect(() => { loadTicket(); }, [loadTicket]);
+
+  // Opening a ticket - however the user got here, not just via the bell -
+  // clears any unread notification pointing at it (best-effort, doesn't
+  // block or error the page if it fails).
+  useEffect(() => {
+    if (!id) return;
+    markNotificationsReadByTrackingId(id).catch(() => {});
+  }, [id]);
   useEffect(() => { threadEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [ticket]);
 
   const submitReply = async () => {

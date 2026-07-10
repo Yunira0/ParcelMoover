@@ -1,13 +1,15 @@
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   Truck, AlertCircle, RefreshCw, LogOut,
-  PackageCheck, RotateCcw, Banknote, Coins,
+  PackageCheck, RotateCcw, Banknote, Coins, ChevronRight,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { getDashboardSummary, type DashboardSummary } from '../lib/api'
 
 export default function DashboardPage() {
   const { rider, logout } = useAuth()
+  const navigate = useNavigate()
 
   const [summary, setSummary] = useState<DashboardSummary | null>(null)
   const [loading, setLoading] = useState(true)
@@ -106,8 +108,15 @@ export default function DashboardPage() {
 
           {/* To Pay card */}
           <div className="px-5 mt-4">
-            <div className="bg-surface rounded-2xl border border-border p-4 flex flex-col gap-4">
-              <p className="text-xs font-semibold text-text-muted uppercase tracking-wider">To Pay</p>
+            <button
+              onClick={() => navigate('/settlements')}
+              style={{ touchAction: 'manipulation' }}
+              className="w-full text-left bg-surface rounded-2xl border border-border p-4 flex flex-col gap-4 cursor-pointer active:opacity-70 transition-opacity"
+            >
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-text-muted uppercase tracking-wider">To Pay</p>
+                <ChevronRight size={16} className="text-text-muted" />
+              </div>
 
               {/* Main amount */}
               <div className="flex items-baseline gap-1">
@@ -143,7 +152,7 @@ export default function DashboardPage() {
                   <span className="text-[11px] text-text-muted">Delivered</span>
                 </div>
               </div>
-            </div>
+            </button>
           </div>
 
           {/* Active parcels list */}

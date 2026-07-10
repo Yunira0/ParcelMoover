@@ -1,6 +1,6 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, ArrowRight, Bell, User } from 'lucide-react';
+import { Search, ArrowRight, Bell, User, Package, Truck, Banknote } from 'lucide-react';
 import Button from './Button';
 import type { AppNotification } from '../services/notifications.service';
 import {
@@ -23,6 +23,9 @@ const timeAgo = (iso: string) => {
   return `${Math.floor(hours / 24)}d ago`;
 };
 
+// Polling interval for SSE fallback (30 seconds)
+const POLL_INTERVAL_MS = 30_000;
+
 const TopNav: React.FC = () => {
   const navigate = useNavigate();
   const [query, setQuery] = useState('');
@@ -31,6 +34,11 @@ const TopNav: React.FC = () => {
   const [unreadCount, setUnreadCount] = useState(0);
   const [unclosedCount, setUnclosedCount] = useState(0);
   const notificationsRef = useRef<HTMLDivElement>(null);
+  const sseConnectedRef = useRef(true);
+
+  const refreshUnreadCount = useCallback(() => {
+    getUnreadNotificationCount().then(setUnreadCount).catch(() => {});
+  }, []);
 
   const runSearch = () => {
     const trimmed = query.trim();
@@ -39,7 +47,7 @@ const TopNav: React.FC = () => {
   };
 
   useEffect(() => {
-    getUnreadNotificationCount().then(setUnreadCount).catch(() => {});
+    refreshUnreadCount();
     getUnclosedRemarksCount()
       .then((res) => {
         if (res?.success && res.data?.count !== undefined) {
@@ -49,11 +57,22 @@ const TopNav: React.FC = () => {
       .catch(() => {});
 
     const unsubscribe = subscribeToNotificationStream((notification) => {
+      sseConnectedRef.current = true;
       setNotifications((prev) => [notification, ...prev]);
       setUnreadCount((prev) => prev + 1);
     });
-    return unsubscribe;
-  }, []);
+
+    // Polling fallback: if SSE misses events (tab backgrounded, connection drop),
+    // periodically re-fetch the true unread count from the server.
+    const pollTimer = setInterval(() => {
+      refreshUnreadCount();
+    }, POLL_INTERVAL_MS);
+
+    return () => {
+      unsubscribe();
+      clearInterval(pollTimer);
+    };
+  }, [refreshUnreadCount]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -79,6 +98,27 @@ const TopNav: React.FC = () => {
     return match ? match[0] : null;
   };
 
+  const resolveNavigationPath = (notification: AppNotification): string | null => {
+    // Prefer explicit link field
+    if (notification.link) return notification.link;
+
+    // Fallback: extract tracking ID and navigate to order detail
+    const trackingId = resolveTrackingId(notification);
+    if (trackingId) return `/orders/track/${trackingId}`;
+
+    // Type-based fallback routes
+    switch (notification.type) {
+      case 'pickup':
+        return '/pickup-operations';
+      case 'dispatch':
+        return '/dispatch-operations';
+      case 'cod_settlement':
+        return '/finance';
+      default:
+        return null;
+    }
+  };
+
   const handleNotificationClick = async (notification: AppNotification) => {
     if (!notification.readAt) {
       setNotifications((prev) =>
@@ -91,10 +131,10 @@ const TopNav: React.FC = () => {
         // best-effort - the unread badge will self-correct on next fetch
       }
     }
-    const trackingId = resolveTrackingId(notification);
-    if (trackingId) {
+    const path = resolveNavigationPath(notification);
+    if (path) {
       setIsNotificationsOpen(false);
-      navigate(`/orders/track/${trackingId}`);
+      navigate(path);
     }
   };
 
@@ -105,6 +145,19 @@ const TopNav: React.FC = () => {
       await markAllNotificationsRead();
     } catch {
       // best-effort - the unread badge will self-correct on next fetch
+    }
+  };
+
+  const getNotificationIcon = (type: string) => {
+    switch (type) {
+      case 'pickup':
+        return <Package size={14} className="notification-icon notification-icon-pickup" />;
+      case 'dispatch':
+        return <Truck size={14} className="notification-icon notification-icon-dispatch" />;
+      case 'cod_settlement':
+        return <Banknote size={14} className="notification-icon notification-icon-cod" />;
+      default:
+        return null;
     }
   };
 
@@ -156,7 +209,11 @@ const TopNav: React.FC = () => {
             aria-label="Notifications"
           >
             <Bell size={24} style={{ color: 'var(--color-text-primary)' }} />
-            {unreadCount > 0 && <div className="bell-dot"></div>}
+            {unreadCount > 0 && (
+              <span className="notification-badge" aria-label={`${unreadCount} unread notifications`}>
+                {unreadCount > 99 ? '99+' : unreadCount}
+              </span>
+            )}
           </button>
 
           {isNotificationsOpen && (
@@ -177,10 +234,13 @@ const TopNav: React.FC = () => {
                     <button
                       type="button"
                       key={notification.id}
-                      className={`notification-item ${notification.readAt ? '' : 'notification-item-unread'}`}
+                      className={`notification-item notification-item--${notification.type || 'general'} ${notification.readAt ? '' : 'notification-item-unread'}`}
                       onClick={() => handleNotificationClick(notification)}
                     >
-                      <div className="notification-item-title">{notification.title}</div>
+                      <div className="notification-item-header">
+                        {getNotificationIcon(notification.type)}
+                        <span className="notification-item-title">{notification.title}</span>
+                      </div>
                       {notification.body && (
                         <div className="notification-item-body">{notification.body}</div>
                       )}

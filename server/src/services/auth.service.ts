@@ -323,6 +323,10 @@ function validateRegisterInput(input: RegisterUserInput) {
     if (!input.phone?.trim()) {
       throw new AppError(400, "Phone number is required for vendor");
     }
+
+    if (!input.pickupLandmark?.trim()) {
+      throw new AppError(400, "Location is required for vendor");
+    }
   }
 
   if (input.type === "rider") {
