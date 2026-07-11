@@ -1,0 +1,59 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: parcelmoover
+      POSTGRES_PASSWORD: parcelmoover
+      POSTGRES_DB: parcelmoover
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    ports:
+      # Host port 5433 (not 5432) — your Mac already has a local Postgres
+      # listening on 5432. The app container still reaches this via the
+      # internal `db:5432` DNS name regardless of this host-side mapping.
+      - "5434:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U parcelmoover"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    # No host port mapping: the app container reaches this via the internal
+    # `redis:6379` DNS name regardless, and your Mac already has a local
+    # redis-server on 6379 from `npm run dev`.
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - server/.env
+    environment:
+      DATABASE_URL: postgresql://parcelmoover:parcelmoover@db:5432/parcelmoover
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      NODE_ENV: production
+    ports:
+      - "3000:3000"
+    volumes:
+      - uploads-data:/app/uploads
+
+volumes:
+  db-data:
+  uploads-data:

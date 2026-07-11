@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { User, Lock, Check, LogOut } from 'lucide-react';
+import { User, Lock, Check, LogOut, MapPin, Mail, Phone, Shield } from 'lucide-react';
+import PageHeader from '../components/PageHeader';
+import SegmentedTabs from '../components/SegmentedTabs';
+import StatusChip from '../components/StatusChip';
 import FormField from '../components/FormField';
 import Button from '../components/Button';
 import { getCurrentUser as fetchMe, changePassword, logout, updateMe } from '../services/auth.service';
@@ -17,6 +20,16 @@ const ROLE_LABELS: Record<string, string> = {
   rider: 'Rider',
 };
 
+function getInitials(name: string): string {
+  return name
+    .split(' ')
+    .filter(Boolean)
+    .map((w) => w[0])
+    .slice(0, 2)
+    .join('')
+    .toUpperCase();
+}
+
 const ProfilePage: React.FC = () => {
   const navigate = useNavigate();
   const cached = getCurrentUser();
@@ -24,22 +37,24 @@ const ProfilePage: React.FC = () => {
 
   const handleLogout = async () => {
     try {
-      // Best-effort: revoke the server-side session so the httpOnly cookie
-      // can't be replayed. Still clean up locally below even if this fails
-      // (e.g. the token was already expired/invalid).
       await logout();
     } catch {
-      // ignore
+      // ignore — clean up locally regardless
     } finally {
       localStorage.removeItem('user');
       navigate('/login');
     }
   };
 
+  // Loading state
+  const [loading, setLoading] = useState(true);
+
   // Profile fields
   const [fullName, setFullName] = useState(cached?.fullName ?? '');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState(cached?.email ?? '');
+  const [hubName, setHubName] = useState('');
+  const [accountStatus, setAccountStatus] = useState('');
   const [infoLoading, setInfoLoading] = useState(false);
   const [infoSuccess, setInfoSuccess] = useState(false);
   const [infoError, setInfoError] = useState('');
@@ -55,11 +70,16 @@ const ProfilePage: React.FC = () => {
   const roles = getCurrentUserRoles();
 
   useEffect(() => {
-    fetchMe().then((data) => {
-      setFullName(data.fullName ?? '');
-      setPhone(data.phone ?? '');
-      setEmail(data.email ?? '');
-    }).catch(() => {});
+    fetchMe()
+      .then((data) => {
+        setFullName(data.fullName ?? '');
+        setPhone(data.phone ?? '');
+        setEmail(data.email ?? '');
+        setHubName(data.hubName ?? '');
+        setAccountStatus(data.status ?? 'active');
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
   }, []);
 
   const handleInfoSubmit = async (e: React.FormEvent) => {
@@ -70,7 +90,6 @@ const ProfilePage: React.FC = () => {
     setInfoSuccess(false);
     try {
       const updated = await updateMe({ fullName, phone });
-      // Sync localStorage so topnav name updates
       const stored = JSON.parse(localStorage.getItem('user') || 'null');
       if (stored) localStorage.setItem('user', JSON.stringify({ ...stored, fullName: updated.fullName }));
       setInfoSuccess(true);
@@ -106,116 +125,189 @@ const ProfilePage: React.FC = () => {
     }
   };
 
+  if (loading) {
+    return (
+      <div className="profile-page">
+        <div className="profile-skeleton-header" />
+        <div className="profile-skeleton-tabs" />
+        <div className="profile-skeleton-body" />
+      </div>
+    );
+  }
+
+  const statusTone = accountStatus === 'active' ? 'success' : 'warning';
+
   return (
     <div className="profile-page">
-      <div className="profile-header">
+      <PageHeader
+        title="My Profile"
+        subtitle="Manage your account information and security settings."
+      />
+
+      <div className="profile-overview">
         <div className="profile-avatar">
-          <User size={32} />
+          {getInitials(fullName || cached?.fullName || 'U')}
         </div>
-        <div className="profile-header-info">
-          <h1>{fullName || cached?.fullName}</h1>
-          <p className="profile-email">{email}</p>
-          <div className="profile-roles">
-            {roles.map((r) => (
-              <span key={r} className="profile-role-badge">{ROLE_LABELS[r] ?? r}</span>
-            ))}
+        <div className="profile-overview-info">
+          <h2>{fullName || cached?.fullName}</h2>
+          <p className="profile-overview-email">{email}</p>
+          <div className="profile-overview-meta">
+            <div className="profile-roles">
+              {roles.map((r) => (
+                <span key={r} className="profile-role-badge">{ROLE_LABELS[r] ?? r}</span>
+              ))}
+            </div>
+            {hubName && (
+              <span className="profile-hub-badge">
+                <MapPin size={12} /> {hubName}
+              </span>
+            )}
+            <StatusChip tone={statusTone} variant="solid">
+              {accountStatus === 'active' ? 'Active' : 'Inactive'}
+            </StatusChip>
           </div>
         </div>
-        <Button variant="danger" className="profile-logout-btn" onClick={handleLogout}>
-          <LogOut size={16} /> Log Out
+      </div>
+
+      <SegmentedTabs
+        ariaLabel="Profile sections"
+        value={tab}
+        onChange={(v) => setTab(v as Tab)}
+        options={[
+          { value: 'info', label: 'Personal Info' },
+          { value: 'password', label: 'Security' },
+        ]}
+        fullWidth={false}
+      />
+
+      {tab === 'info' && (
+        <div className="profile-tab-content">
+          <section className="profile-section">
+            <div className="profile-section-header">
+              <Shield size={16} />
+              <h3>Account Details</h3>
+            </div>
+            <div className="profile-detail-grid">
+              <div className="profile-detail-item">
+                <span className="profile-detail-label"><Mail size={13} /> Email</span>
+                <span className="profile-detail-value">{email}</span>
+              </div>
+              <div className="profile-detail-item">
+                <span className="profile-detail-label"><Phone size={13} /> Phone</span>
+                <span className="profile-detail-value">{phone || '—'}</span>
+              </div>
+              <div className="profile-detail-item">
+                <span className="profile-detail-label"><MapPin size={13} /> Hub</span>
+                <span className="profile-detail-value">{hubName || '—'}</span>
+              </div>
+              <div className="profile-detail-item">
+                <span className="profile-detail-label">Status</span>
+                <span className="profile-detail-value">
+                  <StatusChip tone={statusTone} variant="solid">
+                    {accountStatus === 'active' ? 'Active' : 'Inactive'}
+                  </StatusChip>
+                </span>
+              </div>
+              <div className="profile-detail-item profile-detail-item-full">
+                <span className="profile-detail-label"><Shield size={13} /> Roles</span>
+                <div className="profile-detail-value profile-detail-roles">
+                  {roles.map((r) => (
+                    <StatusChip key={r} tone="info" variant="outline">
+                      {ROLE_LABELS[r] ?? r}
+                    </StatusChip>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section className="profile-section">
+            <div className="profile-section-header">
+              <User size={16} />
+              <h3>Personal Information</h3>
+            </div>
+            <form className="profile-form" onSubmit={handleInfoSubmit}>
+              <FormField
+                label="Full Name"
+                required
+                value={fullName}
+                onChange={setFullName}
+                placeholder="Your full name"
+              />
+              <FormField
+                label="Phone Number"
+                value={phone}
+                onChange={setPhone}
+                placeholder="e.g. 9800000000"
+              />
+
+              {infoError && <p className="profile-alert profile-alert-error">{infoError}</p>}
+              {infoSuccess && (
+                <p className="profile-alert profile-alert-success"><Check size={14} /> Profile updated successfully</p>
+              )}
+
+              <div className="profile-form-actions">
+                <Button type="submit" variant="primary" disabled={infoLoading}>
+                  {infoLoading ? 'Saving\u2026' : 'Save Changes'}
+                </Button>
+              </div>
+            </form>
+          </section>
+        </div>
+      )}
+
+      {tab === 'password' && (
+        <div className="profile-tab-content">
+          <section className="profile-section">
+            <div className="profile-section-header">
+              <Lock size={16} />
+              <h3>Change Password</h3>
+            </div>
+            <form className="profile-form" onSubmit={handlePasswordSubmit}>
+              <FormField
+                label="Current Password"
+                type="password"
+                required
+                value={currentPwd}
+                onChange={setCurrentPwd}
+                placeholder="Enter current password"
+              />
+              <FormField
+                label="New Password"
+                type="password"
+                required
+                value={newPwd}
+                onChange={setNewPwd}
+                placeholder="Min. 8 characters"
+              />
+              <FormField
+                label="Confirm New Password"
+                type="password"
+                required
+                value={confirmPwd}
+                onChange={setConfirmPwd}
+                placeholder="Re-enter new password"
+              />
+
+              {pwdError && <p className="profile-alert profile-alert-error">{pwdError}</p>}
+              {pwdSuccess && (
+                <p className="profile-alert profile-alert-success"><Check size={14} /> Password changed successfully</p>
+              )}
+
+              <div className="profile-form-actions">
+                <Button type="submit" variant="primary" disabled={pwdLoading}>
+                  {pwdLoading ? 'Updating\u2026' : 'Update Password'}
+                </Button>
+              </div>
+            </form>
+          </section>
+        </div>
+      )}
+
+      <div className="profile-logout">
+        <Button variant="danger" onClick={handleLogout}>
+          <LogOut size={15} /> Log Out
         </Button>
-      </div>
-
-      <div className="profile-tabs">
-        <button
-          className={`profile-tab ${tab === 'info' ? 'active' : ''}`}
-          onClick={() => setTab('info')}
-        >
-          <User size={15} /> Profile Info
-        </button>
-        <button
-          className={`profile-tab ${tab === 'password' ? 'active' : ''}`}
-          onClick={() => setTab('password')}
-        >
-          <Lock size={15} /> Change Password
-        </button>
-      </div>
-
-      <div className="profile-body">
-        {tab === 'info' && (
-          <form className="profile-form" onSubmit={handleInfoSubmit}>
-            <FormField
-              label="Full Name"
-              required
-              value={fullName}
-              onChange={setFullName}
-              placeholder="Your full name"
-            />
-            <FormField
-              label="Email Address"
-              value={email}
-              onChange={() => {}}
-              disabled
-            />
-            <FormField
-              label="Phone Number"
-              value={phone}
-              onChange={setPhone}
-              placeholder="e.g. 9800000000"
-            />
-
-            {infoError && <p className="profile-error">{infoError}</p>}
-            {infoSuccess && (
-              <p className="profile-success"><Check size={15} /> Profile updated successfully</p>
-            )}
-
-            <div className="profile-form-actions">
-              <Button type="submit" variant="primary" disabled={infoLoading}>
-                {infoLoading ? 'Saving…' : 'Save Changes'}
-              </Button>
-            </div>
-          </form>
-        )}
-
-        {tab === 'password' && (
-          <form className="profile-form" onSubmit={handlePasswordSubmit}>
-            <FormField
-              label="Current Password"
-              type="password"
-              required
-              value={currentPwd}
-              onChange={setCurrentPwd}
-              placeholder="Enter current password"
-            />
-            <FormField
-              label="New Password"
-              type="password"
-              required
-              value={newPwd}
-              onChange={setNewPwd}
-              placeholder="Min. 8 characters"
-            />
-            <FormField
-              label="Confirm New Password"
-              type="password"
-              required
-              value={confirmPwd}
-              onChange={setConfirmPwd}
-              placeholder="Re-enter new password"
-            />
-
-            {pwdError && <p className="profile-error">{pwdError}</p>}
-            {pwdSuccess && (
-              <p className="profile-success"><Check size={15} /> Password changed successfully</p>
-            )}
-
-            <div className="profile-form-actions">
-              <Button type="submit" variant="primary" disabled={pwdLoading}>
-                {pwdLoading ? 'Updating…' : 'Update Password'}
-              </Button>
-            </div>
-          </form>
-        )}
       </div>
     </div>
   );

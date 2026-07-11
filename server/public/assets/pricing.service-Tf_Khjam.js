@@ -1,0 +1,1 @@
+import{t as e}from"./api-YN7heKRk.js";var t=async()=>(await e.get(`/pricing/settings`)).data,n=async t=>(await e.put(`/pricing/settings`,t)).data,r=async(t,n,r)=>(await e.get(`/pricing/quote`,{params:{destinationLocationId:t,weightKg:n,...r?{vendorId:r}:{}}})).data;export{r as n,n as r,t};

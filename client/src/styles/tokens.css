@@ -14,11 +14,13 @@
   --color-border-primary: #c2410c;
   --color-primary: #c2410c;
   --color-primary-subtle: rgb(194 65 12 / 6%);
+  --color-primary-hover: #9a3412;
   --color-text-caption: #4b5563;
   --color-text-default: #030712;
   --color-background-elevated: #e5e7eb;
   --color-background-success-default: #15803d;
   --color-background-warning-default: #a16207;
+  --color-success-default: #15803d;
   --color-icon-caption: #4b5563;
   --color-icon-default: #030712;
   --color-background-canvas: #f3f4f6;

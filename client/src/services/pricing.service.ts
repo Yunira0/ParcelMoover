@@ -9,7 +9,6 @@ export interface PricingSettings {
   flatOutsideValley: number | null;
   extraWeightPercent: number | null;
   freeWeightKg: number;
-  extraWeightPercent: number;
 }
 
 export type UpdatePricingSettingsInput = Partial<Omit<PricingSettings, 'id'>>;

@@ -98,7 +98,6 @@ const RateSetup: React.FC = () => {
         flatOutsideValley: settings.flatOutsideValley,
         extraWeightPercent: settings.extraWeightPercent,
         freeWeightKg: settings.freeWeightKg,
-        extraWeightPercent: settings.extraWeightPercent,
       });
       setMsg('Rates saved.');
       setTimeout(() => setMsg(''), 2000);

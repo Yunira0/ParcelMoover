@@ -335,6 +335,32 @@ export const getOrderByTrackingId = async (
   return response.data;
 };
 
+export interface PublicTrackingHistoryEntry {
+  status: ParcelStatus;
+  location: string | null;
+  createdAt: string;
+}
+
+export interface PublicTracking {
+  trackingId: string;
+  status: ParcelStatus;
+  serviceType: ServiceType;
+  pieces: number;
+  origin: string;
+  destination: string;
+  createdAt: string;
+  lastUpdatedAt: string;
+  statusHistory: PublicTrackingHistoryEntry[];
+}
+
+/** Unauthenticated lookup for the public "track a parcel" page - never carries party/financial detail. */
+export const trackParcelPublic = async (
+  trackingId: string,
+): Promise<{ success: boolean; data: PublicTracking }> => {
+  const response = await api.get(`/orders/public-track/${encodeURIComponent(trackingId)}`);
+  return response.data;
+};
+
 export const addOrderRemark = async (
   orderId: string,
   remark: string,

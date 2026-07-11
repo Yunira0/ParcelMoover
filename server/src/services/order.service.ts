@@ -1354,6 +1354,46 @@ export async function getOrderByTrackingId(actor: OrderActor, trackingId: string
   };
 }
 
+// Unauthenticated lookup for the public landing-page tracker. Tracking IDs
+// are unguessable (13 random base32 chars + check digit, validated by the
+// controller before this runs), so an exact match alone is an acceptable
+// access check - but the payload must stay limited to what a passer-by
+// tracking their own parcel needs. No party phone/address, no COD/pricing,
+// no staff or vendor identity - just shipment status and public hub names.
+export async function getPublicOrderTracking(trackingId: string) {
+  const parcel = await prisma.parcels.findFirst({
+    where: { tracking_id: trackingId, deleted_at: null },
+    include: {
+      locations_parcels_origin_location_idTolocations: true,
+      locations_parcels_destination_location_idTolocations: true,
+      parcel_status_history: {
+        orderBy: { created_at: "desc" as const },
+        include: { locations: true },
+      },
+    },
+  });
+
+  if (!parcel) {
+    throw new AppError(404, "No parcel found with this tracking ID");
+  }
+
+  return {
+    trackingId: parcel.tracking_id,
+    status: parcel.status,
+    serviceType: parcel.service_type,
+    pieces: parcel.pieces,
+    origin: locationName(parcel.locations_parcels_origin_location_idTolocations) || "",
+    destination: locationName(parcel.locations_parcels_destination_location_idTolocations) || "",
+    createdAt: formatDate(parcel.created_at),
+    lastUpdatedAt: formatDate(parcel.parcel_status_history[0]?.created_at || parcel.updated_at),
+    statusHistory: parcel.parcel_status_history.map((entry) => ({
+      status: entry.new_status,
+      location: entry.locations?.name || null,
+      createdAt: formatDate(entry.created_at),
+    })),
+  };
+}
+
 export async function addOrderRemark(
   actor: OrderActor,
   parcelId: string,

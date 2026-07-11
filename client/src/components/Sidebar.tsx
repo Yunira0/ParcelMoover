@@ -22,6 +22,7 @@ import {
   Users,
   Truck,
   ClipboardCheck,
+  ScrollText,
   LogOut,
   ChevronLeft,
   ChevronRight,
@@ -242,6 +243,7 @@ const AdminSidebar: React.FC<{ isSuperAdmin: boolean }> = ({ isSuperAdmin }) => 
         <SidebarItem to="/riders" icon={Bike} label="Rider Management" />
         <SidebarItem to="/finance" icon={Wallet} label="COD Management" />
         {(isSuperAdmin || hasAdminPermission('SETTINGS_ACCESS')) && <SidebarItem to="/settings" icon={Settings} label="Settings" />}
+        {isSuperAdmin && <SidebarItem to="/system-logs" icon={ScrollText} label="System Logs" />}
 
         <SidebarSection label="Operations" />
         <div className="sidebar-subnav">

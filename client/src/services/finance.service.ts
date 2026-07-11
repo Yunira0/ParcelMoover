@@ -129,7 +129,6 @@ export interface CreateSettlementPayload {
   targetId: string;
   codCollectionIds: string[];
   settlementDate: string;
-  remark: string;
 }
 
 export interface CreateSettlementResponse {

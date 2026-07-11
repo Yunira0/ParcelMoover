@@ -112,8 +112,33 @@
       "Bash(git commit *)",
       "Bash(git push *)",
       "Bash(pkill -f \"vite\")",
-      "Bash(rm -f /tmp/vite-dev.log)"
+      "Bash(rm -f /tmp/vite-dev.log)",
+      "Bash(echo \"EXIT_CODE:$?\")",
+      "Bash(pkill -f \"ts-node ./src/index.ts\")",
+      "Bash(pkill -f \"nodemon -L ./src/index.ts\")",
+      "Bash(docker compose *)",
+      "Bash(echo \"EXIT CODE: $?\")",
+      "Bash(lsof -nP -iTCP:6379 -sTCP:LISTEN)",
+      "Bash(lsof -nP -iTCP:5432 -sTCP:LISTEN)",
+      "Bash(echo \"exit:$?\")",
+      "Bash(lsof -nP -iTCP:5433 -sTCP:LISTEN)"
     ]
   },
-  "skillOverrides": {}
+  "skillOverrides": {},
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/skills/impeccable/scripts/hook.mjs\"",
+            "timeout": 5,
+            "statusMessage": "Checking UI changes"
+          }
+        ]
+      }
+    ]
+  },
+  "description": "Impeccable design detector: runs after Edit/Write/MultiEdit on UI files and surfaces findings as system reminders."
 }

@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import MainLayout from './layouts/MainLayout'
 import DashboardLayout from './layouts/DashboardLayout'
 import Home from './pages/Home'
+import TrackParcel from './pages/TrackParcel'
 import Login from './pages/Login'
 import NotFound from './pages/NotFound'
 import ProtectedRoute from './components/ProtectedRoute'
@@ -46,6 +47,7 @@ const VendorDeliveryCharges = lazy(() => import('./pages/vendor/VendorDeliveryCh
 const ForceChangePasswordPage = lazy(() => import('./pages/ForceChangePasswordPage'))
 const KycApplicationPage = lazy(() => import('./pages/KycApplicationPage'))
 const KycManagement = lazy(() => import('./pages/KycManagement'))
+const SystemLogs = lazy(() => import('./pages/SystemLogs'))
 const ProfilePage = lazy(() => import('./pages/ProfilePage'))
 
 function App() {
@@ -56,6 +58,8 @@ function App() {
       <Routes>
         {/* Public Routes */}
         <Route path="/" element={<MainLayout><Home /></MainLayout>} />
+        <Route path="/track" element={<MainLayout><TrackParcel /></MainLayout>} />
+        <Route path="/track/:trackingId" element={<MainLayout><TrackParcel /></MainLayout>} />
         <Route path="/login" element={<MainLayout><Login /></MainLayout>} />
         {/* Standalone — no sidebar/topnav, intentionally outside ProtectedRoute */}
         <Route path="/change-password" element={<ForceChangePasswordPage />} />
@@ -121,6 +125,10 @@ function App() {
           <Route
             path="/kyc-applications"
             element={<RoleGuard allowedRoles={['super_admin']}><KycManagement /></RoleGuard>}
+          />
+          <Route
+            path="/system-logs"
+            element={<RoleGuard allowedRoles={['super_admin']}><SystemLogs /></RoleGuard>}
           />
           <Route
             path="/riders"

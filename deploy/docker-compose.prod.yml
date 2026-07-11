@@ -1,0 +1,72 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-parcelmoover}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.production}
+      POSTGRES_DB: ${POSTGRES_DB:-parcelmoover}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    # No host port mapping — only the app container reaches this, over the
+    # internal compose network. Never expose Postgres directly to the internet.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-parcelmoover}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  redis:
+    image: redis:7-alpine
+    restart: always
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    # No host port mapping — internal only, same reasoning as db.
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  app:
+    image: ${APP_IMAGE:-parcelmoover:latest}
+    restart: always
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env.production
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-parcelmoover}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-parcelmoover}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      NODE_ENV: production
+      TRUST_PROXY: "true"
+      TRUSTED_PROXIES: 127.0.0.1
+    # Bound to localhost only — Nginx on the same box terminates TLS on
+    # 80/443 and reverse-proxies to this. The app port is never reachable
+    # directly from the internet.
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - uploads-data:/app/uploads
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  db-data:
+  uploads-data:

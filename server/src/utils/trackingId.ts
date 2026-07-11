@@ -63,3 +63,24 @@ export function generateTrackingId(date = new Date()) {
 
   return `${PREFIX}-${datePart}-${randomPart}-${checkDigit}`
 }
+
+const TRACKING_ID_PATTERN = new RegExp(
+  `^${PREFIX}-(\\d{6})-([${ALPHABET}]{${RANDOM_LENGTH}})-([${ALPHABET}])$`,
+);
+
+// Format + check-digit validation so the public tracking endpoint can reject
+// junk input before it ever reaches Redis or the database - tracking IDs are
+// unguessable (13 random base32 chars), but nothing else gates that route.
+export function isValidTrackingId(trackingId: string): boolean {
+  const match = TRACKING_ID_PATTERN.exec(trackingId);
+  if (!match) return false;
+
+  const [, datePart, randomPart, checkDigit] = match;
+  const body = `${PREFIX}${datePart}${randomPart}`;
+
+  try {
+    return getCheckDigit(body) === checkDigit;
+  } catch {
+    return false;
+  }
+}

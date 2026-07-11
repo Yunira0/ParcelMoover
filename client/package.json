@@ -13,6 +13,7 @@
     "axios": "^1.17.0",
     "jsbarcode": "^3.12.3",
     "lucide-react": "^1.21.0",
+    "motion": "^12.42.2",
     "nepali-date-converter": "^3.4.0",
     "qrcode": "^1.5.4",
     "react": "^19.2.6",

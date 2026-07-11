@@ -1,0 +1,112 @@
+.track-search {
+  width: 100%;
+}
+
+.track-search-field {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 52px;
+  background: var(--color-background-surface);
+  border-radius: var(--border-radius-default);
+  overflow: hidden;
+  transition: box-shadow 150ms ease-out;
+}
+
+.track-search-hero .track-search-field {
+  box-shadow: var(--shadow-lg);
+}
+
+.track-search-page .track-search-field {
+  border: 1px solid var(--color-border-default);
+}
+
+.track-search-field:focus-within {
+  box-shadow: 0 0 0 2px var(--color-background-surface), 0 0 0 4px var(--color-background-primary-default);
+}
+
+.track-search-page .track-search-field:focus-within {
+  box-shadow: var(--shadow-focus);
+  border-color: var(--color-border-primary);
+}
+
+.track-search-icon {
+  flex-shrink: 0;
+  color: var(--color-icon-placeholder);
+  margin-left: var(--space-4);
+}
+
+.track-search-field input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-family: var(--typography-font-family-default);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-default);
+  padding: 0 var(--space-3);
+  letter-spacing: 0.01em;
+}
+
+.track-search-field input::placeholder {
+  color: var(--color-text-placeholder);
+  font-weight: var(--font-weight-regular);
+}
+
+.track-search-submit {
+  flex-shrink: 0;
+  height: 100%;
+  padding: 0 var(--space-6);
+  border: none;
+  background: var(--color-background-primary-default);
+  color: var(--color-text-base);
+  font-family: var(--typography-font-family-default);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semi-bold);
+  cursor: pointer;
+  transition: background-color 150ms ease-out;
+}
+
+.track-search-submit:hover {
+  background: var(--color-primary-hover);
+}
+
+.track-search-submit:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--color-text-base);
+}
+
+.track-search-error {
+  margin: var(--space-2) 0 0;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  color: rgb(255 255 255 / 92%);
+}
+
+.track-search-page .track-search-error {
+  color: var(--color-danger-text);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .track-search-field,
+  .track-search-submit {
+    transition: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .track-search-field {
+    height: 48px;
+  }
+
+  .track-search-icon {
+    margin-left: var(--space-3);
+  }
+
+  .track-search-submit {
+    padding: 0 var(--space-4);
+  }
+}

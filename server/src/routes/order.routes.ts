@@ -20,6 +20,7 @@ import {
   createOrderController,
   dashboardSummaryController,
   getOrderByTrackingIdController,
+  getPublicOrderTrackingController,
   getSenderProfileController,
   listOrdersController,
   riderRunSheetController,
@@ -36,6 +37,7 @@ POST   /orders
 POST   /orders/bulk
 GET    /orders
 GET    /orders/track/:trackingId
+GET    /orders/public-track/:trackingId   (unauthenticated)
 PATCH  /orders/:id/status
 PATCH  /orders/bulk-status
 POST   /orders/:id/remarks
@@ -164,6 +166,27 @@ orderRouter.get(
   orderReadLimiter,
   validate(listOrdersQuerySchema, "query"),
   listOrdersController,
+);
+
+// GET /orders/public-track/:trackingId — unauthenticated lookup for the public
+// landing-page tracker. Separate, tighter limiter than orderReadLimiter since
+// this route has no auth to fall back on for abuse control - just IP + a
+// pre-DB format/check-digit check in the controller.
+const publicTrackLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 20,
+  message: { success: false, message: "Too many tracking requests, please slow down" },
+  standardHeaders: true,
+  legacyHeaders: false,
+  passOnStoreError: true,
+  store: createRedisRateLimitStore("public-track"),
+  keyGenerator: (req) => ipKeyGenerator(req.ip ?? ""),
+});
+
+orderRouter.get(
+  "/public-track/:trackingId",
+  publicTrackLimiter,
+  getPublicOrderTrackingController,
 );
 
 // GET /orders/track/:trackingId — single order detail (must come before any /:id route)

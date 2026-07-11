@@ -6,6 +6,7 @@ import {
   createOrder,
   getDashboardSummary,
   getOrderByTrackingId,
+  getPublicOrderTracking,
   getRiderRunSheet,
   getSenderProfile,
   listOrders,
@@ -14,6 +15,7 @@ import {
 import { syncRemarkToNcm } from "../services/ncm.service";
 import { withIdempotency } from "../services/idempotency.service";
 import { ORDER_SORT_FIELDS, OrderSortField, OrderType, ParcelStatus, STATUS_TRANSITIONS } from "../types/order.type";
+import { isValidTrackingId } from "../utils/trackingId";
 
 // General UUID shape (8-4-4-4-12 hex). Intentionally not strict about the
 // RFC-4122 version/variant nibbles, since seeded/demo records use deterministic
@@ -292,6 +294,29 @@ export async function getOrderByTrackingIdController(req: Request, res: Response
     return res.status(error.statusCode || 500).json({
       success: false,
       message: error.message || "Failed to load order",
+    });
+  }
+}
+
+// Unauthenticated - backs the public "track a parcel" box on the landing
+// page. Format+check-digit validation up front rejects junk before it costs
+// a database round trip; the service layer itself never returns party,
+// financial, or staff/vendor identity fields for this path (see
+// getPublicOrderTracking).
+export async function getPublicOrderTrackingController(req: Request, res: Response) {
+  try {
+    const { trackingId } = req.params;
+    if (typeof trackingId !== "string" || !isValidTrackingId(trackingId)) {
+      return res.status(400).json({ success: false, message: "That doesn't look like a valid tracking ID" });
+    }
+
+    const tracking = await getPublicOrderTracking(trackingId);
+    return res.status(200).json({ success: true, data: tracking });
+  } catch (error: any) {
+    const statusCode = error.statusCode || 500;
+    return res.status(statusCode).json({
+      success: false,
+      message: statusCode < 500 ? error.message : "Failed to load tracking information",
     });
   }
 }
