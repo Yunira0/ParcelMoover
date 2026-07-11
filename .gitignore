@@ -125,3 +125,17 @@ FORM_VALIDATION_FIX.md
 QUICK_FIXES.md
 REDIS_TIMEOUT_FIX.md
 SESSION_SUMMARY.md
+
+# Internal-only docs and AI agent tooling — kept locally, not published
+# to the (currently private, going-beta) GitHub remote.
+CLAUDE.md
+client/PRODUCT.md
+client/DESIGN.md
+docs/TEST_PLAN.md
+docs/ncm-integration-plan.md
+/.impeccable/
+.agents/
+.claude/skills/
+.claude/settings.local.json
+.claude/launch.json
+.codex/
