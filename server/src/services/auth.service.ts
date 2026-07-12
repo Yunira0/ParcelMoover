@@ -505,7 +505,7 @@ export async function registerUserBySuperAdmin(
   if (!role) {
     throw new AppError(
       400,
-      `Role '${data.type}' does not exist in the system")`,
+      `Role '${data.type}' does not exist in the system`,
     );
   }
 

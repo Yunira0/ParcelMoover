@@ -11,6 +11,7 @@
     "redis": "redis-server --save \"\" --appendonly no",
     "server:dev": "nodemon -L ./src/index.ts",
     "dev": "concurrently -n redis,server -c magenta,cyan npm:redis npm:server:dev",
+    "seed:roles": "ts-node --transpile-only prisma/seed-roles.ts",
     "seed:delivery-rates": "ts-node --transpile-only prisma/seed-delivery-rates.ts",
     "seed:demo-users": "ts-node --transpile-only prisma/seed-demo-users.ts",
     "seed:sales-orders": "ts-node --transpile-only prisma/seed-sales-orders.ts"
