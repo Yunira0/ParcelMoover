@@ -1,0 +1,16 @@
+{
+  "Rules": [
+    {
+      "ID": "expire-db-backups",
+      "Filter": { "Prefix": "db/" },
+      "Status": "Enabled",
+      "Expiration": { "Days": 35 }
+    },
+    {
+      "ID": "expire-upload-backups",
+      "Filter": { "Prefix": "uploads/" },
+      "Status": "Enabled",
+      "Expiration": { "Days": 90 }
+    }
+  ]
+}

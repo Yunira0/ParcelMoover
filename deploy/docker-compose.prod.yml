@@ -68,5 +68,10 @@ services:
         max-file: "3"
 
 volumes:
+  # Named explicitly so deploy/backup-*.sh can target them by a fixed name
+  # regardless of which directory `docker compose` is invoked from (compose
+  # otherwise prefixes volume names with the project/directory name).
   db-data:
+    name: parcelmoover_db-data
   uploads-data:
+    name: parcelmoover_uploads-data

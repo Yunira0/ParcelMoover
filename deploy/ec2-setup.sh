@@ -5,8 +5,9 @@
 # What this does:
 #   1. Installs Docker + the Compose plugin, enables Docker on boot
 #   2. Installs Nginx + Certbot for TLS termination
-#   3. Adds a swapfile (small instances OOM during `npm ci` / `vite build` otherwise)
-#   4. Locks the firewall down to SSH/HTTP/HTTPS only
+#   3. Installs awscli, for the DB/uploads backup scripts (deploy/backup-*.sh)
+#   4. Adds a swapfile (small instances OOM during `npm ci` / `vite build` otherwise)
+#   5. Locks the firewall down to SSH/HTTP/HTTPS only
 #
 # What it does NOT do (do these yourself, in order, after this script finishes):
 #   - Copy the repo onto the box (git clone, or scp a tarball)
@@ -16,6 +17,7 @@
 #   - Point your domain's DNS A record at this instance's public IP
 #   - Run certbot to issue the TLS cert (instructions printed at the end)
 #   - Build/pull the app image and `docker compose -f deploy/docker-compose.prod.yml up -d`
+#   - Set up automated DB/uploads backups (instructions printed at the end)
 
 set -euo pipefail
 
@@ -37,6 +39,9 @@ systemctl start docker
 
 echo "==> Installing Nginx + Certbot"
 apt-get install -y nginx certbot python3-certbot-nginx
+
+echo "==> Installing awscli (for deploy/backup-db.sh and backup-uploads.sh)"
+apt-get install -y awscli
 
 echo "==> Adding a 2G swapfile (protects small instances during image builds)"
 if [[ ! -f /swapfile ]]; then
@@ -98,5 +103,22 @@ Done. Next steps (do these manually):
 
 7. Verify:
      curl https://YOUR_DOMAIN_HERE/health
+
+8. Set up DB + uploads backups (deploy/backup-db.sh, deploy/backup-uploads.sh):
+     - Create an S3 bucket for backups (versioning + default encryption on,
+       block all public access), then apply the lifecycle policy so old
+       backups expire automatically instead of costing money forever:
+         aws s3api put-bucket-lifecycle-configuration \
+           --bucket YOUR_BACKUP_BUCKET --lifecycle-configuration file://deploy/s3-lifecycle.json
+     - Prefer attaching an IAM role to this EC2 instance with s3:PutObject
+       scoped to that bucket, instead of static AWS keys on the box.
+     - Add to /opt/parcelmoover/deploy/.env.production:
+         BACKUP_S3_BUCKET=YOUR_BACKUP_BUCKET
+     - Install the cron jobs:
+         crontab -e
+         0 2 * * *   /opt/parcelmoover/deploy/backup-db.sh      >> /var/log/parcelmoover-backup.log 2>&1
+         0 3 * * 0   /opt/parcelmoover/deploy/backup-uploads.sh >> /var/log/parcelmoover-backup.log 2>&1
+     - Test the restore path once against a scratch stack, don't wait for a
+       real incident to find out (deploy/restore-db.sh).
 ==============================================================================
 EOF
