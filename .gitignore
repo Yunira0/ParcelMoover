@@ -71,6 +71,12 @@ typings/
 # dotenv environment variables file
 .env
 .env.test
+.env.production
+
+# Uploaded KYC/registration documents — sensitive PII, never belongs in git
+# history (see server/src/lib/documentEncryption.ts for how these are
+# protected at rest on disk instead).
+server/uploads/
 
 # parcel-bundler cache (https://parceljs.org/)
 .cache
