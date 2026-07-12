@@ -27,6 +27,13 @@ const demoUuid = (prefix: string, num: number) => {
   return `${hexPrefix}-0000-0000-0000-${num.toString().padStart(12, "0")}`;
 };
 async function main() {
+  // This seed hardcodes "DemoPass123!" for every account it creates,
+  // including the super admin — a known password must never exist in a
+  // real deployment. Use prisma/create-superadmin.ts for a real first admin.
+  if (process.env.NODE_ENV === "production") {
+    console.error("Refusing to run the demo seed with NODE_ENV=production.");
+    process.exit(1);
+  }
   console.log("🌱 Starting comprehensive database seeding...");
   // =========================================================================
   // 1. Seed Roles

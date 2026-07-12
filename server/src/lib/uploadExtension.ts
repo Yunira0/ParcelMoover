@@ -13,3 +13,11 @@ const EXTENSION_BY_MIME_TYPE: Record<string, string> = {
 export function safeUploadExtension(mimetype: string): string {
   return EXTENSION_BY_MIME_TYPE[mimetype] ?? "";
 }
+
+const MIME_TYPE_BY_EXTENSION: Record<string, string> = Object.fromEntries(
+  Object.entries(EXTENSION_BY_MIME_TYPE).map(([mime, ext]) => [ext, mime]),
+);
+
+export function mimeTypeForExtension(ext: string): string {
+  return MIME_TYPE_BY_EXTENSION[ext.toLowerCase()] ?? "application/octet-stream";
+}

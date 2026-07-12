@@ -1,5 +1,4 @@
 import express, {Express} from 'express';
-import path from 'path';
 import helmet from 'helmet';
 import {config} from 'dotenv';
 import rateLimit, { ipKeyGenerator } from "express-rate-limit";
@@ -24,6 +23,7 @@ import { errorHandler } from "./middlewares/errorHandler.middleware";
 import { requestId } from "./middlewares/requestId.middleware";
 import {authorizeRoles} from "./middlewares/authorizeRoles.middleware";
 import { createRedisRateLimitStore } from "./lib/rateLimitStore";
+import { serveEncryptedDocument } from "./lib/serveEncryptedDocument";
 
 
 import cors from "cors"
@@ -43,6 +43,11 @@ if (!process.env.DATABASE_URL) {
 
 if (!process.env.CSRF_SECRET) {
   console.error('🔴 FATAL: CSRF_SECRET environment variable is not set');
+  process.exit(1);
+}
+
+if (!process.env.DOCUMENT_ENCRYPTION_KEY) {
+  console.error('🔴 FATAL: DOCUMENT_ENCRYPTION_KEY environment variable is not set');
   process.exit(1);
 }
 
@@ -139,7 +144,22 @@ app.use(
     "/uploads",
     authMiddleware,
     authorizeRoles("super_admin", "admin"),
-    express.static(path.join(process.cwd(), "uploads")),
+    // Fire-and-forget: who opened which document is worth recording, but a
+    // logging failure must never block staff from viewing a file they're entitled to.
+    (req, _res, next) => {
+        prisma.audit_logs.create({
+            data: {
+                actor_id: req.user!.id,
+                entity_type: "document",
+                action: "VIEW_DOCUMENT",
+                new_data: { path: req.path },
+                ip_address: req.ip || null,
+                user_agent: req.get("user-agent") || null,
+            },
+        }).catch((err) => console.error("[audit] Failed to log document view:", err));
+        next();
+    },
+    serveEncryptedDocument,
 )
 
 app.use("/api/me", MeRoutes);

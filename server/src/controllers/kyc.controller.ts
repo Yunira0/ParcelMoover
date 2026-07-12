@@ -6,10 +6,13 @@ import {
   rejectKycApplication,
   submitKycApplication,
 } from "../services/kyc.service";
+import { flattenMulterFiles, secureUploadedFiles } from "../lib/secureUploadedFiles";
 
 export const submitKycController = async (req: Request, res: Response) => {
   try {
     const files = req.files as Record<string, Express.Multer.File[]> | undefined;
+    await secureUploadedFiles(flattenMulterFiles(files));
+
     const docPath = (f?: Express.Multer.File) =>
       f?.filename ? `uploads/kyc/${f.filename}` : undefined;
 

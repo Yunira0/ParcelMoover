@@ -136,6 +136,10 @@ async function createAccount(role: Role, index: number, roleId: string, password
 }
 
 async function main() {
+  if (process.env.NODE_ENV === "production") {
+    console.error("Refusing to run load-test seeding with NODE_ENV=production.");
+    process.exit(1);
+  }
   const total = Object.values(COUNTS).reduce((a, b) => a + b, 0);
   console.log(`🌱 Seeding ${total} load-test accounts across 5 roles...`);
 

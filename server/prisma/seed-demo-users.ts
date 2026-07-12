@@ -7,6 +7,10 @@ import * as bcrypt from "bcrypt";
 const PASSWORD = "DemoPass123!";
 
 async function main() {
+  if (process.env.NODE_ENV === "production") {
+    console.error("Refusing to run the demo seed with NODE_ENV=production.");
+    process.exit(1);
+  }
   console.log("🌱 Seeding demo users (admin / rider / vendor / sales)...");
 
   const passwordHash = await bcrypt.hash(PASSWORD, 12);

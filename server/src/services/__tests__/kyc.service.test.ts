@@ -65,6 +65,9 @@ function makeMockTx() {
     vendors: {
       create: vi.fn().mockResolvedValue({ id: "new-vendor-1" }),
     },
+    audit_logs: {
+      create: vi.fn().mockResolvedValue({}),
+    },
   };
 }
 

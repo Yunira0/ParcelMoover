@@ -1,6 +1,8 @@
 import prisma from "../lib/prisma";
 import bcrypt from "bcrypt";
 import { randomInt } from "crypto";
+import path from "path";
+import { unlink } from "fs/promises";
 import { AppError } from "../utils/AppError";
 import { sendWelcomeEmail } from "../lib/mailer";
 
@@ -93,26 +95,48 @@ export async function submitKycApplication(data: KycApplicationInput) {
     throw new AppError(409, "A pending KYC application already exists for this email. Our team will review it shortly.");
   }
 
-  return prisma.vendor_kyc_applications.create({
-    data: {
-      online_business_name: data.onlineBusinessName.trim(),
-      pickup_location: data.pickupLocation.trim(),
-      pickup_landmark: data.pickupLandmark?.trim() || null,
-      business_contact: data.businessContact.trim(),
-      owner_name: data.ownerName.trim(),
-      owner_email: normalizedEmail,
-      owner_contact: data.ownerContact.trim(),
-      billing_business_name: data.billingBusinessName?.trim() || null,
-      registered_address: data.registeredAddress?.trim() || null,
-      registration_no: data.registrationNo?.trim() || null,
-      pan_vat_no: data.panVatNo?.trim() || null,
-      citizenship_doc: data.citizenshipDocPath || null,
-      pan_vat_doc: data.panVatDocPath || null,
-      business_cert_doc: data.businessCertDocPath || null,
-      bank_name: data.bankName?.trim() || null,
-      bank_account_no: data.bankAccountNo?.trim() || null,
-      bank_account_holder: data.bankAccountHolder?.trim() || null,
-    },
+  return prisma.$transaction(async (tx) => {
+    const app = await tx.vendor_kyc_applications.create({
+      data: {
+        online_business_name: data.onlineBusinessName.trim(),
+        pickup_location: data.pickupLocation.trim(),
+        pickup_landmark: data.pickupLandmark?.trim() || null,
+        business_contact: data.businessContact.trim(),
+        owner_name: data.ownerName.trim(),
+        owner_email: normalizedEmail,
+        owner_contact: data.ownerContact.trim(),
+        billing_business_name: data.billingBusinessName?.trim() || null,
+        registered_address: data.registeredAddress?.trim() || null,
+        registration_no: data.registrationNo?.trim() || null,
+        pan_vat_no: data.panVatNo?.trim() || null,
+        citizenship_doc: data.citizenshipDocPath || null,
+        pan_vat_doc: data.panVatDocPath || null,
+        business_cert_doc: data.businessCertDocPath || null,
+        bank_name: data.bankName?.trim() || null,
+        bank_account_no: data.bankAccountNo?.trim() || null,
+        bank_account_holder: data.bankAccountHolder?.trim() || null,
+      },
+    });
+
+    // No actor_id: this is the public, unauthenticated application form.
+    await tx.audit_logs.create({
+      data: {
+        entity_type: "vendor_kyc_application",
+        entity_id: app.id,
+        action: "KYC_SUBMIT",
+        new_data: {
+          ownerEmail: normalizedEmail,
+          onlineBusinessName: app.online_business_name,
+          documentsSubmitted: {
+            citizenshipDoc: !!app.citizenship_doc,
+            panVatDoc: !!app.pan_vat_doc,
+            businessCertDoc: !!app.business_cert_doc,
+          },
+        },
+      },
+    });
+
+    return app;
   });
 }
 
@@ -243,7 +267,7 @@ export async function approveKycApplication(id: string, reviewerId: string, note
       data: { user_id: user.id, role_id: vendorRole.id },
     });
 
-    await tx.vendors.create({
+    const vendor = await tx.vendors.create({
       data: {
         user_id: user.id,
         client_name: app.owner_name,
@@ -265,6 +289,17 @@ export async function approveKycApplication(id: string, reviewerId: string, note
         joined_at: new Date(),
       },
     });
+
+    await tx.audit_logs.create({
+      data: {
+        actor_id: reviewerId,
+        entity_type: "vendor_kyc_application",
+        entity_id: id,
+        action: "KYC_APPROVE",
+        old_data: { status: "pending" },
+        new_data: { status: "approved", notes: notes?.trim() || null, createdVendorId: vendor.id, createdUserId: user.id },
+      },
+    });
   });
 
   sendWelcomeEmail({ to: app.owner_email, name: app.owner_name, password: tempPassword })
@@ -283,20 +318,106 @@ export async function rejectKycApplication(
   if (!app) throw new AppError(404, "KYC application not found");
   if (app.status !== "pending") throw new AppError(400, "Only pending applications can be rejected");
 
-  // Atomic compare-and-swap: only updates if still "pending", closing the
-  // race with a concurrent approve/reject on the same application.
-  const claim = await prisma.vendor_kyc_applications.updateMany({
-    where: { id, status: "pending" },
-    data: {
-      status: "rejected",
-      reviewed_by: reviewerId,
-      reviewed_at: new Date(),
-      rejection_reason: rejectionReason.trim(),
-      notes: notes?.trim() || null,
-      updated_at: new Date(),
-    },
+  await prisma.$transaction(async (tx) => {
+    // Atomic compare-and-swap: only updates if still "pending", closing the
+    // race with a concurrent approve/reject on the same application.
+    const claim = await tx.vendor_kyc_applications.updateMany({
+      where: { id, status: "pending" },
+      data: {
+        status: "rejected",
+        reviewed_by: reviewerId,
+        reviewed_at: new Date(),
+        rejection_reason: rejectionReason.trim(),
+        notes: notes?.trim() || null,
+        updated_at: new Date(),
+      },
+    });
+    if (claim.count === 0) {
+      throw new AppError(409, "This application has already been reviewed");
+    }
+
+    await tx.audit_logs.create({
+      data: {
+        actor_id: reviewerId,
+        entity_type: "vendor_kyc_application",
+        entity_id: id,
+        action: "KYC_REJECT",
+        old_data: { status: "pending" },
+        new_data: { status: "rejected", rejectionReason: rejectionReason.trim(), notes: notes?.trim() || null },
+      },
+    });
   });
-  if (claim.count === 0) {
-    throw new AppError(409, "This application has already been reviewed");
+}
+
+// Deletes a document file on disk given its stored relative path (e.g.
+// "uploads/kyc/xyz.jpg"). Returns true if the file is gone afterward -
+// including when it was already missing, which we treat as success so a
+// half-purged record from a previous run still gets its DB fields cleared.
+async function deleteDocumentFile(relativePath: string | null): Promise<boolean> {
+  if (!relativePath) return true;
+  try {
+    await unlink(path.join(process.cwd(), relativePath));
+    return true;
+  } catch (error: any) {
+    if (error?.code === "ENOENT") return true;
+    console.error(`[kyc] Failed to delete document file "${relativePath}":`, error);
+    return false;
   }
+}
+
+const REJECTED_DOCUMENT_RETENTION_DAYS = 30;
+
+// Rejected applicants were never onboarded, so there's no ongoing business or
+// compliance reason to keep their citizenship/PAN/business-cert scans once
+// the review window has passed. Approved applications become vendors and are
+// intentionally excluded - see project memory on document retention.
+export async function purgeExpiredRejectedKycDocuments(): Promise<{ checked: number; purged: number }> {
+  const cutoff = new Date(Date.now() - REJECTED_DOCUMENT_RETENTION_DAYS * 24 * 60 * 60 * 1000);
+
+  const candidates = await prisma.vendor_kyc_applications.findMany({
+    where: {
+      status: "rejected",
+      reviewed_at: { lt: cutoff },
+      OR: [
+        { citizenship_doc: { not: null } },
+        { pan_vat_doc: { not: null } },
+        { business_cert_doc: { not: null } },
+      ],
+    },
+    select: { id: true, citizenship_doc: true, pan_vat_doc: true, business_cert_doc: true },
+  });
+
+  let purged = 0;
+
+  for (const app of candidates) {
+    const [citizenshipDeleted, panVatDeleted, businessCertDeleted] = await Promise.all([
+      deleteDocumentFile(app.citizenship_doc),
+      deleteDocumentFile(app.pan_vat_doc),
+      deleteDocumentFile(app.business_cert_doc),
+    ]);
+
+    const clearedFields: Record<string, null> = {};
+    if (app.citizenship_doc && citizenshipDeleted) clearedFields.citizenship_doc = null;
+    if (app.pan_vat_doc && panVatDeleted) clearedFields.pan_vat_doc = null;
+    if (app.business_cert_doc && businessCertDeleted) clearedFields.business_cert_doc = null;
+    if (Object.keys(clearedFields).length === 0) continue;
+
+    await prisma.$transaction(async (tx) => {
+      await tx.vendor_kyc_applications.update({
+        where: { id: app.id },
+        data: clearedFields,
+      });
+      await tx.audit_logs.create({
+        data: {
+          entity_type: "vendor_kyc_application",
+          entity_id: app.id,
+          action: "KYC_PURGE_DOCUMENTS",
+          new_data: { purgedFields: Object.keys(clearedFields), retentionDays: REJECTED_DOCUMENT_RETENTION_DAYS },
+        },
+      });
+    });
+    purged++;
+  }
+
+  return { checked: candidates.length, purged };
 }

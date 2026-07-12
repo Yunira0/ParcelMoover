@@ -42,6 +42,7 @@ async function startServer() {
     console.log(generateTrackingId());
     verifyMailer();
     startNcmReconciliation();
+    startKycDocumentPurge();
   });
 }
 
@@ -92,6 +93,39 @@ function startNcmReconciliation() {
       console.error("[NCM] reconciliation sweep failed:", error);
     }
   }, NCM_RECONCILE_INTERVAL_MS).unref();
+}
+
+// Rejected KYC applicants' documents (citizenship/PAN/business-cert scans)
+// are purged 30 days after rejection - see purgeExpiredRejectedKycDocuments.
+// Same Redis NX lock pattern as NCM reconciliation so only one instance runs
+// the sweep when multiple app processes share the same database.
+const KYC_PURGE_INTERVAL_MS = 6 * 60 * 60 * 1000;
+const KYC_PURGE_LOCK_KEY = "kyc:document-purge-lock";
+
+function startKycDocumentPurge() {
+  setInterval(async () => {
+    try {
+      const acquired = await redis.set(
+        KYC_PURGE_LOCK_KEY,
+        "1",
+        "EX",
+        Math.floor(KYC_PURGE_INTERVAL_MS / 1000) - 60,
+        "NX",
+      );
+      if (!acquired) return;
+    } catch {
+      // Redis down — run anyway; the purge is idempotent.
+    }
+    try {
+      const { purgeExpiredRejectedKycDocuments } = await import("./services/kyc.service");
+      const result = await purgeExpiredRejectedKycDocuments();
+      if (result.purged > 0) {
+        console.log(`[KYC] document purge: checked ${result.checked}, purged ${result.purged}`);
+      }
+    } catch (error) {
+      console.error("[KYC] document purge sweep failed:", error);
+    }
+  }, KYC_PURGE_INTERVAL_MS).unref();
 }
 
 startServer().catch((error) => {
