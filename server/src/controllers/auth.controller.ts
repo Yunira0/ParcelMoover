@@ -14,6 +14,7 @@ import jwt from "jsonwebtoken";
 import prisma from "../lib/prisma";
 import { revokeToken } from "../lib/tokenRevocation";
 import { ACCESS_TOKEN_AUDIENCE, CSRF_TOKEN_AUDIENCE, JWT_ALGORITHM, JWT_ISSUER } from "../utils/jwtConfig";
+import { flattenMulterFiles, secureUploadedFiles } from "../lib/secureUploadedFiles";
 
 const formatDate = (date?: Date | null) => date ? date.toISOString().slice(0, 10) : "";
 const managedUserTypes = ["admin", "vendor", "rider"] as const;
@@ -50,6 +51,8 @@ export const registerUserController = async (req: Request, res: Response) => {
 
     // Multipart registration: merge uploaded document paths into the payload.
     const files = req.files as Record<string, Express.Multer.File[]> | undefined;
+    await secureUploadedFiles(flattenMulterFiles(files));
+
     const docPath = (f?: Express.Multer.File) =>
       f?.filename ? `uploads/registration/${f.filename}` : undefined;
 

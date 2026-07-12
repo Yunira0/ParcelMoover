@@ -614,6 +614,23 @@ export async function registerUserBySuperAdmin(
         },
       });
       await syncSalesRoleForDepartment(tx, user.id, data.department);
+      await tx.audit_logs.create({
+        data: {
+          actor_id: superAdminUserID,
+          entity_type: "admin",
+          entity_id: user.id,
+          action: "REGISTER_USER",
+          new_data: {
+            email: data.email,
+            documentsSubmitted: {
+              idDocument: !!data.idDocumentPath,
+              citizenshipDoc: !!data.citizenshipDocPath,
+              panDoc: !!data.panDocPath,
+              experienceLetterDoc: !!data.experienceLetterDocPath,
+            },
+          },
+        },
+      });
       return { user, profile: admin, role: data.type };
     }
 
@@ -652,6 +669,22 @@ export async function registerUserBySuperAdmin(
           joined_at: data.joinedAt ? new Date(data.joinedAt) : null,
         },
       });
+      await tx.audit_logs.create({
+        data: {
+          actor_id: superAdminUserID,
+          entity_type: "vendor",
+          entity_id: user.id,
+          action: "REGISTER_USER",
+          new_data: {
+            email: data.email,
+            documentsSubmitted: {
+              citizenshipDoc: !!data.citizenshipDocPath,
+              panVatDoc: !!data.panVatDocPath,
+              businessCertDoc: !!data.businessCertDocPath,
+            },
+          },
+        },
+      });
       return { user, profile: vendor, role: data.type };
     }
 
@@ -676,6 +709,23 @@ export async function registerUserBySuperAdmin(
         bank_account_holder: data.bankAccountHolder ?? null,
         status: "active",
         joined_at: data.joinedAt ? new Date(data.joinedAt) : null,
+      },
+    });
+    await tx.audit_logs.create({
+      data: {
+        actor_id: superAdminUserID,
+        entity_type: "rider",
+        entity_id: user.id,
+        action: "REGISTER_USER",
+        new_data: {
+          email: data.email,
+          documentsSubmitted: {
+            citizenshipDoc: !!data.citizenshipDocPath,
+            panVatDoc: !!data.panVatDocPath,
+            licenceDoc: !!data.licenceDocPath,
+            bluebookDoc: !!data.bluebookDocPath,
+          },
+        },
       },
     });
     return { user, profile: raider, role: data.type };
