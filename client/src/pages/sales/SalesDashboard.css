@@ -1,0 +1,73 @@
+.sales-dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  width: 100%;
+}
+
+.sales-dashboard-error {
+  color: var(--color-danger-text);
+  font-size: var(--font-size-sm);
+  margin: 0;
+}
+
+.sales-dashboard-card {
+  background-color: var(--color-background-surface);
+  border-radius: var(--border-radius-modal);
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.sales-dashboard-main-row {
+  display: flex;
+  gap: var(--space-4);
+  align-items: flex-start;
+}
+
+.sales-dashboard-charts-col {
+  display: flex;
+  gap: var(--space-4);
+  flex: 1;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: stretch;
+}
+
+.sales-dashboard-side-col {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  width: 320px;
+  flex-shrink: 0;
+}
+
+@media (max-width: 1100px) {
+  .sales-dashboard-main-row {
+    flex-direction: column;
+  }
+
+  .sales-dashboard-side-col {
+    width: 100%;
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .sales-dashboard-side-col > * {
+    flex: 1;
+    min-width: 260px;
+  }
+}
+
+@media (max-width: 700px) {
+  .sales-dashboard-side-col {
+    flex-direction: column;
+  }
+
+  .sales-dashboard-charts-col {
+    flex-direction: column;
+  }
+}

@@ -296,6 +296,7 @@ export const getAdminsController = async (_req: Request, res: Response) => {
         email: admin.users.email || "",
         phone: admin.users.phone || "",
         location: locationLabel(admin.locations),
+        locationId: admin.location_id,
         position: admin.position || "",
         department: admin.department || "",
         joined: formatDate(admin.joined_at),

@@ -1,0 +1,23 @@
+.sales-top-vendors {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.sales-top-vendors-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.sales-top-vendors-link {
+  font-size: var(--font-size-xxs);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-primary);
+}
+
+.sales-top-vendors-error {
+  color: var(--color-danger-text);
+  font-size: var(--font-size-sm);
+  margin: 0;
+}

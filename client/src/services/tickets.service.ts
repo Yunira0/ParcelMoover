@@ -56,11 +56,21 @@ export interface ListTicketsParams {
   category?: TicketCategory;
   fromDate?: string;
   toDate?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface TicketsListMeta {
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
 }
 
 export interface TicketsListResponse {
   success: boolean;
   data: Ticket[];
+  meta: TicketsListMeta;
 }
 
 export interface CreateTicketInput {
@@ -81,6 +91,8 @@ export const getTickets = async (params?: ListTicketsParams): Promise<TicketsLis
   if (params?.category) query.category = params.category;
   if (params?.fromDate) query.fromDate = params.fromDate;
   if (params?.toDate) query.toDate = params.toDate;
+  if (params?.page) query.page = String(params.page);
+  if (params?.pageSize) query.pageSize = String(params.pageSize);
 
   const response = await api.get('/tickets', { params: query });
   return response.data;

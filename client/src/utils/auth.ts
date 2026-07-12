@@ -40,6 +40,11 @@ export function isAdminSide(): boolean {
   return hasAnyRole(['super_admin', 'admin']);
 }
 
+/** True for a pure sales account — excludes admin/super_admin, who also carry the 'sales' role code when department = Sales but use the admin views. */
+export function isSalesUser(): boolean {
+  return hasAnyRole(['sales']) && !isAdminSide();
+}
+
 /** Returns the staff permission codes for the current vendor_staff user. */
 export function getStaffPermissions(): string[] {
   const p = getCurrentUser()?.permissions;

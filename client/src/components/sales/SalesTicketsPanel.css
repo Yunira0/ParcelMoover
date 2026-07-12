@@ -1,0 +1,66 @@
+.sales-tickets-panel {
+  background-color: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-modal);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.sales-tickets-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-2) var(--space-3);
+  background-color: var(--color-background-elevated);
+  border-bottom: 1px solid var(--color-border-default);
+}
+
+.sales-tickets-panel-title {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-default);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.sales-tickets-panel-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: var(--font-size-xxs);
+  color: var(--color-text-primary);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+}
+
+.sales-tickets-panel-rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.sales-tickets-panel-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-border-default);
+}
+
+.sales-tickets-panel-row:last-child {
+  border-bottom: none;
+}
+
+.sales-tickets-panel-label {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-default);
+}
+
+.sales-tickets-panel-value {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-bold);
+}
+
+.sales-tickets-panel-value--success { color: #15803d; }
+.sales-tickets-panel-value--info    { color: #0e7490; }
+.sales-tickets-panel-value--warning { color: #b45309; }

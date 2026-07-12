@@ -47,6 +47,7 @@ interface UpdateManagedUserInput {
   clientName?: string;
   businessName?: string;
   sales?: string;
+  salesUserId?: string;
   rateType?: string;
   flatInsideValley?: string | number;
   flatOutsideValley?: string | number;
@@ -74,6 +75,33 @@ function putRate(obj: Record<string, unknown>, key: string, val: string | number
   if (val === "" || val === null) { obj[key] = null; return; }
   const n = Number(val);
   obj[key] = Number.isFinite(n) ? n : null;
+}
+
+// The "Sales" department is the one department that maps to a real RBAC role
+// (used for authorization/scoping across finance, orders, tickets, vendors -
+// see the `sales` role in prisma/seed-roles.ts). A Sales-department admin
+// still gets a normal `admins` profile row; this just grants/revokes the
+// second `sales` user_roles row to keep it in sync with the department field.
+async function syncSalesRoleForDepartment(
+  tx: Pick<typeof prisma, "roles" | "user_roles">,
+  userId: string,
+  department: string | null | undefined,
+) {
+  const wantsSales = (department ?? "").trim().toLowerCase() === "sales";
+  const salesRole = await tx.roles.findUnique({ where: { code: "sales" } });
+  if (!salesRole) return;
+
+  const existing = await tx.user_roles.findUnique({
+    where: { user_id_role_id: { user_id: userId, role_id: salesRole.id } },
+  });
+
+  if (wantsSales && !existing) {
+    await tx.user_roles.create({ data: { user_id: userId, role_id: salesRole.id } });
+  } else if (!wantsSales && existing) {
+    await tx.user_roles.delete({
+      where: { user_id_role_id: { user_id: userId, role_id: salesRole.id } },
+    });
+  }
 }
 
 async function assertCanManageUsers(userId: string, targetType?: ManagedUserType) {
@@ -200,7 +228,11 @@ export async function updateManagedUserProfile(
       putText(u, "bank_account_holder", data.bankAccountHolder);
       if (data.locationId !== undefined) u.location_id = data.locationId || null;
       if (joinedAt) u.joined_at = joinedAt;
-      return tx.admins.update({ where: { id }, data: u });
+      const updatedAdmin = await tx.admins.update({ where: { id }, data: u });
+      if (data.department !== undefined) {
+        await syncSalesRoleForDepartment(tx, userId, data.department);
+      }
+      return updatedAdmin;
     }
 
     if (data.type === "vendor") {
@@ -211,6 +243,7 @@ export async function updateManagedUserProfile(
       putText(u, "email", data.email);
       putText(u, "address", data.address);
       putText(u, "sales", data.sales);
+      if (data.salesUserId !== undefined) u.sales_user_id = data.salesUserId || null;
       putText(u, "pickup_landmark", data.pickupLandmark);
       putText(u, "billing_business_name", data.billingBusinessName);
       putText(u, "registration_no", data.registrationNo);
@@ -265,6 +298,7 @@ export async function getManagedUserDetail(actorUserId: string, type: ManagedUse
       type, id: v.id, userId: v.user_id,
       clientName: v.client_name, businessName: v.business_name, phone: v.phone,
       email: v.email, locationId: v.location_id, address: v.address, sales: v.sales,
+      salesUserId: v.sales_user_id,
       rateType: v.rate_type,
       flatInsideValley: num(v.flat_inside_valley), flatOutsideValley: num(v.flat_outside_valley),
       zoneMajorCities: num(v.zone_major_cities), zoneUrbanAreas: num(v.zone_urban_areas),
@@ -558,6 +592,7 @@ export async function registerUserBySuperAdmin(
           joined_at: data.joinedAt ? new Date(data.joinedAt) : null,
         },
       });
+      await syncSalesRoleForDepartment(tx, user.id, data.department);
       return { user, profile: admin, role: data.type };
     }
 

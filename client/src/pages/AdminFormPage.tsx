@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, CheckCircle, Upload, X, User, Building2, FileText, CreditCard, Lock } from 'lucide-react';
 import Button from '../components/Button';
 import FormField from '../components/FormField';
-import { registerUser, getManagedUser, updateUserProfile } from '../services/users.service';
+import { registerUser, getManagedUser, updateUserProfile, getLocations } from '../services/users.service';
 import './AdminFormPage.css';
 
 interface AdminFormInput {
@@ -20,6 +20,7 @@ interface AdminFormInput {
   currentAddress: string;
   experience: string;
   // Service Info
+  locationId: string;
   department: string;
   designation: string;
   // Documents
@@ -61,6 +62,7 @@ const emptyForm: AdminFormInput = {
   permanentAddress: '',
   currentAddress: '',
   experience: '',
+  locationId: '',
   department: '',
   designation: '',
   documentType: '',
@@ -135,6 +137,23 @@ const AdminFormPage: React.FC = () => {
   const [error, setError] = useState('');
   const [submitted, setSubmitted] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [hubs, setHubs] = useState<Array<{ value: string; label: string }>>([]);
+
+  // Hubs/branches an admin can be assigned to (Sales-department staff need one
+  // so vendors can be matched to a sales rep in their own hub).
+  useEffect(() => {
+    getLocations()
+      .then((res) => {
+        if (res?.success && Array.isArray(res.data)) {
+          setHubs(
+            res.data
+              .filter((loc: any) => loc.is_hub)
+              .map((loc: any) => ({ value: loc.id, label: loc.name })),
+          );
+        }
+      })
+      .catch((err) => console.error('Failed to load hubs:', err));
+  }, []);
 
   // Edit mode: load the admin's saved data and prefill the form.
   useEffect(() => {
@@ -158,6 +177,7 @@ const AdminFormPage: React.FC = () => {
           permanentAddress: s(d.permanentAddress),
           currentAddress: s(d.currentAddress),
           experience: s(d.experience),
+          locationId: s(d.locationId),
           department: s(d.department),
           designation: s(d.position),
           documentType: s(d.idDocumentType),
@@ -197,6 +217,7 @@ const AdminFormPage: React.FC = () => {
     if (!form.fullName.trim()) errors.fullName = 'Name is required';
     if (!form.address.trim()) errors.address = 'Address is required';
     if (!form.phone.trim()) errors.phone = 'Phone number is required';
+    if (!form.locationId.trim()) errors.locationId = 'Hub is required';
     if (!form.department.trim()) errors.department = 'Department is required';
     if (!form.designation.trim()) errors.designation = 'Designation is required';
     if (!form.email.trim()) errors.email = 'Email is required';
@@ -235,6 +256,7 @@ const AdminFormPage: React.FC = () => {
           phone: form.phone,
           email: form.email,
           position: form.designation,
+          locationId: form.locationId,
           department: form.department,
           address: form.address,
           citizenshipNo: form.citizenshipNo,
@@ -261,6 +283,7 @@ const AdminFormPage: React.FC = () => {
         password: form.password,
         phone: form.phone,
         position: form.designation,
+        locationId: form.locationId,
         department: form.department,
         address: form.address,
         citizenshipNo: form.citizenshipNo,
@@ -420,6 +443,16 @@ const AdminFormPage: React.FC = () => {
                 description="Department and role"
               />
               <div className="afp-fields">
+                <FormField
+                  label="Hub"
+                  type="select"
+                  required
+                  value={form.locationId}
+                  onChange={set('locationId')}
+                  placeholder="Select hub"
+                  options={hubs}
+                />
+                {fieldErrors.locationId && <span className="afp-field-error">{fieldErrors.locationId}</span>}
                 <FormField
                   label="Department"
                   type="select"

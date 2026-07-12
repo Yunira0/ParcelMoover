@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, CheckCircle, Upload, X, Building2, User, FileText, CreditCard, Lock, Tag, ExternalLink } from 'lucide-react';
 import Button from '../components/Button';
 import FormField from '../components/FormField';
-import { registerUser, getLocations, getAdmins, getVendors, getManagedUser, updateUserProfile } from '../services/users.service';
+import { registerUser, getLocations, getAdmins, getManagedUser, updateUserProfile } from '../services/users.service';
 import { getCurrentUser } from '../services/auth.service';
 import { getCurrentUser as getCachedUser, getCurrentUserRoles } from '../utils/auth';
 import { getPricingSettings } from '../services/pricing.service';
@@ -18,6 +18,7 @@ interface VendorFormInput {
   ownerEmail: string;
   ownerContact: string;
   sales: string;
+  salesUserId: string;
   rateType: string;
   flatInsideValley: string;
   flatOutsideValley: string;
@@ -49,6 +50,7 @@ const emptyForm: VendorFormInput = {
   ownerEmail: '',
   ownerContact: '',
   sales: '',
+  salesUserId: '',
   rateType: 'flat',
   flatInsideValley: '',
   flatOutsideValley: '',
@@ -138,24 +140,28 @@ const VendorFormPage: React.FC = () => {
   // Only super admins can open the rate-config screen, so the shortcut is theirs.
   const isSuperAdmin = roles.includes('super_admin');
   const salesName = getCachedUser()?.fullName ?? '';
+  const ownSalesUserId = getCachedUser()?.id ?? '';
   const [form, setForm] = useState<VendorFormInput>(
-    isSalesUser && salesName ? { ...emptyForm, sales: salesName } : emptyForm,
+    isSalesUser && salesName
+      ? { ...emptyForm, sales: salesName, salesUserId: ownSalesUserId }
+      : emptyForm,
   );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [submitted, setSubmitted] = useState(false);
   const [locations, setLocations] = useState<Array<{ value: string; label: string }>>([]);
-  const [salesOptions, setSalesOptions] = useState<Array<{ value: string; label: string }>>([]);
+  // Sales-department admins, kept unfiltered so the dropdown can be re-filtered
+  // by hub whenever the selected pickup location changes.
+  const [salesAdmins, setSalesAdmins] = useState<Array<{ userId: string; name: string; locationId: string | null }>>([]);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
     const fetchHubs = async () => {
       try {
-        const [res, me, adminsRes, vendorsRes] = await Promise.all([
+        const [res, me, adminsRes] = await Promise.all([
           getLocations(),
           getCurrentUser().catch(() => null),
           getAdmins().catch(() => null),
-          getVendors().catch(() => null),
         ]);
         let hubs: Array<{ value: string; label: string }> = [];
         if (res && res.success && Array.isArray(res.data)) {
@@ -165,18 +171,15 @@ const VendorFormPage: React.FC = () => {
             .map((loc: any) => ({ value: loc.id, label: loc.name }));
           setLocations(hubs);
         }
-        // Existing sales = admins in the "Sales" department + any sales names
-        // already recorded on vendors. De-duplicated, case-insensitively.
-        const names = new Set<string>();
+        // Sales staff = admins in the "Sales" department, each carrying their
+        // own hub so the dropdown can be scoped to the vendor's hub below.
         if (adminsRes?.success && Array.isArray(adminsRes.data)) {
-          adminsRes.data
-            .filter((a: any) => (a.department || '').toLowerCase() === 'sales')
-            .forEach((a: any) => a.name && names.add(a.name));
+          setSalesAdmins(
+            adminsRes.data
+              .filter((a: any) => (a.department || '').toLowerCase() === 'sales')
+              .map((a: any) => ({ userId: a.userId, name: a.name, locationId: a.locationId ?? null })),
+          );
         }
-        if (vendorsRes?.success && Array.isArray(vendorsRes.data)) {
-          vendorsRes.data.forEach((v: any) => v.sales && names.add(v.sales));
-        }
-        setSalesOptions(Array.from(names).map((n) => ({ value: n, label: n })));
         // Default the hub to the creating admin's own hub. Falls back to the sole
         // hub when the admin has none (e.g. single-hub setup).
         const adminHubId: string | null = me?.hubId ?? null;
@@ -192,6 +195,20 @@ const VendorFormPage: React.FC = () => {
     };
     fetchHubs();
   }, []);
+
+  // Re-scope the Sales dropdown to whichever hub is currently selected. No
+  // sales staff for that hub is a valid state - the field stays optional so
+  // the vendor can be saved unassigned rather than blocked.
+  const salesOptions = React.useMemo(() => {
+    // A sales user viewing/creating their own client is locked to themselves,
+    // and won't necessarily show up in the (admin/super_admin-only) admins
+    // list they may not even have permission to fetch - show their own name
+    // regardless so the locked, disabled field doesn't render blank.
+    if (isSalesUser) return salesName ? [{ value: ownSalesUserId, label: salesName }] : [];
+    return salesAdmins
+      .filter((a) => a.locationId && a.locationId === form.pickupLocation)
+      .map((a) => ({ value: a.userId, label: a.name }));
+  }, [salesAdmins, form.pickupLocation, isSalesUser, salesName, ownSalesUserId]);
 
   // Prefill the per-vendor rate fields with the global defaults from Settings;
   // the creator can then edit them so this vendor gets its own rates.
@@ -233,6 +250,7 @@ const VendorFormPage: React.FC = () => {
           pickupLocation: s(d.locationId),
           registeredAddress: s(d.address),
           sales: s(d.sales),
+          salesUserId: s(d.salesUserId),
           rateType: s(d.rateType) || 'flat',
           flatInsideValley: s(d.flatInsideValley),
           flatOutsideValley: s(d.flatOutsideValley),
@@ -272,7 +290,6 @@ const VendorFormPage: React.FC = () => {
     if (!form.pickupLocation.trim()) errors.pickupLocation = 'Hub is required';
     if (!form.pickupLandmark.trim()) errors.pickupLandmark = 'Location is required';
     if (!form.businessContact.trim()) errors.businessContact = 'Contact number is required';
-    if (!form.sales.trim()) errors.sales = 'Sales is required';
     if (!form.ownerName.trim()) errors.ownerName = 'Owner name is required';
     if (!form.ownerEmail.trim()) errors.ownerEmail = 'Email is required';
     if (!form.ownerContact.trim()) errors.ownerContact = 'Contact number is required';
@@ -315,6 +332,7 @@ const VendorFormPage: React.FC = () => {
           locationId: form.pickupLocation,
           address: form.registeredAddress,
           sales: form.sales,
+          salesUserId: form.salesUserId,
           rateType: form.rateType,
           flatInsideValley: form.flatInsideValley,
           flatOutsideValley: form.flatOutsideValley,
@@ -343,6 +361,7 @@ const VendorFormPage: React.FC = () => {
         locationId: form.pickupLocation,
         address: form.registeredAddress,
         sales: form.sales,
+        salesUserId: form.salesUserId,
         rateType: form.rateType,
         // Only send the override fields relevant to the chosen model.
         ...(form.rateType === 'flat'
@@ -473,13 +492,16 @@ const VendorFormPage: React.FC = () => {
                 )}
                 <FormField
                   label="Sales"
-                  type="combobox"
-                  required
-                  value={form.sales}
-                  onChange={set('sales')}
-                  placeholder="Select existing sales or type a name"
+                  type="select"
+                  value={form.salesUserId}
+                  onChange={(value) => {
+                    const picked = salesOptions.find((o) => o.value === value);
+                    setForm((prev) => ({ ...prev, salesUserId: value, sales: picked?.label ?? '' }));
+                  }}
+                  placeholder={salesOptions.length === 0 ? 'No sales staff for this hub' : 'Unassigned'}
                   options={salesOptions}
                   disabled={isSalesUser}
+                  hint={salesOptions.length === 0 ? 'No sales staff assigned to this hub yet — you can leave this unassigned.' : undefined}
                 />
                 {fieldErrors.sales && (
                   <span className="vfp-field-error">{fieldErrors.sales}</span>

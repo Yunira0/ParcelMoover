@@ -39,6 +39,7 @@ export interface RegisterUserInput {
 
   // Vendor profile
   sales?: string;
+  salesUserId?: string;
   rateType?: string; // per_destination | zone | flat
   // Per-vendor rate overrides (sent as strings; blank → use Settings default)
   flatInsideValley?: string;
@@ -90,6 +91,7 @@ export interface UpdateUserProfileInput {
   clientName?: string;
   businessName?: string;
   sales?: string;
+  salesUserId?: string;
   rateType?: string;
   flatInsideValley?: string;
   flatOutsideValley?: string;

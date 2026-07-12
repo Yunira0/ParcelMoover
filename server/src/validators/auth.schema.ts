@@ -63,12 +63,45 @@ export const registerUserSchema = z
         z.undefined(),
       ])
       .optional(),
+    // Shared profile / bank fields
+    pan: optionalAuthString(50),
+    citizenshipNo: optionalAuthString(50),
+    bankName: optionalAuthString(100),
+    bankAccountNo: optionalAuthString(50),
+    bankAccountHolder: optionalAuthString(100),
     // admin-only
     position: optionalAuthString(100, "Position must not exceed 100 characters"),
+    department: optionalAuthString(100),
+    idDocumentType: optionalAuthString(50),
+    idDocumentNumber: optionalAuthString(100),
+    fatherName: optionalAuthString(100),
+    motherName: optionalAuthString(100),
+    grandfatherName: optionalAuthString(100),
+    permanentAddress: optionalAuthString(255),
+    currentAddress: optionalAuthString(255),
+    experience: optionalAuthString(255),
     // vendor-only
     clientName: optionalMinMaxString(2, 100),
     address: optionalAuthString(255),
     businessName: optionalAuthString(100),
+    sales: optionalAuthString(100),
+    salesUserId: optionalUuidSchema,
+    rateType: optionalAuthString(30),
+    flatInsideValley: optionalAuthString(20),
+    flatOutsideValley: optionalAuthString(20),
+    zoneMajorCities: optionalAuthString(20),
+    zoneUrbanAreas: optionalAuthString(20),
+    zoneRemoteAreas: optionalAuthString(20),
+    extraWeightPercent: optionalAuthString(20),
+    pickupLandmark: optionalAuthString(255),
+    billingBusinessName: optionalAuthString(100),
+    registrationNo: optionalAuthString(100),
+    panVatNo: optionalAuthString(50),
+    // rider-only
+    riderLocation: optionalAuthString(255),
+    licenceNo: optionalAuthString(50),
+    vehicleNo: optionalAuthString(50),
+    salaryCommission: optionalAuthString(100),
   })
   .superRefine((data, ctx) => {
     if (data.type === "vendor" && !data.clientName) {
@@ -112,13 +145,46 @@ export const updateManagedUserSchema = z.object({
     .optional(),
   // Must match the DB user_status enum (active | inactive) - Prisma rejects other values.
   status: z.enum(["active", "inactive"]).optional(),
+  // Shared profile / bank fields
+  pan: optionalAuthString(50),
+  citizenshipNo: optionalAuthString(50),
+  bankName: optionalAuthString(100),
+  bankAccountNo: optionalAuthString(50),
+  bankAccountHolder: optionalAuthString(100),
   // admin-only
   position: optionalAuthString(100),
+  department: optionalAuthString(100),
+  idDocumentType: optionalAuthString(50),
+  idDocumentNumber: optionalAuthString(100),
+  fatherName: optionalAuthString(100),
+  motherName: optionalAuthString(100),
+  grandfatherName: optionalAuthString(100),
+  permanentAddress: optionalAuthString(255),
+  currentAddress: optionalAuthString(255),
+  experience: optionalAuthString(255),
   // vendor-only
   clientName: optionalMinMaxString(2, 100),
   address: optionalAuthString(255),
   businessName: optionalAuthString(100),
+  sales: optionalAuthString(100),
+  salesUserId: optionalUuidSchema,
+  rateType: optionalAuthString(30),
+  flatInsideValley: optionalAuthString(20),
+  flatOutsideValley: optionalAuthString(20),
+  zoneMajorCities: optionalAuthString(20),
+  zoneUrbanAreas: optionalAuthString(20),
+  zoneRemoteAreas: optionalAuthString(20),
+  extraWeightPercent: optionalAuthString(20),
+  pickupLandmark: optionalAuthString(255),
+  billingBusinessName: optionalAuthString(100),
+  registrationNo: optionalAuthString(100),
+  panVatNo: optionalAuthString(50),
   alternatePhone: optionalAlternatePhone,
+  // rider-only
+  riderLocation: optionalAuthString(255),
+  licenceNo: optionalAuthString(50),
+  vehicleNo: optionalAuthString(50),
+  salaryCommission: optionalAuthString(100),
 });
 
 export type UpdateManagedUserInput = z.infer<typeof updateManagedUserSchema>;
