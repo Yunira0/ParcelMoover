@@ -146,6 +146,18 @@ app.use("/api/me", MeRoutes);
 
 app.use("/api/audit-logs", AuditLogRoutes)
 
+// SPA fallback — client-side routes like /dashboard, /vendors, /tickets have
+// no matching Express route or file under public/, so without this they 404
+// on direct navigation or a hard refresh (React Router only owns them once
+// the JS bundle has loaded). Skips /api and /uploads so those keep returning
+// real 404s/errors instead of the app shell.
+app.use((req, res, next) => {
+  if (req.method !== "GET" || req.path.startsWith("/api") || req.path.startsWith("/uploads")) {
+    return next();
+  }
+  res.sendFile("index.html", { root: "public" });
+});
+
 // Global error handler — must be last
 app.use(errorHandler);
 
