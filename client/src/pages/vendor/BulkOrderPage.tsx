@@ -10,7 +10,18 @@ import {
   type BulkCreateResult,
   type SenderProfile,
 } from '../../services/orders.service';
+import { getVendors } from '../../services/users.service';
+import { isVendorSide } from '../../utils/auth';
 import './BulkOrderPage.css';
+
+interface VendorOption {
+  id: string;
+  client: string;
+  company: string;
+  phone: string;
+  address: string;
+  locationId: string | null;
+}
 
 // ── CSV helpers ───────────────────────────────────────────────────────────────
 
@@ -157,12 +168,18 @@ function csvToRows(text: string): ParsedRow[] {
 const BulkOrderPage: React.FC = () => {
   const navigate = useNavigate();
   const fileRef = useRef<HTMLInputElement>(null);
+  // Vendor/vendor_staff have exactly one possible sender (themselves), fetched
+  // automatically below. Admin/super_admin/sales act on behalf of one of many
+  // vendors, so they pick which one via the dropdown instead.
+  const actingForVendor = !isVendorSide();
 
   // The vendor IS the default sender - no reason to ask them to type in their
   // own business name/phone. Fetched once and applied to every row in the batch.
   const [senderProfile, setSenderProfile] = useState<SenderProfile | null>(null);
   const [senderLoading, setSenderLoading] = useState(true);
   const [senderError, setSenderError] = useState('');
+  const [vendorOptions, setVendorOptions] = useState<VendorOption[]>([]);
+  const [selectedVendorId, setSelectedVendorId] = useState('');
   const [rows, setRows] = useState<ParsedRow[]>([]);
   const [fileName, setFileName] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -173,8 +190,22 @@ const BulkOrderPage: React.FC = () => {
     let cancelled = false;
     (async () => {
       try {
-        const res = await getSenderProfile();
-        if (!cancelled && res?.success) setSenderProfile(res.data);
+        if (actingForVendor) {
+          const res = await getVendors();
+          if (!cancelled && res?.success && Array.isArray(res.data)) {
+            setVendorOptions(res.data.map((v: any) => ({
+              id: v.id,
+              client: v.client,
+              company: v.company,
+              phone: v.phone,
+              address: v.address || '',
+              locationId: v.locationId ?? null,
+            })));
+          }
+        } else {
+          const res = await getSenderProfile();
+          if (!cancelled && res?.success) setSenderProfile(res.data);
+        }
       } catch (err: any) {
         if (!cancelled) {
           setSenderError(err?.response?.data?.message || 'Failed to load sender details.');
@@ -184,7 +215,21 @@ const BulkOrderPage: React.FC = () => {
       }
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [actingForVendor]);
+
+  // When acting on behalf of a vendor, the picked vendor's own details stand
+  // in for the auto-fetched sender profile used by the vendor-side flow.
+  useEffect(() => {
+    if (!actingForVendor) return;
+    const vendor = vendorOptions.find(v => v.id === selectedVendorId);
+    setSenderProfile(vendor ? {
+      id: vendor.id,
+      name: vendor.company || vendor.client,
+      phone: vendor.phone,
+      address: vendor.address,
+      locationId: vendor.locationId,
+    } : null);
+  }, [actingForVendor, selectedVendorId, vendorOptions]);
 
   const validRows = rows.filter(r => !r._error);
   const invalidRows = rows.filter(r => r._error);
@@ -215,6 +260,10 @@ const BulkOrderPage: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (actingForVendor && !selectedVendorId) {
+      setError('Pick which vendor this import is for.');
+      return;
+    }
     if (!senderProfile) {
       setError('Sender details could not be loaded. Please refresh and try again.');
       return;
@@ -233,7 +282,9 @@ const BulkOrderPage: React.FC = () => {
           phone: senderProfile.phone,
           address: senderProfile.address || undefined,
         },
-        orders: validRows.map(({ _raw: _r, _error: _e, ...row }) => row),
+        orders: validRows.map(({ _raw: _r, _error: _e, ...row }) => (
+          actingForVendor ? { ...row, vendorId: selectedVendorId } : row
+        )),
       });
       setResult(res.data);
     } catch (err: any) {
@@ -319,6 +370,27 @@ const BulkOrderPage: React.FC = () => {
             <p className="bop-empty">Loading sender details…</p>
           ) : senderError ? (
             <p role="alert" className="bop-error">{senderError}</p>
+          ) : actingForVendor ? (
+            <div className="bop-sender-fields">
+              <FormField
+                label="Vendor"
+                type="searchable-select"
+                required
+                value={selectedVendorId}
+                onChange={setSelectedVendorId}
+                searchableOptions={vendorOptions.map(v => ({ id: v.id, label: v.company || v.client, description: v.phone }))}
+                placeholder="Select which vendor this import is for"
+                searchPlaceholder="Search vendors..."
+                emptyMessage="No vendors available."
+                gridColumn="1 / -1"
+              />
+              {senderProfile && (
+                <>
+                  <FormField label="Sender Name" value={senderProfile.name} onChange={() => {}} disabled />
+                  <FormField label="Sender Phone" value={senderProfile.phone} onChange={() => {}} disabled />
+                </>
+              )}
+            </div>
           ) : senderProfile ? (
             <div className="bop-sender-fields">
               <FormField label="Sender Name" value={senderProfile.name} onChange={() => {}} disabled />

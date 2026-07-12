@@ -17,7 +17,7 @@ import { generateTrackingId } from "../utils/trackingId";
 import { generateDispatchNo } from "../utils/dispatchId";
 import { generateRunSheetNo } from "../utils/runSheetNo";
 import { NEPAL_UTC_OFFSET_MS, formatNepalDate as formatDate } from "../utils/nepalTime";
-import { resolveOwnVendorId } from "./vendor-scope.service";
+import { resolveOwnVendorId, isStaffActor } from "./vendor-scope.service";
 import { invalidateVendorFinanceCache } from "./finance.service";
 
 type Party = { name: string; phone: string; alternate_phone?: string | null };
@@ -438,6 +438,11 @@ async function _createOrderImpl(actor: OrderActor, data: CreateOrderInput) {
   // order list, COD collections, and settlements).
   const ownVendorId = await resolveOwnVendorId(actor);
 
+  // A sales actor picking a vendorId (e.g. bulk-importing on behalf of a
+  // client) can only ever pick a vendor they own - matches the sales_user_id
+  // scoping already enforced on the vendor list / dashboard / tickets.
+  const isSalesActor = actor.roles.includes("sales") && !isStaffActor(actor);
+
   // Run the remaining two independent reads in parallel.
   const [vendor, originLoc, destinationLoc] = await Promise.all([
     ownVendorId
@@ -446,7 +451,12 @@ async function _createOrderImpl(actor: OrderActor, data: CreateOrderInput) {
         })
       : data.vendorId
       ? prisma.vendors.findFirst({
-          where: { id: data.vendorId, deleted_at: null, status: "active" },
+          where: {
+            id: data.vendorId,
+            deleted_at: null,
+            status: "active",
+            ...(isSalesActor ? { sales_user_id: actor.id } : {}),
+          },
         })
       : Promise.resolve(null),
     data.originLocationId

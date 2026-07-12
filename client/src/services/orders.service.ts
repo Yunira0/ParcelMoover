@@ -413,6 +413,8 @@ export interface BulkCreateOrderRow {
   deliveryInstruction?: string;
   originLocationId?: string;
   destinationLocationId?: string;
+  /** Set by admin/super_admin/sales when bulk-importing on behalf of a vendor. */
+  vendorId?: string;
 }
 
 export interface BulkCreateOrderInput {

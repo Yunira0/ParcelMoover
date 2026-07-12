@@ -79,12 +79,12 @@ function App() {
             path="/orders/create"
             element={<RoleGuard allowedRoles={['super_admin', 'admin', 'vendor', 'vendor_staff']} requiredPermission="ORDER_ACCESS"><CreateOrderPage /></RoleGuard>}
           />
-          {/* Scoped to vendor/vendor_staff only: BulkOrderPage auto-fills the
-              sender from GET /orders/sender-profile (vendor-only), with no
-              vendor picker for an admin actor to select on behalf of. */}
+          {/* vendor/vendor_staff bulk-import for themselves via GET /orders/sender-profile;
+              admin/super_admin/sales pick which vendor via a dropdown instead
+              (sales is further scoped server-side to vendors they own). */}
           <Route
             path="/orders/bulk-create"
-            element={<RoleGuard allowedRoles={['vendor', 'vendor_staff']} requiredPermission="ORDER_ACCESS"><BulkOrderPage /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'sales', 'vendor', 'vendor_staff']} requiredPermission="ORDER_ACCESS"><BulkOrderPage /></RoleGuard>}
           />
           {/* Every known role can legitimately track some subset of orders - the
               backend (getOrderByTrackingId) already scopes which specific orders
