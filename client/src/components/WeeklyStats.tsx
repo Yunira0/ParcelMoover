@@ -20,11 +20,15 @@ interface SeriesDef {
   dotClass: string;
 }
 
+// Colors reuse the same status tokens CODSettlement uses (success/warning/
+// info) rather than one-off hex values, so "green means delivered" reads the
+// same way across the app. SVG presentation attributes resolve CSS custom
+// properties same as any other CSS value.
 const SERIES: SeriesDef[] = [
-  { key: 'total', label: 'Total Order', dataKey: 'totalOrders', color: '#c2410c', dotClass: 'total' },
-  { key: 'picked', label: 'Picked Up', dataKey: 'pickedUp', color: '#1e0cc2', dotClass: 'picked' },
-  { key: 'delivered', label: 'Delivered', dataKey: 'delivered', color: '#00bd29', dotClass: 'delivered' },
-  { key: 'returned', label: 'Returned', dataKey: 'returned', color: '#d0c82f', dotClass: 'returned' },
+  { key: 'total', label: 'Total Order', dataKey: 'totalOrders', color: 'var(--color-primary)', dotClass: 'total' },
+  { key: 'picked', label: 'Picked Up', dataKey: 'pickedUp', color: 'var(--color-info-text)', dotClass: 'picked' },
+  { key: 'delivered', label: 'Delivered', dataKey: 'delivered', color: 'var(--color-success-default)', dotClass: 'delivered' },
+  { key: 'returned', label: 'Returned', dataKey: 'returned', color: 'var(--color-background-warning-default)', dotClass: 'returned' },
 ];
 
 const FILTERS: { key: FilterKey; label: string }[] = [
@@ -74,10 +78,14 @@ const WeeklyStats: React.FC<WeeklyStatsProps> = ({ data, loading, period, onPeri
 
   const visibleSeries = activeFilter === 'all' ? SERIES : SERIES.filter((s) => s.key === activeFilter);
 
+  // Scaled to whichever series are actually on screen, not the full set - a
+  // single-series filter (e.g. "Delivered") used to keep the axis pinned to
+  // Total Order's much larger scale, flattening the isolated line to an
+  // unreadable sliver at the bottom of the chart.
   const yMax = useMemo(() => {
-    const maxVal = Math.max(1, ...data.flatMap((d) => SERIES.map((s) => d[s.dataKey])));
+    const maxVal = Math.max(1, ...data.flatMap((d) => visibleSeries.map((s) => d[s.dataKey])));
     return niceCeiling(maxVal);
-  }, [data]);
+  }, [data, visibleSeries]);
 
   const innerW = CHART_W - PAD.left - PAD.right;
   const innerH = CHART_H - PAD.top - PAD.bottom;
@@ -111,7 +119,13 @@ const WeeklyStats: React.FC<WeeklyStatsProps> = ({ data, loading, period, onPeri
       <div className="weekly-stats-header">
         <div className="title-with-info">
           <h3>Weekly Stats</h3>
-          <Info size={16} style={{ color: 'var(--color-text-caption)' }} />
+          <button type="button" className="info-trigger" aria-label="About this chart" aria-describedby="weekly-stats-info">
+            <Info size={16} />
+            <span className="info-tooltip" role="tooltip" id="weekly-stats-info">
+              Order volume by day for the selected range. Use the filters below to isolate a single
+              stage - the chart rescales to that stage's own numbers.
+            </span>
+          </button>
         </div>
 
         <div className="stats-controls">
@@ -119,12 +133,14 @@ const WeeklyStats: React.FC<WeeklyStatsProps> = ({ data, loading, period, onPeri
             <button
               className={`period-tab ${period === 7 ? 'active' : ''}`}
               onClick={() => onPeriodChange(7)}
+              disabled={loading}
             >
               7D
             </button>
             <button
               className={`period-tab ${period === 30 ? 'active' : ''}`}
               onClick={() => onPeriodChange(30)}
+              disabled={loading}
             >
               30D
             </button>
@@ -204,11 +220,20 @@ const WeeklyStats: React.FC<WeeklyStatsProps> = ({ data, loading, period, onPeri
                   />
                 )}
 
-                {visibleSeries.map((s) => (
-                  <path key={s.key} d={linePath(s.dataKey)} className="chart-line" stroke={s.color} />
+                {/* Always render every series and toggle visibility with a class
+                    (same pattern as the legend's dim state) rather than adding/
+                    removing SVG nodes - lets the filter change crossfade instead
+                    of snapping the line in and out. */}
+                {SERIES.map((s) => (
+                  <path
+                    key={s.key}
+                    d={linePath(s.dataKey)}
+                    className={`chart-line ${visibleSeries.includes(s) ? '' : 'chart-line-hidden'}`}
+                    stroke={s.color}
+                  />
                 ))}
 
-                {visibleSeries.map((s) =>
+                {SERIES.map((s) =>
                   data.map((d, i) => (
                     <circle
                       key={`${s.key}-${i}`}
@@ -216,7 +241,7 @@ const WeeklyStats: React.FC<WeeklyStatsProps> = ({ data, loading, period, onPeri
                       cy={yAt(d[s.dataKey])}
                       r={hoverIndex === i ? 4 : 2.5}
                       fill={s.color}
-                      className="chart-point"
+                      className={`chart-point ${visibleSeries.includes(s) ? '' : 'chart-point-hidden'}`}
                     />
                   )),
                 )}

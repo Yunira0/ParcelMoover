@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, ArrowRight, Bell, User, Package, Truck, Banknote } from 'lucide-react';
+import { Search, ArrowRight, Bell, User, Package, Truck, Banknote, Menu, MessageSquare, X } from 'lucide-react';
 import Button from './Button';
 import type { AppNotification } from '../services/notifications.service';
 import {
@@ -11,6 +11,7 @@ import {
   subscribeToNotificationStream,
 } from '../services/notifications.service';
 import { getUnclosedRemarksCount } from '../services/remarks.service';
+import { useMobileNav } from '../context/MobileNavContext';
 import './TopNav.css';
 
 const timeAgo = (iso: string) => {
@@ -28,7 +29,11 @@ const POLL_INTERVAL_MS = 30_000;
 
 const TopNav: React.FC = () => {
   const navigate = useNavigate();
+  const { toggleMobile } = useMobileNav();
   const [query, setQuery] = useState('');
+  // Below the breakpoint the search field is collapsed to an icon; this
+  // expands it to take over the bar, same pattern as most mobile search UIs.
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -43,6 +48,7 @@ const TopNav: React.FC = () => {
   const runSearch = () => {
     const trimmed = query.trim();
     if (!trimmed) return;
+    setIsSearchOpen(false);
     navigate(`/orders?search=${encodeURIComponent(trimmed)}`);
   };
 
@@ -162,7 +168,16 @@ const TopNav: React.FC = () => {
   };
 
   return (
-    <nav className="top-nav">
+    <nav className={`top-nav ${isSearchOpen ? 'top-nav--search-open' : ''}`}>
+      <button
+        type="button"
+        className="mobile-menu-btn"
+        onClick={toggleMobile}
+        aria-label="Open navigation menu"
+      >
+        <Menu size={22} />
+      </button>
+
       <div className="top-nav-logo">
         {/* Logo removed as requested */}
       </div>
@@ -179,7 +194,16 @@ const TopNav: React.FC = () => {
             className="search-input"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
+            autoFocus={isSearchOpen}
           />
+          <button
+            type="button"
+            className="search-close-btn"
+            onClick={() => setIsSearchOpen(false)}
+            aria-label="Close search"
+          >
+            <X size={16} />
+          </button>
         </div>
         <Button type="submit" variant="primary" className="search-button">
           Search
@@ -187,20 +211,31 @@ const TopNav: React.FC = () => {
         </Button>
       </form>
 
+      <button
+        type="button"
+        className="mobile-search-btn"
+        onClick={() => setIsSearchOpen(true)}
+        aria-label="Search"
+      >
+        <Search size={20} />
+      </button>
+
       <div className="top-nav-profile">
         <Button
           variant="outline"
           className="cmt-button"
           onClick={() => navigate('/unclosed-remarks')}
+          aria-label={`Unclosed comments${unclosedCount > 0 ? `, ${unclosedCount > 99 ? '99+' : unclosedCount}` : ''}`}
         >
-          Unclosed cmt
+          <MessageSquare size={16} />
+          <span className="cmt-label">Unclosed cmt</span>
           {unclosedCount > 0 && (
-            <span className="cmt-badge" aria-label={`${unclosedCount} unclosed comments`}>
+            <span className="cmt-badge" aria-hidden="true">
               {unclosedCount > 99 ? '99+' : unclosedCount}
             </span>
           )}
         </Button>
-        
+
         <div className="notification-bell" ref={notificationsRef}>
           <button
             type="button"

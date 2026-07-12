@@ -38,6 +38,70 @@
   margin: 0;
 }
 
+.info-trigger {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: var(--border-radius-sm);
+  background: none;
+  color: var(--color-text-caption);
+  cursor: help;
+  transition: color 150ms ease-out;
+}
+
+.info-trigger:hover,
+.info-trigger:focus-visible {
+  color: var(--color-text-default);
+}
+
+.info-trigger:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+
+.info-tooltip {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  width: 220px;
+  background-color: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-modal);
+  box-shadow: var(--shadow-md);
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-regular);
+  color: var(--color-text-caption);
+  text-align: left;
+  line-height: var(--line-height-xs);
+  z-index: var(--z-dropdown);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-2px);
+  transition: opacity 150ms ease-out, transform 150ms ease-out, visibility 150ms;
+  pointer-events: none;
+}
+
+.info-trigger:hover .info-tooltip,
+.info-trigger:focus-visible .info-tooltip {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .info-trigger,
+  .info-tooltip {
+    transition-duration: 1ms;
+    transform: none;
+  }
+}
+
 .stats-controls {
   display: flex;
   gap: var(--space-4);
@@ -59,12 +123,35 @@
   font-size: var(--font-size-xxs);
   font-weight: var(--font-weight-medium);
   cursor: pointer;
+  transition: background-color 150ms ease-out, border-color 150ms ease-out, box-shadow 150ms ease-out;
+}
+
+.period-tab:hover:not(.active):not(:disabled) {
+  background-color: var(--color-background-canvas);
+  border-color: var(--color-text-caption);
+}
+
+.period-tab:focus-visible,
+.filter-tab:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+
+.period-tab:disabled {
+  cursor: not-allowed;
+  opacity: var(--opacity-60);
 }
 
 .period-tab.active {
   background-color: var(--color-background-primary-default);
   border-color: var(--color-border-primary);
   color: var(--color-text-base);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .period-tab {
+    transition: none;
+  }
 }
 
 .date-picker {
@@ -100,12 +187,24 @@
   font-size: var(--font-size-xxs);
   font-weight: var(--font-weight-medium);
   cursor: pointer;
+  transition: background-color 150ms ease-out, border-color 150ms ease-out, box-shadow 150ms ease-out;
+}
+
+.filter-tab:hover:not(.active) {
+  background-color: var(--color-background-canvas);
+  border-color: var(--color-text-caption);
 }
 
 .filter-tab.active {
   background-color: var(--color-background-primary-default);
   border-color: var(--color-border-primary);
   color: var(--color-text-base);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .filter-tab {
+    transition: none;
+  }
 }
 
 .legend {
@@ -129,10 +228,10 @@
   flex-shrink: 0;
 }
 
-.legend-dot.total { background-color: #c2410c; }
-.legend-dot.picked { background-color: #1e0cc2; }
-.legend-dot.delivered { background-color: #00bd29; }
-.legend-dot.returned { background-color: #d0c82f; }
+.legend-dot.total { background-color: var(--color-primary); }
+.legend-dot.picked { background-color: var(--color-info-text); }
+.legend-dot.delivered { background-color: var(--color-success-default); }
+.legend-dot.returned { background-color: var(--color-background-warning-default); }
 
 .legend-item-dim {
   opacity: 0.35;
@@ -190,10 +289,30 @@
   stroke-width: 2;
   stroke-linejoin: round;
   stroke-linecap: round;
+  /* Hover/crosshair interaction is owned by the transparent overlay rect;
+     the line itself should never intercept pointer events. */
+  pointer-events: none;
+  transition: opacity 150ms ease-out;
+}
+
+.chart-line-hidden {
+  opacity: 0;
 }
 
 .chart-point {
-  transition: r 0.1s ease;
+  pointer-events: none;
+  transition: r 0.1s ease, opacity 150ms ease-out;
+}
+
+.chart-point-hidden {
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chart-line,
+  .chart-point {
+    transition: none;
+  }
 }
 
 .chart-tooltip {

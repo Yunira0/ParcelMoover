@@ -57,7 +57,13 @@ const formatUpdatedAt = (value: string) => {
 
 const Dashboard: React.FC = () => {
   const [summary, setSummary] = useState<DashboardSummary>(EMPTY_SUMMARY);
-  const [loading, setLoading] = useState(true);
+  // initialLoading only covers the very first fetch - it's what blanks the
+  // stat cards, COD Settlement, and Today's Overview to a loading state.
+  // chartLoading is scoped to the Weekly Stats period toggle, which refetches
+  // the whole summary just to get new trend data; without the split, that
+  // refetch used to blank the unrelated money/status widgets too.
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [chartLoading, setChartLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
   const [trendPeriod, setTrendPeriod] = useState<7 | 30>(7);
@@ -75,7 +81,8 @@ const Dashboard: React.FC = () => {
     } catch {
       setError('Dashboard data is unavailable.');
     } finally {
-      setLoading(false);
+      setInitialLoading(false);
+      setChartLoading(false);
       if (showRefreshing) setRefreshing(false);
     }
   }, [trendPeriod]);
@@ -98,22 +105,22 @@ const Dashboard: React.FC = () => {
     {
       icon: ClipboardList,
       label: "PENDING PICKUPS",
-      value: loading ? '...' : summary.overview.pendingPickups.toLocaleString()
+      value: initialLoading ? '...' : summary.overview.pendingPickups.toLocaleString()
     },
     {
       icon: RotateCcw,
       label: "Pending Return",
-      value: loading ? '...' : summary.overview.pendingReturns.toLocaleString()
+      value: initialLoading ? '...' : summary.overview.pendingReturns.toLocaleString()
     },
     {
       icon: Truck,
       label: "In Transit",
-      value: loading ? '...' : summary.overview.inTransit.toLocaleString()
+      value: initialLoading ? '...' : summary.overview.inTransit.toLocaleString()
     },
     {
       icon: PackageCheck,
       label: "Pending Deliveries",
-      value: loading ? '...' : summary.overview.pendingDeliveries.toLocaleString()
+      value: initialLoading ? '...' : summary.overview.pendingDeliveries.toLocaleString()
     }
   ];
 
@@ -154,17 +161,17 @@ const Dashboard: React.FC = () => {
         <div className="grid-left">
           <WeeklyStats
             data={summary.weeklyTrend}
-            loading={loading}
+            loading={initialLoading || chartLoading}
             period={trendPeriod}
             onPeriodChange={(p) => {
+              setChartLoading(true);
               setTrendPeriod(p);
-              setLoading(true);
             }}
           />
         </div>
         <div className="grid-right">
-          <CODSettlement data={summary.codSettlement} loading={loading} />
-          <TodayOverview data={summary.today} loading={loading} />
+          <CODSettlement data={summary.codSettlement} loading={initialLoading} />
+          <TodayOverview data={summary.today} loading={initialLoading} />
         </div>
       </div>
     </div>

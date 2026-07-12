@@ -30,13 +30,21 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import { getCurrentUserRoles, hasAdminPermission, isAdminSide } from '../utils/auth';
 import { useStaffPermissions } from '../context/StaffPermissionsContext';
+import { useMobileNav } from '../context/MobileNavContext';
 import { logout } from '../services/auth.service';
 import './Sidebar.css';
 
 // ── Collapse context ───────────────────────────────────────────────────────────
-interface CollapseCtx { collapsed: boolean; toggle: () => void }
-const SidebarCollapseContext = createContext<CollapseCtx>({ collapsed: false, toggle: () => {} });
+// Desktop icon-only collapse and the mobile off-canvas drawer are two
+// different concerns (persisted preference vs. transient overlay state), but
+// every role-specific <aside> below needs both to build its className, so
+// they're threaded through the same context to avoid prop drilling.
+interface CollapseCtx { collapsed: boolean; toggle: () => void; mobileOpen: boolean }
+const SidebarCollapseContext = createContext<CollapseCtx>({ collapsed: false, toggle: () => {}, mobileOpen: false });
 const useSidebarCollapse = () => useContext(SidebarCollapseContext);
+
+const asideClassName = (collapsed: boolean, mobileOpen: boolean) =>
+  `sidebar${collapsed ? ' sidebar--collapsed' : ''}${mobileOpen ? ' sidebar--mobile-open' : ''}`;
 
 // ── Shared atoms ───────────────────────────────────────────────────────────────
 interface SidebarItemProps { to: string; icon: LucideIcon; label: string; badge?: number }
@@ -132,9 +140,9 @@ const SidebarToggleBtn: React.FC = () => {
 
 // ── Vendor sidebar ─────────────────────────────────────────────────────────────
 const VendorSidebar: React.FC = () => {
-  const { collapsed } = useSidebarCollapse();
+  const { collapsed, mobileOpen } = useSidebarCollapse();
   return (
-    <aside className={`sidebar${collapsed ? ' sidebar--collapsed' : ''}`}>
+    <aside className={asideClassName(collapsed, mobileOpen)}>
       <SidebarToggleBtn />
       <div className="sidebar-nav">
         <SidebarItem to="/dashboard" icon={LayoutDashboard} label="Dashboard" />
@@ -163,11 +171,11 @@ const VendorSidebar: React.FC = () => {
 // ── Vendor staff sidebar ───────────────────────────────────────────────────────
 const VendorStaffSidebar: React.FC = () => {
   const perms = useStaffPermissions();
-  const { collapsed } = useSidebarCollapse();
+  const { collapsed, mobileOpen } = useSidebarCollapse();
   const has = (p: string) => perms.includes(p);
 
   return (
-    <aside className={`sidebar${collapsed ? ' sidebar--collapsed' : ''}`}>
+    <aside className={asideClassName(collapsed, mobileOpen)}>
       <SidebarToggleBtn />
       <div className="sidebar-nav">
         {has('DASHBOARD_ACCESS') && (
@@ -203,9 +211,9 @@ const VendorStaffSidebar: React.FC = () => {
 // Sales accounts only manage their own clients: dashboard, orders, the vendor
 // (client) list, and customer-experience (remarks/tickets) — all backend-scoped.
 const SalesSidebar: React.FC = () => {
-  const { collapsed } = useSidebarCollapse();
+  const { collapsed, mobileOpen } = useSidebarCollapse();
   return (
-    <aside className={`sidebar${collapsed ? ' sidebar--collapsed' : ''}`}>
+    <aside className={asideClassName(collapsed, mobileOpen)}>
       <SidebarToggleBtn />
       <div className="sidebar-nav">
         <SidebarItem to="/dashboard" icon={LayoutDashboard} label="Dashboard" />
@@ -228,9 +236,9 @@ const SalesSidebar: React.FC = () => {
 
 // ── Admin / super-admin sidebar ────────────────────────────────────────────────
 const AdminSidebar: React.FC<{ isSuperAdmin: boolean }> = ({ isSuperAdmin }) => {
-  const { collapsed } = useSidebarCollapse();
+  const { collapsed, mobileOpen } = useSidebarCollapse();
   return (
-    <aside className={`sidebar${collapsed ? ' sidebar--collapsed' : ''}`}>
+    <aside className={asideClassName(collapsed, mobileOpen)}>
       <SidebarToggleBtn />
       <div className="sidebar-nav">
         <SidebarItem to="/dashboard" icon={LayoutDashboard} label="Dashboard" />
@@ -284,9 +292,15 @@ const Sidebar: React.FC = () => {
   }, []);
 
   const roles = getCurrentUserRoles();
+  const { mobileOpen, closeMobile } = useMobileNav();
 
   return (
-    <SidebarCollapseContext.Provider value={{ collapsed, toggle }}>
+    <SidebarCollapseContext.Provider value={{ collapsed, toggle, mobileOpen }}>
+      {/* Only present (and only visible, via CSS) below the drawer breakpoint;
+          tapping it dismisses the drawer without needing to find the toggle. */}
+      {mobileOpen && (
+        <div className="sidebar-backdrop" onClick={closeMobile} aria-hidden="true" />
+      )}
       {roles.includes('vendor_staff') ? (
         <VendorStaffSidebar />
       ) : roles.includes('vendor') && !isAdminSide() ? (

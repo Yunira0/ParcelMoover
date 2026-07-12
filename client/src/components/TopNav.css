@@ -32,6 +32,12 @@
   border-radius: var(--border-radius-default);
   width: 346px;
   background-color: var(--color-background-surface);
+  transition: border-color 150ms ease-out, box-shadow 150ms ease-out;
+}
+
+.search-input-wrapper:focus-within {
+  border-color: var(--color-border-primary);
+  box-shadow: var(--shadow-focus);
 }
 
 .search-input-wrapper img {
@@ -54,6 +60,118 @@
   display: flex;
   align-items: center;
   gap: var(--space-6);
+}
+
+/* ── Mobile-only controls ─────────────────────────────────────────────────
+   Hidden by default; the two breakpoints below reveal the hamburger and
+   the collapsed search affordance once the full bar no longer fits. */
+.mobile-menu-btn,
+.mobile-search-btn,
+.search-close-btn {
+  display: none;
+}
+
+.mobile-menu-btn,
+.mobile-search-btn {
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: none;
+  border-radius: var(--border-radius-default);
+  background: transparent;
+  color: var(--color-text-default);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.mobile-menu-btn:hover,
+.mobile-search-btn:hover {
+  background-color: var(--color-background-canvas);
+}
+
+.mobile-menu-btn:focus-visible,
+.mobile-search-btn:focus-visible,
+.search-close-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+
+.cmt-label {
+  white-space: nowrap;
+}
+
+@media (max-width: 768px) {
+  .mobile-menu-btn {
+    display: flex;
+  }
+
+  .top-nav-logo {
+    display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .top-nav {
+    gap: var(--space-2);
+    padding: 0 var(--space-3);
+  }
+
+  .top-nav-profile {
+    gap: var(--space-2);
+  }
+
+  .cmt-button {
+    padding: 0 var(--space-2);
+    min-width: 36px;
+  }
+
+  .cmt-label {
+    display: none;
+  }
+
+  /* The full search form only renders as an expanding overlay on mobile;
+     collapsed to a single icon button until tapped open. */
+  .top-nav-search {
+    display: none;
+  }
+
+  .mobile-search-btn {
+    display: flex;
+  }
+
+  .search-close-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: var(--color-text-caption);
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+
+  .top-nav--search-open .mobile-menu-btn,
+  .top-nav--search-open .mobile-search-btn,
+  .top-nav--search-open .top-nav-profile {
+    display: none;
+  }
+
+  .top-nav--search-open .top-nav-search {
+    display: flex;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .top-nav--search-open .search-input-wrapper {
+    width: 100%;
+    flex: 1;
+    min-width: 0;
+  }
 }
 
 
@@ -84,6 +202,12 @@
   border: none;
   padding: 0;
   cursor: pointer;
+}
+
+.notification-bell-trigger:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+  border-radius: var(--border-radius-default);
 }
 
 /* Anchor for the floating unclosed-comments count badge */
@@ -154,33 +278,20 @@
   flex-shrink: 0;
 }
 
+/* Notification type is signaled by icon + color alone (the leading icon is
+   the affordance the design system's side-stripe ban asks for in place of a
+   colored border-left); reuses the same status tokens CODSettlement uses so
+   "warning/info/success" mean the same thing everywhere in the app. */
 .notification-icon-pickup {
-  color: #f59e0b;
+  color: var(--color-background-warning-default);
 }
 
 .notification-icon-dispatch {
-  color: #3b82f6;
+  color: var(--color-info-text);
 }
 
 .notification-icon-cod {
-  color: #10b981;
-}
-
-/* Colored left border per notification type */
-.notification-item--pickup {
-  border-left: 3px solid #f59e0b;
-}
-
-.notification-item--dispatch {
-  border-left: 3px solid #3b82f6;
-}
-
-.notification-item--cod_settlement {
-  border-left: 3px solid #10b981;
-}
-
-.notification-item--general {
-  border-left: 3px solid transparent;
+  color: var(--color-success-default);
 }
 
 .notification-panel {
@@ -285,6 +396,11 @@
 
 .user-profile:hover {
   opacity: 0.85;
+}
+
+.user-profile:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
 }
 
 .user-profile img {

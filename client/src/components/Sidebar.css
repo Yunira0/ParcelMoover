@@ -270,3 +270,92 @@
   flex-shrink: 0;
   margin-left: auto;
 }
+
+/* ── Focus visibility ──────────────────────────────────────────────────────── */
+.sidebar-toggle-btn:focus-visible,
+.sidebar-item:focus-visible,
+.sidebar-subitem:focus-visible,
+.sidebar-logout:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+
+/* ── Mobile drawer ─────────────────────────────────────────────────────────
+   Below the breakpoint the sidebar becomes an off-canvas overlay instead of
+   taking up permanent width - at narrow viewports a fixed 256px in-flow
+   sidebar left almost nothing for content (see /impeccable critique). */
+.sidebar-backdrop {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100dvh;
+    z-index: var(--z-modal);
+    transform: translateX(-100%);
+    transition: transform 0.2s ease;
+    box-shadow: var(--shadow-lg);
+  }
+
+  .sidebar--mobile-open {
+    transform: translateX(0);
+  }
+
+  /* Icon-only collapse is a desktop density preference; it doesn't make
+     sense on an overlay drawer the user just explicitly opened to see
+     labels, so the drawer always opens at full width with labels shown. */
+  .sidebar--collapsed.sidebar--mobile-open {
+    width: 256px;
+  }
+
+  .sidebar--collapsed.sidebar--mobile-open .sidebar-nav {
+    padding: 8px 10px;
+    align-items: stretch;
+  }
+
+  .sidebar--collapsed.sidebar--mobile-open .sidebar-item,
+  .sidebar--collapsed.sidebar--mobile-open .sidebar-subitem,
+  .sidebar--collapsed.sidebar--mobile-open .sidebar-logout {
+    padding: 9px 12px;
+    justify-content: flex-start;
+    width: 100%;
+    gap: 10px;
+  }
+
+  .sidebar--collapsed.sidebar--mobile-open .sidebar-label,
+  .sidebar--collapsed.sidebar--mobile-open .sidebar-section-label {
+    display: block;
+  }
+
+  .sidebar--collapsed.sidebar--mobile-open .sidebar-subnav {
+    margin-left: 14px;
+    padding-left: 14px;
+    border-left: 1.5px solid var(--color-border-default);
+    align-items: stretch;
+    width: auto;
+  }
+
+  .sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background-color: var(--color-overlay);
+    z-index: var(--z-dropdown);
+  }
+
+  /* The icon-only collapse toggle is a desktop density preference persisted
+     to localStorage - hide it in the drawer so a mobile tap can't silently
+     flip that stored preference for the user's next desktop visit. */
+  .sidebar--mobile-open .sidebar-toggle-btn {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar {
+    transition: none;
+  }
+}
