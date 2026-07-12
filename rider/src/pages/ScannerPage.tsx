@@ -20,8 +20,14 @@ const SCAN_FORMATS = [
   BarcodeFormat.ITF,
 ]
 
+// TRY_HARDER is meant for a single best-effort decode of a static image - in
+// a continuous video loop, combined with checking 7 formats every frame, it
+// makes each decode attempt too expensive to keep up with real-time frames
+// on mid/low-end Android hardware, so scans never complete in practice
+// (reported as "camera shows video, never detects a code"). Leaving it off
+// here trades rare edge-case robustness for actually finishing each frame's
+// decode before the next one arrives.
 const HINTS = new Map<DecodeHintType, unknown>([
-  [DecodeHintType.TRY_HARDER, true],
   [DecodeHintType.POSSIBLE_FORMATS, SCAN_FORMATS],
 ])
 
@@ -232,11 +238,14 @@ export default function ScannerPage() {
 
     async function start() {
       try {
+        // 1280x720 has plenty of resolution for a QR/barcode at normal scanning
+        // distance, at under half the pixels of 1080p to decode every frame -
+        // see the HINTS comment above for why frame cost matters here.
         await startWithConstraints({
           video: {
             facingMode: { ideal: 'environment' },
-            width:  { ideal: 1920 },
-            height: { ideal: 1080 },
+            width:  { ideal: 1280 },
+            height: { ideal: 720 },
           },
         })
       } catch (err: any) {
