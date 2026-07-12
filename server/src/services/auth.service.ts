@@ -80,27 +80,48 @@ function putRate(obj: Record<string, unknown>, key: string, val: string | number
 // The "Sales" department is the one department that maps to a real RBAC role
 // (used for authorization/scoping across finance, orders, tickets, vendors -
 // see the `sales` role in prisma/seed-roles.ts). A Sales-department admin
-// still gets a normal `admins` profile row; this just grants/revokes the
-// second `sales` user_roles row to keep it in sync with the department field.
+// still gets a normal `admins` profile row, but the `sales` role REPLACES
+// the base `admin` role rather than sitting alongside it - every "is this a
+// pure sales account" check in the app (client and server) tests for
+// `sales` without `admin`, and `admin`/`super_admin` are already treated as
+// unrestricted staff wherever vendor/ticket/order data gets scoped to a
+// sales rep's own vendors. Leaving `admin` in place would silently grant a
+// sales account full admin access instead of the intended vendor-scoped view.
 async function syncSalesRoleForDepartment(
   tx: Pick<typeof prisma, "roles" | "user_roles">,
   userId: string,
   department: string | null | undefined,
 ) {
   const wantsSales = (department ?? "").trim().toLowerCase() === "sales";
-  const salesRole = await tx.roles.findUnique({ where: { code: "sales" } });
-  if (!salesRole) return;
+  const [salesRole, adminRole] = await Promise.all([
+    tx.roles.findUnique({ where: { code: "sales" } }),
+    tx.roles.findUnique({ where: { code: "admin" } }),
+  ]);
+  if (!salesRole || !adminRole) return;
 
-  const existing = await tx.user_roles.findUnique({
-    where: { user_id_role_id: { user_id: userId, role_id: salesRole.id } },
-  });
-
-  if (wantsSales && !existing) {
-    await tx.user_roles.create({ data: { user_id: userId, role_id: salesRole.id } });
-  } else if (!wantsSales && existing) {
-    await tx.user_roles.delete({
+  const [hasSales, hasAdmin] = await Promise.all([
+    tx.user_roles.findUnique({
       where: { user_id_role_id: { user_id: userId, role_id: salesRole.id } },
-    });
+    }),
+    tx.user_roles.findUnique({
+      where: { user_id_role_id: { user_id: userId, role_id: adminRole.id } },
+    }),
+  ]);
+
+  if (wantsSales) {
+    if (!hasSales) await tx.user_roles.create({ data: { user_id: userId, role_id: salesRole.id } });
+    if (hasAdmin) {
+      await tx.user_roles.delete({
+        where: { user_id_role_id: { user_id: userId, role_id: adminRole.id } },
+      });
+    }
+  } else {
+    if (hasSales) {
+      await tx.user_roles.delete({
+        where: { user_id_role_id: { user_id: userId, role_id: salesRole.id } },
+      });
+    }
+    if (!hasAdmin) await tx.user_roles.create({ data: { user_id: userId, role_id: adminRole.id } });
   }
 }
 
