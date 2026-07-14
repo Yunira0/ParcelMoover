@@ -589,6 +589,7 @@ export const getLocationsController = async (_req: Request, res: Response) => {
         city: location.city,
         district: location.district,
         is_hub: location.is_hub,
+        parent_id: location.parent_id,
       })),
     });
   } catch (error: any) {

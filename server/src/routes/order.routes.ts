@@ -7,6 +7,7 @@ import { validate } from "../middlewares/validate.middleware";
 import { uuidParamSchema } from "../validators/common";
 import {
   createOrderSchema,
+  updateOrderDetailsSchema,
   updateOrderStatusSchema,
   bulkUpdateOrderStatusSchema,
   listOrdersQuerySchema,
@@ -24,6 +25,7 @@ import {
   getSenderProfileController,
   listOrdersController,
   riderRunSheetController,
+  updateOrderDetailsController,
   updateOrderStatusController,
 } from "../controllers/order.controller";
 import { csrfProtection } from "../middlewares/csrf.middleware";
@@ -222,6 +224,20 @@ orderRouter.patch(
   validate(uuidParamSchema, "params"),
   validate(updateOrderStatusSchema),
   updateOrderStatusController,
+);
+
+// PATCH /orders/:id — edit parcel details (receiver, route, weight, COD, …).
+// Status changes stay on /:id/status; this route never moves a parcel.
+orderRouter.patch(
+  "/:id",
+  authMiddleware,
+  csrfProtection,
+  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff"),
+  requireStaffPermission("ORDER_ACCESS"),
+  statusUpdateLimiter,
+  validate(uuidParamSchema, "params"),
+  validate(updateOrderDetailsSchema),
+  updateOrderDetailsController,
 );
 
 // POST /orders/:id/remarks - leave a remark on a parcel (visible to anyone with access to it)

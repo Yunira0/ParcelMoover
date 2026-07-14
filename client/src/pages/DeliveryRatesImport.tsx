@@ -323,7 +323,7 @@ const DeliveryRatesImport: React.FC<{ onImported?: () => void }> = ({ onImported
             <table className="di-preview-table">
               <thead>
                 <tr>
-                  <th>#</th>
+                  <th>ID</th>
                   <th>Origin</th>
                   <th>Destination</th>
                   <th>Base Charge</th>

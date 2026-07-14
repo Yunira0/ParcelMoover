@@ -373,7 +373,7 @@ const DestinationsImport: React.FC = () => {
             <table className="di-preview-table">
               <thead>
                 <tr>
-                  <th>#</th>
+                  <th>ID</th>
                   <th>Destination</th>
                   <th>Code</th>
                   <th>Covered Areas</th>

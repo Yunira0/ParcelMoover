@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
+  ChevronDown,
   Copy,
   Download,
   Edit,
@@ -181,6 +182,7 @@ const matchesSecondaryFilters = (order: Order, filters: SecondaryFilters) => {
 };
 
 const orderToCreateInput = (order: Order): CreateOrderInput => ({
+  vendorId: order.vendorId || undefined,
   sender: {
     name: order.senderName,
     phone: order.senderPhone,
@@ -189,19 +191,27 @@ const orderToCreateInput = (order: Order): CreateOrderInput => ({
   receiver: {
     name: order.receiverName,
     phone: order.receiverPhone,
-    address: order.destination,
+    alternatePhone: order.receiverAlternatePhone || undefined,
+    address: order.receiverAddress || order.destination,
   },
+  originLocationId: order.originLocationId || undefined,
+  destinationLocationId: order.destinationLocationId || undefined,
   orderType: order.orderType,
   serviceType: order.serviceType,
   pieces: order.pieces,
   weightKg: order.weightKg,
   codAmount: order.codAmount,
   deliveryCharge: order.deliveryCharge,
+  packageType: order.packageType || undefined,
+  deliveryInstruction: order.deliveryInstruction || undefined,
   pickupAddress: order.origin,
 });
 
 const OrderManagement: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
+  // One-shot success notice from the edit flow's redirect.
+  const [notice, setNotice] = useState<string>(() => (location.state as { notice?: string } | null)?.notice || '');
   const [searchParams, setSearchParams] = useSearchParams();
   const [orders, setOrders] = useState<Order[]>([]);
   const [meta, setMeta] = useState<OrdersPageMeta | null>(null);
@@ -234,6 +244,17 @@ const OrderManagement: React.FC = () => {
   const [openActionId, setOpenActionId] = useState<string | null>(null);
   const [remarkPopupOrder, setRemarkPopupOrder] = useState<Order | null>(null);
   const [printWorking, setPrintWorking] = useState(false);
+  const [filtersCollapsed, setFiltersCollapsed] = useState(
+    () => localStorage.getItem('order-filters-collapsed') === 'true',
+  );
+
+  const toggleFiltersCollapsed = () => {
+    setFiltersCollapsed(prev => {
+      const next = !prev;
+      localStorage.setItem('order-filters-collapsed', String(next));
+      return next;
+    });
+  };
 
   const toggleSort = (field: OrderSortField) => {
     if (sortBy !== field) {
@@ -252,9 +273,18 @@ const OrderManagement: React.FC = () => {
     originHub, riderName, keyword, destinationHub, currentStatus, orderType, dateFrom, dateTo, vendor, operationDept,
   };
   // Arrays are truthy even when empty, so check length for the multi-select filters.
-  const hasSecondaryFilters = Object.values(secondaryFilters).some(v =>
+  const activeFilterCount = Object.values(secondaryFilters).filter(v =>
     Array.isArray(v) ? v.length > 0 : Boolean(v),
-  );
+  ).length;
+  const hasSecondaryFilters = activeFilterCount > 0;
+
+  useEffect(() => {
+    if (!notice) return;
+    // Clear the router state so refresh/back doesn't resurrect the notice.
+    window.history.replaceState({}, '');
+    const handle = setTimeout(() => setNotice(''), 6000);
+    return () => clearTimeout(handle);
+  }, [notice]);
 
   // Debounce search input so every keystroke doesn't fire a request.
   useEffect(() => {
@@ -399,7 +429,16 @@ const OrderManagement: React.FC = () => {
 
   const openPrefilledModal = (order: Order, mode: 'copy' | 'edit') => {
     setOpenActionId(null);
-    navigate('/orders/create', { state: { initialData: orderToCreateInput(order), mode } });
+    navigate('/orders/create', {
+      state: {
+        initialData: orderToCreateInput(order),
+        mode,
+        // The create page needs the real parcel id (and tracking id for the
+        // header) to PATCH instead of POST when mode is 'edit'.
+        orderId: mode === 'edit' ? order.id : undefined,
+        trackingId: mode === 'edit' ? order.trackingId : undefined,
+      },
+    });
   };
 
   const toggleRowSelection = (orderId: string) => {
@@ -481,7 +520,7 @@ const OrderManagement: React.FC = () => {
 
   const orderColumns = [
     {
-      header: '#',
+      header: 'ID',
       accessor: (order: Order) => `#${order.orderNumber}`,
       width: '70px',
     },
@@ -499,7 +538,7 @@ const OrderManagement: React.FC = () => {
       accessor: (order: Order) => (
         <div className="party-cell">
           <span>{order.senderName}</span>
-          <small>{maskPhone(order.senderPhone)}</small>
+          <small>{order.senderPhone}</small>
         </div>
       ),
       width: '210px',
@@ -509,7 +548,7 @@ const OrderManagement: React.FC = () => {
       accessor: (order: Order) => (
         <div className="party-cell">
           <span>{order.receiverName}</span>
-          <small>{maskPhone(order.receiverPhone)}</small>
+          <small>{order.receiverPhone}</small>
         </div>
       ),
       width: '210px',
@@ -599,100 +638,118 @@ const OrderManagement: React.FC = () => {
       />
 
       {loadError && <p className="order-load-error">{loadError}</p>}
+      {notice && <p className="order-update-notice">{notice}</p>}
 
-      <div className="order-filter-panel">
-        <FilterDropdown
-          label="ORIGIN HUB"
-          value={originHub}
-          onChange={setOriginHub}
-          placeholder="Select Hub"
-          options={filterOptions.origins.map(value => ({ value, label: value }))}
-        />
-        <FilterDropdown
-          label="RIDER NAME"
-          value={riderName}
-          onChange={setRiderName}
-          placeholder="Type name....."
-          options={filterOptions.riders.map(value => ({ value, label: value }))}
-        />
-        <label aria-label="Keyword filter">
-          <span>KEYWORD</span>
-          <input
-            type="text"
-            className="order-keyword-input"
-            value={keyword}
-            onChange={e => setKeyword(e.target.value)}
-            placeholder="Name or number"
-          />
-        </label>
-        <FilterDropdown
-          label="DESTINATION HUB"
-          value={destinationHub}
-          onChange={setDestinationHub}
-          placeholder="Select Hub"
-          options={filterOptions.destinations.map(value => ({ value, label: value }))}
-        />
-        <FilterDropdown
-          label="ORDER TYPE"
-          value={orderType}
-          onChange={setOrderType}
-          placeholder="Standard"
-          options={[
-            { value: 'delivery', label: 'Delivery' },
-            { value: 'exchange', label: 'Exchange' },
-            { value: 'return', label: 'Return' },
-          ]}
-        />
-        <label aria-label="Created from date">
-          <span>FROM DATE</span>
-          <input
-            type="date"
-            className="order-date-input"
-            value={dateFrom}
-            max={dateTo || undefined}
-            onChange={e => setDateFrom(e.target.value)}
-          />
-        </label>
-        <label aria-label="Created to date">
-          <span>TO DATE</span>
-          <input
-            type="date"
-            className="order-date-input"
-            value={dateTo}
-            min={dateFrom || undefined}
-            onChange={e => setDateTo(e.target.value)}
-          />
-        </label>
-        <FilterDropdown
-          label="OPERATION DEPT"
-          value={operationDept}
-          onChange={setOperationDept}
-          placeholder="All Departments"
-          options={[
-            { value: 'pickup', label: 'Pickup' },
-            { value: 'delivery', label: 'Delivery' },
-            { value: 'returns', label: 'Returns' },
-          ]}
-        />
-        <MultiFilterDropdown
-          label="CURRENT STATUS"
-          className="order-filter-span-2"
-          value={currentStatus}
-          onChange={setCurrentStatus}
-          placeholder="Select status"
-          options={(Object.keys(STATUS_LABELS) as ParcelStatus[]).map(value => ({ value, label: STATUS_LABELS[value] }))}
-        />
-        <MultiFilterDropdown
-          label="VENDOR"
-          value={vendor}
-          onChange={setVendor}
-          placeholder="All Vendors"
-          options={filterOptions.vendors.map(value => ({ value, label: value }))}
-        />
-        <Button variant="outline" className="clear-filter-btn" onClick={clearFilters}>
-          Clear Filters
-        </Button>
-      </div>
+      <section className="order-filter-panel">
+        <button
+          type="button"
+          className="order-filter-toggle"
+          onClick={toggleFiltersCollapsed}
+          aria-expanded={!filtersCollapsed}
+          aria-controls="order-filter-fields"
+        >
+          <span className="order-filter-toggle-label">Filters</span>
+          {activeFilterCount > 0 && (
+            <span className="order-filter-count">{activeFilterCount} active</span>
+          )}
+          <ChevronDown size={16} className="order-filter-chevron" aria-hidden="true" />
+        </button>
+        {!filtersCollapsed && (
+          <div id="order-filter-fields" className="order-filter-fields">
+            <FilterDropdown
+              label="ORIGIN HUB"
+              value={originHub}
+              onChange={setOriginHub}
+              placeholder="Select Hub"
+              options={filterOptions.origins.map(value => ({ value, label: value }))}
+            />
+            <FilterDropdown
+              label="RIDER NAME"
+              value={riderName}
+              onChange={setRiderName}
+              placeholder="Type name....."
+              options={filterOptions.riders.map(value => ({ value, label: value }))}
+            />
+            <label aria-label="Keyword filter">
+              <span>KEYWORD</span>
+              <input
+                type="text"
+                className="order-keyword-input"
+                value={keyword}
+                onChange={e => setKeyword(e.target.value)}
+                placeholder="Name or number"
+              />
+            </label>
+            <FilterDropdown
+              label="DESTINATION HUB"
+              value={destinationHub}
+              onChange={setDestinationHub}
+              placeholder="Select Hub"
+              options={filterOptions.destinations.map(value => ({ value, label: value }))}
+            />
+            <FilterDropdown
+              label="ORDER TYPE"
+              value={orderType}
+              onChange={setOrderType}
+              placeholder="Standard"
+              options={[
+                { value: 'delivery', label: 'Delivery' },
+                { value: 'exchange', label: 'Exchange' },
+                { value: 'return', label: 'Return' },
+              ]}
+            />
+            <label aria-label="Created from date">
+              <span>FROM DATE</span>
+              <input
+                type="date"
+                className="order-date-input"
+                value={dateFrom}
+                max={dateTo || undefined}
+                onChange={e => setDateFrom(e.target.value)}
+              />
+            </label>
+            <label aria-label="Created to date">
+              <span>TO DATE</span>
+              <input
+                type="date"
+                className="order-date-input"
+                value={dateTo}
+                min={dateFrom || undefined}
+                onChange={e => setDateTo(e.target.value)}
+              />
+            </label>
+            <FilterDropdown
+              label="OPERATION DEPT"
+              value={operationDept}
+              onChange={setOperationDept}
+              placeholder="All Departments"
+              options={[
+                { value: 'pickup', label: 'Pickup' },
+                { value: 'delivery', label: 'Delivery' },
+                { value: 'returns', label: 'Returns' },
+              ]}
+            />
+            <MultiFilterDropdown
+              label="CURRENT STATUS"
+              className="order-filter-span-2"
+              value={currentStatus}
+              onChange={setCurrentStatus}
+              placeholder="Select status"
+              options={(Object.keys(STATUS_LABELS) as ParcelStatus[]).map(value => ({ value, label: STATUS_LABELS[value] }))}
+            />
+            <MultiFilterDropdown
+              label="VENDOR"
+              value={vendor}
+              onChange={setVendor}
+              placeholder="All Vendors"
+              options={filterOptions.vendors.map(value => ({ value, label: value }))}
+            />
+            <Button variant="outline" className="clear-filter-btn" onClick={clearFilters}>
+              Clear Filters
+            </Button>
+          </div>
+        )}
+      </section>
 
       {hasSecondaryFilters && (
         <p className="order-filter-scope-note">

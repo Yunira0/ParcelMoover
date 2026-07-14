@@ -317,7 +317,7 @@ const BulkOrderPage: React.FC = () => {
               <h3>Failed Orders</h3>
               <table className="bop-result-table">
                 <thead>
-                  <tr><th>#</th><th>Row</th><th>Reason</th></tr>
+                  <tr><th>ID</th><th>Row</th><th>Reason</th></tr>
                 </thead>
                 <tbody>
                   {result.results
@@ -460,7 +460,7 @@ const BulkOrderPage: React.FC = () => {
               <table className="bop-preview-table">
                 <thead>
                   <tr>
-                    <th>#</th>
+                    <th>ID</th>
                     <th>Receiver</th>
                     <th>Phone</th>
                     <th>Address</th>

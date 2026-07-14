@@ -101,26 +101,32 @@ const Dashboard: React.FC = () => {
     };
   }, [loadSummary]);
 
+  // Each card links to the screen where that number is actually worked
+  // (status groups match the dashboard-summary SQL definitions).
   const stats = [
     {
       icon: ClipboardList,
       label: "PENDING PICKUPS",
-      value: initialLoading ? '...' : summary.overview.pendingPickups.toLocaleString()
+      value: initialLoading ? '...' : summary.overview.pendingPickups.toLocaleString(),
+      to: '/orders?tab=ready_to_pick',
     },
     {
       icon: RotateCcw,
       label: "Pending Return",
-      value: initialLoading ? '...' : summary.overview.pendingReturns.toLocaleString()
+      value: initialLoading ? '...' : summary.overview.pendingReturns.toLocaleString(),
+      to: '/return',
     },
     {
       icon: Truck,
       label: "In Transit",
-      value: initialLoading ? '...' : summary.overview.inTransit.toLocaleString()
+      value: initialLoading ? '...' : summary.overview.inTransit.toLocaleString(),
+      to: '/orders?tab=inprogress',
     },
     {
       icon: PackageCheck,
       label: "Pending Deliveries",
-      value: initialLoading ? '...' : summary.overview.pendingDeliveries.toLocaleString()
+      value: initialLoading ? '...' : summary.overview.pendingDeliveries.toLocaleString(),
+      to: '/orders?tab=inprogress&currentStatus=ready_to_deliver&currentStatus=sent_for_delivery&currentStatus=oov',
     }
   ];
 

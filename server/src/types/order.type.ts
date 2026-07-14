@@ -37,6 +37,23 @@ export interface CreateOrderInput {
   scheduledPickupAt?: string;
 }
 
+export interface UpdateOrderDetailsInput {
+  receiver?: OrderPartyInput;
+
+  originLocationId?: string;
+  destinationLocationId?: string;
+
+  orderType?: OrderType;
+  serviceType?: ServiceType;
+
+  pieces?: number;
+  weightKg?: number;
+  codAmount?: number;
+
+  packageType?: string;
+  deliveryInstruction?: string;
+}
+
 export type ParcelStatus =
   | "pickup_ordered"
   | "rider_assigned"

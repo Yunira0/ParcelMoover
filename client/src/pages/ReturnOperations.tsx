@@ -247,7 +247,7 @@ const ReturnOperations: React.FC = () => {
 
   const returnColumns = [
     {
-      header: '#',
+      header: 'ID',
       accessor: (order: Order) => `#${order.orderNumber}`,
       width: '70px',
       className: 'return-sn-cell',

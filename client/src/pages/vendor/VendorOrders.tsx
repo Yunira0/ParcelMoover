@@ -327,7 +327,7 @@ const VendorOrders: React.FC = () => {
 
   const columns = [
     {
-      header: '#',
+      header: 'ID',
       accessor: (order: Order) => `#${order.orderNumber}`,
       width: '70px',
     },

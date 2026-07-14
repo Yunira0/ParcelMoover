@@ -139,7 +139,7 @@ export function printRunSheet(
   <table>
     <thead>
       <tr>
-        <th>#</th>
+        <th>ID</th>
         <th>Tracking ID</th>
         <th>Receiver</th>
         <th>Delivery Address</th>

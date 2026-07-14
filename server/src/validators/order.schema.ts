@@ -91,6 +91,27 @@ export const createOrderSchema = z.object({
 
 export type CreateOrderInput = z.infer<typeof createOrderSchema>;
 
+// ── Update order details (parcel info edit, not status) ──────────────────────
+
+export const updateOrderDetailsSchema = z
+  .object({
+    receiver: orderPartySchema.optional(),
+    originLocationId: optionalUuidSchema,
+    destinationLocationId: optionalUuidSchema,
+    orderType: z.enum(ORDER_TYPES).optional(),
+    serviceType: z.enum(SERVICE_TYPES).optional(),
+    pieces: z.number().int("pieces must be an integer").min(1, "pieces must be at least 1").optional(),
+    weightKg: z.number().positive("weightKg must be a positive number").optional(),
+    codAmount: z.number().min(0, "codAmount cannot be negative").optional(),
+    packageType: z.string().max(50).optional(),
+    deliveryInstruction: z.string().max(500).optional(),
+  })
+  .refine((data) => Object.values(data).some((v) => v !== undefined), {
+    message: "At least one field must be provided",
+  });
+
+export type UpdateOrderDetailsInput = z.infer<typeof updateOrderDetailsSchema>;
+
 // ── Update single order status ────────────────────────────────────────────────
 
 export const updateOrderStatusSchema = z.object({

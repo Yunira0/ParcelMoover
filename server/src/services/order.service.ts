@@ -11,6 +11,7 @@ import {
   OrderSortField,
   ParcelStatus,
   STATUS_TRANSITIONS,
+  UpdateOrderDetailsInput,
   UpdateParcelStatusInput,
 } from "../types/order.type";
 import { generateTrackingId } from "../utils/trackingId";
@@ -600,6 +601,247 @@ async function _createOrderImpl(actor: OrderActor, data: CreateOrderInput) {
   return parcel;
 }
 
+// A parcel that has reached a terminal state is settled paperwork — its
+// details (COD, receiver, route) feed finance and RTO records and must not
+// change underneath them.
+const EDIT_BLOCKED_STATUSES: parcel_status[] = [
+  "delivered",
+  "partially_delivered",
+  "cancelled",
+  "returned_to_vendor",
+  "loss_and_damage",
+];
+
+// Vendor-side actors may only edit while the parcel is still theirs to hand
+// over; once it's in the network, changes go through ops staff.
+const VENDOR_EDITABLE_STATUSES: parcel_status[] = [
+  "pickup_ordered",
+  "rider_assigned",
+  "failed_pickup",
+];
+
+async function upsertPartyByPhone(
+  tx: Prisma.TransactionClient,
+  partyData: OrderPartyInput,
+) {
+  const normalizedPhone = partyData.phone.trim().replace(/\s/g, "");
+  const existing = await tx.parties.findFirst({
+    where: { phone: normalizedPhone },
+    orderBy: { created_at: "desc" },
+  });
+  const fields = {
+    name: partyData.name.trim(),
+    alternate_phone: partyData.alternatePhone?.trim() || null,
+    address: partyData.address?.trim() || null,
+  };
+  if (existing) {
+    return tx.parties.update({ where: { id: existing.id }, data: fields });
+  }
+  return tx.parties.create({ data: { ...fields, phone: normalizedPhone } });
+}
+
+export async function updateOrderDetails(
+  actor: OrderActor,
+  parcelId: string,
+  data: UpdateOrderDetailsInput,
+) {
+  const ownVendorId = await resolveOwnVendorId(actor);
+
+  const parcel = await prisma.parcels.findFirst({
+    where: { id: parcelId, ...(ownVendorId ? { vendor_id: ownVendorId } : {}) },
+    include: {
+      parties_parcels_sender_idToparties: true,
+      parties_parcels_receiver_idToparties: true,
+      vendors: true,
+    },
+  });
+  if (!parcel) throw new AppError(404, "Order not found");
+
+  if (EDIT_BLOCKED_STATUSES.includes(parcel.status)) {
+    throw new AppError(409, `Order can no longer be edited in status "${parcel.status}"`);
+  }
+  if (ownVendorId && !VENDOR_EDITABLE_STATUSES.includes(parcel.status)) {
+    throw new AppError(409, "This parcel is already in the delivery network — contact support to change it");
+  }
+
+  const [originLoc, destinationLoc] = await Promise.all([
+    data.originLocationId
+      ? prisma.locations.findUnique({ where: { id: data.originLocationId } })
+      : Promise.resolve(null),
+    data.destinationLocationId
+      ? prisma.locations.findUnique({ where: { id: data.destinationLocationId } })
+      : Promise.resolve(null),
+  ]);
+  if (data.originLocationId && (!originLoc || !originLoc.is_active))
+    throw new AppError(400, "Origin location not found or inactive");
+  if (data.destinationLocationId && (!destinationLoc || !destinationLoc.is_active))
+    throw new AppError(400, "Destination location not found or inactive");
+
+  const currentReceiver = parcel.parties_parcels_receiver_idToparties;
+  const currentWeight = parcel.weight_kg === null ? undefined : Number(parcel.weight_kg);
+
+  // Human-readable trail of what changed — each entry carries the previous and
+  // new value ("COD amount: 1000 → 1200") and is written into the parcel's
+  // history so the order detail page shows who edited what.
+  const changedKeys = new Set<string>();
+  const changedFields: string[] = [];
+  const note = (key: string, oldValue: unknown, newValue: unknown) => {
+    changedKeys.add(key);
+    const show = (v: unknown) => (v === null || v === undefined || v === "" ? "—" : String(v));
+    changedFields.push(`${key}: ${show(oldValue)} → ${show(newValue)}`);
+  };
+  if (data.receiver) {
+    const normalizedPhone = data.receiver.phone.trim().replace(/\s/g, "");
+    if (data.receiver.name.trim() !== currentReceiver.name)
+      note("receiver name", currentReceiver.name, data.receiver.name.trim());
+    if (normalizedPhone !== currentReceiver.phone)
+      note("receiver phone", currentReceiver.phone, normalizedPhone);
+    if ((data.receiver.alternatePhone?.trim() || null) !== currentReceiver.alternate_phone)
+      note("receiver alt phone", currentReceiver.alternate_phone, data.receiver.alternatePhone?.trim());
+    if ((data.receiver.address?.trim() || null) !== currentReceiver.address)
+      note("receiver address", currentReceiver.address, data.receiver.address?.trim());
+  }
+  if (data.originLocationId !== undefined && data.originLocationId !== parcel.origin_location_id) {
+    const oldName = parcel.origin_location_id
+      ? (await prisma.locations.findUnique({ where: { id: parcel.origin_location_id } }))?.name
+      : null;
+    note("origin", oldName ?? parcel.origin_location_id, originLoc?.name ?? data.originLocationId);
+  }
+  if (data.destinationLocationId !== undefined && data.destinationLocationId !== parcel.destination_location_id) {
+    const oldName = parcel.destination_location_id
+      ? (await prisma.locations.findUnique({ where: { id: parcel.destination_location_id } }))?.name
+      : null;
+    note("destination", oldName ?? parcel.destination_location_id, destinationLoc?.name ?? data.destinationLocationId);
+  }
+  if (data.orderType !== undefined && data.orderType !== parcel.order_type)
+    note("order type", parcel.order_type, data.orderType);
+  if (data.serviceType !== undefined && data.serviceType !== parcel.service_type)
+    note("service type", parcel.service_type, data.serviceType);
+  if (data.pieces !== undefined && data.pieces !== parcel.pieces) note("pieces", parcel.pieces, data.pieces);
+  if (data.weightKg !== undefined && data.weightKg !== currentWeight)
+    note("weight", currentWeight, data.weightKg);
+  if (data.codAmount !== undefined && data.codAmount !== Number(parcel.cod_amount))
+    note("COD amount", Number(parcel.cod_amount), data.codAmount);
+  if (data.packageType !== undefined && data.packageType !== (parcel.package_type || undefined))
+    note("package type", parcel.package_type, data.packageType);
+  if (data.deliveryInstruction !== undefined && data.deliveryInstruction !== (parcel.delivery_instruction || undefined))
+    note("delivery instruction", parcel.delivery_instruction, data.deliveryInstruction);
+
+  if (changedFields.length === 0) return parcel;
+
+  // Weight or destination changes re-price the parcel with the same waterfall
+  // as order creation (vendor rate model, then route rate, else keep as-is).
+  let deliveryCharge = Number(parcel.delivery_charge);
+  const destinationLocationId = data.destinationLocationId ?? parcel.destination_location_id;
+  const originLocationId = data.originLocationId ?? parcel.origin_location_id;
+  const weightKg = data.weightKg ?? currentWeight ?? 1;
+  const repriceNeeded =
+    changedKeys.has("weight") || changedKeys.has("destination") || changedKeys.has("origin");
+  if (repriceNeeded && destinationLocationId) {
+    if (parcel.vendors) {
+      const vendor = parcel.vendors;
+      const quote = await getVendorQuote(vendor.rate_type as RateType, destinationLocationId, weightKg, {
+        flatInsideValley: vendor.flat_inside_valley === null ? null : Number(vendor.flat_inside_valley),
+        flatOutsideValley: vendor.flat_outside_valley === null ? null : Number(vendor.flat_outside_valley),
+        zoneMajorCities: vendor.zone_major_cities === null ? null : Number(vendor.zone_major_cities),
+        zoneUrbanAreas: vendor.zone_urban_areas === null ? null : Number(vendor.zone_urban_areas),
+        zoneRemoteAreas: vendor.zone_remote_areas === null ? null : Number(vendor.zone_remote_areas),
+        extraWeightPercent: vendor.extra_weight_percent === null ? null : Number(vendor.extra_weight_percent),
+      });
+      deliveryCharge = quote.totalPayable;
+    } else if (originLocationId) {
+      const quote = await getDeliveryQuote(originLocationId, destinationLocationId, weightKg);
+      deliveryCharge = quote.totalPayable;
+    }
+  }
+
+  const updated = await prisma.$transaction(async (tx) => {
+    let receiverId = parcel.receiver_id;
+    let receiver = currentReceiver;
+    if (data.receiver) {
+      receiver = await upsertPartyByPhone(tx, data.receiver);
+      receiverId = receiver.id;
+    }
+
+    const updatedParcel = await tx.parcels.update({
+      where: { id: parcel.id },
+      data: {
+        receiver_id: receiverId,
+        origin_location_id: originLocationId,
+        destination_location_id: destinationLocationId,
+        order_type: data.orderType ?? parcel.order_type,
+        service_type: data.serviceType ?? parcel.service_type,
+        pieces: data.pieces ?? parcel.pieces,
+        weight_kg: weightKg,
+        cod_amount: data.codAmount ?? parcel.cod_amount,
+        delivery_charge: deliveryCharge,
+        package_type: data.packageType !== undefined ? data.packageType || null : parcel.package_type,
+        delivery_instruction:
+          data.deliveryInstruction !== undefined ? data.deliveryInstruction || null : parcel.delivery_instruction,
+        search_text: buildSearchText(parcel.tracking_id, parcel.parties_parcels_sender_idToparties, receiver),
+      },
+    });
+
+    const writes: Prisma.PrismaPromise<unknown>[] = [
+      // Same-status history entry: records WHO edited the parcel info and what
+      // they touched, without pretending the status moved.
+      tx.parcel_status_history.create({
+        data: {
+          parcel_id: parcel.id,
+          old_status: parcel.status,
+          new_status: parcel.status,
+          location_id: parcel.current_location_id,
+          changed_by: actor.id,
+          remarks: `Parcel info edited — ${changedFields.join("; ")}`.slice(0, 500),
+        },
+      }),
+      tx.audit_logs.create({
+        data: {
+          actor_id: actor.id,
+          entity_type: "parcel",
+          entity_id: parcel.id,
+          action: "UPDATE_ORDER",
+          old_data: {
+            receiverId: parcel.receiver_id,
+            destinationLocationId: parcel.destination_location_id,
+            codAmount: Number(parcel.cod_amount),
+            weightKg: currentWeight ?? null,
+            deliveryCharge: Number(parcel.delivery_charge),
+          },
+          new_data: {
+            changedFields,
+            receiverId,
+            destinationLocationId,
+            codAmount: Number(updatedParcel.cod_amount),
+            weightKg: Number(updatedParcel.weight_kg),
+            deliveryCharge: Number(updatedParcel.delivery_charge),
+          },
+        },
+      }),
+    ];
+    if (data.codAmount !== undefined && changedKeys.has("COD amount")) {
+      writes.push(
+        tx.cod_collections.updateMany({
+          where: { parcel_id: parcel.id, payment_status: "pending" },
+          data: { cod_amount: data.codAmount },
+        }),
+      );
+    }
+    await Promise.all(writes);
+
+    return updatedParcel;
+  });
+
+  invalidateOrderCaches().catch((err) => console.error("[Redis] cache invalidation failed:", err));
+  if (parcel.vendor_id) {
+    invalidateVendorFinanceCache(parcel.vendor_id).catch((err) =>
+      console.error("[Redis] cache invalidation failed:", err),
+    );
+  }
+
+  return updated;
+}
+
 const BULK_CREATE_MAX = 100;
 
 // Each order runs its own multi-query transaction (tracking id, party lookup,
@@ -846,7 +1088,10 @@ function mapOrder(
     senderPhone: parcel.parties_parcels_sender_idToparties.phone,
     receiverName: parcel.parties_parcels_receiver_idToparties.name,
     receiverPhone: parcel.parties_parcels_receiver_idToparties.phone,
+    receiverAlternatePhone: parcel.parties_parcels_receiver_idToparties.alternate_phone || "",
     receiverAddress: parcel.parties_parcels_receiver_idToparties.address || "",
+    originLocationId: parcel.origin_location_id,
+    destinationLocationId: parcel.destination_location_id,
     origin:
       locationName(parcel.locations_parcels_origin_location_idTolocations) ||
       parcel.parties_parcels_sender_idToparties.address ||

@@ -121,7 +121,7 @@ const KycManagement: React.FC = () => {
   };
 
   const columns = [
-    { header: '#', accessor: (a: KycApplication) => a.sn, width: '48px' },
+    { header: 'ID', accessor: (a: KycApplication) => a.sn, width: '48px' },
     { header: 'Business', accessor: (a: KycApplication) => (
       <div>
         <div className="kyc-cell-primary">{a.onlineBusinessName}</div>

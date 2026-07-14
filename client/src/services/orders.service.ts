@@ -69,9 +69,12 @@ export interface Order {
   senderPhone: string;
   receiverName: string;
   receiverPhone: string;
+  receiverAlternatePhone?: string;
   receiverAddress: string;
   origin: string;
   destination: string;
+  originLocationId?: string | null;
+  destinationLocationId?: string | null;
   pieces: number;
   weightKg?: number;
   attemptCount: number;
@@ -378,6 +381,17 @@ export const createOrder = async (data: CreateOrderInput) => {
   const response = await api.post('/orders', data, {
     headers: { 'Idempotency-Key': idempotencyKey },
   });
+  return response.data;
+};
+
+export type UpdateOrderInput = Partial<Omit<CreateOrderInput, 'sender' | 'vendorId' | 'deliveryCharge' | 'pickupAddress' | 'scheduledPickupAt'>>;
+
+export const updateOrder = async (orderId: string, data: UpdateOrderInput) => {
+  const idempotencyKey = uuidv4();
+  const response = await api.patch(`/orders/${orderId}`, data, {
+    headers: { 'Idempotency-Key': idempotencyKey },
+  });
+  notifyOrderStatusChanged();
   return response.data;
 };
 

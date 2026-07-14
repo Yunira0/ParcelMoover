@@ -1,12 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Info } from 'lucide-react';
 import FormField from '../components/FormField';
 import PageHeader from '../components/PageHeader';
 import Button from '../components/Button';
 import { getLocations, getVendors } from '../services/users.service';
 import { getVendorQuote } from '../services/pricing.service';
-import { createOrder, getSenderProfile, type CreateOrderInput, type OrderType, type ServiceType } from '../services/orders.service';
+import { createOrder, updateOrder, getSenderProfile, type CreateOrderInput, type UpdateOrderInput, type OrderType, type ServiceType } from '../services/orders.service';
 import { isVendorSide } from '../utils/auth';
 import './CreateOrderPage.css';
 
@@ -22,6 +22,7 @@ interface VendorOption {
 interface LocationOption {
   id: string;
   name: string;
+  parentId?: string | null;
 }
 
 const SERVICE_TYPE_OPTIONS: { value: ServiceType; label: string }[] = [
@@ -89,7 +90,17 @@ const SERVER_FIELD_MAP: Record<string, keyof FormState> = {
 
 const CreateOrderPage: React.FC = () => {
   const location = useLocation();
-  const prefillInitialData = (location.state as { initialData?: CreateOrderInput } | null)?.initialData;
+  const navigate = useNavigate();
+  const navState = location.state as {
+    initialData?: CreateOrderInput;
+    mode?: 'copy' | 'edit';
+    orderId?: string;
+    trackingId?: string;
+  } | null;
+  const prefillInitialData = navState?.initialData;
+  const editOrderId = navState?.mode === 'edit' ? navState.orderId : undefined;
+  const editTrackingId = navState?.mode === 'edit' ? navState.trackingId : undefined;
+  const isEditMode = Boolean(editOrderId);
 
   const isVendorActor = isVendorSide();
 
@@ -156,7 +167,7 @@ const CreateOrderPage: React.FC = () => {
       try {
         const res = await getLocations();
         if (res?.success && Array.isArray(res.data)) {
-          setLocationOptions(res.data.map((l: any) => ({ id: l.id, name: l.name })));
+          setLocationOptions(res.data.map((l: any) => ({ id: l.id, name: l.name, parentId: l.parent_id })));
         }
       } catch (err) {
         console.error('Failed to load locations:', err);
@@ -284,13 +295,17 @@ const CreateOrderPage: React.FC = () => {
     // Validate all fields up-front so every error is shown at once
     const errors: Partial<Record<keyof FormState, string>> = {};
 
-    if (!isVendorActor && !form.vendorId) {
+    // Edit mode: the vendor is fixed (and may legitimately be empty for
+    // admin-created orders), so don't demand one.
+    if (!isVendorActor && !form.vendorId && !isEditMode) {
       errors.vendorId = 'Please select a vendor.';
     }
-    if (!form.originLocationId) {
+    // Edit mode: older/imported parcels may predate route locations — leaving
+    // them unset means "unchanged", so only creation demands them.
+    if (!form.originLocationId && !isEditMode) {
       errors.originLocationId = 'Please select an origin location.';
     }
-    if (!form.destinationLocationId) {
+    if (!form.destinationLocationId && !isEditMode) {
       errors.destinationLocationId = 'Please select a destination location.';
     }
     if (!form.customerName.trim()) {
@@ -319,7 +334,10 @@ const CreateOrderPage: React.FC = () => {
       return;
     }
 
-    if (!quote) {
+    // Editing must never be blocked by a missing rate config — the server only
+    // re-prices when weight/route actually changed, and keeps the old charge
+    // when no rate resolves.
+    if (!quote && !isEditMode) {
       setGeneralError('Charges could not be calculated for this route. Please configure a delivery rate first.');
       return;
     }
@@ -359,6 +377,23 @@ const CreateOrderPage: React.FC = () => {
 
     setSubmitting(true);
     try {
+      if (isEditMode && editOrderId) {
+        const editPayload: UpdateOrderInput = {
+          receiver: payload.receiver,
+          // Empty means "leave the route as it is", not "clear it".
+          originLocationId: payload.originLocationId || undefined,
+          destinationLocationId: payload.destinationLocationId || undefined,
+          orderType: payload.orderType,
+          serviceType: payload.serviceType,
+          weightKg: payload.weightKg,
+          codAmount: payload.codAmount,
+          packageType: payload.packageType,
+          deliveryInstruction: payload.deliveryInstruction,
+        };
+        const res = await updateOrder(editOrderId, editPayload);
+        navigate('/orders', { state: { notice: `Order ${res.data.trackingId} updated.` } });
+        return;
+      }
       const res = await createOrder(payload);
       resetForm();
       setSuccessMessage(`Order ${res.data.trackingId} created successfully. You can create another order below.`);
@@ -386,6 +421,11 @@ const CreateOrderPage: React.FC = () => {
   };
 
   const locationSelectOptions = locationOptions.map(l => ({ id: l.id, label: l.name }));
+  // Destinations are top-level locations; covered areas (children with a
+  // parentId) are delivery zones within them, not valid order destinations.
+  const destinationSelectOptions = locationOptions
+    .filter(l => !l.parentId)
+    .map(l => ({ id: l.id, label: l.name }));
 
   // Vendors never pick their own origin - it's always their hub (e.g. Imadol),
   // so "From" is shown read-only instead of an editable dropdown.
@@ -395,7 +435,12 @@ const CreateOrderPage: React.FC = () => {
 
   return (
     <div className="create-order-page">
-      <PageHeader title="Create Order" subtitle="Set up and submit new package orders through the system." />
+      <PageHeader
+        title={isEditMode ? 'Edit Order' : 'Create Order'}
+        subtitle={isEditMode
+          ? `Update parcel details for ${editTrackingId || 'this order'}. Changes are recorded in the parcel history.`
+          : 'Set up and submit new package orders through the system.'}
+      />
 
       <form className="create-order-body" onSubmit={handleSubmit}>
         <div className="create-order-main">
@@ -413,6 +458,7 @@ const CreateOrderPage: React.FC = () => {
                 searchPlaceholder="Search vendor by name..."
                 emptyMessage="No vendors found."
                 error={fieldErrors.vendorId}
+                disabled={isEditMode}
               />
             </div>
           )}
@@ -470,7 +516,7 @@ const CreateOrderPage: React.FC = () => {
                 label="To"
                 required
                 type="searchable-select"
-                searchableOptions={locationSelectOptions}
+                searchableOptions={destinationSelectOptions}
                 value={form.destinationLocationId}
                 onChange={id => setField('destinationLocationId', id)}
                 placeholder="Enter Destination"
@@ -591,7 +637,7 @@ const CreateOrderPage: React.FC = () => {
             <FormField
               label=""
               type="searchable-select"
-              searchableOptions={locationSelectOptions}
+              searchableOptions={destinationSelectOptions}
               value={form.destinationLocationId}
               onChange={id => setField('destinationLocationId', id)}
               placeholder="Search branch"
@@ -636,11 +682,19 @@ const CreateOrderPage: React.FC = () => {
 
           <div className="create-order-actions">
             <Button type="submit" variant="primary" grow disabled={submitting}>
-              {submitting ? 'Creating...' : 'New Order'}
+              {isEditMode
+                ? (submitting ? 'Saving...' : 'Save Changes')
+                : (submitting ? 'Creating...' : 'Create Order')}
             </Button>
-            <Button type="button" variant="secondary" onClick={resetForm} disabled={submitting}>
-              Reset
-            </Button>
+            {isEditMode ? (
+              <Button type="button" variant="secondary" onClick={() => navigate('/orders')} disabled={submitting}>
+                Cancel
+              </Button>
+            ) : (
+              <Button type="button" variant="secondary" onClick={resetForm} disabled={submitting}>
+                Reset
+              </Button>
+            )}
           </div>
         </div>
       </form>

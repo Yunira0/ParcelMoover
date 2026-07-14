@@ -216,7 +216,7 @@ const HoldOperations: React.FC = () => {
 
   const holdColumns = useMemo(() => [
     {
-      header: '#',
+      header: 'ID',
       accessor: (order: Order) => `#${order.orderNumber}`,
       width: '70px',
       className: 'hold-sn-cell',

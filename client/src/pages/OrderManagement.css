@@ -11,6 +11,12 @@
   margin: 0;
 }
 
+.order-update-notice {
+  color: var(--color-success-default);
+  font-size: var(--font-size-sm);
+  margin: 0;
+}
+
 .sortable-column-header {
   align-items: center;
   background: none;
@@ -42,6 +48,70 @@
   background: var(--color-background-surface);
   border: 1px solid var(--color-border-default);
   border-radius: var(--border-radius-modal);
+}
+
+.order-filter-toggle {
+  align-items: center;
+  background: none;
+  border: none;
+  border-radius: var(--border-radius-modal);
+  color: var(--color-text-default);
+  cursor: pointer;
+  display: flex;
+  font-family: var(--typography-font-family-default);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  gap: var(--space-2);
+  line-height: var(--line-height-sm);
+  padding: var(--space-3) var(--space-4);
+  text-align: left;
+  width: 100%;
+}
+
+.order-filter-toggle:hover {
+  background: var(--color-background-canvas);
+}
+
+.order-filter-toggle:focus-visible {
+  box-shadow: var(--shadow-focus);
+  outline: none;
+}
+
+/* Keep the hover/focus background from spilling past the panel's bottom
+   corners while the fields below are expanded. */
+.order-filter-toggle[aria-expanded='true'] {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.order-filter-count {
+  background: var(--color-background-primary-invert-default);
+  border-radius: var(--border-radius-full);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semi-bold);
+  line-height: var(--line-height-xs);
+  padding: var(--space-0-5) var(--space-2);
+}
+
+.order-filter-chevron {
+  color: var(--color-text-caption);
+  margin-left: auto;
+  transition: transform 0.15s ease-out;
+}
+
+.order-filter-toggle[aria-expanded='true'] .order-filter-chevron {
+  transform: rotate(180deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .order-filter-chevron {
+    transition: none;
+  }
+}
+
+.order-filter-fields {
+  border-top: 1px solid var(--color-border-default);
   display: grid;
   gap: var(--space-4);
   grid-template-columns: repeat(4, minmax(150px, 1fr));
@@ -253,13 +323,13 @@
 
 
 @media (max-width: 1200px) {
-  .order-filter-panel {
+  .order-filter-fields {
     grid-template-columns: repeat(3, minmax(150px, 1fr));
   }
 }
 
 @media (max-width: 760px) {
-  .order-filter-panel {
+  .order-filter-fields {
     grid-template-columns: 1fr;
   }
 

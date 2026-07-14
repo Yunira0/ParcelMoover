@@ -29,6 +29,27 @@
   gap: var(--space-4);
 }
 
+.today-overview-card-link {
+  color: inherit;
+  text-decoration: none;
+  transition: border-color 0.15s ease-out;
+}
+
+.today-overview-card-link:hover {
+  border-color: var(--color-text-placeholder);
+}
+
+.today-overview-card-link:focus-visible {
+  box-shadow: var(--shadow-focus);
+  outline: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .today-overview-card-link {
+    transition: none;
+  }
+}
+
 .today-label {
   font-weight: var(--font-weight-semi-bold);
   font-size: var(--font-size-md);
