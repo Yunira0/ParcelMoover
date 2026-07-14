@@ -8,10 +8,12 @@ export const nameSchema = z
   .min(2, "Name must be at least 2 characters")
   .max(100, "Name must not exceed 100 characters");
 
+// Tolerates the separators people naturally type ("984-123 4567", "(01) 4123456")
+// by stripping them before validating; the stored value is always bare digits.
 export const phoneSchema = z
   .string()
-  .trim()
-  .regex(/^\+?[0-9]{10,15}$/, "Phone must be 10–15 digits, optionally starting with +");
+  .transform((val) => val.trim().replace(/[\s\-()]/g, ""))
+  .pipe(z.string().regex(/^\+?[0-9]{10,15}$/, "Phone must be 10–15 digits, optionally starting with +"));
 
 // Optional email: empty string or undefined → undefined; otherwise validate
 export const emailSchema = z

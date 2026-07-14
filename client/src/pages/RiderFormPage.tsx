@@ -5,7 +5,15 @@ import Button from '../components/Button';
 import FormField from '../components/FormField';
 import { registerUser, getLocations, getManagedUser, updateUserProfile } from '../services/users.service';
 import { getCurrentUser } from '../services/auth.service';
+import { extractServerFieldErrors, isValidEmail, isValidPhone, normalizePhone } from '../utils/serverValidation';
 import './RiderFormPage.css';
+
+// API validation-error field → form field, for errors returned by the server.
+// Fields not listed here share the same name on both sides.
+const API_FIELD_MAP: Record<string, string> = {
+  phone: 'contactNo',
+  locationId: 'serviceBranch',
+};
 
 interface RiderFormInput {
   // Rider Info
@@ -203,8 +211,10 @@ const RiderFormPage: React.FC = () => {
     if (!form.fullName.trim()) errors.fullName = 'Rider name is required';
     if (!form.riderLocation.trim()) errors.riderLocation = 'Rider location is required';
     if (!form.contactNo.trim()) errors.contactNo = 'Contact number is required';
+    else if (!isValidPhone(form.contactNo)) errors.contactNo = 'Enter a 10–15 digit phone number';
     if (!form.serviceBranch.trim()) errors.serviceBranch = 'Service branch is required';
     if (!form.email.trim()) errors.email = 'Email is required';
+    else if (!isValidEmail(form.email)) errors.email = 'Enter a valid email address';
     // Documents and password only required when creating a new rider.
     if (!isEdit) {
       if (!form.citizenshipDoc) errors.citizenshipDoc = 'Citizenship document is required';
@@ -236,7 +246,7 @@ const RiderFormPage: React.FC = () => {
         await updateUserProfile(editId!, {
           type: 'rider',
           fullName: form.fullName,
-          phone: form.contactNo,
+          phone: normalizePhone(form.contactNo),
           email: form.email,
           locationId: form.serviceBranch,
           riderLocation: form.riderLocation,
@@ -257,7 +267,7 @@ const RiderFormPage: React.FC = () => {
         fullName: form.fullName,
         email: form.email,
         password: form.password,
-        phone: form.contactNo,
+        phone: normalizePhone(form.contactNo),
         locationId: form.serviceBranch, // the rider's hub / service branch
         riderLocation: form.riderLocation,
         citizenshipNo: form.citizenshipNo,
@@ -275,7 +285,18 @@ const RiderFormPage: React.FC = () => {
       });
       setSubmitted(true);
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to create rider. Please try again.');
+      // Zod rejections from the API name the exact offending fields — show
+      // them inline instead of the generic "Validation failed".
+      const serverErrors = extractServerFieldErrors(err, API_FIELD_MAP);
+      if (serverErrors) {
+        setFieldErrors(serverErrors.fieldErrors);
+        setError(serverErrors.summary);
+        setTimeout(() => {
+          document.querySelector('.rfp-field-error')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 0);
+      } else {
+        setError(err.response?.data?.message || 'Failed to create rider. Please try again.');
+      }
     } finally {
       setLoading(false);
     }

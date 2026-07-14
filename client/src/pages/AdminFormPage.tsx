@@ -4,7 +4,16 @@ import { ArrowLeft, CheckCircle, Upload, X, User, Building2, FileText, CreditCar
 import Button from '../components/Button';
 import FormField from '../components/FormField';
 import { registerUser, getManagedUser, updateUserProfile, getLocations } from '../services/users.service';
+import { extractServerFieldErrors, isValidEmail, isValidPhone, normalizePhone } from '../utils/serverValidation';
 import './AdminFormPage.css';
+
+// API validation-error field → form field, for errors returned by the server.
+// Fields not listed here share the same name on both sides.
+const API_FIELD_MAP: Record<string, string> = {
+  position: 'designation',
+  idDocumentType: 'documentType',
+  idDocumentNumber: 'documentNumber',
+};
 
 interface AdminFormInput {
   // Employee Info
@@ -217,10 +226,12 @@ const AdminFormPage: React.FC = () => {
     if (!form.fullName.trim()) errors.fullName = 'Name is required';
     if (!form.address.trim()) errors.address = 'Address is required';
     if (!form.phone.trim()) errors.phone = 'Phone number is required';
+    else if (!isValidPhone(form.phone)) errors.phone = 'Enter a 10–15 digit phone number';
     if (!form.locationId.trim()) errors.locationId = 'Hub is required';
     if (!form.department.trim()) errors.department = 'Department is required';
     if (!form.designation.trim()) errors.designation = 'Designation is required';
     if (!form.email.trim()) errors.email = 'Email is required';
+    else if (!isValidEmail(form.email)) errors.email = 'Enter a valid email address';
     // Document and password only required when creating a new admin.
     if (!isEdit) {
       if (!form.documentType.trim()) errors.documentType = 'Document type is required';
@@ -253,7 +264,7 @@ const AdminFormPage: React.FC = () => {
         await updateUserProfile(editId!, {
           type: 'admin',
           fullName: form.fullName,
-          phone: form.phone,
+          phone: normalizePhone(form.phone),
           email: form.email,
           position: form.designation,
           locationId: form.locationId,
@@ -281,7 +292,7 @@ const AdminFormPage: React.FC = () => {
         fullName: form.fullName,
         email: form.email,
         password: form.password,
-        phone: form.phone,
+        phone: normalizePhone(form.phone),
         position: form.designation,
         locationId: form.locationId,
         department: form.department,
@@ -303,7 +314,18 @@ const AdminFormPage: React.FC = () => {
       });
       setSubmitted(true);
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to create admin. Please try again.');
+      // Zod rejections from the API name the exact offending fields — show
+      // them inline instead of the generic "Validation failed".
+      const serverErrors = extractServerFieldErrors(err, API_FIELD_MAP);
+      if (serverErrors) {
+        setFieldErrors(serverErrors.fieldErrors);
+        setError(serverErrors.summary);
+        setTimeout(() => {
+          document.querySelector('.afp-field-error')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 0);
+      } else {
+        setError(err.response?.data?.message || 'Failed to create admin. Please try again.');
+      }
     } finally {
       setLoading(false);
     }

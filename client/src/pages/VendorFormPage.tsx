@@ -7,7 +7,20 @@ import { registerUser, getLocations, getAdmins, getManagedUser, updateUserProfil
 import { getCurrentUser } from '../services/auth.service';
 import { getCurrentUser as getCachedUser, getCurrentUserRoles } from '../utils/auth';
 import { getPricingSettings } from '../services/pricing.service';
+import { extractServerFieldErrors, isValidEmail, isValidPhone, normalizePhone } from '../utils/serverValidation';
 import './VendorFormPage.css';
+
+// API validation-error field → form field, for errors returned by the server.
+// Fields not listed here share the same name on both sides.
+const API_FIELD_MAP: Record<string, string> = {
+  fullName: 'ownerName',
+  clientName: 'ownerName',
+  email: 'ownerEmail',
+  phone: 'ownerContact',
+  businessName: 'onlineBusinessName',
+  locationId: 'pickupLocation',
+  address: 'registeredAddress',
+};
 
 interface VendorFormInput {
   onlineBusinessName: string;
@@ -290,9 +303,12 @@ const VendorFormPage: React.FC = () => {
     if (!form.pickupLocation.trim()) errors.pickupLocation = 'Hub is required';
     if (!form.pickupLandmark.trim()) errors.pickupLandmark = 'Location is required';
     if (!form.businessContact.trim()) errors.businessContact = 'Contact number is required';
+    else if (!isValidPhone(form.businessContact)) errors.businessContact = 'Enter a 10–15 digit phone number';
     if (!form.ownerName.trim()) errors.ownerName = 'Owner name is required';
     if (!form.ownerEmail.trim()) errors.ownerEmail = 'Email is required';
+    else if (!isValidEmail(form.ownerEmail)) errors.ownerEmail = 'Enter a valid email address';
     if (!form.ownerContact.trim()) errors.ownerContact = 'Contact number is required';
+    else if (!isValidPhone(form.ownerContact)) errors.ownerContact = 'Enter a 10–15 digit phone number';
     if (!form.billingBusinessName.trim()) errors.billingBusinessName = 'Business name is required';
     if (!form.registeredAddress.trim()) errors.registeredAddress = 'Address is required';
     // Documents and password are only required when creating a new vendor.
@@ -325,7 +341,7 @@ const VendorFormPage: React.FC = () => {
         await updateUserProfile(editId!, {
           type: 'vendor',
           fullName: form.ownerName,
-          phone: form.ownerContact,
+          phone: normalizePhone(form.ownerContact),
           email: form.ownerEmail,
           clientName: form.ownerName,
           businessName: form.onlineBusinessName,
@@ -355,7 +371,7 @@ const VendorFormPage: React.FC = () => {
         fullName: form.ownerName,
         email: form.ownerEmail,
         password: form.password,
-        phone: form.ownerContact,
+        phone: normalizePhone(form.ownerContact),
         clientName: form.ownerName,
         businessName: form.onlineBusinessName,
         locationId: form.pickupLocation,
@@ -391,7 +407,18 @@ const VendorFormPage: React.FC = () => {
       });
       setSubmitted(true);
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to create vendor. Please try again.');
+      // Zod rejections from the API name the exact offending fields — show
+      // them inline instead of the generic "Validation failed".
+      const serverErrors = extractServerFieldErrors(err, API_FIELD_MAP);
+      if (serverErrors) {
+        setFieldErrors(serverErrors.fieldErrors);
+        setError(serverErrors.summary);
+        setTimeout(() => {
+          document.querySelector('.vfp-field-error')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 0);
+      } else {
+        setError(err.response?.data?.message || 'Failed to create vendor. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
