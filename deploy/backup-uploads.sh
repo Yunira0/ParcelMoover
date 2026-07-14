@@ -30,7 +30,7 @@ trap cleanup EXIT
 
 echo "==> [$(date -u)] Archiving uploads-data volume..."
 docker run --rm \
-  -v parcelmoover_uploads-data:/data:ro \
+  -v deploy_uploads-data:/data:ro \
   -v /tmp:/backup \
   alpine \
   tar czf "/backup/${ARCHIVE_NAME}" -C /data .

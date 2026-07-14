@@ -68,10 +68,14 @@ services:
         max-file: "3"
 
 volumes:
-  # Named explicitly so deploy/backup-*.sh can target them by a fixed name
-  # regardless of which directory `docker compose` is invoked from (compose
-  # otherwise prefixes volume names with the project/directory name).
+  # The live production data was created by earlier compose runs under the
+  # default project-prefixed names (deploy_*). Point at those existing volumes
+  # (external, so compose never tries to create or relabel them) rather than
+  # the parcelmoover_* names this file once declared — bringing the stack up
+  # with renamed volumes silently starts the app on a fresh empty database.
   db-data:
-    name: parcelmoover_db-data
+    name: deploy_db-data
+    external: true
   uploads-data:
-    name: parcelmoover_uploads-data
+    name: deploy_uploads-data
+    external: true
