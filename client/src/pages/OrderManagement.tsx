@@ -99,14 +99,6 @@ const SEARCH_DEBOUNCE_MS = 300;
 const uniqueValues = (values: string[]) =>
   Array.from(new Set(values.filter(Boolean))).sort((a, b) => a.localeCompare(b));
 
-const maskPhone = (phone: string) => {
-  if (!phone) return '';
-  if (phone.includes('*')) return phone;
-  const digits = phone.replace(/\D/g, '');
-  if (digits.length < 6) return phone;
-  return `+977 ${digits.slice(-10, -6)}******`;
-};
-
 const formatMoney = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 0 });
 
 const getStatusTone = (status: ParcelStatus): StatusChipTone => {
