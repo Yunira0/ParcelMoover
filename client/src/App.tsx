@@ -41,6 +41,7 @@ const VendorSettlements = lazy(() => import('./pages/vendor/VendorSettlements'))
 const VendorPendingCod = lazy(() => import('./pages/vendor/VendorPendingCod'))
 const VendorOrderPayments = lazy(() => import('./pages/vendor/VendorOrderPayments'))
 const VendorUserManagement = lazy(() => import('./pages/vendor/VendorUserManagement'))
+const VendorApiKeys = lazy(() => import('./pages/vendor/VendorApiKeys'))
 const StaffFormPage = lazy(() => import('./pages/vendor/StaffFormPage'))
 const BulkOrderPage = lazy(() => import('./pages/vendor/BulkOrderPage'))
 const VendorDeliveryCharges = lazy(() => import('./pages/vendor/VendorDeliveryCharges'))
@@ -233,6 +234,10 @@ function App() {
           <Route
             path="/delivery-charges"
             element={<RoleGuard allowedRoles={['vendor', 'vendor_staff']} requiredPermission="DELIVERY_CHARGES_ACCESS"><VendorDeliveryCharges /></RoleGuard>}
+          />
+          <Route
+            path="/developer/api-keys"
+            element={<RoleGuard allowedRoles={['vendor']}><VendorApiKeys /></RoleGuard>}
           />
           <Route path="/profile" element={<ProfilePage />} />
         </Route>

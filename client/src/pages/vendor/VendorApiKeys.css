@@ -1,0 +1,165 @@
+.api-keys-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  width: 100%;
+}
+
+.api-keys-error {
+  color: var(--color-danger-text);
+  font-size: var(--font-size-sm);
+  margin: 0;
+}
+
+.api-key-name-cell {
+  align-items: center;
+  color: var(--color-text-default);
+  display: inline-flex;
+  font-weight: var(--font-weight-semi-bold);
+  gap: var(--space-2);
+}
+
+.api-key-name-cell svg {
+  color: var(--color-text-primary);
+  flex-shrink: 0;
+}
+
+.api-key-prefix {
+  background: var(--color-background-elevated);
+  border-radius: var(--border-radius-default);
+  color: var(--color-text-caption);
+  font-family: var(--typography-font-family-mono, monospace);
+  font-size: var(--font-size-xs);
+  padding: 2px var(--space-2);
+}
+
+.api-key-status {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+}
+
+.api-key-status.active {
+  color: #16a34a;
+}
+
+.api-key-status.revoked {
+  color: var(--color-text-caption);
+}
+
+.api-key-revoke-btn {
+  align-items: center;
+  background: transparent;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-default);
+  color: var(--color-text-caption);
+  cursor: pointer;
+  display: inline-flex;
+  font-family: var(--typography-font-family-default);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  height: 30px;
+  justify-content: center;
+  padding: 0 var(--space-3);
+  transition: all 150ms ease;
+}
+
+.api-key-revoke-btn:hover {
+  border-color: var(--color-danger-text);
+  color: var(--color-danger-text);
+}
+
+.api-key-revoke-btn:disabled {
+  cursor: not-allowed;
+  opacity: var(--opacity-60);
+}
+
+/* One-time plaintext key reveal inside the create modal */
+.api-key-reveal {
+  align-items: center;
+  background: var(--color-background-elevated);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-default);
+  display: flex;
+  gap: var(--space-2);
+  margin: var(--space-4) 0;
+  padding: var(--space-3);
+}
+
+.api-key-reveal code {
+  color: var(--color-text-default);
+  flex: 1;
+  font-family: var(--typography-font-family-mono, monospace);
+  font-size: var(--font-size-xs);
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+.api-key-name-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: var(--space-4) 0;
+}
+
+.api-key-name-field span {
+  color: var(--color-text-caption);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+}
+
+.api-key-name-field input {
+  background: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-default);
+  color: var(--color-text-default);
+  font-family: var(--typography-font-family-default);
+  font-size: var(--font-size-sm);
+  min-height: 36px;
+  outline: none;
+  padding: var(--space-2);
+}
+
+.api-key-name-field input:focus {
+  border-color: var(--color-border-primary);
+  box-shadow: 0 0 0 2px rgb(194 65 12 / 12%);
+}
+
+/* Quick-start endpoint reference under the table */
+.api-keys-docs {
+  background: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-default);
+  padding: var(--space-4);
+}
+
+.api-keys-docs h3 {
+  color: var(--color-text-default);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semi-bold);
+  margin: 0 0 var(--space-2);
+}
+
+.api-keys-docs p {
+  color: var(--color-text-caption);
+  font-size: var(--font-size-sm);
+  margin: 0 0 var(--space-2);
+}
+
+.api-keys-docs ul {
+  color: var(--color-text-caption);
+  display: flex;
+  flex-direction: column;
+  font-size: var(--font-size-sm);
+  gap: var(--space-1);
+  margin: 0;
+  padding-left: var(--space-5);
+}
+
+.api-keys-docs code {
+  background: var(--color-background-elevated);
+  border-radius: var(--border-radius-default);
+  color: var(--color-text-default);
+  font-family: var(--typography-font-family-mono, monospace);
+  font-size: var(--font-size-xs);
+  padding: 1px var(--space-1);
+}

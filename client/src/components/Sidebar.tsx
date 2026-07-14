@@ -23,6 +23,7 @@ import {
   Truck,
   ClipboardCheck,
   ScrollText,
+  KeyRound,
   LogOut,
   ChevronLeft,
   ChevronRight,
@@ -159,6 +160,7 @@ const VendorSidebar: React.FC = () => {
         <SidebarItem to="/user-management" icon={Users} label="User Management" />
         <SidebarItem to="/tickets" icon={Ticket} label="Tickets" />
         <SidebarItem to="/delivery-charges" icon={Truck} label="Delivery Charges" />
+        <SidebarItem to="/developer/api-keys" icon={KeyRound} label="API Keys" />
       </div>
 
       <div className="sidebar-footer">

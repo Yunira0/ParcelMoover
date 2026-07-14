@@ -14,6 +14,8 @@ import KycRoutes from "./routes/kyc.routes"
 import LocationRoutes from "./routes/location.routes"
 import PricingRoutes from "./routes/pricing.routes"
 import NcmRoutes from "./routes/ncm.routes"
+import ApiKeyRoutes from "./routes/apiKey.routes"
+import PublicApiRoutes from "./routes/publicApi.routes"
 import MeRoutes from "./routes/me.routes"
 import AuditLogRoutes from "./routes/auditLog.routes"
 import prisma, { pool } from "./lib/prisma";
@@ -137,6 +139,12 @@ app.use("/api/pricing", PricingRoutes)
 
 // NCM (Nepal Can Move) 3PL integration — includes the public webhook receiver.
 app.use("/api/ncm", NcmRoutes)
+
+// Vendor self-service management of partner API keys (dashboard, JWT-authed).
+app.use("/api/api-keys", ApiKeyRoutes)
+
+// Public partner API v1 — external e-commerce integrations, API-key-authed.
+app.use("/api/v1", PublicApiRoutes)
 
 // KYC/registration documents (citizenship, PAN, licence, bank docs) contain
 // sensitive PII — only staff verifying an account should ever be able to open one.

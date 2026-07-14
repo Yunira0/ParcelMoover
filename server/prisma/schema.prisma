@@ -592,9 +592,26 @@ model vendors {
   locations             locations?        @relation(fields: [location_id], references: [id], onUpdate: NoAction)
   users                 users?            @relation("vendor_owner", fields: [user_id], references: [id], onUpdate: NoAction)
   sales_user            users?            @relation("vendor_sales_user", fields: [sales_user_id], references: [id], onUpdate: NoAction)
+  api_keys              api_keys[]
 
   @@index([location_id], map: "idx_vendors_location_id")
   @@index([sales_user_id], map: "idx_vendors_sales_user_id")
+}
+
+// Partner API keys — vendor-owned credentials for the public /api/v1 surface.
+// Only the SHA-256 hash of the key is stored; the plaintext is shown once at creation.
+model api_keys {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  vendor_id    String    @db.Uuid
+  name         String
+  key_prefix   String
+  key_hash     String    @unique
+  created_at   DateTime  @default(now()) @db.Timestamptz(6)
+  last_used_at DateTime? @db.Timestamptz(6)
+  revoked_at   DateTime? @db.Timestamptz(6)
+  vendors      vendors   @relation(fields: [vendor_id], references: [id], onUpdate: NoAction)
+
+  @@index([vendor_id], map: "idx_api_keys_vendor_id")
 }
 
 // Single-row global pricing config for zone-based and flat (valley) rate types.
