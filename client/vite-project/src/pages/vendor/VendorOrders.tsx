@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { ChevronsLeft, ChevronsRight, Download, FileUp, MessageSquareText, Plus, Printer, Search, X } from 'lucide-react';
+import { ChevronsLeft, ChevronsRight, Download, Eye, FileUp, Plus, Printer, Search, X } from 'lucide-react';
 import PageHeader from '../../components/PageHeader';
 import Table from '../../components/Table';
 import Button from '../../components/Button';
@@ -412,7 +412,7 @@ const VendorOrders: React.FC = () => {
           title="View remarks"
           aria-label={`View remarks for ${order.trackingId}`}
         >
-          <MessageSquareText size={18} />
+          <Eye size={18} />
         </Button>
       ),
       width: '90px',

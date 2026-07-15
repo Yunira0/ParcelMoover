@@ -101,6 +101,23 @@
   color: var(--color-text-default);
 }
 
+/* Close button — always clearly visible */
+.qr-header-close {
+  color: var(--color-text-default);
+}
+
+.qr-header-close:hover {
+  background: var(--color-danger-default, #dc2626);
+  color: #fff;
+}
+
+.qr-close-x {
+  font-size: 22px;
+  line-height: 1;
+  font-weight: 400;
+  display: block;
+}
+
 /* Thread */
 .qr-thread {
   flex: 1;

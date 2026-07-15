@@ -212,8 +212,8 @@ const QuickRemarkPopup: React.FC<QuickRemarkPopupProps> = ({ orderId, trackingId
             <button className="qr-header-btn" onClick={() => loadRemarks(true)} aria-label="Refresh">
               <RefreshCw size={16} />
             </button>
-            <button className="qr-header-btn" onClick={onClose} aria-label="Close">
-              <X size={18} />
+            <button className="qr-header-btn qr-header-close" onClick={onClose} aria-label="Close" title="Close">
+              <span className="qr-close-x" aria-hidden="true">&times;</span>
             </button>
           </div>
         </div>
