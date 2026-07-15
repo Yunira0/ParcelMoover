@@ -1360,6 +1360,12 @@ export async function getDashboardSummary(actor: OrderActor) {
     pendingCodCount,
     lastSettlement,
     trendCounts,
+    orderAmountTotals,
+    pendingPickupsAmountTotals,
+    pendingReturnsAmountTotals,
+    inTransitAmountTotals,
+    deliveredAmountTotals,
+    returnsAmountTotals,
   ] = await Promise.all([
     prisma.parcels.count({ where: parcelWhere }),
     prisma.parcels.count({
@@ -1452,8 +1458,38 @@ export async function getDashboardSummary(actor: OrderActor) {
         ]),
       ),
     ),
+    prisma.parcels.aggregate({
+      where: parcelWhere,
+      _sum: { cod_amount: true },
+    }),
+    prisma.parcels.aggregate({
+      where: { ...parcelWhere, status: { in: PICKUP_PENDING_STATUSES } },
+      _sum: { cod_amount: true },
+    }),
+    prisma.parcels.aggregate({
+      where: { ...parcelWhere, order_type: "return", status: { in: OPEN_STATUSES } },
+      _sum: { cod_amount: true },
+    }),
+    prisma.parcels.aggregate({
+      where: { ...parcelWhere, status: { in: IN_TRANSIT_STATUSES } },
+      _sum: { cod_amount: true },
+    }),
+    prisma.parcels.aggregate({
+      where: { ...parcelWhere, status: "delivered" },
+      _sum: { cod_amount: true },
+    }),
+    prisma.parcels.aggregate({
+      where: { ...parcelWhere, order_type: "return" },
+      _sum: { cod_amount: true },
+    }),
   ]);
 
+  const totalOrderAmount = moneyToNumber(orderAmountTotals._sum.cod_amount);
+  const pendingPickupsAmount = moneyToNumber(pendingPickupsAmountTotals._sum.cod_amount);
+  const pendingReturnsAmount = moneyToNumber(pendingReturnsAmountTotals._sum.cod_amount);
+  const inTransitAmount = moneyToNumber(inTransitAmountTotals._sum.cod_amount);
+  const totalDeliveredAmount = moneyToNumber(deliveredAmountTotals._sum.cod_amount);
+  const totalReturnsAmount = moneyToNumber(returnsAmountTotals._sum.cod_amount);
   const totalCod = moneyToNumber(codTotals._sum.cod_amount);
   const settledCod = moneyToNumber(codTotals._sum.remitted_amount);
   const pendingCod = codTotals._sum.pending_amount === null
@@ -1473,13 +1509,19 @@ export async function getDashboardSummary(actor: OrderActor) {
   const summary = {
     overview: {
       totalOrders,
+      totalOrderAmount,
       pendingPickups,
+      pendingPickupsAmount,
       pendingReturns,
+      pendingReturnsAmount,
       inTransit,
+      inTransitAmount,
       pendingDeliveries,
       totalDelivered,
+      totalDeliveredAmount,
       totalPickedUp,
       totalReturns,
+      totalReturnsAmount,
     },
     today: {
       totalOrders: todaysOrders,

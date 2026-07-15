@@ -21,12 +21,18 @@ const REFRESH_INTERVAL_MS = 15_000;
 const EMPTY_SUMMARY: DashboardSummary = {
   overview: {
     totalOrders: 0,
+    totalOrderAmount: 0,
     pendingPickups: 0,
+    pendingPickupsAmount: 0,
     pendingReturns: 0,
+    pendingReturnsAmount: 0,
     inTransit: 0,
+    inTransitAmount: 0,
     pendingDeliveries: 0,
     totalDelivered: 0,
+    totalDeliveredAmount: 0,
     totalReturns: 0,
+    totalReturnsAmount: 0,
   },
   today: {
     totalOrders: 0,

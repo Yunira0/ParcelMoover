@@ -62,26 +62,11 @@
   color: var(--color-text-default);
 }
 
+.vendor-cod-card-row-value--normal {
+  font-weight: var(--font-weight-regular);
+}
+
 .vendor-cod-card-row-date {
   font-size: var(--font-size-sm);
   color: var(--color-background-success-default);
-}
-
-.vendor-cod-card-total {
-  background-color: var(--color-background-elevated);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--space-2);
-  font-weight: var(--font-weight-bold);
-}
-
-.vendor-cod-card-total span:first-child {
-  font-size: var(--font-size-md);
-  color: var(--color-text-default);
-}
-
-.vendor-cod-card-total-value {
-  font-size: var(--font-size-lg);
-  color: var(--color-text-primary);
 }

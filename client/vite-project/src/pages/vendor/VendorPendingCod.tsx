@@ -71,8 +71,10 @@ const VendorPendingCod: React.FC = () => {
             <thead>
               <tr>
                 <th>SN</th>
+                <th>Order ID</th>
                 <th>Tracking ID</th>
                 <th>Receiver</th>
+                <th>Contact Number</th>
                 <th>Destination</th>
                 <th>COD</th>
                 <th>Charges</th>
@@ -82,11 +84,10 @@ const VendorPendingCod: React.FC = () => {
               {bill.items.map((item, index) => (
                 <tr key={item.trackingId}>
                   <td>{index + 1}</td>
+                  <td>#{item.orderNumber}</td>
                   <td>{item.trackingId}</td>
-                  <td>
-                    {item.receiverName}
-                    <div className="vendor-finance-subtext">{item.receiverPhone}</div>
-                  </td>
+                  <td>{item.receiverName}</td>
+                  <td>{item.receiverPhone}</td>
                   <td>{item.destination}</td>
                   <td>{formatCurrency(item.codAmount)}</td>
                   <td>{formatCurrency(item.deliveryCharge)}</td>
