@@ -1,7 +1,7 @@
 import React, { useRef, useEffect } from 'react';
 import { MessageSquare, Reply } from 'lucide-react';
 import type { OrderRemark } from '../../services/orders.service';
-import { toBsDate } from '../../utils/nepaliDate';
+import { toBsDate, toBsDateLabel, toNptTime } from '../../utils/nepaliDate';
 
 interface OrderRemarksProps {
   remarks: OrderRemark[];
@@ -36,18 +36,9 @@ function formatTime(dateStr: string): string {
   if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
     return toBsDate(dateStr);
   }
-  const date = new Date(dateStr);
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffMins = Math.floor(diffMs / 60000);
-  const diffHours = Math.floor(diffMs / 3600000);
-  const diffDays = Math.floor(diffMs / 86400000);
-
-  if (diffMins < 1) return 'Just now';
-  if (diffMins < 60) return `${diffMins}m ago`;
-  if (diffHours < 24) return `${diffHours}h ago`;
-  if (diffDays < 7) return `${diffDays}d ago`;
-  return toBsDate(date);
+  // Show the exact BS date and time the remark was added (not a relative
+  // "6h ago"), matching the status-timeline format.
+  return `${toBsDateLabel(dateStr)}, ${toNptTime(dateStr)}`;
 }
 
 const OrderRemarks: React.FC<OrderRemarksProps> = ({ remarks, onReply, highlightedRemarkId }) => {

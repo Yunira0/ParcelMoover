@@ -21,6 +21,7 @@ import FilterDropdown from '../components/FilterDropdown';
 import MultiFilterDropdown from '../components/MultiFilterDropdown';
 import QuickRemarkPopup from '../components/QuickRemarkPopup';
 import { toBsDate } from '../utils/nepaliDate';
+import NepaliDatePicker from '../components/NepaliDatePicker';
 import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react';
 import {
   getOrders,
@@ -44,7 +45,7 @@ const STATUS_LABELS: Record<ParcelStatus, string> = {
   ready_to_deliver: 'Ready to Deliver',
   sent_for_delivery: 'In Transit',
   oov: 'Transit',
-  dispatched: 'Dispatched',
+  dispatched: 'In Transit',
   arrived_at_branch: 'Arrived at Destination',
   hold: 'On Hold',
   loss_and_damage: 'Loss & Damage',
@@ -459,26 +460,37 @@ const OrderManagement: React.FC = () => {
 
   const downloadCsv = async () => {
     let exportOrders = selectedExportOrders;
-    // No explicit selection: export the full tab+search-scoped set (not just
-    // the currently loaded page), then narrow by the same client-side filters.
-    if (selectedOrders.length === 0) {
-      try {
-        const res = await getOrders({ status: TAB_GROUPS[filter], search: debouncedSearch || undefined });
-        if (res?.success && Array.isArray(res.data)) {
+    // The "arrived at origin" date is only fetched for exports (withArrival), so
+    // pull the tab+search-scoped set fresh with that flag on.
+    try {
+      const res = await getOrders({ status: TAB_GROUPS[filter], search: debouncedSearch || undefined, withArrival: true });
+      if (res?.success && Array.isArray(res.data)) {
+        if (selectedOrders.length === 0) {
+          // No explicit selection: export the full scoped set, narrowed by the
+          // same client-side filters as the table.
           exportOrders = res.data.filter(order => matchesSecondaryFilters(order, secondaryFilters));
+        } else {
+          // Keep the exact selection, but enrich each row with its arrival date.
+          const arrivalById = new Map(res.data.map(order => [order.id, order.arrivedAtOrigin]));
+          exportOrders = selectedExportOrders.map(order => ({
+            ...order,
+            arrivedAtOrigin: arrivalById.get(order.id) ?? order.arrivedAtOrigin,
+          }));
         }
-      } catch {
-        // fall back to the currently loaded page
       }
+    } catch {
+      // fall back to the currently loaded page / selection
     }
 
-    const headers = ['#', 'Tracking ID', 'Origin', 'Sender', 'Receiver', 'Destination', 'COD', 'Delivery Charge', 'Weight', 'Status', 'Rider', 'Remarks', 'Last Updated By', 'Last Updated At'];
+    const headers = ['#', 'Tracking ID', 'Origin', 'Sender', 'Receiver', 'Receiver Phone', 'Receiver Address', 'Destination', 'COD', 'Delivery Charge', 'Weight', 'Status', 'Rider', 'Remarks', 'Order Created Date', 'Arrived at Origin Date', 'Delivered At', 'Last Updated By', 'Last Updated At'];
     const rows = exportOrders.map(order => [
       `#${order.orderNumber}`,
       order.trackingId,
       order.origin,
       order.senderName,
       order.receiverName,
+      order.receiverPhone || '',
+      order.receiverAddress || '',
       order.destination,
       order.codAmount,
       order.deliveryCharge,
@@ -486,6 +498,9 @@ const OrderManagement: React.FC = () => {
       STATUS_LABELS[order.status],
       order.riderName || '',
       order.remarks || '',
+      toBsDate(order.createdAt) || '',
+      toBsDate(order.arrivedAtOrigin) || '',
+      toBsDate(order.deliveredAt) || '',
       order.lastUpdatedBy || '',
       toBsDate(order.lastUpdatedAt) || '',
     ]);
@@ -526,7 +541,7 @@ const OrderManagement: React.FC = () => {
     },
     { header: 'ORIGIN', accessor: (order: Order) => order.origin || '-', width: '150px' },
     {
-      header: 'SENDOR',
+      header: 'SENDER',
       accessor: (order: Order) => (
         <div className="party-cell">
           <span>{order.senderName}</span>
@@ -574,7 +589,7 @@ const OrderManagement: React.FC = () => {
         onClick={() => setRemarkPopupOrder(order)}
         title={order.remarks || 'Add remark'}
       >
-        {order.remarks || '-'}
+        {order.remarks || 'Add remark'}
       </button>
     ), width: '160px', className: 'remarks-cell' },
     {
@@ -692,22 +707,20 @@ const OrderManagement: React.FC = () => {
             />
             <label aria-label="Created from date">
               <span>FROM DATE</span>
-              <input
-                type="date"
-                className="order-date-input"
+              <NepaliDatePicker
                 value={dateFrom}
                 max={dateTo || undefined}
-                onChange={e => setDateFrom(e.target.value)}
+                onChange={setDateFrom}
+                aria-label="Created from date"
               />
             </label>
             <label aria-label="Created to date">
               <span>TO DATE</span>
-              <input
-                type="date"
-                className="order-date-input"
+              <NepaliDatePicker
                 value={dateTo}
                 min={dateFrom || undefined}
-                onChange={e => setDateTo(e.target.value)}
+                onChange={setDateTo}
+                aria-label="Created to date"
               />
             </label>
             <FilterDropdown

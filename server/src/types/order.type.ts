@@ -1,6 +1,6 @@
 export type OrderType = "exchange" | "delivery" | "return";
 
-export type ServiceType = "dtd" | "btd" | "btb" | "dtb";
+export type ServiceType = "home_delivery" | "branch_delivery";
 
 export interface OrderPartyInput {
   name: string;
@@ -86,6 +86,9 @@ export interface UpdateParcelStatusInput {
   riderId?: string;
   /** Required when status is "partially_delivered". Amount of COD collected, cannot be negative or exceed parcel's total COD. */
   codCollected?: number;
+  /** Rider confirmation that they received the customer's exchange/return parcel.
+   * Required to deliver an exchange order; triggers auto-creation of the return. */
+  exchangeReturnReceived?: boolean;
 }
 
 export const ORDER_SORT_FIELDS = ["createdAt", "codAmount", "deliveryCharge", "trackingId", "status"] as const;
@@ -105,6 +108,9 @@ export interface ListOrdersQuery {
   dir?: "next" | "prev";
   sortBy?: OrderSortField;
   sortDir?: "asc" | "desc";
+  // Export-only: enrich each row with its first "arrived at origin" date via a
+  // batched history query. Off by default to keep the list/table path lean.
+  withArrival?: boolean;
 }
 
 export interface BulkUpdateParcelStatusInput {

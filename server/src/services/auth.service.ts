@@ -54,7 +54,17 @@ interface UpdateManagedUserInput {
   zoneMajorCities?: string | number;
   zoneUrbanAreas?: string | number;
   zoneRemoteAreas?: string | number;
+  zoneInsideValley?: string | number;
+  insideValleyFlatRate?: string | number;
   extraWeightPercent?: string | number;
+  returnInsideValleyPercent?: string | number;
+  returnOutsideValleyPercent?: string | number;
+  branchFlatInsideValley?: string | number;
+  branchFlatOutsideValley?: string | number;
+  branchZoneMajorCities?: string | number;
+  branchZoneUrbanAreas?: string | number;
+  branchZoneRemoteAreas?: string | number;
+  branchZoneInsideValley?: string | number;
   pickupLandmark?: string;
   billingBusinessName?: string;
   registrationNo?: string;
@@ -279,7 +289,17 @@ export async function updateManagedUserProfile(
       putRate(u, "zone_major_cities", data.zoneMajorCities);
       putRate(u, "zone_urban_areas", data.zoneUrbanAreas);
       putRate(u, "zone_remote_areas", data.zoneRemoteAreas);
+      putRate(u, "zone_inside_valley", data.zoneInsideValley);
+      putRate(u, "inside_valley_flat_rate", data.insideValleyFlatRate);
       putRate(u, "extra_weight_percent", data.extraWeightPercent);
+      putRate(u, "return_inside_valley_percent", data.returnInsideValleyPercent);
+      putRate(u, "return_outside_valley_percent", data.returnOutsideValleyPercent);
+      putRate(u, "branch_flat_inside_valley", data.branchFlatInsideValley);
+      putRate(u, "branch_flat_outside_valley", data.branchFlatOutsideValley);
+      putRate(u, "branch_zone_major_cities", data.branchZoneMajorCities);
+      putRate(u, "branch_zone_urban_areas", data.branchZoneUrbanAreas);
+      putRate(u, "branch_zone_remote_areas", data.branchZoneRemoteAreas);
+      putRate(u, "branch_zone_inside_valley", data.branchZoneInsideValley);
       if (joinedAt) u.joined_at = joinedAt;
       if (data.status) u.status = data.status;
       return tx.vendors.update({ where: { id }, data: u });
@@ -323,8 +343,14 @@ export async function getManagedUserDetail(actorUserId: string, type: ManagedUse
       rateType: v.rate_type,
       flatInsideValley: num(v.flat_inside_valley), flatOutsideValley: num(v.flat_outside_valley),
       zoneMajorCities: num(v.zone_major_cities), zoneUrbanAreas: num(v.zone_urban_areas),
-      zoneRemoteAreas: num(v.zone_remote_areas),
+      zoneRemoteAreas: num(v.zone_remote_areas), zoneInsideValley: num(v.zone_inside_valley),
+      insideValleyFlatRate: num(v.inside_valley_flat_rate),
       extraWeightPercent: num(v.extra_weight_percent),
+      returnInsideValleyPercent: num(v.return_inside_valley_percent),
+      returnOutsideValleyPercent: num(v.return_outside_valley_percent),
+      branchFlatInsideValley: num(v.branch_flat_inside_valley), branchFlatOutsideValley: num(v.branch_flat_outside_valley),
+      branchZoneMajorCities: num(v.branch_zone_major_cities), branchZoneUrbanAreas: num(v.branch_zone_urban_areas),
+      branchZoneRemoteAreas: num(v.branch_zone_remote_areas), branchZoneInsideValley: num(v.branch_zone_inside_valley),
       pickupLandmark: v.pickup_landmark, billingBusinessName: v.billing_business_name,
       registrationNo: v.registration_no, panVatNo: v.pan_vat_no,
       bankName: v.bank_name, bankAccountNo: v.bank_account_no, bankAccountHolder: v.bank_account_holder,
@@ -654,7 +680,17 @@ export async function registerUserBySuperAdmin(
           zone_major_cities: parseRate(data.zoneMajorCities),
           zone_urban_areas: parseRate(data.zoneUrbanAreas),
           zone_remote_areas: parseRate(data.zoneRemoteAreas),
+          zone_inside_valley: parseRate(data.zoneInsideValley),
+          inside_valley_flat_rate: parseRate(data.insideValleyFlatRate),
           extra_weight_percent: parseRate(data.extraWeightPercent),
+          return_inside_valley_percent: parseRate(data.returnInsideValleyPercent),
+          return_outside_valley_percent: parseRate(data.returnOutsideValleyPercent),
+          branch_flat_inside_valley: parseRate(data.branchFlatInsideValley),
+          branch_flat_outside_valley: parseRate(data.branchFlatOutsideValley),
+          branch_zone_major_cities: parseRate(data.branchZoneMajorCities),
+          branch_zone_urban_areas: parseRate(data.branchZoneUrbanAreas),
+          branch_zone_remote_areas: parseRate(data.branchZoneRemoteAreas),
+          branch_zone_inside_valley: parseRate(data.branchZoneInsideValley),
           pickup_landmark: data.pickupLandmark ?? null,
           billing_business_name: data.billingBusinessName ?? null,
           registration_no: data.registrationNo ?? null,

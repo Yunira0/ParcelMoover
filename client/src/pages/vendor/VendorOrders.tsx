@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { ChevronsLeft, ChevronsRight, Download, FileUp, MessageSquareText, Plus, Printer, Search, X } from 'lucide-react';
+import { ChevronsLeft, ChevronsRight, Download, FileUp, Plus, Printer, Search, X } from 'lucide-react';
 import PageHeader from '../../components/PageHeader';
 import Table from '../../components/Table';
 import Button from '../../components/Button';
@@ -12,12 +12,15 @@ import {
   bulkUpdateOrderStatus,
   getOrders,
   subscribeToOrderStatusChanged,
+  type CreateOrderInput,
   type Order,
   type OrdersPageMeta,
   type OrderType,
   type ParcelStatus,
 } from '../../services/orders.service';
 import { printLabels } from '../../utils/printLabels';
+import { toBsDate } from '../../utils/nepaliDate';
+import NepaliDatePicker from '../../components/NepaliDatePicker';
 import { useCursorPagination } from '../../hooks/useCursorPagination';
 import './VendorOrders.css';
 
@@ -27,9 +30,9 @@ const STATUS_LABELS: Record<ParcelStatus, string> = {
   picked_up: 'Picked Up',
   arrived: 'Arrived at Origin',
   ready_to_deliver: 'Ready to Deliver',
-  sent_for_delivery: 'Out for Delivery',
+  sent_for_delivery: 'Sent for Delivery',
   oov: 'Transit',
-  dispatched: 'Dispatched',
+  dispatched: 'In Transit',
   arrived_at_branch: 'Arrived at Destination',
   hold: 'On Hold',
   loss_and_damage: 'Loss & Damage',
@@ -67,17 +70,41 @@ const uniqueValues = (values: string[]) =>
 
 const formatMoney = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 0 });
 
-const formatDate = (value?: string) => {
-  if (!value) return '-';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: '2-digit' });
-};
-
-// Native <input type="date"> yields a YYYY-MM-DD string. order.createdAt is
-// already a YYYY-MM-DD day string from the API (Nepal-local), so just take it
-// as-is instead of round-tripping through Date/UTC, which would re-shift it.
+// The BS picker still emits an AD "YYYY-MM-DD" string, matching order.createdAt,
+// which is already a YYYY-MM-DD day string from the API (Nepal-local), so just take
+// it as-is instead of round-tripping through Date/UTC, which would re-shift it.
 const toIsoDay = (value: string) => (/^\d{4}-\d{2}-\d{2}/.test(value) ? value.slice(0, 10) : '');
+
+// A vendor may only cancel an order before it has physically moved.
+const CANCELLABLE_STATUSES: ParcelStatus[] = ['pickup_ordered', 'rider_assigned'];
+
+// Maps a listed order back into the Create Order form's prefill shape so the
+// vendor can duplicate it as a new order.
+const orderToCreateInput = (order: Order): CreateOrderInput => ({
+  vendorId: order.vendorId || undefined,
+  sender: {
+    name: order.senderName,
+    phone: order.senderPhone,
+    address: order.origin,
+  },
+  receiver: {
+    name: order.receiverName,
+    phone: order.receiverPhone,
+    alternatePhone: order.receiverAlternatePhone || undefined,
+    address: order.receiverAddress || order.destination,
+  },
+  originLocationId: order.originLocationId || undefined,
+  destinationLocationId: order.destinationLocationId || undefined,
+  orderType: order.orderType,
+  serviceType: order.serviceType,
+  pieces: order.pieces,
+  weightKg: order.weightKg,
+  codAmount: order.codAmount,
+  deliveryCharge: order.deliveryCharge,
+  packageType: order.packageType || undefined,
+  deliveryInstruction: order.deliveryInstruction || undefined,
+  pickupAddress: order.origin,
+});
 
 interface VendorOrderFilters {
   fromDate: string;
@@ -130,7 +157,23 @@ const VendorOrders: React.FC = () => {
   const [printWorking, setPrintWorking] = useState(false);
   const [bulkWorking, setBulkWorking] = useState(false);
   const [bulkError, setBulkError] = useState('');
+  const [openActionId, setOpenActionId] = useState<string | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // Close the row-action menu on outside click or Escape.
+  useEffect(() => {
+    if (!openActionId) return;
+    const onPointer = (e: MouseEvent) => {
+      if (!(e.target as HTMLElement).closest('.vo-actions')) setOpenActionId(null);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpenActionId(null); };
+    document.addEventListener('mousedown', onPointer);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onPointer);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [openActionId]);
 
   // Debounce search input so every keystroke doesn't fire a request.
   useEffect(() => {
@@ -279,6 +322,33 @@ const VendorOrders: React.FC = () => {
     }
   };
 
+  const printOneLabel = async (order: Order) => {
+    setOpenActionId(null);
+    await printLabels([order]);
+  };
+
+  const trackOrder = (order: Order) => {
+    setOpenActionId(null);
+    navigate(`/orders/track/${encodeURIComponent(order.trackingId)}`);
+  };
+
+  const duplicateOrder = (order: Order) => {
+    setOpenActionId(null);
+    navigate('/orders/create', { state: { initialData: orderToCreateInput(order), mode: 'copy' } });
+  };
+
+  const cancelOrder = async (order: Order) => {
+    setOpenActionId(null);
+    const confirmed = window.confirm(`Cancel order ${order.trackingId}? This cannot be undone.`);
+    if (!confirmed) return;
+    try {
+      await bulkUpdateOrderStatus([order.id], 'cancelled', { remarks: 'Cancelled by vendor' });
+      await loadOrders();
+    } catch (err: any) {
+      setLoadError(err?.response?.data?.message || err?.message || 'Failed to cancel the order.');
+    }
+  };
+
   const downloadCsv = async () => {
     let rows: Order[] = exportOrders;
     // No explicit selection: export the full status/type/search-scoped set
@@ -298,7 +368,7 @@ const VendorOrders: React.FC = () => {
       }
     }
 
-    const headers = ['#', 'Order ID', 'Status', 'Customer', 'Phone', 'Order Type', 'Destination Branch', 'COD Amount', 'Service Charge', 'Last Comment'];
+    const headers = ['#', 'Tracking ID', 'Status', 'Customer', 'Phone', 'Order Type', 'Destination Branch', 'COD Amount', 'Service Charge', 'Last Comment'];
     const csvRows = rows.map(order => [
       `#${order.orderNumber}`,
       order.trackingId,
@@ -332,12 +402,12 @@ const VendorOrders: React.FC = () => {
       width: '70px',
     },
     {
-      header: 'Order ID',
+      header: 'Tracking ID',
       accessor: (order: Order) => (
         <div className="vo-id-cell">
           <Link to={`/orders/track/${order.trackingId}`} className="vo-id-link">{order.trackingId}</Link>
           <span className="vo-id-ref">ref-</span>
-          <span className="vo-id-date">{formatDate(order.createdAt)}</span>
+          <span className="vo-id-date">{toBsDate(order.createdAt)}</span>
         </div>
       ),
       width: '200px',
@@ -347,7 +417,7 @@ const VendorOrders: React.FC = () => {
       accessor: (order: Order) => (
         <div className="vo-status-cell">
           <StatusChip tone={getStatusTone(order.status)}>{STATUS_LABELS[order.status]}</StatusChip>
-          <span className="vo-status-date">{formatDate(order.lastUpdatedAt || order.createdAt)}</span>
+          <span className="vo-status-date">{toBsDate(order.lastUpdatedAt || order.createdAt)}</span>
         </div>
       ),
       width: '160px',
@@ -365,7 +435,7 @@ const VendorOrders: React.FC = () => {
     },
     {
       header: 'Product Description',
-      accessor: (order: Order) => order.remarks?.trim() ? order.remarks : '-',
+      accessor: (order: Order) => order.packageType?.trim() ? order.packageType : '-',
       width: '180px',
       className: 'vo-muted-cell',
     },
@@ -397,28 +467,47 @@ const VendorOrders: React.FC = () => {
     {
       header: 'Last Comment',
       accessor: (order: Order) => (
-        <span className="vo-comment-cell" title={order.remarks || ''}>
-          {order.remarks?.trim() ? order.remarks : '-'}
-        </span>
+        <button
+          type="button"
+          className="vo-comment-cell"
+          title="Click to view or add remarks"
+          onClick={() => setRemarkPopupOrder(order)}
+          aria-label={`View or add remarks for ${order.trackingId}`}
+        >
+          {order.remarks?.trim() ? order.remarks : 'Add remark'}
+        </button>
       ),
       width: '180px',
     },
     {
       header: 'Action',
       accessor: (order: Order) => (
-        <Button
-          variant="ghost"
-          size="icon"
-          className="vo-action-btn"
-          onClick={() => setRemarkPopupOrder(order)}
-          title="View remarks"
-          aria-label={`View remarks for ${order.trackingId}`}
-        >
-          <MessageSquareText size={18} />
-        </Button>
+        <div className="vo-actions">
+          <button
+            type="button"
+            className="vo-actions-trigger"
+            aria-haspopup="menu"
+            aria-expanded={openActionId === order.id}
+            aria-label={`Actions for ${order.trackingId}`}
+            title="Actions"
+            onClick={() => setOpenActionId(id => (id === order.id ? null : order.id))}
+          >
+            <span aria-hidden="true">⋯</span>
+          </button>
+          {openActionId === order.id && (
+            <div className="vo-actions-menu" role="menu">
+              <button type="button" role="menuitem" onClick={() => printOneLabel(order)}>Print label</button>
+              <button type="button" role="menuitem" onClick={() => trackOrder(order)}>Track parcel</button>
+              <button type="button" role="menuitem" onClick={() => duplicateOrder(order)}>Duplicate order</button>
+              {CANCELLABLE_STATUSES.includes(order.status) && (
+                <button type="button" role="menuitem" className="vo-actions-item--danger" onClick={() => cancelOrder(order)}>Cancel order</button>
+              )}
+            </div>
+          )}
+        </div>
       ),
       width: '90px',
-      className: 'vo-center-cell',
+      className: 'vo-actions-cell',
     },
   ];
 
@@ -432,20 +521,18 @@ const VendorOrders: React.FC = () => {
         <div className="vo-date-range">
           <span className="vo-field-label">Select Date Range</span>
           <div className="vo-date-range-inputs">
-            <input
-              type="date"
+            <NepaliDatePicker
               aria-label="From date"
               value={draft.fromDate}
               max={draft.toDate || undefined}
-              onChange={(event) => setDraft(prev => ({ ...prev, fromDate: event.target.value }))}
+              onChange={(next) => setDraft(prev => ({ ...prev, fromDate: next }))}
             />
             <span className="vo-date-range-sep">–</span>
-            <input
-              type="date"
+            <NepaliDatePicker
               aria-label="To date"
               value={draft.toDate}
               min={draft.fromDate || undefined}
-              onChange={(event) => setDraft(prev => ({ ...prev, toDate: event.target.value }))}
+              onChange={(next) => setDraft(prev => ({ ...prev, toDate: next }))}
             />
           </div>
         </div>

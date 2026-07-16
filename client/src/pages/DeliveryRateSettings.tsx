@@ -19,6 +19,7 @@ const defaultFormState = {
   originLocationId: '',
   destinationLocationId: '',
   baseCharge: '',
+  branchBaseCharge: '',
   extraWeightPercent: '',
   freeWeightKg: '2',
 };
@@ -101,6 +102,7 @@ const DeliveryRateSettings: React.FC = () => {
         originLocationId: form.originLocationId,
         destinationLocationId: form.destinationLocationId,
         baseCharge,
+        branchBaseCharge: form.branchBaseCharge ? Number(form.branchBaseCharge) : null,
         extraWeightPercent: form.extraWeightPercent ? Number(form.extraWeightPercent) : 0,
         freeWeightKg: form.freeWeightKg ? Number(form.freeWeightKg) : 2,
       });
@@ -136,6 +138,7 @@ const DeliveryRateSettings: React.FC = () => {
     { header: 'ORIGIN', accessor: (r: DeliveryRate) => r.originLocationName },
     { header: 'DESTINATION', accessor: (r: DeliveryRate) => r.destinationLocationName },
     { header: 'BASE CHARGE', accessor: (r: DeliveryRate) => r.baseCharge.toLocaleString() },
+    { header: 'BRANCH CHARGE', accessor: (r: DeliveryRate) => (r.branchBaseCharge != null ? r.branchBaseCharge.toLocaleString() : '—') },
     { header: 'EXTRA % / KG', accessor: (r: DeliveryRate) => `${r.extraWeightPercent}%` },
     { header: 'FREE WEIGHT', accessor: (r: DeliveryRate) => `${r.freeWeightKg} kg` },
     {
@@ -209,6 +212,14 @@ const DeliveryRateSettings: React.FC = () => {
               onChange={value => setForm(prev => ({ ...prev, baseCharge: value }))}
               placeholder="e.g. 100"
               error={fieldErrors.baseCharge}
+            />
+            <FormField
+              label="Branch Delivery Charge (optional)"
+              type="number"
+              min={0}
+              value={form.branchBaseCharge}
+              onChange={value => setForm(prev => ({ ...prev, branchBaseCharge: value }))}
+              placeholder="e.g. 80"
             />
             <FormField
               label="Free Weight (kg)"

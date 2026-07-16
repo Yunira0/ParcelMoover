@@ -1,13 +1,12 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
   ChevronDown,
   ChevronUp,
   Download,
-  PackageCheck,
   Printer,
+  RefreshCw,
   Search,
-  Truck,
 } from 'lucide-react';
 import Table from '../components/Table';
 import SearchableSelect from '../components/SearchableSelect';
@@ -63,7 +62,7 @@ const STATUS_LABELS: Record<ParcelStatus, string> = {
   ready_to_deliver: 'Ready to Deliver',
   sent_for_delivery: 'Sent for Delivery',
   oov: 'Transit',
-  dispatched: 'Dispatched',
+  dispatched: 'In Transit',
   arrived_at_branch: 'Arrived at Destination',
   hold: 'Hold',
   loss_and_damage: 'Loss and Damage',
@@ -101,9 +100,36 @@ const STATUS_TRANSITIONS: Record<ParcelStatus, ParcelStatus[]> = {
   returned_to_vendor: [],
 };
 
+// Small custom ostrich glyph (lucide has none). Stroke style matches the other
+// icons so it sits well inside the coloured order-type box.
+const OstrichIcon = ({ size = 18 }: { size?: number }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.6}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M11.5 13.5c-1-1.3-1.6-2.6-1.4-4C10.3 7.8 9.2 6.5 8 6" />
+    <circle cx="7" cy="5.2" r="1.2" fill="currentColor" stroke="none" />
+    <path d="M5.9 5.1 4.4 4.7" />
+    <ellipse cx="14" cy="13" rx="4.5" ry="3.8" />
+    <path d="M12.5 16.5 11.6 21" />
+    <path d="M15.6 16.6 16.6 21" />
+    <path d="M11.6 21h-1.3M11.6 21l1 .9" />
+    <path d="M16.6 21h1.3M16.6 21l-1 .9" />
+  </svg>
+);
+
+// Colour the order-type box by order type: delivery = green, return = red,
+// exchange = yellow.
 const getOrderTypeTone = (order: Order) => {
-  if (order.status === 'failed_pickup') return 'danger';
-  if (order.status === 'rider_assigned') return 'warning';
+  if (order.orderType === 'return') return 'danger';
+  if (order.orderType === 'exchange') return 'warning';
   return 'success';
 };
 
@@ -117,10 +143,8 @@ const createEmptyTabSelections = (): Record<PickupTab, Set<string | number>> => 
 });
 
 const SERVICE_TYPE_FULL_LABELS: Record<Order['serviceType'], string> = {
-  dtd: 'Door to Door Delivery',
-  btd: 'Branch to Door Delivery',
-  btb: 'Branch to Branch Delivery',
-  dtb: 'Door to Branch Delivery',
+  home_delivery: 'Home Delivery',
+  branch_delivery: 'Branch Delivery',
 };
 
 const ORDER_TYPE_LABELS: Record<Order['orderType'], string> = {
@@ -295,6 +319,9 @@ const PickupGroupDetailPanel: React.FC<{
   );
 };
 
+// Cancelling or failing an order requires a reason remark.
+const REASON_REQUIRED_STATUSES: ParcelStatus[] = ['cancelled', 'failed_pickup', 'failed_delivery'];
+
 const PickupOperations: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const [orders, setOrders] = useState<Order[]>([]);
@@ -315,6 +342,7 @@ const PickupOperations: React.FC = () => {
   const [actionError, setActionError] = useState('');
   const [riders, setRiders] = useState<{ id: string; name: string }[]>([]);
   const [riderId, setRiderId] = useState('');
+  const [reasonRemarks, setReasonRemarks] = useState('');
   const [expandedGroupId, setExpandedGroupId] = useState('');
   const [remarkPopupOrder, setRemarkPopupOrder] = useState<Order | null>(null);
 
@@ -417,7 +445,15 @@ const PickupOperations: React.FC = () => {
     }
   }, [allowedStatusOptions, isActionOpen]);
 
+  // Focus the popover when it opens so Up/Down/Enter drive it straight away,
+  // without the user having to Tab into an option first.
+  const statusPopoverRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (isActionOpen) statusPopoverRef.current?.focus();
+  }, [isActionOpen]);
+
   const isRiderAssignAction = selectedNextStatus === 'rider_assigned';
+  const isReasonRequiredAction = !!selectedNextStatus && REASON_REQUIRED_STATUSES.includes(selectedNextStatus);
 
   const toggleGroupSelection = (groupId: string | number) => {
     const group = groups.find(g => g.id === groupId);
@@ -484,13 +520,18 @@ const PickupOperations: React.FC = () => {
       return;
     }
 
+    if (isReasonRequiredAction && !reasonRemarks.trim()) {
+      setActionError('A reason remark is required to cancel or fail an order.');
+      return;
+    }
+
     setStatusUpdating(true);
     try {
       await Promise.all(
         selectedOrders.map(order => updateOrderStatus(
           order.id,
           selectedNextStatus,
-          undefined,
+          isReasonRequiredAction ? reasonRemarks.trim() : undefined,
           undefined,
           isRiderAssignAction ? riderId : undefined,
         )),
@@ -501,6 +542,7 @@ const PickupOperations: React.FC = () => {
       setIsActionOpen(false);
       setSelectedNextStatus('');
       setRiderId('');
+      setReasonRemarks('');
     } catch (err: any) {
       setActionError(err.response?.data?.message || 'Failed to change pickup status.');
     } finally {
@@ -523,6 +565,11 @@ const PickupOperations: React.FC = () => {
   };
 
   const handleStatusPopoverKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    // Don't hijack typing/navigation inside the reason textarea or the rider
+    // search field - those keys belong to the focused field.
+    const tag = (event.target as HTMLElement).tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+
     if (event.key === 'Enter') {
       event.preventDefault();
       applyStatusChange();
@@ -571,7 +618,7 @@ const PickupOperations: React.FC = () => {
           className={`pickup-order-type ${getOrderTypeTone(group.orders[0]!)}`}
           title={group.mixedOrderType ? 'Mixed order types in this pickup' : undefined}
         >
-          {group.orderType === 'return' ? <Truck size={18} /> : <PackageCheck size={18} />}
+          {group.orderType === 'exchange' ? <RefreshCw size={18} /> : <OstrichIcon size={18} />}
         </span>
       ),
       width: '100px',
@@ -644,7 +691,14 @@ const PickupOperations: React.FC = () => {
               Action{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
             </Button>
             {isActionOpen && (
-              <div className="pickup-status-popover" onKeyDown={handleStatusPopoverKeyDown}>
+              <div
+                ref={statusPopoverRef}
+                className="pickup-status-popover"
+                tabIndex={-1}
+                role="listbox"
+                aria-label="Next status"
+                onKeyDown={handleStatusPopoverKeyDown}
+              >
                 <div className="pickup-status-popover-header">
                   <button type="button" onClick={() => setIsActionOpen(false)} aria-label="Close status action">
                     &times;
@@ -689,16 +743,31 @@ const PickupOperations: React.FC = () => {
                     ))}
                   </div>
                 </div>
+                {isReasonRequiredAction && (
+                  <div className="pickup-reason-field">
+                    <label className="pickup-reason-label">
+                      Reason <span className="pickup-reason-required">*</span>
+                    </label>
+                    <textarea
+                      rows={2}
+                      value={reasonRemarks}
+                      onChange={e => setReasonRemarks(e.target.value)}
+                      placeholder={`Reason to ${STATUS_LABELS[selectedNextStatus as ParcelStatus]?.toLowerCase() || 'cancel/fail'}...`}
+                      className="pickup-reason-textarea"
+                      disabled={statusUpdating}
+                    />
+                  </div>
+                )}
                 {actionError && <p className="pickup-action-error">{actionError}</p>}
                 <div className="pickup-status-submit-row">
-                  <Button variant="secondary" className="pickup-outline-btn" onClick={() => { setIsActionOpen(false); setRiderId(''); }}>
+                  <Button variant="secondary" className="pickup-outline-btn" onClick={() => { setIsActionOpen(false); setRiderId(''); setReasonRemarks(''); }}>
                     Cancel
                   </Button>
                   <Button
                     variant="primary"
                     className="pickup-apply-btn"
                     onClick={applyStatusChange}
-                    disabled={statusUpdating || !selectedNextStatus || (isRiderAssignAction && !riderId)}
+                    disabled={statusUpdating || !selectedNextStatus || (isRiderAssignAction && !riderId) || (isReasonRequiredAction && !reasonRemarks.trim())}
                   >
                     {statusUpdating ? 'Applying...' : 'Submit'}
                   </Button>

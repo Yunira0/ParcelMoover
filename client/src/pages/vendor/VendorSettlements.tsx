@@ -6,7 +6,9 @@ import Pagination from '../../components/Pagination';
 import StatusChip from '../../components/StatusChip';
 import type { SettlementListItem } from '../../services/finance.service';
 import { getSettlements } from '../../services/finance.service';
-import { formatCurrency as formatCurrencyBase, formatDate } from '../../utils/format';
+import { formatCurrency as formatCurrencyBase } from '../../utils/format';
+import { toBsDate } from '../../utils/nepaliDate';
+import NepaliDatePicker from '../../components/NepaliDatePicker';
 import './VendorFinance.css';
 
 const PAGE_SIZE = 20;
@@ -75,7 +77,7 @@ const VendorSettlements: React.FC = () => {
         </button>
       ),
     },
-    { header: 'TRANSFER DATE', accessor: (item: SettlementListItem) => formatDate(item.transferDate) },
+    { header: 'TRANSFER DATE', accessor: (item: SettlementListItem) => toBsDate(item.transferDate) },
     { header: 'ORDERS', accessor: (item: SettlementListItem) => `${item.orderCount} order(s)` },
     { header: 'AMOUNT', accessor: (item: SettlementListItem) => formatCurrency(item.amount) },
     {
@@ -97,25 +99,25 @@ const VendorSettlements: React.FC = () => {
         <div className="vendor-finance-date-range">
           <label>
             From
-            <input
-              type="date"
+            <NepaliDatePicker
               value={fromDate}
               max={toDate || undefined}
-              onChange={(event) => {
+              aria-label="From date"
+              onChange={(next) => {
                 setPage(1);
-                setFromDate(event.target.value);
+                setFromDate(next);
               }}
             />
           </label>
           <label>
             To
-            <input
-              type="date"
+            <NepaliDatePicker
               value={toDate}
               min={fromDate || undefined}
-              onChange={(event) => {
+              aria-label="To date"
+              onChange={(next) => {
                 setPage(1);
-                setToDate(event.target.value);
+                setToDate(next);
               }}
             />
           </label>

@@ -10,10 +10,8 @@ import './TrackParcel.css';
 type LoadState = 'idle' | 'loading' | 'success' | 'error';
 
 const SERVICE_LABELS: Record<string, string> = {
-  dtd: 'Door to door',
-  btd: 'Branch to door',
-  btb: 'Branch to branch',
-  dtb: 'Door to branch',
+  home_delivery: 'Home Delivery',
+  branch_delivery: 'Branch Delivery',
 };
 
 const TrackParcel: React.FC = () => {

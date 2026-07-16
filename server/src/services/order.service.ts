@@ -30,7 +30,24 @@ function buildSearchText(trackingId: string, sender: Party, receiver: Party): st
   ].join(" ").toLowerCase();
 }
 import { getDeliveryQuote } from "./delivery-rate.service";
-import { getVendorQuote, RateType } from "./pricing.service";
+import { getVendorQuote, getReturnDeliveryQuote, RateType, ServiceType } from "./pricing.service";
+
+// Maps a vendor row's branch-rate override columns to VendorRateOverrides keys.
+function branchOverrides(v: {
+  branch_flat_inside_valley: unknown; branch_flat_outside_valley: unknown;
+  branch_zone_major_cities: unknown; branch_zone_urban_areas: unknown;
+  branch_zone_remote_areas: unknown; branch_zone_inside_valley: unknown;
+}) {
+  const n = (x: unknown) => (x === null || x === undefined ? null : Number(x));
+  return {
+    branchFlatInsideValley: n(v.branch_flat_inside_valley),
+    branchFlatOutsideValley: n(v.branch_flat_outside_valley),
+    branchZoneMajorCities: n(v.branch_zone_major_cities),
+    branchZoneUrbanAreas: n(v.branch_zone_urban_areas),
+    branchZoneRemoteAreas: n(v.branch_zone_remote_areas),
+    branchZoneInsideValley: n(v.branch_zone_inside_valley),
+  };
+}
 import { createNotification } from "./notification.service";
 
 type OrderActor = {
@@ -193,6 +210,13 @@ const RIDER_ASSIGNMENT_FIELD: Partial<Record<parcel_status, "pickup_rider_id" | 
   // Sending an RTO parcel back to the vendor needs a rider to carry it.
   sent_to_vendor: "delivery_rider_id",
 };
+
+// Cancelling or failing an order must always record why, for the audit trail.
+const REASON_REQUIRED_STATUSES: parcel_status[] = [
+  "cancelled",
+  "failed_pickup",
+  "failed_delivery",
+];
 
 // Which leg (and therefore which assigned rider column) a given *current*
 // status belongs to. A rider may only progress a parcel that is on the leg
@@ -479,23 +503,45 @@ async function _createOrderImpl(actor: OrderActor, data: CreateOrderInput) {
   const resolvedDestinationLocationId = data.destinationLocationId || data.receiver.locationId || null;
   const weightKg = data.weightKg || 1;
 
+  // A return parcel is goods the customer hands back for the vendor (created on
+  // an exchange delivery or a return pickup). It never carries COD, so force it
+  // to 0 regardless of what the caller passed. It still incurs a delivery charge
+  // (a percent of the normal rate, see below) which is billed via settlement.
+  const isReturnOrder = (data.orderType || "delivery") === "return";
+  const codAmount = isReturnOrder ? 0 : data.codAmount || 0;
+
   // Payable is computed server-side so the client can't spoof the charge. Vendor
   // orders price by the vendor's chosen rate model (per-destination / zone / flat);
   // non-vendor orders fall back to the legacy origin→destination route rate, then
-  // to a manually supplied charge when no rate can be resolved.
+  // to a manually supplied charge when no rate can be resolved. Return orders are
+  // charged the vendor's return percent of that normal rate instead of the full rate.
   let deliveryCharge = data.deliveryCharge || 0;
   if (vendor && resolvedDestinationLocationId) {
-    const quote = await getVendorQuote(vendor.rate_type as RateType, resolvedDestinationLocationId, weightKg, {
+    const overrides = {
       flatInsideValley: vendor.flat_inside_valley === null ? null : Number(vendor.flat_inside_valley),
       flatOutsideValley: vendor.flat_outside_valley === null ? null : Number(vendor.flat_outside_valley),
       zoneMajorCities: vendor.zone_major_cities === null ? null : Number(vendor.zone_major_cities),
       zoneUrbanAreas: vendor.zone_urban_areas === null ? null : Number(vendor.zone_urban_areas),
       zoneRemoteAreas: vendor.zone_remote_areas === null ? null : Number(vendor.zone_remote_areas),
+      zoneInsideValley: vendor.zone_inside_valley === null ? null : Number(vendor.zone_inside_valley),
+      insideValleyFlatRate: vendor.inside_valley_flat_rate === null ? null : Number(vendor.inside_valley_flat_rate),
       extraWeightPercent: vendor.extra_weight_percent === null ? null : Number(vendor.extra_weight_percent),
-    });
+      ...branchOverrides(vendor),
+      returnInsideValleyPercent: vendor.return_inside_valley_percent === null ? null : Number(vendor.return_inside_valley_percent),
+      returnOutsideValleyPercent: vendor.return_outside_valley_percent === null ? null : Number(vendor.return_outside_valley_percent),
+    };
+    const serviceType = (data.serviceType as ServiceType) || "home_delivery";
+    const quote = isReturnOrder
+      ? await getReturnDeliveryQuote(vendor.rate_type as RateType, resolvedDestinationLocationId, weightKg, overrides, serviceType)
+      : await getVendorQuote(vendor.rate_type as RateType, resolvedDestinationLocationId, weightKg, overrides, serviceType);
     deliveryCharge = quote.totalPayable;
   } else if (resolvedOriginLocationId && resolvedDestinationLocationId) {
-    const quote = await getDeliveryQuote(resolvedOriginLocationId, resolvedDestinationLocationId, weightKg);
+    const quote = await getDeliveryQuote(
+      resolvedOriginLocationId,
+      resolvedDestinationLocationId,
+      weightKg,
+      (data.serviceType as ServiceType) || "home_delivery",
+    );
     deliveryCharge = quote.totalPayable;
   }
 
@@ -518,11 +564,11 @@ async function _createOrderImpl(actor: OrderActor, data: CreateOrderInput) {
         current_location_id: resolvedOriginLocationId,
         destination_location_id: resolvedDestinationLocationId,
         order_type: data.orderType || "delivery",
-        service_type: data.serviceType || "dtd",
+        service_type: data.serviceType || "home_delivery",
         status: "pickup_ordered",
         pieces: data.pieces || 1,
         weight_kg: weightKg,
-        cod_amount: data.codAmount || 0,
+        cod_amount: codAmount,
         delivery_charge: deliveryCharge,
         package_type: data.packageType || null,
         delivery_instruction: data.deliveryInstruction || null,
@@ -554,7 +600,7 @@ async function _createOrderImpl(actor: OrderActor, data: CreateOrderInput) {
         data: {
           parcel_id: parcel.id,
           vendor_id: vendor?.id || null,
-          cod_amount: data.codAmount || 0,
+          cod_amount: codAmount,
           payment_status: "pending",
         },
       }),
@@ -680,6 +726,13 @@ export async function updateOrderDetails(
   const currentReceiver = parcel.parties_parcels_receiver_idToparties;
   const currentWeight = parcel.weight_kg === null ? undefined : Number(parcel.weight_kg);
 
+  // Return parcels never carry COD. If this order already is - or is now being
+  // turned into - a return, force COD to 0 so it stays out of COD settlement.
+  const effectiveOrderType = data.orderType ?? parcel.order_type;
+  if (effectiveOrderType === "return") {
+    data.codAmount = 0;
+  }
+
   // Human-readable trail of what changed — each entry carries the previous and
   // new value ("COD amount: 1000 → 1200") and is written into the parcel's
   // history so the order detail page shows who edited what.
@@ -740,17 +793,32 @@ export async function updateOrderDetails(
   if (repriceNeeded && destinationLocationId) {
     if (parcel.vendors) {
       const vendor = parcel.vendors;
-      const quote = await getVendorQuote(vendor.rate_type as RateType, destinationLocationId, weightKg, {
+      const overrides = {
         flatInsideValley: vendor.flat_inside_valley === null ? null : Number(vendor.flat_inside_valley),
         flatOutsideValley: vendor.flat_outside_valley === null ? null : Number(vendor.flat_outside_valley),
         zoneMajorCities: vendor.zone_major_cities === null ? null : Number(vendor.zone_major_cities),
         zoneUrbanAreas: vendor.zone_urban_areas === null ? null : Number(vendor.zone_urban_areas),
         zoneRemoteAreas: vendor.zone_remote_areas === null ? null : Number(vendor.zone_remote_areas),
+        zoneInsideValley: vendor.zone_inside_valley === null ? null : Number(vendor.zone_inside_valley),
+        insideValleyFlatRate: vendor.inside_valley_flat_rate === null ? null : Number(vendor.inside_valley_flat_rate),
         extraWeightPercent: vendor.extra_weight_percent === null ? null : Number(vendor.extra_weight_percent),
-      });
+        ...branchOverrides(vendor),
+        returnInsideValleyPercent: vendor.return_inside_valley_percent === null ? null : Number(vendor.return_inside_valley_percent),
+        returnOutsideValleyPercent: vendor.return_outside_valley_percent === null ? null : Number(vendor.return_outside_valley_percent),
+      };
+      const serviceType = (data.serviceType ?? parcel.service_type) as ServiceType;
+      // Return orders re-price at the vendor's return percent of the normal rate.
+      const quote = effectiveOrderType === "return"
+        ? await getReturnDeliveryQuote(vendor.rate_type as RateType, destinationLocationId, weightKg, overrides, serviceType)
+        : await getVendorQuote(vendor.rate_type as RateType, destinationLocationId, weightKg, overrides, serviceType);
       deliveryCharge = quote.totalPayable;
     } else if (originLocationId) {
-      const quote = await getDeliveryQuote(originLocationId, destinationLocationId, weightKg);
+      const quote = await getDeliveryQuote(
+        originLocationId,
+        destinationLocationId,
+        weightKg,
+        (data.serviceType ?? parcel.service_type) as ServiceType,
+      );
       deliveryCharge = quote.totalPayable;
     }
   }
@@ -1062,6 +1130,9 @@ export interface ListOrdersResult {
 function mapOrder(
   parcel: Prisma.parcelsGetPayload<{ include: typeof ORDERS_INCLUDE }>,
   isStaff: boolean,
+  // Only populated for exports, where the caller batch-fetches the first
+  // "arrived at origin" timestamp per parcel (see fetchArrivedAtOriginMap).
+  arrivedByParcelId?: Map<string, string>,
 ) {
   const latestHistory = parcel.parcel_status_history[0];
   const rider =
@@ -1116,7 +1187,27 @@ function mapOrder(
     lastUpdatedAt: formatDate(latestHistory?.created_at || parcel.updated_at),
     createdAt: formatDate(parcel.created_at),
     createdAtRaw: parcel.created_at.toISOString(),
+    arrivedAtOrigin: arrivedByParcelId?.get(parcel.id) ?? "",
+    deliveredAt: parcel.delivered_at ? formatDate(parcel.delivered_at) : "",
   };
+}
+
+// Batch-fetches the first "arrived at origin" date (Nepal-local "YYYY-MM-DD")
+// for each parcel id, in one indexed query. Used only by the export path so the
+// regular list/table queries stay lean.
+async function fetchArrivedAtOriginMap(parcelIds: string[]): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  if (parcelIds.length === 0) return map;
+  const rows = await prisma.parcel_status_history.findMany({
+    where: { parcel_id: { in: parcelIds }, new_status: "arrived" },
+    select: { parcel_id: true, created_at: true },
+    orderBy: { created_at: "asc" },
+  });
+  // asc order → the first row seen for a parcel is its earliest arrival.
+  for (const row of rows) {
+    if (!map.has(row.parcel_id)) map.set(row.parcel_id, formatDate(row.created_at));
+  }
+  return map;
 }
 
 // Allow-listed so a client can only sort by a column that's actually indexed
@@ -1284,7 +1375,10 @@ export async function listOrders(
   const isDefaultUnfilteredQuery =
     !paginated && !query.status?.length && !query.orderType && !query.search &&
     !query.sortBy && vendorIds === undefined;
-  const cacheKey = isDefaultUnfilteredQuery ? ordersListCacheKey(vendorId, riderId) : null;
+  // Export requests (withArrival) skip the shared cache so the enriched rows
+  // never pollute the lean list cache and vice-versa.
+  const cacheKey =
+    isDefaultUnfilteredQuery && !query.withArrival ? ordersListCacheKey(vendorId, riderId) : null;
 
   if (cacheKey) {
     try {
@@ -1308,8 +1402,11 @@ export async function listOrders(
         take: DEFAULT_LIST_CAP,
       }),
     ]);
+    const arrivedMap = query.withArrival
+      ? await fetchArrivedAtOriginMap(parcels.map((p) => p.id))
+      : undefined;
     const result: ListOrdersResult = {
-      data: parcels.map((p) => mapOrder(p, isStaff)),
+      data: parcels.map((p) => mapOrder(p, isStaff, arrivedMap)),
       meta: {
         page: 1,
         pageSize: DEFAULT_LIST_CAP,
@@ -1551,13 +1648,31 @@ const ORDER_DETAIL_INCLUDE = {
   riders_parcels_delivery_rider_idToriders: true,
   parcel_remarks: {
     orderBy: { created_at: "desc" as const },
-    include: { users: true, parent_remark: { include: { users: true } } },
+    include: {
+      users: { include: { user_roles: { include: { roles: true } } } },
+      parent_remark: {
+        include: { users: { include: { user_roles: { include: { roles: true } } } } },
+      },
+    },
   },
   parcel_status_history: {
     orderBy: { created_at: "desc" as const },
-    include: { users: true, locations: true },
+    include: {
+      users: { include: { user_roles: { include: { roles: true } } } },
+      locations: true,
+    },
   },
 } satisfies Prisma.parcelsInclude;
+
+// Internal staff whose real names must never surface to vendors/riders - their
+// remarks and status changes are attributed to a generic "Staff" instead.
+const STAFF_ROLE_CODES = new Set(["super_admin", "admin"]);
+
+function isStaffAuthor(
+  user: { user_roles?: { roles: { code: string } }[] } | null | undefined,
+): boolean {
+  return !!user?.user_roles?.some((ur) => STAFF_ROLE_CODES.has(ur.roles.code));
+}
 
 export async function getOrderByTrackingId(actor: OrderActor, trackingId: string) {
   const { vendorId, vendorIds, riderId } = await getActorScope(actor);
@@ -1583,25 +1698,38 @@ export async function getOrderByTrackingId(actor: OrderActor, trackingId: string
   return {
     ...mapOrder(parcel, isStaff),
     canChangeStatus: isStaff,
-    remarks: parcel.parcel_remarks.map((remark) => ({
-      id: remark.id,
-      remark: remark.remark,
-      addedBy: remark.users?.full_name || "Unknown",
-      createdAt: formatDate(remark.created_at),
-      parentRemarkId: remark.parent_remark_id,
-      parentAuthor: remark.parent_remark?.users?.full_name || null,
-      parentSnippet: remark.parent_remark?.remark || null,
-    })),
-    // Staff see who (which user) changed the status; vendors/riders only see
-    // which branch/company made the change - never an internal staff member's name.
+    // Staff see the real author name; vendors/riders see a generic "Staff"
+    // label in place of any internal staff member's name (their own / other
+    // non-staff authors still show normally).
+    remarks: parcel.parcel_remarks.map((remark) => {
+      const maskAuthor = !isStaff && isStaffAuthor(remark.users);
+      const maskParent = !isStaff && isStaffAuthor(remark.parent_remark?.users);
+      return {
+        id: remark.id,
+        remark: remark.remark,
+        addedBy: maskAuthor ? "Staff" : remark.users?.full_name || "Unknown",
+        createdAt: formatDate(remark.created_at),
+        parentRemarkId: remark.parent_remark_id,
+        parentAuthor: remark.parent_remark?.users
+          ? maskParent
+            ? "Staff"
+            : remark.parent_remark.users.full_name
+          : null,
+        parentSnippet: remark.parent_remark?.remark || null,
+      };
+    }),
+    // Staff see who (which user) changed the status; vendors/riders see "Staff"
+    // for internal staff changes and the branch/company name for branch-driven
+    // ones - never an internal staff member's real name.
     statusHistory: parcel.parcel_status_history.map((entry) => {
       const branchLabel = entry.locations?.name || vendorName || "Branch";
+      const nonStaffLabel = isStaffAuthor(entry.users) ? "Staff" : branchLabel;
       return {
         id: entry.id,
         oldStatus: entry.old_status,
         newStatus: entry.new_status,
         remarks: entry.remarks || "",
-        changedBy: isStaff ? entry.users?.full_name || "System" : branchLabel,
+        changedBy: isStaff ? entry.users?.full_name || "System" : nonStaffLabel,
         changedByType: isStaff ? ("user" as const) : ("branch" as const),
         createdAt: formatDate(entry.created_at),
       };
@@ -1712,7 +1840,12 @@ export async function addOrderRemark(
       remark: trimmed,
       parent_remark_id: validParentId,
     },
-    include: { users: true, parent_remark: { include: { users: true } } },
+    include: {
+      users: true,
+      parent_remark: {
+        include: { users: { include: { user_roles: { include: { roles: true } } } } },
+      },
+    },
   });
 
   const parentAuthorId = remark.parent_remark?.users?.id;
@@ -1735,13 +1868,22 @@ export async function addOrderRemark(
     syncRemarkToNcm(parcel.id, `${remark.users?.full_name || "Staff"}: ${trimmed}`),
   );
 
+  // The author is the actor themselves, so addedBy is safe; but a non-staff
+  // actor replying to a staff remark must not learn the staff member's name.
+  const isStaff =
+    actor.roles.includes("super_admin") || actor.roles.includes("admin");
+  const maskParent = !isStaff && isStaffAuthor(remark.parent_remark?.users);
   return {
     id: remark.id,
     remark: remark.remark,
     addedBy: remark.users?.full_name || "Unknown",
     createdAt: formatDate(remark.created_at),
     parentRemarkId: remark.parent_remark_id,
-    parentAuthor: remark.parent_remark?.users?.full_name || null,
+    parentAuthor: remark.parent_remark?.users
+      ? maskParent
+        ? "Staff"
+        : remark.parent_remark.users.full_name
+      : null,
     parentSnippet: remark.parent_remark?.remark || null,
   };
 }
@@ -1846,6 +1988,12 @@ async function computeDashboardSummary(
       todays_orders: bigint;
       todays_delivered: bigint;
       todays_returns: bigint;
+      total_order_amount: string;
+      pending_pickups_amount: string;
+      pending_returns_amount: string;
+      in_transit_amount: string;
+      total_delivered_amount: string;
+      total_returns_amount: string;
     }>
   >(Prisma.sql`
     SELECT
@@ -1859,7 +2007,13 @@ async function computeDashboardSummary(
       COUNT(*) FILTER (WHERE order_type::text = 'return') AS total_returns,
       COUNT(*) FILTER (WHERE created_at >= ${todayStart}) AS todays_orders,
       COUNT(*) FILTER (WHERE status::text = ANY(ARRAY['delivered','partially_delivered']) AND delivered_at >= ${todayStart}) AS todays_delivered,
-      COUNT(*) FILTER (WHERE order_type::text = 'return' AND created_at >= ${todayStart}) AS todays_returns
+      COUNT(*) FILTER (WHERE order_type::text = 'return' AND created_at >= ${todayStart}) AS todays_returns,
+      COALESCE(SUM(cod_amount), 0) AS total_order_amount,
+      COALESCE(SUM(cod_amount) FILTER (WHERE status::text = ANY(${PICKUP_PENDING_STATUSES})), 0) AS pending_pickups_amount,
+      COALESCE(SUM(cod_amount) FILTER (WHERE order_type::text = 'return' AND status::text = ANY(${OPEN_STATUSES})), 0) AS pending_returns_amount,
+      COALESCE(SUM(cod_amount) FILTER (WHERE status::text = ANY(${IN_TRANSIT_STATUSES})), 0) AS in_transit_amount,
+      COALESCE(SUM(cod_amount) FILTER (WHERE status::text = 'delivered'), 0) AS total_delivered_amount,
+      COALESCE(SUM(cod_amount) FILTER (WHERE order_type::text = 'return'), 0) AS total_returns_amount
     FROM parcels
     WHERE deleted_at IS NULL ${parcelScopeSql}
   `);
@@ -1875,6 +2029,12 @@ async function computeDashboardSummary(
   const todaysOrders = Number(overviewRow!.todays_orders);
   const todaysDelivered = Number(overviewRow!.todays_delivered);
   const todaysReturns = Number(overviewRow!.todays_returns);
+  const totalOrderAmount = Number(overviewRow!.total_order_amount);
+  const pendingPickupsAmount = Number(overviewRow!.pending_pickups_amount);
+  const pendingReturnsAmount = Number(overviewRow!.pending_returns_amount);
+  const inTransitAmount = Number(overviewRow!.in_transit_amount);
+  const totalDeliveredAmount = Number(overviewRow!.total_delivered_amount);
+  const totalReturnsAmount = Number(overviewRow!.total_returns_amount);
 
   // Same consolidation for the weekly/monthly trend: previously 4 queries per
   // day (up to 120 for the 30-day view), now one query with 4 conditional
@@ -1958,13 +2118,19 @@ async function computeDashboardSummary(
   const summary = {
     overview: {
       totalOrders,
+      totalOrderAmount,
       pendingPickups,
+      pendingPickupsAmount,
       pendingReturns,
+      pendingReturnsAmount,
       inTransit,
+      inTransitAmount,
       pendingDeliveries,
       totalDelivered,
+      totalDeliveredAmount,
       totalPickedUp,
       totalReturns,
+      totalReturnsAmount,
     },
     today: {
       totalOrders: todaysOrders,
@@ -2109,6 +2275,9 @@ async function _updateParcelStatusImpl(
     where: { id: parcelId, deleted_at: null },
     include: {
       pickup_tasks: true,
+      parties_parcels_sender_idToparties: true,
+      parties_parcels_receiver_idToparties: true,
+      vendors: true,
     },
   });
 
@@ -2118,6 +2287,19 @@ async function _updateParcelStatusImpl(
 
   const currentStatus = parcel.status as ParcelStatus;
   const newStatus = data.status;
+
+  // Delivering an exchange order requires confirming the customer's exchange
+  // (return) parcel was received to carry back. Riders cannot complete the
+  // delivery without it; confirming (any actor) auto-creates the linked return.
+  const isExchangeDelivery = parcel.order_type === "exchange" && newStatus === "delivered";
+  const actorIsRider = actor.roles.includes("rider");
+  if (isExchangeDelivery && actorIsRider && !data.exchangeReturnReceived) {
+    throw new AppError(
+      400,
+      "Confirm you received the exchange return parcel before completing this delivery",
+    );
+  }
+  const shouldRaiseReturn = isExchangeDelivery && data.exchangeReturnReceived === true;
   const isAdmin = actor.roles.some((r) => ["super_admin", "admin"].includes(r));
   // A super_admin may force any status from any status (including out of a
   // terminal state) - the transition map only constrains everyone else.
@@ -2229,7 +2411,52 @@ async function _updateParcelStatusImpl(
     }
   }
 
-  const updatedParcel = await prisma.$transaction(async (tx) => {
+  // Cancelling or failing an order requires a reason.
+  if (REASON_REQUIRED_STATUSES.includes(newStatus as parcel_status)) {
+    if (!data.remarks || data.remarks.trim().length === 0) {
+      throw new AppError(400, "Remarks are required to cancel or fail an order");
+    }
+  }
+
+  // Pre-compute the auto-created return parcel's delivery charge (the vendor's
+  // return percent of the normal rate, priced against the CUSTOMER's location -
+  // i.e. where this exchange was delivered, so the percent keys off their valley).
+  // Done before the delivery txn since the quote runs its own reads.
+  let returnCharge = 0;
+  if (shouldRaiseReturn && parcel.vendor_id && parcel.destination_location_id) {
+    const v = parcel.vendors;
+    try {
+      const quote = await getReturnDeliveryQuote(
+        (v?.rate_type as RateType) ?? "flat",
+        parcel.destination_location_id,
+        parcel.weight_kg === null ? 1 : Number(parcel.weight_kg),
+        v
+          ? {
+              flatInsideValley: v.flat_inside_valley === null ? null : Number(v.flat_inside_valley),
+              flatOutsideValley: v.flat_outside_valley === null ? null : Number(v.flat_outside_valley),
+              zoneMajorCities: v.zone_major_cities === null ? null : Number(v.zone_major_cities),
+              zoneUrbanAreas: v.zone_urban_areas === null ? null : Number(v.zone_urban_areas),
+              zoneRemoteAreas: v.zone_remote_areas === null ? null : Number(v.zone_remote_areas),
+              zoneInsideValley: v.zone_inside_valley === null ? null : Number(v.zone_inside_valley),
+              insideValleyFlatRate: v.inside_valley_flat_rate === null ? null : Number(v.inside_valley_flat_rate),
+              extraWeightPercent: v.extra_weight_percent === null ? null : Number(v.extra_weight_percent),
+              ...branchOverrides(v),
+              returnInsideValleyPercent: v.return_inside_valley_percent === null ? null : Number(v.return_inside_valley_percent),
+              returnOutsideValleyPercent: v.return_outside_valley_percent === null ? null : Number(v.return_outside_valley_percent),
+            }
+          : {},
+        parcel.service_type as ServiceType,
+      );
+      returnCharge = quote.totalPayable;
+    } catch {
+      // Unclassified destination / missing rate: fall back to a free return
+      // rather than blocking the exchange delivery itself.
+      returnCharge = 0;
+    }
+  }
+
+  const txOutcome = await prisma.$transaction(async (tx) => {
+    let createdReturn: { id: string; trackingId: string } | null = null;
     const updateData: Prisma.parcelsUpdateInput = {
       status: newStatus as parcel_status,
     };
@@ -2329,11 +2556,95 @@ async function _updateParcelStatusImpl(
         new_data: { status: newStatus },
       },
     });
-    return updatedParcel;
+
+    // Side-effect: a confirmed exchange delivery hands the customer's return
+    // parcel to the rider. Auto-create that return order (customer → vendor,
+    // no COD, return-rate charge), already picked up by this delivery rider,
+    // and link it back to the exchange order. Guarded so a re-delivery of the
+    // same exchange (e.g. super_admin override) can't create a duplicate.
+    if (shouldRaiseReturn) {
+      const existingReturn = await tx.parcels.findFirst({
+        where: { source_order_id: parcel.id },
+        select: { id: true },
+      });
+      if (!existingReturn) {
+        const returnTrackingId = await generateUniqueTrackingId(tx);
+        const customerParty = parcel.parties_parcels_receiver_idToparties;
+        const vendorParty = parcel.parties_parcels_sender_idToparties;
+        const now = new Date();
+        const ret = await tx.parcels.create({
+          data: {
+            tracking_id: returnTrackingId,
+            search_text: buildSearchText(returnTrackingId, customerParty, vendorParty),
+            vendor_id: parcel.vendor_id,
+            // Goods flow customer → vendor: swap the exchange order's parties/route.
+            sender_id: parcel.receiver_id,
+            receiver_id: parcel.sender_id,
+            origin_location_id: parcel.destination_location_id,
+            current_location_id: parcel.destination_location_id,
+            destination_location_id: parcel.origin_location_id,
+            order_type: "return",
+            service_type: parcel.service_type,
+            status: "picked_up",
+            pieces: parcel.pieces,
+            weight_kg: parcel.weight_kg,
+            cod_amount: 0,
+            delivery_charge: returnCharge,
+            source_order_id: parcel.id,
+            pickup_rider_id: parcel.delivery_rider_id,
+            picked_up_at: now,
+            created_by: actor.id,
+          },
+        });
+        createdReturn = { id: ret.id, trackingId: ret.tracking_id };
+        await Promise.all([
+          tx.cod_collections.create({
+            data: { parcel_id: ret.id, vendor_id: parcel.vendor_id, cod_amount: 0, payment_status: "pending" },
+          }),
+          tx.pickup_tasks.create({
+            data: { parcel_id: ret.id, pickup_address: null, status: "picked_up" },
+          }),
+          tx.parcel_status_history.create({
+            data: {
+              parcel_id: ret.id,
+              old_status: null,
+              new_status: "picked_up",
+              location_id: parcel.destination_location_id,
+              changed_by: actor.id,
+              remarks: `Return auto-created from exchange order ${parcel.tracking_id}`,
+            },
+          }),
+          tx.audit_logs.create({
+            data: {
+              actor_id: actor.id,
+              entity_type: "parcel",
+              entity_id: ret.id,
+              action: "CREATE_RETURN_ORDER",
+              new_data: { trackingId: ret.tracking_id, sourceOrderId: parcel.id, sourceTrackingId: parcel.tracking_id },
+            },
+          }),
+        ]);
+      }
+    }
+    return { updatedParcel, createdReturn };
   });
+
+  const { updatedParcel, createdReturn } = txOutcome;
 
   await invalidateOrderCaches();
   await notifyVendorOfStatusChange(parcel.vendor_id, parcel.tracking_id, newStatus, actor.id);
+
+  // Let admins know a return parcel was raised off this exchange delivery.
+  if (createdReturn) {
+    notifyAdmins(
+      `Return raised: ${createdReturn.trackingId}`,
+      `Auto-created from exchange order ${parcel.tracking_id}; rider is carrying it back.`,
+      createdReturn.trackingId,
+      "return",
+      `/orders/track/${createdReturn.trackingId}`,
+      actor.id,
+    ).catch(() => {});
+  }
 
   // Notify admins about new delivery ticket when parcel arrives at branch
   if (newStatus === "arrived_at_branch") {
@@ -2553,6 +2864,13 @@ async function _bulkUpdateParcelStatusImpl(
       if (data.codCollected > totalCod) {
         throw new AppError(400, `COD collected (${data.codCollected}) cannot exceed parcel ${parcel.tracking_id}'s total COD (${totalCod})`);
       }
+    }
+  }
+
+  // Cancelling or failing an order requires a reason.
+  if (REASON_REQUIRED_STATUSES.includes(newStatus as parcel_status)) {
+    if (!data.remarks || data.remarks.trim().length === 0) {
+      throw new AppError(400, "Remarks are required to cancel or fail an order");
     }
   }
 

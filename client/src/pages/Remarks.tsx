@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { Eye, Search, X } from 'lucide-react';
+import { CheckCircle2, Eye, Search, X } from 'lucide-react';
 import Table from '../components/Table';
 import Button from '../components/Button';
 import PageHeader from '../components/PageHeader';
@@ -10,6 +10,7 @@ import StatusChip, { type StatusChipTone } from '../components/StatusChip';
 import FilterDropdown from '../components/FilterDropdown';
 import {
   getRemarks,
+  setRemarkStatus,
   REMARK_STATUS_LABELS,
   type Remark,
   type RemarkStatus,
@@ -77,6 +78,8 @@ const Remarks: React.FC = () => {
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [selectedIds, setSelectedIds] = useState<Set<string | number>>(new Set());
+  // Tracks the remark whose "Mark as Done" request is in flight, to disable just that button.
+  const [markingDoneId, setMarkingDoneId] = useState<string | null>(null);
 
   // Keep tab/search/date-range bookmarkable - mirror into the URL (replacing
   // history, not pushing, so the back button doesn't step through every keystroke).
@@ -171,6 +174,20 @@ const Remarks: React.FC = () => {
     setDateRange('');
   };
 
+  const markAsDone = useCallback(async (remarkId: string) => {
+    setMarkingDoneId(remarkId);
+    try {
+      await setRemarkStatus(remarkId, 'closed');
+      // Update just this row locally so the status chip flips to "Closed" and the
+      // button disappears, without a full-table reload.
+      setRemarks((prev) =>
+        prev.map((remark) => (remark.id === remarkId ? { ...remark, status: 'closed' } : remark)),
+      );
+    } finally {
+      setMarkingDoneId(null);
+    }
+  }, []);
+
   const columns = useMemo(() => [
     {
       header: 'SN',
@@ -209,13 +226,25 @@ const Remarks: React.FC = () => {
     {
       header: 'ACTION',
       accessor: (remark: Remark) => (
-        <Button variant="outline" size="sm" onClick={() => navigate(`/remarks/${remark.id}`)}>
-          <Eye size={14} /> View
-        </Button>
+        <div className="remarks-action-cell">
+          <Button variant="outline" size="sm" onClick={() => navigate(`/remarks/${remark.id}`)}>
+            <Eye size={14} /> View
+          </Button>
+          {remark.status !== 'closed' && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => markAsDone(remark.id)}
+              disabled={markingDoneId === remark.id}
+            >
+              <CheckCircle2 size={14} /> {markingDoneId === remark.id ? 'Saving…' : 'Mark as Done'}
+            </Button>
+          )}
+        </div>
       ),
-      width: '110px',
+      width: '240px',
     },
-  ], [page, visibleRemarks, navigate]);
+  ], [page, visibleRemarks, navigate, markAsDone, markingDoneId]);
 
   return (
     <div className="remarks-container">
@@ -270,7 +299,7 @@ const Remarks: React.FC = () => {
         loading={loading}
         loadingMessage="Loading remarks..."
         emptyMessage="No remarks found."
-        minWidth="1280px"
+        minWidth="1410px"
         tableClassName="remarks-table"
       />
 

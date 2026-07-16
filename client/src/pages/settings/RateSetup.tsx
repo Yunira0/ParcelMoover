@@ -17,6 +17,7 @@ const ZONE_OPTIONS = [
   { value: 'major_cities', label: 'Major cities' },
   { value: 'urban_areas', label: 'Urban areas' },
   { value: 'remote_areas', label: 'Remote areas' },
+  { value: 'inside_valley', label: 'Inside valley' },
 ];
 
 const VALLEY_OPTIONS = [
@@ -25,7 +26,7 @@ const VALLEY_OPTIONS = [
   { value: 'outside', label: 'Outside valley' },
 ];
 
-type RowEdit = { rate: string; zone: string; valley: string };
+type RowEdit = { rate: string; branchRate: string; zone: string; valley: string };
 
 const RateSetup: React.FC = () => {
   const [destinations, setDestinations] = useState<Destination[]>([]);
@@ -46,6 +47,7 @@ const RateSetup: React.FC = () => {
         locRes.data.forEach((d) => {
           initial[d.id] = {
             rate: d.perDestinationRate != null ? String(d.perDestinationRate) : '',
+            branchRate: d.branchPerDestinationRate != null ? String(d.branchPerDestinationRate) : '',
             zone: d.zone || '',
             valley: d.valley || '',
           };
@@ -70,6 +72,7 @@ const RateSetup: React.FC = () => {
     try {
       await updateLocation(id, {
         perDestinationRate: row.rate.trim() === '' ? null : Number(row.rate),
+        branchPerDestinationRate: row.branchRate.trim() === '' ? null : Number(row.branchRate),
         zone: row.zone || null,
         valley: row.valley || null,
       });
@@ -94,10 +97,19 @@ const RateSetup: React.FC = () => {
         zoneMajorCities: settings.zoneMajorCities,
         zoneUrbanAreas: settings.zoneUrbanAreas,
         zoneRemoteAreas: settings.zoneRemoteAreas,
+        zoneInsideValley: settings.zoneInsideValley,
         flatInsideValley: settings.flatInsideValley,
         flatOutsideValley: settings.flatOutsideValley,
         extraWeightPercent: settings.extraWeightPercent,
         freeWeightKg: settings.freeWeightKg,
+        returnInsideValleyPercent: settings.returnInsideValleyPercent,
+        returnOutsideValleyPercent: settings.returnOutsideValleyPercent,
+        branchZoneMajorCities: settings.branchZoneMajorCities,
+        branchZoneUrbanAreas: settings.branchZoneUrbanAreas,
+        branchZoneRemoteAreas: settings.branchZoneRemoteAreas,
+        branchZoneInsideValley: settings.branchZoneInsideValley,
+        branchFlatInsideValley: settings.branchFlatInsideValley,
+        branchFlatOutsideValley: settings.branchFlatOutsideValley,
       });
       setMsg('Rates saved.');
       setTimeout(() => setMsg(''), 2000);
@@ -129,6 +141,10 @@ const RateSetup: React.FC = () => {
             <input type="number" min={0} value={settings.zoneRemoteAreas ?? ''}
               onChange={(e) => setSetting('zoneRemoteAreas', e.target.value)} />
           </label>
+          <label>Inside valley (Rs.)
+            <input type="number" min={0} value={settings.zoneInsideValley ?? ''}
+              onChange={(e) => setSetting('zoneInsideValley', e.target.value)} />
+          </label>
         </div>
 
         <h3>Flat rates</h3>
@@ -149,6 +165,54 @@ const RateSetup: React.FC = () => {
           <label>Extra weight surcharge (%)
             <input type="number" min={0} max={100} step="0.1" value={settings.extraWeightPercent ?? ''}
               onChange={(e) => setSetting('extraWeightPercent', e.target.value)} />
+          </label>
+        </div>
+
+        <h3>Return rates</h3>
+        <p className="rate-muted">
+          A return parcel carries no COD but is billed this percent of the normal delivery rate,
+          by the destination’s valley side. Vendors can override these on their profile.
+        </p>
+        <div className="rate-grid">
+          <label>Inside valley (% of delivery)
+            <input type="number" min={0} max={100} step="0.1" value={settings.returnInsideValleyPercent ?? ''}
+              onChange={(e) => setSetting('returnInsideValleyPercent', e.target.value)} />
+          </label>
+          <label>Outside valley (% of delivery)
+            <input type="number" min={0} max={100} step="0.1" value={settings.returnOutsideValleyPercent ?? ''}
+              onChange={(e) => setSetting('returnOutsideValleyPercent', e.target.value)} />
+          </label>
+        </div>
+
+        <h3>Branch delivery rates</h3>
+        <p className="rate-muted">
+          Charges for branch delivery (parcel dropped at a branch, not the customer’s door).
+          Leave blank to fall back to the matching home-delivery rate.
+        </p>
+        <div className="rate-grid">
+          <label>Branch — major cities (Rs.)
+            <input type="number" min={0} value={settings.branchZoneMajorCities ?? ''}
+              onChange={(e) => setSetting('branchZoneMajorCities', e.target.value)} />
+          </label>
+          <label>Branch — urban areas (Rs.)
+            <input type="number" min={0} value={settings.branchZoneUrbanAreas ?? ''}
+              onChange={(e) => setSetting('branchZoneUrbanAreas', e.target.value)} />
+          </label>
+          <label>Branch — remote areas (Rs.)
+            <input type="number" min={0} value={settings.branchZoneRemoteAreas ?? ''}
+              onChange={(e) => setSetting('branchZoneRemoteAreas', e.target.value)} />
+          </label>
+          <label>Branch — zone inside valley (Rs.)
+            <input type="number" min={0} value={settings.branchZoneInsideValley ?? ''}
+              onChange={(e) => setSetting('branchZoneInsideValley', e.target.value)} />
+          </label>
+          <label>Branch — flat inside valley (Rs.)
+            <input type="number" min={0} value={settings.branchFlatInsideValley ?? ''}
+              onChange={(e) => setSetting('branchFlatInsideValley', e.target.value)} />
+          </label>
+          <label>Branch — flat outside valley (Rs.)
+            <input type="number" min={0} value={settings.branchFlatOutsideValley ?? ''}
+              onChange={(e) => setSetting('branchFlatOutsideValley', e.target.value)} />
           </label>
         </div>
 
@@ -175,6 +239,7 @@ const RateSetup: React.FC = () => {
                 <tr>
                   <th>Destination</th>
                   <th>Per-destination rate (Rs.)</th>
+                  <th>Branch rate (Rs.)</th>
                   <th>Zone</th>
                   <th>Valley</th>
                   <th></th>
@@ -190,6 +255,10 @@ const RateSetup: React.FC = () => {
                       <td>
                         <input type="number" min={0} value={row.rate}
                           onChange={(e) => setRow(d.id, { rate: e.target.value })} placeholder="e.g. 155" />
+                      </td>
+                      <td>
+                        <input type="number" min={0} value={row.branchRate}
+                          onChange={(e) => setRow(d.id, { branchRate: e.target.value })} placeholder="e.g. 100" />
                       </td>
                       <td>
                         <select value={row.zone} onChange={(e) => setRow(d.id, { zone: e.target.value })}>

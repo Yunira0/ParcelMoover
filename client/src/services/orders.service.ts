@@ -24,7 +24,7 @@ export type ParcelStatus =
   | 'returned_to_vendor';
 
 export type OrderType = 'delivery' | 'exchange' | 'return';
-export type ServiceType = 'dtd' | 'btd' | 'btb' | 'dtb';
+export type ServiceType = 'home_delivery' | 'branch_delivery';
 
 export interface CreateOrderInput {
   sender: {
@@ -91,6 +91,10 @@ export interface Order {
   lastUpdatedAt?: string;
   createdAt: string;
   createdAtRaw: string;
+  /** AD "YYYY-MM-DD" of the first "arrived at origin" status change, or '' if never. */
+  arrivedAtOrigin?: string;
+  /** AD "YYYY-MM-DD" the parcel was delivered, or '' if not delivered. */
+  deliveredAt?: string;
 }
 
 export const ORDER_SORT_FIELDS = ['createdAt', 'codAmount', 'deliveryCharge', 'trackingId', 'status'] as const;
@@ -108,6 +112,8 @@ export interface ListOrdersParams {
   dir?: 'next' | 'prev';
   sortBy?: OrderSortField;
   sortDir?: 'asc' | 'desc';
+  /** Export-only: include each order's first "arrived at origin" date. */
+  withArrival?: boolean;
 }
 
 export interface OrdersPageMeta {
@@ -161,12 +167,18 @@ export interface DashboardTrendDay {
 export interface DashboardSummary {
   overview: {
     totalOrders: number;
+    totalOrderAmount: number;
     pendingPickups: number;
+    pendingPickupsAmount: number;
     pendingReturns: number;
+    pendingReturnsAmount: number;
     inTransit: number;
+    inTransitAmount: number;
     pendingDeliveries: number;
     totalDelivered: number;
+    totalDeliveredAmount: number;
     totalReturns: number;
+    totalReturnsAmount: number;
   };
   today: {
     totalOrders: number;
@@ -211,6 +223,7 @@ export const getOrders = async (params?: ListOrdersParams, signal?: AbortSignal)
   if (params?.dir !== undefined) query.dir = params.dir;
   if (params?.sortBy) query.sortBy = params.sortBy;
   if (params?.sortDir) query.sortDir = params.sortDir;
+  if (params?.withArrival) query.withArrival = 'true';
 
   const response = await api.get('/orders', { params: query, signal });
   return response.data;

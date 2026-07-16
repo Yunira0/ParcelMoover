@@ -46,9 +46,9 @@ export const STATUS_LABEL: Record<ParcelStatus, string> = {
   picked_up: 'Picked Up',
   arrived: 'Arrived at Origin',
   ready_to_deliver: 'Ready to Deliver',
-  sent_for_delivery: 'Out for Delivery',
+  sent_for_delivery: 'Sent for Delivery',
   oov: 'Out of Volume',
-  dispatched: 'Dispatched',
+  dispatched: 'In Transit',
   arrived_at_branch: 'Arrived at Destination',
   hold: 'On Hold',
   loss_and_damage: 'Loss & Damage',
@@ -70,10 +70,8 @@ const ORDER_TYPE_LABEL: Record<OrderType, string> = {
 };
 
 const SERVICE_TYPE_LABEL: Record<ServiceType, string> = {
-  dtd: 'Door-to-Door',
-  btd: 'Branch-to-Door',
-  btb: 'Branch-to-Branch',
-  dtb: 'Door-to-Branch',
+  home_delivery: 'Home Delivery',
+  branch_delivery: 'Branch Delivery',
 };
 
 const OrderDetailHeader: React.FC<OrderDetailHeaderProps> = ({

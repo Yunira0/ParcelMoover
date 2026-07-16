@@ -101,6 +101,26 @@
   color: var(--color-text-default);
 }
 
+/* Close button - kept visually distinct so it's obviously the exit control. */
+.qr-header-btn--close {
+  border: 1px solid var(--color-border-default);
+  color: var(--color-text-default);
+}
+
+.qr-header-btn--close:hover {
+  background: var(--color-danger-surface);
+  border-color: var(--color-danger-border);
+  color: var(--color-danger-text);
+}
+
+.qr-close-glyph {
+  font-size: 22px;
+  line-height: 1;
+  font-weight: 400;
+  /* Nudge the multiplication-sign glyph to sit optically centered. */
+  margin-top: -2px;
+}
+
 /* Thread */
 .qr-thread {
   flex: 1;

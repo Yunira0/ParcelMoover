@@ -9,6 +9,7 @@ export interface VendorBillingProfile {
 }
 
 export interface PendingCodItem {
+  orderNumber: number;
   trackingId: string;
   receiverName: string;
   receiverPhone: string;
@@ -187,6 +188,7 @@ export const getUnsettledOrders = async (
 };
 
 export interface SettlementDetailItem {
+  orderNumber: number;
   trackingId: string;
   reference: string | null;
   receiverName: string;

@@ -192,6 +192,7 @@ export async function getPendingCodBill(actor: Actor, vendorIdParam?: string): P
     include: {
       parcels: {
         select: {
+          order_number: true,
           tracking_id: true,
           delivery_charge: true,
           parties_parcels_receiver_idToparties: { select: { name: true, phone: true } },
@@ -205,6 +206,7 @@ export async function getPendingCodBill(actor: Actor, vendorIdParam?: string): P
   });
 
   const items: PendingCodItem[] = collections.map((c) => ({
+    orderNumber: c.parcels.order_number,
     trackingId: c.parcels.tracking_id,
     receiverName: c.parcels.parties_parcels_receiver_idToparties.name,
     receiverPhone: c.parcels.parties_parcels_receiver_idToparties.phone,
@@ -803,6 +805,7 @@ export async function getSettlementDetail(actor: Actor, settlementId: string): P
             include: {
               parcels: {
                 select: {
+                  order_number: true,
                   tracking_id: true,
                   delivery_charge: true,
                   delivered_at: true,
@@ -870,6 +873,7 @@ export async function getSettlementDetail(actor: Actor, settlementId: string): P
   const items: SettlementDetailItem[] = settlement.settlement_items.map((si) => {
     const parcel = si.cod_collections.parcels;
     return {
+      orderNumber: parcel.order_number,
       trackingId: parcel.tracking_id,
       reference: null,
       receiverName: parcel.parties_parcels_receiver_idToparties.name,

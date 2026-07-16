@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { X, CheckCircle2, Clock } from 'lucide-react'
 import { getSettlementDetail, type SettlementDetail } from '../lib/api'
+import { toBsDate } from '../lib/nepaliDate'
 
 interface Props {
   settlementId: string
@@ -65,7 +66,7 @@ export default function SettlementDetailSheet({ settlementId, onClose }: Props) 
               </div>
               <div className="flex flex-col items-end">
                 <span className="text-lg font-bold text-text-primary tabular-nums">Rs {detail.payableAmount.toLocaleString()}</span>
-                {detail.transferDate && <span className="text-xs text-text-muted">{detail.transferDate}</span>}
+                {detail.transferDate && <span className="text-xs text-text-muted">{toBsDate(detail.transferDate)}</span>}
               </div>
             </div>
 

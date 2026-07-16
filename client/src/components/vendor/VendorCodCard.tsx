@@ -34,13 +34,13 @@ const VendorCodCard: React.FC<VendorCodCardProps> = ({ data, loading = false }) 
           </div>
         </div>
         <div className="vendor-cod-card-row">
-          <span className="vendor-cod-card-row-label">Pending</span>
+          <span className="vendor-cod-card-row-label">COD Pending</span>
           <span className="vendor-cod-card-row-value">{loading ? '...' : formatCurrency(data.pendingCod)}</span>
         </div>
-      </div>
-      <div className="vendor-cod-card-total">
-        <span>Total</span>
-        <span className="vendor-cod-card-total-value">{loading ? '...' : formatCurrency(data.totalCod)}</span>
+        <div className="vendor-cod-card-row">
+          <span className="vendor-cod-card-row-label">Pending Delivery Charge</span>
+          <span className="vendor-cod-card-row-value vendor-cod-card-row-value--normal">{loading ? '...' : formatCurrency(data.totalCod)}</span>
+        </div>
       </div>
     </div>
   </div>

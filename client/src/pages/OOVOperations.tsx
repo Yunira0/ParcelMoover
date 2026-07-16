@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
   Download,
@@ -95,6 +95,9 @@ const createEmptySelections = (): Record<OOVTab, Map<string, Order>> => ({
 
 const formatMoney = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 0 });
 
+// Cancelling or failing an order requires a reason remark.
+const REASON_REQUIRED_STATUSES: ParcelStatus[] = ['cancelled', 'failed_pickup', 'failed_delivery'];
+
 const OOVOperations: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const [orders, setOrders] = useState<Order[]>([]);
@@ -119,6 +122,7 @@ const OOVOperations: React.FC = () => {
   const [riders, setRiders] = useState<{ id: string; name: string }[]>([]);
   const [toLocationId, setToLocationId] = useState('');
   const [riderId, setRiderId] = useState('');
+  const [reasonRemarks, setReasonRemarks] = useState('');
   const [ncmBranches, setNcmBranches] = useState<NcmBranch[]>([]);
   const [ncmBranchesError, setNcmBranchesError] = useState('');
   const [ncmBranch, setNcmBranch] = useState('');
@@ -214,6 +218,14 @@ const OOVOperations: React.FC = () => {
       : allowedStatusOptions[0] || '';
 
   const isDispatchAction = effectiveNextStatus === 'dispatched';
+  const isReasonRequiredAction = REASON_REQUIRED_STATUSES.includes(effectiveNextStatus as ParcelStatus);
+
+  // Focus the popover when it opens so Up/Down/Enter drive it straight away,
+  // without the user having to Tab into an option first.
+  const statusPopoverRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (isActionOpen) statusPopoverRef.current?.focus();
+  }, [isActionOpen]);
 
   // NCM branch list is only needed once the 3PL method is picked — and the
   // fetch fails cleanly when the NCM integration isn't configured.
@@ -300,6 +312,11 @@ const OOVOperations: React.FC = () => {
       return;
     }
 
+    if (isReasonRequiredAction && !reasonRemarks.trim()) {
+      setActionError('A reason remark is required to cancel or fail an order.');
+      return;
+    }
+
     setStatusUpdating(true);
     try {
       const ids = selectedOrders.map(order => String(order.id));
@@ -320,6 +337,7 @@ const OOVOperations: React.FC = () => {
         await bulkUpdateOrderStatus(ids, effectiveNextStatus, {
           toLocationId: isDispatchAction && dispatchMethod === 'manifest' ? toLocationId : undefined,
           riderId: isDispatchAction && dispatchMethod === 'manifest' ? riderId || undefined : undefined,
+          remarks: isReasonRequiredAction ? reasonRemarks.trim() : undefined,
         });
       }
       await loadOovOrders();
@@ -331,6 +349,7 @@ const OOVOperations: React.FC = () => {
       setRiderId('');
       setNcmBranch('');
       setDispatchMethod('manifest');
+      setReasonRemarks('');
     } catch (err: unknown) {
       const message =
         typeof err === 'object' &&
@@ -342,6 +361,39 @@ const OOVOperations: React.FC = () => {
       setActionError(message);
     } finally {
       setStatusUpdating(false);
+    }
+  };
+
+  const moveSelectedStatus = (direction: 1 | -1) => {
+    if (allowedStatusOptions.length === 0) return;
+
+    const currentIndex = allowedStatusOptions.findIndex(status => status === effectiveNextStatus);
+    const safeIndex = currentIndex === -1 ? 0 : currentIndex;
+    const nextIndex = (safeIndex + direction + allowedStatusOptions.length) % allowedStatusOptions.length;
+    setSelectedNextStatus(allowedStatusOptions[nextIndex]);
+  };
+
+  const handleStatusPopoverKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    // Don't hijack typing/navigation inside the reason field or the rider/branch
+    // search fields - those keys belong to the focused field.
+    const tag = (event.target as HTMLElement).tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      void applyStatusChange();
+      return;
+    }
+
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      moveSelectedStatus(1);
+      return;
+    }
+
+    if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      moveSelectedStatus(-1);
     }
   };
 
@@ -491,7 +543,14 @@ const OOVOperations: React.FC = () => {
               Action{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
             </Button>
             {isActionOpen && (
-              <div className="oov-status-popover">
+              <div
+                ref={statusPopoverRef}
+                className="oov-status-popover"
+                tabIndex={-1}
+                role="listbox"
+                aria-label="Next status"
+                onKeyDown={handleStatusPopoverKeyDown}
+              >
                 <div className="oov-status-popover-header">
                   <span>Next status</span>
                   <button type="button" onClick={() => setIsActionOpen(false)} aria-label="Close status action">
@@ -592,16 +651,31 @@ const OOVOperations: React.FC = () => {
                     </div>
                   </div>
                 )}
+                {isReasonRequiredAction && (
+                  <div className="oov-reason-field">
+                    <label className="oov-reason-label">
+                      Reason <span className="oov-reason-required">*</span>
+                    </label>
+                    <textarea
+                      rows={2}
+                      value={reasonRemarks}
+                      onChange={e => setReasonRemarks(e.target.value)}
+                      placeholder={`Reason to ${STATUS_LABELS[effectiveNextStatus as ParcelStatus]?.toLowerCase() || 'cancel/fail'}...`}
+                      className="oov-reason-textarea"
+                      disabled={statusUpdating}
+                    />
+                  </div>
+                )}
                 {actionError && <p className="oov-action-error">{actionError}</p>}
                 <div className="oov-status-submit-row">
-                  <Button variant="secondary" className="oov-outline-btn" onClick={() => setIsActionOpen(false)}>
+                  <Button variant="secondary" className="oov-outline-btn" onClick={() => { setIsActionOpen(false); setReasonRemarks(''); }}>
                     Cancel
                   </Button>
                   <Button
                     variant="primary"
                     className="oov-apply-btn"
                     onClick={applyStatusChange}
-                    disabled={statusUpdating || !effectiveNextStatus}
+                    disabled={statusUpdating || !effectiveNextStatus || (isReasonRequiredAction && !reasonRemarks.trim())}
                   >
                     {statusUpdating ? 'Applying...' : 'Submit'}
                   </Button>

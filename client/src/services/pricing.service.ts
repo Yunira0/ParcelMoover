@@ -5,10 +5,19 @@ export interface PricingSettings {
   zoneMajorCities: number | null;
   zoneUrbanAreas: number | null;
   zoneRemoteAreas: number | null;
+  zoneInsideValley: number | null;
   flatInsideValley: number | null;
   flatOutsideValley: number | null;
   extraWeightPercent: number | null;
   freeWeightKg: number;
+  branchZoneMajorCities: number | null;
+  branchZoneUrbanAreas: number | null;
+  branchZoneRemoteAreas: number | null;
+  branchZoneInsideValley: number | null;
+  branchFlatInsideValley: number | null;
+  branchFlatOutsideValley: number | null;
+  returnInsideValleyPercent: number | null;
+  returnOutsideValleyPercent: number | null;
 }
 
 export type UpdatePricingSettingsInput = Partial<Omit<PricingSettings, 'id'>>;

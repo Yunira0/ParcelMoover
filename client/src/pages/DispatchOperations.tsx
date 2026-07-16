@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
   Download,
@@ -67,7 +67,7 @@ const STATUS_LABELS: Record<ParcelStatus, string> = {
   ready_to_deliver: 'Ready to Deliver',
   sent_for_delivery: 'Sent for Delivery',
   oov: 'Transit',
-  dispatched: 'Dispatched',
+  dispatched: 'In Transit',
   arrived_at_branch: 'Arrived at Destination',
   hold: 'Hold',
   loss_and_damage: 'Loss and Damage',
@@ -114,6 +114,9 @@ const createEmptyTabSelections = (): Record<DispatchTab, Set<string | number>> =
   failed: new Set(),
 });
 
+// Cancelling or failing an order requires a reason remark.
+const REASON_REQUIRED_STATUSES: ParcelStatus[] = ['cancelled', 'failed_pickup', 'failed_delivery'];
+
 const DispatchOperations: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const [orders, setOrders] = useState<Order[]>([]);
@@ -136,6 +139,7 @@ const DispatchOperations: React.FC = () => {
   const [riderId, setRiderId] = useState('');
   const [partialRemarks, setPartialRemarks] = useState('');
   const [partialCodCollected, setPartialCodCollected] = useState('');
+  const [reasonRemarks, setReasonRemarks] = useState('');
   const [remarkPopupOrder, setRemarkPopupOrder] = useState<Order | null>(null);
 
   useEffect(() => {
@@ -227,6 +231,14 @@ const DispatchOperations: React.FC = () => {
 
   const isRiderAssignAction = effectiveNextStatus === 'sent_for_delivery';
   const isPartialDeliveryAction = effectiveNextStatus === 'partially_delivered';
+  const isReasonRequiredAction = REASON_REQUIRED_STATUSES.includes(effectiveNextStatus as ParcelStatus);
+
+  // Focus the popover when it opens so Up/Down/Enter drive it straight away,
+  // without the user having to Tab into an option first.
+  const statusPopoverRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (isActionOpen) statusPopoverRef.current?.focus();
+  }, [isActionOpen]);
 
   const toggleRowSelection = (orderId: string | number) => {
     setSelectedIdsByTab(prev => {
@@ -283,6 +295,11 @@ const DispatchOperations: React.FC = () => {
       return;
     }
 
+    if (isReasonRequiredAction && !reasonRemarks.trim()) {
+      setActionError('A reason remark is required to cancel or fail an order.');
+      return;
+    }
+
     if (isPartialDeliveryAction) {
       if (!partialRemarks.trim()) {
         setActionError('Remarks are required for partial delivery.');
@@ -308,7 +325,9 @@ const DispatchOperations: React.FC = () => {
         ? { riderId }
         : isPartialDeliveryAction
           ? { remarks: partialRemarks, codCollected: parseFloat(partialCodCollected) }
-          : undefined;
+          : isReasonRequiredAction
+            ? { remarks: reasonRemarks.trim() }
+            : undefined;
       await bulkUpdateOrderStatus(
         selectedOrders.map(order => order.id),
         effectiveNextStatus,
@@ -322,6 +341,7 @@ const DispatchOperations: React.FC = () => {
       setRiderId('');
       setPartialRemarks('');
       setPartialCodCollected('');
+      setReasonRemarks('');
     } catch (err: unknown) {
       const message =
         typeof err === 'object' &&
@@ -333,6 +353,39 @@ const DispatchOperations: React.FC = () => {
       setActionError(message);
     } finally {
       setStatusUpdating(false);
+    }
+  };
+
+  const moveSelectedStatus = (direction: 1 | -1) => {
+    if (allowedStatusOptions.length === 0) return;
+
+    const currentIndex = allowedStatusOptions.findIndex(status => status === effectiveNextStatus);
+    const safeIndex = currentIndex === -1 ? 0 : currentIndex;
+    const nextIndex = (safeIndex + direction + allowedStatusOptions.length) % allowedStatusOptions.length;
+    setSelectedNextStatus(allowedStatusOptions[nextIndex]);
+  };
+
+  const handleStatusPopoverKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    // Don't hijack typing/navigation inside the reason/COD fields or the rider
+    // search field - those keys belong to the focused field.
+    const tag = (event.target as HTMLElement).tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      void applyStatusChange();
+      return;
+    }
+
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      moveSelectedStatus(1);
+      return;
+    }
+
+    if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      moveSelectedStatus(-1);
     }
   };
 
@@ -477,7 +530,14 @@ const DispatchOperations: React.FC = () => {
               Action{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
             </Button>
             {isActionOpen && (
-              <div className="dispatch-status-popover">
+              <div
+                ref={statusPopoverRef}
+                className="dispatch-status-popover"
+                tabIndex={-1}
+                role="listbox"
+                aria-label="Next status"
+                onKeyDown={handleStatusPopoverKeyDown}
+              >
                 <div className="dispatch-status-popover-header">
                   <span>Next status</span>
                   <button type="button" onClick={() => setIsActionOpen(false)} aria-label="Close status action">
@@ -551,16 +611,33 @@ const DispatchOperations: React.FC = () => {
                     </div>
                   </div>
                 )}
+                {isReasonRequiredAction && (
+                  <div className="dispatch-partial-form">
+                    <div className="dispatch-partial-field">
+                      <label className="dispatch-partial-label">
+                        Reason <span className="dispatch-partial-required">*</span>
+                      </label>
+                      <textarea
+                        rows={2}
+                        value={reasonRemarks}
+                        onChange={e => setReasonRemarks(e.target.value)}
+                        placeholder={`Reason to ${STATUS_LABELS[effectiveNextStatus as ParcelStatus]?.toLowerCase() || 'cancel/fail'}...`}
+                        className="dispatch-partial-textarea"
+                        disabled={statusUpdating}
+                      />
+                    </div>
+                  </div>
+                )}
                 {actionError && <p className="dispatch-action-error">{actionError}</p>}
                 <div className="dispatch-status-submit-row">
-                  <Button variant="secondary" className="dispatch-outline-btn" onClick={() => { setIsActionOpen(false); setRiderId(''); }}>
+                  <Button variant="secondary" className="dispatch-outline-btn" onClick={() => { setIsActionOpen(false); setRiderId(''); setReasonRemarks(''); }}>
                     Cancel
                   </Button>
                   <Button
                     variant="primary"
                     className="dispatch-apply-btn"
                     onClick={applyStatusChange}
-                    disabled={statusUpdating || !effectiveNextStatus || (isRiderAssignAction && !riderId) || (isPartialDeliveryAction && (!partialRemarks.trim() || !partialCodCollected))}
+                    disabled={statusUpdating || !effectiveNextStatus || (isRiderAssignAction && !riderId) || (isPartialDeliveryAction && (!partialRemarks.trim() || !partialCodCollected)) || (isReasonRequiredAction && !reasonRemarks.trim())}
                   >
                     {statusUpdating ? 'Applying...' : 'Submit'}
                   </Button>

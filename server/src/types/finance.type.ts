@@ -24,6 +24,7 @@ export interface VendorBillingProfile {
 }
 
 export interface PendingCodItem {
+  orderNumber: number;
   trackingId: string;
   receiverName: string;
   receiverPhone: string;
@@ -131,6 +132,7 @@ export interface UnsettledOrdersResult {
 }
 
 export interface SettlementDetailItem {
+  orderNumber: number;
   trackingId: string;
   reference: string | null;
   receiverName: string;
