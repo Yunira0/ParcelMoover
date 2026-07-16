@@ -80,6 +80,23 @@
   opacity: 0.6;
 }
 
+/* The BS date pickers share one bordered box, so strip their own chrome. */
+.vo-date-range-inputs .ndp-root {
+  flex: 1;
+  min-width: 0;
+}
+
+.vo-date-range-inputs .ndp-trigger {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  border-radius: 0;
+}
+
+.vo-date-range-inputs .ndp-trigger:focus-visible {
+  box-shadow: none;
+}
+
 .vo-date-range-sep {
   color: var(--color-text-caption);
 }
@@ -258,14 +275,23 @@
 
 .vo-muted-cell,
 .vo-comment-cell {
-  color: var(--color-text-caption);
-}
-
-.vo-comment-cell {
   display: -webkit-box;
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  padding: 0;
+  margin: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  text-align: left;
+  color: var(--color-text-caption);
+  cursor: pointer;
+}
+
+.vo-comment-cell:hover {
+  color: var(--color-primary);
+  text-decoration: underline;
 }
 
 .vo-center-cell {
@@ -292,12 +318,80 @@
   color: var(--color-danger-default);
 }
 
-.vo-action-btn {
-  color: var(--color-text-caption);
+/* Row actions menu ------------------------------------------------------- */
+.vo-actions-cell {
+  overflow: visible !important;
+  text-align: center;
 }
 
-.vo-action-btn:hover {
+.vo-actions {
+  position: relative;
+  display: inline-flex;
+}
+
+.vo-actions-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  font-size: 20px;
+  line-height: 1;
+  color: var(--color-text-caption);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--border-radius-default);
+  cursor: pointer;
+}
+
+.vo-actions-trigger:hover {
   color: var(--color-text-primary);
+  background: var(--color-primary-subtle);
+}
+
+.vo-actions-menu {
+  position: absolute;
+  top: 36px;
+  right: 0;
+  z-index: var(--z-dropdown, 200);
+  display: flex;
+  flex-direction: column;
+  min-width: 150px;
+  padding: var(--space-1);
+  background: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-default);
+  box-shadow: var(--app-shadow);
+}
+
+.vo-actions-menu button {
+  display: flex;
+  align-items: center;
+  min-height: 36px;
+  padding: var(--space-2);
+  font-family: var(--typography-font-family-default);
+  font-size: var(--font-size-sm);
+  text-align: left;
+  color: var(--color-text-default);
+  background: transparent;
+  border: 0;
+  border-radius: var(--border-radius-default);
+  cursor: pointer;
+}
+
+.vo-actions-menu button:hover {
+  background: var(--color-background-primary-invert-default);
+  color: var(--color-text-primary);
+}
+
+.vo-actions-menu button.vo-actions-item--danger {
+  color: var(--color-danger-text);
+}
+
+.vo-actions-menu button.vo-actions-item--danger:hover {
+  background: var(--color-danger-surface);
+  color: var(--color-danger-text);
 }
 
 /* Responsive ------------------------------------------------------------- */

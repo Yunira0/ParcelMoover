@@ -31,7 +31,7 @@ export async function invalidateDestinationPricingCache() {
 export type RateType = "per_destination" | "zone" | "flat";
 export const RATE_TYPES: RateType[] = ["per_destination", "zone", "flat"];
 
-export const ZONES = ["major_cities", "urban_areas", "remote_areas"] as const;
+export const ZONES = ["major_cities", "urban_areas", "remote_areas", "inside_valley"] as const;
 export type Zone = (typeof ZONES)[number];
 
 export const VALLEYS = ["inside", "outside"] as const;
@@ -64,6 +64,7 @@ export async function getPricingSettings() {
     zoneMajorCities: settings.zone_major_cities === null ? null : Number(settings.zone_major_cities),
     zoneUrbanAreas: settings.zone_urban_areas === null ? null : Number(settings.zone_urban_areas),
     zoneRemoteAreas: settings.zone_remote_areas === null ? null : Number(settings.zone_remote_areas),
+    zoneInsideValley: settings.zone_inside_valley === null ? null : Number(settings.zone_inside_valley),
     flatInsideValley: settings.flat_inside_valley === null ? null : Number(settings.flat_inside_valley),
     flatOutsideValley: settings.flat_outside_valley === null ? null : Number(settings.flat_outside_valley),
     extraWeightPercent: settings.extra_weight_percent === null ? null : Number(settings.extra_weight_percent),
@@ -83,6 +84,7 @@ export interface UpdatePricingSettingsInput {
   zoneMajorCities?: number | null;
   zoneUrbanAreas?: number | null;
   zoneRemoteAreas?: number | null;
+  zoneInsideValley?: number | null;
   flatInsideValley?: number | null;
   flatOutsideValley?: number | null;
   extraWeightPercent?: number | null;
@@ -97,6 +99,7 @@ export async function updatePricingSettings(input: UpdatePricingSettingsInput) {
       ...(input.zoneMajorCities !== undefined ? { zone_major_cities: input.zoneMajorCities } : {}),
       ...(input.zoneUrbanAreas !== undefined ? { zone_urban_areas: input.zoneUrbanAreas } : {}),
       ...(input.zoneRemoteAreas !== undefined ? { zone_remote_areas: input.zoneRemoteAreas } : {}),
+      ...(input.zoneInsideValley !== undefined ? { zone_inside_valley: input.zoneInsideValley } : {}),
       ...(input.flatInsideValley !== undefined ? { flat_inside_valley: input.flatInsideValley } : {}),
       ...(input.flatOutsideValley !== undefined ? { flat_outside_valley: input.flatOutsideValley } : {}),
       ...(input.extraWeightPercent !== undefined ? { extra_weight_percent: input.extraWeightPercent } : {}),
@@ -155,6 +158,10 @@ export interface VendorRateOverrides {
   zoneMajorCities?: number | null;
   zoneUrbanAreas?: number | null;
   zoneRemoteAreas?: number | null;
+  zoneInsideValley?: number | null;
+  // Cross-model override: when set, inside-valley destinations are charged this
+  // flat rate regardless of the vendor's primary rate model.
+  insideValleyFlatRate?: number | null;
   extraWeightPercent?: number | null;
 }
 
@@ -175,7 +182,13 @@ export async function getVendorQuote(
   let rate: number | null = null;
   let basis = "";
 
-  if (rateType === "per_destination") {
+  // Cross-model override: a vendor may pair their primary model with a flat rate
+  // for inside-valley deliveries. When set, it wins for inside-valley destinations
+  // no matter which primary model is selected.
+  if (dest.valley === "inside" && overrides.insideValleyFlatRate != null) {
+    rate = overrides.insideValleyFlatRate;
+    basis = "Flat inside-valley rate";
+  } else if (rateType === "per_destination") {
     rate = dest.perDestinationRate;
     basis = `Per-destination rate for ${dest.name}`;
     if (rate === null) throw new AppError(404, `No per-destination rate set for ${dest.name}`);
@@ -186,6 +199,8 @@ export async function getVendorQuote(
         ? pick(overrides.zoneMajorCities, settings.zoneMajorCities)
         : dest.zone === "urban_areas"
         ? pick(overrides.zoneUrbanAreas, settings.zoneUrbanAreas)
+        : dest.zone === "inside_valley"
+        ? pick(overrides.zoneInsideValley, settings.zoneInsideValley)
         : pick(overrides.zoneRemoteAreas, settings.zoneRemoteAreas);
     basis = `Zone rate (${dest.zone.replace("_", " ")})`;
     if (rate === null) throw new AppError(404, `No rate set for zone "${dest.zone}"`);

@@ -50,6 +50,8 @@ export async function getVendorQuoteController(req: Request, res: Response) {
       zone_major_cities: true,
       zone_urban_areas: true,
       zone_remote_areas: true,
+      zone_inside_valley: true,
+      inside_valley_flat_rate: true,
       extra_weight_percent: true,
     } as const;
 
@@ -82,6 +84,8 @@ export async function getVendorQuoteController(req: Request, res: Response) {
       zoneMajorCities: vendor!.zone_major_cities === null ? null : Number(vendor!.zone_major_cities),
       zoneUrbanAreas: vendor!.zone_urban_areas === null ? null : Number(vendor!.zone_urban_areas),
       zoneRemoteAreas: vendor!.zone_remote_areas === null ? null : Number(vendor!.zone_remote_areas),
+      zoneInsideValley: vendor!.zone_inside_valley === null ? null : Number(vendor!.zone_inside_valley),
+      insideValleyFlatRate: vendor!.inside_valley_flat_rate === null ? null : Number(vendor!.inside_valley_flat_rate),
       extraWeightPercent: vendor!.extra_weight_percent === null ? null : Number(vendor!.extra_weight_percent),
     };
 

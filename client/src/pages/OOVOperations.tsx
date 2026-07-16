@@ -95,6 +95,9 @@ const createEmptySelections = (): Record<OOVTab, Map<string, Order>> => ({
 
 const formatMoney = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 0 });
 
+// Cancelling or failing an order requires a reason remark.
+const REASON_REQUIRED_STATUSES: ParcelStatus[] = ['cancelled', 'failed_pickup', 'failed_delivery'];
+
 const OOVOperations: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const [orders, setOrders] = useState<Order[]>([]);
@@ -119,6 +122,7 @@ const OOVOperations: React.FC = () => {
   const [riders, setRiders] = useState<{ id: string; name: string }[]>([]);
   const [toLocationId, setToLocationId] = useState('');
   const [riderId, setRiderId] = useState('');
+  const [reasonRemarks, setReasonRemarks] = useState('');
   const [ncmBranches, setNcmBranches] = useState<NcmBranch[]>([]);
   const [ncmBranchesError, setNcmBranchesError] = useState('');
   const [ncmBranch, setNcmBranch] = useState('');
@@ -214,6 +218,7 @@ const OOVOperations: React.FC = () => {
       : allowedStatusOptions[0] || '';
 
   const isDispatchAction = effectiveNextStatus === 'dispatched';
+  const isReasonRequiredAction = REASON_REQUIRED_STATUSES.includes(effectiveNextStatus as ParcelStatus);
 
   // NCM branch list is only needed once the 3PL method is picked — and the
   // fetch fails cleanly when the NCM integration isn't configured.
@@ -300,6 +305,11 @@ const OOVOperations: React.FC = () => {
       return;
     }
 
+    if (isReasonRequiredAction && !reasonRemarks.trim()) {
+      setActionError('A reason remark is required to cancel or fail an order.');
+      return;
+    }
+
     setStatusUpdating(true);
     try {
       const ids = selectedOrders.map(order => String(order.id));
@@ -320,6 +330,7 @@ const OOVOperations: React.FC = () => {
         await bulkUpdateOrderStatus(ids, effectiveNextStatus, {
           toLocationId: isDispatchAction && dispatchMethod === 'manifest' ? toLocationId : undefined,
           riderId: isDispatchAction && dispatchMethod === 'manifest' ? riderId || undefined : undefined,
+          remarks: isReasonRequiredAction ? reasonRemarks.trim() : undefined,
         });
       }
       await loadOovOrders();
@@ -331,6 +342,7 @@ const OOVOperations: React.FC = () => {
       setRiderId('');
       setNcmBranch('');
       setDispatchMethod('manifest');
+      setReasonRemarks('');
     } catch (err: unknown) {
       const message =
         typeof err === 'object' &&
@@ -592,16 +604,31 @@ const OOVOperations: React.FC = () => {
                     </div>
                   </div>
                 )}
+                {isReasonRequiredAction && (
+                  <div className="oov-reason-field">
+                    <label className="oov-reason-label">
+                      Reason <span className="oov-reason-required">*</span>
+                    </label>
+                    <textarea
+                      rows={2}
+                      value={reasonRemarks}
+                      onChange={e => setReasonRemarks(e.target.value)}
+                      placeholder={`Reason to ${STATUS_LABELS[effectiveNextStatus as ParcelStatus]?.toLowerCase() || 'cancel/fail'}...`}
+                      className="oov-reason-textarea"
+                      disabled={statusUpdating}
+                    />
+                  </div>
+                )}
                 {actionError && <p className="oov-action-error">{actionError}</p>}
                 <div className="oov-status-submit-row">
-                  <Button variant="secondary" className="oov-outline-btn" onClick={() => setIsActionOpen(false)}>
+                  <Button variant="secondary" className="oov-outline-btn" onClick={() => { setIsActionOpen(false); setReasonRemarks(''); }}>
                     Cancel
                   </Button>
                   <Button
                     variant="primary"
                     className="oov-apply-btn"
                     onClick={applyStatusChange}
-                    disabled={statusUpdating || !effectiveNextStatus}
+                    disabled={statusUpdating || !effectiveNextStatus || (isReasonRequiredAction && !reasonRemarks.trim())}
                   >
                     {statusUpdating ? 'Applying...' : 'Submit'}
                   </Button>

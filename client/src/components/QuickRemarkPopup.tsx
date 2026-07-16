@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { MessageSquare, RefreshCw, Send, X } from 'lucide-react';
+import { MessageSquare, RefreshCw, Send } from 'lucide-react';
 import Button from './Button';
 import { getOrderByTrackingId, addOrderRemark, type OrderRemark } from '../services/orders.service';
 import { toBsDate } from '../utils/nepaliDate';
@@ -212,8 +212,8 @@ const QuickRemarkPopup: React.FC<QuickRemarkPopupProps> = ({ orderId, trackingId
             <button className="qr-header-btn" onClick={() => loadRemarks(true)} aria-label="Refresh">
               <RefreshCw size={16} />
             </button>
-            <button className="qr-header-btn" onClick={onClose} aria-label="Close">
-              <X size={18} />
+            <button className="qr-header-btn qr-header-btn--close" onClick={onClose} aria-label="Close" title="Close">
+              <span className="qr-close-glyph" aria-hidden="true">×</span>
             </button>
           </div>
         </div>
@@ -260,8 +260,8 @@ const QuickRemarkPopup: React.FC<QuickRemarkPopupProps> = ({ orderId, trackingId
                 {replyingTo.remark.length > 40 ? replyingTo.remark.slice(0, 40) + '...' : replyingTo.remark}
               </span>
             </div>
-            <button className="qr-replying-close" onClick={cancelReply} aria-label="Cancel reply">
-              <X size={14} />
+            <button className="qr-replying-close" onClick={cancelReply} aria-label="Cancel reply" title="Cancel reply">
+              <span className="qr-close-glyph" aria-hidden="true">×</span>
             </button>
           </div>
         )}

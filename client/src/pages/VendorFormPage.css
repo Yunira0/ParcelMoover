@@ -154,6 +154,45 @@
   color: var(--color-text-caption);
 }
 
+/* Optional "second rate" add-on, styled as a card to match the rate options. */
+.vfp-inside-valley-block {
+  margin-top: var(--space-3);
+  padding: 14px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 10px;
+  background: var(--color-background-surface);
+  gap: var(--space-3);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.vfp-inside-valley-block.is-on {
+  border-color: var(--color-primary, #4f46e5);
+  box-shadow: 0 0 0 1px var(--color-primary, #4f46e5);
+}
+
+.vfp-inside-valley-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.vfp-inside-valley-toggle input {
+  margin-top: 3px;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  accent-color: var(--color-primary, #4f46e5);
+  cursor: pointer;
+}
+
+/* Reveal the rate input with a subtle divider once the option is on. */
+.vfp-inside-valley-block .vfp-fields {
+  padding-top: var(--space-1);
+  margin-top: var(--space-1);
+  border-top: 1px dashed var(--color-border-default);
+}
+
 .vfp-rate-config-link {
   align-self: flex-start;
   display: inline-flex;

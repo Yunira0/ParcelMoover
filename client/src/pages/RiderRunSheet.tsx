@@ -18,6 +18,7 @@ import Table from '../components/Table';
 import Button from '../components/Button';
 import SearchableSelect from '../components/SearchableSelect';
 import StatusChip, { type StatusChipTone } from '../components/StatusChip';
+import NepaliDatePicker from '../components/NepaliDatePicker';
 import {
   getRiderRunSheet,
   subscribeToOrderStatusChanged,
@@ -42,7 +43,7 @@ const STATUS_LABELS: Record<ParcelStatus, string> = {
   ready_to_deliver: 'Ready to Deliver',
   sent_for_delivery: 'Sent for Delivery',
   oov: 'Transit',
-  dispatched: 'Dispatched',
+  dispatched: 'In Transit',
   arrived_at_branch: 'Arrived at Destination',
   hold: 'Hold',
   loss_and_damage: 'Loss and Damage',
@@ -363,7 +364,7 @@ const RiderRunSheet: React.FC = () => {
 
       <div className="runsheet-stats">
         <StatCard icon={Package} label="Total Items" value={summary.totalItems} />
-        <StatCard icon={Truck} label="Out for Delivery" value={summary.outItems} />
+        <StatCard icon={Truck} label="Sent for Delivery" value={summary.outItems} />
         <StatCard icon={PackageCheck} label="Delivered" value={summary.deliveredItems} />
         <StatCard icon={Banknote} label="COD on Sheets" value={formatCurrency(summary.totalCod, 0)} />
       </div>
@@ -386,11 +387,10 @@ const RiderRunSheet: React.FC = () => {
           </div>
           <div className="runsheet-filter-group">
             <label className="runsheet-filter-label">Date</label>
-            <input
-              type="date"
+            <NepaliDatePicker
               value={date}
-              onChange={e => setDate(e.target.value)}
-              className="runsheet-date-input"
+              onChange={setDate}
+              aria-label="Run sheet date"
             />
           </div>
         </div>

@@ -54,6 +54,8 @@ interface UpdateManagedUserInput {
   zoneMajorCities?: string | number;
   zoneUrbanAreas?: string | number;
   zoneRemoteAreas?: string | number;
+  zoneInsideValley?: string | number;
+  insideValleyFlatRate?: string | number;
   extraWeightPercent?: string | number;
   pickupLandmark?: string;
   billingBusinessName?: string;
@@ -279,6 +281,8 @@ export async function updateManagedUserProfile(
       putRate(u, "zone_major_cities", data.zoneMajorCities);
       putRate(u, "zone_urban_areas", data.zoneUrbanAreas);
       putRate(u, "zone_remote_areas", data.zoneRemoteAreas);
+      putRate(u, "zone_inside_valley", data.zoneInsideValley);
+      putRate(u, "inside_valley_flat_rate", data.insideValleyFlatRate);
       putRate(u, "extra_weight_percent", data.extraWeightPercent);
       if (joinedAt) u.joined_at = joinedAt;
       if (data.status) u.status = data.status;
@@ -323,7 +327,8 @@ export async function getManagedUserDetail(actorUserId: string, type: ManagedUse
       rateType: v.rate_type,
       flatInsideValley: num(v.flat_inside_valley), flatOutsideValley: num(v.flat_outside_valley),
       zoneMajorCities: num(v.zone_major_cities), zoneUrbanAreas: num(v.zone_urban_areas),
-      zoneRemoteAreas: num(v.zone_remote_areas),
+      zoneRemoteAreas: num(v.zone_remote_areas), zoneInsideValley: num(v.zone_inside_valley),
+      insideValleyFlatRate: num(v.inside_valley_flat_rate),
       extraWeightPercent: num(v.extra_weight_percent),
       pickupLandmark: v.pickup_landmark, billingBusinessName: v.billing_business_name,
       registrationNo: v.registration_no, panVatNo: v.pan_vat_no,
@@ -654,6 +659,8 @@ export async function registerUserBySuperAdmin(
           zone_major_cities: parseRate(data.zoneMajorCities),
           zone_urban_areas: parseRate(data.zoneUrbanAreas),
           zone_remote_areas: parseRate(data.zoneRemoteAreas),
+          zone_inside_valley: parseRate(data.zoneInsideValley),
+          inside_valley_flat_rate: parseRate(data.insideValleyFlatRate),
           extra_weight_percent: parseRate(data.extraWeightPercent),
           pickup_landmark: data.pickupLandmark ?? null,
           billing_business_name: data.billingBusinessName ?? null,

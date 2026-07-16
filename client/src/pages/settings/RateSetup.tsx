@@ -17,6 +17,7 @@ const ZONE_OPTIONS = [
   { value: 'major_cities', label: 'Major cities' },
   { value: 'urban_areas', label: 'Urban areas' },
   { value: 'remote_areas', label: 'Remote areas' },
+  { value: 'inside_valley', label: 'Inside valley' },
 ];
 
 const VALLEY_OPTIONS = [
@@ -94,6 +95,7 @@ const RateSetup: React.FC = () => {
         zoneMajorCities: settings.zoneMajorCities,
         zoneUrbanAreas: settings.zoneUrbanAreas,
         zoneRemoteAreas: settings.zoneRemoteAreas,
+        zoneInsideValley: settings.zoneInsideValley,
         flatInsideValley: settings.flatInsideValley,
         flatOutsideValley: settings.flatOutsideValley,
         extraWeightPercent: settings.extraWeightPercent,
@@ -128,6 +130,10 @@ const RateSetup: React.FC = () => {
           <label>Remote areas (Rs.)
             <input type="number" min={0} value={settings.zoneRemoteAreas ?? ''}
               onChange={(e) => setSetting('zoneRemoteAreas', e.target.value)} />
+          </label>
+          <label>Inside valley (Rs.)
+            <input type="number" min={0} value={settings.zoneInsideValley ?? ''}
+              onChange={(e) => setSetting('zoneInsideValley', e.target.value)} />
           </label>
         </div>
 

@@ -105,6 +105,9 @@ export interface ListOrdersQuery {
   dir?: "next" | "prev";
   sortBy?: OrderSortField;
   sortDir?: "asc" | "desc";
+  // Export-only: enrich each row with its first "arrived at origin" date via a
+  // batched history query. Off by default to keep the list/table path lean.
+  withArrival?: boolean;
 }
 
 export interface BulkUpdateParcelStatusInput {

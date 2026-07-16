@@ -562,6 +562,10 @@ model vendors {
   zone_major_cities     Decimal?          @db.Decimal(12, 2)
   zone_urban_areas      Decimal?          @db.Decimal(12, 2)
   zone_remote_areas     Decimal?          @db.Decimal(12, 2)
+  zone_inside_valley    Decimal?          @db.Decimal(12, 2)
+  // Optional cross-model override: a flat rate for inside-valley destinations
+  // that takes precedence over rate_type when set. Null = no override.
+  inside_valley_flat_rate Decimal?        @db.Decimal(12, 2)
   extra_weight_percent  Decimal?          @db.Decimal(5, 2)
   client_name           String
   business_name         String?
@@ -620,6 +624,7 @@ model pricing_settings {
   zone_major_cities    Decimal? @db.Decimal(12, 2)
   zone_urban_areas     Decimal? @db.Decimal(12, 2)
   zone_remote_areas    Decimal? @db.Decimal(12, 2)
+  zone_inside_valley   Decimal? @db.Decimal(12, 2)
   flat_inside_valley   Decimal? @db.Decimal(12, 2)
   flat_outside_valley  Decimal? @db.Decimal(12, 2)
   extra_weight_percent Decimal? @db.Decimal(5, 2)

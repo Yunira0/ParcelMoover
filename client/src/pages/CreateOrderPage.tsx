@@ -396,7 +396,7 @@ const CreateOrderPage: React.FC = () => {
       }
       const res = await createOrder(payload);
       resetForm();
-      setSuccessMessage(`Order ${res.data.trackingId} created successfully. You can create another order below.`);
+      setSuccessMessage(`Order #${res.data.orderNumber} (${res.data.trackingId}) created successfully. You can create another order below.`);
     } catch (err: any) {
       const data = err.response?.data;
       if (data?.errors?.length) {

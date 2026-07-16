@@ -81,6 +81,7 @@ export async function createOrderController(req: Request, res: Response) {
         message: "Order created successfully",
         data: {
           id: order.id,
+          orderNumber: order.order_number,
           trackingId: order.tracking_id,
           status: order.status,
           createdAt: order.created_at,
@@ -255,6 +256,7 @@ export async function listOrdersController(req: Request, res: Response) {
         ...(dir !== undefined ? { dir } : {}),
         ...(sortBy ? { sortBy } : {}),
         ...(sortDir ? { sortDir } : {}),
+        ...(req.query.withArrival === "true" ? { withArrival: true } : {}),
       },
     );
 

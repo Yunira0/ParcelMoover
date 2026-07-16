@@ -11,7 +11,7 @@ const PUBLIC_STATUS_LABELS: Record<ParcelStatus, string> = {
   picked_up: 'Picked up',
   arrived: 'In transit',
   ready_to_deliver: 'In transit',
-  sent_for_delivery: 'Out for delivery',
+  sent_for_delivery: 'Sent for delivery',
   oov: 'In transit',
   dispatched: 'In transit',
   arrived_at_branch: 'In transit',

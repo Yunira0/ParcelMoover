@@ -72,6 +72,61 @@ export function toBsDateLabel(value?: string | Date | null): string {
   return `${bs.day} ${BS_MONTHS[bs.month - 1]} ${bs.year}`;
 }
 
+type BsDayParts = { year: number; monthIndex: number; day: number };
+
+/**
+ * AD "YYYY-MM-DD" (a Nepal-local calendar day) → BS parts (monthIndex is 0-11),
+ * or null when the value is not a plain day string or falls outside the
+ * converter's supported range.
+ */
+export function adDayToBsParts(ad?: string | null): BsDayParts | null {
+  if (!ad) return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ad.trim());
+  if (!m) return null;
+  try {
+    const AnyNepali = NepaliDate as any;
+    const at = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    const nd = AnyNepali.fromAD ? AnyNepali.fromAD(at) : new AnyNepali(at);
+    const bs = nd.getBS
+      ? nd.getBS()
+      : { year: nd.getYear(), month: nd.getMonth(), date: nd.getDate() };
+    return { year: bs.year, monthIndex: bs.month, day: bs.date };
+  } catch {
+    return null;
+  }
+}
+
+/** BS (year, monthIndex 0-11, day) → AD "YYYY-MM-DD" Nepal-local calendar day. */
+export function bsToAdDay(year: number, monthIndex: number, day: number): string {
+  const jd = new (NepaliDate as any)(year, monthIndex, day).toJsDate() as Date;
+  return `${jd.getFullYear()}-${pad(jd.getMonth() + 1)}-${pad(jd.getDate())}`;
+}
+
+/** Number of days (30-32) in a BS month. */
+export function bsDaysInMonth(year: number, monthIndex: number): number {
+  const AnyNepali = NepaliDate as any;
+  const start = new AnyNepali(year, monthIndex, 1).toJsDate() as Date;
+  const nextYear = monthIndex === 11 ? year + 1 : year;
+  const nextMonth = (monthIndex + 1) % 12;
+  const next = new AnyNepali(nextYear, nextMonth, 1).toJsDate() as Date;
+  return Math.round((next.getTime() - start.getTime()) / 86_400_000);
+}
+
+/** Weekday index (0=Sunday) of BS (year, monthIndex, day). */
+export function bsWeekday(year: number, monthIndex: number, day: number): number {
+  return (new (NepaliDate as any)(year, monthIndex, day).toJsDate() as Date).getDay();
+}
+
+/** Today's date as BS parts (monthIndex is 0-11). */
+export function todayBsParts(): BsDayParts {
+  const AnyNepali = NepaliDate as any;
+  const nd = AnyNepali.now ? AnyNepali.now() : new AnyNepali();
+  const bs = nd.getBS
+    ? nd.getBS()
+    : { year: nd.getYear(), month: nd.getMonth(), date: nd.getDate() };
+  return { year: bs.year, monthIndex: bs.month, day: bs.date };
+}
+
 /** Nepal clock time for a timestamp, e.g. "19:53" or "19:53:44". */
 export function toNptTime(value?: string | Date | null, withSeconds = false): string {
   if (!value) return '';
