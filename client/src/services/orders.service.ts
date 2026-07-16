@@ -167,12 +167,18 @@ export interface DashboardTrendDay {
 export interface DashboardSummary {
   overview: {
     totalOrders: number;
+    totalOrderAmount: number;
     pendingPickups: number;
+    pendingPickupsAmount: number;
     pendingReturns: number;
+    pendingReturnsAmount: number;
     inTransit: number;
+    inTransitAmount: number;
     pendingDeliveries: number;
     totalDelivered: number;
+    totalDeliveredAmount: number;
     totalReturns: number;
+    totalReturnsAmount: number;
   };
   today: {
     totalOrders: number;
