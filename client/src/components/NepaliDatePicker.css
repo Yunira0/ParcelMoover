@@ -11,7 +11,9 @@
   justify-content: space-between;
   gap: 8px;
   width: 100%;
-  padding: 7px 10px;
+  height: 36px;
+  padding: 0 10px;
+  box-sizing: border-box;
   font: inherit;
   font-size: 0.875rem;
   color: var(--color-text-default);
@@ -78,7 +80,7 @@
 .ndp-weekdays,
 .ndp-grid {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 2px;
 }
 
@@ -90,13 +92,17 @@
   color: var(--color-text-caption);
 }
 
-.ndp-blank { aspect-ratio: 1; }
+.ndp-blank {
+  aspect-ratio: 1;
+  min-width: 0;
+}
 
 .ndp-day {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   aspect-ratio: 1;
+  min-width: 0;
   font: inherit;
   font-size: 0.82rem;
   color: var(--color-text-default);

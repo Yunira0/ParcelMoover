@@ -11,9 +11,6 @@ interface CODSettlementProps {
 const formatCurrency = (value: number) => `Rs. ${Math.round(value).toLocaleString()}`;
 
 const CODSettlement: React.FC<CODSettlementProps> = ({ data, loading = false }) => {
-  const progressPercent = Math.min(Math.max(data.progressPercent, 0), 100);
-  const displayProgress = `${progressPercent.toFixed(1)}%`;
-
   return (
     <div className="cod-settlement">
       <div className="cod-header">
@@ -41,15 +38,12 @@ const CODSettlement: React.FC<CODSettlementProps> = ({ data, loading = false }) 
           </div>
           <span className="status-amount">{loading ? '...' : formatCurrency(data.pendingCod)}</span>
         </div>
-      </div>
-      
-      <div className="settlement-progress">
-        <div className="progress-header">
-          <span>Settlement Progress</span>
-          <span className="progress-percent">{loading ? '...' : displayProgress}</span>
-        </div>
-        <div className="progress-bar-container">
-          <div className="progress-bar" style={{ width: loading ? '0%' : displayProgress }}></div>
+        <div className="settlement-row">
+          <div className="status-label">
+            <span className="status-dot rider"></span>
+            <span>COD to collect from riders</span>
+          </div>
+          <span className="status-amount">{loading ? '...' : formatCurrency(data.codFromRider)}</span>
         </div>
       </div>
     </div>

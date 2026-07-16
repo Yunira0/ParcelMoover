@@ -188,7 +188,10 @@ export async function getPendingCodBill(actor: Actor, vendorIdParam?: string): P
   if (cached) return cached;
 
   const collections = await prisma.cod_collections.findMany({
-    where: { vendor_id: vendor.id, payment_status: payment_status.pending },
+    // Only orders with cash actually collected are billable (excludes
+    // not-yet-delivered orders); amounts are on the collected basis so the bill
+    // matches what will be settled.
+    where: { vendor_id: vendor.id, payment_status: payment_status.pending, collected_amount: { gt: 0 } },
     include: {
       parcels: {
         select: {
@@ -211,7 +214,7 @@ export async function getPendingCodBill(actor: Actor, vendorIdParam?: string): P
     receiverName: c.parcels.parties_parcels_receiver_idToparties.name,
     receiverPhone: c.parcels.parties_parcels_receiver_idToparties.phone,
     destination: formatLocation(c.parcels.locations_parcels_destination_location_idTolocations),
-    codAmount: Number(c.cod_amount),
+    codAmount: Number(c.collected_amount),
     deliveryCharge: Number(c.parcels.delivery_charge),
   }));
 
@@ -497,7 +500,14 @@ export async function getUnsettledOrders(
   // eligible.
   const where: Prisma.cod_collectionsWhereInput = riderId
     ? { rider_id: riderId, rider_payment_status: payment_status.pending, collected_amount: { gt: 0 } }
-    : { ...(vendorId ? { vendor_id: vendorId } : {}), payment_status: payment_status.pending };
+    : {
+        ...(vendorId ? { vendor_id: vendorId } : {}),
+        payment_status: payment_status.pending,
+        // Only orders where cash was actually collected are settleable - this
+        // excludes not-yet-delivered orders (which would otherwise pay out COD
+        // that was never collected) and mirrors the rider leg's guard.
+        collected_amount: { gt: 0 },
+      };
 
   const collections = await prisma.cod_collections.findMany({
     where,
@@ -517,11 +527,14 @@ export async function getUnsettledOrders(
   });
 
   const items: UnsettledOrderItem[] = collections.map((c) => {
-    const codAmount = Number(c.cod_amount);
+    const collected = Number(c.collected_amount);
     const deliveryCharge = Number(c.parcels.delivery_charge);
-    // Vendor leg owes (COD - delivery charge); rider leg owes exactly what
-    // they collected (may be less than codAmount for a partial delivery).
-    const netPayable = riderId ? Number(c.collected_amount) : codAmount - deliveryCharge;
+    // Both legs settle on the cash actually collected, which is less than the
+    // declared COD on a partial delivery. Vendor leg owes (collected - delivery
+    // charge); rider leg owes exactly what they collected. The COD column shows
+    // the collected amount so the row reconciles (COD - charge = net payable).
+    const codAmount = collected;
+    const netPayable = riderId ? collected : collected - deliveryCharge;
     return {
       id: c.parcel_id,
       codCollectionId: c.id,
@@ -586,6 +599,9 @@ export async function createSettlement(
           id: { in: codCollectionIds },
           vendor_id: target.id,
           payment_status: payment_status.pending,
+          // Only settle orders where cash was actually collected - never pay a
+          // vendor for COD that hasn't been collected yet.
+          collected_amount: { gt: 0 },
         };
 
   const collections = await prisma.cod_collections.findMany({
@@ -600,11 +616,13 @@ export async function createSettlement(
     );
   }
 
-  const grossAmount = collections.reduce((sum, c) => sum + Number(c.cod_amount), 0);
+  // Gross is the cash actually collected (not the declared COD, which overstates
+  // partial deliveries). Vendor payout is gross minus the delivery charge.
+  const grossAmount = collections.reduce((sum, c) => sum + Number(c.collected_amount), 0);
   const payableAmount =
     payeeType === "rider"
       ? collections.reduce((sum, c) => sum + Number(c.collected_amount), 0)
-      : collections.reduce((sum, c) => sum + Number(c.cod_amount) - Number(c.parcels.delivery_charge), 0);
+      : collections.reduce((sum, c) => sum + Number(c.collected_amount) - Number(c.parcels.delivery_charge), 0);
   const statementId = generateStatementId(payeeType);
 
   const settlement = await prisma.$transaction(async (tx) => {
@@ -626,13 +644,13 @@ export async function createSettlement(
       data: collections.map((c) => ({
         settlement_id: created.id,
         cod_collection_id: c.id,
-        amount: payeeType === "rider" ? Number(c.collected_amount) : Number(c.cod_amount) - Number(c.parcels.delivery_charge),
+        amount: payeeType === "rider" ? Number(c.collected_amount) : Number(c.collected_amount) - Number(c.parcels.delivery_charge),
       })),
     });
 
-    // rider_remitted_amount / vendor remitted_amount vary per row (equal to
-    // that row's collected_amount / cod_amount), so this can't be a single
-    // shared updateMany.
+    // rider_remitted_amount / vendor remitted_amount vary per row (both equal
+    // that row's collected_amount - the cash actually collected), so this can't
+    // be a single shared updateMany.
     if (payeeType === "rider") {
       const settledAt = new Date();
       await Promise.all(
@@ -652,7 +670,7 @@ export async function createSettlement(
         collections.map((c) =>
           tx.cod_collections.update({
             where: { id: c.id },
-            data: { payment_status: payment_status.paid, remitted_amount: c.cod_amount },
+            data: { payment_status: payment_status.paid, remitted_amount: c.collected_amount },
           }),
         ),
       );
@@ -883,6 +901,7 @@ export async function getSettlementDetail(actor: Actor, settlementId: string): P
       pieces: parcel.pieces,
       weightKg: parcel.weight_kg === null ? null : Number(parcel.weight_kg),
       codAmount: Number(si.cod_collections.cod_amount),
+      collectedAmount: Number(si.cod_collections.collected_amount),
       deliveryCharge: Number(parcel.delivery_charge),
       settledAmount: Number(si.amount),
       deliveredAt: parcel.delivered_at ? parcel.delivered_at.toISOString() : null,

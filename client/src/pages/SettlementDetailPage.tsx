@@ -26,8 +26,8 @@ function buildStatementHtml(detail: SettlementDetail): string {
           <td>${item.receiverName}<div class="sub">${item.receiverPhone}</div><div class="sub">${item.destination}</div></td>
           <td class="r">${item.weightKg === null ? '-' : item.weightKg.toFixed(2)}</td>
           <td class="r">${money(item.codAmount)}</td>
-          <td class="r">${money(item.settledAmount)}</td>
-          <td class="r">${money(item.codAmount - item.settledAmount)}</td>
+          <td class="r">${money(item.collectedAmount)}</td>
+          <td class="r">${money(item.deliveryCharge)}</td>
         </tr>`,
     )
     .join('');
@@ -35,11 +35,11 @@ function buildStatementHtml(detail: SettlementDetail): string {
   const totals = detail.items.reduce(
     (acc, item) => {
       acc.cod += item.codAmount;
-      acc.collected += item.settledAmount;
-      acc.commission += item.codAmount - item.settledAmount;
+      acc.collected += item.collectedAmount;
+      acc.deliveryCharge += item.deliveryCharge;
       return acc;
     },
-    { cod: 0, collected: 0, commission: 0 },
+    { cod: 0, collected: 0, deliveryCharge: 0 },
   );
 
   return `<!doctype html><html><head><meta charset="utf-8"><title>${detail.statementId}</title>
@@ -77,14 +77,14 @@ function buildStatementHtml(detail: SettlementDetail): string {
       <thead><tr>
         <th>SN</th><th>Order ID</th><th>Transaction ID</th><th>Receiver</th>
         <th class="r">Weight</th><th class="r">COD</th>
-        <th class="r">Collected COD</th><th class="r">Commission</th>
+        <th class="r">Collected COD</th><th class="r">Delivery Charges</th>
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>
     <div class="totals">
       <div><span>Total COD</span><span>${money(totals.cod)}</span></div>
       <div><span>Collected COD</span><span>${money(totals.collected)}</span></div>
-      <div><span>Commission</span><span>${money(totals.commission)}</span></div>
+      <div><span>Delivery Charges</span><span>${money(totals.deliveryCharge)}</span></div>
       <div class="payable"><span>Payable Amount</span><span>${money(detail.payableAmount)}</span></div>
     </div>
   </body></html>`;
@@ -147,13 +147,13 @@ const SettlementDetailPage: React.FC = () => {
     ? detail.items.reduce(
         (acc, item) => {
           acc.cod += item.codAmount;
-          acc.collected += item.settledAmount;
-          acc.commission += item.codAmount - item.settledAmount;
+          acc.collected += item.collectedAmount;
+          acc.deliveryCharge += item.deliveryCharge;
           return acc;
         },
-        { cod: 0, collected: 0, commission: 0 },
+        { cod: 0, collected: 0, deliveryCharge: 0 },
       )
-    : { cod: 0, collected: 0, commission: 0 };
+    : { cod: 0, collected: 0, deliveryCharge: 0 };
 
   return (
     <div className="settlement-detail-page">
@@ -238,7 +238,7 @@ const SettlementDetailPage: React.FC = () => {
                     <th style={{ textAlign: 'right' }}>Weight</th>
                     <th style={{ textAlign: 'right' }}>COD</th>
                     <th style={{ textAlign: 'right' }}>Collected COD</th>
-                    <th style={{ textAlign: 'right' }}>Commission</th>
+                    <th style={{ textAlign: 'right' }}>Delivery Charges</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -262,8 +262,8 @@ const SettlementDetailPage: React.FC = () => {
                         {item.weightKg === null ? '-' : item.weightKg.toFixed(2)}
                       </td>
                       <td style={{ textAlign: 'right' }}>{money(item.codAmount)}</td>
-                      <td style={{ textAlign: 'right' }}>{money(item.settledAmount)}</td>
-                      <td style={{ textAlign: 'right' }}>{money(item.codAmount - item.settledAmount)}</td>
+                      <td style={{ textAlign: 'right' }}>{money(item.collectedAmount)}</td>
+                      <td style={{ textAlign: 'right' }}>{money(item.deliveryCharge)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -281,8 +281,8 @@ const SettlementDetailPage: React.FC = () => {
               <span>{money(totals.collected)}</span>
             </div>
             <div>
-              <span>Commission</span>
-              <span>{money(totals.commission)}</span>
+              <span>Delivery Charges</span>
+              <span>{money(totals.deliveryCharge)}</span>
             </div>
             <div className="cod-bill-totals-payable">
               <span>Payable Amount</span>

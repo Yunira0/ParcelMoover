@@ -4,7 +4,7 @@ import prisma from "../lib/prisma";
 import redis from "../lib/redis";
 import { ncmFetch, isNcmConfigured } from "../lib/ncmClient";
 import { AppError } from "../utils/AppError";
-import { applyExternalCarrierStatus, invalidateOrderCaches, notifyVendorOfStatusChange } from "./order.service";
+import { applyExternalCarrierStatus, invalidateOrderCaches } from "./order.service";
 
 /**
  * NCM (Nepal Can Move) — the 3PL that carries our outside-valley leg.
@@ -348,9 +348,6 @@ export async function handoffParcelsToNcm(
 
   if (dispatched.length > 0) {
     await invalidateOrderCaches();
-    await Promise.all(
-      dispatched.map((d) => notifyVendorOfStatusChange(d.vendorId, d.trackingId, "dispatched", actor.id)),
-    );
   }
 
   return results;
