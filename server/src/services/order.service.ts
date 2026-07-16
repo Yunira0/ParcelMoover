@@ -1988,6 +1988,12 @@ async function computeDashboardSummary(
       todays_orders: bigint;
       todays_delivered: bigint;
       todays_returns: bigint;
+      total_order_amount: string;
+      pending_pickups_amount: string;
+      pending_returns_amount: string;
+      in_transit_amount: string;
+      total_delivered_amount: string;
+      total_returns_amount: string;
     }>
   >(Prisma.sql`
     SELECT
@@ -2001,7 +2007,13 @@ async function computeDashboardSummary(
       COUNT(*) FILTER (WHERE order_type::text = 'return') AS total_returns,
       COUNT(*) FILTER (WHERE created_at >= ${todayStart}) AS todays_orders,
       COUNT(*) FILTER (WHERE status::text = ANY(ARRAY['delivered','partially_delivered']) AND delivered_at >= ${todayStart}) AS todays_delivered,
-      COUNT(*) FILTER (WHERE order_type::text = 'return' AND created_at >= ${todayStart}) AS todays_returns
+      COUNT(*) FILTER (WHERE order_type::text = 'return' AND created_at >= ${todayStart}) AS todays_returns,
+      COALESCE(SUM(cod_amount), 0) AS total_order_amount,
+      COALESCE(SUM(cod_amount) FILTER (WHERE status::text = ANY(${PICKUP_PENDING_STATUSES})), 0) AS pending_pickups_amount,
+      COALESCE(SUM(cod_amount) FILTER (WHERE order_type::text = 'return' AND status::text = ANY(${OPEN_STATUSES})), 0) AS pending_returns_amount,
+      COALESCE(SUM(cod_amount) FILTER (WHERE status::text = ANY(${IN_TRANSIT_STATUSES})), 0) AS in_transit_amount,
+      COALESCE(SUM(cod_amount) FILTER (WHERE status::text = 'delivered'), 0) AS total_delivered_amount,
+      COALESCE(SUM(cod_amount) FILTER (WHERE order_type::text = 'return'), 0) AS total_returns_amount
     FROM parcels
     WHERE deleted_at IS NULL ${parcelScopeSql}
   `);
@@ -2017,6 +2029,12 @@ async function computeDashboardSummary(
   const todaysOrders = Number(overviewRow!.todays_orders);
   const todaysDelivered = Number(overviewRow!.todays_delivered);
   const todaysReturns = Number(overviewRow!.todays_returns);
+  const totalOrderAmount = Number(overviewRow!.total_order_amount);
+  const pendingPickupsAmount = Number(overviewRow!.pending_pickups_amount);
+  const pendingReturnsAmount = Number(overviewRow!.pending_returns_amount);
+  const inTransitAmount = Number(overviewRow!.in_transit_amount);
+  const totalDeliveredAmount = Number(overviewRow!.total_delivered_amount);
+  const totalReturnsAmount = Number(overviewRow!.total_returns_amount);
 
   // Same consolidation for the weekly/monthly trend: previously 4 queries per
   // day (up to 120 for the 30-day view), now one query with 4 conditional
@@ -2100,13 +2118,19 @@ async function computeDashboardSummary(
   const summary = {
     overview: {
       totalOrders,
+      totalOrderAmount,
       pendingPickups,
+      pendingPickupsAmount,
       pendingReturns,
+      pendingReturnsAmount,
       inTransit,
+      inTransitAmount,
       pendingDeliveries,
       totalDelivered,
+      totalDeliveredAmount,
       totalPickedUp,
       totalReturns,
+      totalReturnsAmount,
     },
     today: {
       totalOrders: todaysOrders,
