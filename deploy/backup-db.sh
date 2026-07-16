@@ -12,16 +12,21 @@
 # the box) or AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY exported some other way.
 #
 # Install as a cron job, e.g. nightly at 2am server time:
-#   crontab -e
-#   0 2 * * * /opt/parcelmoover/deploy/backup-db.sh >> /var/log/parcelmoover-backup.log 2>&1
+#   sudo crontab -e
+#   0 2 * * * /var/www/express-app/deploy/backup-db.sh >> /var/log/parcelmoover-backup.log 2>&1
 
 set -euo pipefail
 
 DEPLOY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$DEPLOY_DIR"
 
+# set -a exports everything sourced, so the vars reach the docker compose
+# and aws child processes — a plain `source` keeps them shell-local and
+# compose fails interpolating ${POSTGRES_PASSWORD:?}
+set -a
 # shellcheck disable=SC1091
 source .env.production
+set +a
 
 : "${BACKUP_S3_BUCKET:?Set BACKUP_S3_BUCKET in deploy/.env.production}"
 
@@ -32,7 +37,7 @@ cleanup() { rm -f "$DUMP_FILE"; }
 trap cleanup EXIT
 
 echo "==> [$(date -u)] Dumping database..."
-docker compose -f docker-compose.prod.yml exec -T db \
+docker compose -f docker-compose.prod.yml --env-file .env.production exec -T db \
   pg_dump -U "${POSTGRES_USER:-parcelmoover}" "${POSTGRES_DB:-parcelmoover}" \
   | gzip > "$DUMP_FILE"
 

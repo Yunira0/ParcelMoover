@@ -1,1 +1,0 @@
-import{t as e}from"./api-YN7heKRk.js";var t=async()=>(await e.get(`/delivery-rates`)).data,n=async t=>(await e.post(`/delivery-rates`,t)).data,r=async(t,n)=>(await e.patch(`/delivery-rates/${t}/active`,{isActive:n})).data,i=async t=>(await e.post(`/delivery-rates/bulk-import`,{rows:t})).data;export{n as i,t as n,r,i as t};
