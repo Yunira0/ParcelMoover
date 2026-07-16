@@ -42,6 +42,14 @@ interface VendorFormInput {
   insideValleyFlatRate: string;
   insideValleyEnabled: boolean;
   extraWeightPercent: string;
+  returnInsideValleyPercent: string;
+  returnOutsideValleyPercent: string;
+  branchFlatInsideValley: string;
+  branchFlatOutsideValley: string;
+  branchZoneMajorCities: string;
+  branchZoneUrbanAreas: string;
+  branchZoneRemoteAreas: string;
+  branchZoneInsideValley: string;
   registeredAddress: string;
   registrationNo: string;
   panVatNo: string;
@@ -76,6 +84,14 @@ const emptyForm: VendorFormInput = {
   insideValleyFlatRate: '',
   insideValleyEnabled: false,
   extraWeightPercent: '',
+  returnInsideValleyPercent: '',
+  returnOutsideValleyPercent: '',
+  branchFlatInsideValley: '',
+  branchFlatOutsideValley: '',
+  branchZoneMajorCities: '',
+  branchZoneUrbanAreas: '',
+  branchZoneRemoteAreas: '',
+  branchZoneInsideValley: '',
   registeredAddress: '',
   registrationNo: '',
   panVatNo: '',
@@ -279,6 +295,14 @@ const VendorFormPage: React.FC = () => {
           insideValleyFlatRate: s(d.insideValleyFlatRate),
           insideValleyEnabled: d.insideValleyFlatRate != null,
           extraWeightPercent: s(d.extraWeightPercent),
+          returnInsideValleyPercent: s(d.returnInsideValleyPercent),
+          returnOutsideValleyPercent: s(d.returnOutsideValleyPercent),
+          branchFlatInsideValley: s(d.branchFlatInsideValley),
+          branchFlatOutsideValley: s(d.branchFlatOutsideValley),
+          branchZoneMajorCities: s(d.branchZoneMajorCities),
+          branchZoneUrbanAreas: s(d.branchZoneUrbanAreas),
+          branchZoneRemoteAreas: s(d.branchZoneRemoteAreas),
+          branchZoneInsideValley: s(d.branchZoneInsideValley),
           pickupLandmark: s(d.pickupLandmark),
           registrationNo: s(d.registrationNo),
           panVatNo: s(d.panVatNo),
@@ -363,6 +387,14 @@ const VendorFormPage: React.FC = () => {
           zoneRemoteAreas: form.zoneRemoteAreas,
           zoneInsideValley: form.zoneInsideValley,
           insideValleyFlatRate: form.insideValleyEnabled ? form.insideValleyFlatRate : '',
+          returnInsideValleyPercent: form.returnInsideValleyPercent,
+          returnOutsideValleyPercent: form.returnOutsideValleyPercent,
+          branchFlatInsideValley: form.branchFlatInsideValley,
+          branchFlatOutsideValley: form.branchFlatOutsideValley,
+          branchZoneMajorCities: form.branchZoneMajorCities,
+          branchZoneUrbanAreas: form.branchZoneUrbanAreas,
+          branchZoneRemoteAreas: form.branchZoneRemoteAreas,
+          branchZoneInsideValley: form.branchZoneInsideValley,
           pickupLandmark: form.pickupLandmark,
           billingBusinessName: form.onlineBusinessName,
           registrationNo: form.registrationNo,
@@ -404,6 +436,21 @@ const VendorFormPage: React.FC = () => {
           ? { extraWeightPercent: form.extraWeightPercent }
           : {}),
         ...(form.insideValleyEnabled ? { insideValleyFlatRate: form.insideValleyFlatRate } : {}),
+        // Return percents apply regardless of the primary rate model.
+        returnInsideValleyPercent: form.returnInsideValleyPercent,
+        returnOutsideValleyPercent: form.returnOutsideValleyPercent,
+        // Branch overrides mirror the chosen model.
+        ...(form.rateType === 'flat'
+          ? { branchFlatInsideValley: form.branchFlatInsideValley, branchFlatOutsideValley: form.branchFlatOutsideValley }
+          : {}),
+        ...(form.rateType === 'zone'
+          ? {
+              branchZoneMajorCities: form.branchZoneMajorCities,
+              branchZoneUrbanAreas: form.branchZoneUrbanAreas,
+              branchZoneRemoteAreas: form.branchZoneRemoteAreas,
+              branchZoneInsideValley: form.branchZoneInsideValley,
+            }
+          : {}),
         pickupLandmark: form.pickupLandmark,
         billingBusinessName: form.onlineBusinessName,
         registrationNo: form.registrationNo,
@@ -810,6 +857,50 @@ const VendorFormPage: React.FC = () => {
                   )}
                 </div>
               )}
+              {/* Branch delivery overrides — mirror the primary model; blank
+                  falls back to the Settings branch defaults. */}
+              {form.rateType === 'flat' && (
+                <div className="vfp-rate-fields">
+                  <p className="vfp-rate-note">Branch delivery rates (parcel dropped at a branch). Blank uses Settings.</p>
+                  <div className="vfp-fields">
+                    <FormField label="Branch — inside valley (Rs.)" type="number" min={0}
+                      value={form.branchFlatInsideValley} onChange={set('branchFlatInsideValley')} placeholder="e.g. 80" />
+                    <FormField label="Branch — outside valley (Rs.)" type="number" min={0}
+                      value={form.branchFlatOutsideValley} onChange={set('branchFlatOutsideValley')} placeholder="e.g. 180" />
+                  </div>
+                </div>
+              )}
+              {form.rateType === 'zone' && (
+                <div className="vfp-rate-fields">
+                  <p className="vfp-rate-note">Branch delivery rates (parcel dropped at a branch). Blank uses Settings.</p>
+                  <div className="vfp-fields">
+                    <FormField label="Branch — major cities (Rs.)" type="number" min={0}
+                      value={form.branchZoneMajorCities} onChange={set('branchZoneMajorCities')} placeholder="e.g. 200" />
+                    <FormField label="Branch — urban areas (Rs.)" type="number" min={0}
+                      value={form.branchZoneUrbanAreas} onChange={set('branchZoneUrbanAreas')} placeholder="e.g. 250" />
+                    <FormField label="Branch — remote areas (Rs.)" type="number" min={0}
+                      value={form.branchZoneRemoteAreas} onChange={set('branchZoneRemoteAreas')} placeholder="e.g. 400" />
+                    <FormField label="Branch — inside valley (Rs.)" type="number" min={0}
+                      value={form.branchZoneInsideValley} onChange={set('branchZoneInsideValley')} placeholder="e.g. 150" />
+                  </div>
+                </div>
+              )}
+
+              {/* Return rate: a return parcel has no COD but is billed this
+                  percent of the normal delivery rate, by valley side. */}
+              <div className="vfp-rate-fields">
+                <p className="vfp-rate-note">
+                  Return parcels carry no COD but are charged this percent of the normal delivery
+                  rate. Leave blank to use the Settings default (e.g. 0% inside, 50% outside).
+                </p>
+                <div className="vfp-fields">
+                  <FormField label="Return — inside valley (% of delivery)" type="number" min={0} max={100}
+                    value={form.returnInsideValleyPercent} onChange={set('returnInsideValleyPercent')} placeholder="e.g. 0" />
+                  <FormField label="Return — outside valley (% of delivery)" type="number" min={0} max={100}
+                    value={form.returnOutsideValleyPercent} onChange={set('returnOutsideValleyPercent')} placeholder="e.g. 50" />
+                </div>
+              </div>
+
               {isSuperAdmin && (form.rateType === 'zone' || form.rateType === 'flat') && (
                 <button
                   type="button"

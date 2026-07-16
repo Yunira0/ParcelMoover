@@ -213,10 +213,14 @@ export async function updateParcelStatus(
   // against a possibly-already-applied change instead of defeating the point
   // of idempotency by minting a fresh key every call.
   idempotencyKey: string = crypto.randomUUID(),
+  // Set when delivering an exchange order: confirms the rider received the
+  // customer's return parcel (required for exchange deliveries; the server
+  // auto-creates the linked return order).
+  exchangeReturnReceived?: boolean,
 ): Promise<void> {
   await api.patch(
     `/orders/${orderId}/status`,
-    { status, remarks, codCollected },
+    { status, remarks, codCollected, exchangeReturnReceived },
     { headers: { 'Idempotency-Key': idempotencyKey } }
   )
 }

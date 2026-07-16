@@ -7,6 +7,7 @@ export interface DeliveryRate {
   destinationLocationId: string;
   destinationLocationName: string;
   baseCharge: number;
+  branchBaseCharge: number | null;
   extraWeightPercent: number;
   freeWeightKg: number;
   isActive: boolean;
@@ -17,6 +18,7 @@ export interface UpsertDeliveryRateInput {
   originLocationId: string;
   destinationLocationId: string;
   baseCharge: number;
+  branchBaseCharge?: number | null;
   extraWeightPercent?: number;
   freeWeightKg?: number;
 }

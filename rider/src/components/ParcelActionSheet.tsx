@@ -59,6 +59,12 @@ export default function ParcelActionSheet({ parcel, onClose, onDone }: Props) {
   const [done,       setDone]       = useState<ParcelStatus | null>(null)
   const [error,      setError]      = useState('')
   const [partialCodCollected, setPartialCodCollected] = useState('')
+  // On an exchange delivery the rider must collect the customer's exchange
+  // parcel to carry back to the vendor - so we gate "Delivered" behind a
+  // confirmation that they actually received it.
+  const [exchangePrompt, setExchangePrompt] = useState(false)
+
+  const isExchange = parcel.orderType === 'exchange'
 
   const nextStatuses = RIDER_TRANSITIONS[parcel.status] ?? []
   const pillClass    = STATUS_PILL[parcel.status] ?? 'text-text-secondary bg-surface-2'
@@ -74,7 +80,7 @@ export default function ParcelActionSheet({ parcel, onClose, onDone }: Props) {
     return idempotencyRef.current.key
   }
 
-  async function confirmAction(status: ParcelStatus) {
+  async function confirmAction(status: ParcelStatus, opts?: { exchangeReturnReceived?: boolean }) {
     setLoading(true)
     setError('')
     try {
@@ -102,7 +108,14 @@ export default function ParcelActionSheet({ parcel, onClose, onDone }: Props) {
           setLoading(false)
           return
         }
-        await updateParcelStatus(parcel.id, status, remarks || undefined, undefined, idempotencyKeyFor(status))
+        await updateParcelStatus(
+          parcel.id,
+          status,
+          remarks || undefined,
+          undefined,
+          idempotencyKeyFor(status),
+          opts?.exchangeReturnReceived,
+        )
       }
       idempotencyRef.current = null
       setDone(status)
@@ -117,6 +130,17 @@ export default function ParcelActionSheet({ parcel, onClose, onDone }: Props) {
     } finally {
       setLoading(false)
     }
+  }
+
+  // Delivering an exchange order first asks whether the rider received the
+  // exchange parcel to bring back; every other action goes straight through.
+  function handlePrimaryAction(status: ParcelStatus) {
+    if (status === 'delivered' && isExchange) {
+      setError('')
+      setExchangePrompt(true)
+      return
+    }
+    confirmAction(status)
   }
 
   return (
@@ -290,8 +314,44 @@ export default function ParcelActionSheet({ parcel, onClose, onDone }: Props) {
           </div>
         )}
 
+        {/* Exchange delivery: confirm the return parcel was collected */}
+        {exchangePrompt && !done && (
+          <div className="flex flex-col gap-3 bg-brand-dim border border-brand/20 rounded-2xl px-4 py-4">
+            <div className="flex items-start gap-2.5">
+              <RefreshCw size={18} className="text-brand shrink-0 mt-0.5" />
+              <div className="flex flex-col gap-1">
+                <p className="text-sm font-bold text-text-primary">Exchange delivery</p>
+                <p className="text-xs text-text-secondary leading-snug">
+                  Did you receive the exchange parcel from the customer to return to the vendor?
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={() => confirmAction('delivered', { exchangeReturnReceived: true })}
+                disabled={loading}
+                style={{ touchAction: 'manipulation', boxShadow: '0 4px 20px rgba(249,115,22,0.3)' }}
+                className="flex items-center justify-center gap-2 h-12 rounded-2xl bg-brand text-white text-sm font-semibold cursor-pointer active:bg-brand-dark disabled:opacity-50 transition-colors"
+              >
+                {loading ? <RefreshCw size={16} className="animate-spin" /> : <><CheckCheck size={16} /> Yes, I received it</>}
+              </button>
+              <button
+                onClick={() => {
+                  setExchangePrompt(false)
+                  setError('You must collect the exchange parcel from the customer before completing this delivery.')
+                }}
+                disabled={loading}
+                style={{ touchAction: 'manipulation' }}
+                className="flex items-center justify-center gap-2 h-12 rounded-2xl bg-surface-2 border border-border text-text-secondary text-sm font-semibold cursor-pointer active:opacity-80 disabled:opacity-50"
+              >
+                No, not yet
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Action buttons */}
-        {!done && nextStatuses.length > 0 && (
+        {!done && !exchangePrompt && nextStatuses.length > 0 && (
           <div className="flex flex-col gap-3 pt-1">
             {nextStatuses.map(status => {
               const meta     = ACTION_META[status]
@@ -352,7 +412,7 @@ export default function ParcelActionSheet({ parcel, onClose, onDone }: Props) {
 
               return (
                 <button key={status}
-                  onClick={() => confirmAction(status as ParcelStatus)}
+                  onClick={() => handlePrimaryAction(status as ParcelStatus)}
                   disabled={loading}
                   style={{ touchAction: 'manipulation', boxShadow: '0 4px 20px rgba(249,115,22,0.3)' }}
                   className="flex items-center justify-center gap-2 h-12 rounded-2xl bg-brand text-white text-sm font-semibold cursor-pointer active:bg-brand-dark disabled:opacity-50 transition-colors"

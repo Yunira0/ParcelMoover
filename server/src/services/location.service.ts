@@ -16,6 +16,7 @@ export interface UpsertLocationInput {
   zone?: string | null; // major_cities | urban_areas | remote_areas
   valley?: string | null; // inside | outside
   perDestinationRate?: number | null;
+  branchPerDestinationRate?: number | null;
 }
 
 function mapLocation(loc: {
@@ -32,6 +33,7 @@ function mapLocation(loc: {
   zone: string | null;
   valley: string | null;
   per_destination_rate: { toString(): string } | null;
+  branch_per_destination_rate: { toString(): string } | null;
 }) {
   return {
     id: loc.id,
@@ -47,6 +49,7 @@ function mapLocation(loc: {
     zone: loc.zone,
     valley: loc.valley,
     perDestinationRate: loc.per_destination_rate === null ? null : Number(loc.per_destination_rate),
+    branchPerDestinationRate: loc.branch_per_destination_rate === null ? null : Number(loc.branch_per_destination_rate),
   };
 }
 
@@ -326,6 +329,9 @@ export async function updateLocation(id: string, input: Partial<UpsertLocationIn
       ...(input.valley !== undefined ? { valley: input.valley || null } : {}),
       ...(input.perDestinationRate !== undefined
         ? { per_destination_rate: input.perDestinationRate }
+        : {}),
+      ...(input.branchPerDestinationRate !== undefined
+        ? { branch_per_destination_rate: input.branchPerDestinationRate }
         : {}),
       updated_at: new Date(),
     },

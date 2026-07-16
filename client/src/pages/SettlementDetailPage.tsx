@@ -17,14 +17,13 @@ function buildStatementHtml(detail: SettlementDetail): string {
       (item, index) => `
         <tr>
           <td>${index + 1}</td>
+          <td>#${item.orderNumber}</td>
           <td>
             <div style="font-family:monospace">${item.trackingId}</div>
             ${item.deliveredAt ? `<div class="sub">${new Date(item.deliveredAt).toLocaleString()}</div>` : ''}
             ${item.orderType ? `<div class="sub">${item.orderType}</div>` : ''}
           </td>
-          <td>${item.reference || '-'}</td>
           <td>${item.receiverName}<div class="sub">${item.receiverPhone}</div><div class="sub">${item.destination}</div></td>
-          <td class="r">${item.pieces ?? '-'}</td>
           <td class="r">${item.weightKg === null ? '-' : item.weightKg.toFixed(2)}</td>
           <td class="r">${money(item.codAmount)}</td>
           <td class="r">${money(item.settledAmount)}</td>
@@ -76,8 +75,8 @@ function buildStatementHtml(detail: SettlementDetail): string {
     </div>
     <table>
       <thead><tr>
-        <th>SN</th><th>Waybill</th><th>Reference</th><th>Receiver</th>
-        <th class="r">Pieces</th><th class="r">Weight</th><th class="r">COD</th>
+        <th>SN</th><th>Order ID</th><th>Transaction ID</th><th>Receiver</th>
+        <th class="r">Weight</th><th class="r">COD</th>
         <th class="r">Collected COD</th><th class="r">Commission</th>
       </tr></thead>
       <tbody>${rows}</tbody>
@@ -233,10 +232,9 @@ const SettlementDetailPage: React.FC = () => {
                 <thead>
                   <tr>
                     <th>SN</th>
-                    <th>Waybill</th>
-                    <th>Reference</th>
+                    <th>Order ID</th>
+                    <th>Transaction ID</th>
                     <th>Receiver</th>
-                    <th style={{ textAlign: 'right' }}>Pieces</th>
                     <th style={{ textAlign: 'right' }}>Weight</th>
                     <th style={{ textAlign: 'right' }}>COD</th>
                     <th style={{ textAlign: 'right' }}>Collected COD</th>
@@ -247,6 +245,7 @@ const SettlementDetailPage: React.FC = () => {
                   {detail.items.map((item, index) => (
                     <tr key={item.trackingId}>
                       <td>{index + 1}</td>
+                      <td>#{item.orderNumber}</td>
                       <td>
                         <div style={{ fontFamily: 'monospace' }}>{item.trackingId}</div>
                         {item.deliveredAt && (
@@ -254,13 +253,11 @@ const SettlementDetailPage: React.FC = () => {
                         )}
                         {item.orderType && <div className="vendor-finance-subtext">{item.orderType}</div>}
                       </td>
-                      <td>{item.reference || '-'}</td>
                       <td>
                         {item.receiverName}
                         <div className="vendor-finance-subtext">{item.receiverPhone}</div>
                         <div className="vendor-finance-subtext">{item.destination}</div>
                       </td>
-                      <td style={{ textAlign: 'right' }}>{item.pieces ?? '-'}</td>
                       <td style={{ textAlign: 'right' }}>
                         {item.weightKg === null ? '-' : item.weightKg.toFixed(2)}
                       </td>

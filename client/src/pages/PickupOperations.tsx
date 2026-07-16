@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
   ChevronDown,
@@ -143,10 +143,8 @@ const createEmptyTabSelections = (): Record<PickupTab, Set<string | number>> => 
 });
 
 const SERVICE_TYPE_FULL_LABELS: Record<Order['serviceType'], string> = {
-  dtd: 'Door to Door Delivery',
-  btd: 'Branch to Door Delivery',
-  btb: 'Branch to Branch Delivery',
-  dtb: 'Door to Branch Delivery',
+  home_delivery: 'Home Delivery',
+  branch_delivery: 'Branch Delivery',
 };
 
 const ORDER_TYPE_LABELS: Record<Order['orderType'], string> = {
@@ -447,6 +445,13 @@ const PickupOperations: React.FC = () => {
     }
   }, [allowedStatusOptions, isActionOpen]);
 
+  // Focus the popover when it opens so Up/Down/Enter drive it straight away,
+  // without the user having to Tab into an option first.
+  const statusPopoverRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (isActionOpen) statusPopoverRef.current?.focus();
+  }, [isActionOpen]);
+
   const isRiderAssignAction = selectedNextStatus === 'rider_assigned';
   const isReasonRequiredAction = !!selectedNextStatus && REASON_REQUIRED_STATUSES.includes(selectedNextStatus);
 
@@ -560,6 +565,11 @@ const PickupOperations: React.FC = () => {
   };
 
   const handleStatusPopoverKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    // Don't hijack typing/navigation inside the reason textarea or the rider
+    // search field - those keys belong to the focused field.
+    const tag = (event.target as HTMLElement).tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+
     if (event.key === 'Enter') {
       event.preventDefault();
       applyStatusChange();
@@ -681,7 +691,14 @@ const PickupOperations: React.FC = () => {
               Action{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
             </Button>
             {isActionOpen && (
-              <div className="pickup-status-popover" onKeyDown={handleStatusPopoverKeyDown}>
+              <div
+                ref={statusPopoverRef}
+                className="pickup-status-popover"
+                tabIndex={-1}
+                role="listbox"
+                aria-label="Next status"
+                onKeyDown={handleStatusPopoverKeyDown}
+              >
                 <div className="pickup-status-popover-header">
                   <button type="button" onClick={() => setIsActionOpen(false)} aria-label="Close status action">
                     &times;

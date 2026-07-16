@@ -1,0 +1,231 @@
+.scp-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  width: 100%;
+}
+
+/* Back navigation */
+.scp-back {
+  align-items: center;
+  background: transparent;
+  border: none;
+  color: var(--color-text-caption);
+  cursor: pointer;
+  display: inline-flex;
+  font-family: var(--typography-font-family-default);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  gap: var(--space-2);
+  padding: 0;
+  transition: color 150ms ease;
+  width: fit-content;
+}
+
+.scp-back:hover {
+  color: var(--color-text-default);
+}
+
+.scp-back:focus-visible {
+  border-radius: var(--border-radius-default);
+  outline: 2px solid var(--color-border-primary);
+  outline-offset: 2px;
+}
+
+/* Page header */
+.scp-header h1 {
+  color: var(--color-text-default);
+  font-size: var(--font-size-2xl);
+  font-weight: var(--font-weight-bold);
+  line-height: var(--line-height-2xl);
+  margin: 0 0 var(--space-1) 0;
+}
+
+.scp-header p {
+  color: var(--color-text-caption);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-sm);
+  margin: 0;
+  text-transform: capitalize;
+}
+
+/* Form */
+.scp-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* Section card */
+.scp-section {
+  background: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-modal);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  padding: var(--space-6);
+}
+
+/* Section header with icon */
+.scp-section-header {
+  align-items: flex-start;
+  display: flex;
+  gap: var(--space-3);
+}
+
+.scp-section-icon {
+  align-items: center;
+  background: var(--color-background-elevated);
+  border-radius: var(--border-radius-default);
+  color: var(--color-icon-primary);
+  display: flex;
+  flex-shrink: 0;
+  height: 36px;
+  justify-content: center;
+  width: 36px;
+}
+
+.scp-section-header h3 {
+  color: var(--color-text-default);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semi-bold);
+  line-height: var(--line-height-md);
+  margin: 0 0 var(--space-1) 0;
+}
+
+.scp-section-header p {
+  color: var(--color-text-caption);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-sm);
+  margin: 0;
+}
+
+/* Entity + date row */
+.scp-row {
+  display: grid;
+  gap: var(--space-4);
+  grid-template-columns: 1fr 1fr;
+}
+
+.scp-field {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.scp-label {
+  color: var(--color-text-default);
+  display: block;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  margin-bottom: var(--space-2);
+}
+
+/* Orders table */
+.scp-table-wrap {
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-default);
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.scp-table {
+  border-collapse: collapse;
+  font-size: 13px;
+  width: 100%;
+}
+
+.scp-table thead tr {
+  background: var(--color-background-elevated);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.scp-table th {
+  color: var(--color-text-caption);
+  font-weight: var(--font-weight-semi-bold);
+  padding: var(--space-3) var(--space-3);
+  text-align: left;
+}
+
+.scp-table td {
+  border-top: 1px solid var(--color-border-default);
+  color: var(--color-text-default);
+  padding: var(--space-3) var(--space-3);
+}
+
+.scp-table tbody tr {
+  cursor: pointer;
+}
+
+.scp-table tbody tr:hover {
+  background: var(--color-background-elevated);
+}
+
+.scp-row-selected,
+.scp-row-selected:hover {
+  background: var(--color-background-primary-invert-default);
+}
+
+.scp-mono {
+  font-family: monospace;
+  font-size: 12px;
+}
+
+/* Empty / loading state */
+.scp-empty {
+  color: var(--color-text-caption);
+  font-size: var(--font-size-sm);
+  padding: var(--space-8);
+  text-align: center;
+}
+
+/* Selection summary */
+.scp-summary {
+  align-items: center;
+  background: var(--color-background-primary-invert-default);
+  border-radius: var(--border-radius-default);
+  color: var(--color-text-default);
+  display: flex;
+  font-size: 13px;
+  justify-content: space-between;
+  padding: var(--space-3) var(--space-4);
+}
+
+.scp-summary-total {
+  font-size: 15px;
+  font-weight: var(--font-weight-bold);
+}
+
+/* Error banner */
+.scp-error {
+  background: var(--color-danger-surface);
+  border: 1px solid var(--color-danger-border);
+  border-radius: var(--border-radius-default);
+  color: var(--color-danger-text);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-sm);
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+}
+
+/* Actions */
+.scp-actions {
+  display: flex;
+  gap: var(--space-3);
+  justify-content: flex-end;
+  padding-top: var(--space-2);
+}
+
+/* Responsive */
+@media (max-width: 640px) {
+  .scp-row {
+    grid-template-columns: 1fr;
+  }
+
+  .scp-section {
+    padding: var(--space-4);
+  }
+}

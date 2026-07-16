@@ -156,6 +156,10 @@
   z-index: 40;
 }
 
+.oov-status-popover:focus {
+  outline: none;
+}
+
 .oov-status-popover-header {
   align-items: center;
   display: flex;

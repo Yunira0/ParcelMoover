@@ -44,6 +44,7 @@ export interface DeliveryQuote {
   freeWeightKg: number;
   rateType: RateType;
   basis: string; // which rule produced the rate, for display/debug
+  valley: Valley | null; // destination's valley side, for return-rate lookup
 }
 
 // There is exactly one pricing_settings row; create a blank one on first read.
@@ -69,6 +70,16 @@ export async function getPricingSettings() {
     flatOutsideValley: settings.flat_outside_valley === null ? null : Number(settings.flat_outside_valley),
     extraWeightPercent: settings.extra_weight_percent === null ? null : Number(settings.extra_weight_percent),
     freeWeightKg: Number(settings.free_weight_kg),
+    branchZoneMajorCities: settings.branch_zone_major_cities === null ? null : Number(settings.branch_zone_major_cities),
+    branchZoneUrbanAreas: settings.branch_zone_urban_areas === null ? null : Number(settings.branch_zone_urban_areas),
+    branchZoneRemoteAreas: settings.branch_zone_remote_areas === null ? null : Number(settings.branch_zone_remote_areas),
+    branchZoneInsideValley: settings.branch_zone_inside_valley === null ? null : Number(settings.branch_zone_inside_valley),
+    branchFlatInsideValley: settings.branch_flat_inside_valley === null ? null : Number(settings.branch_flat_inside_valley),
+    branchFlatOutsideValley: settings.branch_flat_outside_valley === null ? null : Number(settings.branch_flat_outside_valley),
+    returnInsideValleyPercent:
+      settings.return_inside_valley_percent === null ? null : Number(settings.return_inside_valley_percent),
+    returnOutsideValleyPercent:
+      settings.return_outside_valley_percent === null ? null : Number(settings.return_outside_valley_percent),
   };
 
   try {
@@ -89,6 +100,14 @@ export interface UpdatePricingSettingsInput {
   flatOutsideValley?: number | null;
   extraWeightPercent?: number | null;
   freeWeightKg?: number;
+  branchZoneMajorCities?: number | null;
+  branchZoneUrbanAreas?: number | null;
+  branchZoneRemoteAreas?: number | null;
+  branchZoneInsideValley?: number | null;
+  branchFlatInsideValley?: number | null;
+  branchFlatOutsideValley?: number | null;
+  returnInsideValleyPercent?: number | null;
+  returnOutsideValleyPercent?: number | null;
 }
 
 export async function updatePricingSettings(input: UpdatePricingSettingsInput) {
@@ -104,6 +123,14 @@ export async function updatePricingSettings(input: UpdatePricingSettingsInput) {
       ...(input.flatOutsideValley !== undefined ? { flat_outside_valley: input.flatOutsideValley } : {}),
       ...(input.extraWeightPercent !== undefined ? { extra_weight_percent: input.extraWeightPercent } : {}),
       ...(input.freeWeightKg !== undefined ? { free_weight_kg: input.freeWeightKg } : {}),
+      ...(input.branchZoneMajorCities !== undefined ? { branch_zone_major_cities: input.branchZoneMajorCities } : {}),
+      ...(input.branchZoneUrbanAreas !== undefined ? { branch_zone_urban_areas: input.branchZoneUrbanAreas } : {}),
+      ...(input.branchZoneRemoteAreas !== undefined ? { branch_zone_remote_areas: input.branchZoneRemoteAreas } : {}),
+      ...(input.branchZoneInsideValley !== undefined ? { branch_zone_inside_valley: input.branchZoneInsideValley } : {}),
+      ...(input.branchFlatInsideValley !== undefined ? { branch_flat_inside_valley: input.branchFlatInsideValley } : {}),
+      ...(input.branchFlatOutsideValley !== undefined ? { branch_flat_outside_valley: input.branchFlatOutsideValley } : {}),
+      ...(input.returnInsideValleyPercent !== undefined ? { return_inside_valley_percent: input.returnInsideValleyPercent } : {}),
+      ...(input.returnOutsideValleyPercent !== undefined ? { return_outside_valley_percent: input.returnOutsideValleyPercent } : {}),
       updated_at: new Date(),
     },
   });
@@ -140,6 +167,12 @@ async function resolveDestinationPricing(destinationLocationId: string) {
         : parent?.per_destination_rate != null
         ? Number(parent.per_destination_rate)
         : null,
+    branchPerDestinationRate:
+      dest.branch_per_destination_rate !== null
+        ? Number(dest.branch_per_destination_rate)
+        : parent?.branch_per_destination_rate != null
+        ? Number(parent.branch_per_destination_rate)
+        : null,
   };
 
   try {
@@ -163,7 +196,19 @@ export interface VendorRateOverrides {
   // flat rate regardless of the vendor's primary rate model.
   insideValleyFlatRate?: number | null;
   extraWeightPercent?: number | null;
+  // Parallel branch-delivery overrides (used when service_type = branch_delivery).
+  branchFlatInsideValley?: number | null;
+  branchFlatOutsideValley?: number | null;
+  branchZoneMajorCities?: number | null;
+  branchZoneUrbanAreas?: number | null;
+  branchZoneRemoteAreas?: number | null;
+  branchZoneInsideValley?: number | null;
+  // Return-parcel charge as a percent of the normal delivery rate, by valley side.
+  returnInsideValleyPercent?: number | null;
+  returnOutsideValleyPercent?: number | null;
 }
+
+export type ServiceType = "home_delivery" | "branch_delivery";
 
 // Computes the delivery charge for a vendor's chosen rate model to a destination,
 // honouring per-vendor overrides before falling back to the global defaults.
@@ -172,6 +217,7 @@ export async function getVendorQuote(
   destinationLocationId: string,
   weightKg = 1,
   overrides: VendorRateOverrides = {},
+  serviceType: ServiceType = "home_delivery",
 ): Promise<DeliveryQuote> {
   const settings = await getPricingSettings();
   const dest = await resolveDestinationPricing(destinationLocationId);
@@ -179,39 +225,59 @@ export async function getVendorQuote(
   const pick = (override: number | null | undefined, fallback: number | null) =>
     override !== undefined && override !== null ? override : fallback;
 
+  // Branch deliveries price off the parallel branch rate set. Each branch value
+  // falls back to its home counterpart when unset, so a vendor/admin only fills
+  // in branch rates where they actually differ.
+  const isBranch = serviceType === "branch_delivery";
+  const fb = (branch: number | null | undefined, home: number | null) =>
+    branch !== undefined && branch !== null ? branch : home;
+  const sFlatInside = isBranch ? fb(settings.branchFlatInsideValley, settings.flatInsideValley) : settings.flatInsideValley;
+  const sFlatOutside = isBranch ? fb(settings.branchFlatOutsideValley, settings.flatOutsideValley) : settings.flatOutsideValley;
+  const sZoneMajor = isBranch ? fb(settings.branchZoneMajorCities, settings.zoneMajorCities) : settings.zoneMajorCities;
+  const sZoneUrban = isBranch ? fb(settings.branchZoneUrbanAreas, settings.zoneUrbanAreas) : settings.zoneUrbanAreas;
+  const sZoneRemote = isBranch ? fb(settings.branchZoneRemoteAreas, settings.zoneRemoteAreas) : settings.zoneRemoteAreas;
+  const sZoneInside = isBranch ? fb(settings.branchZoneInsideValley, settings.zoneInsideValley) : settings.zoneInsideValley;
+  const oFlatInside = isBranch ? overrides.branchFlatInsideValley : overrides.flatInsideValley;
+  const oFlatOutside = isBranch ? overrides.branchFlatOutsideValley : overrides.flatOutsideValley;
+  const oZoneMajor = isBranch ? overrides.branchZoneMajorCities : overrides.zoneMajorCities;
+  const oZoneUrban = isBranch ? overrides.branchZoneUrbanAreas : overrides.zoneUrbanAreas;
+  const oZoneRemote = isBranch ? overrides.branchZoneRemoteAreas : overrides.zoneRemoteAreas;
+  const oZoneInside = isBranch ? overrides.branchZoneInsideValley : overrides.zoneInsideValley;
+  const perDestRate = isBranch ? fb(dest.branchPerDestinationRate, dest.perDestinationRate) : dest.perDestinationRate;
+  const label = isBranch ? "branch" : "home";
+
   let rate: number | null = null;
   let basis = "";
 
-  // Cross-model override: a vendor may pair their primary model with a flat rate
-  // for inside-valley deliveries. When set, it wins for inside-valley destinations
-  // no matter which primary model is selected.
-  if (dest.valley === "inside" && overrides.insideValleyFlatRate != null) {
+  // Cross-model override (home only): a vendor may pair their primary model with
+  // a flat rate for inside-valley deliveries.
+  if (!isBranch && dest.valley === "inside" && overrides.insideValleyFlatRate != null) {
     rate = overrides.insideValleyFlatRate;
     basis = "Flat inside-valley rate";
   } else if (rateType === "per_destination") {
-    rate = dest.perDestinationRate;
-    basis = `Per-destination rate for ${dest.name}`;
-    if (rate === null) throw new AppError(404, `No per-destination rate set for ${dest.name}`);
+    rate = perDestRate;
+    basis = `Per-destination ${label} rate for ${dest.name}`;
+    if (rate === null) throw new AppError(404, `No per-destination ${label} rate set for ${dest.name}`);
   } else if (rateType === "zone") {
     if (!dest.zone) throw new AppError(404, `${dest.name} is not assigned to a zone`);
     rate =
       dest.zone === "major_cities"
-        ? pick(overrides.zoneMajorCities, settings.zoneMajorCities)
+        ? pick(oZoneMajor, sZoneMajor)
         : dest.zone === "urban_areas"
-        ? pick(overrides.zoneUrbanAreas, settings.zoneUrbanAreas)
+        ? pick(oZoneUrban, sZoneUrban)
         : dest.zone === "inside_valley"
-        ? pick(overrides.zoneInsideValley, settings.zoneInsideValley)
-        : pick(overrides.zoneRemoteAreas, settings.zoneRemoteAreas);
-    basis = `Zone rate (${dest.zone.replace("_", " ")})`;
-    if (rate === null) throw new AppError(404, `No rate set for zone "${dest.zone}"`);
+        ? pick(oZoneInside, sZoneInside)
+        : pick(oZoneRemote, sZoneRemote);
+    basis = `Zone ${label} rate (${dest.zone.replace("_", " ")})`;
+    if (rate === null) throw new AppError(404, `No ${label} rate set for zone "${dest.zone}"`);
   } else {
     if (!dest.valley) throw new AppError(404, `${dest.name} is not classified inside/outside valley`);
     rate =
       dest.valley === "inside"
-        ? pick(overrides.flatInsideValley, settings.flatInsideValley)
-        : pick(overrides.flatOutsideValley, settings.flatOutsideValley);
-    basis = `Flat rate (${dest.valley} valley)`;
-    if (rate === null) throw new AppError(404, `No flat rate set for ${dest.valley} valley`);
+        ? pick(oFlatInside, sFlatInside)
+        : pick(oFlatOutside, sFlatOutside);
+    basis = `Flat ${label} rate (${dest.valley} valley)`;
+    if (rate === null) throw new AppError(404, `No flat ${label} rate set for ${dest.valley} valley`);
   }
 
   // Weight surcharge: extra kg beyond freeWeightKg charged as a percent of the base rate.
@@ -228,5 +294,44 @@ export async function getVendorQuote(
     freeWeightKg,
     rateType,
     basis,
+    valley: dest.valley,
+  };
+}
+
+// A return parcel is charged a percent of what a normal delivery to the same
+// destination would cost, chosen by the destination's valley side (e.g. 0%
+// inside valley, 50% outside). Per-vendor return percents win over the global
+// pricing_settings defaults; an unset/unknown percent means a free return (0%).
+export async function getReturnDeliveryQuote(
+  rateType: RateType,
+  destinationLocationId: string,
+  weightKg = 1,
+  overrides: VendorRateOverrides = {},
+  serviceType: ServiceType = "home_delivery",
+): Promise<DeliveryQuote & { returnPercent: number; baseDeliveryCharge: number }> {
+  const base = await getVendorQuote(rateType, destinationLocationId, weightKg, overrides, serviceType);
+  const settings = await getPricingSettings();
+
+  const pick = (override: number | null | undefined, fallback: number | null) =>
+    override !== undefined && override !== null ? override : fallback;
+
+  const percent =
+    (base.valley === "inside"
+      ? pick(overrides.returnInsideValleyPercent, settings.returnInsideValleyPercent)
+      : base.valley === "outside"
+      ? pick(overrides.returnOutsideValleyPercent, settings.returnOutsideValleyPercent)
+      : null) ?? 0;
+
+  const charge = base.totalPayable * (percent / 100);
+  const valleyLabel = base.valley ? `${base.valley} valley` : "unclassified destination";
+
+  return {
+    ...base,
+    baseCharge: charge,
+    weightSurcharge: 0,
+    totalPayable: charge,
+    basis: `Return rate (${percent}% of delivery, ${valleyLabel})`,
+    returnPercent: percent,
+    baseDeliveryCharge: base.totalPayable,
   };
 }
