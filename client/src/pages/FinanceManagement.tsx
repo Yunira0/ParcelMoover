@@ -7,7 +7,6 @@ import Pagination from '../components/Pagination';
 import TicketCategoryButton from '../components/TicketCategoryButton';
 import SegmentedTabs from '../components/SegmentedTabs';
 import StatusChip from '../components/StatusChip';
-import AddSettlementModal from '../components/AddSettlementModal';
 import type { SettlementListItem } from '../services/finance.service';
 import { getSettlements } from '../services/finance.service';
 import './FinanceManagement.css';
@@ -25,8 +24,6 @@ const FinanceManagement: React.FC = () => {
   const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     let active = true;
@@ -49,7 +46,7 @@ const FinanceManagement: React.FC = () => {
     return () => {
       active = false;
     };
-  }, [activeType, page, reloadKey]);
+  }, [activeType, page]);
 
   const rows = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -69,11 +66,6 @@ const FinanceManagement: React.FC = () => {
   const handleTypeChange = (type: FinanceType) => {
     setActiveType(type);
     setPage(1);
-  };
-
-  const handleSettlementCreated = () => {
-    setPage(1);
-    setReloadKey((k) => k + 1);
   };
 
   const columns = [
@@ -135,7 +127,7 @@ const FinanceManagement: React.FC = () => {
         subtitle="Manage financial accounts and monitor performance indicators."
         actionLabel="Add Settlement"
         actionIcon={<Plus size={16} />}
-        onAction={() => setIsModalOpen(true)}
+        onAction={() => navigate(`/finance/settlements/new?type=${activeType}`)}
       >
         <TicketCategoryButton category="cod_settlement" notificationType="cod_settlement" />
       </PageHeader>
@@ -175,13 +167,6 @@ const FinanceManagement: React.FC = () => {
       />
 
       <Pagination ariaLabel="Settlements pagination" page={page} totalPages={totalPages} onPageChange={setPage} />
-
-      <AddSettlementModal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        onSuccess={handleSettlementCreated}
-        defaultType={activeType}
-      />
     </div>
   );
 };

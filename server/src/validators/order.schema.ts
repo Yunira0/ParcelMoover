@@ -11,7 +11,7 @@ import {
 // ── Enums (must stay in sync with order.type.ts) ──────────────────────────────
 
 const ORDER_TYPES = ["delivery", "exchange", "return"] as const;
-const SERVICE_TYPES = ["dtd", "btd", "btb", "dtb"] as const;
+const SERVICE_TYPES = ["home_delivery", "branch_delivery"] as const;
 
 export const PARCEL_STATUSES = [
   "pickup_ordered",

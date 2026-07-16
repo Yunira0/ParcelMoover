@@ -603,7 +603,7 @@ export async function updateOrderStatusController(req: Request, res: Response) {
         message: "Unauthorized",
       });
     }
-    const { status, locationId, remarks, riderId, codCollected } = req.body;
+    const { status, locationId, remarks, riderId, codCollected, exchangeReturnReceived } = req.body;
     if (!status) {
       return res.status(400).json({
         success: false,
@@ -655,7 +655,7 @@ export async function updateOrderStatusController(req: Request, res: Response) {
         const parcel = await updateParcelStatus(
           { id: req.user!.id, roles: req.user!.roles },
           rawId,
-          { status, locationId, remarks, riderId, codCollected },
+          { status, locationId, remarks, riderId, codCollected, exchangeReturnReceived: exchangeReturnReceived === true },
         );
 
         const responseBody = {

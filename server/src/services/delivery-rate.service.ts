@@ -10,6 +10,7 @@ const RATE_CACHE_TTL_SECONDS = 5 * 60;
 
 interface CachedRate {
   baseCharge: number;
+  branchBaseCharge: number | null;
   freeWeightKg: number;
   extraWeightPercent: number;
 }
@@ -57,6 +58,7 @@ export async function upsertDeliveryRate(actor: Actor, input: UpsertDeliveryRate
 
   const data = {
     base_charge: input.baseCharge,
+    branch_base_charge: input.branchBaseCharge ?? null,
     extra_weight_percent: input.extraWeightPercent ?? 0,
     free_weight_kg: input.freeWeightKg ?? 2,
     is_active: true,
@@ -99,6 +101,7 @@ export async function listDeliveryRates() {
     destinationLocationId: rate.destination_location_id,
     destinationLocationName: rate.locations_delivery_rates_destination_location_idTolocations.name,
     baseCharge: Number(rate.base_charge),
+    branchBaseCharge: rate.branch_base_charge === null ? null : Number(rate.branch_base_charge),
     extraWeightPercent: Number(rate.extra_weight_percent),
     freeWeightKg: Number(rate.free_weight_kg),
     isActive: rate.is_active,
@@ -251,6 +254,7 @@ async function getActiveRate(
 
   const result: CachedRate = {
     baseCharge: Number(rate.base_charge),
+    branchBaseCharge: rate.branch_base_charge === null ? null : Number(rate.branch_base_charge),
     freeWeightKg: Number(rate.free_weight_kg),
     extraWeightPercent: Number(rate.extra_weight_percent),
   };
@@ -268,11 +272,13 @@ export async function getDeliveryQuote(
   originLocationId: string,
   destinationLocationId: string,
   weightKg: number,
+  serviceType: "home_delivery" | "branch_delivery" = "home_delivery",
 ): Promise<DeliveryQuote> {
-  const { baseCharge, freeWeightKg, extraWeightPercent } = await getActiveRate(
-    originLocationId,
-    destinationLocationId,
-  );
+  const rate = await getActiveRate(originLocationId, destinationLocationId);
+  const { branchBaseCharge, freeWeightKg, extraWeightPercent } = rate;
+  // Branch deliveries use the branch base charge when configured, else the home one.
+  const baseCharge =
+    serviceType === "branch_delivery" && branchBaseCharge !== null ? branchBaseCharge : rate.baseCharge;
 
   const extraKg = Math.max(0, weightKg - freeWeightKg);
   const weightSurcharge = extraKg * (baseCharge * (extraWeightPercent / 100));

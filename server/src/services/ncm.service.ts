@@ -137,7 +137,7 @@ function ncmVrefId(trackingId: string): string {
 // The NCM leg starts at their origin branch (we carry parcels to it), so the
 // NCM delivery type follows the *receiving* half of our service type.
 function defaultDeliveryType(serviceType: string): NcmDeliveryType {
-  return serviceType === "btb" || serviceType === "dtb" ? "Branch2Branch" : "Branch2Door";
+  return serviceType === "branch_delivery" ? "Branch2Branch" : "Branch2Door";
 }
 
 function handoffRemark(ncmOrderId: number, branch: string, deliveryType: string): string {

@@ -70,10 +70,8 @@ const ORDER_TYPE_LABEL: Record<OrderType, string> = {
 };
 
 const SERVICE_TYPE_LABEL: Record<ServiceType, string> = {
-  dtd: 'Door-to-Door',
-  btd: 'Branch-to-Door',
-  btb: 'Branch-to-Branch',
-  dtb: 'Door-to-Branch',
+  home_delivery: 'Home Delivery',
+  branch_delivery: 'Branch Delivery',
 };
 
 const OrderDetailHeader: React.FC<OrderDetailHeaderProps> = ({

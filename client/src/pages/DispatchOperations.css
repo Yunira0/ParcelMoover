@@ -150,6 +150,10 @@
   z-index: 40;
 }
 
+.dispatch-status-popover:focus {
+  outline: none;
+}
+
 .dispatch-status-popover-header {
   align-items: center;
   display: flex;

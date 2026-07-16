@@ -805,6 +805,7 @@ export async function getSettlementDetail(actor: Actor, settlementId: string): P
             include: {
               parcels: {
                 select: {
+                  order_number: true,
                   tracking_id: true,
                   delivery_charge: true,
                   delivered_at: true,
@@ -872,6 +873,7 @@ export async function getSettlementDetail(actor: Actor, settlementId: string): P
   const items: SettlementDetailItem[] = settlement.settlement_items.map((si) => {
     const parcel = si.cod_collections.parcels;
     return {
+      orderNumber: parcel.order_number,
       trackingId: parcel.tracking_id,
       reference: null,
       receiverName: parcel.parties_parcels_receiver_idToparties.name,

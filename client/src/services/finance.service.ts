@@ -188,6 +188,7 @@ export const getUnsettledOrders = async (
 };
 
 export interface SettlementDetailItem {
+  orderNumber: number;
   trackingId: string;
   reference: string | null;
   receiverName: string;

@@ -14,6 +14,7 @@ export interface ManagedLocation {
   zone: string | null; // major_cities | urban_areas | remote_areas
   valley: string | null; // inside | outside
   perDestinationRate: number | null;
+  branchPerDestinationRate: number | null;
 }
 
 export interface Destination extends ManagedLocation {
@@ -33,6 +34,7 @@ export interface UpsertLocationInput {
   zone?: string | null;
   valley?: string | null;
   perDestinationRate?: number | null;
+  branchPerDestinationRate?: number | null;
 }
 
 export const listManagedLocations = async (): Promise<{ success: boolean; data: Destination[] }> => {

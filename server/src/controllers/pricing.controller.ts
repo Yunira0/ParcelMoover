@@ -38,7 +38,7 @@ export async function updatePricingSettingsController(req: Request, res: Respons
 // vendor (the order form passes vendorId; vendor actors resolve to their own).
 export async function getVendorQuoteController(req: Request, res: Response) {
   try {
-    const { vendorId, destinationLocationId, weightKg } = req.query;
+    const { vendorId, destinationLocationId, weightKg, serviceType } = req.query;
     if (typeof destinationLocationId !== "string") {
       return res.status(400).json({ success: false, message: "destinationLocationId is required" });
     }
@@ -53,6 +53,14 @@ export async function getVendorQuoteController(req: Request, res: Response) {
       zone_inside_valley: true,
       inside_valley_flat_rate: true,
       extra_weight_percent: true,
+      branch_flat_inside_valley: true,
+      branch_flat_outside_valley: true,
+      branch_zone_major_cities: true,
+      branch_zone_urban_areas: true,
+      branch_zone_remote_areas: true,
+      branch_zone_inside_valley: true,
+      return_inside_valley_percent: true,
+      return_outside_valley_percent: true,
     } as const;
 
     let vendor = null;
@@ -87,10 +95,19 @@ export async function getVendorQuoteController(req: Request, res: Response) {
       zoneInsideValley: vendor!.zone_inside_valley === null ? null : Number(vendor!.zone_inside_valley),
       insideValleyFlatRate: vendor!.inside_valley_flat_rate === null ? null : Number(vendor!.inside_valley_flat_rate),
       extraWeightPercent: vendor!.extra_weight_percent === null ? null : Number(vendor!.extra_weight_percent),
+      returnInsideValleyPercent: vendor!.return_inside_valley_percent === null ? null : Number(vendor!.return_inside_valley_percent),
+      returnOutsideValleyPercent: vendor!.return_outside_valley_percent === null ? null : Number(vendor!.return_outside_valley_percent),
+      branchFlatInsideValley: vendor!.branch_flat_inside_valley === null ? null : Number(vendor!.branch_flat_inside_valley),
+      branchFlatOutsideValley: vendor!.branch_flat_outside_valley === null ? null : Number(vendor!.branch_flat_outside_valley),
+      branchZoneMajorCities: vendor!.branch_zone_major_cities === null ? null : Number(vendor!.branch_zone_major_cities),
+      branchZoneUrbanAreas: vendor!.branch_zone_urban_areas === null ? null : Number(vendor!.branch_zone_urban_areas),
+      branchZoneRemoteAreas: vendor!.branch_zone_remote_areas === null ? null : Number(vendor!.branch_zone_remote_areas),
+      branchZoneInsideValley: vendor!.branch_zone_inside_valley === null ? null : Number(vendor!.branch_zone_inside_valley),
     };
 
     const weight = weightKg !== undefined ? Number(weightKg) : 1;
-    const quote = await getVendorQuote(rateType, destinationLocationId, weight, overrides);
+    const svc = serviceType === "branch_delivery" ? "branch_delivery" : "home_delivery";
+    const quote = await getVendorQuote(rateType, destinationLocationId, weight, overrides, svc);
     return res.status(200).json({ success: true, data: quote });
   } catch (error: any) {
     return res.status(error.statusCode || 500).json({

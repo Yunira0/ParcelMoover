@@ -9,6 +9,7 @@ export const upsertDeliveryRateSchema = z.object({
   baseCharge: z.coerce
     .number()
     .min(0, "baseCharge cannot be negative"),
+  branchBaseCharge: z.coerce.number().min(0, "branchBaseCharge cannot be negative").optional().nullable(),
   extraWeightPercent: z.coerce
     .number()
     .min(0)

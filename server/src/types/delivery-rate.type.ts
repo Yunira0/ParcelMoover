@@ -2,6 +2,7 @@ export interface UpsertDeliveryRateInput {
   originLocationId: string;
   destinationLocationId: string;
   baseCharge: number;
+  branchBaseCharge?: number | null;
   extraWeightPercent?: number;
   freeWeightKg?: number;
 }

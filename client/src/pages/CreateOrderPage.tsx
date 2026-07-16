@@ -26,10 +26,8 @@ interface LocationOption {
 }
 
 const SERVICE_TYPE_OPTIONS: { value: ServiceType; label: string }[] = [
-  { value: 'dtd', label: 'Door to Door (DTD)' },
-  { value: 'btd', label: 'Branch to Door (BTD)' },
-  { value: 'btb', label: 'Branch to Branch (BTB)' },
-  { value: 'dtb', label: 'Door to Branch (DTB)' },
+  { value: 'home_delivery', label: 'Home Delivery' },
+  { value: 'branch_delivery', label: 'Branch Delivery' },
 ];
 
 const ORDER_TYPE_OPTIONS: { value: OrderType; label: string }[] = [
@@ -52,7 +50,7 @@ const OTHER_DELIVERY_INSTRUCTION = 'Other';
 
 const defaultFormState = {
   vendorId: '',
-  serviceType: 'dtd' as ServiceType,
+  serviceType: 'home_delivery' as ServiceType,
   orderType: 'delivery' as OrderType,
   originLocationId: '',
   destinationLocationId: '',
@@ -188,7 +186,7 @@ const CreateOrderPage: React.FC = () => {
     setForm(prev => ({
       ...prev,
       vendorId: prefillInitialData.vendorId || '',
-      serviceType: prefillInitialData.serviceType || 'dtd',
+      serviceType: prefillInitialData.serviceType || 'home_delivery',
       orderType: prefillInitialData.orderType || 'delivery',
       originLocationId: prefillInitialData.originLocationId || '',
       destinationLocationId: prefillInitialData.destinationLocationId || '',

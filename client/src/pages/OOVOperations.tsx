@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
   Download,
@@ -220,6 +220,13 @@ const OOVOperations: React.FC = () => {
   const isDispatchAction = effectiveNextStatus === 'dispatched';
   const isReasonRequiredAction = REASON_REQUIRED_STATUSES.includes(effectiveNextStatus as ParcelStatus);
 
+  // Focus the popover when it opens so Up/Down/Enter drive it straight away,
+  // without the user having to Tab into an option first.
+  const statusPopoverRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (isActionOpen) statusPopoverRef.current?.focus();
+  }, [isActionOpen]);
+
   // NCM branch list is only needed once the 3PL method is picked — and the
   // fetch fails cleanly when the NCM integration isn't configured.
   useEffect(() => {
@@ -354,6 +361,39 @@ const OOVOperations: React.FC = () => {
       setActionError(message);
     } finally {
       setStatusUpdating(false);
+    }
+  };
+
+  const moveSelectedStatus = (direction: 1 | -1) => {
+    if (allowedStatusOptions.length === 0) return;
+
+    const currentIndex = allowedStatusOptions.findIndex(status => status === effectiveNextStatus);
+    const safeIndex = currentIndex === -1 ? 0 : currentIndex;
+    const nextIndex = (safeIndex + direction + allowedStatusOptions.length) % allowedStatusOptions.length;
+    setSelectedNextStatus(allowedStatusOptions[nextIndex]);
+  };
+
+  const handleStatusPopoverKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    // Don't hijack typing/navigation inside the reason field or the rider/branch
+    // search fields - those keys belong to the focused field.
+    const tag = (event.target as HTMLElement).tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      void applyStatusChange();
+      return;
+    }
+
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      moveSelectedStatus(1);
+      return;
+    }
+
+    if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      moveSelectedStatus(-1);
     }
   };
 
@@ -503,7 +543,14 @@ const OOVOperations: React.FC = () => {
               Action{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
             </Button>
             {isActionOpen && (
-              <div className="oov-status-popover">
+              <div
+                ref={statusPopoverRef}
+                className="oov-status-popover"
+                tabIndex={-1}
+                role="listbox"
+                aria-label="Next status"
+                onKeyDown={handleStatusPopoverKeyDown}
+              >
                 <div className="oov-status-popover-header">
                   <span>Next status</span>
                   <button type="button" onClick={() => setIsActionOpen(false)} aria-label="Close status action">

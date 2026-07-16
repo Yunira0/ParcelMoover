@@ -24,7 +24,7 @@ export type ParcelStatus =
   | 'returned_to_vendor';
 
 export type OrderType = 'delivery' | 'exchange' | 'return';
-export type ServiceType = 'dtd' | 'btd' | 'btb' | 'dtb';
+export type ServiceType = 'home_delivery' | 'branch_delivery';
 
 export interface CreateOrderInput {
   sender: {

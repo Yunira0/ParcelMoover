@@ -23,6 +23,7 @@ const RiderManagement = lazy(() => import('./pages/RiderManagement'))
 const RiderFormPage = lazy(() => import('./pages/RiderFormPage'))
 const FinanceManagement = lazy(() => import('./pages/FinanceManagement'))
 const SettlementDetailPage = lazy(() => import('./pages/SettlementDetailPage'))
+const SettlementCreatePage = lazy(() => import('./pages/SettlementCreatePage'))
 const DeliveryRateSettings = lazy(() => import('./pages/DeliveryRateSettings'))
 const Settings = lazy(() => import('./pages/settings/Settings'))
 const PickupOperations = lazy(() => import('./pages/PickupOperations'))
@@ -202,6 +203,10 @@ function App() {
           <Route
             path="/remarks/:id"
             element={<RoleGuard allowedRoles={['super_admin', 'admin', 'vendor', 'vendor_staff', 'sales']}><RemarkDetail /></RoleGuard>}
+          />
+          <Route
+            path="/finance/settlements/new"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']}><SettlementCreatePage /></RoleGuard>}
           />
           <Route
             path="/finance/settlements/:id"

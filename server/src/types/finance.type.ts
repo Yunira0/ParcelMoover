@@ -132,6 +132,7 @@ export interface UnsettledOrdersResult {
 }
 
 export interface SettlementDetailItem {
+  orderNumber: number;
   trackingId: string;
   reference: string | null;
   receiverName: string;
