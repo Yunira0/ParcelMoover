@@ -39,6 +39,7 @@ const EMPTY_SUMMARY: DashboardSummary = {
     totalCod: 0,
     settledCod: 0,
     pendingCod: 0,
+    codFromRider: 0,
     progressPercent: 0,
     scopedToRider: false,
     lastAmount: 0,

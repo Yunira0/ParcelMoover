@@ -3,7 +3,6 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Users, ListChecks } from 'lucide-react';
 import Button from '../components/Button';
 import FormField from '../components/FormField';
-import NepaliDatePicker from '../components/NepaliDatePicker';
 import { getUnsettledOrders, createSettlement, type UnsettledOrderItem } from '../services/finance.service';
 import { getRiders, getVendors } from '../services/users.service';
 import './SettlementCreatePage.css';
@@ -184,11 +183,11 @@ const SettlementCreatePage: React.FC = () => {
               />
             </div>
             <div className="scp-field">
-              <label className="scp-label">Settlement Date</label>
-              <NepaliDatePicker
+              <FormField
+                label="Settlement Date"
+                type="date"
                 value={settlementDate}
                 onChange={setSettlementDate}
-                aria-label="Settlement Date"
               />
             </div>
           </div>

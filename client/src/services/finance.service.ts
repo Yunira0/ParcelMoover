@@ -198,6 +198,7 @@ export interface SettlementDetailItem {
   pieces: number | null;
   weightKg: number | null;
   codAmount: number;
+  collectedAmount: number;
   deliveryCharge: number;
   settledAmount: number;
   deliveredAt: string | null;

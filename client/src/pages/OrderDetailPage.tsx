@@ -16,6 +16,7 @@ import OrderInfoCards from '../components/order-detail/OrderInfoCards';
 import OrderTimeline from '../components/order-detail/OrderTimeline';
 import OrderRemarks from '../components/order-detail/OrderRemarks';
 import OrderRemarkInput from '../components/order-detail/OrderRemarkInput';
+import OrderPriceLog from '../components/order-detail/OrderPriceLog';
 import { printLabels } from '../utils/printLabels';
 import './OrderDetailPage.css';
 
@@ -257,6 +258,14 @@ const OrderDetailPage: React.FC = () => {
               onCancelReply={() => setReplyingTo(null)}
             />
           </div>
+        </div>
+
+        <div className="od-pricelog">
+          <div className="od-section-header">
+            <h2>Price Log</h2>
+            <span className="od-section-count">{order.priceLog.length}</span>
+          </div>
+          <OrderPriceLog entries={order.priceLog} />
         </div>
       </div>
     </div>

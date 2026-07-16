@@ -622,27 +622,9 @@ async function _createOrderImpl(actor: OrderActor, data: CreateOrderInput) {
     return parcel;
   });
 
-  // Notify admins about new pickup ticket
-  notifyAdmins(
-    `New Pickup Ticket: ${parcel.tracking_id}`,
-    `A new order is ready for pickup.`,
-    parcel.tracking_id,
-    "pickup",
-    `/orders/track/${parcel.tracking_id}`,
-    actor.id,
-  ).catch(() => {});
-
-  // Notify admins about new COD settlement request if order has COD
-  if (Number(parcel.cod_amount) > 0) {
-    notifyAdmins(
-      `COD Settlement: ${parcel.tracking_id}`,
-      `New COD order of Rs. ${Number(parcel.cod_amount)} requires settlement.`,
-      parcel.tracking_id,
-      "cod_settlement",
-      `/finance`,
-      actor.id,
-    ).catch(() => {});
-  }
+  // New orders no longer notify admins - a ping per created order floods the
+  // notification feed. Admins are still notified on the actionable events
+  // downstream (arrival at branch, delivery/COD settlement).
 
   return parcel;
 }
@@ -935,7 +917,6 @@ export async function bulkCreateOrders(actor: OrderActor, input: BulkCreateOrder
     | { index: number; success: false; error: string }
   > = new Array(input.orders.length);
   const vendorIdsToInvalidate = new Set<string>();
-  const createdParcels: { trackingId: string; vendorId: string | null; codAmount: number }[] = [];
 
   // Cheap, DB-free validation happens up front and in original order;
   // only orders that pass it hit the database.
@@ -993,11 +974,6 @@ export async function bulkCreateOrders(actor: OrderActor, input: BulkCreateOrder
         results[index] = { index, success: true, trackingId: parcel.tracking_id };
         created++;
         if (parcel.vendor_id) vendorIdsToInvalidate.add(parcel.vendor_id);
-        createdParcels.push({
-          trackingId: parcel.tracking_id,
-          vendorId: parcel.vendor_id,
-          codAmount: Number(parcel.cod_amount),
-        });
       } else {
         const err = outcome.reason as any;
         results[index] = { index, success: false, error: err?.message || "Order creation failed" };
@@ -1012,33 +988,8 @@ export async function bulkCreateOrders(actor: OrderActor, input: BulkCreateOrder
     await Promise.all(Array.from(vendorIdsToInvalidate, (id) => invalidateVendorFinanceCache(id)));
   }
 
-  // Send notifications after all tickets are raised
-  if (createdParcels.length > 0) {
-    // Notify admins about new pickup tickets
-    for (const p of createdParcels) {
-      notifyAdmins(
-        `New Pickup Ticket: ${p.trackingId}`,
-        `A new order is ready for pickup.`,
-        p.trackingId,
-        "pickup",
-        `/orders/track/${p.trackingId}`,
-        actor.id,
-      ).catch(() => {});
-    }
-
-    // Notify admins about new COD settlement requests
-    for (const p of createdParcels) {
-      if (p.codAmount <= 0) continue;
-      notifyAdmins(
-        `COD Settlement: ${p.trackingId}`,
-        `New COD order of Rs. ${p.codAmount} requires settlement.`,
-        p.trackingId,
-        "cod_settlement",
-        `/finance`,
-        actor.id,
-      ).catch(() => {});
-    }
-  }
+  // New orders no longer notify admins (see createOrder) - a bulk import would
+  // otherwise fire a ping per parcel and bury the feed.
 
   return { created, failed, results };
 }
@@ -1695,9 +1646,51 @@ export async function getOrderByTrackingId(actor: OrderActor, trackingId: string
 
   const vendorName = parcel.vendors?.business_name || parcel.vendors?.client_name || "";
 
+  // Price Log: every admin/vendor edit that moved this parcel's COD or delivery
+  // charge, derived from the UPDATE_ORDER audit trail. Lets a vendor see exactly
+  // when and by how much their money figures were adjusted after order creation.
+  const priceAudits = await prisma.audit_logs.findMany({
+    where: { entity_type: "parcel", entity_id: parcel.id, action: "UPDATE_ORDER" },
+    orderBy: { created_at: "desc" },
+    include: { users: { include: { user_roles: { include: { roles: true } } } } },
+  });
+  const priceLog = priceAudits.flatMap((log) => {
+    const oldData = (log.old_data ?? {}) as Record<string, unknown>;
+    const newData = (log.new_data ?? {}) as Record<string, unknown>;
+    // Staff see who edited; vendors see a generic "Admin" for internal staff
+    // edits (their own edits still show their name), matching the masking used
+    // for remarks and status history.
+    const changedBy = isStaff
+      ? log.users?.full_name || "System"
+      : isStaffAuthor(log.users)
+        ? "Admin"
+        : log.users?.full_name || "Admin";
+    const at = formatDate(log.created_at);
+    const rows: {
+      id: string;
+      field: "cod" | "delivery_charge";
+      oldValue: number;
+      newValue: number;
+      changedBy: string;
+      createdAt: string;
+    }[] = [];
+    const oldCod = Number(oldData.codAmount);
+    const newCod = Number(newData.codAmount);
+    if (Number.isFinite(oldCod) && Number.isFinite(newCod) && oldCod !== newCod) {
+      rows.push({ id: `${log.id}-cod`, field: "cod", oldValue: oldCod, newValue: newCod, changedBy, createdAt: at });
+    }
+    const oldDc = Number(oldData.deliveryCharge);
+    const newDc = Number(newData.deliveryCharge);
+    if (Number.isFinite(oldDc) && Number.isFinite(newDc) && oldDc !== newDc) {
+      rows.push({ id: `${log.id}-dc`, field: "delivery_charge", oldValue: oldDc, newValue: newDc, changedBy, createdAt: at });
+    }
+    return rows;
+  });
+
   return {
     ...mapOrder(parcel, isStaff),
     canChangeStatus: isStaff,
+    priceLog,
     // Staff see the real author name; vendors/riders see a generic "Staff"
     // label in place of any internal staff member's name (their own / other
     // non-staff authors still show normally).
@@ -1941,6 +1934,24 @@ async function computeDashboardSummary(
     ...(riderId ? { rider_id: riderId } : {}),
   };
 
+  // The COD Settlement card counts only delivered / partially-delivered orders
+  // from the last 30 days (by delivery date). To keep the math honest across
+  // partial deliveries - where the declared cod_amount overstates what was
+  // actually collected - every figure is anchored on collected_amount (the cash
+  // actually in hand), and the settled legs are clamped with LEAST() so a
+  // settlement can never exceed what was collected. Pending is then
+  // collected - settled, so Settled + Pending always equals Total exactly.
+  const COD_WINDOW_DAYS = 30;
+  const codWindowStart = new Date(todayStart);
+  codWindowStart.setDate(codWindowStart.getDate() - COD_WINDOW_DAYS);
+  const codScopeSql: Prisma.Sql = vendorId
+    ? Prisma.sql`AND c.vendor_id = ${vendorId}::uuid`
+    : vendorIds
+    ? Prisma.sql`AND c.vendor_id = ANY(${vendorIds}::uuid[])`
+    : riderId
+    ? Prisma.sql`AND c.rider_id = ${riderId}::uuid`
+    : Prisma.empty;
+
   const settlementWhere: Prisma.settlementsWhereInput = {
     status: "settled",
     ...(vendorId ? { vendor_id: vendorId } : {}),
@@ -2056,7 +2067,7 @@ async function computeDashboardSummary(
     Number(trendRow![`d${i}_returned`]),
   ]);
 
-  const [todaysRemarks, unclosedComments, codTotals, pendingCodCount, lastSettlement] = await Promise.all([
+  const [todaysRemarks, unclosedComments, codRows, pendingCodCount, lastSettlement] = await Promise.all([
     prisma.parcel_remarks.count({
       where: { created_at: { gte: todayStart }, parcels: parcelWhere },
     }),
@@ -2066,16 +2077,26 @@ async function computeDashboardSummary(
         ...(vendorId || riderId ? { parcels: parcelWhere } : {}),
       },
     }),
-    prisma.cod_collections.aggregate({
-      where: codWhere,
-      _sum: {
-        cod_amount: true,
-        remitted_amount: true,
-        pending_amount: true,
-        collected_amount: true,
-        rider_remitted_amount: true,
-      },
-    }),
+    prisma.$queryRaw<
+      Array<{
+        total_collected: string;
+        settled_to_vendor: string;
+        settled_to_rider: string;
+        cod_from_rider: string;
+      }>
+    >(Prisma.sql`
+      SELECT
+        COALESCE(SUM(c.collected_amount), 0) AS total_collected,
+        COALESCE(SUM(LEAST(c.remitted_amount, c.collected_amount)), 0) AS settled_to_vendor,
+        COALESCE(SUM(LEAST(c.rider_remitted_amount, c.collected_amount)), 0) AS settled_to_rider,
+        COALESCE(SUM(c.collected_amount - LEAST(c.rider_remitted_amount, c.collected_amount)), 0) AS cod_from_rider
+      FROM cod_collections c
+      JOIN parcels p ON p.id = c.parcel_id
+      WHERE p.deleted_at IS NULL
+        AND p.status::text IN ('delivered', 'partially_delivered')
+        AND p.delivered_at >= ${codWindowStart}
+        ${codScopeSql}
+    `),
     prisma.cod_collections.count({
       where: riderId
         ? { ...codWhere, rider_payment_status: "pending", collected_amount: { gt: 0 } }
@@ -2088,20 +2109,20 @@ async function computeDashboardSummary(
     }),
   ]);
 
-  // Rider scope reports the rider leg (cash collected vs. remitted to
-  // office); vendor/staff scope reports the vendor leg (COD vs. paid out) -
-  // the two legs are tracked independently on cod_collections.
-  const totalCod = riderId
-    ? moneyToNumber(codTotals._sum.collected_amount)
-    : moneyToNumber(codTotals._sum.cod_amount);
+  // All figures are on the collected-cash basis (see codScopeSql above). Total
+  // is the cash actually collected; settled is what has been remitted onward
+  // (to the vendor for vendor/staff scope, to the office for rider scope),
+  // clamped in SQL so it can't exceed the collection; pending is the remainder.
+  const codRow = codRows[0];
+  const totalCod = Number(codRow?.total_collected ?? 0);
   const settledCod = riderId
-    ? moneyToNumber(codTotals._sum.rider_remitted_amount)
-    : moneyToNumber(codTotals._sum.remitted_amount);
-  const pendingCod = riderId
-    ? Math.max(totalCod - settledCod, 0)
-    : codTotals._sum.pending_amount === null
-      ? Math.max(totalCod - settledCod, 0)
-      : moneyToNumber(codTotals._sum.pending_amount);
+    ? Number(codRow?.settled_to_rider ?? 0)
+    : Number(codRow?.settled_to_vendor ?? 0);
+  const pendingCod = Math.max(totalCod - settledCod, 0);
+
+  // Cash riders have collected but not yet remitted to the office - shown on
+  // the admin card alongside the settled/pending vendor figures.
+  const codFromRider = Number(codRow?.cod_from_rider ?? 0);
 
   const weeklyTrend = trendDayRanges.map(({ start }, index) => {
     const [dayTotalOrders, dayPickedUp, dayDelivered, dayReturned] = trendCounts[index] ?? [0, 0, 0, 0];
@@ -2144,6 +2165,7 @@ async function computeDashboardSummary(
       totalCod,
       settledCod,
       pendingCod,
+      codFromRider,
       pendingCodCount,
       progressPercent: totalCod > 0 ? (settledCod / totalCod) * 100 : 0,
       scopedToRider: Boolean(riderId),
@@ -2195,31 +2217,6 @@ export async function getSenderProfile(actor: OrderActor) {
     address: vendor.pickup_landmark || vendor.address || "",
     locationId: vendor.location_id,
   };
-}
-
-export async function notifyVendorOfStatusChange(
-  vendorId: string | null,
-  trackingId: string,
-  newStatus: ParcelStatus,
-  actorId: string,
-) {
-  if (!vendorId) return;
-
-  const vendor = await prisma.vendors.findUnique({
-    where: { id: vendorId },
-    select: { user_id: true },
-  });
-
-  if (!vendor?.user_id || vendor.user_id === actorId) return;
-
-  await createNotification(
-    vendor.user_id,
-    `Order ${trackingId} updated`,
-    `Status changed to '${newStatus}'.`,
-    trackingId,
-    "general",
-    `/orders/track/${trackingId}`,
-  );
 }
 
 // Notify all active admin/super_admin users (fire-and-forget).
@@ -2632,9 +2629,10 @@ async function _updateParcelStatusImpl(
   const { updatedParcel, createdReturn } = txOutcome;
 
   await invalidateOrderCaches();
-  await notifyVendorOfStatusChange(parcel.vendor_id, parcel.tracking_id, newStatus, actor.id);
 
-  // Let admins know a return parcel was raised off this exchange delivery.
+  // Status changes (vendor pings, arrival-at-branch and delivery/COD admin
+  // pings) no longer notify - they flooded the feed. Only the auto-raised
+  // return below still notifies, since it's an exceptional, actionable event.
   if (createdReturn) {
     notifyAdmins(
       `Return raised: ${createdReturn.trackingId}`,
@@ -2642,30 +2640,6 @@ async function _updateParcelStatusImpl(
       createdReturn.trackingId,
       "return",
       `/orders/track/${createdReturn.trackingId}`,
-      actor.id,
-    ).catch(() => {});
-  }
-
-  // Notify admins about new delivery ticket when parcel arrives at branch
-  if (newStatus === "arrived_at_branch") {
-    notifyAdmins(
-      `New Delivery Ticket: ${parcel.tracking_id}`,
-      `Parcel has arrived at branch and is ready for delivery.`,
-      parcel.tracking_id,
-      "dispatch",
-      `/orders/track/${parcel.tracking_id}`,
-      actor.id,
-    ).catch(() => {});
-  }
-
-  // Notify admins about COD settlement when parcel is delivered with COD
-  if (newStatus === "delivered" && Number(parcel.cod_amount) > 0) {
-    notifyAdmins(
-      `COD Settlement: ${parcel.tracking_id}`,
-      `COD of Rs. ${Number(parcel.cod_amount)} collected on delivery.`,
-      parcel.tracking_id,
-      "cod_settlement",
-      `/finance`,
       actor.id,
     ).catch(() => {});
   }
@@ -3039,63 +3013,8 @@ async function _bulkUpdateParcelStatusImpl(
 
   await invalidateOrderCaches();
 
-  const vendorIds = Array.from(
-    new Set(parcels.map((p) => p.vendor_id).filter((id): id is string => Boolean(id))),
-  );
-  if (vendorIds.length) {
-    const vendors = await prisma.vendors.findMany({
-      where: { id: { in: vendorIds } },
-      select: { id: true, user_id: true },
-    });
-    const vendorUserIdById = new Map(vendors.map((v) => [v.id, v.user_id]));
-
-    await Promise.all(
-      parcels.map((p) => {
-        const vendorUserId = p.vendor_id ? vendorUserIdById.get(p.vendor_id) : null;
-        if (!vendorUserId || vendorUserId === actor.id) return Promise.resolve();
-        return createNotification(
-          vendorUserId,
-          `Order ${p.tracking_id} updated`,
-          `Status changed to '${newStatus}'.`,
-          p.tracking_id,
-          "general",
-          `/orders/track/${p.tracking_id}`,
-        );
-      }),
-    );
-  }
-
-  // Notify admins about new delivery tickets when parcels arrive at branch
-  if (newStatus === "arrived_at_branch") {
-    const arrivedParcels = parcels.filter((p) => p.status !== "arrived_at_branch");
-    for (const p of arrivedParcels) {
-      notifyAdmins(
-        `New Delivery Ticket: ${p.tracking_id}`,
-        `Parcel has arrived at branch and is ready for delivery.`,
-        p.tracking_id,
-        "dispatch",
-        `/orders/track/${p.tracking_id}`,
-        actor.id,
-      ).catch(() => {});
-    }
-  }
-
-  // Notify admins about COD settlement when parcels are delivered with COD
-  if (newStatus === "delivered") {
-    const codParcels = parcels.filter(
-      (p) => Number(p.cod_amount) > 0 && p.status !== "delivered",
-    );
-    for (const p of codParcels) {
-      notifyAdmins(
-        `COD Settlement: ${p.tracking_id}`,
-        `COD of Rs. ${Number(p.cod_amount)} collected on delivery.`,
-        p.tracking_id,
-        "cod_settlement",
-        `/finance`,
-        actor.id,
-      ).catch(() => {});
-    }
-  }
+  // Bulk status changes no longer notify vendors or admins (see the single
+  // update path) - a batch would otherwise fire a ping per parcel.
 
   return result;
 }
@@ -3180,7 +3099,6 @@ export async function applyExternalCarrierStatus(
         console.error("[Redis] cache invalidation failed:", err),
       );
     }
-    await notifyVendorOfStatusChange(parcel.vendor_id, parcel.tracking_id, targetStatus, "");
     return { applied: true };
   });
 }

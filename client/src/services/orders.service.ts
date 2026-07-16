@@ -192,6 +192,8 @@ export interface DashboardSummary {
     totalCod: number;
     settledCod: number;
     pendingCod: number;
+    /** Cash riders have collected but not yet remitted to the office. */
+    codFromRider: number;
     progressPercent: number;
     scopedToRider: boolean;
     lastAmount: number;
@@ -337,9 +339,21 @@ export interface OrderStatusHistoryEntry {
   createdAt: string;
 }
 
+/** A single COD or delivery-charge adjustment made after the order was created. */
+export interface PriceLogEntry {
+  id: string;
+  field: 'cod' | 'delivery_charge';
+  oldValue: number;
+  newValue: number;
+  changedBy: string;
+  createdAt: string;
+}
+
 export interface OrderDetail extends Omit<Order, 'remarks'> {
   remarks: OrderRemark[];
   statusHistory: OrderStatusHistoryEntry[];
+  /** COD / delivery-charge changes made after creation, newest first. */
+  priceLog: PriceLogEntry[];
   /** True when the viewer is allowed to change this order's status (super_admin/admin). */
   canChangeStatus: boolean;
 }

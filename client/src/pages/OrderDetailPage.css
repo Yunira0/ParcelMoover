@@ -680,3 +680,81 @@
   font-size: var(--font-size-sm);
   margin: 0;
 }
+
+/* ── Price Log ──────────────────────────────────────────────────────────── */
+
+.od-pricelog {
+  background: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-xl);
+  overflow: hidden;
+}
+
+.od-pricelog-empty {
+  padding: var(--space-5);
+  color: var(--color-text-caption);
+  font-size: var(--font-size-sm);
+  text-align: center;
+}
+
+.od-pricelog-table-wrap {
+  overflow-x: auto;
+}
+
+.od-pricelog-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-sm);
+}
+
+.od-pricelog-table th {
+  text-align: left;
+  padding: var(--space-3) var(--space-5);
+  background: var(--color-background-canvas);
+  color: var(--color-text-caption);
+  font-weight: var(--font-weight-semi-bold);
+  font-size: var(--font-size-xs);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.od-pricelog-table td {
+  padding: var(--space-3) var(--space-5);
+  border-top: 1px solid var(--color-border-default);
+  color: var(--color-text-default);
+  vertical-align: middle;
+}
+
+.od-pricelog-change {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  white-space: nowrap;
+}
+
+.od-pricelog-old {
+  color: var(--color-text-caption);
+  text-decoration: line-through;
+}
+
+.od-pricelog-arrow {
+  color: var(--color-text-caption);
+  flex: none;
+}
+
+.od-pricelog-new {
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-default);
+}
+
+.od-pricelog-date {
+  color: var(--color-text-caption);
+  white-space: nowrap;
+}
+
+@media (max-width: 768px) {
+  .od-pricelog-table th,
+  .od-pricelog-table td {
+    padding: var(--space-3) var(--space-4);
+  }
+}
