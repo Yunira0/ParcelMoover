@@ -10,7 +10,7 @@ concurrency:
   cancel-in-progress: false    # let a running deploy finish, queue the next
 
 jobs:
-  # ── Stage 1: prove the code builds & tests pass before touching the server ──
+  # ── Stage 1: prove the code builds & tests pass before building the image ──
   ci:
     runs-on: ubuntu-latest
     services:
@@ -51,6 +51,12 @@ jobs:
           DATABASE_URL: postgresql://placeholder:placeholder@localhost:5432/placeholder
         run: npm run build
 
+      - name: Apply migrations to the test database
+        working-directory: server
+        env:
+          DATABASE_URL: postgresql://parcelmoover:parcelmoover@localhost:5432/parcelmoover_test
+        run: npx prisma migrate deploy
+
       - name: Run server tests
         working-directory: server
         env:
@@ -66,24 +72,77 @@ jobs:
           npm ci
           npm run build
 
-  # ── Stage 2: ship to EC2 — only runs if CI passed ──
-  deploy:
+  # ── Stage 2: build the image HERE, not on the 1GB production box.
+  # Building on the server OOM-killed it on 2026-07-16 and locked out SSH.
+  # The server only ever pulls finished images from GHCR now. ──
+  build:
     needs: ci
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.meta.outputs.image }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute image name
+        id: meta
+        # GHCR requires a lowercase namespace; github.repository_owner is "Yunira0"
+        run: echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/parcelmoover" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          # :<sha> is the tag actually deployed (and the rollback target);
+          # :latest is a convenience alias for humans
+          tags: |
+            ${{ steps.meta.outputs.image }}:${{ github.sha }}
+            ${{ steps.meta.outputs.image }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ── Stage 3: ship to EC2 — pull the image, snapshot the DB, restart, verify ──
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
     environment: production     # optional: add required reviewers in repo settings
+    permissions:
+      contents: read
+      packages: read            # lets GITHUB_TOKEN pull the image on the server
+
+    env:
+      SSH_HOST: ${{ secrets.EC2_HOST }}          # 13.50.238.10
+      APP_IMAGE: ${{ needs.build.outputs.image }}:${{ github.sha }}
 
     steps:
       - uses: actions/checkout@v4
 
       - name: Set up SSH
         env:
-          SSH_KEY: ${{ secrets.EC2_SSH_KEY }}       # contents of the .pem
-          SSH_HOST: ${{ secrets.EC2_HOST }}          # e.g. 51.21.199.242
+          SSH_KEY: ${{ secrets.EC2_SSH_KEY }}          # dedicated deploy key, NOT the .pem
+          SSH_KNOWN_HOSTS: ${{ secrets.EC2_KNOWN_HOSTS }}  # optional pinned host key
         run: |
           mkdir -p ~/.ssh
           echo "$SSH_KEY" > ~/.ssh/deploy_key
           chmod 400 ~/.ssh/deploy_key
-          ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts
+          if [ -n "$SSH_KNOWN_HOSTS" ]; then
+            # pinned host key (get it once with: ssh-keyscan 13.50.238.10)
+            echo "$SSH_KNOWN_HOSTS" >> ~/.ssh/known_hosts
+          else
+            # fallback: trust-on-first-use every run — works, but pin it when you can
+            ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts
+          fi
 
       - name: Export clean tree (committed files only, like git archive)
         run: |
@@ -91,100 +150,138 @@ jobs:
           git archive HEAD | tar -x -C /tmp/release
 
       - name: Rsync release to staging dir on host
-        env:
-          SSH_HOST: ${{ secrets.EC2_HOST }}
         run: |
           rsync -az --delete \
             -e "ssh -i ~/.ssh/deploy_key" \
             /tmp/release/ \
-            ubuntu@"$SSH_HOST":/opt/parcelmoover-staging/
+            ubuntu@"$SSH_HOST":/var/www/parcelmoover-staging/
 
-      - name: Pre-deploy safety net (DB snapshot + tag rollback image)
-        env:
-          SSH_HOST: ${{ secrets.EC2_HOST }}
+      - name: Pre-deploy safety net (DB snapshot + record rollback image)
         run: |
           ssh -i ~/.ssh/deploy_key ubuntu@"$SSH_HOST" bash -s <<'EOF'
             set -euo pipefail
+            APP_DIR=/var/www/express-app
 
-            # fresh restore point right before migrations run — the nightly
-            # 2am cron backup could be many hours stale by deploy time
-            sudo /opt/parcelmoover/deploy/backup-db.sh
+            # Local pre-deploy dump — self-contained, no S3 required. This is
+            # the restore point if the incoming deploy runs a bad migration.
+            # Keeps the last 7; lives on the root volume, so it survives
+            # container recreation but NOT instance loss — configure
+            # BACKUP_S3_BUCKET + an instance role for real off-box backups.
+            sudo mkdir -p /var/backups/parcelmoover
+            if sudo docker ps --format '{{.Names}}' | grep -qx deploy-db-1; then
+              sudo docker exec deploy-db-1 \
+                sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' \
+                | gzip | sudo tee "/var/backups/parcelmoover/pre-deploy-$(date -u +%Y%m%dT%H%M%SZ).sql.gz" >/dev/null
+              sudo find /var/backups/parcelmoover -name 'pre-deploy-*.sql.gz' -mtime +7 -delete
+            fi
 
-            # keep the currently-running (known-good) image as the rollback
-            # target before the build overwrites :latest
-            if sudo docker image inspect parcelmoover:latest >/dev/null 2>&1; then
-              sudo docker tag parcelmoover:latest parcelmoover:previous
+            # Off-box S3 backup too, when configured
+            if grep -q '^BACKUP_S3_BUCKET=' "$APP_DIR/deploy/.env.production" 2>/dev/null; then
+              sudo "$APP_DIR/deploy/backup-db.sh"
+            fi
+
+            # Remember the exact image currently serving traffic — this is
+            # what the rollback step re-deploys
+            if sudo docker ps --format '{{.Names}}' | grep -qx deploy-app-1; then
+              sudo docker inspect deploy-app-1 --format '{{.Config.Image}}' \
+                | sudo tee "$APP_DIR/deploy/.last-good-image" >/dev/null
             fi
           EOF
 
-      - name: Sync into live dir, build image, restart stack
+      - name: Sync into live dir, pull image, restart stack
         id: deploy_stack
-        env:
-          SSH_HOST: ${{ secrets.EC2_HOST }}
         run: |
-          ssh -i ~/.ssh/deploy_key ubuntu@"$SSH_HOST" bash -s <<'EOF'
+          ssh -i ~/.ssh/deploy_key ubuntu@"$SSH_HOST" \
+            "APP_IMAGE='$APP_IMAGE' GHCR_USER='${{ github.actor }}' GHCR_TOKEN='${{ secrets.GITHUB_TOKEN }}' bash -s" <<'EOF'
             set -euo pipefail
+            APP_DIR=/var/www/express-app
 
-            # no --delete: .env.production and other host-only files must survive
-            rsync -a /opt/parcelmoover-staging/ /opt/parcelmoover/
+            # --delete so files removed from the repo actually disappear from
+            # the live tree; host-only files are explicitly preserved
+            rsync -a --delete \
+              --exclude='.git' \
+              --exclude='deploy/.env.production' \
+              --exclude='deploy/.env.production.*' \
+              --exclude='deploy/.last-good-image' \
+              /var/www/parcelmoover-staging/ "$APP_DIR"/
 
-            cd /opt/parcelmoover
-            sudo docker build -t parcelmoover:latest .
+            echo "$GHCR_TOKEN" | sudo docker login ghcr.io -u "$GHCR_USER" --password-stdin
 
-            sudo docker compose \
+            cd "$APP_DIR"
+            sudo env APP_IMAGE="$APP_IMAGE" docker compose \
+              -f deploy/docker-compose.prod.yml \
+              --env-file deploy/.env.production \
+              pull app
+
+            sudo env APP_IMAGE="$APP_IMAGE" docker compose \
               -f deploy/docker-compose.prod.yml \
               --env-file deploy/.env.production \
               up -d
 
-            # verify the data volume didn't get swapped (your 2026-07-14 incident)
+            # verify the data volume didn't get swapped (2026-07-14 incident)
             sudo docker inspect deploy-db-1 --format '{{range .Mounts}}{{.Name}}{{end}}' \
               | grep -q deploy_db-data || { echo "WRONG DB VOLUME MOUNTED"; exit 1; }
+
+            # old images pile up fast on a 19GB disk — keep the rollback
+            # target and current, prune the rest
+            sudo docker image prune -f >/dev/null
           EOF
 
-      - name: Health check
+      - name: Health check (retry up to 60s)
         id: health
-        env:
-          SSH_HOST: ${{ secrets.EC2_HOST }}
         run: |
-          sleep 20
-          ssh -i ~/.ssh/deploy_key ubuntu@"$SSH_HOST" \
-            "curl -fsS http://127.0.0.1:3000/health"
+          ssh -i ~/.ssh/deploy_key ubuntu@"$SSH_HOST" bash -s <<'EOF'
+            for i in $(seq 1 12); do
+              if curl -fsS http://127.0.0.1:3000/health >/dev/null 2>&1; then
+                echo "==> Healthy after ~$(( i * 5 ))s"
+                exit 0
+              fi
+              sleep 5
+            done
+            echo "!! App never became healthy — dumping last log lines:"
+            sudo docker logs deploy-app-1 2>&1 | tail -30
+            exit 1
+          EOF
 
       # ── Automatic rollback: only fires if the restart or health check failed,
       # never for earlier failures (SSH setup, rsync) where nothing was touched ──
-      - name: Rollback to previous image
+      - name: Rollback to last good image
         if: >-
           failure() &&
           (steps.deploy_stack.outcome == 'failure' || steps.health.outcome == 'failure')
-        env:
-          SSH_HOST: ${{ secrets.EC2_HOST }}
         run: |
           ssh -i ~/.ssh/deploy_key ubuntu@"$SSH_HOST" bash -s <<'EOF'
             set -euo pipefail
+            APP_DIR=/var/www/express-app
 
-            if ! sudo docker image inspect parcelmoover:previous >/dev/null 2>&1; then
-              echo "!! No parcelmoover:previous image on host — cannot auto-rollback."
-              echo "!! Restore manually: redeploy the last good commit, or restore the"
-              echo "!! pre-deploy DB dump with deploy/restore-db.sh."
+            if [ ! -s "$APP_DIR/deploy/.last-good-image" ]; then
+              echo "!! No recorded last-good image — cannot auto-rollback."
+              echo "!! Restore manually: re-run the workflow from the last good"
+              echo "!! commit, or restore the newest /var/backups/parcelmoover dump."
               exit 1
             fi
 
-            echo "==> Rolling back app to previous image..."
-            sudo docker tag parcelmoover:previous parcelmoover:latest
+            LAST_GOOD="$(cat "$APP_DIR/deploy/.last-good-image")"
+            echo "==> Rolling back app to $LAST_GOOD ..."
 
-            cd /opt/parcelmoover
-            # force-recreate: the tag name didn't change, only what it points
-            # to, so compose must be told to recreate the app container
-            sudo docker compose \
+            cd "$APP_DIR"
+            # force-recreate: image ref may be unchanged if the failure was
+            # mid-deploy, so compose must be told to recreate regardless
+            sudo env APP_IMAGE="$LAST_GOOD" docker compose \
               -f deploy/docker-compose.prod.yml \
               --env-file deploy/.env.production \
               up -d --force-recreate app
 
-            sleep 20
-            curl -fsS http://127.0.0.1:3000/health
-            echo "==> Rollback OK — previous version is serving again."
-
-            echo "NOTE: code is rolled back, the DATABASE is not. If the failed"
-            echo "deploy ran a bad migration, restore the pre-deploy snapshot"
-            echo "(newest s3 db/ dump) with /opt/parcelmoover/deploy/restore-db.sh."
+            for i in $(seq 1 12); do
+              if curl -fsS http://127.0.0.1:3000/health >/dev/null 2>&1; then
+                echo "==> Rollback OK — $LAST_GOOD is serving again."
+                echo "NOTE: code is rolled back, the DATABASE is not. If the failed"
+                echo "deploy ran a bad migration, restore the newest pre-deploy dump"
+                echo "from /var/backups/parcelmoover/."
+                exit 0
+              fi
+              sleep 5
+            done
+            echo "!! Rollback image is up but never became healthy — manual intervention needed."
+            exit 1
           EOF
