@@ -1,1 +1,0 @@
-import{i as e,r as t}from"./api-YN7heKRk.js";e();var n=t(),r=({checked:e,onChange:t,disabled:r=!1,ariaLabel:i})=>(0,n.jsx)(`button`,{type:`button`,role:`switch`,"aria-checked":e,"aria-label":i,className:`toggle-switch${e?` toggle-switch-on`:``}`,disabled:r,onClick:()=>t(!e),children:(0,n.jsx)(`span`,{className:`toggle-switch-knob`})});export{r as t};

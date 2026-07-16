@@ -1,0 +1,190 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}        # lets you trigger manually from the Actions tab
+
+concurrency:
+  group: production-deploy     # never run two deploys at once
+  cancel-in-progress: false    # let a running deploy finish, queue the next
+
+jobs:
+  # ── Stage 1: prove the code builds & tests pass before touching the server ──
+  ci:
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: parcelmoover
+          POSTGRES_PASSWORD: parcelmoover
+          POSTGRES_DB: parcelmoover_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U parcelmoover"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            server/package-lock.json
+            client/package-lock.json
+
+      - name: Install server deps
+        working-directory: server
+        run: npm ci
+
+      - name: Build server (prisma generate + tsc)
+        working-directory: server
+        env:
+          # prisma.config.ts reads DATABASE_URL at config-load even for
+          # generate, which never connects — placeholder is fine
+          DATABASE_URL: postgresql://placeholder:placeholder@localhost:5432/placeholder
+        run: npm run build
+
+      - name: Run server tests
+        working-directory: server
+        env:
+          DATABASE_URL: postgresql://parcelmoover:parcelmoover@localhost:5432/parcelmoover_test
+          REDIS_HOST: 127.0.0.1
+          REDIS_PORT: 6379
+          JWT_SECRET: ci-only-secret
+        run: npm test
+
+      - name: Install client deps & build
+        working-directory: client
+        run: |
+          npm ci
+          npm run build
+
+  # ── Stage 2: ship to EC2 — only runs if CI passed ──
+  deploy:
+    needs: ci
+    runs-on: ubuntu-latest
+    environment: production     # optional: add required reviewers in repo settings
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up SSH
+        env:
+          SSH_KEY: ${{ secrets.EC2_SSH_KEY }}       # contents of the .pem
+          SSH_HOST: ${{ secrets.EC2_HOST }}          # e.g. 51.21.199.242
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 400 ~/.ssh/deploy_key
+          ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts
+
+      - name: Export clean tree (committed files only, like git archive)
+        run: |
+          mkdir -p /tmp/release
+          git archive HEAD | tar -x -C /tmp/release
+
+      - name: Rsync release to staging dir on host
+        env:
+          SSH_HOST: ${{ secrets.EC2_HOST }}
+        run: |
+          rsync -az --delete \
+            -e "ssh -i ~/.ssh/deploy_key" \
+            /tmp/release/ \
+            ubuntu@"$SSH_HOST":/opt/parcelmoover-staging/
+
+      - name: Pre-deploy safety net (DB snapshot + tag rollback image)
+        env:
+          SSH_HOST: ${{ secrets.EC2_HOST }}
+        run: |
+          ssh -i ~/.ssh/deploy_key ubuntu@"$SSH_HOST" bash -s <<'EOF'
+            set -euo pipefail
+
+            # fresh restore point right before migrations run — the nightly
+            # 2am cron backup could be many hours stale by deploy time
+            sudo /opt/parcelmoover/deploy/backup-db.sh
+
+            # keep the currently-running (known-good) image as the rollback
+            # target before the build overwrites :latest
+            if sudo docker image inspect parcelmoover:latest >/dev/null 2>&1; then
+              sudo docker tag parcelmoover:latest parcelmoover:previous
+            fi
+          EOF
+
+      - name: Sync into live dir, build image, restart stack
+        id: deploy_stack
+        env:
+          SSH_HOST: ${{ secrets.EC2_HOST }}
+        run: |
+          ssh -i ~/.ssh/deploy_key ubuntu@"$SSH_HOST" bash -s <<'EOF'
+            set -euo pipefail
+
+            # no --delete: .env.production and other host-only files must survive
+            rsync -a /opt/parcelmoover-staging/ /opt/parcelmoover/
+
+            cd /opt/parcelmoover
+            sudo docker build -t parcelmoover:latest .
+
+            sudo docker compose \
+              -f deploy/docker-compose.prod.yml \
+              --env-file deploy/.env.production \
+              up -d
+
+            # verify the data volume didn't get swapped (your 2026-07-14 incident)
+            sudo docker inspect deploy-db-1 --format '{{range .Mounts}}{{.Name}}{{end}}' \
+              | grep -q deploy_db-data || { echo "WRONG DB VOLUME MOUNTED"; exit 1; }
+          EOF
+
+      - name: Health check
+        id: health
+        env:
+          SSH_HOST: ${{ secrets.EC2_HOST }}
+        run: |
+          sleep 20
+          ssh -i ~/.ssh/deploy_key ubuntu@"$SSH_HOST" \
+            "curl -fsS http://127.0.0.1:3000/health"
+
+      # ── Automatic rollback: only fires if the restart or health check failed,
+      # never for earlier failures (SSH setup, rsync) where nothing was touched ──
+      - name: Rollback to previous image
+        if: >-
+          failure() &&
+          (steps.deploy_stack.outcome == 'failure' || steps.health.outcome == 'failure')
+        env:
+          SSH_HOST: ${{ secrets.EC2_HOST }}
+        run: |
+          ssh -i ~/.ssh/deploy_key ubuntu@"$SSH_HOST" bash -s <<'EOF'
+            set -euo pipefail
+
+            if ! sudo docker image inspect parcelmoover:previous >/dev/null 2>&1; then
+              echo "!! No parcelmoover:previous image on host — cannot auto-rollback."
+              echo "!! Restore manually: redeploy the last good commit, or restore the"
+              echo "!! pre-deploy DB dump with deploy/restore-db.sh."
+              exit 1
+            fi
+
+            echo "==> Rolling back app to previous image..."
+            sudo docker tag parcelmoover:previous parcelmoover:latest
+
+            cd /opt/parcelmoover
+            # force-recreate: the tag name didn't change, only what it points
+            # to, so compose must be told to recreate the app container
+            sudo docker compose \
+              -f deploy/docker-compose.prod.yml \
+              --env-file deploy/.env.production \
+              up -d --force-recreate app
+
+            sleep 20
+            curl -fsS http://127.0.0.1:3000/health
+            echo "==> Rollback OK — previous version is serving again."
+
+            echo "NOTE: code is rolled back, the DATABASE is not. If the failed"
+            echo "deploy ran a bad migration, restore the pre-deploy snapshot"
+            echo "(newest s3 db/ dump) with /opt/parcelmoover/deploy/restore-db.sh."
+          EOF

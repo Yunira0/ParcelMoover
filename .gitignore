@@ -78,6 +78,13 @@ typings/
 # protected at rest on disk instead).
 server/uploads/
 
+# Built SPA copied into the server — regenerated from client/dist by the
+# Docker build (Dockerfile stage 1), never served from the repo copy.
+server/public/
+
+# One-off local verification scripts
+server/scratch-*.ts
+
 # parcel-bundler cache (https://parceljs.org/)
 .cache
 
@@ -139,7 +146,9 @@ client/PRODUCT.md
 client/DESIGN.md
 docs/TEST_PLAN.md
 docs/ncm-integration-plan.md
-/.impeccable/
+docs/DMS-Test-Plan-Tracker.xlsx
+.impeccable/
+skills-lock.json
 .agents/
 .claude/skills/
 .claude/settings.local.json
