@@ -150,20 +150,6 @@ const CreateTicketModal: React.FC<CreateTicketModalProps> = ({ isOpen, onClose, 
       return { payload: { category, subject: 'Pickup request', description: composed } };
     }
 
-    if (category === 'loss_and_damage') {
-      const cleanedIds = form.orderIds.map((id) => id.trim()).filter(Boolean);
-      if (cleanedIds.length === 0) return { error: 'Add at least one order ID.' };
-      if (!description.trim()) return { error: 'Please fill in all fields.' };
-      return {
-        payload: {
-          category,
-          priority,
-          subject: `Loss & damage — ${cleanedIds.length} order${cleanedIds.length === 1 ? '' : 's'}`,
-          description: `Order IDs: ${cleanedIds.join(', ')}\n\n${description.trim()}`,
-        },
-      };
-    }
-
     // delivery
     const cleanedIds = form.orderIds.map((id) => id.trim()).filter(Boolean);
     if (cleanedIds.length === 0) return { error: 'Add at least one order ID.' };
@@ -294,7 +280,7 @@ const CreateTicketModal: React.FC<CreateTicketModalProps> = ({ isOpen, onClose, 
               </>
             )}
 
-            {(form.category === 'delivery' || form.category === 'loss_and_damage') && (
+            {form.category === 'delivery' && (
               <div className="ticket-orderids">
                 <label>Order IDs<span className="required">*</span></label>
                 {form.orderIds.map((orderId, index) => (
