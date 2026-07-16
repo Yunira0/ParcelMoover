@@ -6,6 +6,11 @@ export const ADMIN_PERMISSIONS = [
   "MANAGE_USERS",
   // Access to the Settings section (destinations, rate setup, delivery rates).
   "SETTINGS_ACCESS",
+  // Review (approve/reject) KYC applications - otherwise super_admin-only.
+  "KYC_ACCESS",
+  // Read the system audit logs - they expose actor identity and raw
+  // before/after payloads across every entity, so this is a real grant.
+  "SYSTEM_LOGS_ACCESS",
 ] as const;
 
 export type AdminPermission = (typeof ADMIN_PERMISSIONS)[number];

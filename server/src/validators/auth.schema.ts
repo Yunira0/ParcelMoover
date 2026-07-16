@@ -7,6 +7,7 @@ import {
   passwordSchema,
   optionalUuidSchema,
 } from "./common";
+import { ADMIN_PERMISSIONS } from "../types/adminPermission.type";
 
 // ── Login ─────────────────────────────────────────────────────────────────────
 
@@ -212,7 +213,15 @@ export type UpdatePasswordInput = z.infer<typeof updatePasswordSchema>;
 // ── Delegated admin permissions ───────────────────────────────────────────────
 
 export const updateAdminPermissionsSchema = z.object({
-  permissions: z.array(z.enum(["MANAGE_USERS", "SETTINGS_ACCESS"])).max(10),
+  permissions: z.array(z.enum(ADMIN_PERMISSIONS)).max(10),
 });
 
 export type UpdateAdminPermissionsInput = z.infer<typeof updateAdminPermissionsSchema>;
+
+// ── Super admin role grant ────────────────────────────────────────────────────
+
+export const updateAdminRoleSchema = z.object({
+  superAdmin: z.boolean(),
+});
+
+export type UpdateAdminRoleInput = z.infer<typeof updateAdminRoleSchema>;

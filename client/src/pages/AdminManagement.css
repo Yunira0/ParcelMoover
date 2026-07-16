@@ -88,6 +88,18 @@
   margin-top: 2px;
 }
 
+/* The super-admin role toggle sits above the delegated permissions and is a
+   bigger deal than any of them - the rust border marks it apart. */
+.admin-permission-row--role {
+  border-color: var(--color-border-primary);
+}
+
+.admin-permission-hint {
+  color: var(--color-text-caption);
+  font-size: var(--font-size-xs);
+  margin: 0;
+}
+
 .admin-permission-error {
   color: var(--color-text-danger, #dc2626);
   font-size: var(--font-size-sm);

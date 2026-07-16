@@ -50,7 +50,7 @@ function labelHtml(order: Order, qrDataUrl: string, barcodeUrl: string): string 
   <div class="route-row">
     <span class="route-hub">${esc(order.origin)}</span>
     <span class="route-arrow">&#8594;</span>
-    <span class="route-hub">${esc(order.destination)}</span>
+    <span class="route-hub">${esc(order.destinationName || order.destination)}</span>
   </div>
 
   <div class="label-main">

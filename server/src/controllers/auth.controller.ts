@@ -4,6 +4,7 @@ import {
   loginUser,
   registerUserBySuperAdmin,
   updateAdminPermissions,
+  setAdminSuperAdminRole,
   updateManagedUserPassword,
   updateManagedUserProfile,
   getManagedUserDetail,
@@ -25,7 +26,7 @@ const isManagedUserType = (value: unknown): value is ManagedUserType =>
 
 const locationLabel = (location?: { name: string; city: string | null; district: string | null } | null) => {
   if (!location) return "";
-  return [location.name, location.city || location.district].filter(Boolean).join(", ");
+  return [location.name, location.district].filter(Boolean).join(" - ");
 };
 
 const LIST_DEFAULT_PAGE_SIZE = 20;
@@ -208,6 +209,36 @@ export const updateAdminPermissionsController = async (req: Request, res: Respon
   }
 };
 
+export const updateAdminRoleController = async (req: Request, res: Response) => {
+  try {
+    const actorUserId = req.user?.id;
+    const { id } = req.params;
+    const { superAdmin } = req.body;
+
+    if (!actorUserId) {
+      throw new AppError(401, "Unauthorized");
+    }
+
+    if (typeof id !== "string") {
+      throw new AppError(400, "Invalid admin id");
+    }
+
+    const updated = await setAdminSuperAdminRole(actorUserId, id, superAdmin);
+
+    return sendSuccess(
+      res,
+      200,
+      superAdmin ? "Super admin role granted" : "Super admin role revoked",
+      updated,
+    );
+  } catch (error: any) {
+    return res.status(error.statusCode || 400).json({
+      success: false,
+      message: error.message || "Failed to update role",
+    });
+  }
+};
+
 export const login = async (req: Request, res: Response) => {
   try {
     //fetch data from request body
@@ -282,7 +313,7 @@ export const getAdminsController = async (_req: Request, res: Response) => {
         users: { is: { deleted_at: null } },
       },
       include: {
-        users: true,
+        users: { include: { user_roles: { include: { roles: true } } } },
         locations: true,
       },
       orderBy: { created_at: "desc" },
@@ -305,6 +336,7 @@ export const getAdminsController = async (_req: Request, res: Response) => {
         joined: formatDate(admin.joined_at),
         status: admin.users.status,
         permissions: admin.permissions,
+        isSuperAdmin: admin.users.user_roles.some((ur) => ur.roles.code === "super_admin"),
       })),
     });
   } catch (error: any) {

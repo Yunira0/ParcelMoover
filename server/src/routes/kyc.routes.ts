@@ -8,6 +8,7 @@ import {
 } from "../controllers/kyc.controller";
 import { authMiddleware } from "../middlewares/auth.middleware";
 import { authorizeRoles } from "../middlewares/authorizeRoles.middleware";
+import { requireAdminPermission } from "../middlewares/adminPermission.middleware";
 import { csrfProtection } from "../middlewares/csrf.middleware";
 import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { createRedisRateLimitStore } from "../lib/rateLimitStore";
@@ -46,14 +47,16 @@ const kycRouter: Router = Router();
 // Public — anyone can submit a KYC application (multipart/form-data for file uploads)
 kycRouter.post("/apply", kycSubmitLimiter, kycUpload, submitKycController);
 
-// Protected — super admins only
-kycRouter.get("/applications", authMiddleware, authorizeRoles("super_admin"), listKycController);
-kycRouter.get("/applications/:id", authMiddleware, authorizeRoles("super_admin"), getKycController);
+// Protected — super admins, or admins delegated KYC_ACCESS
+const kycReviewAccess = [authorizeRoles("super_admin", "admin"), requireAdminPermission("KYC_ACCESS")] as const;
+
+kycRouter.get("/applications", authMiddleware, ...kycReviewAccess, listKycController);
+kycRouter.get("/applications/:id", authMiddleware, ...kycReviewAccess, getKycController);
 kycRouter.patch(
   "/applications/:id/approve",
   authMiddleware,
   csrfProtection,
-  authorizeRoles("super_admin"),
+  ...kycReviewAccess,
   kycReviewLimiter,
   approveKycController,
 );
@@ -61,7 +64,7 @@ kycRouter.patch(
   "/applications/:id/reject",
   authMiddleware,
   csrfProtection,
-  authorizeRoles("super_admin"),
+  ...kycReviewAccess,
   kycReviewLimiter,
   rejectKycController,
 );

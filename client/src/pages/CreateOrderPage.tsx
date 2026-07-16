@@ -425,6 +425,20 @@ const CreateOrderPage: React.FC = () => {
     .filter(l => !l.parentId)
     .map(l => ({ id: l.id, label: l.name }));
 
+  // Lookup Branch: same destinations, but each carries its covered areas as the
+  // option description - the search then also matches area names (SearchableSelect
+  // filters and highlights descriptions), so typing "Gwarko" finds Imadol.
+  const lookupBranchOptions = locationOptions
+    .filter(l => !l.parentId)
+    .map(l => {
+      const areas = locationOptions.filter(a => a.parentId === l.id).map(a => a.name);
+      return {
+        id: l.id,
+        label: l.name,
+        description: areas.length > 0 ? `Covers: ${areas.join(', ')}` : undefined,
+      };
+    });
+
   // Vendors never pick their own origin - it's always their hub (e.g. Imadol),
   // so "From" is shown read-only instead of an editable dropdown.
   const originHubName = isVendorActor
@@ -635,11 +649,11 @@ const CreateOrderPage: React.FC = () => {
             <FormField
               label=""
               type="searchable-select"
-              searchableOptions={destinationSelectOptions}
+              searchableOptions={lookupBranchOptions}
               value={form.destinationLocationId}
               onChange={id => setField('destinationLocationId', id)}
               placeholder="Search branch"
-              searchPlaceholder="Search branch..."
+              searchPlaceholder="Search branch or covered area..."
               emptyMessage="No branches found."
             />
           </div>

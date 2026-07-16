@@ -21,7 +21,7 @@ export const changePassword = async (currentPassword: string, newPassword: strin
   return response.data;
 };
 
-export const updateMe = async (data: { fullName: string; phone?: string }) => {
+export const updateMe = async (data: { fullName: string; phone?: string; hubId?: string | null }) => {
   const response = await api.patch('/me', data);
   return response.data;
 };

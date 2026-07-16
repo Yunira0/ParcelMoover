@@ -12,7 +12,7 @@ import {
 } from '../../services/locations.service';
 import './DestinationsSettings.css';
 
-const emptyDest = { name: '', code: '', city: '', district: '' };
+const emptyDest = { name: '', code: '', province: '', district: '', municipality: '' };
 
 const DestinationsSettings: React.FC = () => {
   const [destinations, setDestinations] = useState<Destination[]>([]);
@@ -53,8 +53,10 @@ const DestinationsSettings: React.FC = () => {
       await createLocation({
         name: destForm.name,
         code: destForm.code || undefined,
-        city: destForm.city || undefined,
+        province: destForm.province || undefined,
         district: destForm.district || undefined,
+        // Municipality lives in the locations.city column server-side.
+        city: destForm.municipality || undefined,
         isHub: true,
       });
       setDestForm(emptyDest);
@@ -129,10 +131,14 @@ const DestinationsSettings: React.FC = () => {
               onChange={(v) => setDestForm((p) => ({ ...p, code: v }))} placeholder="e.g. PKR-01" />
           </div>
           <div className="dest-form-row">
-            <FormField label="City" value={destForm.city}
-              onChange={(v) => setDestForm((p) => ({ ...p, city: v }))} placeholder="e.g. Pokhara" />
+            <FormField label="Province" value={destForm.province}
+              onChange={(v) => setDestForm((p) => ({ ...p, province: v }))} placeholder="e.g. Gandaki" />
             <FormField label="District" value={destForm.district}
               onChange={(v) => setDestForm((p) => ({ ...p, district: v }))} placeholder="e.g. Kaski" />
+          </div>
+          <div className="dest-form-row">
+            <FormField label="Municipality" value={destForm.municipality}
+              onChange={(v) => setDestForm((p) => ({ ...p, municipality: v }))} placeholder="e.g. Pokhara" />
           </div>
           <div className="dest-form-actions">
             <Button type="submit" variant="primary" disabled={savingDest}>

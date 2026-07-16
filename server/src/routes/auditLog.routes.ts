@@ -2,6 +2,7 @@ import { Request, Router } from "express";
 import { rateLimit, ipKeyGenerator } from "express-rate-limit";
 import { authMiddleware } from "../middlewares/auth.middleware";
 import { authorizeRoles } from "../middlewares/authorizeRoles.middleware";
+import { requireAdminPermission } from "../middlewares/adminPermission.middleware";
 import { validate } from "../middlewares/validate.middleware";
 import { listAuditLogsQuerySchema } from "../validators/auditLog.schema";
 import { createRedisRateLimitStore } from "../lib/rateLimitStore";
@@ -26,14 +27,19 @@ const auditLogReadLimiter = rateLimit({
   keyGenerator: actorOrIpKey,
 });
 
-// System logs are super_admin-only — they expose actor identity and raw
-// before/after payloads (order amounts, PII) across every entity in the app.
+// System logs expose actor identity and raw before/after payloads (order
+// amounts, PII) across every entity in the app - super_admin, or an admin a
+// super_admin explicitly delegated SYSTEM_LOGS_ACCESS to.
+const systemLogsAccess = [
+  authorizeRoles("super_admin", "admin"),
+  requireAdminPermission("SYSTEM_LOGS_ACCESS"),
+] as const;
 
 // GET /api/audit-logs — filter dropdown options (entity types, actions in use)
 auditLogRouter.get(
   "/filter-options",
   authMiddleware,
-  authorizeRoles("super_admin"),
+  ...systemLogsAccess,
   auditLogReadLimiter,
   getAuditLogFilterOptionsController,
 );
@@ -42,7 +48,7 @@ auditLogRouter.get(
 auditLogRouter.get(
   "/",
   authMiddleware,
-  authorizeRoles("super_admin"),
+  ...systemLogsAccess,
   auditLogReadLimiter,
   validate(listAuditLogsQuerySchema, "query"),
   listAuditLogsController,
