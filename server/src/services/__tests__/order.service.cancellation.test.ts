@@ -77,7 +77,10 @@ describe("order status cancellation authorization", () => {
       mockedPrisma.parcels.findFirst.mockResolvedValue(makeFakeParcel());
 
       await expect(
-        updateParcelStatus({ id: "admin-1", roles: ["admin"] }, "parcel-1", { status: "cancelled" }),
+        updateParcelStatus({ id: "admin-1", roles: ["admin"] }, "parcel-1", {
+          status: "cancelled",
+          remarks: "customer requested cancellation",
+        }),
       ).resolves.toBeDefined();
     });
 
@@ -88,6 +91,7 @@ describe("order status cancellation authorization", () => {
       await expect(
         updateParcelStatus({ id: "vendor-user-1", roles: ["vendor"] }, "parcel-1", {
           status: "cancelled",
+          remarks: "customer requested cancellation",
         }),
       ).resolves.toBeDefined();
     });
@@ -99,6 +103,7 @@ describe("order status cancellation authorization", () => {
       await expect(
         updateParcelStatus({ id: "staff-1", roles: ["vendor_staff"] }, "parcel-1", {
           status: "cancelled",
+          remarks: "customer requested cancellation",
         }),
       ).resolves.toBeDefined();
     });
@@ -133,6 +138,7 @@ describe("order status cancellation authorization", () => {
         bulkUpdateParcelStatus({ id: "vendor-user-1", roles: ["vendor"] }, {
           ids: ["parcel-1"],
           status: "cancelled",
+          remarks: "customer requested cancellation",
         }),
       ).resolves.toMatchObject({ updatedCount: 1, status: "cancelled" });
     });
