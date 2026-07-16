@@ -14,6 +14,7 @@ const TICKET_CATEGORY_NOTIFICATIONS: Record<string, { type: string; label: strin
   pickup: { type: "pickup", label: "Pickup" },
   delivery: { type: "dispatch", label: "Delivery" },
   cod_settlement: { type: "cod_settlement", label: "COD Settlement" },
+  loss_and_damage: { type: "loss_and_damage", label: "Loss & Damage" },
 };
 
 // The workflow only uses these three; legacy values are normalized on read.
