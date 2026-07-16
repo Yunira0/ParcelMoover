@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { Eye, Search, X } from 'lucide-react';
+import { CheckCircle2, Eye, Search, X } from 'lucide-react';
 import Table from '../components/Table';
 import Button from '../components/Button';
 import PageHeader from '../components/PageHeader';
@@ -8,6 +8,7 @@ import Pagination from '../components/Pagination';
 import StatusChip, { type StatusChipTone } from '../components/StatusChip';
 import {
   getRemarks,
+  setRemarkStatus,
   REMARK_STATUS_LABELS,
   type Remark,
   type RemarkStatus,
@@ -30,6 +31,8 @@ const UnclosedRemarks: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState(() => searchParams.get('search') || '');
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
+  // Tracks the remark whose "Mark as Done" request is in flight, to disable just that button.
+  const [markingDoneId, setMarkingDoneId] = useState<string | null>(null);
 
   const loadRemarks = useCallback(async () => {
     setLoading(true);
@@ -45,6 +48,17 @@ const UnclosedRemarks: React.FC = () => {
 
   useEffect(() => { loadRemarks(); }, [loadRemarks]);
   useEffect(() => { setPage(1); }, [searchQuery]);
+
+  const markAsDone = useCallback(async (remarkId: string) => {
+    setMarkingDoneId(remarkId);
+    try {
+      await setRemarkStatus(remarkId, 'closed');
+      // This page only lists unclosed remarks, so a newly-closed one drops off the list.
+      setRemarks((prev) => prev.filter((remark) => remark.id !== remarkId));
+    } finally {
+      setMarkingDoneId(null);
+    }
+  }, []);
 
   // Keep search bookmarkable - mirror into the URL (replacing history, not
   // pushing, so the back button doesn't step through every keystroke).
@@ -118,14 +132,24 @@ const UnclosedRemarks: React.FC = () => {
       {
         header: 'ACTION',
         accessor: (r: Remark) => (
-          <Button variant="outline" size="sm" onClick={() => navigate(`/remarks/${r.id}`)}>
-            <Eye size={14} /> View
-          </Button>
+          <div className="ucr-action-cell">
+            <Button variant="outline" size="sm" onClick={() => navigate(`/remarks/${r.id}`)}>
+              <Eye size={14} /> View
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => markAsDone(r.id)}
+              disabled={markingDoneId === r.id}
+            >
+              <CheckCircle2 size={14} /> {markingDoneId === r.id ? 'Saving…' : 'Mark as Done'}
+            </Button>
+          </div>
         ),
-        width: '100px',
+        width: '240px',
       },
     ],
-    [page, visible, navigate],
+    [page, visible, navigate, markAsDone, markingDoneId],
   );
 
   return (
@@ -171,7 +195,7 @@ const UnclosedRemarks: React.FC = () => {
         loading={loading}
         loadingMessage="Loading remarks..."
         emptyMessage="No unclosed remarks found."
-        minWidth="1200px"
+        minWidth="1340px"
         tableClassName="ucr-table"
       />
 

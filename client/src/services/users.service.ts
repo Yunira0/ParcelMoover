@@ -47,6 +47,8 @@ export interface RegisterUserInput {
   zoneMajorCities?: string;
   zoneUrbanAreas?: string;
   zoneRemoteAreas?: string;
+  zoneInsideValley?: string;
+  insideValleyFlatRate?: string;
   pickupLandmark?: string;
   billingBusinessName?: string;
   registrationNo?: string;
@@ -98,6 +100,8 @@ export interface UpdateUserProfileInput {
   zoneMajorCities?: string;
   zoneUrbanAreas?: string;
   zoneRemoteAreas?: string;
+  zoneInsideValley?: string;
+  insideValleyFlatRate?: string;
   pickupLandmark?: string;
   billingBusinessName?: string;
   registrationNo?: string;

@@ -315,6 +315,40 @@
   margin: var(--space-2) 0 0;
 }
 
+.pickup-reason-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin-top: var(--space-3);
+}
+
+.pickup-reason-label {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-default);
+}
+
+.pickup-reason-required {
+  color: var(--color-danger-text);
+}
+
+.pickup-reason-textarea {
+  width: 100%;
+  padding: var(--space-2);
+  font-family: var(--typography-font-family-default);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-default);
+  background: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-default);
+  resize: vertical;
+}
+
+.pickup-reason-textarea:focus {
+  border-color: var(--color-border-primary);
+  outline: none;
+}
+
 .pickup-status-submit-row {
   display: flex;
   gap: var(--space-2);

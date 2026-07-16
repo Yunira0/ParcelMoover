@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import './Modal.css';
 import Button from './Button';
+import NepaliDatePicker from './NepaliDatePicker';
 import { getUnsettledOrders, createSettlement, type UnsettledOrderItem } from '../services/finance.service';
 import { getRiders, getVendors } from '../services/users.service';
 
@@ -182,10 +183,10 @@ const AddSettlementModal: React.FC<AddSettlementModalProps> = ({
             </div>
             <div className="form-group" style={{ flex: '1 1 160px' }}>
               <label>Settlement Date</label>
-              <input
-                type="date"
+              <NepaliDatePicker
                 value={settlementDate}
-                onChange={(e) => setSettlementDate(e.target.value)}
+                onChange={setSettlementDate}
+                aria-label="Settlement Date"
               />
             </div>
           </div>

@@ -5,6 +5,7 @@ import {
   type PendingCodResult, type SettlementStatement,
 } from '../lib/api'
 import SettlementDetailSheet from '../components/SettlementDetailSheet'
+import { toBsDate } from '../lib/nepaliDate'
 
 export default function SettlementsPage() {
   const [pending, setPending] = useState<PendingCodResult | null>(null)
@@ -134,7 +135,7 @@ export default function SettlementsPage() {
                       <span className="text-sm font-bold text-text-primary font-mono truncate">{s.statementId}</span>
                       <span className="text-xs text-text-muted truncate">
                         {s.orderCount} order{s.orderCount === 1 ? '' : 's'}
-                        {s.transferDate ? ` · ${s.transferDate}` : ''}
+                        {s.transferDate ? ` · ${toBsDate(s.transferDate)}` : ''}
                       </span>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">

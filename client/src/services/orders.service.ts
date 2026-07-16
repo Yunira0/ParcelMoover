@@ -91,6 +91,10 @@ export interface Order {
   lastUpdatedAt?: string;
   createdAt: string;
   createdAtRaw: string;
+  /** AD "YYYY-MM-DD" of the first "arrived at origin" status change, or '' if never. */
+  arrivedAtOrigin?: string;
+  /** AD "YYYY-MM-DD" the parcel was delivered, or '' if not delivered. */
+  deliveredAt?: string;
 }
 
 export const ORDER_SORT_FIELDS = ['createdAt', 'codAmount', 'deliveryCharge', 'trackingId', 'status'] as const;
@@ -108,6 +112,8 @@ export interface ListOrdersParams {
   dir?: 'next' | 'prev';
   sortBy?: OrderSortField;
   sortDir?: 'asc' | 'desc';
+  /** Export-only: include each order's first "arrived at origin" date. */
+  withArrival?: boolean;
 }
 
 export interface OrdersPageMeta {
@@ -211,6 +217,7 @@ export const getOrders = async (params?: ListOrdersParams, signal?: AbortSignal)
   if (params?.dir !== undefined) query.dir = params.dir;
   if (params?.sortBy) query.sortBy = params.sortBy;
   if (params?.sortDir) query.sortDir = params.sortDir;
+  if (params?.withArrival) query.withArrival = 'true';
 
   const response = await api.get('/orders', { params: query, signal });
   return response.data;

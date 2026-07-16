@@ -194,6 +194,13 @@ const RIDER_ASSIGNMENT_FIELD: Partial<Record<parcel_status, "pickup_rider_id" | 
   sent_to_vendor: "delivery_rider_id",
 };
 
+// Cancelling or failing an order must always record why, for the audit trail.
+const REASON_REQUIRED_STATUSES: parcel_status[] = [
+  "cancelled",
+  "failed_pickup",
+  "failed_delivery",
+];
+
 // Which leg (and therefore which assigned rider column) a given *current*
 // status belongs to. A rider may only progress a parcel that is on the leg
 // they were actually assigned to — pickup_rider_id for pickup-leg statuses,
@@ -491,6 +498,8 @@ async function _createOrderImpl(actor: OrderActor, data: CreateOrderInput) {
       zoneMajorCities: vendor.zone_major_cities === null ? null : Number(vendor.zone_major_cities),
       zoneUrbanAreas: vendor.zone_urban_areas === null ? null : Number(vendor.zone_urban_areas),
       zoneRemoteAreas: vendor.zone_remote_areas === null ? null : Number(vendor.zone_remote_areas),
+      zoneInsideValley: vendor.zone_inside_valley === null ? null : Number(vendor.zone_inside_valley),
+      insideValleyFlatRate: vendor.inside_valley_flat_rate === null ? null : Number(vendor.inside_valley_flat_rate),
       extraWeightPercent: vendor.extra_weight_percent === null ? null : Number(vendor.extra_weight_percent),
     });
     deliveryCharge = quote.totalPayable;
@@ -746,6 +755,8 @@ export async function updateOrderDetails(
         zoneMajorCities: vendor.zone_major_cities === null ? null : Number(vendor.zone_major_cities),
         zoneUrbanAreas: vendor.zone_urban_areas === null ? null : Number(vendor.zone_urban_areas),
         zoneRemoteAreas: vendor.zone_remote_areas === null ? null : Number(vendor.zone_remote_areas),
+        zoneInsideValley: vendor.zone_inside_valley === null ? null : Number(vendor.zone_inside_valley),
+        insideValleyFlatRate: vendor.inside_valley_flat_rate === null ? null : Number(vendor.inside_valley_flat_rate),
         extraWeightPercent: vendor.extra_weight_percent === null ? null : Number(vendor.extra_weight_percent),
       });
       deliveryCharge = quote.totalPayable;
@@ -1062,6 +1073,9 @@ export interface ListOrdersResult {
 function mapOrder(
   parcel: Prisma.parcelsGetPayload<{ include: typeof ORDERS_INCLUDE }>,
   isStaff: boolean,
+  // Only populated for exports, where the caller batch-fetches the first
+  // "arrived at origin" timestamp per parcel (see fetchArrivedAtOriginMap).
+  arrivedByParcelId?: Map<string, string>,
 ) {
   const latestHistory = parcel.parcel_status_history[0];
   const rider =
@@ -1116,7 +1130,27 @@ function mapOrder(
     lastUpdatedAt: formatDate(latestHistory?.created_at || parcel.updated_at),
     createdAt: formatDate(parcel.created_at),
     createdAtRaw: parcel.created_at.toISOString(),
+    arrivedAtOrigin: arrivedByParcelId?.get(parcel.id) ?? "",
+    deliveredAt: parcel.delivered_at ? formatDate(parcel.delivered_at) : "",
   };
+}
+
+// Batch-fetches the first "arrived at origin" date (Nepal-local "YYYY-MM-DD")
+// for each parcel id, in one indexed query. Used only by the export path so the
+// regular list/table queries stay lean.
+async function fetchArrivedAtOriginMap(parcelIds: string[]): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  if (parcelIds.length === 0) return map;
+  const rows = await prisma.parcel_status_history.findMany({
+    where: { parcel_id: { in: parcelIds }, new_status: "arrived" },
+    select: { parcel_id: true, created_at: true },
+    orderBy: { created_at: "asc" },
+  });
+  // asc order → the first row seen for a parcel is its earliest arrival.
+  for (const row of rows) {
+    if (!map.has(row.parcel_id)) map.set(row.parcel_id, formatDate(row.created_at));
+  }
+  return map;
 }
 
 // Allow-listed so a client can only sort by a column that's actually indexed
@@ -1284,7 +1318,10 @@ export async function listOrders(
   const isDefaultUnfilteredQuery =
     !paginated && !query.status?.length && !query.orderType && !query.search &&
     !query.sortBy && vendorIds === undefined;
-  const cacheKey = isDefaultUnfilteredQuery ? ordersListCacheKey(vendorId, riderId) : null;
+  // Export requests (withArrival) skip the shared cache so the enriched rows
+  // never pollute the lean list cache and vice-versa.
+  const cacheKey =
+    isDefaultUnfilteredQuery && !query.withArrival ? ordersListCacheKey(vendorId, riderId) : null;
 
   if (cacheKey) {
     try {
@@ -1308,8 +1345,11 @@ export async function listOrders(
         take: DEFAULT_LIST_CAP,
       }),
     ]);
+    const arrivedMap = query.withArrival
+      ? await fetchArrivedAtOriginMap(parcels.map((p) => p.id))
+      : undefined;
     const result: ListOrdersResult = {
-      data: parcels.map((p) => mapOrder(p, isStaff)),
+      data: parcels.map((p) => mapOrder(p, isStaff, arrivedMap)),
       meta: {
         page: 1,
         pageSize: DEFAULT_LIST_CAP,
@@ -2229,6 +2269,13 @@ async function _updateParcelStatusImpl(
     }
   }
 
+  // Cancelling or failing an order requires a reason.
+  if (REASON_REQUIRED_STATUSES.includes(newStatus as parcel_status)) {
+    if (!data.remarks || data.remarks.trim().length === 0) {
+      throw new AppError(400, "Remarks are required to cancel or fail an order");
+    }
+  }
+
   const updatedParcel = await prisma.$transaction(async (tx) => {
     const updateData: Prisma.parcelsUpdateInput = {
       status: newStatus as parcel_status,
@@ -2553,6 +2600,13 @@ async function _bulkUpdateParcelStatusImpl(
       if (data.codCollected > totalCod) {
         throw new AppError(400, `COD collected (${data.codCollected}) cannot exceed parcel ${parcel.tracking_id}'s total COD (${totalCod})`);
       }
+    }
+  }
+
+  // Cancelling or failing an order requires a reason.
+  if (REASON_REQUIRED_STATUSES.includes(newStatus as parcel_status)) {
+    if (!data.remarks || data.remarks.trim().length === 0) {
+      throw new AppError(400, "Remarks are required to cancel or fail an order");
     }
   }
 

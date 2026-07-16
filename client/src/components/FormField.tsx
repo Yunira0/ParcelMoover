@@ -1,5 +1,6 @@
 import React, { useId } from 'react';
 import SearchableSelect, { type SearchableSelectOption } from './SearchableSelect';
+import NepaliDatePicker from './NepaliDatePicker';
 import './FormField.css';
 
 export type FormFieldOption = { value: string; label: string };
@@ -115,6 +116,13 @@ const FormField: React.FC<FormFieldProps> = ({
             ))}
           </datalist>
         </>
+      ) : type === 'date' ? (
+        <NepaliDatePicker
+          value={value === undefined ? '' : String(value)}
+          onChange={onChange}
+          placeholder={placeholder}
+          aria-label={label}
+        />
       ) : type === 'searchable-select' ? (
         <SearchableSelect
           options={searchableOptions}

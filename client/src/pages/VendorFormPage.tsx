@@ -38,8 +38,10 @@ interface VendorFormInput {
   zoneMajorCities: string;
   zoneUrbanAreas: string;
   zoneRemoteAreas: string;
+  zoneInsideValley: string;
+  insideValleyFlatRate: string;
+  insideValleyEnabled: boolean;
   extraWeightPercent: string;
-  billingBusinessName: string;
   registeredAddress: string;
   registrationNo: string;
   panVatNo: string;
@@ -70,8 +72,10 @@ const emptyForm: VendorFormInput = {
   zoneMajorCities: '',
   zoneUrbanAreas: '',
   zoneRemoteAreas: '',
+  zoneInsideValley: '',
+  insideValleyFlatRate: '',
+  insideValleyEnabled: false,
   extraWeightPercent: '',
-  billingBusinessName: '',
   registeredAddress: '',
   registrationNo: '',
   panVatNo: '',
@@ -238,6 +242,7 @@ const VendorFormPage: React.FC = () => {
           zoneMajorCities: prev.zoneMajorCities || str(d.zoneMajorCities),
           zoneUrbanAreas: prev.zoneUrbanAreas || str(d.zoneUrbanAreas),
           zoneRemoteAreas: prev.zoneRemoteAreas || str(d.zoneRemoteAreas),
+          zoneInsideValley: prev.zoneInsideValley || str(d.zoneInsideValley),
           extraWeightPercent: prev.extraWeightPercent || str(d.extraWeightPercent),
         }));
       })
@@ -270,9 +275,11 @@ const VendorFormPage: React.FC = () => {
           zoneMajorCities: s(d.zoneMajorCities),
           zoneUrbanAreas: s(d.zoneUrbanAreas),
           zoneRemoteAreas: s(d.zoneRemoteAreas),
+          zoneInsideValley: s(d.zoneInsideValley),
+          insideValleyFlatRate: s(d.insideValleyFlatRate),
+          insideValleyEnabled: d.insideValleyFlatRate != null,
           extraWeightPercent: s(d.extraWeightPercent),
           pickupLandmark: s(d.pickupLandmark),
-          billingBusinessName: s(d.billingBusinessName),
           registrationNo: s(d.registrationNo),
           panVatNo: s(d.panVatNo),
           bankName: s(d.bankName),
@@ -309,7 +316,6 @@ const VendorFormPage: React.FC = () => {
     else if (!isValidEmail(form.ownerEmail)) errors.ownerEmail = 'Enter a valid email address';
     if (!form.ownerContact.trim()) errors.ownerContact = 'Contact number is required';
     else if (!isValidPhone(form.ownerContact)) errors.ownerContact = 'Enter a 10–15 digit phone number';
-    if (!form.billingBusinessName.trim()) errors.billingBusinessName = 'Business name is required';
     if (!form.registeredAddress.trim()) errors.registeredAddress = 'Address is required';
     // Documents and password are only required when creating a new vendor.
     if (!isEdit) {
@@ -355,8 +361,10 @@ const VendorFormPage: React.FC = () => {
           zoneMajorCities: form.zoneMajorCities,
           zoneUrbanAreas: form.zoneUrbanAreas,
           zoneRemoteAreas: form.zoneRemoteAreas,
+          zoneInsideValley: form.zoneInsideValley,
+          insideValleyFlatRate: form.insideValleyEnabled ? form.insideValleyFlatRate : '',
           pickupLandmark: form.pickupLandmark,
-          billingBusinessName: form.billingBusinessName,
+          billingBusinessName: form.onlineBusinessName,
           registrationNo: form.registrationNo,
           panVatNo: form.panVatNo,
           bankName: form.bankName,
@@ -388,14 +396,16 @@ const VendorFormPage: React.FC = () => {
               zoneMajorCities: form.zoneMajorCities,
               zoneUrbanAreas: form.zoneUrbanAreas,
               zoneRemoteAreas: form.zoneRemoteAreas,
+              zoneInsideValley: form.zoneInsideValley,
               extraWeightPercent: form.extraWeightPercent,
             }
           : {}),
         ...(form.rateType === 'per_destination'
           ? { extraWeightPercent: form.extraWeightPercent }
           : {}),
+        ...(form.insideValleyEnabled ? { insideValleyFlatRate: form.insideValleyFlatRate } : {}),
         pickupLandmark: form.pickupLandmark,
-        billingBusinessName: form.billingBusinessName,
+        billingBusinessName: form.onlineBusinessName,
         registrationNo: form.registrationNo,
         panVatNo: form.panVatNo,
         bankName: form.bankName,
@@ -533,6 +543,28 @@ const VendorFormPage: React.FC = () => {
                 {fieldErrors.sales && (
                   <span className="vfp-field-error">{fieldErrors.sales}</span>
                 )}
+                <FormField
+                  label="Registered Address"
+                  required
+                  value={form.registeredAddress}
+                  onChange={set('registeredAddress')}
+                  placeholder="Official registered address"
+                />
+                {fieldErrors.registeredAddress && (
+                  <span className="vfp-field-error">{fieldErrors.registeredAddress}</span>
+                )}
+                <FormField
+                  label="Registration No."
+                  value={form.registrationNo}
+                  onChange={set('registrationNo')}
+                  placeholder="Business registration number"
+                />
+                <FormField
+                  label="PAN / VAT No."
+                  value={form.panVatNo}
+                  onChange={set('panVatNo')}
+                  placeholder="PAN or VAT number"
+                />
               </div>
             </section>
 
@@ -578,51 +610,46 @@ const VendorFormPage: React.FC = () => {
               </div>
             </section>
 
-            {/* Billing Details */}
+            {/* Login Credentials — create-only; placed in the left column so the
+                two columns stay balanced when creating (it isn't shown on edit). */}
+            {!isEdit && (
             <section className="vfp-section">
               <SectionHeader
-                icon={<FileText size={18} />}
-                title="Billing Details"
-                description="Business registration information"
+                icon={<Lock size={18} />}
+                title="Login Credentials"
+                description="Account password"
               />
               <div className="vfp-fields">
                 <FormField
-                  label="Name of Business"
+                  label="Password"
+                  type="password"
                   required
-                  value={form.billingBusinessName}
-                  onChange={set('billingBusinessName')}
-                  placeholder="Registered business name"
+                  value={form.password}
+                  onChange={set('password')}
+                  placeholder="Min. 8 characters"
                 />
-                {fieldErrors.billingBusinessName && (
-                  <span className="vfp-field-error">{fieldErrors.billingBusinessName}</span>
+                {fieldErrors.password && (
+                  <span className="vfp-field-error">{fieldErrors.password}</span>
                 )}
                 <FormField
-                  label="Registered Address"
+                  label="Confirm Password"
+                  type="password"
                   required
-                  value={form.registeredAddress}
-                  onChange={set('registeredAddress')}
-                  placeholder="Official registered address"
+                  value={form.confirmPassword}
+                  onChange={set('confirmPassword')}
+                  placeholder="Re-enter password"
                 />
-                {fieldErrors.registeredAddress && (
-                  <span className="vfp-field-error">{fieldErrors.registeredAddress}</span>
+                {fieldErrors.confirmPassword && (
+                  <span className="vfp-field-error">{fieldErrors.confirmPassword}</span>
                 )}
-                <FormField
-                  label="Registration No."
-                  value={form.registrationNo}
-                  onChange={set('registrationNo')}
-                  placeholder="Business registration number"
-                />
-                <FormField
-                  label="PAN / VAT No."
-                  value={form.panVatNo}
-                  onChange={set('panVatNo')}
-                  placeholder="PAN or VAT number"
-                />
               </div>
+              <p className="vfp-hint">Minimum 8 characters. Vendor can change password after logging in.</p>
             </section>
+            )}
+
           </div>
 
-          {/* Right Column - Documents & Bank */}
+          {/* Right Column - Documents, Bank & Delivery Rate */}
           <div className="vfp-right">
             {/* Documents — only when creating; existing docs aren't re-uploaded on edit */}
             {!isEdit && (
@@ -739,6 +766,8 @@ const VendorFormPage: React.FC = () => {
                       value={form.zoneUrbanAreas} onChange={set('zoneUrbanAreas')} placeholder="e.g. 350" />
                     <FormField label="Remote areas (Rs.)" type="number" min={0}
                       value={form.zoneRemoteAreas} onChange={set('zoneRemoteAreas')} placeholder="e.g. 500" />
+                    <FormField label="Inside valley (Rs.)" type="number" min={0}
+                      value={form.zoneInsideValley} onChange={set('zoneInsideValley')} placeholder="e.g. 200" />
                     <FormField label="Extra weight surcharge (%)" type="number" min={0} max={100}
                       value={form.extraWeightPercent} onChange={set('extraWeightPercent')} placeholder="e.g. 10" />
                   </div>
@@ -755,6 +784,32 @@ const VendorFormPage: React.FC = () => {
                   </div>
                 </div>
               )}
+              {/* Optional second rate: a flat inside-valley rate that overrides the
+                  primary model for inside-valley destinations. */}
+              {(form.rateType === 'zone' || form.rateType === 'per_destination') && (
+                <div className={`vfp-rate-fields vfp-inside-valley-block${form.insideValleyEnabled ? ' is-on' : ''}`}>
+                  <label className="vfp-inside-valley-toggle">
+                    <input
+                      type="checkbox"
+                      checked={form.insideValleyEnabled}
+                      onChange={(e) => setForm((prev) => ({ ...prev, insideValleyEnabled: e.target.checked }))}
+                    />
+                    <span className="vfp-rate-text">
+                      <strong>Also charge a flat rate for inside-valley deliveries</strong>
+                      <small>
+                        Overrides the {form.rateType === 'zone' ? 'zone' : 'per-destination'} rate above for
+                        destinations classified inside valley.
+                      </small>
+                    </span>
+                  </label>
+                  {form.insideValleyEnabled && (
+                    <div className="vfp-fields">
+                      <FormField label="Inside valley flat rate (Rs.)" type="number" min={0}
+                        value={form.insideValleyFlatRate} onChange={set('insideValleyFlatRate')} placeholder="e.g. 120" />
+                    </div>
+                  )}
+                </div>
+              )}
               {isSuperAdmin && (form.rateType === 'zone' || form.rateType === 'flat') && (
                 <button
                   type="button"
@@ -766,42 +821,6 @@ const VendorFormPage: React.FC = () => {
                 </button>
               )}
             </section>
-
-            {/* Login Credentials — not editable here (password change is separate) */}
-            {!isEdit && (
-            <section className="vfp-section">
-              <SectionHeader
-                icon={<Lock size={18} />}
-                title="Login Credentials"
-                description="Account password"
-              />
-              <div className="vfp-fields">
-                <FormField
-                  label="Password"
-                  type="password"
-                  required
-                  value={form.password}
-                  onChange={set('password')}
-                  placeholder="Min. 8 characters"
-                />
-                {fieldErrors.password && (
-                  <span className="vfp-field-error">{fieldErrors.password}</span>
-                )}
-                <FormField
-                  label="Confirm Password"
-                  type="password"
-                  required
-                  value={form.confirmPassword}
-                  onChange={set('confirmPassword')}
-                  placeholder="Re-enter password"
-                />
-                {fieldErrors.confirmPassword && (
-                  <span className="vfp-field-error">{fieldErrors.confirmPassword}</span>
-                )}
-              </div>
-              <p className="vfp-hint">Minimum 8 characters. Vendor can change password after logging in.</p>
-            </section>
-            )}
           </div>
         </div>
 

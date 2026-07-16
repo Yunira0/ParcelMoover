@@ -27,6 +27,8 @@ export interface RegisterUserInput {
     zoneMajorCities?: string | number;
     zoneUrbanAreas?: string | number;
     zoneRemoteAreas?: string | number;
+    zoneInsideValley?: string | number;
+    insideValleyFlatRate?: string | number;
     extraWeightPercent?: string | number;
 
     // --- Shared profile / bank fields (optional, persisted when provided) ---

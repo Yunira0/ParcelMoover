@@ -9,6 +9,7 @@ export interface VendorBillingProfile {
 }
 
 export interface PendingCodItem {
+  orderNumber: number;
   trackingId: string;
   receiverName: string;
   receiverPhone: string;

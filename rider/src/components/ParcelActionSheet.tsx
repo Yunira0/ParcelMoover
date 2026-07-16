@@ -97,6 +97,11 @@ export default function ParcelActionSheet({ parcel, onClose, onDone }: Props) {
         }
         await updateParcelStatus(parcel.id, status, remarks, codValue, idempotencyKeyFor(status))
       } else {
+        if (ACTION_META[status]?.danger && !remarks.trim()) {
+          setError('A reason remark is required to report a failure.')
+          setLoading(false)
+          return
+        }
         await updateParcelStatus(parcel.id, status, remarks || undefined, undefined, idempotencyKeyFor(status))
       }
       idempotencyRef.current = null
@@ -231,7 +236,9 @@ export default function ParcelActionSheet({ parcel, onClose, onDone }: Props) {
         {remarksFor && !done && remarksFor !== 'partially_delivered' && (
           <div className="flex flex-col gap-2">
             <label className="text-sm font-medium text-text-secondary">
-              Remarks <span className="text-text-muted">(optional)</span>
+              Remarks {remarksFor && ACTION_META[remarksFor]?.danger
+                ? <span className="text-error">*</span>
+                : <span className="text-text-muted">(optional)</span>}
             </label>
             <textarea
               rows={3}
@@ -334,7 +341,7 @@ export default function ParcelActionSheet({ parcel, onClose, onDone }: Props) {
                 return (
                   <button key={status}
                     onClick={() => confirmAction(status as ParcelStatus)}
-                    disabled={loading}
+                    disabled={loading || !remarks.trim()}
                     style={{ touchAction: 'manipulation' }}
                     className="flex items-center justify-center gap-2 h-12 rounded-2xl bg-error text-white text-sm font-semibold cursor-pointer active:opacity-80 disabled:opacity-50"
                   >

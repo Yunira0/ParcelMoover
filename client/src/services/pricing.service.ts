@@ -5,6 +5,7 @@ export interface PricingSettings {
   zoneMajorCities: number | null;
   zoneUrbanAreas: number | null;
   zoneRemoteAreas: number | null;
+  zoneInsideValley: number | null;
   flatInsideValley: number | null;
   flatOutsideValley: number | null;
   extraWeightPercent: number | null;
