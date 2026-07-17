@@ -1,4 +1,5 @@
 import express, {Express} from 'express';
+import path from 'path';
 import helmet from 'helmet';
 import {config} from 'dotenv';
 import rateLimit, { ipKeyGenerator } from "express-rate-limit";
@@ -182,6 +183,14 @@ app.use("/api/audit-logs", AuditLogRoutes)
 app.use((req, res, next) => {
   if (req.method !== "GET" || req.path.startsWith("/api") || req.path.startsWith("/uploads")) {
     return next();
+  }
+  // A path with a file extension is a missing static asset — typically a
+  // hashed JS/CSS chunk from a previous deploy that an open tab still
+  // references — not a client-side route. Answering it with index.html makes
+  // the browser fail with "'text/html' is not a valid JavaScript MIME type";
+  // a clean 404 lets the client detect the stale deploy and recover.
+  if (path.extname(req.path) !== "") {
+    return res.status(404).end();
   }
   res.sendFile("index.html", { root: "public" });
 });
