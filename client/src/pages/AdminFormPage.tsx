@@ -5,6 +5,7 @@ import Button from '../components/Button';
 import FormField from '../components/FormField';
 import { registerUser, getManagedUser, updateUserProfile, getLocations } from '../services/users.service';
 import { extractServerFieldErrors, isValidEmail, isValidPhone, normalizePhone } from '../utils/serverValidation';
+import { useHubLock } from '../hooks/useHubLock';
 import './AdminFormPage.css';
 
 // API validation-error field → form field, for errors returned by the server.
@@ -147,6 +148,15 @@ const AdminFormPage: React.FC = () => {
   const [submitted, setSubmitted] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [hubs, setHubs] = useState<Array<{ value: string; label: string }>>([]);
+  // Accounts created by a plain admin inherit that admin's hub; only a
+  // super_admin may choose a different one (server enforces the same rule).
+  const { myHubId, hubLocked, isPlainAdmin } = useHubLock();
+  const hubFieldDisabled = hubLocked || (isEdit && isPlainAdmin);
+
+  useEffect(() => {
+    if (isEdit || !myHubId) return;
+    setForm((prev) => (prev.locationId ? prev : { ...prev, locationId: myHubId }));
+  }, [isEdit, myHubId]);
 
   // Hubs/branches an admin can be assigned to (Sales-department staff need one
   // so vendors can be matched to a sales rep in their own hub).
@@ -473,6 +483,7 @@ const AdminFormPage: React.FC = () => {
                   onChange={set('locationId')}
                   placeholder="Select hub"
                   options={hubs}
+                  disabled={hubFieldDisabled}
                 />
                 {fieldErrors.locationId && <span className="afp-field-error">{fieldErrors.locationId}</span>}
                 <FormField

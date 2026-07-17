@@ -8,6 +8,7 @@ import { getLocations, getVendors } from '../services/users.service';
 import { getVendorQuote } from '../services/pricing.service';
 import { createOrder, updateOrder, getSenderProfile, type CreateOrderInput, type UpdateOrderInput, type OrderType, type ServiceType } from '../services/orders.service';
 import { isVendorSide } from '../utils/auth';
+import { useHubLock } from '../hooks/useHubLock';
 import './CreateOrderPage.css';
 
 interface VendorOption {
@@ -101,6 +102,9 @@ const CreateOrderPage: React.FC = () => {
   const isEditMode = Boolean(editOrderId);
 
   const isVendorActor = isVendorSide();
+  // Orders keyed in by a plain admin always originate from that admin's own
+  // hub — only a super_admin may pick a different origin (server enforces it).
+  const { myHubId, hubLocked } = useHubLock();
 
   const [vendors, setVendors] = useState<VendorOption[]>([]);
   // For a vendor/vendor_staff actor, this is their own vendor (fetched via
@@ -212,12 +216,21 @@ const CreateOrderPage: React.FC = () => {
 
   // Default the "From" (origin) location to the selected vendor's current hub/branch.
   // Vendor orders always originate from the vendor's hub (e.g. Imadol for Kathmandu
-  // valley vendors). Still editable afterwards.
+  // valley vendors). Still editable afterwards. A hub-locked admin's own hub
+  // wins over the vendor's hub, so skip when locked.
   useEffect(() => {
+    if (hubLocked) return;
     const hubId = selectedVendor?.locationId;
     if (!hubId) return;
     setForm(prev => (prev.originLocationId === hubId ? prev : { ...prev, originLocationId: hubId }));
-  }, [selectedVendor?.locationId]);
+  }, [selectedVendor?.locationId, hubLocked]);
+
+  // Hub-locked admins: origin is pinned to their own hub on creation. Edit
+  // mode keeps the parcel's stored origin instead (the field stays disabled).
+  useEffect(() => {
+    if (!hubLocked || !myHubId || isEditMode) return;
+    setForm(prev => (prev.originLocationId === myHubId ? prev : { ...prev, originLocationId: myHubId }));
+  }, [hubLocked, myHubId, isEditMode]);
 
   const weightKgNumber = Number(form.weightKg) || 0;
 
@@ -277,7 +290,11 @@ const CreateOrderPage: React.FC = () => {
     // it must be restored here or the form is stuck with a required-but-unfixable field.
     setForm({
       ...defaultFormState,
-      originLocationId: isVendorActor ? myVendorProfile?.locationId ?? '' : '',
+      originLocationId: isVendorActor
+        ? myVendorProfile?.locationId ?? ''
+        : hubLocked
+        ? myHubId
+        : '',
     });
     setQuote(null);
     setQuoteError('');
@@ -522,6 +539,7 @@ const CreateOrderPage: React.FC = () => {
                   searchPlaceholder="Search origin..."
                   emptyMessage="No locations found."
                   error={fieldErrors.originLocationId}
+                  disabled={hubLocked}
                 />
               )}
               <FormField

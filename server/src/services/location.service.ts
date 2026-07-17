@@ -124,6 +124,8 @@ export interface BulkImportDestination {
   zone?: string;
   valley?: string;
   perDestinationRate?: number | null;
+  // Rate for branch delivery (parcel dropped at the branch, not the door).
+  branchPerDestinationRate?: number | null;
   areas: string[];
 }
 
@@ -255,6 +257,7 @@ export async function bulkImportLocations(rows: BulkImportDestination[]) {
             zone: row.zone || null,
             valley: row.valley || null,
             per_destination_rate: row.perDestinationRate ?? null,
+            branch_per_destination_rate: row.branchPerDestinationRate ?? null,
           },
         });
         action = "created";
@@ -272,6 +275,9 @@ export async function bulkImportLocations(rows: BulkImportDestination[]) {
             ...(row.valley !== undefined ? { valley: row.valley || null } : {}),
             ...(row.perDestinationRate !== undefined
               ? { per_destination_rate: row.perDestinationRate }
+              : {}),
+            ...(row.branchPerDestinationRate !== undefined
+              ? { branch_per_destination_rate: row.branchPerDestinationRate }
               : {}),
             updated_at: new Date(),
           },

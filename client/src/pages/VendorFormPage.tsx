@@ -8,6 +8,7 @@ import { getCurrentUser } from '../services/auth.service';
 import { getCurrentUser as getCachedUser, getCurrentUserRoles } from '../utils/auth';
 import { getPricingSettings } from '../services/pricing.service';
 import { extractServerFieldErrors, isValidEmail, isValidPhone, normalizePhone } from '../utils/serverValidation';
+import { useHubLock } from '../hooks/useHubLock';
 import './VendorFormPage.css';
 
 // API validation-error field → form field, for errors returned by the server.
@@ -172,6 +173,10 @@ const VendorFormPage: React.FC = () => {
   const isSalesUser = roles.includes('sales') && !roles.includes('admin') && !roles.includes('super_admin');
   // Only super admins can open the rate-config screen, so the shortcut is theirs.
   const isSuperAdmin = roles.includes('super_admin');
+  // A plain admin's vendors always land in that admin's own hub; the hub
+  // field stays free for super_admin (and sales, who have no admin hub).
+  const { hubLocked, isPlainAdmin } = useHubLock();
+  const hubFieldDisabled = hubLocked || (isEdit && isPlainAdmin);
   const salesName = getCachedUser()?.fullName ?? '';
   const ownSalesUserId = getCachedUser()?.id ?? '';
   const [form, setForm] = useState<VendorFormInput>(
@@ -550,6 +555,7 @@ const VendorFormPage: React.FC = () => {
                   onChange={set('pickupLocation')}
                   placeholder="Select hub"
                   options={locations}
+                  disabled={hubFieldDisabled}
                 />
                 {fieldErrors.pickupLocation && (
                   <span className="vfp-field-error">{fieldErrors.pickupLocation}</span>

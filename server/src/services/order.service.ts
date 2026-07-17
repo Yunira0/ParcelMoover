@@ -468,6 +468,16 @@ async function _createOrderImpl(actor: OrderActor, data: CreateOrderInput) {
   // scoping already enforced on the vendor list / dashboard / tickets.
   const isSalesActor = actor.roles.includes("sales") && !isStaffActor(actor);
 
+  // Hub inheritance: orders keyed in by a plain admin always originate from
+  // that admin's own hub — only a super_admin may pick a different origin.
+  if (isStaffActor(actor) && !actor.roles.includes("super_admin")) {
+    const actorAdmin = await prisma.admins.findFirst({
+      where: { user_id: actor.id },
+      select: { location_id: true },
+    });
+    if (actorAdmin?.location_id) data.originLocationId = actorAdmin.location_id;
+  }
+
   // Run the remaining two independent reads in parallel.
   const [vendor, originLoc, destinationLoc] = await Promise.all([
     ownVendorId

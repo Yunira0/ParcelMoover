@@ -8,6 +8,7 @@ import {
   updateManagedUserPassword,
   updateManagedUserProfile,
   getManagedUserDetail,
+  getRootSuperAdminUserId,
 } from "../services/auth.service";
 import { AppError } from "../utils/AppError";
 import { sendSuccess } from "../utils/ApiResponse";
@@ -308,21 +309,29 @@ const ADMINS_LIST_CAP = 500;
 
 export const getAdminsController = async (_req: Request, res: Response) => {
   try {
-    const admins = await prisma.admins.findMany({
-      where: {
-        users: { is: { deleted_at: null } },
-      },
-      include: {
-        users: { include: { user_roles: { include: { roles: true } } } },
-        locations: true,
-      },
-      orderBy: { created_at: "desc" },
-      take: ADMINS_LIST_CAP,
-    });
+    // The root super admin never appears in Admin Management — its profile
+    // lives on its own Profile page. Super admins *granted* the role later
+    // still show, so the grant stays visible and revocable.
+    const [admins, rootSuperAdminUserId] = await Promise.all([
+      prisma.admins.findMany({
+        where: {
+          users: { is: { deleted_at: null } },
+        },
+        include: {
+          users: { include: { user_roles: { include: { roles: true } } } },
+          locations: true,
+        },
+        orderBy: { created_at: "desc" },
+        take: ADMINS_LIST_CAP,
+      }),
+      getRootSuperAdminUserId(),
+    ]);
 
     return res.status(200).json({
       success: true,
-      data: admins.map((admin, index) => ({
+      data: admins
+        .filter((admin) => admin.user_id !== rootSuperAdminUserId)
+        .map((admin, index) => ({
         id: admin.id,
         userId: admin.user_id,
         sn: index + 1,

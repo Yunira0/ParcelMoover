@@ -6,6 +6,7 @@ import FormField from '../components/FormField';
 import { registerUser, getLocations, getManagedUser, updateUserProfile } from '../services/users.service';
 import { getCurrentUser } from '../services/auth.service';
 import { extractServerFieldErrors, isValidEmail, isValidPhone, normalizePhone } from '../utils/serverValidation';
+import { useHubLock } from '../hooks/useHubLock';
 import './RiderFormPage.css';
 
 // API validation-error field → form field, for errors returned by the server.
@@ -127,6 +128,10 @@ const RiderFormPage: React.FC = () => {
   const [submitted, setSubmitted] = useState(false);
   const [hubs, setHubs] = useState<Array<{ value: string; label: string }>>([]);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  // A plain admin's riders always land in that admin's own hub; only a
+  // super_admin may pick another service branch (server enforces the same).
+  const { hubLocked, isPlainAdmin } = useHubLock();
+  const hubFieldDisabled = hubLocked || (isEdit && isPlainAdmin);
 
   useEffect(() => {
     const fetchHubs = async () => {
@@ -425,6 +430,7 @@ const RiderFormPage: React.FC = () => {
                   onChange={set('serviceBranch')}
                   placeholder="Select hub"
                   options={hubs}
+                  disabled={hubFieldDisabled}
                 />
                 {fieldErrors.serviceBranch && <span className="rfp-field-error">{fieldErrors.serviceBranch}</span>}
                 <FormField

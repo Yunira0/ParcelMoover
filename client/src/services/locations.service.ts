@@ -67,6 +67,8 @@ export interface BulkImportDestinationInput {
   zone?: string;
   valley?: string;
   perDestinationRate?: number | null;
+  /** Rate for branch delivery (parcel dropped at the branch, not the door). */
+  branchPerDestinationRate?: number | null;
   areas: string[];
 }
 

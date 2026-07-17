@@ -21,6 +21,7 @@ const COLUMNS = [
   'zone',
   'valley',
   'per_destination_rate',
+  'branch_per_destination_rate',
 ] as const;
 
 type ColumnKey = (typeof COLUMNS)[number];
@@ -29,10 +30,10 @@ const ZONE_VALUES = ['major_cities', 'urban_areas', 'remote_areas'];
 const VALLEY_VALUES = ['inside', 'outside'];
 
 const SAMPLE_ROWS = [
-  ['Imadol', 'IMD', 'Bagmati', 'Lalitpur', 'Mahalaxmi', 'Sanagaun, Gwarko, Lubhu', 'major_cities', 'inside', '100'],
-  ['Kathmandu', 'KTM', 'Bagmati', 'Kathmandu', 'Kathmandu', 'Thamel, Baneshwor, New Road', 'major_cities', 'inside', '100'],
-  ['Pokhara', 'PKR', 'Gandaki', 'Kaski', 'Pokhara', 'Lakeside, Prithvi Chowk', 'urban_areas', 'outside', '150'],
-  ['Butwal', 'BTW', 'Lumbini', 'Rupandehi', 'Butwal', 'Devinagar, Golpark', 'remote_areas', 'outside', '200'],
+  ['Imadol', 'IMD', 'Bagmati', 'Lalitpur', 'Mahalaxmi', 'Sanagaun, Gwarko, Lubhu', 'major_cities', 'inside', '100', '80'],
+  ['Kathmandu', 'KTM', 'Bagmati', 'Kathmandu', 'Kathmandu', 'Thamel, Baneshwor, New Road', 'major_cities', 'inside', '100', '80'],
+  ['Pokhara', 'PKR', 'Gandaki', 'Kaski', 'Pokhara', 'Lakeside, Prithvi Chowk', 'urban_areas', 'outside', '150', '120'],
+  ['Butwal', 'BTW', 'Lumbini', 'Rupandehi', 'Butwal', 'Devinagar, Golpark', 'remote_areas', 'outside', '200', '160'],
 ];
 
 // ── Template download ─────────────────────────────────────────────────────────
@@ -45,7 +46,7 @@ function downloadTemplate() {
   // Set column widths
   ws['!cols'] = [
     { wch: 22 }, { wch: 18 }, { wch: 14 }, { wch: 16 }, { wch: 18 },
-    { wch: 40 }, { wch: 18 }, { wch: 12 }, { wch: 22 },
+    { wch: 40 }, { wch: 18 }, { wch: 12 }, { wch: 22 }, { wch: 28 },
   ];
 
   XLSX.utils.book_append_sheet(wb, ws, 'Destinations');
@@ -62,6 +63,7 @@ function downloadTemplate() {
     ['zone', 'no', `Pricing zone: ${ZONE_VALUES.join(' | ')}.`],
     ['valley', 'no', `Valley side: ${VALLEY_VALUES.join(' | ')}.`],
     ['per_destination_rate', 'no', 'Delivery rate in NPR. Numeric only.'],
+    ['branch_per_destination_rate', 'no', 'Branch-delivery rate in NPR (parcel dropped at the branch, not the door). Numeric only.'],
   ]);
   notes['!cols'] = [{ wch: 22 }, { wch: 10 }, { wch: 70 }];
   XLSX.utils.book_append_sheet(wb, notes, 'Notes');
@@ -81,6 +83,7 @@ interface ParsedRow {
   zone: string;
   valley: string;
   perDestinationRate: string;
+  branchPerDestinationRate: string;
   _rowIndex: number;
   _error?: string;
 }
@@ -130,6 +133,10 @@ function parseSheet(raw: string[][]): ParsedRow[] {
       if (rateStr && isNaN(Number(rateStr))) {
         errors.push('per_destination_rate must be a number');
       }
+      const branchRateStr = get('branch_per_destination_rate');
+      if (branchRateStr && isNaN(Number(branchRateStr))) {
+        errors.push('branch_per_destination_rate must be a number');
+      }
 
       return {
         destinationName: destName,
@@ -141,6 +148,7 @@ function parseSheet(raw: string[][]): ParsedRow[] {
         zone,
         valley,
         perDestinationRate: rateStr,
+        branchPerDestinationRate: branchRateStr,
         _rowIndex: i + (isHeader ? 2 : 1),
         _error: errors.length ? errors.join('; ') : undefined,
       };
@@ -165,6 +173,9 @@ function groupRows(rows: ParsedRow[]): BulkImportDestinationInput[] {
         zone: row.zone || undefined,
         valley: row.valley || undefined,
         perDestinationRate: row.perDestinationRate ? Number(row.perDestinationRate) : undefined,
+        branchPerDestinationRate: row.branchPerDestinationRate
+          ? Number(row.branchPerDestinationRate)
+          : undefined,
         areas: [],
       });
     }
@@ -404,6 +415,7 @@ const DestinationsImport: React.FC = () => {
                   <th>Zone</th>
                   <th>Valley</th>
                   <th>Rate</th>
+                  <th>Branch Rate</th>
                   <th>Status</th>
                 </tr>
               </thead>
@@ -420,6 +432,7 @@ const DestinationsImport: React.FC = () => {
                     <td>{row.zone || <span className="di-empty">—</span>}</td>
                     <td>{row.valley || <span className="di-empty">—</span>}</td>
                     <td>{row.perDestinationRate || <span className="di-empty">—</span>}</td>
+                    <td>{row.branchPerDestinationRate || <span className="di-empty">—</span>}</td>
                     <td>
                       {row._error ? (
                         <span className="di-status di-status--error" title={row._error}>

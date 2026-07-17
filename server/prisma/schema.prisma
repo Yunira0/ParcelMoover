@@ -14,7 +14,7 @@ model admins {
   id                    String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   user_id               String     @unique @db.Uuid
   location_id           String?    @db.Uuid
-  position              String?
+  position              String
   /// Extra privileges granted by a super_admin (see ADMIN_PERMISSIONS).
   permissions           String[]   @default([])
   department            String?
