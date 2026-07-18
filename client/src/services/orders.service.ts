@@ -73,7 +73,7 @@ export interface Order {
   receiverAddress: string;
   origin: string;
   destination: string;
-  /** Raw destination hub name without the "- District" suffix (used on printed labels). */
+  /** Raw destination hub name (used on printed labels). */
   destinationName?: string;
   originLocationId?: string | null;
   destinationLocationId?: string | null;

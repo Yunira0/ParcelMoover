@@ -271,8 +271,8 @@ const OPEN_STATUSES: parcel_status[] = [
 ];
 
 const locationName = (location?: { name: string; city: string | null; district: string | null } | null) => {
-  if (!location) return "";
-  return [location.name, location.district].filter(Boolean).join(" - ");
+  // Location names already contain the district, so don't append it again.
+  return location?.name ?? "";
 };
 
 const moneyToNumber = (value?: Prisma.Decimal | null) => value ? Number(value) : 0;
@@ -1064,9 +1064,21 @@ const ORDERS_INCLUDE = {
   parcel_status_history: {
     orderBy: { created_at: "desc" as const },
     take: 1,
-    include: { users: true },
+    include: { users: { include: { user_roles: { include: { roles: true } } } } },
   },
 } satisfies Prisma.parcelsInclude;
+
+// Role tag appended to "last updated by" so staff can tell at a glance which
+// side of the system touched the parcel. Ordered by precedence: a user with
+// several roles gets the most privileged tag.
+const LAST_UPDATED_BY_ROLE_TAGS: [string, string][] = [
+  ["super_admin", "Super Admin"],
+  ["admin", "Staff"],
+  ["sales", "Sales"],
+  ["rider", "Rider"],
+  ["vendor", "Vendor"],
+  ["vendor_staff", "Vendor Staff"],
+];
 
 export interface ListOrdersResult {
   data: ReturnType<typeof mapOrder>[];
@@ -1105,9 +1117,21 @@ function mapOrder(
   // see which branch/company made the change - never an internal staff name
   // (matches the redaction already applied to getOrderByTrackingId's
   // statusHistory[].changedBy).
-  const lastUpdatedBy = isStaff
-    ? latestHistory?.users?.full_name || ""
-    : locationName(parcel.locations_parcels_origin_location_idTolocations) || vendorName || "Branch";
+  let lastUpdatedBy = "";
+  if (isStaff) {
+    const historyUser = latestHistory?.users;
+    if (historyUser) {
+      const roleCodes = new Set(historyUser.user_roles.map(ur => ur.roles.code));
+      const roleTag = LAST_UPDATED_BY_ROLE_TAGS.find(([code]) => roleCodes.has(code))?.[1];
+      // A vendor account's user name is often just the login contact - the
+      // business name is what staff recognise.
+      const displayName = roleCodes.has("vendor") && vendorName ? vendorName : historyUser.full_name;
+      lastUpdatedBy = roleTag ? `${displayName} (${roleTag})` : displayName;
+    }
+  } else {
+    lastUpdatedBy =
+      locationName(parcel.locations_parcels_origin_location_idTolocations) || vendorName || "Branch";
+  }
 
   return {
     id: parcel.id,
@@ -1132,8 +1156,7 @@ function mapOrder(
       locationName(parcel.locations_parcels_destination_location_idTolocations) ||
       parcel.parties_parcels_receiver_idToparties.address ||
       "",
-    // Raw destination hub name without the "- District" suffix - shipping
-    // labels print this so the district never appears on the label.
+    // Raw destination hub name - shipping labels print this.
     destinationName:
       parcel.locations_parcels_destination_location_idTolocations?.name ||
       parcel.parties_parcels_receiver_idToparties.address ||

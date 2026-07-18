@@ -21,19 +21,23 @@ import {
   subscribeToOrderStatusChanged,
   updateOrderStatus,
   type Order,
-  type OrdersPageMeta,
   type ParcelStatus,
 } from '../services/orders.service';
 import { getRiders } from '../services/users.service';
 import { printLabels } from '../utils/printLabels';
 import { toBsDate, toNptTime } from '../utils/nepaliDate';
-import { useCursorPagination } from '../hooks/useCursorPagination';
 import { formatCurrency } from '../utils/format';
 import './PickupOperations.css';
 
 type PickupTab = 'pickup_ordered' | 'rider_assigned' | 'picked_up' | 'arrived' | 'failed' | 'cancelled';
 
+// Groups (pickups) per page in the outer table.
 const PAGE_SIZE = 10;
+// The whole tab is fetched up front (server pages of 100) so vendor groups are
+// complete - a pickup's Details panel must show every parcel in it, and piece
+// counts must cover the full pickup, which parcel-level server paging broke.
+const SERVER_FETCH_PAGE_SIZE = 100;
+const MAX_FETCH_PAGES = 30; // safety cap: 3000 parcels per tab
 const SEARCH_DEBOUNCE_MS = 300;
 
 const TAB_LABELS: Record<PickupTab, string> = {
@@ -330,14 +334,14 @@ const REASON_REQUIRED_STATUSES: ParcelStatus[] = ['cancelled', 'failed_pickup', 
 const PickupOperations: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const [orders, setOrders] = useState<Order[]>([]);
-  const [meta, setMeta] = useState<OrdersPageMeta | null>(null);
+  const [capped, setCapped] = useState(false);
   const [activeTab, setActiveTab] = useState<PickupTab>(() => {
     const fromUrl = searchParams.get('tab');
     return fromUrl && fromUrl in TAB_LABELS ? (fromUrl as PickupTab) : 'pickup_ordered';
   });
   const [searchQuery, setSearchQuery] = useState(() => searchParams.get('search') || '');
   const [debouncedSearch, setDebouncedSearch] = useState(() => searchParams.get('search') || '');
-  const pager = useCursorPagination();
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [selectedIdsByTab, setSelectedIdsByTab] = useState<Record<PickupTab, Set<string | number>>>(createEmptyTabSelections);
@@ -370,37 +374,55 @@ const PickupOperations: React.FC = () => {
     return () => clearTimeout(handle);
   }, [searchQuery]);
 
+  // Guards against a slow multi-page fetch landing after the user has already
+  // switched tab or typed a new search - only the latest request may setState.
+  const fetchSeqRef = useRef(0);
+
   const loadPickups = useCallback(async () => {
+    const seq = ++fetchSeqRef.current;
     setLoading(true);
     try {
-      const res = await getOrders({
-        status: TAB_STATUSES[activeTab],
-        search: debouncedSearch || undefined,
-        pageSize: PAGE_SIZE,
-        cursor: pager.request.cursor,
-        dir: pager.request.dir,
-      });
-      if (res?.success && Array.isArray(res.data)) {
-        setOrders(res.data);
-        setMeta(res.meta ?? null);
-        setLoadError('');
+      const all: Order[] = [];
+      let cursor: string | undefined;
+      let hasMore = false;
+      for (let i = 0; i < MAX_FETCH_PAGES; i++) {
+        const res = await getOrders({
+          status: TAB_STATUSES[activeTab],
+          search: debouncedSearch || undefined,
+          pageSize: SERVER_FETCH_PAGE_SIZE,
+          cursor,
+          dir: 'next',
+        });
+        if (seq !== fetchSeqRef.current) return;
+        if (!res?.success || !Array.isArray(res.data)) {
+          throw new Error('Unexpected orders response');
+        }
+        all.push(...res.data);
+        hasMore = !!res.meta?.hasNextPage && !!res.meta?.nextCursor;
+        if (!hasMore) break;
+        cursor = res.meta!.nextCursor!;
       }
+      setOrders(all);
+      setCapped(hasMore);
+      setLoadError('');
     } catch {
+      if (seq !== fetchSeqRef.current) return;
       setLoadError('Failed to load pickup orders. Showing the last loaded data, if any.');
     } finally {
-      setLoading(false);
+      if (seq === fetchSeqRef.current) setLoading(false);
     }
-  }, [activeTab, debouncedSearch, pager.request]);
+  }, [activeTab, debouncedSearch]);
 
   useEffect(() => { loadPickups(); }, [loadPickups]);
   useEffect(() => subscribeToOrderStatusChanged(loadPickups), [loadPickups]);
 
   useEffect(() => {
-    pager.reset();
+    setPage(1);
+    setExpandedGroupId('');
     setIsActionOpen(false);
     setActionError('');
     setRiderId('');
-  }, [activeTab, debouncedSearch, pager.reset]);
+  }, [activeTab, debouncedSearch]);
 
   // Keep tab/search bookmarkable - mirror into the URL (replacing history,
   // not pushing, so the back button doesn't step through every keystroke).
@@ -411,25 +433,29 @@ const PickupOperations: React.FC = () => {
     setSearchParams(next, { replace: true });
   }, [activeTab, debouncedSearch, setSearchParams]);
 
-  // Selection is scoped to a single loaded page - clear it when the page or
-  // tab changes so a bulk action never silently drops ids that scrolled out
-  // of the currently-fetched page.
+  // Every order of the tab stays loaded while flipping through group pages, so
+  // selection can safely span pages - only a tab/search change resets it.
   useEffect(() => {
     setSelectedIdsByTab(prev => ({ ...prev, [activeTab]: new Set() }));
-  }, [activeTab, pager.request]);
+  }, [activeTab, debouncedSearch]);
 
   const visibleOrders = orders;
-  const totalPages = meta?.totalPages ?? 1;
   const selectedIds = selectedIdsByTab[activeTab];
   const groups = useMemo(() => groupOrdersByVendor(visibleOrders), [visibleOrders]);
+  const totalPages = Math.max(1, Math.ceil(groups.length / PAGE_SIZE));
+  // Clamp instead of resetting so a reload that shrinks the list doesn't strand
+  // the pager past the last page.
+  const currentPage = Math.min(page, totalPages);
+  const pagedGroups = groups.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
   // A group's row checkbox reads as checked only once every order inside it
   // is selected - the underlying selection stays order-scoped so bulk status
   // changes keep applying per-order exactly as before grouping was added.
   const checkedGroupIds = new Set(
     groups.filter(group => group.orders.every(order => selectedIds.has(order.id))).map(group => group.id),
   );
-  const allGroupsSelected = groups.length > 0 && groups.every(group => checkedGroupIds.has(group.id));
-  const someGroupsSelected = groups.some(group => group.orders.some(order => selectedIds.has(order.id)));
+  // The header checkbox works on the visible page of groups, not the whole tab.
+  const allGroupsSelected = pagedGroups.length > 0 && pagedGroups.every(group => checkedGroupIds.has(group.id));
+  const someGroupsSelected = pagedGroups.some(group => group.orders.some(order => selectedIds.has(order.id)));
   const selectedOrders = visibleOrders.filter(order => selectedIds.has(order.id));
   const allowedStatusOptions = useMemo(() => {
     if (selectedOrders.length === 0) return [];
@@ -477,7 +503,7 @@ const PickupOperations: React.FC = () => {
   const toggleAllGroups = () => {
     setSelectedIdsByTab(prev => {
       const next = new Set(prev[activeTab]);
-      groups.forEach(group => group.orders.forEach(order => {
+      pagedGroups.forEach(group => group.orders.forEach(order => {
         if (allGroupsSelected) next.delete(order.id);
         else next.add(order.id);
       }));
@@ -800,7 +826,7 @@ const PickupOperations: React.FC = () => {
 
       <Table
         columns={pickupColumns}
-        data={groups}
+        data={pagedGroups}
         selectedIds={checkedGroupIds}
         onToggleRow={toggleGroupSelection}
         allSelected={allGroupsSelected}
@@ -826,10 +852,14 @@ const PickupOperations: React.FC = () => {
 
       <Pagination
         ariaLabel="Pickup pagination"
-        page={pager.page}
+        page={currentPage}
         totalPages={totalPages}
-        cursor={pager.controls(meta)}
-        summary={meta ? `${meta.total} order${meta.total === 1 ? '' : 's'}` : undefined}
+        onPageChange={next => { setPage(next); setExpandedGroupId(''); }}
+        summary={
+          `${groups.length} pickup${groups.length === 1 ? '' : 's'} · ` +
+          `${orders.length}${capped ? '+' : ''} order${orders.length === 1 ? '' : 's'}` +
+          (capped ? ` (showing the first ${orders.length})` : '')
+        }
       />
 
       {remarkPopupOrder && (

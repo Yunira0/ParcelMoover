@@ -26,8 +26,8 @@ const isManagedUserType = (value: unknown): value is ManagedUserType =>
   typeof value === "string" && managedUserTypes.includes(value as ManagedUserType);
 
 const locationLabel = (location?: { name: string; city: string | null; district: string | null } | null) => {
-  if (!location) return "";
-  return [location.name, location.district].filter(Boolean).join(" - ");
+  // Location names already contain the district, so don't append it again.
+  return location?.name ?? "";
 };
 
 const LIST_DEFAULT_PAGE_SIZE = 20;

@@ -16,13 +16,13 @@
 
 .rate-card h3 {
   margin: var(--space-2) 0 0;
-  font-size: 0.95rem;
+  font-size: 14px;
   color: var(--color-text-default);
 }
 
 .rate-muted {
   color: var(--color-text-caption);
-  font-size: 0.82rem;
+  font-size: 12px;
   margin: 0;
 }
 
@@ -38,7 +38,7 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
-  font-size: 0.8rem;
+  font-size: 12px;
   color: var(--color-text-caption);
 }
 
@@ -91,6 +91,6 @@
 
 .rate-msg {
   font-size: 0.85rem;
-  color: var(--color-primary, #4f46e5);
+  color: var(--color-primary);
   margin: 0;
 }

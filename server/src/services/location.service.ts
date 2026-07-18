@@ -56,7 +56,8 @@ function mapLocation(loc: {
 // Destinations are top-level locations; covered areas are their children. Returns
 // destinations each with their nested areas, for the Settings management screen.
 export async function listManagedLocations() {
-  const all = await prisma.locations.findMany({ orderBy: { name: "asc" } });
+  // Newest first so a freshly added destination/area shows at the top.
+  const all = await prisma.locations.findMany({ orderBy: { created_at: "desc" } });
   const mapped = all.map(mapLocation);
 
   const destinations = mapped.filter((l) => !l.parentId);

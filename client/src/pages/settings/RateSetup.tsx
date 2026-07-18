@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import Button from '../../components/Button';
+import Pagination from '../../components/Pagination';
 import {
   listManagedLocations,
   updateLocation,
@@ -28,6 +29,8 @@ const VALLEY_OPTIONS = [
 
 type RowEdit = { rate: string; branchRate: string; zone: string; valley: string };
 
+const PAGE_SIZE = 10;
+
 const RateSetup: React.FC = () => {
   const [destinations, setDestinations] = useState<Destination[]>([]);
   const [settings, setSettings] = useState<PricingSettings | null>(null);
@@ -36,13 +39,16 @@ const RateSetup: React.FC = () => {
   const [savingRow, setSavingRow] = useState<string | null>(null);
   const [savingSettings, setSavingSettings] = useState(false);
   const [msg, setMsg] = useState('');
+  const [page, setPage] = useState(1);
 
   const load = async () => {
     setLoading(true);
     try {
       const [locRes, setRes] = await Promise.all([listManagedLocations(), getPricingSettings()]);
       if (locRes?.success) {
-        setDestinations(locRes.data);
+        // The endpoint returns newest-first (for the Destinations tab); the
+        // rates table reads better alphabetically.
+        setDestinations([...locRes.data].sort((a, b) => a.name.localeCompare(b.name)));
         const initial: Record<string, RowEdit> = {};
         locRes.data.forEach((d) => {
           initial[d.id] = {
@@ -121,6 +127,10 @@ const RateSetup: React.FC = () => {
   };
 
   if (loading || !settings) return <p className="rate-muted">Loading rate setup…</p>;
+
+  const totalPages = Math.max(1, Math.ceil(destinations.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const pagedDestinations = destinations.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
   return (
     <div className="rate-setup">
@@ -246,7 +256,7 @@ const RateSetup: React.FC = () => {
                 </tr>
               </thead>
               <tbody>
-                {destinations.map((d) => {
+                {pagedDestinations.map((d) => {
                   const row = rows[d.id];
                   if (!row) return null;
                   return (
@@ -281,6 +291,15 @@ const RateSetup: React.FC = () => {
               </tbody>
             </table>
           </div>
+        )}
+        {destinations.length > PAGE_SIZE && (
+          <Pagination
+            page={currentPage}
+            totalPages={totalPages}
+            onPageChange={setPage}
+            ariaLabel="Destination rates pages"
+            summary={`Showing ${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, destinations.length)} of ${destinations.length} destinations`}
+          />
         )}
       </section>
 
