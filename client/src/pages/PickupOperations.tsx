@@ -221,6 +221,11 @@ const groupDetailColumns = (group: PickupGroup, onRemarkClick: (order: Order) =>
     width: '60px',
   },
   {
+    header: 'ORDER ID',
+    accessor: (order: Order) => `#${order.orderNumber}`,
+    width: '70px',
+  },
+  {
     header: 'DATE & TIME',
     accessor: (order: Order) => <DateTimeCell iso={order.createdAtRaw} />,
     width: '110px',

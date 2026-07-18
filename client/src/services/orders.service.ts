@@ -448,11 +448,12 @@ export const updateOrderStatus = async (
 
 export interface BulkCreateOrderRow {
   sender?: { name: string; phone: string; address?: string };
-  receiver: { name: string; phone: string; alternatePhone?: string; address?: string };
+  receiver: { name: string; phone: string; alternatePhone?: string; address?: string; locationId?: string };
   codAmount?: number;
   weightKg?: number;
   orderType?: OrderType;
   serviceType?: ServiceType;
+  packageType?: string;
   deliveryInstruction?: string;
   originLocationId?: string;
   destinationLocationId?: string;

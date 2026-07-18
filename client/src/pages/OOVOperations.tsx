@@ -446,7 +446,7 @@ const OOVOperations: React.FC = () => {
 
   const oovColumns = [
     {
-      header: 'ID',
+      header: 'ORDER ID',
       accessor: (order: Order) => `#${order.orderNumber}`,
       width: '70px',
       className: 'oov-sn-cell',

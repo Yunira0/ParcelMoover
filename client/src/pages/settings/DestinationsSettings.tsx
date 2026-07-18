@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Plus, MapPin, Trash2, X } from 'lucide-react';
+import { ChevronDown, Plus, MapPin, Trash2, X } from 'lucide-react';
 import Button from '../../components/Button';
 import FormField from '../../components/FormField';
 import StatusChip from '../../components/StatusChip';
@@ -29,6 +29,8 @@ const DestinationsSettings: React.FC = () => {
   // Inline delete confirmation: id of item pending confirm
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  const [showTrash, setShowTrash] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -110,6 +112,9 @@ const DestinationsSettings: React.FC = () => {
     }
   };
 
+  const activeDests = destinations.filter((d) => d.isActive);
+  const trashedDests = destinations.filter((d) => !d.isActive);
+
   return (
     <div className="dest-settings">
       <div className="dest-settings-head">
@@ -155,9 +160,13 @@ const DestinationsSettings: React.FC = () => {
       ) : destinations.length === 0 ? (
         <p className="dest-muted">No destinations yet. Add one to get started.</p>
       ) : (
+        <>
+        {activeDests.length === 0 ? (
+          <p className="dest-muted">All destinations are in the trash. Restore one below to use it again.</p>
+        ) : (
         <div className="dest-list">
-          {destinations.map((dest) => (
-            <div key={dest.id} className={`dest-card ${dest.isActive ? '' : 'dest-card--inactive'}`}>
+          {activeDests.map((dest) => (
+            <div key={dest.id} className="dest-card">
               <div className="dest-card-head">
                 <div className="dest-card-title">
                   <MapPin size={16} />
@@ -165,7 +174,12 @@ const DestinationsSettings: React.FC = () => {
                   {dest.code && <span className="dest-code">{dest.code}</span>}
                 </div>
                 <div className="dest-card-actions">
-                  <button type="button" className="dest-toggle" onClick={() => toggleActive(dest.id, dest.isActive)}>
+                  <button
+                    type="button"
+                    className="dest-toggle"
+                    title="Deactivate and move to trash"
+                    onClick={() => toggleActive(dest.id, dest.isActive)}
+                  >
                     <StatusChip tone={dest.isActive ? 'success' : 'danger'}>
                       {dest.isActive ? 'Active' : 'Inactive'}
                     </StatusChip>
@@ -270,6 +284,76 @@ const DestinationsSettings: React.FC = () => {
             </div>
           ))}
         </div>
+        )}
+
+        {trashedDests.length > 0 && (
+          <div className="dest-trash">
+            <button
+              type="button"
+              className="dest-trash-toggle"
+              aria-expanded={showTrash}
+              onClick={() => setShowTrash((v) => !v)}
+            >
+              <Trash2 size={14} />
+              <span>Trash ({trashedDests.length})</span>
+              <ChevronDown
+                size={14}
+                className={`dest-trash-chevron${showTrash ? ' dest-trash-chevron--open' : ''}`}
+              />
+            </button>
+            {showTrash && (
+              <div className="dest-trash-list">
+                {trashedDests.map((dest) => (
+                  <div key={dest.id} className="dest-trash-row">
+                    <div className="dest-trash-info">
+                      <MapPin size={14} />
+                      <span className="dest-trash-name">{dest.name}</span>
+                      {dest.code && <span className="dest-code">{dest.code}</span>}
+                      <span className="dest-trash-count">
+                        {dest.areas.length} area{dest.areas.length !== 1 ? 's' : ''}
+                      </span>
+                    </div>
+                    <div className="dest-card-actions">
+                      <Button variant="outline" size="sm" onClick={() => toggleActive(dest.id, dest.isActive)}>
+                        Restore
+                      </Button>
+                      {confirmDelete === dest.id ? (
+                        <div className="dest-confirm-delete">
+                          <span>Permanently delete destination and all its areas?</span>
+                          <button
+                            type="button"
+                            className="dest-confirm-btn dest-confirm-btn--danger"
+                            disabled={deleting}
+                            onClick={() => handleDelete(dest.id)}
+                          >
+                            {deleting ? 'Deleting…' : 'Yes, delete'}
+                          </button>
+                          <button
+                            type="button"
+                            className="dest-confirm-btn"
+                            onClick={() => setConfirmDelete(null)}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          className="dest-delete-btn"
+                          title="Delete permanently"
+                          onClick={() => setConfirmDelete(dest.id)}
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+        </>
       )}
     </div>
   );

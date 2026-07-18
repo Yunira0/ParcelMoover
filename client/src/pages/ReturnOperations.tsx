@@ -12,7 +12,6 @@ import {
   bulkUpdateOrderStatus,
   subscribeToOrderStatusChanged,
   type Order,
-  type OrdersPageMeta,
   type ParcelStatus,
 } from '../services/orders.service';
 import RiderAssignModal from '../components/RiderAssignModal';
@@ -72,7 +71,6 @@ const formatMoney = (value: number) => value.toLocaleString(undefined, { maximum
 const ReturnOperations: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const [orders, setOrders] = useState<Order[]>([]);
-  const [meta, setMeta] = useState<OrdersPageMeta | null>(null);
   const [activeTab, setActiveTab] = useState<ReturnTab>(() => {
     const fromUrl = searchParams.get('tab');
     return fromUrl && fromUrl in TAB_LABELS ? (fromUrl as ReturnTab) : 'follow_up';
@@ -92,7 +90,6 @@ const ReturnOperations: React.FC = () => {
   // depends on orderType *and* status together (see returnStage below), which
   // the backend's status[] filter can't express - so this still fetches the
   // (capped, default) unfiltered list rather than a real server-paginated one.
-  // meta.truncated at least surfaces it honestly instead of claiming completeness.
   const loadReturns = async () => {
     setLoading(true);
     try {
@@ -100,7 +97,6 @@ const ReturnOperations: React.FC = () => {
       if (res?.success && Array.isArray(res.data)) {
         // Both kinds of returns: reverse orders + failed deliveries in the RTO flow.
         setOrders(res.data.filter((order) => returnStage(order) !== null));
-        setMeta(res.meta ?? null);
         setLoadError('');
       }
     } catch {
@@ -247,7 +243,7 @@ const ReturnOperations: React.FC = () => {
 
   const returnColumns = [
     {
-      header: 'ID',
+      header: 'ORDER ID',
       accessor: (order: Order) => `#${order.orderNumber}`,
       width: '70px',
       className: 'return-sn-cell',
@@ -311,11 +307,6 @@ const ReturnOperations: React.FC = () => {
       />
 
       {loadError && <p className="return-action-msg">{loadError}</p>}
-      {meta?.truncated && (
-        <p className="return-action-msg">
-          Showing the most recent {meta.pageSize} of {meta.total} matching orders. Narrow your search to see the rest.
-        </p>
-      )}
 
       <div className="return-toolbar">
         <div className="return-toolbar-actions">

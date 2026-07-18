@@ -435,7 +435,7 @@ const DispatchOperations: React.FC = () => {
 
   const dispatchColumns = [
     {
-      header: 'SN',
+      header: 'ORDER ID',
       accessor: (order: Order) => `#${order.orderNumber}`,
       width: '70px',
     },

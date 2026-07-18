@@ -527,7 +527,7 @@ const OrderManagement: React.FC = () => {
 
   const orderColumns = [
     {
-      header: 'ID',
+      header: 'ORDER ID',
       accessor: (order: Order) => `#${order.orderNumber}`,
       width: '70px',
     },
