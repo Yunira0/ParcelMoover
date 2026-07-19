@@ -10,6 +10,7 @@ import {
   logoutController,
   registerUserController,
   updateAdminPermissionsController,
+  updateAdminRoleController,
   updateManagedUserController,
   updateManagedUserPasswordController,
 } from "../controllers/auth.controller";
@@ -21,6 +22,7 @@ import {
   loginSchema,
   registerUserSchema,
   updateAdminPermissionsSchema,
+  updateAdminRoleSchema,
   updateManagedUserSchema,
   updatePasswordSchema,
 } from "../validators/auth.schema";
@@ -154,6 +156,16 @@ authRouter.patch(
   authWriteLimiter,
   validate(updateAdminPermissionsSchema),
   updateAdminPermissionsController,
+);
+// Super-admin only: grant/revoke the super_admin role itself on an admin account.
+authRouter.patch(
+  "/users/admins/:id/role",
+  authMiddleware,
+  csrfProtection,
+  authorizeRoles("super_admin"),
+  authWriteLimiter,
+  validate(updateAdminRoleSchema),
+  updateAdminRoleController,
 );
 authRouter.get("/locations", authMiddleware, authReadLimiter, getLocationsController);
 

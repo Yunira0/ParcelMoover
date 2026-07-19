@@ -273,7 +273,7 @@ const OPEN_STATUSES: parcel_status[] = [
 
 const locationName = (location?: { name: string; city: string | null; district: string | null } | null) => {
   if (!location) return "";
-  return [location.name, location.city || location.district].filter(Boolean).join(", ");
+  return [location.name, location.district].filter(Boolean).join(" - ");
 };
 
 const moneyToNumber = (value?: Prisma.Decimal | null) => value ? Number(value) : 0;
@@ -1122,6 +1122,12 @@ function mapOrder(
       "",
     destination:
       locationName(parcel.locations_parcels_destination_location_idTolocations) ||
+      parcel.parties_parcels_receiver_idToparties.address ||
+      "",
+    // Raw destination hub name without the "- District" suffix - shipping
+    // labels print this so the district never appears on the label.
+    destinationName:
+      parcel.locations_parcels_destination_location_idTolocations?.name ||
       parcel.parties_parcels_receiver_idToparties.address ||
       "",
     pieces: parcel.pieces,

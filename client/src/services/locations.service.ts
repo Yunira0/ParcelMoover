@@ -60,8 +60,10 @@ export const deleteLocation = async (id: string): Promise<{ success: boolean; me
 export interface BulkImportDestinationInput {
   name: string;
   code?: string;
-  city?: string;
+  province?: string;
   district?: string;
+  /** Stored server-side in the locations.city column. */
+  municipality?: string;
   zone?: string;
   valley?: string;
   perDestinationRate?: number | null;

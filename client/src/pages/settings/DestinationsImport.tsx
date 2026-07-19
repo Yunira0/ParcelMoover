@@ -14,21 +14,25 @@ import './DestinationsImport.css';
 const COLUMNS = [
   'destination_name',
   'destination_code',
+  'province',
   'district',
+  'municipality',
   'covered_areas',
   'zone',
   'valley',
   'per_destination_rate',
 ] as const;
 
+type ColumnKey = (typeof COLUMNS)[number];
+
 const ZONE_VALUES = ['major_cities', 'urban_areas', 'remote_areas'];
 const VALLEY_VALUES = ['inside', 'outside'];
 
 const SAMPLE_ROWS = [
-  ['Imadol', 'IMD', 'Lalitpur', 'Sanagaun, Gwarko, Lubhu', 'major_cities', 'inside', '100'],
-  ['Kathmandu', 'KTM', 'Kathmandu', 'Thamel, Baneshwor, New Road', 'major_cities', 'inside', '100'],
-  ['Pokhara', 'PKR', 'Kaski', 'Lakeside, Prithvi Chowk', 'urban_areas', 'outside', '150'],
-  ['Butwal', 'BTW', 'Rupandehi', 'Devinagar, Golpark', 'remote_areas', 'outside', '200'],
+  ['Imadol', 'IMD', 'Bagmati', 'Lalitpur', 'Mahalaxmi', 'Sanagaun, Gwarko, Lubhu', 'major_cities', 'inside', '100'],
+  ['Kathmandu', 'KTM', 'Bagmati', 'Kathmandu', 'Kathmandu', 'Thamel, Baneshwor, New Road', 'major_cities', 'inside', '100'],
+  ['Pokhara', 'PKR', 'Gandaki', 'Kaski', 'Pokhara', 'Lakeside, Prithvi Chowk', 'urban_areas', 'outside', '150'],
+  ['Butwal', 'BTW', 'Lumbini', 'Rupandehi', 'Butwal', 'Devinagar, Golpark', 'remote_areas', 'outside', '200'],
 ];
 
 // ── Template download ─────────────────────────────────────────────────────────
@@ -40,7 +44,7 @@ function downloadTemplate() {
 
   // Set column widths
   ws['!cols'] = [
-    { wch: 22 }, { wch: 18 }, { wch: 16 },
+    { wch: 22 }, { wch: 18 }, { wch: 14 }, { wch: 16 }, { wch: 18 },
     { wch: 40 }, { wch: 18 }, { wch: 12 }, { wch: 22 },
   ];
 
@@ -51,7 +55,9 @@ function downloadTemplate() {
     ['Column', 'Required', 'Allowed values / Notes'],
     ['destination_name', 'YES', 'Name of the hub/branch, e.g. Imadol.'],
     ['destination_code', 'no', 'Short code, e.g. IMD.'],
+    ['province', 'no', 'Province of the destination, e.g. Bagmati.'],
     ['district', 'no', 'District of the destination.'],
+    ['municipality', 'no', 'Municipality of the destination, e.g. Mahalaxmi.'],
     ['covered_areas', 'no', 'Areas this branch covers, separated by commas - e.g. "Sanagaun, Gwarko, Lubhu".'],
     ['zone', 'no', `Pricing zone: ${ZONE_VALUES.join(' | ')}.`],
     ['valley', 'no', `Valley side: ${VALLEY_VALUES.join(' | ')}.`],
@@ -68,7 +74,9 @@ function downloadTemplate() {
 interface ParsedRow {
   destinationName: string;
   destinationCode: string;
+  province: string;
   district: string;
+  municipality: string;
   coveredAreas: string;
   zone: string;
   valley: string;
@@ -94,31 +102,42 @@ function parseSheet(raw: string[][]): ParsedRow[] {
     firstRow.includes('destination_name') || firstRow.some((h) => h.includes('destination'));
   const dataRows = isHeader ? raw.slice(1) : raw;
 
+  // Column positions come from the header when there is one - files made from
+  // an older template (no province/municipality columns) still import - and
+  // fall back to the current template order for headerless files.
+  const colIndex = new Map<ColumnKey, number>();
+  COLUMNS.forEach((col, i) => colIndex.set(col, isHeader ? firstRow.indexOf(col) : i));
+
   return dataRows
     .map((cols, i): ParsedRow => {
-      const get = (idx: number) => String(cols[idx] ?? '').trim();
+      const get = (col: ColumnKey) => {
+        const idx = colIndex.get(col) ?? -1;
+        return idx < 0 ? '' : String(cols[idx] ?? '').trim();
+      };
       const errors: string[] = [];
-      const destName = get(0);
+      const destName = get('destination_name');
       if (!destName) errors.push('destination_name is required');
 
-      const zone = get(4);
+      const zone = get('zone');
       if (zone && !ZONE_VALUES.includes(zone)) {
         errors.push(`zone must be one of: ${ZONE_VALUES.join(', ')}`);
       }
-      const valley = get(5);
+      const valley = get('valley');
       if (valley && !VALLEY_VALUES.includes(valley)) {
         errors.push(`valley must be one of: ${VALLEY_VALUES.join(', ')}`);
       }
-      const rateStr = get(6);
+      const rateStr = get('per_destination_rate');
       if (rateStr && isNaN(Number(rateStr))) {
         errors.push('per_destination_rate must be a number');
       }
 
       return {
         destinationName: destName,
-        destinationCode: get(1),
-        district: get(2),
-        coveredAreas: get(3),
+        destinationCode: get('destination_code'),
+        province: get('province'),
+        district: get('district'),
+        municipality: get('municipality'),
+        coveredAreas: get('covered_areas'),
         zone,
         valley,
         perDestinationRate: rateStr,
@@ -140,7 +159,9 @@ function groupRows(rows: ParsedRow[]): BulkImportDestinationInput[] {
       map.set(key, {
         name: row.destinationName,
         code: row.destinationCode || undefined,
+        province: row.province || undefined,
         district: row.district || undefined,
+        municipality: row.municipality || undefined,
         zone: row.zone || undefined,
         valley: row.valley || undefined,
         perDestinationRate: row.perDestinationRate ? Number(row.perDestinationRate) : undefined,
@@ -376,6 +397,9 @@ const DestinationsImport: React.FC = () => {
                   <th>ID</th>
                   <th>Destination</th>
                   <th>Code</th>
+                  <th>Province</th>
+                  <th>District</th>
+                  <th>Municipality</th>
                   <th>Covered Areas</th>
                   <th>Zone</th>
                   <th>Valley</th>
@@ -389,6 +413,9 @@ const DestinationsImport: React.FC = () => {
                     <td className="di-cell-num">{row._rowIndex}</td>
                     <td>{row.destinationName || <span className="di-empty">—</span>}</td>
                     <td>{row.destinationCode || <span className="di-empty">—</span>}</td>
+                    <td>{row.province || <span className="di-empty">—</span>}</td>
+                    <td>{row.district || <span className="di-empty">—</span>}</td>
+                    <td>{row.municipality || <span className="di-empty">—</span>}</td>
                     <td>{splitAreas(row.coveredAreas).join(', ') || <span className="di-empty">—</span>}</td>
                     <td>{row.zone || <span className="di-empty">—</span>}</td>
                     <td>{row.valley || <span className="di-empty">—</span>}</td>

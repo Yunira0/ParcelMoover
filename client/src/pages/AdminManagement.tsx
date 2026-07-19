@@ -8,7 +8,7 @@ import SegmentedTabs from '../components/SegmentedTabs';
 import StatusChip from '../components/StatusChip';
 import Button from '../components/Button';
 import ToggleSwitch from '../components/ToggleSwitch';
-import { getAdmins, updateAdminPermissions, ADMIN_PERMISSIONS } from '../services/users.service';
+import { getAdmins, updateAdminPermissions, updateAdminRole, ADMIN_PERMISSIONS } from '../services/users.service';
 import { getCurrentUserRoles, hasAdminPermission } from '../utils/auth';
 import '../components/Modal.css';
 import './AdminManagement.css';
@@ -23,8 +23,10 @@ interface AdminUser {
   position: string;
   joined: string;
   status: 'active' | 'inactive';
-  /** Delegated privileges granted by a super_admin (MANAGE_USERS, SETTINGS_ACCESS). */
+  /** Delegated privileges granted by a super_admin (see ADMIN_PERMISSIONS). */
   permissions?: string[];
+  /** Whether this account also carries the super_admin role. */
+  isSuperAdmin?: boolean;
 }
 
 const PERMISSION_LABELS: Record<string, string> = Object.fromEntries(
@@ -47,6 +49,7 @@ const AdminManagement: React.FC = () => {
   // Permissions modal (super_admin only)
   const [permAdmin, setPermAdmin] = useState<AdminUser | null>(null);
   const [permDraft, setPermDraft] = useState<string[]>([]);
+  const [superAdminDraft, setSuperAdminDraft] = useState(false);
   const [permSaving, setPermSaving] = useState(false);
   const [permError, setPermError] = useState('');
 
@@ -73,6 +76,7 @@ const AdminManagement: React.FC = () => {
   const openPermissions = (admin: AdminUser) => {
     setPermError('');
     setPermDraft(admin.permissions ?? []);
+    setSuperAdminDraft(admin.isSuperAdmin ?? false);
     setPermAdmin(admin);
   };
 
@@ -87,7 +91,16 @@ const AdminManagement: React.FC = () => {
     try {
       setPermSaving(true);
       setPermError('');
-      await updateAdminPermissions(permAdmin.id, permDraft);
+      const roleChanged = superAdminDraft !== (permAdmin.isSuperAdmin ?? false);
+      if (roleChanged) {
+        await updateAdminRole(permAdmin.id, superAdminDraft);
+      }
+      // A super admin implicitly holds every permission, and the server
+      // rejects granting explicit ones on top - only save the list for
+      // accounts that end up as plain admins.
+      if (!superAdminDraft) {
+        await updateAdminPermissions(permAdmin.id, permDraft);
+      }
       setPermAdmin(null);
       await loadAdmins();
     } catch (err: any) {
@@ -109,7 +122,9 @@ const AdminManagement: React.FC = () => {
       ? [{
           header: 'PERMISSIONS',
           accessor: (item: AdminUser) =>
-            item.permissions && item.permissions.length > 0 ? (
+            item.isSuperAdmin ? (
+              <StatusChip tone="warning">Super Admin</StatusChip>
+            ) : item.permissions && item.permissions.length > 0 ? (
               <div className="admin-permission-chips">
                 {item.permissions.map((code) => (
                   <StatusChip key={code} tone="info">
@@ -244,6 +259,21 @@ const AdminManagement: React.FC = () => {
             </p>
 
             <div className="admin-permission-list">
+              <div className="admin-permission-row admin-permission-row--role">
+                <div>
+                  <div className="admin-permission-name">Super Admin</div>
+                  <div className="admin-permission-desc">
+                    Full control of the whole system, including granting permissions to other admins.
+                  </div>
+                </div>
+                <ToggleSwitch
+                  checked={superAdminDraft}
+                  onChange={setSuperAdminDraft}
+                  disabled={permSaving}
+                  ariaLabel={`Make ${permAdmin.name} a super admin`}
+                />
+              </div>
+
               {ADMIN_PERMISSIONS.map((perm) => (
                 <div className="admin-permission-row" key={perm.code}>
                   <div>
@@ -251,13 +281,18 @@ const AdminManagement: React.FC = () => {
                     <div className="admin-permission-desc">{perm.description}</div>
                   </div>
                   <ToggleSwitch
-                    checked={permDraft.includes(perm.code)}
+                    checked={superAdminDraft || permDraft.includes(perm.code)}
                     onChange={(checked) => togglePermission(perm.code, checked)}
-                    disabled={permSaving}
+                    disabled={permSaving || superAdminDraft}
                     ariaLabel={`Grant ${perm.label} to ${permAdmin.name}`}
                   />
                 </div>
               ))}
+              {superAdminDraft && (
+                <p className="admin-permission-hint">
+                  A super admin implicitly holds every permission.
+                </p>
+              )}
             </div>
 
             {permError && <p className="admin-permission-error">{permError}</p>}

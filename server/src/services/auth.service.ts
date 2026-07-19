@@ -465,6 +465,66 @@ export async function updateAdminPermissions(
   return updated;
 }
 
+// Super-admin only: grant or revoke the super_admin role on another admin
+// account. Role changes ride on the JWT, so they apply on the target's next
+// login (same as delegated permissions).
+export async function setAdminSuperAdminRole(
+  actorUserId: string,
+  adminId: string,
+  grant: boolean,
+) {
+  const actor = await prisma.users.findUnique({
+    where: { id: actorUserId },
+    include: { user_roles: { include: { roles: true } } },
+  });
+  const actorRoles = actor?.user_roles.map((ur) => ur.roles.code) ?? [];
+  if (!actorRoles.includes("super_admin")) {
+    throw new AppError(403, "Only a super admin can grant the super admin role");
+  }
+
+  const admin = await prisma.admins.findUnique({
+    where: { id: adminId },
+    include: { users: { include: { user_roles: { include: { roles: true } } } } },
+  });
+  if (!admin) {
+    throw new AppError(404, "Admin not found");
+  }
+  if (admin.user_id === actorUserId) {
+    throw new AppError(400, "You cannot change your own super admin role");
+  }
+
+  const role = await prisma.roles.findUnique({ where: { code: "super_admin" } });
+  if (!role) {
+    throw new AppError(500, "super_admin role is not seeded");
+  }
+
+  const isSuperAdmin = admin.users.user_roles.some((ur) => ur.roles.code === "super_admin");
+
+  if (grant && !isSuperAdmin) {
+    await prisma.user_roles.create({
+      data: { user_id: admin.user_id, role_id: role.id },
+    });
+  } else if (!grant && isSuperAdmin) {
+    // Never demote the last active super admin - that would lock everyone
+    // out of user/permission management for good.
+    const otherSuperAdmins = await prisma.user_roles.count({
+      where: {
+        role_id: role.id,
+        user_id: { not: admin.user_id },
+        users: { status: "active", deleted_at: null },
+      },
+    });
+    if (otherSuperAdmins === 0) {
+      throw new AppError(400, "Cannot demote the only remaining super admin");
+    }
+    await prisma.user_roles.delete({
+      where: { user_id_role_id: { user_id: admin.user_id, role_id: role.id } },
+    });
+  }
+
+  return { id: admin.id, superAdmin: grant };
+}
+
 
 
 function validateRegisterInput(input: RegisterUserInput) {
@@ -937,7 +997,10 @@ export async function getCurrentUserProfile(userId: string) {
   };
 }
 
-export async function updateCurrentUserProfile(userId: string, input: { fullName?: string; phone?: string }) {
+export async function updateCurrentUserProfile(
+  userId: string,
+  input: { fullName?: string; phone?: string; hubId?: string | null },
+) {
   if (!input.fullName?.trim()) throw new AppError(400, "Full name is required");
 
   try {
@@ -948,13 +1011,33 @@ export async function updateCurrentUserProfile(userId: string, input: { fullName
         phone: input.phone?.trim() || null,
         updated_at: new Date(),
       },
+      include: { user_roles: { include: { roles: true } } },
     });
+
+    // Staff accounts can set their own hub. Seeded super admins may have no
+    // admins row at all, so this upserts one rather than only updating.
+    let hubName: string | null = null;
+    const roles = updated.user_roles.map((ur) => ur.roles.code);
+    const isStaff = roles.includes("super_admin") || roles.includes("admin");
+    if (input.hubId !== undefined && isStaff) {
+      if (input.hubId) {
+        const hub = await prisma.locations.findUnique({ where: { id: input.hubId } });
+        if (!hub || !hub.is_active) throw new AppError(400, "Hub location not found");
+        hubName = hub.name;
+      }
+      await prisma.admins.upsert({
+        where: { user_id: userId },
+        create: { user_id: userId, location_id: input.hubId || null },
+        update: { location_id: input.hubId || null, updated_at: new Date() },
+      });
+    }
 
     return {
       id: updated.id,
       fullName: updated.full_name,
       email: updated.email,
       phone: updated.phone,
+      hubName,
     };
   } catch (error: any) {
     if (error.code === "P2002") {

@@ -7,6 +7,7 @@ import StatusChip from '../components/StatusChip';
 import FormField from '../components/FormField';
 import Button from '../components/Button';
 import { getCurrentUser as fetchMe, changePassword, logout, updateMe } from '../services/auth.service';
+import { getLocations } from '../services/users.service';
 import { getCurrentUser, getCurrentUserRoles } from '../utils/auth';
 import './ProfilePage.css';
 
@@ -54,6 +55,8 @@ const ProfilePage: React.FC = () => {
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState(cached?.email ?? '');
   const [hubName, setHubName] = useState('');
+  const [hubId, setHubId] = useState('');
+  const [hubOptions, setHubOptions] = useState<{ id: string; label: string }[]>([]);
   const [accountStatus, setAccountStatus] = useState('');
   const [infoLoading, setInfoLoading] = useState(false);
   const [infoSuccess, setInfoSuccess] = useState(false);
@@ -68,6 +71,9 @@ const ProfilePage: React.FC = () => {
   const [pwdError, setPwdError] = useState('');
 
   const roles = getCurrentUserRoles();
+  // Staff (admin/super_admin) accounts carry a hub assignment and may set
+  // their own from here - other account types keep it read-only/hidden.
+  const isStaff = roles.includes('super_admin') || roles.includes('admin');
 
   useEffect(() => {
     fetchMe()
@@ -76,11 +82,28 @@ const ProfilePage: React.FC = () => {
         setPhone(data.phone ?? '');
         setEmail(data.email ?? '');
         setHubName(data.hubName ?? '');
+        setHubId(data.hubId ?? '');
         setAccountStatus(data.status ?? 'active');
       })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    if (!isStaff) return;
+    getLocations()
+      .then((res) => {
+        if (res?.success && Array.isArray(res.data)) {
+          // Hubs are the top-level destinations; covered areas are excluded.
+          setHubOptions(
+            res.data
+              .filter((l: any) => !l.parent_id)
+              .map((l: any) => ({ id: l.id, label: l.name })),
+          );
+        }
+      })
+      .catch(() => {});
+  }, [isStaff]);
 
   const handleInfoSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -89,9 +112,10 @@ const ProfilePage: React.FC = () => {
     setInfoError('');
     setInfoSuccess(false);
     try {
-      const updated = await updateMe({ fullName, phone });
+      const updated = await updateMe({ fullName, phone, ...(isStaff ? { hubId: hubId || null } : {}) });
       const stored = JSON.parse(localStorage.getItem('user') || 'null');
       if (stored) localStorage.setItem('user', JSON.stringify({ ...stored, fullName: updated.fullName }));
+      if (isStaff) setHubName(hubOptions.find((o) => o.id === hubId)?.label ?? '');
       setInfoSuccess(true);
       setTimeout(() => setInfoSuccess(false), 3000);
     } catch (err: any) {
@@ -240,6 +264,18 @@ const ProfilePage: React.FC = () => {
                 onChange={setPhone}
                 placeholder="e.g. 9800000000"
               />
+              {isStaff && (
+                <FormField
+                  label="Hub"
+                  type="searchable-select"
+                  searchableOptions={hubOptions}
+                  value={hubId}
+                  onChange={setHubId}
+                  placeholder="Select your hub"
+                  searchPlaceholder="Search hub..."
+                  emptyMessage="No hubs found."
+                />
+              )}
 
               {infoError && <p className="profile-alert profile-alert-error">{infoError}</p>}
               {infoSuccess && (

@@ -203,6 +203,8 @@ export const updateUserPassword = async (
 export const ADMIN_PERMISSIONS = [
   { code: 'MANAGE_USERS', label: 'User Management', description: 'Create and manage every account type, including other admins.' },
   { code: 'SETTINGS_ACCESS', label: 'Settings', description: 'Access the Settings section: destinations, rate setup and delivery rates.' },
+  { code: 'KYC_ACCESS', label: 'KYC Applications', description: 'Review, approve and reject vendor KYC applications.' },
+  { code: 'SYSTEM_LOGS_ACCESS', label: 'System Logs', description: 'Read the system audit logs, including who changed what across the app.' },
 ] as const;
 
 export type AdminPermissionCode = (typeof ADMIN_PERMISSIONS)[number]['code'];
@@ -210,5 +212,11 @@ export type AdminPermissionCode = (typeof ADMIN_PERMISSIONS)[number]['code'];
 /** Replaces the admin's whole delegated-permission list. */
 export const updateAdminPermissions = async (adminId: string, permissions: string[]) => {
   const response = await api.patch(`/auth/users/admins/${adminId}/permissions`, { permissions });
+  return response.data;
+};
+
+/** Super_admin only: grant or revoke the super_admin role on another admin account. */
+export const updateAdminRole = async (adminId: string, superAdmin: boolean) => {
+  const response = await api.patch(`/auth/users/admins/${adminId}/role`, { superAdmin });
   return response.data;
 };

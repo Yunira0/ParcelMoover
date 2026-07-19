@@ -167,13 +167,21 @@
 }
 
 .searchable-select-option:hover,
-.searchable-select-option.selected {
+.searchable-select-option.selected,
+.searchable-select-option.active {
   background: var(--color-background-primary-invert-default);
 }
 
 .searchable-select-options .searchable-select-option.selected span {
   font-weight: var(--font-weight-medium);
   color: var(--color-background-primary-default);
+}
+
+/* Search-match highlight - rust text, no yellow <mark> background. */
+.searchable-select-option mark {
+  background: transparent;
+  color: var(--color-text-primary);
+  font-weight: var(--font-weight-semibold);
 }
 
 .searchable-select-empty {

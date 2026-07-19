@@ -250,12 +250,12 @@ const AdminSidebar: React.FC<{ isSuperAdmin: boolean }> = ({ isSuperAdmin }) => 
         <SidebarSection label="Management" />
         <SidebarItem to="/admin" icon={UserCheck} label="Admin Management" />
         <SidebarItem to="/vendors" icon={Store} label="Vendor Management" />
-        {isSuperAdmin && <SidebarItem to="/kyc-applications" icon={ClipboardCheck} label="KYC Applications" />}
+        {(isSuperAdmin || hasAdminPermission('KYC_ACCESS')) && <SidebarItem to="/kyc-applications" icon={ClipboardCheck} label="KYC Applications" />}
         <SidebarItem to="/riders" icon={Bike} label="Rider Management" />
         <SidebarItem to="/finance" icon={Wallet} label="COD Management" />
         {(isSuperAdmin || hasAdminPermission('SETTINGS_ACCESS')) && <SidebarItem to="/settings" icon={Settings} label="Settings" />}
         {isSuperAdmin && <SidebarItem to="/sla" icon={Timer} label="SLA" />}
-        {isSuperAdmin && <SidebarItem to="/system-logs" icon={ScrollText} label="System Logs" />}
+        {(isSuperAdmin || hasAdminPermission('SYSTEM_LOGS_ACCESS')) && <SidebarItem to="/system-logs" icon={ScrollText} label="System Logs" />}
 
         <SidebarSection label="Operations" />
         <div className="sidebar-subnav">

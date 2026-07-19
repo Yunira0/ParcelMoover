@@ -1,1 +1,0 @@
-import{n as e,r as t}from"./xlsx-BqVfgZRU.js";function n(n,r,i,a){let o=[i,...a],s=e.aoa_to_sheet(o);s[`!cols`]=i.map((e,t)=>{let n=a.reduce((e,n)=>Math.max(e,String(n[t]??``).length),0);return{wch:Math.min(Math.max(e.length,n)+2,40)}});let c=e.book_new();e.book_append_sheet(c,s,r.slice(0,31)),t(c,n.endsWith(`.xlsx`)?n:`${n}.xlsx`)}export{n as t};

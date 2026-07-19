@@ -128,11 +128,11 @@ function App() {
           />
           <Route
             path="/kyc-applications"
-            element={<RoleGuard allowedRoles={['super_admin']}><KycManagement /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']} adminPermission="KYC_ACCESS"><KycManagement /></RoleGuard>}
           />
           <Route
             path="/system-logs"
-            element={<RoleGuard allowedRoles={['super_admin']}><SystemLogs /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']} adminPermission="SYSTEM_LOGS_ACCESS"><SystemLogs /></RoleGuard>}
           />
           <Route
             path="/riders"

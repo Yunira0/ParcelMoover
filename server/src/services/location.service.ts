@@ -115,8 +115,12 @@ export async function createLocation(input: UpsertLocationInput) {
 export interface BulkImportDestination {
   name: string;
   code?: string;
-  city?: string;
+  province?: string;
   district?: string;
+  // Municipality is stored in the locations.city column - in Nepal's
+  // administrative structure the municipality IS the city-level unit.
+  municipality?: string;
+  city?: string;
   zone?: string;
   valley?: string;
   perDestinationRate?: number | null;
@@ -243,7 +247,8 @@ export async function bulkImportLocations(rows: BulkImportDestination[]) {
           data: {
             name: destName,
             code: row.code?.trim() || null,
-            city: row.city?.trim() || null,
+            province: row.province?.trim() || null,
+            city: (row.municipality ?? row.city)?.trim() || null,
             district: row.district?.trim() || null,
             is_hub: true,
             is_active: true,
@@ -258,7 +263,10 @@ export async function bulkImportLocations(rows: BulkImportDestination[]) {
           where: { id: dest.id },
           data: {
             ...(row.code !== undefined ? { code: row.code?.trim() || null } : {}),
-            ...(row.city !== undefined ? { city: row.city?.trim() || null } : {}),
+            ...(row.province !== undefined ? { province: row.province?.trim() || null } : {}),
+            ...(row.municipality !== undefined || row.city !== undefined
+              ? { city: (row.municipality ?? row.city)?.trim() || null }
+              : {}),
             ...(row.district !== undefined ? { district: row.district?.trim() || null } : {}),
             ...(row.zone !== undefined ? { zone: row.zone || null } : {}),
             ...(row.valley !== undefined ? { valley: row.valley || null } : {}),
