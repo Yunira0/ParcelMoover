@@ -486,7 +486,6 @@ const AdminFormPage: React.FC = () => {
                   label="Hub"
                   type="select"
                   required
-                  disabled
                   value={form.locationId}
                   onChange={set('locationId')}
                   placeholder="Select hub"

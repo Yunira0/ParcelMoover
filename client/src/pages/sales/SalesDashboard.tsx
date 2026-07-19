@@ -122,8 +122,8 @@ const SalesDashboard: React.FC = () => {
           rtvDeliveredAmount={overview.totalReturnsAmount}
           inDelivery={overview.inTransit}
           inDeliveryAmount={overview.inTransitAmount}
-          holdOrders={overview.pendingPickups}
-          holdOrdersAmount={overview.pendingPickupsAmount}
+          pendingPickup={overview.pendingPickups}
+          pendingPickupAmount={overview.pendingPickupsAmount}
           returnProcess={overview.pendingReturns}
           returnProcessAmount={overview.pendingReturnsAmount}
           loading={loading}

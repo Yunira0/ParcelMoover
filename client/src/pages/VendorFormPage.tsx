@@ -556,7 +556,6 @@ const VendorFormPage: React.FC = () => {
                   label="Hub"
                   type="select"
                   required
-                  disabled
                   value={form.pickupLocation}
                   onChange={set('pickupLocation')}
                   placeholder="Select hub"

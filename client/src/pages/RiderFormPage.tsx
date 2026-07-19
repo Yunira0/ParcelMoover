@@ -431,7 +431,6 @@ const RiderFormPage: React.FC = () => {
                   label="Service Branch"
                   type="select"
                   required
-                  disabled
                   value={form.serviceBranch}
                   onChange={set('serviceBranch')}
                   placeholder="Select hub"
