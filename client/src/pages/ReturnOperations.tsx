@@ -14,6 +14,7 @@ import {
   type Order,
   type ParcelStatus,
 } from '../services/orders.service';
+import { downloadExcel } from '../utils/excel';
 import RiderAssignModal from '../components/RiderAssignModal';
 import { toBsDate } from '../utils/nepaliDate';
 import { printLabels } from '../utils/printLabels';
@@ -222,16 +223,7 @@ const ReturnOperations: React.FC = () => {
       order.weightKg ? `${order.weightKg} Kg` : '',
       order.codAmount,
     ]);
-    const csv = [headers, ...rows]
-      .map((row) => row.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(','))
-      .join('\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'return-orders.csv';
-    link.click();
-    URL.revokeObjectURL(url);
+    downloadExcel('return-orders.xlsx', 'Return Orders', headers, rows);
   };
 
   const selectedOrders = visibleOrders.filter((o) => selectedIds.has(o.id));

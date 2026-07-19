@@ -1,7 +1,8 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+﻿import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, CheckCircle2, MessageSquare, RefreshCw, RotateCcw, Send, Tag, User } from 'lucide-react';
+import { ArrowLeft, Building2, CheckCircle2, Clock, Mail, MapPin, MessageSquare, Phone, RefreshCw, RotateCcw, Send, Tag } from 'lucide-react';
 import Button from '../components/Button';
+import { isAdminSide } from '../utils/auth';
 import StatusChip, { type StatusChipTone } from '../components/StatusChip';
 import {
   getTicketById,
@@ -27,7 +28,7 @@ const getInitials = (name: string) => name.split(' ').map((n) => n[0]).join('').
 
 const getAvatarColor = (name: string) => {
   const lower = name.toLowerCase();
-  if (lower.includes('admin') || lower.includes('super')) return '#c2410c';
+  if (lower.includes('admin') || lower.includes('super')) return '#e24c00';
   if (lower.includes('vendor') || lower.includes('branch')) return '#0f766e';
   return '#64748b';
 };
@@ -48,6 +49,8 @@ const formatRelativeTime = (dateStr: string) => {
 const TicketDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  // Admins triage/resolve/close; vendors only raise the ticket and converse.
+  const isAdmin = isAdminSide();
   const [ticket, setTicket] = useState<TicketDetailType | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -148,27 +151,57 @@ const TicketDetail: React.FC = () => {
                 <p className="tracking-link">{ticket.subject}</p>
               </div>
               <div className="detail-header-actions">
-                {ticket.status !== 'closed' ? (
-                  <Button variant="primary" onClick={() => changeStatus('closed')} disabled={statusUpdating}>
-                    <CheckCircle2 size={16} /> Mark as Done
-                  </Button>
+                {isAdmin ? (
+                  ticket.status !== 'closed' ? (
+                    <Button variant="primary" onClick={() => changeStatus('closed')} disabled={statusUpdating}>
+                      <CheckCircle2 size={16} /> Resolve & Close
+                    </Button>
+                  ) : (
+                    <Button variant="secondary" onClick={() => changeStatus('open')} disabled={statusUpdating}>
+                      <RotateCcw size={16} /> Reopen
+                    </Button>
+                  )
                 ) : (
-                  <Button variant="secondary" onClick={() => changeStatus('open')} disabled={statusUpdating}>
-                    <RotateCcw size={16} /> Reopen
-                  </Button>
+                  // Vendors can't change status - they see where their ticket stands.
+                  <div className={`td-vendor-status td-vendor-status-${ticket.status}`}>
+                    {ticket.status === 'closed' ? (
+                      <><CheckCircle2 size={16} /> Resolved by support</>
+                    ) : (
+                      <><Clock size={16} /> Awaiting support</>
+                    )}
+                  </div>
                 )}
               </div>
             </div>
 
             <div className="info-grid">
-              <div className="info-card">
-                <div className="info-card-header">
-                  <User size={16} strokeWidth={1.5} />
-                  <span>Customer</span>
+              {/* Admins need to know which vendor (client) raised the ticket. */}
+              {isAdmin && ticket.vendor && (
+                <div className="info-card td-vendor-card">
+                  <div className="info-card-header">
+                    <Building2 size={16} strokeWidth={1.5} />
+                    <span>Vendor</span>
+                  </div>
+                  <p className="info-name">{ticket.vendor.name}</p>
+                  {ticket.vendor.contactName && ticket.vendor.contactName !== ticket.vendor.name && (
+                    <p className="info-detail">{ticket.vendor.contactName}</p>
+                  )}
+                  <div className="td-vendor-meta">
+                    {ticket.vendor.phone && (
+                      <span className="td-vendor-line"><Phone size={13} strokeWidth={1.5} />{ticket.vendor.phone}</span>
+                    )}
+                    {ticket.vendor.email && (
+                      <span className="td-vendor-line"><Mail size={13} strokeWidth={1.5} />{ticket.vendor.email}</span>
+                    )}
+                    {(ticket.vendor.address || ticket.vendor.location) && (
+                      <span className="td-vendor-line">
+                        <MapPin size={13} strokeWidth={1.5} />
+                        {[ticket.vendor.address, ticket.vendor.location].filter(Boolean).join(', ')}
+                      </span>
+                    )}
+                  </div>
                 </div>
-                <p className="info-name">{ticket.customerName || '—'}</p>
-                <p className="info-detail">{ticket.customerPhone || '—'}</p>
-              </div>
+              )}
               <div className="info-card">
                 <div className="info-card-header">
                   <Tag size={16} strokeWidth={1.5} />

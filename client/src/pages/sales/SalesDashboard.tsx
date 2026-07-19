@@ -34,8 +34,21 @@ const EMPTY_SUMMARY: DashboardSummary = {
     delivered: 0,
     inTransit: 0,
     returns: 0,
+    returnedToVendor: 0,
     remarks: 0,
     unclosedComments: 0,
+  },
+  sla: {
+    overduePickup: 0,
+    overdueDelivery: 0,
+    overdueTransit: 0,
+    overdueRemarks: 0,
+    overdueReturn: 0,
+    pickupHours: null,
+    deliveryHours: null,
+    transitHours: null,
+    remarksHours: null,
+    returnHours: null,
   },
   codSettlement: {
     totalCod: 0,
@@ -119,8 +132,8 @@ const SalesDashboard: React.FC = () => {
         <div className="sales-dashboard-main-row">
           <div className="sales-dashboard-charts-col">
             <OrdersTrendDonut
-              delivered={today.delivered}
-              returns={today.returns}
+              delivered={overview.totalDelivered}
+              returns={overview.totalReturns}
               loading={loading}
             />
             <VendorOrdersTrendChart data={weeklyTrend} loading={loading} />

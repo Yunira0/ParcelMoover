@@ -75,34 +75,55 @@ export default function DashboardPage() {
 
       {!loading && summary && (
         <>
-          {/* Lifetime stats */}
+          {/* Lifetime stats — each drills into the orders behind it */}
           <div className="px-5 mt-4">
             <p className="text-xs font-semibold text-text-muted mb-3 uppercase tracking-wider">Overall</p>
             <div className="grid grid-cols-2 gap-3">
-              <div className="flex flex-col gap-2 bg-surface rounded-2xl p-4 border border-border">
-                <Truck size={17} className="text-brand" />
+              <button
+                onClick={() => navigate('/orders?view=picked_up')}
+                style={{ touchAction: 'manipulation' }}
+                className="flex flex-col gap-2 bg-surface rounded-2xl p-4 border border-border text-left cursor-pointer active:opacity-70 transition-opacity"
+              >
+                <div className="flex items-center justify-between">
+                  <Truck size={17} className="text-brand" />
+                  <ChevronRight size={14} className="text-text-muted" />
+                </div>
                 <span className="text-2xl font-bold text-text-primary">{summary.overview.totalPickedUp}</span>
                 <span className="text-xs text-text-muted">Total Picked Up</span>
-              </div>
-              <div className="flex flex-col gap-2 bg-surface rounded-2xl p-4 border border-border">
-                <PackageCheck size={17} className="text-success" />
+              </button>
+              <button
+                onClick={() => navigate('/orders?view=delivered')}
+                style={{ touchAction: 'manipulation' }}
+                className="flex flex-col gap-2 bg-surface rounded-2xl p-4 border border-border text-left cursor-pointer active:opacity-70 transition-opacity"
+              >
+                <div className="flex items-center justify-between">
+                  <PackageCheck size={17} className="text-success" />
+                  <ChevronRight size={14} className="text-text-muted" />
+                </div>
                 <span className="text-2xl font-bold text-text-primary">{summary.overview.totalDelivered}</span>
                 <span className="text-xs text-text-muted">Total Delivered</span>
-              </div>
+              </button>
               <div className="flex flex-col gap-2 bg-surface rounded-2xl p-4 border border-border">
                 <RotateCcw size={17} className="text-blue-400" />
                 <span className="text-2xl font-bold text-text-primary">{summary.overview.totalReturns}</span>
                 <span className="text-xs text-text-muted">Total RTV</span>
               </div>
-              <div className="flex flex-col gap-2 bg-surface rounded-2xl p-4 border border-border">
-                <Coins size={17} className="text-yellow-400" />
+              <button
+                onClick={() => navigate('/settlements')}
+                style={{ touchAction: 'manipulation' }}
+                className="flex flex-col gap-2 bg-surface rounded-2xl p-4 border border-border text-left cursor-pointer active:opacity-70 transition-opacity"
+              >
+                <div className="flex items-center justify-between">
+                  <Coins size={17} className="text-yellow-400" />
+                  <ChevronRight size={14} className="text-text-muted" />
+                </div>
                 <span className="text-2xl font-bold text-text-primary">
                   {summary.codSettlement.totalCod > 0
                     ? `Rs ${summary.codSettlement.totalCod.toLocaleString()}`
                     : '—'}
                 </span>
                 <span className="text-xs text-text-muted">Total COD</span>
-              </div>
+              </button>
             </div>
           </div>
 

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+﻿import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { MessageSquare, RefreshCw, Send } from 'lucide-react';
 import Button from './Button';
 import { getOrderByTrackingId, addOrderRemark, type OrderRemark } from '../services/orders.service';
@@ -16,7 +16,7 @@ const getInitials = (name: string) =>
 
 const getAvatarColor = (name: string) => {
   const lower = name.toLowerCase();
-  if (lower.includes('admin') || lower.includes('super')) return '#c2410c';
+  if (lower.includes('admin') || lower.includes('super')) return '#e24c00';
   if (lower.includes('vendor') || lower.includes('branch')) return '#0f766e';
   if (lower.includes('rider')) return '#16a34a';
   return '#64748b';
@@ -213,7 +213,7 @@ const QuickRemarkPopup: React.FC<QuickRemarkPopupProps> = ({ orderId, trackingId
               <RefreshCw size={16} />
             </button>
             <button className="qr-header-btn qr-header-btn--close" onClick={onClose} aria-label="Close" title="Close">
-              <span className="qr-close-glyph" aria-hidden="true">×</span>
+              <span className="qr-close-glyph" aria-hidden="true">Ã—</span>
             </button>
           </div>
         </div>
@@ -261,7 +261,7 @@ const QuickRemarkPopup: React.FC<QuickRemarkPopupProps> = ({ orderId, trackingId
               </span>
             </div>
             <button className="qr-replying-close" onClick={cancelReply} aria-label="Cancel reply" title="Cancel reply">
-              <span className="qr-close-glyph" aria-hidden="true">×</span>
+              <span className="qr-close-glyph" aria-hidden="true">Ã—</span>
             </button>
           </div>
         )}

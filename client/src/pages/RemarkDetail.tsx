@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+﻿import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, CheckCircle2, MessageSquare, Package, Phone, RefreshCw, RotateCcw, Send, User, X } from 'lucide-react';
 import Button from '../components/Button';
@@ -26,7 +26,7 @@ const getInitials = (name: string) => name.split(' ').map((n) => n[0]).join('').
 
 const getAvatarColor = (name: string) => {
   const lower = name.toLowerCase();
-  if (lower.includes('admin') || lower.includes('super')) return '#c2410c';
+  if (lower.includes('admin') || lower.includes('super')) return '#e24c00';
   if (lower.includes('vendor') || lower.includes('branch')) return '#0f766e';
   if (lower.includes('rider')) return '#16a34a';
   return '#64748b';
@@ -96,7 +96,7 @@ const RemarkDetail: React.FC = () => {
       const res = await getRemarkById(id);
       if (res?.success && res.data) {
         setRemark(res.data);
-        // Viewing a pending remark acknowledges it — moved here (an explicit
+        // Viewing a pending remark acknowledges it â€” moved here (an explicit
         // status-change call) instead of being a side effect of the GET itself.
         if (res.data.status === 'pending') {
           try {

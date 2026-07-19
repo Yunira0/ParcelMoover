@@ -23,6 +23,10 @@ const STATUS_LABELS: Record<ParcelStatus, string> = {
   failed_pickup:     'Failed Pickup',
   failed_delivery:   'Failed Delivery',
   cancelled:         'Cancelled',
+  follow_up:         'Follow Up',
+  ready_to_return:   'Ready to Return',
+  sent_to_vendor:    'Returning to Vendor',
+  returned_to_vendor: 'Returned to Vendor',
 }
 
 const ACTION_META: Record<string, { label: string; icon: typeof CheckCheck; danger?: boolean; partial?: boolean }> = {
@@ -44,6 +48,9 @@ const STATUS_PILL: Record<string, string> = {
   failed_pickup:     'text-error bg-error/10',
   failed_delivery:   'text-error bg-error/10',
   cancelled:         'text-error bg-error/10',
+  ready_to_return:   'text-yellow-400 bg-yellow-400/10',
+  sent_to_vendor:    'text-blue-400 bg-blue-400/10',
+  returned_to_vendor: 'text-success bg-success/10',
 }
 
 interface Props {

@@ -1,94 +1,118 @@
 import { useEffect, useState } from 'react'
 import {
-  Package, Truck, Building2, MapPin,
-  RefreshCw, AlertCircle, Banknote, ChevronRight,
+  Package, Truck, MapPin, RotateCcw,
+  RefreshCw, AlertCircle, Banknote, ChevronRight, CheckCircle2, XCircle,
 } from 'lucide-react'
 import { usePending } from '../context/PendingContext'
 import ParcelActionSheet from '../components/ParcelActionSheet'
-import { PENDING_QUEUE_STATUSES, type Parcel, type ParcelStatus } from '../lib/api'
+import { getRiderParcels, type Parcel, type ParcelStatus } from '../lib/api'
 
-// ── Filter definitions ────────────────────────────────────────────────────
+// ── Lanes ──────────────────────────────────────────────────────────────────
+// Three filters, each covering the whole lane: the parcels still awaiting a
+// rider action (pending) plus the ones that lane has already completed.
 
-type FilterKey = 'all' | 'pickup' | 'delivery' | 'dropoff'
+type FilterKey = 'pickup' | 'delivery' | 'return'
 
 interface FilterDef {
   key: FilterKey
   label: string
   statuses: ParcelStatus[]
   icon: typeof Package
-  accent: string          // Tailwind text colour
-  border: string          // left-border colour class
-  bg: string              // icon bg
+  accent: string   // Tailwind text colour
+  border: string   // left-border colour class
+  bg: string       // icon bg
 }
 
 const FILTERS: FilterDef[] = [
   {
-    key:      'all',
-    label:    'All',
-    statuses: PENDING_QUEUE_STATUSES,
-    icon:     Package,
-    accent:   'text-text-primary',
-    border:   'border-l-border',
-    bg:       'bg-surface',
+    key: 'pickup',
+    label: 'Pickup',
+    statuses: ['rider_assigned', 'picked_up', 'failed_pickup'],
+    icon: Truck,
+    accent: 'text-yellow-400',
+    border: 'border-l-yellow-400',
+    bg: 'bg-yellow-400/10',
   },
   {
-    key:      'pickup',
-    label:    'Pickup',
-    statuses: ['rider_assigned'],
-    icon:     Truck,
-    accent:   'text-yellow-400',
-    border:   'border-l-yellow-400',
-    bg:       'bg-yellow-400/10',
+    key: 'delivery',
+    label: 'Delivery',
+    statuses: ['sent_for_delivery', 'dispatched', 'delivered', 'partially_delivered', 'failed_delivery'],
+    icon: MapPin,
+    accent: 'text-brand',
+    border: 'border-l-brand',
+    bg: 'bg-brand-dim',
   },
   {
-    key:      'dropoff',
-    label:    'Dispatch',
-    statuses: ['picked_up', 'dispatched'],
-    icon:     Building2,
-    accent:   'text-blue-400',
-    border:   'border-l-blue-400',
-    bg:       'bg-blue-400/10',
-  },
-  {
-    key:      'delivery',
-    label:    'Deliver',
-    statuses: ['sent_for_delivery'],
-    icon:     MapPin,
-    accent:   'text-brand',
-    border:   'border-l-brand',
-    bg:       'bg-brand-dim',
+    key: 'return',
+    label: 'Return',
+    statuses: ['sent_to_vendor', 'returned_to_vendor'],
+    icon: RotateCcw,
+    accent: 'text-blue-400',
+    border: 'border-l-blue-400',
+    bg: 'bg-blue-400/10',
   },
 ]
 
+// Completed / return statuses aren't in the actionable queue the PendingContext
+// tracks (it feeds the nav badge, which must stay = work-to-do). Fetch them
+// separately so each lane can also show what it has already finished.
+const COMPLETED_STATUSES: ParcelStatus[] = [
+  'delivered', 'partially_delivered', 'failed_pickup', 'failed_delivery',
+  'sent_to_vendor', 'returned_to_vendor',
+]
+
+// Statuses that count as "done" within their lane — shown with a success pill
+// so a rider can tell finished parcels apart from ones still needing action.
+const DONE_STATUSES = new Set<ParcelStatus>([
+  'picked_up', 'delivered', 'partially_delivered', 'returned_to_vendor',
+])
+
+// Terminal failures — shown with an error pill so they read differently from
+// both actionable and successfully-completed parcels.
+const FAILED_STATUSES = new Set<ParcelStatus>(['failed_pickup', 'failed_delivery'])
+
 const STATUS_LABEL: Record<string, string> = {
-  rider_assigned:    'Pickup',
-  picked_up:         'Drop at Hub',
-  dispatched:        'Drop at Branch',
-  sent_for_delivery: 'Deliver',
+  rider_assigned:      'To Pick Up',
+  picked_up:           'Picked Up',
+  sent_for_delivery:   'To Deliver',
+  dispatched:          'Dispatched',
+  delivered:           'Delivered',
+  partially_delivered: 'Partial',
+  ready_to_return:     'To Return',
+  sent_to_vendor:      'Returning',
+  returned_to_vendor:  'Returned',
+  failed_pickup:       'Failed',
+  failed_delivery:     'Failed',
 }
 
-function filterFor(key: FilterKey): FilterDef {
-  return FILTERS.find(f => f.key === key)!
+function laneFor(status: ParcelStatus): FilterDef {
+  return FILTERS.find(f => (f.statuses as string[]).includes(status)) ?? FILTERS[0]
 }
 
 // ── Parcel card ───────────────────────────────────────────────────────────
 
 function ParcelCard({ parcel, onTap }: { parcel: Parcel; onTap: () => void }) {
-  const def   = FILTERS.find(f => (f.statuses as string[]).includes(parcel.status)) ?? FILTERS[0]
-  const Icon  = def.icon
+  const def    = laneFor(parcel.status)
+  const done   = DONE_STATUSES.has(parcel.status)
+  const failed = FAILED_STATUSES.has(parcel.status)
+  const Icon   = def.icon
+
+  const iconBg   = failed ? 'bg-error/10' : done ? 'bg-success/10' : def.bg
+  const iconTone = failed ? 'text-error'  : done ? 'text-success'  : def.accent
+  const pillCls  = failed ? 'text-error bg-error/10'
+                 : done   ? 'text-success bg-success/10'
+                 : `${def.bg} ${def.accent}`
 
   return (
     <button
       onClick={onTap}
       style={{ touchAction: 'manipulation' }}
-      className={`w-full flex items-stretch gap-0 bg-surface-2 rounded-2xl border border-border border-l-4 ${def.border} active:opacity-70 transition-opacity cursor-pointer text-left overflow-hidden`}
+      className={`w-full flex items-stretch gap-0 bg-surface-2 rounded-2xl border border-border border-l-4 ${failed ? 'border-l-error' : def.border} active:opacity-70 transition-opacity cursor-pointer text-left overflow-hidden`}
     >
-      {/* Icon column */}
-      <div className={`flex items-center justify-center w-12 shrink-0 ${def.bg}`}>
-        <Icon size={15} className={def.accent} />
+      <div className={`flex items-center justify-center w-12 shrink-0 ${iconBg}`}>
+        <Icon size={15} className={iconTone} />
       </div>
 
-      {/* Content */}
       <div className="flex items-center gap-3 flex-1 min-w-0 px-3 py-3.5">
         <div className="flex flex-col gap-0.5 flex-1 min-w-0">
           <div className="flex items-center gap-2">
@@ -102,13 +126,13 @@ function ParcelCard({ parcel, onTap }: { parcel: Parcel; onTap: () => void }) {
             )}
           </div>
           <span className="text-xs text-text-muted truncate">
-            {parcel.receiverName}
-            {parcel.destination ? ` · ${parcel.destination}` : ''}
+            {parcel.receiverName}{parcel.destination ? ` · ${parcel.destination}` : ''}
           </span>
         </div>
 
         <div className="flex items-center gap-1.5 shrink-0">
-          <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${def.bg} ${def.accent}`}>
+          <span className={`flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-full ${pillCls}`}>
+            {failed ? <XCircle size={10} /> : done ? <CheckCircle2 size={10} /> : null}
             {STATUS_LABEL[parcel.status] ?? parcel.status}
           </span>
           <ChevronRight size={14} className="text-text-muted" />
@@ -121,20 +145,42 @@ function ParcelCard({ parcel, onTap }: { parcel: Parcel; onTap: () => void }) {
 // ── Page ──────────────────────────────────────────────────────────────────
 
 export default function PendingPage() {
-  const { parcels, loading, error, refresh } = usePending()
-  const [activeFilter, setActiveFilter] = useState<FilterKey>('all')
-  const [selected,     setSelected]     = useState<Parcel | null>(null)
+  const { parcels: queue, loading, error, refresh } = usePending()
+  const [completed, setCompleted] = useState<Parcel[]>([])
+  const [activeFilter, setActiveFilter] = useState<FilterKey>('pickup')
+  const [selected, setSelected] = useState<Parcel | null>(null)
 
-  useEffect(() => { refresh() }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  async function loadCompleted() {
+    try {
+      setCompleted(await getRiderParcels(COMPLETED_STATUSES))
+    } catch {
+      // Non-fatal: the actionable queue (which drives the badge) still loads;
+      // completed/return history just won't appear until the next refresh.
+    }
+  }
 
-  const handleDone = () => { setSelected(null); refresh() }
+  async function refreshAll() {
+    await Promise.all([refresh(), loadCompleted()])
+  }
+
+  useEffect(() => { loadCompleted() }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleDone = () => { setSelected(null); refreshAll() }
+
+  // Merge the actionable queue with the fetched completed/return parcels,
+  // de-duped by id (a status can appear in both sources briefly after an update).
+  const seen = new Set<string>()
+  const all: Parcel[] = [...queue, ...completed].filter(p => {
+    if (seen.has(p.id)) return false
+    seen.add(p.id)
+    return true
+  })
 
   const countFor = (f: FilterDef) =>
-    parcels.filter(p => (f.statuses as string[]).includes(p.status)).length
+    all.filter(p => (f.statuses as string[]).includes(p.status)).length
 
-  const visibleParcels = parcels.filter(p =>
-    (filterFor(activeFilter).statuses as string[]).includes(p.status)
-  )
+  const active = FILTERS.find(f => f.key === activeFilter)!
+  const visibleParcels = all.filter(p => (active.statuses as string[]).includes(p.status))
 
   return (
     <div className="flex flex-col flex-1 bg-bg overflow-hidden">
@@ -146,15 +192,15 @@ export default function PendingPage() {
             <p className="text-[11px] font-semibold text-text-muted uppercase tracking-widest">Your Queue</p>
             <h1 className="text-xl font-bold text-text-primary mt-0.5">
               Pending
-              {parcels.length > 0 && (
+              {queue.length > 0 && (
                 <span className="ml-2 text-sm font-semibold text-brand bg-brand-dim px-2 py-0.5 rounded-full">
-                  {parcels.length}
+                  {queue.length}
                 </span>
               )}
             </h1>
           </div>
           <button
-            onClick={refresh}
+            onClick={refreshAll}
             disabled={loading}
             style={{ touchAction: 'manipulation' }}
             aria-label="Refresh"
@@ -168,24 +214,24 @@ export default function PendingPage() {
         <div className="flex gap-2 px-5 pb-3 overflow-x-auto no-scrollbar">
           {FILTERS.map(f => {
             const count  = countFor(f)
-            const active = activeFilter === f.key
+            const isOn   = activeFilter === f.key
             const Icon   = f.icon
             return (
               <button
                 key={f.key}
                 onClick={() => setActiveFilter(f.key)}
                 style={{ touchAction: 'manipulation' }}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap border transition-all cursor-pointer shrink-0
-                  ${active
+                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap border transition-all cursor-pointer shrink-0
+                  ${isOn
                     ? `${f.bg} ${f.accent} border-transparent`
                     : 'bg-surface-2 text-text-muted border-border hover:text-text-secondary'
                   }`}
               >
-                <Icon size={11} />
+                <Icon size={12} />
                 {f.label}
                 {count > 0 && (
                   <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center
-                    ${active ? 'bg-black/10' : 'bg-surface text-text-muted border border-border'}`}>
+                    ${isOn ? 'bg-black/10' : 'bg-surface text-text-muted border border-border'}`}>
                     {count}
                   </span>
                 )}
@@ -194,26 +240,23 @@ export default function PendingPage() {
           })}
         </div>
 
-        {/* Divider */}
         <div className="h-px bg-border mx-5" />
       </div>
 
       {/* ── Scrollable list ── */}
       <div className="flex-1 overflow-y-auto">
 
-        {/* Error */}
         {error && (
           <div className="mx-5 mt-4 flex items-center gap-3 bg-error/10 border border-error/30 rounded-2xl px-4 py-3">
             <AlertCircle size={15} className="text-error shrink-0" />
             <p className="text-sm text-error flex-1">{error}</p>
-            <button onClick={refresh} className="text-error cursor-pointer" aria-label="Retry">
+            <button onClick={refreshAll} className="text-error cursor-pointer" aria-label="Retry">
               <RefreshCw size={14} />
             </button>
           </div>
         )}
 
-        {/* Skeleton */}
-        {loading && parcels.length === 0 && (
+        {loading && all.length === 0 && (
           <div className="px-5 mt-4 flex flex-col gap-3">
             {[1, 2, 3, 4, 5].map(i => (
               <div key={i} className="h-16 rounded-2xl bg-surface-2 animate-pulse" />
@@ -221,32 +264,17 @@ export default function PendingPage() {
           </div>
         )}
 
-        {/* Empty: no parcels at all */}
-        {!loading && !error && parcels.length === 0 && (
-          <div className="flex flex-col items-center justify-center h-full gap-4 px-8 text-center pt-16">
-            <div className="w-20 h-20 rounded-3xl bg-surface-2 flex items-center justify-center border border-border">
-              <Package size={36} className="text-text-muted" strokeWidth={1.5} />
-            </div>
-            <div>
-              <p className="text-base font-semibold text-text-primary">All clear</p>
-              <p className="text-sm text-text-muted mt-1">No parcels waiting for action</p>
-            </div>
-          </div>
-        )}
-
-        {/* Empty: filter has no results */}
-        {!loading && !error && parcels.length > 0 && visibleParcels.length === 0 && (
+        {!loading && !error && visibleParcels.length === 0 && (
           <div className="flex flex-col items-center gap-3 px-8 text-center pt-16">
             <div className="w-16 h-16 rounded-3xl bg-surface-2 flex items-center justify-center border border-border">
-              {(() => { const Icon = filterFor(activeFilter).icon; return <Icon size={26} className="text-text-muted" strokeWidth={1.5} /> })()}
+              <active.icon size={26} className="text-text-muted" strokeWidth={1.5} />
             </div>
             <p className="text-sm text-text-secondary">
-              No <span className="font-semibold">{filterFor(activeFilter).label.toLowerCase()}</span> parcels right now
+              No <span className="font-semibold">{active.label.toLowerCase()}</span> orders right now
             </p>
           </div>
         )}
 
-        {/* List */}
         {visibleParcels.length > 0 && (
           <div className="px-5 pt-4 pb-6 flex flex-col gap-2.5">
             {visibleParcels.map(p => (

@@ -36,31 +36,35 @@
   }
 }
 
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: var(--space-4);
-  margin-bottom: var(--space-6);
-}
-
-@media (max-width: 1100px) {
-  .stats-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 560px) {
-  .stats-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
-.dashboard-main-grid {
+/* A dashboard row pairs a wide panel (2fr) with a narrow one (1fr); the
+   -split modifier makes it an even 1fr/1fr pair. Rows collapse to a single
+   column on tablet and below. */
+.dashboard-row {
   display: grid;
   grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
   gap: var(--space-6);
-  /* stretch so the chart card matches the summary column's height */
   align-items: stretch;
+}
+
+.dashboard-row-split {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+/* Wrapper that turns a bare (unstyled) panel component into a surface card,
+   matching the built-in cards (chart, COD, today's overview). */
+.dashboard-panel {
+  background-color: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-modal);
+  padding: var(--space-4);
+  min-width: 0;
+}
+
+@media (max-width: 1024px) {
+  .dashboard-row,
+  .dashboard-row-split {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .grid-left {
@@ -68,44 +72,9 @@
   display: flex;
 }
 
-.grid-right {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-6);
-  min-width: 0;
-}
-
-/* Below the two-column threshold the chart and the summary cards stack. The
-   right column then flows its two cards side by side to use the full width,
-   collapsing to a single column only on narrow screens. */
-@media (max-width: 1024px) {
-  .dashboard-main-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .grid-right {
-    flex-direction: row;
-    flex-wrap: wrap;
-    align-items: flex-start;
-  }
-  .grid-right > * {
-    flex: 1 1 320px;
-  }
-}
-
-@media (max-width: 640px) {
-  .grid-right {
-    flex-direction: column;
-  }
-}
-
 @media (max-width: 640px) {
   .overview-heading {
     align-items: stretch;
     flex-direction: column;
-  }
-
-  .dashboard-refresh-btn {
-    justify-content: center;
-    width: 100%;
   }
 }

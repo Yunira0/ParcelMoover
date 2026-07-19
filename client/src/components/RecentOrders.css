@@ -1,0 +1,38 @@
+.recent-orders {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.recent-orders-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.recent-orders-link {
+  font-size: var(--font-size-xxs);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-primary);
+}
+
+.recent-orders-id {
+  color: var(--color-text-primary);
+  font-weight: var(--font-weight-medium);
+  text-decoration: none;
+}
+
+.recent-orders-id:hover {
+  text-decoration: underline;
+}
+
+.recent-orders-cod {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.recent-orders-error {
+  color: var(--color-danger-text);
+  font-size: var(--font-size-sm);
+  margin: 0;
+}

@@ -40,6 +40,13 @@ const AddRiderModal: React.FC<AddRiderModalProps> = ({ isOpen, onClose, onSucces
           const res = await getLocations();
           if (res.success && Array.isArray(res.data)) {
             setLocations(res.data);
+            // Location (hub) is fixed to the Imadol admin hub.
+            const imadol = res.data.find(
+              (loc: any) => (loc.code || '').toUpperCase() === 'IMADOL' || (loc.name || '').trim().toLowerCase() === 'imadol',
+            );
+            if (imadol?.id) {
+              setFormData((prev) => (prev.locationId ? prev : { ...prev, locationId: imadol.id }));
+            }
           }
         } catch (err) {
           console.error('Failed to fetch locations:', err);
@@ -126,6 +133,7 @@ const AddRiderModal: React.FC<AddRiderModalProps> = ({ isOpen, onClose, onSucces
               label="Location"
               type="select"
               required
+              disabled
               placeholder="Select Location"
               options={locations.map((loc) => ({ value: loc.id, label: loc.name }))}
               value={formData.locationId}

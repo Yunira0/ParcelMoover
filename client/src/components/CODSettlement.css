@@ -30,24 +30,61 @@
   margin: 0;
 }
 
-.total-collection {
+.cod-ring-wrap {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: var(--space-4) var(--space-2);
-  font-weight: var(--font-weight-bold);
-  font-size: var(--font-size-md);
+  justify-content: center;
+  padding: var(--space-2) 0;
 }
 
-.total-amount {
-  color: var(--color-text-primary);
-  font-size: var(--font-size-lg);
+.cod-ring {
+  width: 150px;
+  height: 150px;
+}
+
+.cod-ring-track {
+  fill: none;
+  stroke: var(--color-background-canvas);
+  stroke-width: 11;
+}
+
+.cod-ring-value {
+  fill: none;
+  stroke: var(--color-background-primary-default);
+  stroke-width: 11;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.5s ease-out;
+}
+
+.cod-ring-percent {
+  fill: var(--color-text-default);
+  font-size: 26px;
+  font-weight: var(--font-weight-bold);
+  font-variant-numeric: tabular-nums;
+}
+
+.cod-ring-caption {
+  fill: var(--color-text-caption);
+  font-size: 11px;
 }
 
 .settlement-details {
   display: flex;
   flex-direction: column;
   border-top: 1px solid var(--color-border-default);
+}
+
+.status-dot.total {
+  background-color: var(--color-text-caption);
+}
+
+.cod-pending {
+  color: var(--color-text-primary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cod-ring-value {
+    transition: none;
+  }
 }
 
 .settlement-row {

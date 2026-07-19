@@ -24,9 +24,20 @@ export interface TicketThreadEntry {
   createdAt: string;
 }
 
+export interface TicketVendor {
+  id: string;
+  name: string;
+  contactName: string;
+  phone: string;
+  email: string;
+  address: string;
+  location: string;
+}
+
 export interface TicketDetail extends Ticket {
   description: string;
   thread: TicketThreadEntry[];
+  vendor: TicketVendor | null;
 }
 
 export const TICKET_STATUS_LABELS: Record<TicketStatus, string> = {

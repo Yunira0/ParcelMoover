@@ -9,17 +9,22 @@ interface OrdersTrendDonutProps {
 
 const OrdersTrendDonut: React.FC<OrdersTrendDonutProps> = ({ delivered, returns, loading = false }) => {
   const total = delivered + returns;
-  const deliveredPercent = total > 0 ? Math.round((delivered / total) * 100) : 0;
+  const hasData = total > 0;
+  const deliveredPercent = hasData ? Math.round((delivered / total) * 100) : 0;
+
+  // With no delivered/returned orders yet, a delivered-vs-returned split has no
+  // meaning - render a flat neutral ring instead of a solid-red (100% returned)
+  // one, which reads as broken.
+  const ringBackground = hasData
+    ? `conic-gradient(var(--color-background-success-default) ${deliveredPercent}%, var(--color-danger-default) ${deliveredPercent}% 100%)`
+    : 'var(--color-background-elevated)';
 
   return (
     <div className="orders-trend-donut">
       <h3 className="section-title">Orders Trend</h3>
-      <div
-        className="donut-ring"
-        style={{ background: `conic-gradient(var(--color-background-success-default) ${deliveredPercent}%, var(--color-danger-default) ${deliveredPercent}% 100%)` }}
-      >
+      <div className="donut-ring" style={{ background: ringBackground }}>
         <div className="donut-center">
-          <span>{loading ? '...' : `${deliveredPercent}%`}</span>
+          <span>{loading ? '...' : hasData ? `${deliveredPercent}%` : '—'}</span>
         </div>
       </div>
       <div className="donut-legend">

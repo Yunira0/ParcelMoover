@@ -1,19 +1,15 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import StatCard from '../components/StatCard';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import OverviewMetrics from '../components/OverviewMetrics';
 import CODSettlement from '../components/CODSettlement';
 import TodayOverview from '../components/TodayOverview';
 import WeeklyStats from '../components/WeeklyStats';
 import DashboardHeader from '../components/DashboardHeader';
-import Button from '../components/Button';
+import QuickActions from '../components/QuickActions';
+import RecentOrders from '../components/RecentOrders';
+import TopVendors from '../components/TopVendors';
+import NeedsAttention from '../components/NeedsAttention';
 import { getDashboardSummary, type DashboardSummary } from '../services/orders.service';
 import { getCurrentUser } from '../utils/auth';
-import { 
-  ClipboardList, 
-  RefreshCw,
-  RotateCcw, 
-  Truck, 
-  PackageCheck 
-} from 'lucide-react';
 import './Dashboard.css';
 
 const REFRESH_INTERVAL_MS = 15_000;
@@ -39,8 +35,21 @@ const EMPTY_SUMMARY: DashboardSummary = {
     delivered: 0,
     inTransit: 0,
     returns: 0,
+    returnedToVendor: 0,
     remarks: 0,
     unclosedComments: 0,
+  },
+  sla: {
+    overduePickup: 0,
+    overdueDelivery: 0,
+    overdueTransit: 0,
+    overdueRemarks: 0,
+    overdueReturn: 0,
+    pickupHours: null,
+    deliveryHours: null,
+    transitHours: null,
+    remarksHours: null,
+    returnHours: null,
   },
   codSettlement: {
     totalCod: 0,
@@ -71,12 +80,27 @@ const Dashboard: React.FC = () => {
   // refetch used to blank the unrelated money/status widgets too.
   const [initialLoading, setInitialLoading] = useState(true);
   const [chartLoading, setChartLoading] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
   const [trendPeriod, setTrendPeriod] = useState<7 | 30>(7);
 
-  const loadSummary = useCallback(async (showRefreshing = false) => {
-    if (showRefreshing) setRefreshing(true);
+  const handlePeriodChange = useCallback((p: 7 | 30) => {
+    setChartLoading(true);
+    setTrendPeriod(p);
+  }, []);
+
+  // Real period-over-period delta for "Delivered today" from the daily trend
+  // (last day vs the previous day). Snapshot metrics have no stored history, so
+  // they show no delta until the backend supplies previous-period counts.
+  const deltas = useMemo(() => {
+    const t = summary.weeklyTrend;
+    if (t.length < 2) return undefined;
+    const prev = t[t.length - 2].delivered;
+    if (!prev) return undefined;
+    const pct = Math.round(((t[t.length - 1].delivered - prev) / prev) * 100);
+    return { deliveredToday: pct } as const;
+  }, [summary.weeklyTrend]);
+
+  const loadSummary = useCallback(async () => {
     try {
       const res = await getDashboardSummary(trendPeriod);
       if (res?.success && res.data) {
@@ -90,7 +114,6 @@ const Dashboard: React.FC = () => {
     } finally {
       setInitialLoading(false);
       setChartLoading(false);
-      if (showRefreshing) setRefreshing(false);
     }
   }, [trendPeriod]);
 
@@ -108,42 +131,13 @@ const Dashboard: React.FC = () => {
     };
   }, [loadSummary]);
 
-  // Each card links to the screen where that number is actually worked
-  // (status groups match the dashboard-summary SQL definitions).
-  const stats = [
-    {
-      icon: ClipboardList,
-      label: "PENDING PICKUPS",
-      value: initialLoading ? '...' : summary.overview.pendingPickups.toLocaleString(),
-      to: '/orders?tab=ready_to_pick',
-    },
-    {
-      icon: RotateCcw,
-      label: "Pending Return",
-      value: initialLoading ? '...' : summary.overview.pendingReturns.toLocaleString(),
-      to: '/return',
-    },
-    {
-      icon: Truck,
-      label: "In Transit",
-      value: initialLoading ? '...' : summary.overview.inTransit.toLocaleString(),
-      to: '/orders?tab=inprogress',
-    },
-    {
-      icon: PackageCheck,
-      label: "Pending Deliveries",
-      value: initialLoading ? '...' : summary.overview.pendingDeliveries.toLocaleString(),
-      to: '/orders?tab=inprogress&currentStatus=ready_to_deliver&currentStatus=sent_for_delivery&currentStatus=oov',
-    }
-  ];
-
   return (
     <div className="dashboard-container">
-      
+
       <DashboardHeader
         user={getCurrentUser()?.fullName || ''}
       />
-      
+
       <div className="overview-section">
         <div className="overview-heading">
           <div>
@@ -152,39 +146,47 @@ const Dashboard: React.FC = () => {
               {error || `Last updated ${formatUpdatedAt(summary.updatedAt)}`}
             </p>
           </div>
-          <Button
-            variant="secondary"
-            className="dashboard-refresh-btn"
-            onClick={() => loadSummary(true)}
-            disabled={refreshing}
-            title="Refresh dashboard"
-          >
-            <RefreshCw size={16} className={refreshing ? 'spinning' : ''} />
-            <span>{refreshing ? 'Refreshing' : 'Refresh'}</span>
-          </Button>
         </div>
-        <div className="stats-grid">
-          {stats.map((stat, index) => (
-            <StatCard key={index} {...stat} />
-          ))}
-        </div>
+        <OverviewMetrics
+          overview={summary.overview}
+          today={summary.today}
+          loading={initialLoading}
+          deltas={deltas}
+        />
       </div>
-      
-      <div className="dashboard-main-grid">
+
+      <QuickActions />
+
+      <div className="dashboard-row">
         <div className="grid-left">
           <WeeklyStats
             data={summary.weeklyTrend}
             loading={initialLoading || chartLoading}
             period={trendPeriod}
-            onPeriodChange={(p) => {
-              setChartLoading(true);
-              setTrendPeriod(p);
-            }}
+            onPeriodChange={handlePeriodChange}
           />
         </div>
-        <div className="grid-right">
-          <CODSettlement data={summary.codSettlement} loading={initialLoading} />
-          <TodayOverview data={summary.today} loading={initialLoading} />
+        <CODSettlement data={summary.codSettlement} loading={initialLoading} />
+      </div>
+
+      <div className="dashboard-row">
+        <div className="dashboard-panel">
+          <RecentOrders />
+        </div>
+        <div className="dashboard-panel">
+          <TodayOverview today={summary.today} overview={summary.overview} loading={initialLoading} />
+        </div>
+      </div>
+
+      <div className="dashboard-row dashboard-row-split">
+        <div className="dashboard-panel">
+          <TopVendors />
+        </div>
+        <div className="dashboard-panel">
+          <NeedsAttention
+            sla={summary.sla}
+            loading={initialLoading}
+          />
         </div>
       </div>
     </div>

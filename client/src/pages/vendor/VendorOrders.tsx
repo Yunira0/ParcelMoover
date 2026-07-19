@@ -18,8 +18,9 @@ import {
   type OrderType,
   type ParcelStatus,
 } from '../../services/orders.service';
+import { downloadExcel } from '../../utils/excel';
 import { printLabels } from '../../utils/printLabels';
-import { toBsDate } from '../../utils/nepaliDate';
+import { toBsDate, toBsDateTime } from '../../utils/nepaliDate';
 import NepaliDatePicker from '../../components/NepaliDatePicker';
 import { useCursorPagination } from '../../hooks/useCursorPagination';
 import './VendorOrders.css';
@@ -381,25 +382,14 @@ const VendorOrders: React.FC = () => {
       order.deliveryCharge,
       order.remarks || '',
     ]);
-    const csv = [headers, ...csvRows]
-      .map(row => row.map(value => `"${String(value).replace(/"/g, '""')}"`).join(','))
-      .join('\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'orders.csv';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+    downloadExcel('orders.xlsx', 'Orders', headers, csvRows);
   };
 
   const columns = [
     {
-      header: 'ID',
+      header: 'Order ID',
       accessor: (order: Order) => `#${order.orderNumber}`,
-      width: '70px',
+      width: '80px',
     },
     {
       header: 'Tracking ID',
@@ -417,7 +407,7 @@ const VendorOrders: React.FC = () => {
       accessor: (order: Order) => (
         <div className="vo-status-cell">
           <StatusChip tone={getStatusTone(order.status)}>{STATUS_LABELS[order.status]}</StatusChip>
-          <span className="vo-status-date">{toBsDate(order.lastUpdatedAt || order.createdAt)}</span>
+          <span className="vo-status-date">{toBsDateTime(order.lastUpdatedAt || order.createdAt)}</span>
         </div>
       ),
       width: '160px',
@@ -428,7 +418,7 @@ const VendorOrders: React.FC = () => {
         <div className="vo-customer-cell">
           <span className="vo-customer-name">{order.receiverName}</span>
           <span className="vo-customer-phone">{order.receiverPhone}</span>
-          <span className="vo-customer-address">{order.destination}</span>
+          <span className="vo-customer-address">{order.receiverAddress || order.destination}</span>
         </div>
       ),
       width: '260px',

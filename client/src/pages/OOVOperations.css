@@ -1,4 +1,4 @@
-.oov-operations-container {
+﻿.oov-operations-container {
   display: flex;
   flex-direction: column;
   gap: var(--space-6);
@@ -20,7 +20,7 @@
 
 .oov-search:focus-within {
   border-color: var(--color-border-primary);
-  box-shadow: 0 0 0 2px rgb(194 65 12 / 12%);
+  box-shadow: 0 0 0 2px rgb(226 76 0 / 12%);
 }
 
 .oov-search input {

@@ -16,6 +16,7 @@ import {
 import {
   bulkImportDeliveryRatesController,
   getDeliveryQuoteController,
+  getMyDeliveryRatesController,
   listDeliveryRatesController,
   setDeliveryRateActiveController,
   upsertDeliveryRateController,
@@ -71,6 +72,18 @@ deliveryRateRouter.get(
   quoteLimiter,
   validate(deliveryQuoteQuerySchema, "query"),
   getDeliveryQuoteController,
+);
+
+// GET /api/delivery-rates/my-rates — the rates that actually apply to the
+// requesting vendor, computed from their own rate model (flat / zone /
+// per-destination), one row per destination.
+deliveryRateRouter.get(
+  "/my-rates",
+  authMiddleware,
+  authorizeRoles("vendor", "vendor_staff"),
+  requireStaffPermission("DELIVERY_CHARGES_ACCESS"),
+  ratesReadLimiter,
+  getMyDeliveryRatesController,
 );
 
 // GET /api/delivery-rates — list all configured routes

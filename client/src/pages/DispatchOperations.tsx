@@ -22,10 +22,11 @@ import {
   type OrdersPageMeta,
   type ParcelStatus,
 } from '../services/orders.service';
+import { downloadExcel } from '../utils/excel';
 import { getRiders } from '../services/users.service';
 import { printLabels } from '../utils/printLabels';
 import { useCursorPagination } from '../hooks/useCursorPagination';
-import { toBsDate } from '../utils/nepaliDate';
+import { toBsDate, toBsDateTime } from '../utils/nepaliDate';
 import './DispatchOperations.css';
 
 const formatMoney = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 0 });
@@ -416,16 +417,7 @@ const DispatchOperations: React.FC = () => {
       toBsDate(order.lastUpdatedAt) || '',
       order.remarks || '',
     ]);
-    const csv = [headers, ...csvRows]
-      .map(row => row.map(value => `"${String(value).replace(/"/g, '""')}"`).join(','))
-      .join('\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'dispatch-orders.csv';
-    link.click();
-    URL.revokeObjectURL(url);
+    downloadExcel('dispatch-orders.xlsx', 'Dispatch Orders', headers, csvRows);
   };
 
   const handlePrintLabels = () => {
@@ -483,7 +475,7 @@ const DispatchOperations: React.FC = () => {
     { header: 'COD', accessor: (order: Order) => formatMoney(order.codAmount), width: '100px' },
     { header: 'ATTEMPT', accessor: (order: Order) => order.attemptCount, width: '90px' },
     { header: 'DELIVERY RIDER', accessor: (order: Order) => order.riderName || '-', width: '150px' },
-    { header: 'LAST UPDATED', accessor: (order: Order) => toBsDate(order.lastUpdatedAt) || '-', width: '135px' },
+    { header: 'LAST UPDATED', accessor: (order: Order) => toBsDateTime(order.lastUpdatedAt) || '-', width: '160px' },
     {
       header: 'REMARKS',
       accessor: (order: Order) => (
