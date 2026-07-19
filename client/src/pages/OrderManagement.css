@@ -130,7 +130,9 @@
   min-width: 0;
 }
 
-.order-filter-panel label span {
+/* Direct child only - the nested dropdown/date-picker value spans must keep
+   their own component typography, not the tiny label caption style. */
+.order-filter-panel label > span {
   color: var(--color-text-caption);
   font-family: var(--typography-font-family-default);
   font-size: var(--font-size-xxs);
@@ -376,6 +378,12 @@
 }
 
 .order-date-input:focus-visible,
+.order-keyword-input::placeholder {
+  color: var(--color-text-placeholder);
+  font-weight: var(--font-weight-regular);
+  opacity: 1;
+}
+
 .order-keyword-input:focus-visible {
   border-color: var(--color-border-primary);
   box-shadow: 0 0 0 2px rgb(226 76 0 / 12%);

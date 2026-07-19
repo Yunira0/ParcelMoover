@@ -27,6 +27,20 @@
   gap: var(--space-3);
   min-height: 80px;
   box-sizing: border-box;
+  /* Cards are links to the matching filtered orders list. */
+  text-decoration: none;
+  color: inherit;
+  cursor: pointer;
+  transition: border-color 120ms ease;
+}
+
+.vendor-metric-card:hover {
+  border-color: var(--color-primary);
+}
+
+.vendor-metric-card:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
 }
 
 /* Coloured icon badge — uses design-system accent tokens */
@@ -51,8 +65,8 @@
 }
 
 .vendor-metric-icon--warning {
-  background-color: color-mix(in srgb, #f59e0b 12%, transparent);
-  color: #b45309;
+  background-color: var(--color-warning-surface);
+  color: var(--color-background-warning-default);
 }
 
 .vendor-metric-icon--info {
@@ -66,8 +80,8 @@
 }
 
 .vendor-metric-icon--danger {
-  background-color: color-mix(in srgb, #ef4444 10%, transparent);
-  color: #b91c1c;
+  background-color: color-mix(in srgb, var(--color-danger-default) 10%, transparent);
+  color: var(--color-danger-text);
 }
 
 .vendor-metric-body {

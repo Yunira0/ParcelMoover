@@ -48,6 +48,7 @@ const VendorApiKeys = lazy(() => import('./pages/vendor/VendorApiKeys'))
 const StaffFormPage = lazy(() => import('./pages/vendor/StaffFormPage'))
 const BulkOrderPage = lazy(() => import('./pages/vendor/BulkOrderPage'))
 const VendorDeliveryCharges = lazy(() => import('./pages/vendor/VendorDeliveryCharges'))
+const VendorMetricDetail = lazy(() => import('./pages/vendor/VendorMetricDetail'))
 const ForceChangePasswordPage = lazy(() => import('./pages/ForceChangePasswordPage'))
 const KycApplicationPage = lazy(() => import('./pages/KycApplicationPage'))
 const KycManagement = lazy(() => import('./pages/KycManagement'))
@@ -78,6 +79,10 @@ function App() {
           }
         >
           <Route path="/dashboard" element={<DashboardRouter />} />
+          <Route
+            path="/dashboard/metric/:metricId"
+            element={<RoleGuard allowedRoles={['vendor', 'vendor_staff']}><VendorMetricDetail /></RoleGuard>}
+          />
           <Route path="/orders" element={<OrdersRouter />} />
           <Route
             path="/orders/create"

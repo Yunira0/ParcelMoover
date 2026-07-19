@@ -4,11 +4,79 @@ import {
   getPricingSettings,
   updatePricingSettings,
   getVendorQuote,
+  getVendorChargeSheet,
   RATE_TYPES,
   RateType,
   VendorRateOverrides,
 } from "../services/pricing.service";
 import { isStaffActor, resolveOwnVendorId } from "../services/vendor-scope.service";
+
+const RATE_SELECT = {
+  rate_type: true,
+  flat_inside_valley: true,
+  flat_outside_valley: true,
+  zone_major_cities: true,
+  zone_urban_areas: true,
+  zone_remote_areas: true,
+  zone_inside_valley: true,
+  inside_valley_flat_rate: true,
+  extra_weight_percent: true,
+  branch_flat_inside_valley: true,
+  branch_flat_outside_valley: true,
+  branch_zone_major_cities: true,
+  branch_zone_urban_areas: true,
+  branch_zone_remote_areas: true,
+  branch_zone_inside_valley: true,
+  return_inside_valley_percent: true,
+  return_outside_valley_percent: true,
+} as const;
+
+// Resolve the vendor whose rates apply to this request: vendor/vendor_staff
+// actors always get their own vendor (a caller-supplied vendorId is only
+// honored for staff, so a vendor account can never read another's overrides),
+// then map the row into { rateType, overrides } for the pricing service.
+async function loadVendorRateConfig(actor: Express.Request["user"], requestedVendorId?: string) {
+  let vendor = null;
+  const ownVendorId = await resolveOwnVendorId(actor!);
+
+  if (ownVendorId) {
+    vendor = await prisma.vendors.findFirst({
+      where: { id: ownVendorId, deleted_at: null },
+      select: RATE_SELECT,
+    });
+  } else if (isStaffActor(actor!) && requestedVendorId) {
+    vendor = await prisma.vendors.findFirst({
+      where: { id: requestedVendorId, deleted_at: null },
+      select: RATE_SELECT,
+    });
+  }
+
+  if (!vendor) return null;
+  const rateType = vendor.rate_type as RateType;
+  if (!RATE_TYPES.includes(rateType)) return null;
+
+  const num = (value: { toString(): string } | null) => (value === null ? null : Number(value));
+  const overrides: VendorRateOverrides = {
+    flatInsideValley: num(vendor.flat_inside_valley),
+    flatOutsideValley: num(vendor.flat_outside_valley),
+    zoneMajorCities: num(vendor.zone_major_cities),
+    zoneUrbanAreas: num(vendor.zone_urban_areas),
+    zoneRemoteAreas: num(vendor.zone_remote_areas),
+    zoneInsideValley: num(vendor.zone_inside_valley),
+    insideValleyFlatRate: num(vendor.inside_valley_flat_rate),
+    extraWeightPercent: num(vendor.extra_weight_percent),
+    returnInsideValleyPercent: num(vendor.return_inside_valley_percent),
+    returnOutsideValleyPercent: num(vendor.return_outside_valley_percent),
+    branchFlatInsideValley: num(vendor.branch_flat_inside_valley),
+    branchFlatOutsideValley: num(vendor.branch_flat_outside_valley),
+    branchZoneMajorCities: num(vendor.branch_zone_major_cities),
+    branchZoneUrbanAreas: num(vendor.branch_zone_urban_areas),
+    branchZoneRemoteAreas: num(vendor.branch_zone_remote_areas),
+    branchZoneInsideValley: num(vendor.branch_zone_inside_valley),
+  };
+
+  return { rateType, overrides };
+}
 
 export async function getPricingSettingsController(_req: Request, res: Response) {
   try {

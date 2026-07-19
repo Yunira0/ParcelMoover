@@ -17,6 +17,8 @@ interface CreateTicketModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
+  /** Pre-select a category when opened from a deep link (e.g. dashboard quick actions). */
+  initialCategory?: TicketCategory;
 }
 
 interface TicketFormState {
@@ -67,10 +69,16 @@ const categoryOptions = (Object.keys(TICKET_CATEGORY_LABELS) as TicketCategory[]
   label: TICKET_CATEGORY_LABELS[c],
 }));
 
-const CreateTicketModal: React.FC<CreateTicketModalProps> = ({ isOpen, onClose, onSuccess }) => {
+const CreateTicketModal: React.FC<CreateTicketModalProps> = ({ isOpen, onClose, onSuccess, initialCategory }) => {
   const [form, setForm] = useState<TicketFormState>(initialState);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (isOpen && initialCategory) {
+      setForm((prev) => ({ ...prev, category: initialCategory }));
+    }
+  }, [isOpen, initialCategory]);
   // Tick every minute so slot availability stays in sync with the real clock
   // even if the modal is left open across a cutoff.
   const [now, setNow] = useState(() => new Date());

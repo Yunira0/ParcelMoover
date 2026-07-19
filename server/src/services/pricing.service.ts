@@ -210,18 +210,26 @@ export interface VendorRateOverrides {
 
 export type ServiceType = "home_delivery" | "branch_delivery";
 
-// Computes the delivery charge for a vendor's chosen rate model to a destination,
-// honouring per-vendor overrides before falling back to the global defaults.
-export async function getVendorQuote(
-  rateType: RateType,
-  destinationLocationId: string,
-  weightKg = 1,
-  overrides: VendorRateOverrides = {},
-  serviceType: ServiceType = "home_delivery",
-): Promise<DeliveryQuote> {
-  const settings = await getPricingSettings();
-  const dest = await resolveDestinationPricing(destinationLocationId);
+interface DestinationPricing {
+  name: string;
+  zone: Zone | null;
+  valley: Valley | null;
+  perDestinationRate: number | null;
+  branchPerDestinationRate: number | null;
+}
 
+type PricingSettingsResolved = Awaited<ReturnType<typeof getPricingSettings>>;
+
+// Pure base-rate selection shared by getVendorQuote (single destination) and
+// getVendorChargeSheet (every destination): vendor overrides win over the
+// global settings, branch rates fall back to their home counterparts.
+function resolveBaseRate(
+  rateType: RateType,
+  dest: DestinationPricing,
+  settings: PricingSettingsResolved,
+  overrides: VendorRateOverrides,
+  serviceType: ServiceType,
+): { rate: number; basis: string } {
   const pick = (override: number | null | undefined, fallback: number | null) =>
     override !== undefined && override !== null ? override : fallback;
 
@@ -280,6 +288,26 @@ export async function getVendorQuote(
     if (rate === null) throw new AppError(404, `No flat ${label} rate set for ${dest.valley} valley`);
   }
 
+  return { rate, basis };
+}
+
+// Computes the delivery charge for a vendor's chosen rate model to a destination,
+// honouring per-vendor overrides before falling back to the global defaults.
+export async function getVendorQuote(
+  rateType: RateType,
+  destinationLocationId: string,
+  weightKg = 1,
+  overrides: VendorRateOverrides = {},
+  serviceType: ServiceType = "home_delivery",
+): Promise<DeliveryQuote> {
+  const settings = await getPricingSettings();
+  const dest = await resolveDestinationPricing(destinationLocationId);
+
+  const pick = (override: number | null | undefined, fallback: number | null) =>
+    override !== undefined && override !== null ? override : fallback;
+
+  const { rate, basis } = resolveBaseRate(rateType, dest, settings, overrides, serviceType);
+
   // Weight surcharge: extra kg beyond freeWeightKg charged as a percent of the base rate.
   const freeWeightKg = settings.freeWeightKg;
   const extraWeightPercent = pick(overrides.extraWeightPercent, settings.extraWeightPercent) ?? 0;
@@ -295,6 +323,56 @@ export async function getVendorQuote(
     rateType,
     basis,
     valley: dest.valley,
+  };
+}
+
+// The vendor-facing charge sheet: what this vendor would be charged today for a
+// base-weight parcel to every active destination, under their rate model with
+// their overrides applied. Destinations with no applicable rate come back null
+// so the UI can show them as "not configured" instead of failing the whole sheet.
+export async function getVendorChargeSheet(rateType: RateType, overrides: VendorRateOverrides = {}) {
+  const settings = await getPricingSettings();
+  const destinations = await prisma.locations.findMany({
+    where: { parent_id: null, is_active: true },
+    orderBy: { name: "asc" },
+  });
+
+  const pick = (override: number | null | undefined, fallback: number | null) =>
+    override !== undefined && override !== null ? override : fallback;
+
+  const rows = destinations.map((d) => {
+    const dest: DestinationPricing = {
+      name: d.name,
+      zone: (d.zone ?? null) as Zone | null,
+      valley: (d.valley ?? null) as Valley | null,
+      perDestinationRate: d.per_destination_rate === null ? null : Number(d.per_destination_rate),
+      branchPerDestinationRate:
+        d.branch_per_destination_rate === null ? null : Number(d.branch_per_destination_rate),
+    };
+    const tryRate = (serviceType: ServiceType) => {
+      try {
+        return resolveBaseRate(rateType, dest, settings, overrides, serviceType).rate;
+      } catch {
+        return null;
+      }
+    };
+    return {
+      id: d.id,
+      name: d.name,
+      zone: dest.zone,
+      valley: dest.valley,
+      homeCharge: tryRate("home_delivery"),
+      branchCharge: tryRate("branch_delivery"),
+    };
+  });
+
+  return {
+    rateType,
+    freeWeightKg: settings.freeWeightKg,
+    extraWeightPercent: pick(overrides.extraWeightPercent, settings.extraWeightPercent) ?? 0,
+    returnInsideValleyPercent: pick(overrides.returnInsideValleyPercent, settings.returnInsideValleyPercent) ?? 0,
+    returnOutsideValleyPercent: pick(overrides.returnOutsideValleyPercent, settings.returnOutsideValleyPercent) ?? 0,
+    destinations: rows,
   };
 }
 

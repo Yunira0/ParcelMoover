@@ -4,9 +4,9 @@ import { Plus, Ticket, Banknote, Bike, ArrowDownToLine } from 'lucide-react';
 import Button from '../Button';
 import './VendorQuickActions.css';
 
-// "Create Order" and "Bulk Import" are wired to real endpoints. The rest map
-// to features that don't have a vendor-facing API yet, so they're shown
-// (matching the design) but disabled rather than faked.
+// Raise Ticket / Request COD / Pickup Request all ride on the ticket system:
+// "/tickets?new=<category>" opens the create-ticket modal pre-set to that
+// category (COD settlement and pickup have dedicated forms in the modal).
 const VendorQuickActions: React.FC = () => {
   const navigate = useNavigate();
 
@@ -16,15 +16,15 @@ const VendorQuickActions: React.FC = () => {
         Create Order
         <Plus size={16} />
       </Button>
-      <Button variant="outline" disabled title="Ticket creation for vendors is coming soon">
+      <Button variant="outline" onClick={() => navigate('/tickets?new=general')}>
         Raise Ticket
         <Ticket size={16} />
       </Button>
-      <Button variant="outline" disabled title="COD remittance requests are coming soon">
+      <Button variant="outline" onClick={() => navigate('/tickets?new=cod_settlement')}>
         Request COD
         <Banknote size={16} />
       </Button>
-      <Button variant="outline" disabled title="Pickup requests are coming soon">
+      <Button variant="outline" onClick={() => navigate('/tickets?new=pickup')}>
         Pickup Request
         <Bike size={16} />
       </Button>

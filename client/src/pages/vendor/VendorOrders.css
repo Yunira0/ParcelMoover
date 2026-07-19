@@ -254,7 +254,6 @@
   text-decoration: underline;
 }
 
-.vo-id-ref,
 .vo-id-date,
 .vo-status-date,
 .vo-customer-phone,
@@ -316,8 +315,8 @@
 }
 
 .vo-type-out {
-  background: var(--color-background-success-invert-default, #dcfce7);
-  color: var(--color-text-success, #16a34a);
+  background: var(--color-success-surface);
+  color: var(--color-success-default);
 }
 
 .vo-type-in {
@@ -343,7 +342,7 @@
   width: 32px;
   height: 32px;
   padding: 0;
-  font-size: 20px;
+  font-size: var(--font-size-xl);
   line-height: 1;
   color: var(--color-text-caption);
   background: transparent;

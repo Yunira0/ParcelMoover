@@ -138,6 +138,14 @@ const filtersFromSearchParams = (searchParams: URLSearchParams): VendorOrderFilt
   status: searchParams.get('status') || '',
 });
 
+// The status filter can hold several comma-separated statuses (dashboard cards
+// deep-link like "?status=pickup_ordered,rider_assigned"); the dropdown itself
+// only ever writes a single one.
+const statusesFromFilter = (value: string): ParcelStatus[] | undefined => {
+  const statuses = value.split(',').filter(Boolean) as ParcelStatus[];
+  return statuses.length > 0 ? statuses : undefined;
+};
+
 const VendorOrders: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -186,7 +194,7 @@ const VendorOrders: React.FC = () => {
     setLoading(true);
     try {
       const res = await getOrders({
-        status: applied.status ? [applied.status as ParcelStatus] : undefined,
+        status: statusesFromFilter(applied.status),
         orderType: (applied.orderType as OrderType) || undefined,
         search: debouncedSearch || undefined,
         pageSize: PAGE_SIZE,
@@ -229,7 +237,7 @@ const VendorOrders: React.FC = () => {
     (async () => {
       try {
         const res = await getOrders({
-          status: applied.status ? [applied.status as ParcelStatus] : undefined,
+          status: statusesFromFilter(applied.status),
           orderType: (applied.orderType as OrderType) || undefined,
         });
         if (!cancelled && res?.success && Array.isArray(res.data)) {
@@ -396,7 +404,6 @@ const VendorOrders: React.FC = () => {
       accessor: (order: Order) => (
         <div className="vo-id-cell">
           <Link to={`/orders/track/${order.trackingId}`} className="vo-id-link">{order.trackingId}</Link>
-          <span className="vo-id-ref">ref-</span>
           <span className="vo-id-date">{toBsDate(order.createdAt)}</span>
         </div>
       ),

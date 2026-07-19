@@ -73,7 +73,7 @@ const isWithinRange = (createdAt: string, range: DateRange) => {
 
 const Tickets: React.FC = () => {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [activeTab, setActiveTab] = useState<TicketTab>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -87,7 +87,22 @@ const Tickets: React.FC = () => {
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [selectedIds, setSelectedIds] = useState<Set<string | number>>(new Set());
-  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  // "?new=<category>" (e.g. from the vendor dashboard quick actions) opens the
+  // create modal straight away with that category pre-selected.
+  const newTicketParam = searchParams.get('new');
+  const initialCreateCategory =
+    newTicketParam && newTicketParam in TICKET_CATEGORY_LABELS ? (newTicketParam as TicketCategory) : undefined;
+  const [isCreateOpen, setIsCreateOpen] = useState(newTicketParam !== null);
+
+  const closeCreateModal = () => {
+    setIsCreateOpen(false);
+    // Strip the deep-link param so a refresh doesn't reopen the modal.
+    if (searchParams.has('new')) {
+      const next = new URLSearchParams(searchParams);
+      next.delete('new');
+      setSearchParams(next, { replace: true });
+    }
+  };
 
   const loadTickets = useCallback(async () => {
     setLoading(true);
@@ -310,8 +325,9 @@ const Tickets: React.FC = () => {
 
       <CreateTicketModal
         isOpen={isCreateOpen}
-        onClose={() => setIsCreateOpen(false)}
+        onClose={closeCreateModal}
         onSuccess={loadTickets}
+        initialCategory={initialCreateCategory}
       />
     </div>
   );
