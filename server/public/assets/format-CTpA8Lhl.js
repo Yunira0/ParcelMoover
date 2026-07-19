@@ -1,0 +1,1 @@
+import{o as e}from"./nepaliDate-HhBw2s26.js";function t(e,t=2){return`Rs. ${e.toLocaleString(void 0,{minimumFractionDigits:t,maximumFractionDigits:t})}`}function n(t){return t&&e(t)||`-`}export{n,t};

@@ -14,6 +14,7 @@ import {
   OctagonMinus,
   Map,
   Settings,
+  Timer,
   Ticket,
   MessageSquare,
   Receipt,
@@ -253,6 +254,7 @@ const AdminSidebar: React.FC<{ isSuperAdmin: boolean }> = ({ isSuperAdmin }) => 
         <SidebarItem to="/riders" icon={Bike} label="Rider Management" />
         <SidebarItem to="/finance" icon={Wallet} label="COD Management" />
         {(isSuperAdmin || hasAdminPermission('SETTINGS_ACCESS')) && <SidebarItem to="/settings" icon={Settings} label="Settings" />}
+        {isSuperAdmin && <SidebarItem to="/sla" icon={Timer} label="SLA" />}
         {isSuperAdmin && <SidebarItem to="/system-logs" icon={ScrollText} label="System Logs" />}
 
         <SidebarSection label="Operations" />

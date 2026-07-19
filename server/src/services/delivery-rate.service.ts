@@ -2,6 +2,12 @@ import prisma from "../lib/prisma";
 import redis from "../lib/redis";
 import { AppError } from "../utils/AppError";
 import { DeliveryQuote, UpsertDeliveryRateInput } from "../types/delivery-rate.type";
+import {
+  getVendorQuote,
+  getPricingSettings,
+  RateType,
+  VendorRateOverrides,
+} from "./pricing.service";
 
 type Actor = { id: string; roles: string[] };
 
@@ -285,4 +291,102 @@ export async function getDeliveryQuote(
   const totalPayable = baseCharge + weightSurcharge;
 
   return { baseCharge, weightSurcharge, totalPayable, freeWeightKg, extraWeightPercent };
+}
+
+// Resolve the vendor behind the current actor - either the owner (users -> vendors)
+// or a staff member (users -> vendor_staff -> vendors).
+async function resolveActorVendor(actor: Actor) {
+  let vendor = await prisma.vendors.findFirst({
+    where: { user_id: actor.id, deleted_at: null },
+  });
+  if (!vendor) {
+    const staff = await prisma.vendor_staff.findFirst({
+      where: { user_id: actor.id, deleted_at: null, enabled: true },
+      select: { vendor_id: true },
+    });
+    if (staff) {
+      vendor = await prisma.vendors.findFirst({
+        where: { id: staff.vendor_id, deleted_at: null },
+      });
+    }
+  }
+  return vendor;
+}
+
+function buildVendorOverrides(vendor: NonNullable<Awaited<ReturnType<typeof resolveActorVendor>>>): VendorRateOverrides {
+  const n = (v: unknown) => (v === null || v === undefined ? null : Number(v));
+  return {
+    flatInsideValley: n(vendor.flat_inside_valley),
+    flatOutsideValley: n(vendor.flat_outside_valley),
+    zoneMajorCities: n(vendor.zone_major_cities),
+    zoneUrbanAreas: n(vendor.zone_urban_areas),
+    zoneRemoteAreas: n(vendor.zone_remote_areas),
+    zoneInsideValley: n(vendor.zone_inside_valley),
+    insideValleyFlatRate: n(vendor.inside_valley_flat_rate),
+    extraWeightPercent: n(vendor.extra_weight_percent),
+    branchFlatInsideValley: n(vendor.branch_flat_inside_valley),
+    branchFlatOutsideValley: n(vendor.branch_flat_outside_valley),
+    branchZoneMajorCities: n(vendor.branch_zone_major_cities),
+    branchZoneUrbanAreas: n(vendor.branch_zone_urban_areas),
+    branchZoneRemoteAreas: n(vendor.branch_zone_remote_areas),
+    branchZoneInsideValley: n(vendor.branch_zone_inside_valley),
+  };
+}
+
+// The delivery rate that actually applies to THIS vendor, per destination, based
+// on their own rate model (flat by valley / zone / per-destination) - not the
+// generic admin origin->destination route table. A flat-rate vendor therefore
+// sees the same rate for every destination in a valley band, a zone-rate vendor
+// sees their zone rate, and a per-destination vendor sees each destination's rate.
+export async function getVendorSelfRates(actor: Actor) {
+  const vendor = await resolveActorVendor(actor);
+  if (!vendor) throw new AppError(404, "No vendor profile found for this account");
+
+  const settings = await getPricingSettings();
+  const overrides = buildVendorOverrides(vendor);
+  const rateType = (vendor.rate_type as RateType) ?? "flat";
+
+  // Destinations are top-level, active locations (covered areas price off their parent).
+  const destinations = await prisma.locations.findMany({
+    where: { parent_id: null, is_active: true },
+    orderBy: { name: "asc" },
+  });
+
+  const rows = await Promise.all(
+    destinations.map(async (dest) => {
+      // weightKg <= free weight so no surcharge - baseCharge is the pure rate.
+      let homeRate: number | null = null;
+      let branchRate: number | null = null;
+      let note: string | null = null;
+      try {
+        homeRate = (await getVendorQuote(rateType, dest.id, 1, overrides, "home_delivery")).baseCharge;
+      } catch (err) {
+        note = err instanceof AppError ? err.message : "Rate not configured";
+      }
+      try {
+        branchRate = (await getVendorQuote(rateType, dest.id, 1, overrides, "branch_delivery")).baseCharge;
+      } catch {
+        // Branch rate optional; leave null if unset.
+      }
+      return {
+        destinationId: dest.id,
+        destinationName: dest.name,
+        zone: dest.zone,
+        valley: dest.valley,
+        homeRate,
+        branchRate,
+        note,
+      };
+    }),
+  );
+
+  const extraWeightPercent =
+    overrides.extraWeightPercent != null ? overrides.extraWeightPercent : settings.extraWeightPercent ?? 0;
+
+  return {
+    rateType,
+    freeWeightKg: settings.freeWeightKg,
+    extraWeightPercent,
+    rates: rows,
+  };
 }

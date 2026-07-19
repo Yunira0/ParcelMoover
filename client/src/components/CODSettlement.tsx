@@ -10,20 +10,45 @@ interface CODSettlementProps {
 
 const formatCurrency = (value: number) => `Rs. ${Math.round(value).toLocaleString()}`;
 
+const RADIUS = 52;
+const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
+
 const CODSettlement: React.FC<CODSettlementProps> = ({ data, loading = false }) => {
+  const percent = Math.max(0, Math.min(100, Math.round(data.progressPercent)));
+  const offset = CIRCUMFERENCE * (1 - percent / 100);
+
   return (
     <div className="cod-settlement">
       <div className="cod-header">
-        <Banknote size={24} style={{ color: 'var(--color-background-primary-default)' }} />
+        <Banknote size={20} style={{ color: 'var(--color-background-primary-default)' }} />
         <h3>COD SETTLEMENT</h3>
       </div>
-      
-      <div className="total-collection">
-        <span>Total COD</span>
-        <span className="total-amount">{loading ? '...' : formatCurrency(data.totalCod)}</span>
+
+      <div className="cod-ring-wrap">
+        <svg className="cod-ring" viewBox="0 0 120 120" role="img" aria-label={`${percent}% of COD settled`}>
+          <circle className="cod-ring-track" cx="60" cy="60" r={RADIUS} />
+          <circle
+            className="cod-ring-value"
+            cx="60"
+            cy="60"
+            r={RADIUS}
+            strokeDasharray={CIRCUMFERENCE}
+            strokeDashoffset={loading ? CIRCUMFERENCE : offset}
+            transform="rotate(-90 60 60)"
+          />
+          <text className="cod-ring-percent" x="60" y="58" textAnchor="middle">{loading ? '—' : `${percent}%`}</text>
+          <text className="cod-ring-caption" x="60" y="76" textAnchor="middle">settled</text>
+        </svg>
       </div>
-      
+
       <div className="settlement-details">
+        <div className="settlement-row">
+          <div className="status-label">
+            <span className="status-dot total"></span>
+            <span>Total COD</span>
+          </div>
+          <span className="status-amount">{loading ? '...' : formatCurrency(data.totalCod)}</span>
+        </div>
         <div className="settlement-row">
           <div className="status-label">
             <span className="status-dot settled"></span>
@@ -36,7 +61,7 @@ const CODSettlement: React.FC<CODSettlementProps> = ({ data, loading = false }) 
             <span className="status-dot pending"></span>
             <span>Pending</span>
           </div>
-          <span className="status-amount">{loading ? '...' : formatCurrency(data.pendingCod)}</span>
+          <span className="status-amount cod-pending">{loading ? '...' : formatCurrency(data.pendingCod)}</span>
         </div>
         <div className="settlement-row">
           <div className="status-label">

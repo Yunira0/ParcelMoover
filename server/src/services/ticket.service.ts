@@ -198,14 +198,56 @@ async function findAccessibleTicket(actor: Actor, id: string) {
   return ticket;
 }
 
-async function buildTicketDetail(ticket: Awaited<ReturnType<typeof findAccessibleTicket>>) {
-  const replies = await prisma.ticket_replies.findMany({
-    where: { ticket_id: ticket.id },
-    orderBy: { created_at: "asc" },
+// The vendor behind a ticket, resolved from its creator. A ticket is raised
+// either by a vendor owner (users -> vendors.user_id) or a vendor's staff
+// member (users -> vendor_staff.user_id -> vendors). Admins see this on the
+// ticket detail page to know which client the issue belongs to.
+async function resolveTicketVendor(createdBy: string | null) {
+  if (!createdBy) return null;
+
+  let vendor = await prisma.vendors.findFirst({
+    where: { user_id: createdBy, deleted_at: null },
+    include: { locations: true },
   });
+
+  if (!vendor) {
+    const staff = await prisma.vendor_staff.findFirst({
+      where: { user_id: createdBy, deleted_at: null },
+      select: { vendor_id: true },
+    });
+    if (staff) {
+      vendor = await prisma.vendors.findFirst({
+        where: { id: staff.vendor_id, deleted_at: null },
+        include: { locations: true },
+      });
+    }
+  }
+
+  if (!vendor) return null;
+
+  return {
+    id: vendor.id,
+    name: vendor.business_name || vendor.client_name,
+    contactName: vendor.client_name,
+    phone: vendor.phone,
+    email: vendor.email || "",
+    address: vendor.address || "",
+    location: vendor.locations?.name || "",
+  };
+}
+
+async function buildTicketDetail(ticket: Awaited<ReturnType<typeof findAccessibleTicket>>) {
+  const [replies, vendor] = await Promise.all([
+    prisma.ticket_replies.findMany({
+      where: { ticket_id: ticket.id },
+      orderBy: { created_at: "asc" },
+    }),
+    resolveTicketVendor(ticket.created_by),
+  ]);
 
   return {
     ...mapTicket(ticket),
+    vendor,
     thread: replies.map((reply) => ({
       id: reply.id,
       message: reply.message,

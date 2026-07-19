@@ -20,7 +20,8 @@ import StatusChip, { type StatusChipTone } from '../components/StatusChip';
 import FilterDropdown from '../components/FilterDropdown';
 import MultiFilterDropdown from '../components/MultiFilterDropdown';
 import QuickRemarkPopup from '../components/QuickRemarkPopup';
-import { toBsDate } from '../utils/nepaliDate';
+import { toBsDate, toBsDateTime } from '../utils/nepaliDate';
+import { downloadExcel } from '../utils/excel';
 import NepaliDatePicker from '../components/NepaliDatePicker';
 import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react';
 import {
@@ -458,7 +459,7 @@ const OrderManagement: React.FC = () => {
     });
   };
 
-  const downloadCsv = async () => {
+  const downloadExcelExport = async () => {
     let exportOrders = selectedExportOrders;
     // The "arrived at origin" date is only fetched for exports (withArrival), so
     // pull the tab+search-scoped set fresh with that flag on.
@@ -504,16 +505,7 @@ const OrderManagement: React.FC = () => {
       order.lastUpdatedBy || '',
       toBsDate(order.lastUpdatedAt) || '',
     ]);
-    const csv = [headers, ...rows]
-      .map(row => row.map(value => `"${String(value).replace(/"/g, '""')}"`).join(','))
-      .join('\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'orders.csv';
-    link.click();
-    URL.revokeObjectURL(url);
+    downloadExcel('orders.xlsx', 'Orders', headers, rows);
   };
 
   const sortableHeader = (label: string, field: OrderSortField) => (
@@ -597,7 +589,7 @@ const OrderManagement: React.FC = () => {
       accessor: (order: Order) => (
         <div className="updated-cell">
           <span>{order.lastUpdatedBy || 'Name'}</span>
-          <span>{toBsDate(order.lastUpdatedAt) || 'date'}</span>
+          <span>{toBsDateTime(order.lastUpdatedAt) || 'date'}</span>
         </div>
       ),
       width: '160px',
@@ -770,7 +762,7 @@ const OrderManagement: React.FC = () => {
           <Button variant="secondary" onClick={() => navigate('/orders/bulk-create')}>Bulk Order</Button>
         </div>
         <div className="order-toolbar-right">
-          <Button variant="primary" onClick={downloadCsv}>
+          <Button variant="primary" onClick={downloadExcelExport}>
             <Download size={14} /> Download
           </Button>
           <Button variant="primary" onClick={handlePrintLabels} disabled={printWorking}>

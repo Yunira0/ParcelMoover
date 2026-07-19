@@ -159,6 +159,13 @@ const AdminFormPage: React.FC = () => {
               .filter((loc: any) => loc.is_hub)
               .map((loc: any) => ({ value: loc.id, label: loc.name })),
           );
+          // Hub is fixed to the Imadol admin hub for every admin.
+          const imadol = res.data.find(
+            (loc: any) => (loc.code || '').toUpperCase() === 'IMADOL' || (loc.name || '').trim().toLowerCase() === 'imadol',
+          );
+          if (imadol?.id) {
+            setForm((prev) => (prev.locationId ? prev : { ...prev, locationId: imadol.id }));
+          }
         }
       })
       .catch((err) => console.error('Failed to load hubs:', err));
@@ -469,6 +476,7 @@ const AdminFormPage: React.FC = () => {
                   label="Hub"
                   type="select"
                   required
+                  disabled
                   value={form.locationId}
                   onChange={set('locationId')}
                   placeholder="Select hub"

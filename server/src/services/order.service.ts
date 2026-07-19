@@ -2,6 +2,7 @@ import { parcel_status, Prisma } from "../generated/prisma/client";
 import prisma from "../lib/prisma";
 import redis, { scanAndDelete } from "../lib/redis";
 import { AppError } from "../utils/AppError";
+import { getSlaSettings, SLA_GROUPS } from "./sla.service";
 import {
   BulkCreateOrderInput,
   BulkUpdateParcelStatusInput,
@@ -1108,6 +1109,7 @@ function mapOrder(
     serviceType: parcel.service_type,
     senderName: parcel.parties_parcels_sender_idToparties.name,
     senderPhone: parcel.parties_parcels_sender_idToparties.phone,
+    senderAddress: parcel.parties_parcels_sender_idToparties.address || "",
     receiverName: parcel.parties_parcels_receiver_idToparties.name,
     receiverPhone: parcel.parties_parcels_receiver_idToparties.phone,
     receiverAlternatePhone: parcel.parties_parcels_receiver_idToparties.alternate_phone || "",
@@ -1135,7 +1137,9 @@ function mapOrder(
     riderName: rider?.name || "",
     remarks: parcel.parcel_remarks[0]?.remark || "",
     lastUpdatedBy,
-    lastUpdatedAt: formatDate(latestHistory?.created_at || parcel.updated_at),
+    // Full timestamp (not just the day) so the UI can show the time alongside
+    // the date; date-only consumers still render fine via toBsDate().
+    lastUpdatedAt: (latestHistory?.created_at || parcel.updated_at).toISOString(),
     createdAt: formatDate(parcel.created_at),
     createdAtRaw: parcel.created_at.toISOString(),
     arrivedAtOrigin: arrivedByParcelId?.get(parcel.id) ?? "",
@@ -1724,7 +1728,8 @@ export async function getOrderByTrackingId(actor: OrderActor, trackingId: string
         remarks: entry.remarks || "",
         changedBy: isStaff ? entry.users?.full_name || "System" : nonStaffLabel,
         changedByType: isStaff ? ("user" as const) : ("branch" as const),
-        createdAt: formatDate(entry.created_at),
+        // Full timestamp so the timeline shows the time of each status change.
+        createdAt: entry.created_at.toISOString(),
       };
     }),
   };
@@ -2067,7 +2072,17 @@ async function computeDashboardSummary(
     Number(trendRow![`d${i}_returned`]),
   ]);
 
-  const [todaysRemarks, unclosedComments, codRows, pendingCodCount, lastSettlement] = await Promise.all([
+  // Same scope as parcelScopeSql but qualified for the `p` alias, so it can be
+  // reused in joins against parcel_status_history below.
+  const pAliasScopeSql: Prisma.Sql = vendorId
+    ? Prisma.sql`AND p.vendor_id = ${vendorId}::uuid`
+    : vendorIds
+    ? Prisma.sql`AND p.vendor_id = ANY(${vendorIds}::uuid[])`
+    : riderId
+    ? Prisma.sql`AND (p.pickup_rider_id = ${riderId}::uuid OR p.delivery_rider_id = ${riderId}::uuid)`
+    : Prisma.empty;
+
+  const [todaysRemarks, unclosedComments, codRows, pendingCodCount, lastSettlement, returnedTodayRows] = await Promise.all([
     prisma.parcel_remarks.count({
       where: { created_at: { gte: todayStart }, parcels: parcelWhere },
     }),
@@ -2107,7 +2122,20 @@ async function computeDashboardSummary(
       orderBy: [{ settlement_date: "desc" }, { created_at: "desc" }],
       select: { amount: true, settlement_date: true, created_at: true },
     }),
+    // Parcels whose status *became* returned_to_vendor today (by status-history
+    // timestamp, since parcels has no returned_at column). DISTINCT guards
+    // against a parcel bouncing into the status more than once in a day.
+    prisma.$queryRaw<Array<{ count: bigint }>>(Prisma.sql`
+      SELECT COUNT(DISTINCT h.parcel_id) AS count
+      FROM parcel_status_history h
+      JOIN parcels p ON p.id = h.parcel_id
+      WHERE h.new_status::text = 'returned_to_vendor'
+        AND h.created_at >= ${todayStart}
+        AND p.deleted_at IS NULL
+        ${pAliasScopeSql}
+    `),
   ]);
+  const todaysReturnedToVendor = Number(returnedTodayRows[0]?.count ?? 0);
 
   // All figures are on the collected-cash basis (see codScopeSql above). Total
   // is the cash actually collected; settled is what has been remitted onward
@@ -2136,6 +2164,66 @@ async function computeDashboardSummary(
     };
   });
 
+  // ── SLA breaches ────────────────────────────────────────────────────────────
+  // An order breaches its SLA when the time since it *entered its current status*
+  // (latest parcel_status_history row, falling back to created_at) exceeds the
+  // hours configured for that status. Counts are scoped like everything else.
+  const slaSettings = await getSlaSettings();
+  const statusThresholds: Array<[string, number]> = [];
+  for (const status of [
+    ...SLA_GROUPS.pickup,
+    ...SLA_GROUPS.delivery,
+    ...SLA_GROUPS.transit,
+    ...SLA_GROUPS.return,
+  ]) {
+    const hours = slaSettings[status];
+    if (typeof hours === "number") statusThresholds.push([status, hours]);
+  }
+
+  const slaCounts: Record<string, number> = {};
+  if (statusThresholds.length) {
+    const breachColumns = statusThresholds.map(([status, hours]) =>
+      Prisma.sql`COUNT(*) FILTER (
+        WHERE status::text = ${status}
+          AND COALESCE(
+            (SELECT MAX(h.created_at) FROM parcel_status_history h WHERE h.parcel_id = parcels.id),
+            created_at
+          ) < now() - (${hours} * interval '1 hour')
+      ) AS ${Prisma.raw(`c_${status}`)}`,
+    );
+    const [row] = await prisma.$queryRaw<Array<Record<string, bigint>>>(Prisma.sql`
+      SELECT ${Prisma.join(breachColumns)}
+      FROM parcels
+      WHERE deleted_at IS NULL ${parcelScopeSql}
+    `);
+    for (const [status] of statusThresholds) slaCounts[status] = Number(row?.[`c_${status}`] ?? 0);
+  }
+
+  const sumStatuses = (statuses: readonly string[]) =>
+    statuses.reduce((n, s) => n + (slaCounts[s] ?? 0), 0);
+
+  // Representative SLA threshold to display for a group row: the tightest
+  // (smallest) configured hours among its statuses, or null if none set.
+  const groupHours = (statuses: readonly string[]): number | null => {
+    const vals = statuses
+      .map((s) => slaSettings[s])
+      .filter((h): h is number => typeof h === "number");
+    return vals.length ? Math.min(...vals) : null;
+  };
+
+  let overdueRemarks = 0;
+  const remarksHours = slaSettings["remarks"];
+  if (typeof remarksHours === "number") {
+    const remarksCutoff = new Date(Date.now() - remarksHours * 3600 * 1000);
+    overdueRemarks = await prisma.parcel_remarks.count({
+      where: {
+        workflow_status: { not: "closed" },
+        created_at: { lt: remarksCutoff },
+        parcels: parcelWhere,
+      },
+    });
+  }
+
   const summary = {
     overview: {
       totalOrders,
@@ -2158,6 +2246,7 @@ async function computeDashboardSummary(
       delivered: todaysDelivered,
       inTransit,
       returns: todaysReturns,
+      returnedToVendor: todaysReturnedToVendor,
       remarks: todaysRemarks,
       unclosedComments,
     },
@@ -2173,6 +2262,18 @@ async function computeDashboardSummary(
       lastSettledAt: lastSettlement
         ? formatDate(lastSettlement.settlement_date || lastSettlement.created_at)
         : null,
+    },
+    sla: {
+      overduePickup: sumStatuses(SLA_GROUPS.pickup),
+      overdueDelivery: sumStatuses(SLA_GROUPS.delivery),
+      overdueTransit: sumStatuses(SLA_GROUPS.transit),
+      overdueRemarks,
+      overdueReturn: sumStatuses(SLA_GROUPS.return),
+      pickupHours: groupHours(SLA_GROUPS.pickup),
+      deliveryHours: groupHours(SLA_GROUPS.delivery),
+      transitHours: groupHours(SLA_GROUPS.transit),
+      remarksHours: typeof slaSettings["remarks"] === "number" ? slaSettings["remarks"] : null,
+      returnHours: groupHours(SLA_GROUPS.return),
     },
     weeklyTrend,
     updatedAt: new Date().toISOString(),

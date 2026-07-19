@@ -6,6 +6,7 @@ import StatusChip from '../components/StatusChip';
 import MakePaymentModal from '../components/MakePaymentModal';
 import { getSettlementDetail, type SettlementDetail } from '../services/finance.service';
 import { hasAnyRole } from '../utils/auth';
+import { toBsDateTime } from '../utils/nepaliDate';
 import './vendor/VendorFinance.css';
 import './SettlementDetailPage.css';
 
@@ -198,6 +199,10 @@ const SettlementDetailPage: React.FC = () => {
               <div>
                 <span>Statement date</span>
                 <span>{detail.transferDate || '-'}</span>
+              </div>
+              <div>
+                <span>Recorded</span>
+                <span>{toBsDateTime(detail.createdAt) || '-'}</span>
               </div>
               <div>
                 <span>Payment status</span>

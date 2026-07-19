@@ -4,3 +4,48 @@
   align-items: center;
   margin-left: auto;
 }
+
+/* Vendor-side read-only status pill (vendors can't resolve/close). */
+.td-vendor-status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md, 8px);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium, 500);
+  border: 1px solid var(--color-border-default);
+}
+.td-vendor-status-closed {
+  color: #15803d;
+  background: rgba(22, 163, 74, 0.08);
+  border-color: rgba(22, 163, 74, 0.25);
+}
+.td-vendor-status-open,
+.td-vendor-status-pending {
+  color: #b45309;
+  background: rgba(217, 119, 6, 0.08);
+  border-color: rgba(217, 119, 6, 0.25);
+}
+
+/* Admin-side vendor detail card. */
+.td-vendor-card {
+  border-left: 3px solid var(--color-brand, #e24c00);
+}
+.td-vendor-meta {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+}
+.td-vendor-line {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-caption);
+}
+.td-vendor-line svg {
+  flex-shrink: 0;
+  color: var(--color-text-muted, #94a3b8);
+}

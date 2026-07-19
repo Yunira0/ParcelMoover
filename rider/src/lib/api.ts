@@ -116,6 +116,7 @@ export type ParcelStatus =
   | 'ready_to_deliver' | 'sent_for_delivery' | 'oov' | 'dispatched'
   | 'arrived_at_branch' | 'hold' | 'loss_and_damage'
   | 'delivered' | 'partially_delivered' | 'failed_pickup' | 'failed_delivery' | 'cancelled'
+  | 'follow_up' | 'ready_to_return' | 'sent_to_vendor' | 'returned_to_vendor'
 
 export interface Parcel {
   id: string

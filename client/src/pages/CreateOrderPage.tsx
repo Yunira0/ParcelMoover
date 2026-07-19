@@ -22,6 +22,7 @@ interface VendorOption {
 interface LocationOption {
   id: string;
   name: string;
+  code?: string | null;
   parentId?: string | null;
 }
 
@@ -165,7 +166,7 @@ const CreateOrderPage: React.FC = () => {
       try {
         const res = await getLocations();
         if (res?.success && Array.isArray(res.data)) {
-          setLocationOptions(res.data.map((l: any) => ({ id: l.id, name: l.name, parentId: l.parent_id })));
+          setLocationOptions(res.data.map((l: any) => ({ id: l.id, name: l.name, code: l.code, parentId: l.parent_id })));
         }
       } catch (err) {
         console.error('Failed to load locations:', err);
@@ -210,14 +211,18 @@ const CreateOrderPage: React.FC = () => {
   // implicit - no Vendor picker shown.
   const selectedVendor = isVendorActor ? myVendorProfile ?? undefined : vendors.find(v => v.id === form.vendorId);
 
-  // Default the "From" (origin) location to the selected vendor's current hub/branch.
-  // Vendor orders always originate from the vendor's hub (e.g. Imadol for Kathmandu
-  // valley vendors). Still editable afterwards.
+  // The single admin hub all orders originate from. Matched by code first, name as fallback.
+  const imadolHub = locationOptions.find(
+    l => (l.code || '').toUpperCase() === 'IMADOL' || l.name.trim().toLowerCase() === 'imadol',
+  );
+
+  // Origin ("From") is always fixed to the Imadol admin hub — for vendors it's their
+  // assigned hub (Imadol), for admins we lock it to Imadol too rather than a free picker.
+  const fixedOriginId = isVendorActor ? selectedVendor?.locationId : imadolHub?.id;
   useEffect(() => {
-    const hubId = selectedVendor?.locationId;
-    if (!hubId) return;
-    setForm(prev => (prev.originLocationId === hubId ? prev : { ...prev, originLocationId: hubId }));
-  }, [selectedVendor?.locationId]);
+    if (!fixedOriginId) return;
+    setForm(prev => (prev.originLocationId === fixedOriginId ? prev : { ...prev, originLocationId: fixedOriginId }));
+  }, [fixedOriginId]);
 
   const weightKgNumber = Number(form.weightKg) || 0;
 
@@ -277,7 +282,7 @@ const CreateOrderPage: React.FC = () => {
     // it must be restored here or the form is stuck with a required-but-unfixable field.
     setForm({
       ...defaultFormState,
-      originLocationId: isVendorActor ? myVendorProfile?.locationId ?? '' : '',
+      originLocationId: fixedOriginId ?? '',
     });
     setQuote(null);
     setQuoteError('');
@@ -418,7 +423,6 @@ const CreateOrderPage: React.FC = () => {
     }
   };
 
-  const locationSelectOptions = locationOptions.map(l => ({ id: l.id, label: l.name }));
   // Destinations are top-level locations; covered areas (children with a
   // parentId) are delivery zones within them, not valid order destinations.
   const destinationSelectOptions = locationOptions
@@ -427,9 +431,7 @@ const CreateOrderPage: React.FC = () => {
 
   // Vendors never pick their own origin - it's always their hub (e.g. Imadol),
   // so "From" is shown read-only instead of an editable dropdown.
-  const originHubName = isVendorActor
-    ? locationOptions.find(l => l.id === selectedVendor?.locationId)?.name
-    : undefined;
+  const originHubName = locationOptions.find(l => l.id === fixedOriginId)?.name;
 
   return (
     <div className="create-order-page">
@@ -488,28 +490,13 @@ const CreateOrderPage: React.FC = () => {
           <div className="order-card">
             <h2>Route Details</h2>
             <div className="order-field-row">
-              {isVendorActor ? (
-                <FormField
-                  label="From"
-                  value={originHubName || 'No hub assigned - contact an admin'}
-                  onChange={() => {}}
-                  disabled
-                  error={fieldErrors.originLocationId}
-                />
-              ) : (
-                <FormField
-                  label="From"
-                  required
-                  type="searchable-select"
-                  searchableOptions={locationSelectOptions}
-                  value={form.originLocationId}
-                  onChange={id => setField('originLocationId', id)}
-                  placeholder="Enter Origin"
-                  searchPlaceholder="Search origin..."
-                  emptyMessage="No locations found."
-                  error={fieldErrors.originLocationId}
-                />
-              )}
+              <FormField
+                label="From"
+                value={originHubName || 'No hub assigned - contact an admin'}
+                onChange={() => {}}
+                disabled
+                error={fieldErrors.originLocationId}
+              />
               <FormField
                 label="To"
                 required

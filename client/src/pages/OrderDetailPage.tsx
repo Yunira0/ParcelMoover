@@ -221,8 +221,10 @@ const OrderDetailPage: React.FC = () => {
         <OrderInfoCards
           senderName={order.senderName}
           senderPhone={order.senderPhone}
+          senderAddress={order.senderAddress}
           receiverName={order.receiverName}
           receiverPhone={order.receiverPhone}
+          receiverAddress={order.receiverAddress}
           origin={order.origin}
           destination={order.destination}
           codAmount={order.codAmount}

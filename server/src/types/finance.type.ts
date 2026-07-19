@@ -72,6 +72,7 @@ export interface SettlementListItem {
   bankAccountNo: string | null;
   bankAccountHolder: string | null;
   transferDate: string | null;
+  createdAt: string;
   orderCount: number;
   amount: number;
   status: "pending" | "settled";
@@ -157,6 +158,7 @@ export interface SettlementDetailResult {
   payeeEmail: string | null;
   payeeAddress: string | null;
   transferDate: string | null;
+  createdAt: string;
   amount: number;
   payableAmount: number;
   status: "pending" | "settled";

@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import {
   bulkImportDeliveryRates,
   getDeliveryQuote,
+  getVendorSelfRates,
   listDeliveryRates,
   setDeliveryRateActive,
   upsertDeliveryRate,
@@ -15,6 +16,21 @@ export async function listDeliveryRatesController(req: Request, res: Response) {
     return res.status(error.statusCode || 500).json({
       success: false,
       message: error.message || "Failed to load delivery rates",
+    });
+  }
+}
+
+// The rates that apply to the requesting vendor, derived from their own rate
+// model (flat / zone / per-destination) rather than the admin route table.
+export async function getMyDeliveryRatesController(req: Request, res: Response) {
+  try {
+    const actor = { id: req.user!.id, roles: req.user!.roles };
+    const data = await getVendorSelfRates(actor);
+    return res.status(200).json({ success: true, data });
+  } catch (error: any) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to load your delivery rates",
     });
   }
 }

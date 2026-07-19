@@ -662,6 +662,16 @@ model pricing_settings {
   updated_at           DateTime @default(now()) @updatedAt @db.Timestamptz(6)
 }
 
+// Per-status SLA thresholds (hours). One row per configurable key: each pickup/
+// delivery/transit parcel status plus the singleton 'remarks' and 'return' keys.
+// sla_hours NULL = SLA disabled for that key.
+model sla_settings {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  status_key String   @unique
+  sla_hours  Int?
+  updated_at DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+}
+
 enum exception_status {
   open
   resolved

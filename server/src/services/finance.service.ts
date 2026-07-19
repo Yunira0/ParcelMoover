@@ -420,6 +420,8 @@ export async function listSettlements(
       bankAccountNo,
       bankAccountHolder,
       transferDate: s.settlement_date ? formatNepalDate(s.settlement_date) : null,
+      // Full timestamp of when the settlement was recorded, so the UI can show time.
+      createdAt: s.created_at.toISOString(),
       orderCount: s.settlement_items.length,
       amount: Number(s.payable_amount ?? s.amount),
       status: s.status,
@@ -917,6 +919,7 @@ export async function getSettlementDetail(actor: Actor, settlementId: string): P
     payeeEmail,
     payeeAddress,
     transferDate: settlement.settlement_date ? formatNepalDate(settlement.settlement_date) : null,
+    createdAt: settlement.created_at.toISOString(),
     amount: Number(settlement.amount),
     payableAmount: Number(settlement.payable_amount ?? settlement.amount),
     status: settlement.status,

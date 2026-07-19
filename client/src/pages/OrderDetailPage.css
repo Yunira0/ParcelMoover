@@ -1,4 +1,4 @@
-/* ============================================================================
+﻿/* ============================================================================
    OrderDetailPage.css - Minimal, Non-Card-Heavy Design
    ============================================================================ */
 
@@ -181,6 +181,11 @@
 
 .od-details-phone {
   font-size: var(--font-size-sm); color: var(--color-text-caption); margin: 0;
+}
+
+.od-details-address {
+  font-size: var(--font-size-sm); color: var(--color-text-caption);
+  margin: var(--space-1) 0 0; line-height: 1.4;
 }
 
 .od-details-divider-v {
@@ -370,7 +375,7 @@
 }
 .od-timeline-item.od-timeline-current .od-timeline-dot {
   transform: scale(1.1);
-  box-shadow: 0 0 0 4px rgb(194 65 12 / 0.12);
+  box-shadow: 0 0 0 4px rgb(226 76 0 / 0.12);
 }
 
 /* ============================================================================
@@ -489,12 +494,12 @@
   background: transparent; border: none; border-radius: 50%;
   color: var(--color-text-primary); cursor: pointer; transition: all 150ms ease; flex-shrink: 0;
 }
-.od-bottom-replying-close:hover { background: rgb(194 65 12 / 0.15); }
+.od-bottom-replying-close:hover { background: rgb(226 76 0 / 0.15); }
 
 /* Highlight for newly added remark */
 .od-chat-msg-highlight { animation: od-highlight-flash 2.5s ease; }
 @keyframes od-highlight-flash {
-  0%   { background: rgb(194 65 12 / 0.1); }
+  0%   { background: rgb(226 76 0 / 0.1); }
   100% { background: transparent; }
 }
 
@@ -512,7 +517,7 @@
 }
 .od-bottom-input-wrap:focus-within {
   border-color: var(--color-border-primary);
-  box-shadow: 0 0 0 3px rgb(194 65 12 / 0.08);
+  box-shadow: 0 0 0 3px rgb(226 76 0 / 0.08);
 }
 
 .od-bottom-input {
@@ -607,7 +612,7 @@
   .od-bottom-send-loading { animation: none; }
 }
 
-/* ── Super admin status override ─────────────────────────────────────────── */
+/* â”€â”€ Super admin status override â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 .od-override {
   background: var(--color-background-surface);
@@ -681,7 +686,7 @@
   margin: 0;
 }
 
-/* ── Price Log ──────────────────────────────────────────────────────────── */
+/* â”€â”€ Price Log â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 .od-pricelog {
   background: var(--color-background-surface);

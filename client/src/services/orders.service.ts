@@ -67,6 +67,7 @@ export interface Order {
   serviceType: ServiceType;
   senderName: string;
   senderPhone: string;
+  senderAddress?: string;
   receiverName: string;
   receiverPhone: string;
   receiverAlternatePhone?: string;
@@ -185,8 +186,24 @@ export interface DashboardSummary {
     delivered: number;
     inTransit: number;
     returns: number;
+    /** Parcels that became returned_to_vendor today (by status-history date). */
+    returnedToVendor: number;
     remarks: number;
     unclosedComments: number;
+  };
+  /** Counts of orders that have breached their per-status SLA (see SLA settings). */
+  sla: {
+    overduePickup: number;
+    overdueDelivery: number;
+    overdueTransit: number;
+    overdueRemarks: number;
+    overdueReturn: number;
+    /** Representative SLA threshold (hours) per group — null if unset. */
+    pickupHours: number | null;
+    deliveryHours: number | null;
+    transitHours: number | null;
+    remarksHours: number | null;
+    returnHours: number | null;
   };
   codSettlement: {
     totalCod: number;
