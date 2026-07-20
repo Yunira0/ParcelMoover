@@ -26,6 +26,8 @@ const EMPTY_SUMMARY: DashboardSummary = {
     totalDeliveredAmount: 0,
     totalReturns: 0,
     totalReturnsAmount: 0,
+    totalReturnedToVendor: 0,
+    totalReturnedToVendorAmount: 0,
   },
   today: {
     totalOrders: 0,
