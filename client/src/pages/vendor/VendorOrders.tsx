@@ -164,8 +164,6 @@ const VendorOrders: React.FC = () => {
   const [trackingSearch, setTrackingSearch] = useState(() => searchParams.get('search') || '');
   const [debouncedSearch, setDebouncedSearch] = useState(() => searchParams.get('search') || '');
   const [printWorking, setPrintWorking] = useState(false);
-  const [bulkWorking, setBulkWorking] = useState(false);
-  const [bulkError, setBulkError] = useState('');
   const [openActionId, setOpenActionId] = useState<string | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -297,25 +295,6 @@ const VendorOrders: React.FC = () => {
       else visibleOrderIds.forEach(id => next.add(id));
       return next;
     });
-  };
-
-  const bulkCancel = async () => {
-    const ids = Array.from(selectedIds);
-    if (ids.length === 0) return;
-    const confirmed = window.confirm(
-      `Cancel ${ids.length} order${ids.length !== 1 ? 's' : ''}? This cannot be undone.`,
-    );
-    if (!confirmed) return;
-    setBulkWorking(true);
-    setBulkError('');
-    try {
-      await bulkUpdateOrderStatus(ids, 'cancelled', { remarks: 'Bulk cancelled by vendor' });
-      setSelectedIds(new Set());
-    } catch (err: any) {
-      setBulkError(err?.response?.data?.message || err?.message || 'Bulk cancel failed');
-    } finally {
-      setBulkWorking(false);
-    }
   };
 
   const handlePrintLabels = async () => {
@@ -580,31 +559,6 @@ const VendorOrders: React.FC = () => {
           Bulk Import <FileUp size={16} />
         </Button>
       </div>
-
-      {selectedIds.size > 0 && (
-        <div className="vo-bulk-bar">
-          <span className="vo-bulk-count">{selectedIds.size} order{selectedIds.size !== 1 ? 's' : ''} selected</span>
-          <div className="vo-bulk-actions">
-            {bulkError && <span className="vo-bulk-error">{bulkError}</span>}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => { setSelectedIds(new Set()); setBulkError(''); }}
-              disabled={bulkWorking}
-            >
-              Clear Selection
-            </Button>
-            <Button
-              variant="danger"
-              size="sm"
-              onClick={bulkCancel}
-              disabled={bulkWorking}
-            >
-              {bulkWorking ? 'Cancelling…' : `Cancel ${selectedIds.size} Order${selectedIds.size !== 1 ? 's' : ''}`}
-            </Button>
-          </div>
-        </div>
-      )}
 
       <div className="vo-list-card">
         <div className="vo-list-header">

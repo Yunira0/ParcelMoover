@@ -18,6 +18,13 @@
   gap: var(--space-4);
 }
 
+.dispatch-search-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: 100%;
+}
+
 .dispatch-search {
   align-items: center;
   background: var(--color-background-surface);
@@ -44,8 +51,56 @@
   font-family: var(--typography-font-family-default);
   font-size: var(--font-size-sm);
   line-height: var(--line-height-sm);
-  min-width: 0;
+  min-width: 160px;
   outline: none;
+}
+
+/* Scanned tracking ids wrap onto their own row below the search bar - never
+   crowding the actual input, which stays full-width and readable no matter
+   how many parcels have been scanned. */
+.scan-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.scan-chip {
+  align-items: center;
+  background: var(--color-neutral-surface);
+  border-radius: var(--border-radius-full);
+  color: var(--color-text-caption);
+  display: inline-flex;
+  flex-shrink: 0;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  gap: var(--space-1);
+  padding: var(--space-0-5) var(--space-2);
+  white-space: nowrap;
+}
+
+.scan-chip button {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  height: 14px;
+  padding: 0;
+  width: 14px;
+}
+
+.dispatch-search button {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: var(--color-text-caption);
+  cursor: pointer;
+  display: flex;
+  height: 24px;
+  justify-content: center;
+  padding: 0;
+  width: 24px;
 }
 
 .dispatch-table th,

@@ -78,6 +78,8 @@ export interface Order {
   destinationName?: string;
   originLocationId?: string | null;
   destinationLocationId?: string | null;
+  /** "inside" | "outside" | null — the destination location's valley classification. */
+  destinationValley?: string | null;
   pieces: number;
   weightKg?: number;
   attemptCount: number;

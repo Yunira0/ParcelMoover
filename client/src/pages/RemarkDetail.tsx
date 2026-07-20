@@ -127,7 +127,11 @@ const RemarkDetail: React.FC = () => {
     setBottomSubmitting(true);
     setBottomError('');
     try {
-      const parentId = replyingTo?.id || undefined;
+      // Not replying to a specific message: attach to this thread's root
+      // remark, not a bare `undefined` parent - that would spawn a brand-new
+      // root-level remark (its own row in the Remarks table) instead of
+      // continuing the conversation being viewed.
+      const parentId = replyingTo?.id || remark.id;
       await addOrderRemark(remark.parcelId, trimmed, parentId);
       // Replying resolves the remark.
       await setRemarkStatus(remark.id, 'closed');

@@ -100,6 +100,23 @@ const TERMINAL_STATUSES: parcel_status[] = [
 // UI — the API must enforce the same restriction, not just hide the buttons.
 const OPS_RESTRICTED_STATUSES: parcel_status[] = ["hold", "loss_and_damage"];
 
+// Fringe areas that sit just outside the valley boundary in `locations.valley`
+// but are close enough to be delivered directly from origin without a Transit
+// (OOV) leg — routing them through Transit anyway would just add a redundant
+// hop for a same-day-reachable destination.
+const DIRECT_DELIVERY_FRINGE_AREAS = ["kavresthali", "thali", "chapagaun", "budhanilkantha", "thankot"];
+
+// From "arrived" (Arrived at Origin), whether a parcel can go straight to
+// Ready to Deliver (true) or must go to Transit/OOV first (false), based on
+// its destination. Inside-valley destinations, plus the fringe areas above,
+// skip Transit; everything else needs the OOV leg.
+function destinationSkipsTransit(destination: { valley?: string | null; name?: string | null } | null | undefined): boolean {
+  if (!destination) return false;
+  if (destination.valley === "inside") return true;
+  const name = (destination.name ?? "").toLowerCase();
+  return DIRECT_DELIVERY_FRINGE_AREAS.some((area) => name.includes(area));
+}
+
 const MAX_PAGE_SIZE = 100;
 const DEFAULT_PAGE_SIZE = 10;
 const MAX_BULK_IDS = 200;
@@ -1163,6 +1180,7 @@ function mapOrder(
       parcel.locations_parcels_destination_location_idTolocations?.name ||
       parcel.parties_parcels_receiver_idToparties.address ||
       "",
+    destinationValley: parcel.locations_parcels_destination_location_idTolocations?.valley ?? null,
     pieces: parcel.pieces,
     weightKg: parcel.weight_kg === null ? undefined : Number(parcel.weight_kg),
     attemptCount: parcel.attempt_count,
@@ -2415,6 +2433,7 @@ async function _updateParcelStatusImpl(
       parties_parcels_sender_idToparties: true,
       parties_parcels_receiver_idToparties: true,
       vendors: true,
+      locations_parcels_destination_location_idTolocations: true,
     },
   });
 
@@ -2490,6 +2509,19 @@ async function _updateParcelStatusImpl(
         422,
         `Invalid status transition: '${currentStatus}' → '${newStatus}'. Allowed: [${allowed?.join(", ")}]`,
       );
+    }
+
+    // From "arrived", destination decides whether the parcel skips Transit
+    // (inside valley + fringe areas) or must go through it (everywhere else) —
+    // only one of the two branch-allowed next statuses is actually valid.
+    if (currentStatus === "arrived" && (newStatus === "ready_to_deliver" || newStatus === "oov")) {
+      const skipsTransit = destinationSkipsTransit(parcel.locations_parcels_destination_location_idTolocations);
+      if (skipsTransit && newStatus === "oov") {
+        throw new AppError(422, "Destination is inside the valley: this parcel must go to 'Ready to Deliver', not 'Transit'.");
+      }
+      if (!skipsTransit && newStatus === "ready_to_deliver") {
+        throw new AppError(422, "Destination is outside the valley: this parcel must go to 'Transit' first.");
+      }
     }
   }
 
@@ -2875,7 +2907,7 @@ async function _bulkUpdateParcelStatusImpl(
       deleted_at: null,
       ...(vendorId ? { vendor_id: vendorId } : {}),
     },
-    include: { pickup_tasks: true },
+    include: { pickup_tasks: true, locations_parcels_destination_location_idTolocations: true },
   });
 
   if (parcels.length !== ids.length) {
@@ -2899,6 +2931,18 @@ async function _bulkUpdateParcelStatusImpl(
           422,
           `Invalid status transition for ${parcel.tracking_id}: '${currentStatus}' → '${newStatus}'`,
         );
+      }
+
+      // From "arrived", destination decides whether the parcel skips Transit
+      // (inside valley + fringe areas) or must go through it (everywhere else).
+      if (currentStatus === "arrived" && (newStatus === "ready_to_deliver" || newStatus === "oov")) {
+        const skipsTransit = destinationSkipsTransit(parcel.locations_parcels_destination_location_idTolocations);
+        if (skipsTransit && newStatus === "oov") {
+          throw new AppError(422, `Parcel ${parcel.tracking_id}: destination is inside the valley, must go to 'Ready to Deliver', not 'Transit'.`);
+        }
+        if (!skipsTransit && newStatus === "ready_to_deliver") {
+          throw new AppError(422, `Parcel ${parcel.tracking_id}: destination is outside the valley, must go to 'Transit' first.`);
+        }
       }
     }
     // Riders may only progress parcels they're actually assigned to, and only

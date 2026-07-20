@@ -138,23 +138,18 @@ const RiderFormPage: React.FC = () => {
       try {
         const [res, me] = await Promise.all([getLocations(), getCurrentUser().catch(() => null)]);
         let hubList: Array<{ value: string; label: string }> = [];
-        let imadolId = '';
         if (res && res.success && Array.isArray(res.data)) {
           // The service branch is the rider's hub, so only show hub locations.
           hubList = res.data
             .filter((loc: any) => loc.is_hub)
             .map((loc: any) => ({ value: loc.id, label: loc.name }));
           setHubs(hubList);
-          const imadol = res.data.find(
-            (loc: any) => (loc.code || '').toUpperCase() === 'IMADOL' || (loc.name || '').trim().toLowerCase() === 'imadol',
-          );
-          imadolId = imadol?.id || '';
         }
-        // Service branch (hub) is fixed to the Imadol admin hub. Fall back to the
-        // admin's own hub / sole hub only if Imadol isn't present.
+        // Service branch defaults to whichever hub the current staff member
+        // (super_admin or admin) is assigned to. Fall back to the sole hub
+        // only if the actor has none.
         const adminHubId: string | null = me?.hubId ?? null;
-        const defaultHub = imadolId
-          || (adminHubId && hubList.some(h => h.value === adminHubId) ? adminHubId : '')
+        const defaultHub = (adminHubId && hubList.some(h => h.value === adminHubId) ? adminHubId : '')
           || (hubList.length === 1 ? hubList[0].value : '');
         if (defaultHub) {
           setForm(prev => (prev.serviceBranch ? prev : { ...prev, serviceBranch: defaultHub }));

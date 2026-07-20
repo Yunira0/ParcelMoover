@@ -5,6 +5,7 @@ import {
   Printer,
   Search,
   Send,
+  X,
 } from 'lucide-react';
 import Table from '../components/Table';
 import SearchableSelect from '../components/SearchableSelect';
@@ -27,6 +28,7 @@ import { getRiders } from '../services/users.service';
 import { printLabels } from '../utils/printLabels';
 import { useCursorPagination } from '../hooks/useCursorPagination';
 import { toBsDate, toBsDateTime } from '../utils/nepaliDate';
+import { commitScannedTerm, handleScannerPaste } from '../utils/scannerInput';
 import './DispatchOperations.css';
 
 const formatMoney = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 0 });
@@ -127,6 +129,14 @@ const DispatchOperations: React.FC = () => {
     return fromUrl && fromUrl in TAB_LABELS ? (fromUrl as DispatchTab) : 'ready_to_deliver';
   });
   const [searchQuery, setSearchQuery] = useState(() => searchParams.get('search') || '');
+  // Tracking ids confirmed by pressing Enter (typically a barcode scanner) -
+  // kept separate from the live input buffer so rapid scans never race each
+  // other (see utils/scannerInput.ts). Rendered as chips beside the input.
+  const [scannedIds, setScannedIds] = useState<string[]>([]);
+  const combinedSearch = useMemo(
+    () => [...scannedIds, searchQuery.trim()].filter(Boolean).join(', '),
+    [scannedIds, searchQuery],
+  );
   const [debouncedSearch, setDebouncedSearch] = useState(() => searchParams.get('search') || '');
   const pager = useCursorPagination();
   const [loading, setLoading] = useState(true);
@@ -158,9 +168,9 @@ const DispatchOperations: React.FC = () => {
 
   // Debounce search input so every keystroke doesn't fire a request.
   useEffect(() => {
-    const handle = setTimeout(() => setDebouncedSearch(searchQuery.trim()), SEARCH_DEBOUNCE_MS);
+    const handle = setTimeout(() => setDebouncedSearch(combinedSearch), SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(handle);
-  }, [searchQuery]);
+  }, [combinedSearch]);
 
   useEffect(() => {
     pager.reset();
@@ -175,25 +185,39 @@ const DispatchOperations: React.FC = () => {
     setSearchParams(next, { replace: true });
   }, [activeTab, debouncedSearch, setSearchParams]);
 
+  // Scanning several parcels in a row fires one debounced search per scan -
+  // without this, a slower-to-resolve earlier request can land after a later
+  // one and stomp its results, making an already-scanned parcel vanish again.
+  const loadRequestIdRef = useRef(0);
+
   const loadDispatches = useCallback(async () => {
+    const requestId = ++loadRequestIdRef.current;
     setLoading(true);
     try {
+      // A scanner builds up a comma-separated list of tracking ids - fetch
+      // enough rows in one page to fit the whole scanned batch, instead of
+      // silently cutting it off at the default page size.
+      const scannedTermCount = debouncedSearch ? debouncedSearch.split(',').map(t => t.trim()).filter(Boolean).length : 0;
+      const pageSize = scannedTermCount > 1 ? Math.min(100, Math.max(PAGE_SIZE, scannedTermCount)) : PAGE_SIZE;
+
       const res = await getOrders({
         status: TAB_STATUSES[activeTab],
         search: debouncedSearch || undefined,
-        pageSize: PAGE_SIZE,
+        pageSize,
         cursor: pager.request.cursor,
         dir: pager.request.dir,
       });
+      if (requestId !== loadRequestIdRef.current) return;
       if (res?.success && Array.isArray(res.data)) {
         setOrders(res.data);
         setMeta(res.meta ?? null);
         setLoadError('');
       }
     } catch {
+      if (requestId !== loadRequestIdRef.current) return;
       setLoadError('Failed to load dispatch orders. Showing the last loaded data, if any.');
     } finally {
-      setLoading(false);
+      if (requestId === loadRequestIdRef.current) setLoading(false);
     }
   }, [activeTab, debouncedSearch, pager.request]);
 
@@ -646,20 +670,88 @@ const DispatchOperations: React.FC = () => {
         </div>
       </div>
 
-      <label className="dispatch-search">
-        <Search size={16} />
-        <input
-          value={searchQuery}
-          onChange={event => {
-            setSearchQuery(event.target.value);
-            pager.reset();
-            setIsActionOpen(false);
-            setActionError('');
-            setRiderId('');
-          }}
-          placeholder="Search tracking id"
-        />
-      </label>
+      <div className="dispatch-search-wrap">
+        <label className="dispatch-search">
+          <Search size={16} />
+          <input
+            value={searchQuery}
+            onChange={event => {
+              setSearchQuery(event.target.value);
+              pager.reset();
+              setIsActionOpen(false);
+              setActionError('');
+              setRiderId('');
+            }}
+            onKeyDown={event => commitScannedTerm(
+              event,
+              updater => {
+                setScannedIds(updater);
+                pager.reset();
+                setIsActionOpen(false);
+                setActionError('');
+                setRiderId('');
+              },
+              value => {
+                setSearchQuery(value);
+                pager.reset();
+                setIsActionOpen(false);
+                setActionError('');
+                setRiderId('');
+              },
+            )}
+            onPaste={event => handleScannerPaste(
+              event,
+              updater => {
+                setScannedIds(updater);
+                pager.reset();
+                setIsActionOpen(false);
+                setActionError('');
+                setRiderId('');
+              },
+              value => {
+                setSearchQuery(value);
+                pager.reset();
+                setIsActionOpen(false);
+                setActionError('');
+                setRiderId('');
+              },
+            )}
+            placeholder="Search tracking id"
+          />
+          {(searchQuery || scannedIds.length > 0) && (
+            <button
+              type="button"
+              onClick={() => {
+                setSearchQuery('');
+                setScannedIds([]);
+                pager.reset();
+                setIsActionOpen(false);
+                setActionError('');
+                setRiderId('');
+              }}
+              aria-label="Clear search"
+            >
+              <X size={14} />
+            </button>
+          )}
+        </label>
+        {scannedIds.length > 0 && (
+          <div className="scan-chip-list">
+            {scannedIds.map(id => (
+              <span key={id} className="scan-chip">
+                {id}
+                <button
+                  type="button"
+                  onClick={() => setScannedIds(prev => prev.filter(x => x !== id))}
+                  aria-label={`Remove ${id}`}
+                >
+                  <X size={10} />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
 
       <Table
         columns={dispatchColumns}
@@ -669,7 +761,10 @@ const DispatchOperations: React.FC = () => {
         allSelected={allVisibleSelected}
         someSelected={someVisibleSelected}
         onToggleAll={toggleVisibleSelection}
-        loading={loading}
+        // Only blank the table for the very first load - re-searching (e.g.
+        // one debounced request per scanned parcel) would otherwise flash the
+        // whole table to "Loading..." and back on every single scan.
+        loading={loading && orders.length === 0}
         loadingMessage="Loading dispatch orders..."
         emptyMessage="No dispatch orders found."
         minWidth="1680px"

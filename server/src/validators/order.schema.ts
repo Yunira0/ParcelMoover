@@ -187,7 +187,11 @@ export const listOrdersQuerySchema = paginationQuerySchema.extend({
     }, z.array(z.enum(PARCEL_STATUSES)).optional())
     .optional(),
   orderType: z.enum(ORDER_TYPES).optional(),
-  search: z.string().max(100).optional(),
+  // A barcode scanner builds this up as a comma-separated list of full
+  // tracking ids (~27 chars each incl. separator) - 100 chars only fit ~3
+  // scans before every further scan gets rejected outright. Sized for the
+  // client's 100-term scan batch cap (order.service.ts MAX_PAGE_SIZE).
+  search: z.string().max(3000).optional(),
   // Keyset pagination: opaque cursor + walk direction. A malformed cursor is
   // treated as "no cursor" by the service, so only the length is bounded here.
   cursor: z.string().max(400).optional(),

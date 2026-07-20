@@ -141,7 +141,7 @@ const Tickets: React.FC = () => {
       if (categoryFilter && ticket.category !== categoryFilter) return false;
       if (!isWithinRange(ticket.createdAt, dateRange)) return false;
       if (q && !(
-        ticket.customerName.toLowerCase().includes(q) ||
+        ticket.vendorName.toLowerCase().includes(q) ||
         ticket.customerPhone.toLowerCase().includes(q) ||
         ticket.ticketId.toLowerCase().includes(q) ||
         ticket.subject.toLowerCase().includes(q)
@@ -195,10 +195,10 @@ const Tickets: React.FC = () => {
     },
     { header: 'TICKET ID', accessor: (ticket: Ticket) => ticket.ticketId, width: '110px', className: 'tickets-id-cell' },
     {
-      header: 'CUSTOMER',
+      header: 'VENDOR',
       accessor: (ticket: Ticket) => (
         <div className="tickets-customer-cell">
-          <span>{ticket.customerName}</span>
+          <span>{ticket.vendorName || '—'}</span>
           <small>{ticket.customerPhone}</small>
         </div>
       ),

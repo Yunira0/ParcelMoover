@@ -9,6 +9,7 @@ export interface Ticket {
   ticketId: string;
   customerName: string;
   customerPhone: string;
+  vendorName: string;
   subject: string;
   category: TicketCategory;
   priority: TicketPriority;

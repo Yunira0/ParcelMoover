@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState, useCallback } from 'react';
+import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   ChevronDown,
@@ -35,6 +35,7 @@ import {
   type ParcelStatus,
 } from '../services/orders.service';
 import { printLabels } from '../utils/printLabels';
+import { commitScannedTerm, handleScannerPaste } from '../utils/scannerInput';
 import { useCursorPagination } from '../hooks/useCursorPagination';
 import './OrderManagement.css';
 
@@ -217,7 +218,20 @@ const OrderManagement: React.FC = () => {
     return fromUrl && fromUrl in TAB_GROUPS ? (fromUrl as FilterTab) : 'all';
   });
   const [trackingSearch, setTrackingSearch] = useState(() => searchParams.get('search') || '');
-  const [debouncedSearch, setDebouncedSearch] = useState(trackingSearch);
+  // Tracking ids confirmed by pressing Enter (typically a barcode scanner) -
+  // kept separate from the live input buffer so rapid scans never race each
+  // other (see utils/scannerInput.ts). Rendered as chips beside the input.
+  const [scannedIds, setScannedIds] = useState<string[]>([]);
+  const combinedSearch = useMemo(
+    () => [...scannedIds, trackingSearch.trim()].filter(Boolean).join(', '),
+    [scannedIds, trackingSearch],
+  );
+  const [debouncedSearch, setDebouncedSearch] = useState(combinedSearch);
+  // Distinguishes a genuine external search navigation (TopNav search, back/
+  // forward, a pasted URL) from the URL just echoing our own sync below -
+  // without this, every scan's URL sync would immediately re-hydrate and dump
+  // all prior scans back into the single edit buffer.
+  const lastSyncedSearchRef = useRef<string | null>(null);
   const [originHub, setOriginHub] = useState(() => searchParams.get('originHub') || '');
   const [riderName, setRiderName] = useState(() => searchParams.get('riderName') || '');
   const [keyword, setKeyword] = useState(() => searchParams.get('keyword') || '');
@@ -282,41 +296,58 @@ const OrderManagement: React.FC = () => {
 
   // Debounce search input so every keystroke doesn't fire a request.
   useEffect(() => {
-    const handle = setTimeout(() => setDebouncedSearch(trackingSearch.trim()), SEARCH_DEBOUNCE_MS);
+    const handle = setTimeout(() => setDebouncedSearch(combinedSearch), SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(handle);
-  }, [trackingSearch]);
+  }, [combinedSearch]);
+
+  // Scanning several parcels in a row fires one debounced search per scan -
+  // without this, a slower-to-resolve earlier request can land after a later
+  // one and stomp its results, making an already-scanned parcel vanish again.
+  const loadRequestIdRef = useRef(0);
 
   const loadOrders = useCallback(async () => {
+    const requestId = ++loadRequestIdRef.current;
     setLoading(true);
     try {
+      // A scanner builds up a comma-separated list of tracking ids - fetch
+      // enough rows in one page to fit the whole scanned batch, instead of
+      // silently cutting it off at the default page size.
+      const scannedTermCount = debouncedSearch ? debouncedSearch.split(',').map(t => t.trim()).filter(Boolean).length : 0;
+      const pageSize = scannedTermCount > 1 ? Math.min(100, Math.max(PAGE_SIZE, scannedTermCount)) : PAGE_SIZE;
+
       const res = await getOrders({
         status: TAB_GROUPS[filter],
         search: debouncedSearch || undefined,
-        pageSize: PAGE_SIZE,
+        pageSize,
         cursor: pager.request.cursor,
         dir: pager.request.dir,
         sortBy,
         sortDir,
       });
+      if (requestId !== loadRequestIdRef.current) return;
       if (res?.success && Array.isArray(res.data)) {
         setOrders(res.data);
         setMeta(res.meta ?? null);
         setLoadError('');
       }
     } catch {
+      if (requestId !== loadRequestIdRef.current) return;
       setLoadError('Failed to load orders. Showing the last loaded data, if any.');
     } finally {
-      setLoading(false);
+      if (requestId === loadRequestIdRef.current) setLoading(false);
     }
   }, [filter, debouncedSearch, pager.request, sortBy, sortDir]);
 
   useEffect(() => { loadOrders(); }, [loadOrders]);
   useEffect(() => subscribeToOrderStatusChanged(loadOrders), [loadOrders]);
   useEffect(() => { pager.reset(); }, [filter, debouncedSearch, originHub, riderName, keyword, destinationHub, currentStatus, orderType, dateFrom, dateTo, vendor, operationDept, sortBy, sortDir, pager.reset]);
-  // Re-sync when the navbar search re-navigates here with a new ?search= param.
+  // Re-sync when the navbar search re-navigates here with a new ?search= param -
+  // but not when the URL change is just our own sync below echoing back.
   useEffect(() => {
     const fromUrl = searchParams.get('search');
-    if (fromUrl !== null) setTrackingSearch(fromUrl);
+    if (fromUrl === null || fromUrl === lastSyncedSearchRef.current) return;
+    setScannedIds([]);
+    setTrackingSearch(fromUrl);
   }, [searchParams]);
 
   // Keep every filter bookmarkable/shareable - mirror them into the URL
@@ -325,7 +356,7 @@ const OrderManagement: React.FC = () => {
   useEffect(() => {
     const next = new URLSearchParams();
     if (filter !== 'all') next.set('tab', filter);
-    if (trackingSearch) next.set('search', trackingSearch);
+    if (combinedSearch) next.set('search', combinedSearch);
     if (originHub) next.set('originHub', originHub);
     if (riderName) next.set('riderName', riderName);
     if (keyword) next.set('keyword', keyword);
@@ -338,9 +369,10 @@ const OrderManagement: React.FC = () => {
     if (operationDept) next.set('operationDept', operationDept);
     if (sortBy) next.set('sortBy', sortBy);
     if (sortDir !== 'desc') next.set('sortDir', sortDir);
+    lastSyncedSearchRef.current = combinedSearch;
     setSearchParams(next, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filter, trackingSearch, originHub, riderName, keyword, destinationHub, currentStatus, orderType, dateFrom, dateTo, vendor, operationDept, sortBy, sortDir]);
+  }, [filter, combinedSearch, originHub, riderName, keyword, destinationHub, currentStatus, orderType, dateFrom, dateTo, vendor, operationDept, sortBy, sortDir]);
 
   // A separate, tab-scoped (unsearched, unpaginated) fetch purely to keep the
   // filter dropdown option lists representative - the paginated `orders` above
@@ -776,19 +808,39 @@ const OrderManagement: React.FC = () => {
         </div>
       </div>
 
-      <label className="tracking-search">
-        <Search size={16} />
-        <input
-          value={trackingSearch}
-          onChange={event => setTrackingSearch(event.target.value)}
-          placeholder="TRK001 or TRK001, TRK002, TRK003"
-        />
-        {trackingSearch && (
-          <button type="button" onClick={() => setTrackingSearch('')} aria-label="Clear search">
-            <X size={14} />
-          </button>
+      <div className="tracking-search-wrap">
+        <label className="tracking-search">
+          <Search size={16} />
+          <input
+            value={trackingSearch}
+            onChange={event => setTrackingSearch(event.target.value)}
+            onKeyDown={event => commitScannedTerm(event, setScannedIds, setTrackingSearch)}
+            onPaste={event => handleScannerPaste(event, setScannedIds, setTrackingSearch)}
+            placeholder="TRK001 or TRK001, TRK002, TRK003"
+          />
+          {(trackingSearch || scannedIds.length > 0) && (
+            <button type="button" onClick={() => { setTrackingSearch(''); setScannedIds([]); }} aria-label="Clear search">
+              <X size={14} />
+            </button>
+          )}
+        </label>
+        {scannedIds.length > 0 && (
+          <div className="scan-chip-list">
+            {scannedIds.map(id => (
+              <span key={id} className="scan-chip">
+                {id}
+                <button
+                  type="button"
+                  onClick={() => setScannedIds(prev => prev.filter(x => x !== id))}
+                  aria-label={`Remove ${id}`}
+                >
+                  <X size={10} />
+                </button>
+              </span>
+            ))}
+          </div>
         )}
-      </label>
+      </div>
 
       <Table
         columns={orderColumns}
@@ -799,7 +851,10 @@ const OrderManagement: React.FC = () => {
         someSelected={someVisibleSelected}
         onToggleAll={toggleVisibleSelection}
         getRowClassName={(order) => selectedIds.has(order.id) ? 'selected-row' : ''}
-        loading={loading}
+        // Only blank the table for the very first load - re-searching (e.g.
+        // one debounced request per scanned parcel) would otherwise flash the
+        // whole table to "Loading..." and back on every single scan.
+        loading={loading && orders.length === 0}
         loadingMessage="Loading orders..."
         emptyMessage="No orders found."
         minWidth="2075px"

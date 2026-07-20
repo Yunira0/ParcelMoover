@@ -7,6 +7,7 @@ import {
   Printer,
   RefreshCw,
   Search,
+  X,
 } from 'lucide-react';
 import Table from '../components/Table';
 import SearchableSelect from '../components/SearchableSelect';
@@ -27,6 +28,7 @@ import { getRiders } from '../services/users.service';
 import { printLabels } from '../utils/printLabels';
 import { toBsDate, toNptTime } from '../utils/nepaliDate';
 import { formatCurrency } from '../utils/format';
+import { commitScannedTerm, handleScannerPaste } from '../utils/scannerInput';
 import './PickupOperations.css';
 
 type PickupTab = 'pickup_ordered' | 'rider_assigned' | 'picked_up' | 'arrived' | 'failed' | 'cancelled';
@@ -102,6 +104,19 @@ const STATUS_TRANSITIONS: Record<ParcelStatus, ParcelStatus[]> = {
   ready_to_return: [],
   sent_to_vendor: [],
   returned_to_vendor: [],
+};
+
+// Fringe areas that sit just outside the valley boundary but are close enough
+// to deliver directly from origin without a Transit (OOV) leg.
+const DIRECT_DELIVERY_FRINGE_AREAS = ['kavresthali', 'thali', 'chapagaun', 'budhanilkantha', 'thankot'];
+
+// From "Arrived at Origin", whether a parcel should skip Transit and go
+// straight to Ready to Deliver (inside valley + fringe areas) or must go
+// through Transit/OOV first (everywhere else).
+const destinationSkipsTransit = (order: Order): boolean => {
+  if (order.destinationValley === 'inside') return true;
+  const name = (order.destinationName || '').toLowerCase();
+  return DIRECT_DELIVERY_FRINGE_AREAS.some(area => name.includes(area));
 };
 
 // Small custom ostrich glyph (lucide has none). Stroke style matches the other
@@ -340,6 +355,14 @@ const PickupOperations: React.FC = () => {
     return fromUrl && fromUrl in TAB_LABELS ? (fromUrl as PickupTab) : 'pickup_ordered';
   });
   const [searchQuery, setSearchQuery] = useState(() => searchParams.get('search') || '');
+  // Tracking ids confirmed by pressing Enter (typically a barcode scanner) -
+  // kept separate from the live input buffer so rapid scans never race each
+  // other (see utils/scannerInput.ts). Rendered as chips beside the input.
+  const [scannedIds, setScannedIds] = useState<string[]>([]);
+  const combinedSearch = useMemo(
+    () => [...scannedIds, searchQuery.trim()].filter(Boolean).join(', '),
+    [scannedIds, searchQuery],
+  );
   const [debouncedSearch, setDebouncedSearch] = useState(() => searchParams.get('search') || '');
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
@@ -370,9 +393,9 @@ const PickupOperations: React.FC = () => {
 
   // Debounce search input so every keystroke doesn't fire a request.
   useEffect(() => {
-    const handle = setTimeout(() => setDebouncedSearch(searchQuery.trim()), SEARCH_DEBOUNCE_MS);
+    const handle = setTimeout(() => setDebouncedSearch(combinedSearch), SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(handle);
-  }, [searchQuery]);
+  }, [combinedSearch]);
 
   // Guards against a slow multi-page fetch landing after the user has already
   // switched tab or typed a new search - only the latest request may setState.
@@ -457,14 +480,28 @@ const PickupOperations: React.FC = () => {
   const allGroupsSelected = pagedGroups.length > 0 && pagedGroups.every(group => checkedGroupIds.has(group.id));
   const someGroupsSelected = pagedGroups.some(group => group.orders.some(order => selectedIds.has(order.id)));
   const selectedOrders = visibleOrders.filter(order => selectedIds.has(order.id));
+  const isOptionValidForOrder = (status: ParcelStatus, order: Order) => {
+    if (!STATUS_TRANSITIONS[order.status].includes(status)) return false;
+    // From "Arrived at Origin", only one of Ready to Deliver / Transit is
+    // actually valid, decided by the destination.
+    if (order.status === 'arrived' && (status === 'ready_to_deliver' || status === 'oov')) {
+      const skipsTransit = destinationSkipsTransit(order);
+      if (skipsTransit && status === 'oov') return false;
+      if (!skipsTransit && status === 'ready_to_deliver') return false;
+    }
+    return true;
+  };
+
   const allowedStatusOptions = useMemo(() => {
     if (selectedOrders.length === 0) return [];
 
     const [firstOrder, ...remainingOrders] = selectedOrders;
-    const firstAllowed = new Set(STATUS_TRANSITIONS[firstOrder.status]);
+    const firstAllowed = new Set(
+      STATUS_TRANSITIONS[firstOrder.status].filter(status => isOptionValidForOrder(status, firstOrder)),
+    );
 
     return Array.from(firstAllowed).filter(status =>
-      remainingOrders.every(order => STATUS_TRANSITIONS[order.status].includes(status)),
+      remainingOrders.every(order => isOptionValidForOrder(status, order)),
     );
   }, [selectedOrders]);
 
@@ -815,14 +852,39 @@ const PickupOperations: React.FC = () => {
         </div>
       </div>
 
-      <label className="pickup-search">
-        <Search size={16} />
-        <input
-          value={searchQuery}
-          onChange={event => setSearchQuery(event.target.value)}
-          placeholder="Search tracking id"
-        />
-      </label>
+      <div className="pickup-search-wrap">
+        <label className="pickup-search">
+          <Search size={16} />
+          <input
+            value={searchQuery}
+            onChange={event => setSearchQuery(event.target.value)}
+            onKeyDown={event => commitScannedTerm(event, setScannedIds, setSearchQuery)}
+            onPaste={event => handleScannerPaste(event, setScannedIds, setSearchQuery)}
+            placeholder="Search tracking id"
+          />
+          {(searchQuery || scannedIds.length > 0) && (
+            <button type="button" onClick={() => { setSearchQuery(''); setScannedIds([]); }} aria-label="Clear search">
+              <X size={14} />
+            </button>
+          )}
+        </label>
+        {scannedIds.length > 0 && (
+          <div className="scan-chip-list">
+            {scannedIds.map(id => (
+              <span key={id} className="scan-chip">
+                {id}
+                <button
+                  type="button"
+                  onClick={() => setScannedIds(prev => prev.filter(x => x !== id))}
+                  aria-label={`Remove ${id}`}
+                >
+                  <X size={10} />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
 
       <Table
         columns={pickupColumns}

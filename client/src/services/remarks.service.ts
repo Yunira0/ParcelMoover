@@ -18,10 +18,15 @@ export interface Remark {
   status: RemarkStatus;
   addedBy: string;
   createdAt: string;
+  lastRemark: string;
+  lastRemarkBy: string;
+  lastRemarkAt: string;
 }
 
 export interface ListRemarksParams {
   status?: RemarkStatus;
+  /** Server-side filter: workflow_status != 'closed', root remarks only. */
+  unclosed?: boolean;
   search?: string;
   fromDate?: string;
   toDate?: string;
@@ -68,6 +73,7 @@ export interface RemarkDetail {
 export const getRemarks = async (params?: ListRemarksParams): Promise<RemarksListResponse> => {
   const query: Record<string, string> = {};
   if (params?.status) query.status = params.status;
+  if (params?.unclosed) query.unclosed = 'true';
   if (params?.search) query.search = params.search;
   if (params?.fromDate) query.fromDate = params.fromDate;
   if (params?.toDate) query.toDate = params.toDate;
@@ -83,11 +89,23 @@ export const getRemarkById = async (id: string): Promise<{ success: boolean; dat
   return response.data;
 };
 
+const REMARK_STATUS_CHANGED_EVENT = 'parcelmoover:remark-status-changed';
+
+export const notifyRemarkStatusChanged = () => {
+  window.dispatchEvent(new Event(REMARK_STATUS_CHANGED_EVENT));
+};
+
+export const subscribeToRemarkStatusChanged = (handler: () => void) => {
+  window.addEventListener(REMARK_STATUS_CHANGED_EVENT, handler);
+  return () => window.removeEventListener(REMARK_STATUS_CHANGED_EVENT, handler);
+};
+
 export const setRemarkStatus = async (
   id: string,
   status: RemarkStatus,
 ): Promise<{ success: boolean; data: { id: string; status: RemarkStatus } }> => {
   const response = await api.patch(`/remarks/${id}/status`, { status });
+  notifyRemarkStatusChanged();
   return response.data;
 };
 

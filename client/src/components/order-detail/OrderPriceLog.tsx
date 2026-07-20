@@ -1,6 +1,7 @@
 import React from 'react';
 import { ArrowRight } from 'lucide-react';
 import type { PriceLogEntry } from '../../services/orders.service';
+import { toBsDate } from '../../utils/nepaliDate';
 
 const FIELD_LABELS: Record<PriceLogEntry['field'], string> = {
   cod: 'COD Amount',
@@ -46,7 +47,7 @@ const OrderPriceLog: React.FC<OrderPriceLogProps> = ({ entries }) => {
                 </span>
               </td>
               <td>{entry.changedBy}</td>
-              <td className="od-pricelog-date">{entry.createdAt}</td>
+              <td className="od-pricelog-date">{toBsDate(entry.createdAt)}</td>
             </tr>
           ))}
         </tbody>

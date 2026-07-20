@@ -62,6 +62,7 @@ function labelHtml(order: Order, qrDataUrl: string, barcodeUrl: string): string 
       <div class="party-divider"></div>
       <div class="party">
         <span class="party-role">To</span>
+        <span class="party-location">${esc(order.destinationName || order.destination)}</span>
         <span class="party-name">${esc(order.receiverName)}</span>
         <span class="party-phone">${esc(order.receiverPhone)}</span>
       </div>
@@ -247,6 +248,17 @@ const CSS = `
     text-transform: uppercase;
   }
 
+  .party-location {
+    font-size: 8px;
+    font-weight: 700;
+    color: #555;
+    text-transform: uppercase;
+    letter-spacing: 0.2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   .party-name {
     font-size: 12px;
     font-weight: 700;
@@ -354,18 +366,20 @@ const CSS = `
   @media print {
     body { margin: 0; }
     .label { border: 1px solid #000; }
+    /* Each label is its own physical page, not one continuous strip - every
+       label but the last forces a page break right after it. */
+    .label:not(:last-child) {
+      page-break-after: always;
+      break-after: page;
+    }
   }
 `;
 
-// One continuous strip the height of every label stacked back-to-back, so a
-// roll printer feeds them one after another with no blank gap or forced cut
-// between labels - the physical media (die-cut roll or manual tear) handles
-// separation, not a CSS page break per label.
-function printMediaCss(labelCount: number): string {
+function printMediaCss(): string {
   return `
   @media print {
     @page {
-      size: 100mm ${labelCount * 75}mm;
+      size: 100mm 75mm;
       margin: 0;
     }
   }
@@ -383,7 +397,6 @@ export async function printLabels(orders: Order[]): Promise<void> {
     alert('Please allow popups for this site to print labels.');
     return;
   }
-  win.document.write('<!DOCTYPE html><title>Preparing labels…</title><body style="font-family:Arial,sans-serif;padding:24px;color:#555;">Preparing labels…</body>');
 
   const qrUrls = await Promise.all(
     orders.map((o) =>
@@ -394,22 +407,27 @@ export async function printLabels(orders: Order[]): Promise<void> {
 
   const labelsMarkup = orders.map((o, i) => labelHtml(o, qrUrls[i]!, barcodeUrls[i]!)).join('\n');
 
+  // Print as soon as this one document finishes loading - no "Preparing…"
+  // placeholder page, and only a single document.write() pass. A prior
+  // placeholder write followed by a second open()/write() left the popup's
+  // `load` event firing unreliably, sometimes leaving it sitting unprinted
+  // until the user manually hit Ctrl/Cmd+P.
+  win.onload = () => {
+    win.focus();
+    win.print();
+    win.addEventListener('afterprint', () => win.close());
+  };
+
   win.document.open();
   win.document.write(`<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <title>Shipping Labels — ParcelMoover</title>
-  <style>${CSS}${printMediaCss(orders.length)}</style>
+  <style>${CSS}${printMediaCss()}</style>
 </head>
 <body>
 ${labelsMarkup}
-<script>
-  window.addEventListener('load', function() {
-    window.print();
-    window.addEventListener('afterprint', function() { window.close(); });
-  });
-<\/script>
 </body>
 </html>`);
   win.document.close();

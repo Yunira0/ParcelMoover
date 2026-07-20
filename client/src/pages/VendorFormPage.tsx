@@ -202,17 +202,12 @@ const VendorFormPage: React.FC = () => {
           getAdmins().catch(() => null),
         ]);
         let hubs: Array<{ value: string; label: string }> = [];
-        let imadolId = '';
         if (res && res.success && Array.isArray(res.data)) {
           // Vendors are assigned to a hub/branch, so only show hub locations.
           hubs = res.data
             .filter((loc: any) => loc.is_hub)
             .map((loc: any) => ({ value: loc.id, label: loc.name }));
           setLocations(hubs);
-          const imadol = res.data.find(
-            (loc: any) => (loc.code || '').toUpperCase() === 'IMADOL' || (loc.name || '').trim().toLowerCase() === 'imadol',
-          );
-          imadolId = imadol?.id || '';
         }
         // Sales staff = admins in the "Sales" department, each carrying their
         // own hub so the dropdown can be scoped to the vendor's hub below.
@@ -223,11 +218,11 @@ const VendorFormPage: React.FC = () => {
               .map((a: any) => ({ userId: a.userId, name: a.name, locationId: a.locationId ?? null })),
           );
         }
-        // Hub is fixed to the Imadol admin hub for every vendor. Fall back to the
-        // admin's own hub / sole hub only if Imadol isn't found in the location list.
+        // Hub defaults to whichever hub the current staff member (super_admin
+        // or admin) is assigned to. Fall back to the sole hub only if the
+        // actor has none (e.g. a sales user).
         const adminHubId: string | null = me?.hubId ?? null;
-        const defaultHub = imadolId
-          || (adminHubId && hubs.some(h => h.value === adminHubId) ? adminHubId : '')
+        const defaultHub = (adminHubId && hubs.some(h => h.value === adminHubId) ? adminHubId : '')
           || (hubs.length === 1 ? hubs[0].value : '');
         if (defaultHub) {
           setForm(prev => (prev.pickupLocation ? prev : { ...prev, pickupLocation: defaultHub }));

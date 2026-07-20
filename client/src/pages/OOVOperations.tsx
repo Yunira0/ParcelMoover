@@ -4,6 +4,7 @@ import {
   Download,
   Printer,
   Search,
+  X,
 } from 'lucide-react';
 import Table from '../components/Table';
 import Button from '../components/Button';
@@ -25,6 +26,7 @@ import { getLocations, getRiders } from '../services/users.service';
 import { getNcmBranches, handoffToNcm, type NcmBranch } from '../services/ncm.service';
 import { toBsDate, toBsDateTime } from '../utils/nepaliDate';
 import { printLabels } from '../utils/printLabels';
+import { commitScannedTerm, handleScannerPaste } from '../utils/scannerInput';
 import { useCursorPagination } from '../hooks/useCursorPagination';
 import './OOVOperations.css';
 
@@ -108,6 +110,14 @@ const OOVOperations: React.FC = () => {
     return fromUrl && fromUrl in TAB_LABELS ? (fromUrl as OOVTab) : 'oov';
   });
   const [searchQuery, setSearchQuery] = useState(() => searchParams.get('search') || '');
+  // Tracking ids confirmed by pressing Enter (typically a barcode scanner) -
+  // kept separate from the live input buffer so rapid scans never race each
+  // other (see utils/scannerInput.ts). Rendered as chips beside the input.
+  const [scannedIds, setScannedIds] = useState<string[]>([]);
+  const combinedSearch = useMemo(
+    () => [...scannedIds, searchQuery.trim()].filter(Boolean).join(', '),
+    [scannedIds, searchQuery],
+  );
   const [debouncedSearch, setDebouncedSearch] = useState(() => searchParams.get('search') || '');
   const pager = useCursorPagination();
   const [loading, setLoading] = useState(true);
@@ -130,9 +140,9 @@ const OOVOperations: React.FC = () => {
 
   // Debounce search input so every keystroke doesn't fire a request.
   useEffect(() => {
-    const handle = setTimeout(() => setDebouncedSearch(searchQuery.trim()), SEARCH_DEBOUNCE_MS);
+    const handle = setTimeout(() => setDebouncedSearch(combinedSearch), SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(handle);
-  }, [searchQuery]);
+  }, [combinedSearch]);
 
   useEffect(() => {
     pager.reset();
@@ -163,25 +173,39 @@ const OOVOperations: React.FC = () => {
     })();
   }, []);
 
+  // Scanning several parcels in a row fires one debounced search per scan -
+  // without this, a slower-to-resolve earlier request can land after a later
+  // one and stomp its results, making an already-scanned parcel vanish again.
+  const loadRequestIdRef = useRef(0);
+
   const loadOovOrders = useCallback(async () => {
+    const requestId = ++loadRequestIdRef.current;
     setLoading(true);
     try {
+      // A scanner builds up a comma-separated list of tracking ids - fetch
+      // enough rows in one page to fit the whole scanned batch, instead of
+      // silently cutting it off at the default page size.
+      const scannedTermCount = debouncedSearch ? debouncedSearch.split(',').map(t => t.trim()).filter(Boolean).length : 0;
+      const pageSize = scannedTermCount > 1 ? Math.min(100, Math.max(PAGE_SIZE, scannedTermCount)) : PAGE_SIZE;
+
       const res = await getOrders({
         status: TAB_STATUSES[activeTab],
         search: debouncedSearch || undefined,
-        pageSize: PAGE_SIZE,
+        pageSize,
         cursor: pager.request.cursor,
         dir: pager.request.dir,
       });
+      if (requestId !== loadRequestIdRef.current) return;
       if (res?.success && Array.isArray(res.data)) {
         setOrders(res.data);
         setMeta(res.meta ?? null);
         setLoadError('');
       }
     } catch {
+      if (requestId !== loadRequestIdRef.current) return;
       setLoadError('Failed to load orders. Showing the last loaded data, if any.');
     } finally {
-      setLoading(false);
+      if (requestId === loadRequestIdRef.current) setLoading(false);
     }
   }, [activeTab, debouncedSearch, pager.request]);
 
@@ -517,14 +541,39 @@ const OOVOperations: React.FC = () => {
       {loadError && <p className="oov-action-error">{loadError}</p>}
 
       <div className="oov-toolbar">
-        <label className="oov-search">
-          <Search size={16} />
-          <input
-            value={searchQuery}
-            onChange={event => setSearchQuery(event.target.value)}
-            placeholder="Search tracking id"
-          />
-        </label>
+        <div className="oov-search-wrap">
+          <label className="oov-search">
+            <Search size={16} />
+            <input
+              value={searchQuery}
+              onChange={event => setSearchQuery(event.target.value)}
+              onKeyDown={event => commitScannedTerm(event, setScannedIds, setSearchQuery)}
+              onPaste={event => handleScannerPaste(event, setScannedIds, setSearchQuery)}
+              placeholder="Search tracking id"
+            />
+            {(searchQuery || scannedIds.length > 0) && (
+              <button type="button" onClick={() => { setSearchQuery(''); setScannedIds([]); }} aria-label="Clear search">
+                <X size={14} />
+              </button>
+            )}
+          </label>
+          {scannedIds.length > 0 && (
+            <div className="scan-chip-list">
+              {scannedIds.map(id => (
+                <span key={id} className="scan-chip">
+                  {id}
+                  <button
+                    type="button"
+                    onClick={() => setScannedIds(prev => prev.filter(x => x !== id))}
+                    aria-label={`Remove ${id}`}
+                  >
+                    <X size={10} />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
         <div className="oov-toolbar-actions">
           {selectedIds.size > 0 && (
             <span className="oov-selected-count">
@@ -693,7 +742,10 @@ const OOVOperations: React.FC = () => {
         allSelected={allVisibleSelected}
         someSelected={someVisibleSelected}
         onToggleAll={toggleVisibleSelection}
-        loading={loading}
+        // Only blank the table for the very first load - re-searching (e.g.
+        // one debounced request per scanned parcel) would otherwise flash the
+        // whole table to "Loading..." and back on every single scan.
+        loading={loading && orders.length === 0}
         loadingMessage="Loading orders..."
         emptyMessage="No orders found."
         minWidth="1480px"
