@@ -218,9 +218,13 @@ export interface DashboardSummary {
     pendingCod: number;
     /** Cash riders have collected but not yet remitted to the office. */
     codFromRider: number;
+    /** Delivery charge owed on orders whose COD hasn't been settled yet. */
+    pendingDeliveryCharge: number;
     progressPercent: number;
     scopedToRider: boolean;
+    /** Net amount actually paid to the vendor in the last settlement (COD minus delivery charge). */
     lastAmount: number;
+    /** Full ISO timestamp of the last settlement (has both date and time). */
     lastSettledAt: string | null;
   };
   weeklyTrend: DashboardTrendDay[];

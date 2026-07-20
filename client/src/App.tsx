@@ -81,7 +81,7 @@ function App() {
           <Route path="/dashboard" element={<DashboardRouter />} />
           <Route
             path="/dashboard/metric/:metricId"
-            element={<RoleGuard allowedRoles={['vendor', 'vendor_staff']}><VendorMetricDetail /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['vendor', 'vendor_staff', 'sales']}><VendorMetricDetail /></RoleGuard>}
           />
           <Route path="/orders" element={<OrdersRouter />} />
           <Route

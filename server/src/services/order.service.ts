@@ -2001,16 +2001,15 @@ async function computeDashboardSummary(
     ...(riderId ? { rider_id: riderId } : {}),
   };
 
-  // The COD Settlement card counts only delivered / partially-delivered orders
-  // from the last 30 days (by delivery date). To keep the math honest across
-  // partial deliveries - where the declared cod_amount overstates what was
-  // actually collected - every figure is anchored on collected_amount (the cash
-  // actually in hand), and the settled legs are clamped with LEAST() so a
-  // settlement can never exceed what was collected. Pending is then
-  // collected - settled, so Settled + Pending always equals Total exactly.
-  const COD_WINDOW_DAYS = 30;
-  const codWindowStart = new Date(todayStart);
-  codWindowStart.setDate(codWindowStart.getDate() - COD_WINDOW_DAYS);
+  // The COD Settlement card counts every delivered / partially-delivered
+  // order, all-time - not a rolling window, since "pending" is money still
+  // owed and must never silently drop off just because it's old. To keep the
+  // math honest across partial deliveries - where the declared cod_amount
+  // overstates what was actually collected - every figure is anchored on
+  // collected_amount (the cash actually in hand), and the settled legs are
+  // clamped with LEAST() so a settlement can never exceed what was collected.
+  // Pending is then collected - settled, so Settled + Pending always equals
+  // Total exactly.
   const codScopeSql: Prisma.Sql = vendorId
     ? Prisma.sql`AND c.vendor_id = ${vendorId}::uuid`
     : vendorIds
@@ -2166,18 +2165,19 @@ async function computeDashboardSummary(
         settled_to_vendor: string;
         settled_to_rider: string;
         cod_from_rider: string;
+        pending_delivery_charge: string;
       }>
     >(Prisma.sql`
       SELECT
         COALESCE(SUM(c.collected_amount), 0) AS total_collected,
         COALESCE(SUM(LEAST(c.remitted_amount, c.collected_amount)), 0) AS settled_to_vendor,
         COALESCE(SUM(LEAST(c.rider_remitted_amount, c.collected_amount)), 0) AS settled_to_rider,
-        COALESCE(SUM(c.collected_amount - LEAST(c.rider_remitted_amount, c.collected_amount)), 0) AS cod_from_rider
+        COALESCE(SUM(c.collected_amount - LEAST(c.rider_remitted_amount, c.collected_amount)), 0) AS cod_from_rider,
+        COALESCE(SUM(p.delivery_charge) FILTER (WHERE c.payment_status::text = 'pending'), 0) AS pending_delivery_charge
       FROM cod_collections c
       JOIN parcels p ON p.id = c.parcel_id
       WHERE p.deleted_at IS NULL
         AND p.status::text IN ('delivered', 'partially_delivered')
-        AND p.delivered_at >= ${codWindowStart}
         ${codScopeSql}
     `),
     prisma.cod_collections.count({
@@ -2188,7 +2188,7 @@ async function computeDashboardSummary(
     prisma.settlements.findFirst({
       where: settlementWhere,
       orderBy: [{ settlement_date: "desc" }, { created_at: "desc" }],
-      select: { amount: true, settlement_date: true, created_at: true },
+      select: { amount: true, payable_amount: true, settlement_date: true, created_at: true },
     }),
     // Parcels whose status *became* returned_to_vendor today (by status-history
     // timestamp, since parcels has no returned_at column). DISTINCT guards
@@ -2219,6 +2219,11 @@ async function computeDashboardSummary(
   // Cash riders have collected but not yet remitted to the office - shown on
   // the admin card alongside the settled/pending vendor figures.
   const codFromRider = Number(codRow?.cod_from_rider ?? 0);
+
+  // Delivery charge on orders whose COD hasn't been settled to the vendor
+  // yet - this is deducted from collected_amount at settlement time (see
+  // finance.service.ts's payableAmount calc), so it's still "owed" until then.
+  const pendingDeliveryCharge = Number(codRow?.pending_delivery_charge ?? 0);
 
   const weeklyTrend = trendDayRanges.map(({ start }, index) => {
     const [dayTotalOrders, dayPickedUp, dayDelivered, dayReturned] = trendCounts[index] ?? [0, 0, 0, 0];
@@ -2326,12 +2331,15 @@ async function computeDashboardSummary(
       pendingCod,
       codFromRider,
       pendingCodCount,
+      pendingDeliveryCharge,
       progressPercent: totalCod > 0 ? (settledCod / totalCod) * 100 : 0,
       scopedToRider: Boolean(riderId),
-      lastAmount: lastSettlement ? moneyToNumber(lastSettlement.amount) : 0,
-      lastSettledAt: lastSettlement
-        ? formatDate(lastSettlement.settlement_date || lastSettlement.created_at)
-        : null,
+      // Net amount the vendor was actually paid (collected COD minus delivery
+      // charge - see finance.service.ts's payableAmount), not the gross total.
+      lastAmount: lastSettlement ? moneyToNumber(lastSettlement.payable_amount ?? lastSettlement.amount) : 0,
+      // Full timestamp, not just the (time-less) settlement_date column, so the
+      // UI can show both date and time of when the settlement was created.
+      lastSettledAt: lastSettlement ? lastSettlement.created_at.toISOString() : null,
     },
     sla: {
       overduePickup: sumStatuses(SLA_GROUPS.pickup),
@@ -2727,6 +2735,20 @@ async function _updateParcelStatusImpl(
         remarks: data.remarks || null,
       },
     });
+    // Also surface the reason as a parcel remark - status_history is an audit
+    // trail nobody browses day-to-day, but the Remarks thread/column is what
+    // vendors and CX actually check, so a failed/cancelled reason typed in
+    // the status-change dialog needs to land there too.
+    if (data.remarks && data.remarks.trim().length > 0) {
+      await tx.parcel_remarks.create({
+        data: {
+          parcel_id: parcelId,
+          user_id: actor.id,
+          location_id: data.locationId || parcel.current_location_id,
+          remark: `Marked ${newStatus.replace(/_/g, " ")}: ${data.remarks.trim()}`,
+        },
+      });
+    }
     // Write to audit log
     await tx.audit_logs.create({
       data: {
@@ -2827,6 +2849,24 @@ async function _updateParcelStatusImpl(
       `/orders/track/${createdReturn.trackingId}`,
       actor.id,
     ).catch(() => {});
+  }
+
+  // Failed pickup/delivery and cancellation are exceptional, actionable
+  // events for the vendor (unlike routine transit pings), so - like the
+  // auto-raised return above - this is worth an exception to the
+  // no-blanket-status-notifications rule.
+  if (REASON_REQUIRED_STATUSES.includes(newStatus as parcel_status)) {
+    const vendorUserId = parcel.vendors?.user_id;
+    if (vendorUserId && vendorUserId !== actor.id) {
+      createNotification(
+        vendorUserId,
+        `Order ${parcel.tracking_id} marked ${newStatus.replace(/_/g, " ")}`,
+        data.remarks || null,
+        parcel.tracking_id,
+        "status_change",
+        `/orders/track/${parcel.tracking_id}`,
+      ).catch(() => {});
+    }
   }
 
   return updatedParcel;
@@ -3159,6 +3199,18 @@ async function _bulkUpdateParcelStatusImpl(
         remarks: data.remarks || null,
       })),
     });
+    // See the single-update path for why this also needs to land in
+    // parcel_remarks, not just parcel_status_history.
+    if (data.remarks && data.remarks.trim().length > 0) {
+      await tx.parcel_remarks.createMany({
+        data: parcels.map((p) => ({
+          parcel_id: p.id,
+          user_id: actor.id,
+          location_id: toLocationId || data.toLocationId || p.current_location_id,
+          remark: `Marked ${(newStatus as string).replace(/_/g, " ")}: ${data.remarks!.trim()}`,
+        })),
+      });
+    }
 
     await tx.audit_logs.createMany({
       data: parcels.map((p) => ({
@@ -3211,7 +3263,33 @@ async function _bulkUpdateParcelStatusImpl(
   await invalidateOrderCaches();
 
   // Bulk status changes no longer notify vendors or admins (see the single
-  // update path) - a batch would otherwise fire a ping per parcel.
+  // update path) - a batch would otherwise fire a ping per parcel. Failed/
+  // cancelled is the one exception (mirrors the single-update path): one
+  // notification per affected vendor, not per parcel, so a large batch still
+  // can't flood the feed.
+  if (REASON_REQUIRED_STATUSES.includes(newStatus as parcel_status)) {
+    const vendorIds = [...new Set(parcels.map((p) => p.vendor_id).filter((id): id is string => !!id))];
+    if (vendorIds.length > 0) {
+      const vendorUsers = await prisma.vendors.findMany({
+        where: { id: { in: vendorIds }, user_id: { not: null } },
+        select: { id: true, user_id: true },
+      });
+      const label = (newStatus as string).replace(/_/g, " ");
+      for (const vendor of vendorUsers) {
+        if (!vendor.user_id || vendor.user_id === actor.id) continue;
+        const vendorParcels = parcels.filter((p) => p.vendor_id === vendor.id);
+        const single = vendorParcels.length === 1 ? vendorParcels[0] : null;
+        createNotification(
+          vendor.user_id,
+          single ? `Order ${single.tracking_id} marked ${label}` : `${vendorParcels.length} orders marked ${label}`,
+          data.remarks || null,
+          single?.tracking_id ?? null,
+          "status_change",
+          single ? `/orders/track/${single.tracking_id}` : "/orders",
+        ).catch(() => {});
+      }
+    }
+  }
 
   return result;
 }
