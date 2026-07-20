@@ -43,6 +43,7 @@ function makeMockTx() {
       updateMany: vi.fn().mockResolvedValue({ count: 1 }),
     },
     parcel_status_history: { create: vi.fn(), createMany: vi.fn() },
+    parcel_remarks: { create: vi.fn(), createMany: vi.fn() },
     audit_logs: { create: vi.fn(), createMany: vi.fn() },
   };
 }
