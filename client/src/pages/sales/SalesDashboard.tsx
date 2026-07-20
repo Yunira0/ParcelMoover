@@ -118,8 +118,8 @@ const SalesDashboard: React.FC = () => {
           totalOrderAmount={overview.totalOrderAmount}
           delivered={overview.totalDelivered}
           deliveredAmount={overview.totalDeliveredAmount}
-          rtvDelivered={overview.totalReturns}
-          rtvDeliveredAmount={overview.totalReturnsAmount}
+          rtvDelivered={overview.totalReturnedToVendor}
+          rtvDeliveredAmount={overview.totalReturnedToVendorAmount}
           inDelivery={overview.inTransit}
           inDeliveryAmount={overview.inTransitAmount}
           pendingPickup={overview.pendingPickups}
@@ -133,7 +133,7 @@ const SalesDashboard: React.FC = () => {
           <div className="sales-dashboard-charts-col">
             <OrdersTrendDonut
               delivered={overview.totalDelivered}
-              returns={overview.totalReturns}
+              returns={overview.totalReturnedToVendor}
               loading={loading}
             />
             <VendorOrdersTrendChart data={weeklyTrend} loading={loading} />
@@ -143,7 +143,7 @@ const SalesDashboard: React.FC = () => {
             <VendorTodayPanel
               orders={today.totalOrders}
               delivered={today.delivered}
-              returns={today.returns}
+              returns={today.returnedToVendor}
               remarks={today.remarks}
               loading={loading}
             />

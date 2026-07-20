@@ -81,7 +81,7 @@ const TAB_GROUPS: Record<FilterTab, ParcelStatus[]> = {
   failed: ['failed_pickup', 'failed_delivery', 'loss_and_damage'],
   // Returns still being worked: not yet handed back to the vendor.
   return_process: ['follow_up', 'ready_to_return', 'sent_to_vendor'],
-  rtv: ['failed_delivery', 'follow_up', 'ready_to_return', 'sent_to_vendor', 'returned_to_vendor'],
+  rtv: ['follow_up', 'ready_to_return', 'sent_to_vendor', 'returned_to_vendor'],
   cancelled: ['cancelled'],
 };
 

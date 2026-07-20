@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /$
+Disallow: /
+
+Sitemap: https://www.parcelmoover.com/sitemap.xml

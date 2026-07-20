@@ -35,6 +35,28 @@
   height: 36px;
 }
 
+.form-password-wrap {
+  position: relative;
+}
+
+.form-password-wrap input {
+  padding-right: 34px;
+}
+
+.form-password-toggle {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: 0;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  color: var(--color-text-caption);
+  cursor: pointer;
+}
+
 .form-group textarea {
   resize: vertical;
   min-height: 72px;

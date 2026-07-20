@@ -184,6 +184,9 @@ export interface DashboardSummary {
     totalDeliveredAmount: number;
     totalReturns: number;
     totalReturnsAmount: number;
+    /** Parcels currently at returned_to_vendor status (all-time). */
+    totalReturnedToVendor: number;
+    totalReturnedToVendorAmount: number;
   };
   today: {
     totalOrders: number;

@@ -48,19 +48,18 @@ const IN_DELIVERY_STATUSES: ParcelStatus[] = [
   'picked_up', 'arrived', 'dispatched', 'arrived_at_branch',
   'ready_to_deliver', 'sent_for_delivery', 'oov',
 ];
-const OPEN_STATUSES: ParcelStatus[] = [
-  'pickup_ordered', 'rider_assigned', 'picked_up', 'arrived', 'ready_to_deliver',
-  'sent_for_delivery', 'partially_delivered', 'oov', 'dispatched',
-  'arrived_at_branch', 'hold', 'loss_and_damage',
-];
+// Return-workflow stages still in progress, i.e. not yet back with the
+// vendor (compare 'rtv-delivered', which is the terminal returned_to_vendor
+// status). Mirrors RETURN_IN_PROGRESS_STATUSES in order.service.ts.
+const RETURN_IN_PROGRESS_STATUSES: ParcelStatus[] = ['follow_up', 'ready_to_return', 'sent_to_vendor'];
 
 interface MetricConfig {
   label: string;
   description: string;
   status?: ParcelStatus[];
   orderType?: OrderType;
-  /** Restrict to today (NPT): by creation date or by delivery date. */
-  today?: 'created' | 'delivered';
+  /** Restrict to today (NPT): by creation date, delivery date, or latest status change. */
+  today?: 'created' | 'delivered' | 'statusChanged';
 }
 
 export const METRICS: Record<string, MetricConfig> = {
@@ -75,8 +74,8 @@ export const METRICS: Record<string, MetricConfig> = {
   },
   'rtv-delivered': {
     label: 'RTV Delivered',
-    description: 'Return-type orders (return to vendor).',
-    orderType: 'return',
+    description: 'Orders returned to vendor.',
+    status: ['returned_to_vendor'],
   },
   'in-delivery': {
     label: 'In Delivery',
@@ -90,9 +89,8 @@ export const METRICS: Record<string, MetricConfig> = {
   },
   'return-process': {
     label: 'Return Process',
-    description: 'Return-type orders still moving through the network.',
-    orderType: 'return',
-    status: OPEN_STATUSES,
+    description: 'Orders in the return workflow: follow up, ready to return, or sent to vendor.',
+    status: RETURN_IN_PROGRESS_STATUSES,
   },
   'today-orders': {
     label: "Today's Orders",
@@ -107,9 +105,9 @@ export const METRICS: Record<string, MetricConfig> = {
   },
   'today-returns': {
     label: "Today's RTV Delivered",
-    description: 'Return-type orders created today.',
-    orderType: 'return',
-    today: 'created',
+    description: 'Orders returned to vendor today.',
+    status: ['returned_to_vendor'],
+    today: 'statusChanged',
   },
 };
 
@@ -121,9 +119,14 @@ const MAX_FETCH_PAGES = 10; // safety cap: 1000 orders per metric page
 const nepalToday = () =>
   new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kathmandu' }).format(new Date());
 
-const matchesToday = (order: Order, mode: 'created' | 'delivered') => {
+const matchesToday = (order: Order, mode: 'created' | 'delivered' | 'statusChanged') => {
   const today = nepalToday();
   if (mode === 'delivered') return order.deliveredAt === today;
+  if (mode === 'statusChanged') {
+    return order.lastUpdatedAt
+      ? new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kathmandu' }).format(new Date(order.lastUpdatedAt)) === today
+      : false;
+  }
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kathmandu' })
     .format(new Date(order.createdAtRaw)) === today;
 };

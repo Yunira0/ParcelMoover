@@ -89,6 +89,11 @@ const RETURN_WORKFLOW_STATUSES: parcel_status[] = [
   "returned_to_vendor",
 ];
 
+// Same workflow, excluding the terminal returned_to_vendor stage — parcels
+// still moving through the return process rather than already back with the
+// vendor. Used for the "pending returns" / "return process" dashboard figure.
+const RETURN_IN_PROGRESS_STATUSES: parcel_status[] = ["follow_up", "ready_to_return", "sent_to_vendor"];
+
 const TERMINAL_STATUSES: parcel_status[] = [
   "delivered",
   "cancelled",
@@ -2058,6 +2063,7 @@ async function computeDashboardSummary(
       total_delivered: bigint;
       total_picked_up: bigint;
       total_returns: bigint;
+      total_returned_to_vendor: bigint;
       todays_orders: bigint;
       todays_delivered: bigint;
       todays_returns: bigint;
@@ -2067,26 +2073,29 @@ async function computeDashboardSummary(
       in_transit_amount: string;
       total_delivered_amount: string;
       total_returns_amount: string;
+      total_returned_to_vendor_amount: string;
     }>
   >(Prisma.sql`
     SELECT
       COUNT(*) AS total_orders,
       COUNT(*) FILTER (WHERE status::text = ANY(${PICKUP_PENDING_STATUSES})) AS pending_pickups,
-      COUNT(*) FILTER (WHERE order_type::text = 'return' AND status::text = ANY(${OPEN_STATUSES})) AS pending_returns,
+      COUNT(*) FILTER (WHERE status::text = ANY(${RETURN_IN_PROGRESS_STATUSES})) AS pending_returns,
       COUNT(*) FILTER (WHERE status::text = ANY(${IN_TRANSIT_STATUSES})) AS in_transit,
       COUNT(*) FILTER (WHERE status::text = ANY(${DELIVERY_PENDING_STATUSES})) AS pending_deliveries,
       COUNT(*) FILTER (WHERE status::text = ANY(ARRAY['delivered','partially_delivered'])) AS total_delivered,
       COUNT(*) FILTER (WHERE status::text NOT IN ('pickup_ordered','rider_assigned','failed_pickup','cancelled')) AS total_picked_up,
       COUNT(*) FILTER (WHERE order_type::text = 'return') AS total_returns,
+      COUNT(*) FILTER (WHERE status::text = 'returned_to_vendor') AS total_returned_to_vendor,
       COUNT(*) FILTER (WHERE created_at >= ${todayStart}) AS todays_orders,
       COUNT(*) FILTER (WHERE status::text = ANY(ARRAY['delivered','partially_delivered']) AND delivered_at >= ${todayStart}) AS todays_delivered,
       COUNT(*) FILTER (WHERE order_type::text = 'return' AND created_at >= ${todayStart}) AS todays_returns,
       COALESCE(SUM(cod_amount), 0) AS total_order_amount,
       COALESCE(SUM(cod_amount) FILTER (WHERE status::text = ANY(${PICKUP_PENDING_STATUSES})), 0) AS pending_pickups_amount,
-      COALESCE(SUM(cod_amount) FILTER (WHERE order_type::text = 'return' AND status::text = ANY(${OPEN_STATUSES})), 0) AS pending_returns_amount,
+      COALESCE(SUM(cod_amount) FILTER (WHERE status::text = ANY(${RETURN_IN_PROGRESS_STATUSES})), 0) AS pending_returns_amount,
       COALESCE(SUM(cod_amount) FILTER (WHERE status::text = ANY(${IN_TRANSIT_STATUSES})), 0) AS in_transit_amount,
       COALESCE(SUM(cod_amount) FILTER (WHERE status::text = 'delivered'), 0) AS total_delivered_amount,
-      COALESCE(SUM(cod_amount) FILTER (WHERE order_type::text = 'return'), 0) AS total_returns_amount
+      COALESCE(SUM(cod_amount) FILTER (WHERE order_type::text = 'return'), 0) AS total_returns_amount,
+      COALESCE(SUM(cod_amount) FILTER (WHERE status::text = 'returned_to_vendor'), 0) AS total_returned_to_vendor_amount
     FROM parcels
     WHERE deleted_at IS NULL ${parcelScopeSql}
   `);
@@ -2099,6 +2108,7 @@ async function computeDashboardSummary(
   const totalDelivered = Number(overviewRow!.total_delivered);
   const totalPickedUp = Number(overviewRow!.total_picked_up);
   const totalReturns = Number(overviewRow!.total_returns);
+  const totalReturnedToVendor = Number(overviewRow!.total_returned_to_vendor);
   const todaysOrders = Number(overviewRow!.todays_orders);
   const todaysDelivered = Number(overviewRow!.todays_delivered);
   const todaysReturns = Number(overviewRow!.todays_returns);
@@ -2108,6 +2118,7 @@ async function computeDashboardSummary(
   const inTransitAmount = Number(overviewRow!.in_transit_amount);
   const totalDeliveredAmount = Number(overviewRow!.total_delivered_amount);
   const totalReturnsAmount = Number(overviewRow!.total_returns_amount);
+  const totalReturnedToVendorAmount = Number(overviewRow!.total_returned_to_vendor_amount);
 
   // Same consolidation for the weekly/monthly trend: previously 4 queries per
   // day (up to 120 for the 30-day view), now one query with 4 conditional
@@ -2297,6 +2308,8 @@ async function computeDashboardSummary(
       totalPickedUp,
       totalReturns,
       totalReturnsAmount,
+      totalReturnedToVendor,
+      totalReturnedToVendorAmount,
     },
     today: {
       totalOrders: todaysOrders,
