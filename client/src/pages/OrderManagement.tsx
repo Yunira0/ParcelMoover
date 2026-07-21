@@ -243,6 +243,7 @@ const OrderManagement: React.FC = () => {
   const [vendor, setVendor] = useState<string[]>(() => searchParams.getAll('vendor'));
   const [operationDept, setOperationDept] = useState(() => searchParams.get('operationDept') || '');
   const pager = useCursorPagination();
+  const [pageSizeChoice, setPageSizeChoice] = useState(PAGE_SIZE);
   const [sortBy, setSortBy] = useState<OrderSortField | undefined>(() => {
     const fromUrl = searchParams.get('sortBy');
     return fromUrl && (ORDER_SORT_FIELDS as readonly string[]).includes(fromUrl) ? (fromUrl as OrderSortField) : undefined;
@@ -313,7 +314,7 @@ const OrderManagement: React.FC = () => {
       // enough rows in one page to fit the whole scanned batch, instead of
       // silently cutting it off at the default page size.
       const scannedTermCount = debouncedSearch ? debouncedSearch.split(',').map(t => t.trim()).filter(Boolean).length : 0;
-      const pageSize = scannedTermCount > 1 ? Math.min(100, Math.max(PAGE_SIZE, scannedTermCount)) : PAGE_SIZE;
+      const pageSize = scannedTermCount > 1 ? Math.min(100, Math.max(pageSizeChoice, scannedTermCount)) : pageSizeChoice;
 
       const res = await getOrders({
         status: TAB_GROUPS[filter],
@@ -336,7 +337,7 @@ const OrderManagement: React.FC = () => {
     } finally {
       if (requestId === loadRequestIdRef.current) setLoading(false);
     }
-  }, [filter, debouncedSearch, pager.request, sortBy, sortDir]);
+  }, [filter, debouncedSearch, pager.request, sortBy, sortDir, pageSizeChoice]);
 
   useEffect(() => { loadOrders(); }, [loadOrders]);
   useEffect(() => subscribeToOrderStatusChanged(loadOrders), [loadOrders]);
@@ -866,6 +867,12 @@ const OrderManagement: React.FC = () => {
         page={pager.page}
         totalPages={totalPages}
         cursor={pager.controls(meta)}
+        pageSize={pageSizeChoice}
+        pageSizeLabel="parcels"
+        onPageSizeChange={(size) => {
+          setPageSizeChoice(size);
+          pager.reset();
+        }}
         summary={meta
           ? hasSecondaryFilters
             ? `${visibleOrders.length} of ${orders.length} on this page match your filters — ${meta.total} total in "${TAB_LABELS[filter]}"`
