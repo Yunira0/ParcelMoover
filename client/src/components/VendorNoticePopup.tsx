@@ -18,7 +18,12 @@ import './VendorNoticePopup.css';
 // sessions is driven by the server's persisted `dismissed` flag (see
 // vendor_notice_dismissals) - a vendor who hasn't dismissed a notice still
 // sees it the next time they open the portal in a fresh tab.
-const SESSION_SEEN_KEY = 'vendorNoticePopupSeen';
+//
+// Exported so Login.tsx can clear it on every successful login - otherwise a
+// logout then log-back-in in the *same tab* would leave this flag set from
+// the prior session and the popup would never fetch/show again.
+export const VENDOR_NOTICE_SEEN_KEY = 'vendorNoticePopupSeen';
+const SESSION_SEEN_KEY = VENDOR_NOTICE_SEEN_KEY;
 
 const VendorNoticePopup: React.FC = () => {
   const [notices, setNotices] = useState<VendorNoticeWithDismissed[]>([]);
