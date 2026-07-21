@@ -33,7 +33,6 @@ const VendorNoticePopup: React.FC = () => {
       setLoading(false);
       return;
     }
-    sessionStorage.setItem(SESSION_SEEN_KEY, '1');
 
     let cancelled = false;
 
@@ -41,11 +40,17 @@ const VendorNoticePopup: React.FC = () => {
       try {
         const res = await getActiveVendorNotices();
         if (cancelled) return;
+        // Only claim the tab-scoped flag once this effect run is confirmed to be
+        // the one that survives - React 18 StrictMode mounts, tears down, then
+        // remounts every effect once in dev, and writing this eagerly at the top
+        // of the effect let the throwaway first run claim it before its own
+        // fetch resolved, starving the real run of ever fetching.
+        sessionStorage.setItem(SESSION_SEEN_KEY, '1');
         if (res?.success && res.data?.length) {
           setNotices(res.data.filter((n) => !n.dismissed));
         }
       } catch {
-        // Silent — popup is non-critical
+        if (!cancelled) sessionStorage.setItem(SESSION_SEEN_KEY, '1');
       } finally {
         if (!cancelled) setLoading(false);
       }
