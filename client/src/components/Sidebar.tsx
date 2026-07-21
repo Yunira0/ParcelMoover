@@ -25,6 +25,7 @@ import {
   ClipboardCheck,
   ScrollText,
   KeyRound,
+  Bell,
   LogOut,
   ChevronLeft,
   ChevronRight,
@@ -256,6 +257,7 @@ const AdminSidebar: React.FC<{ isSuperAdmin: boolean }> = ({ isSuperAdmin }) => 
         {(isSuperAdmin || hasAdminPermission('SETTINGS_ACCESS')) && <SidebarItem to="/settings" icon={Settings} label="Settings" />}
         {isSuperAdmin && <SidebarItem to="/sla" icon={Timer} label="SLA" />}
         {(isSuperAdmin || hasAdminPermission('SYSTEM_LOGS_ACCESS')) && <SidebarItem to="/system-logs" icon={ScrollText} label="System Logs" />}
+        {(isSuperAdmin || hasAdminPermission('SETTINGS_ACCESS')) && <SidebarItem to="/vendor-notices" icon={Bell} label="Vendor Notices" />}
 
         <SidebarSection label="Operations" />
         <div className="sidebar-subnav">

@@ -811,6 +811,164 @@ export async function payForSettlement(
   };
 }
 
+// Admin-only, gated by the delegable EDIT_SETTLEMENTS permission: corrects an
+// unsettled statement's order list (add/remove cod_collections) after the
+// fact. Once a statement is settled (payment recorded via payForSettlement)
+// it's immutable - money has already moved, so this always re-checks status
+// even though the route middleware also gates on it being unsettled elsewhere.
+export async function updateSettlement(
+  actor: Actor,
+  settlementId: string,
+  codCollectionIds: string[],
+): Promise<CreateSettlementResult> {
+  if (!codCollectionIds || codCollectionIds.length === 0) {
+    throw new AppError(400, "A settlement must include at least one order");
+  }
+
+  const settlement = await prisma.settlements.findUnique({
+    where: { id: settlementId },
+    include: { settlement_items: { select: { cod_collection_id: true } } },
+  });
+  if (!settlement) {
+    throw new AppError(404, "Settlement not found");
+  }
+  if (settlement.status === "settled") {
+    throw new AppError(400, "This statement has already been paid and can no longer be edited");
+  }
+
+  const payeeType = settlement.payee_type as "rider" | "vendor";
+  const targetId = payeeType === "rider" ? settlement.rider_id : settlement.vendor_id;
+  if (!targetId) {
+    throw new AppError(500, "Settlement is missing its payee");
+  }
+
+  const existingIds = new Set(settlement.settlement_items.map((i) => i.cod_collection_id));
+  const nextIds = new Set(codCollectionIds);
+  const toRemove = settlement.settlement_items.filter((i) => !nextIds.has(i.cod_collection_id));
+  const toAddIds = codCollectionIds.filter((id) => !existingIds.has(id));
+  const keptIds = codCollectionIds.filter((id) => existingIds.has(id));
+
+  // Orders newly added must belong to the same payee and still be pending
+  // settlement - the same eligibility rule createSettlement enforces.
+  const eligibleAddWhere: Prisma.cod_collectionsWhereInput =
+    payeeType === "rider"
+      ? { id: { in: toAddIds }, rider_id: targetId, rider_payment_status: payment_status.pending, collected_amount: { gt: 0 } }
+      : { id: { in: toAddIds }, vendor_id: targetId, payment_status: payment_status.pending, collected_amount: { gt: 0 } };
+
+  const [toAddCollections, keptCollections] = await Promise.all([
+    toAddIds.length > 0
+      ? prisma.cod_collections.findMany({ where: eligibleAddWhere, include: { parcels: { select: { delivery_charge: true } } } })
+      : Promise.resolve([]),
+    keptIds.length > 0
+      ? prisma.cod_collections.findMany({ where: { id: { in: keptIds } }, include: { parcels: { select: { delivery_charge: true } } } })
+      : Promise.resolve([]),
+  ]);
+
+  if (toAddCollections.length !== toAddIds.length) {
+    throw new AppError(
+      400,
+      "One or more orders being added are not eligible (already settled or belong to a different account)",
+    );
+  }
+
+  const allCollections = [...keptCollections, ...toAddCollections];
+  const grossAmount = allCollections.reduce((sum, c) => sum + Number(c.collected_amount), 0);
+  const payableAmount =
+    payeeType === "rider"
+      ? grossAmount
+      : allCollections.reduce((sum, c) => sum + Number(c.collected_amount) - Number(c.parcels.delivery_charge), 0);
+
+  const updated = await prisma.$transaction(async (tx) => {
+    if (toRemove.length > 0) {
+      const removedIds = toRemove.map((i) => i.cod_collection_id);
+      await tx.settlement_items.deleteMany({
+        where: { settlement_id: settlement.id, cod_collection_id: { in: removedIds } },
+      });
+      if (payeeType === "rider") {
+        await tx.cod_collections.updateMany({
+          where: { id: { in: removedIds } },
+          data: { rider_payment_status: payment_status.pending, rider_remitted_amount: 0, rider_settled_at: null },
+        });
+      } else {
+        await tx.cod_collections.updateMany({
+          where: { id: { in: removedIds } },
+          data: { payment_status: payment_status.pending, remitted_amount: 0 },
+        });
+      }
+    }
+
+    if (toAddCollections.length > 0) {
+      await tx.settlement_items.createMany({
+        data: toAddCollections.map((c) => ({
+          settlement_id: settlement.id,
+          cod_collection_id: c.id,
+          amount: payeeType === "rider" ? Number(c.collected_amount) : Number(c.collected_amount) - Number(c.parcels.delivery_charge),
+        })),
+      });
+      if (payeeType === "rider") {
+        await Promise.all(
+          toAddCollections.map((c) =>
+            tx.cod_collections.update({
+              where: { id: c.id },
+              data: { rider_payment_status: payment_status.paid, rider_remitted_amount: c.collected_amount, rider_settled_at: new Date() },
+            }),
+          ),
+        );
+      } else {
+        await Promise.all(
+          toAddCollections.map((c) =>
+            tx.cod_collections.update({
+              where: { id: c.id },
+              data: { payment_status: payment_status.paid, remitted_amount: c.collected_amount },
+            }),
+          ),
+        );
+      }
+    }
+
+    const result = await tx.settlements.update({
+      where: { id: settlement.id },
+      data: { amount: grossAmount, payable_amount: payableAmount },
+    });
+
+    await tx.audit_logs.create({
+      data: {
+        actor_id: actor.id,
+        entity_type: "settlement",
+        entity_id: settlement.id,
+        action: "EDIT_SETTLEMENT",
+        old_data: {
+          codCollectionIds: Array.from(existingIds),
+          amount: Number(settlement.amount),
+          payableAmount: Number(settlement.payable_amount ?? settlement.amount),
+        },
+        new_data: { codCollectionIds, amount: grossAmount, payableAmount },
+      },
+    });
+
+    return result;
+  });
+
+  if (payeeType === "rider") {
+    await invalidateRiderFinanceCache(targetId);
+  } else {
+    await invalidateVendorFinanceCache(targetId);
+  }
+
+  return {
+    id: updated.id,
+    statementId: updated.statement_id,
+    payeeType,
+    amount: Number(updated.amount),
+    payableAmount,
+    settlementDate: updated.settlement_date ? formatNepalDate(updated.settlement_date) : null,
+    status: updated.status,
+    paymentMethod: updated.payment_method,
+    payments: Array.isArray(updated.payments) ? (updated.payments as unknown as SettlementPaymentInput[]) : [],
+    remark: updated.remark,
+  };
+}
+
 // Line-item breakdown of a single settlement statement - which orders were
 // bundled into it and how much of each was settled. Authorization mirrors
 // listSettlements: staff see any statement, vendor/rider/sales are confined
@@ -893,6 +1051,7 @@ export async function getSettlementDetail(actor: Actor, settlementId: string): P
   const items: SettlementDetailItem[] = settlement.settlement_items.map((si) => {
     const parcel = si.cod_collections.parcels;
     return {
+      codCollectionId: si.cod_collection_id,
       orderNumber: parcel.order_number,
       trackingId: parcel.tracking_id,
       reference: null,
@@ -914,6 +1073,7 @@ export async function getSettlementDetail(actor: Actor, settlementId: string): P
     id: settlement.id,
     statementId: settlement.statement_id,
     payeeType: settlement.payee_type as "rider" | "vendor",
+    payeeId: (settlement.rider_id ?? settlement.vendor_id) as string,
     payeeName,
     payeePhone,
     payeeEmail,

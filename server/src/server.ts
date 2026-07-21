@@ -20,6 +20,7 @@ import ApiKeyRoutes from "./routes/apiKey.routes"
 import PublicApiRoutes from "./routes/publicApi.routes"
 import MeRoutes from "./routes/me.routes"
 import AuditLogRoutes from "./routes/auditLog.routes"
+import VendorNoticeRoutes from "./routes/vendorNotice.routes"
 import prisma, { pool } from "./lib/prisma";
 import cookiesParser from "cookie-parser";
 import {authMiddleware} from "./middlewares/auth.middleware";
@@ -177,6 +178,8 @@ app.use(
 app.use("/api/me", MeRoutes);
 
 app.use("/api/audit-logs", AuditLogRoutes)
+
+app.use("/api/vendor-notices", VendorNoticeRoutes)
 
 // SPA fallback — client-side routes like /dashboard, /vendors, /tickets have
 // no matching Express route or file under public/, so without this they 404

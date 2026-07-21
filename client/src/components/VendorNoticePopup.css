@@ -1,0 +1,78 @@
+.vnp-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--color-overlay);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: var(--z-modal);
+  animation: vnp-fade-in 0.2s ease;
+}
+
+@keyframes vnp-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Banner-only card: the image *is* the notice, no text chrome around it. */
+.vnp-card {
+  position: relative;
+  width: 560px;
+  max-width: 92vw;
+  border-radius: var(--border-radius-xl);
+  overflow: hidden;
+  box-shadow: var(--shadow-lg);
+  animation: vnp-slide-up 0.25s ease;
+  line-height: 0;
+}
+
+@keyframes vnp-slide-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.vnp-banner {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+}
+
+.vnp-close {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: var(--border-radius-full);
+  background: rgba(0, 0, 0, 0.55);
+  color: white;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.vnp-close svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.vnp-close:hover {
+  background: rgba(0, 0, 0, 0.75);
+}
+
+.vnp-counter {
+  position: absolute;
+  bottom: var(--space-3);
+  right: var(--space-3);
+  padding: 2px 8px;
+  border-radius: var(--border-radius-full);
+  background: rgba(0, 0, 0, 0.55);
+  color: white;
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-md);
+}

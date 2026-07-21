@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Printer, Download, CreditCard } from 'lucide-react';
+import { ArrowLeft, Printer, Download, CreditCard, Pencil } from 'lucide-react';
 import Button from '../components/Button';
 import StatusChip from '../components/StatusChip';
 import MakePaymentModal from '../components/MakePaymentModal';
+import EditSettlementModal from '../components/EditSettlementModal';
 import { getSettlementDetail, type SettlementDetail } from '../services/finance.service';
-import { hasAnyRole } from '../utils/auth';
+import { hasAnyRole, hasAdminPermission } from '../utils/auth';
 import { toBsDateTime } from '../utils/nepaliDate';
 import './vendor/VendorFinance.css';
 import './SettlementDetailPage.css';
@@ -99,8 +100,12 @@ const SettlementDetailPage: React.FC = () => {
   const [error, setError] = useState('');
   const [reloadKey, setReloadKey] = useState(0);
   const [showPayment, setShowPayment] = useState(false);
+  const [showEdit, setShowEdit] = useState(false);
 
   const canPay = hasAnyRole(['super_admin', 'admin']);
+  // Correcting a mistake before money moves — gated by the delegable
+  // EDIT_SETTLEMENTS permission, same pattern as MANAGE_USERS/SETTINGS_ACCESS.
+  const canEdit = hasAnyRole(['super_admin']) || hasAdminPermission('EDIT_SETTLEMENTS');
 
   useEffect(() => {
     let active = true;
@@ -169,6 +174,11 @@ const SettlementDetailPage: React.FC = () => {
           <Button variant="secondary" onClick={handleDownload} disabled={!detail}>
             <Download size={16} /> Download
           </Button>
+          {canEdit && detail?.status === 'pending' && (
+            <Button variant="secondary" onClick={() => setShowEdit(true)}>
+              <Pencil size={16} /> Edit
+            </Button>
+          )}
           {canPay && detail?.status === 'pending' && (
             <Button variant="primary" onClick={() => setShowPayment(true)}>
               <CreditCard size={16} /> Make Payment
@@ -302,6 +312,17 @@ const SettlementDetailPage: React.FC = () => {
           settlementId={detail.id}
           payableAmount={detail.payableAmount}
           onClose={() => setShowPayment(false)}
+          onSuccess={() => setReloadKey((k) => k + 1)}
+        />
+      )}
+
+      {showEdit && detail && (
+        <EditSettlementModal
+          settlementId={detail.id}
+          payeeType={detail.payeeType}
+          payeeId={detail.payeeId}
+          currentItems={detail.items}
+          onClose={() => setShowEdit(false)}
           onSuccess={() => setReloadKey((k) => k + 1)}
         />
       )}

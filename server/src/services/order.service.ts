@@ -2092,7 +2092,7 @@ async function computeDashboardSummary(
       COALESCE(SUM(cod_amount) FILTER (WHERE status::text = ANY(${PICKUP_PENDING_STATUSES})), 0) AS pending_pickups_amount,
       COALESCE(SUM(cod_amount) FILTER (WHERE status::text = ANY(${RETURN_IN_PROGRESS_STATUSES})), 0) AS pending_returns_amount,
       COALESCE(SUM(cod_amount) FILTER (WHERE status::text = ANY(${IN_TRANSIT_STATUSES})), 0) AS in_transit_amount,
-      COALESCE(SUM(cod_amount) FILTER (WHERE status::text = 'delivered'), 0) AS total_delivered_amount,
+      COALESCE(SUM(cod_amount) FILTER (WHERE status::text = ANY(ARRAY['delivered','partially_delivered'])), 0) AS total_delivered_amount,
       COALESCE(SUM(cod_amount) FILTER (WHERE order_type::text = 'return'), 0) AS total_returns_amount,
       COALESCE(SUM(cod_amount) FILTER (WHERE status::text = 'returned_to_vendor'), 0) AS total_returned_to_vendor_amount
     FROM parcels
@@ -2126,7 +2126,7 @@ async function computeDashboardSummary(
   const trendSelects = trendDayRanges.map(({ start, end }, i) => Prisma.sql`
     COUNT(*) FILTER (WHERE created_at >= ${start} AND created_at < ${end}) AS ${Prisma.raw(`d${i}_total`)},
     COUNT(*) FILTER (WHERE picked_up_at >= ${start} AND picked_up_at < ${end}) AS ${Prisma.raw(`d${i}_picked_up`)},
-    COUNT(*) FILTER (WHERE status::text = 'delivered' AND delivered_at >= ${start} AND delivered_at < ${end}) AS ${Prisma.raw(`d${i}_delivered`)},
+    COUNT(*) FILTER (WHERE status::text = ANY(ARRAY['delivered','partially_delivered']) AND delivered_at >= ${start} AND delivered_at < ${end}) AS ${Prisma.raw(`d${i}_delivered`)},
     COUNT(*) FILTER (WHERE order_type::text = 'return' AND created_at >= ${start} AND created_at < ${end}) AS ${Prisma.raw(`d${i}_returned`)}
   `);
   const [trendRow] = await prisma.$queryRaw<Array<Record<string, bigint>>>(Prisma.sql`

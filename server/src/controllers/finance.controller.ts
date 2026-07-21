@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
-import { getPendingCodBill, listOrderCod, listSettlements, getUnsettledOrders, createSettlement, payForSettlement, getSettlementDetail } from "../services/finance.service";
-import { CodPaymentFilter, CreateSettlementInput, PaySettlementInput } from "../types/finance.type";
+import { getPendingCodBill, listOrderCod, listSettlements, getUnsettledOrders, createSettlement, payForSettlement, updateSettlement, getSettlementDetail } from "../services/finance.service";
+import { CodPaymentFilter, CreateSettlementInput, PaySettlementInput, UpdateSettlementInput } from "../types/finance.type";
 
 // General UUID shape — not strict about RFC-4122 version/variant nibbles, so
 // seeded/demo ids (e.g. 55555555-0000-0000-0000-000000000002) are accepted.
@@ -211,6 +211,29 @@ export async function payForSettlementController(req: Request, res: Response) {
     return res.status(error.statusCode || 500).json({
       success: false,
       message: error.message || "Failed to record payment",
+    });
+  }
+}
+
+export async function updateSettlementController(req: Request, res: Response) {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const { id } = req.params;
+    if (typeof id !== "string" || !UUID_REGEX.test(id)) {
+      return res.status(400).json({ success: false, message: "Invalid settlement id" });
+    }
+
+    const input = req.body as UpdateSettlementInput;
+    const settlement = await updateSettlement({ id: req.user.id, roles: req.user.roles }, id, input.codCollectionIds);
+
+    return res.status(200).json({ success: true, message: "Settlement updated", data: settlement });
+  } catch (error: any) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to update settlement",
     });
   }
 }

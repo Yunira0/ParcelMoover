@@ -101,6 +101,10 @@ export interface PaySettlementInput {
   remark: string;
 }
 
+export interface UpdateSettlementInput {
+  codCollectionIds: string[];
+}
+
 export interface CreateSettlementResult {
   id: string;
   statementId: string;
@@ -133,6 +137,7 @@ export interface UnsettledOrdersResult {
 }
 
 export interface SettlementDetailItem {
+  codCollectionId: string;
   orderNumber: number;
   trackingId: string;
   reference: string | null;
@@ -153,6 +158,8 @@ export interface SettlementDetailResult {
   id: string;
   statementId: string;
   payeeType: "rider" | "vendor";
+  /** vendors.id / riders.id — needed by the client to look up more orders eligible for this statement when editing it. */
+  payeeId: string;
   payeeName: string;
   payeePhone: string;
   payeeEmail: string | null;

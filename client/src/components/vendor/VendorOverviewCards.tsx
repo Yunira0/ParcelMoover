@@ -56,7 +56,7 @@ const VendorOverviewCards: React.FC<VendorOverviewCardsProps> = ({
     { icon: Package,       label: 'Total Orders',  value: fmt(totalOrders),  sub: fmtAmount(totalOrderAmount),    accent: 'primary', to: '/dashboard/metric/total-orders' },
     { icon: Truck,         label: 'Delivered',     value: fmt(delivered),    sub: fmtAmount(deliveredAmount),     accent: 'success', to: '/dashboard/metric/delivered' },
     { icon: RotateCcw,     label: 'RTV Delivered', value: fmt(rtvDelivered), sub: fmtAmount(rtvDeliveredAmount),  accent: 'warning', to: '/dashboard/metric/rtv-delivered' },
-    { icon: PackageSearch, label: 'In Delivery',   value: fmt(inDelivery),   sub: fmtAmount(inDeliveryAmount),    accent: 'info',    to: '/dashboard/metric/in-delivery' },
+    { icon: PackageSearch, label: 'In Progress',   value: fmt(inDelivery),   sub: fmtAmount(inDeliveryAmount),    accent: 'info',    to: '/dashboard/metric/in-delivery' },
     { icon: Clock,         label: 'Pending Pickup',value: fmt(pendingPickup),  sub: fmtAmount(pendingPickupAmount),   accent: 'neutral', to: '/dashboard/metric/pending-pickup' },
     { icon: RefreshCw,     label: 'Return Process',value: fmt(returnProcess),sub: fmtAmount(returnProcessAmount), accent: 'danger',  to: '/dashboard/metric/return-process' },
   ];

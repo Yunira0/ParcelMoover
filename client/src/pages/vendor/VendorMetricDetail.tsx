@@ -78,7 +78,7 @@ export const METRICS: Record<string, MetricConfig> = {
     status: ['returned_to_vendor'],
   },
   'in-delivery': {
-    label: 'In Delivery',
+    label: 'In Progress',
     description: 'Orders picked up and moving through the network towards the customer.',
     status: IN_DELIVERY_STATUSES,
   },

@@ -163,7 +163,9 @@ const OOVOperations: React.FC = () => {
     (async () => {
       try {
         const [locRes, riderRes] = await Promise.all([getLocations(), getRiders()]);
-        if (locRes?.success && Array.isArray(locRes.data)) setLocations(locRes.data);
+        if (locRes?.success && Array.isArray(locRes.data)) {
+          setLocations(locRes.data.filter((loc: any) => loc.is_hub));
+        }
         if (riderRes?.success && Array.isArray(riderRes.data)) {
           setRiders(riderRes.data.filter((r: { status: string }) => r.status === 'active'));
         }

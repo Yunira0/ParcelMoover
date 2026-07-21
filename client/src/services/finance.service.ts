@@ -189,6 +189,7 @@ export const getUnsettledOrders = async (
 };
 
 export interface SettlementDetailItem {
+  codCollectionId: string;
   orderNumber: number;
   trackingId: string;
   reference: string | null;
@@ -209,6 +210,7 @@ export interface SettlementDetail {
   id: string;
   statementId: string;
   payeeType: PayeeType;
+  payeeId: string;
   payeeName: string;
   payeePhone: string;
   payeeEmail: string | null;
@@ -227,4 +229,12 @@ export interface SettlementDetail {
 export const getSettlementDetail = async (id: string): Promise<SettlementDetail> => {
   const response = await api.get(`/finance/settlements/${id}`);
   return response.data.data;
+};
+
+export const updateSettlement = async (
+  id: string,
+  codCollectionIds: string[],
+): Promise<{ success: boolean; message: string; data: CreateSettlementResponse }> => {
+  const response = await api.patch(`/finance/settlements/${id}`, { codCollectionIds });
+  return response.data;
 };

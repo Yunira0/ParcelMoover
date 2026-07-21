@@ -3,6 +3,7 @@ import { rateLimit, ipKeyGenerator } from "express-rate-limit";
 import { authMiddleware } from "../middlewares/auth.middleware";
 import { authorizeRoles } from "../middlewares/authorizeRoles.middleware";
 import { requireStaffPermission } from "../middlewares/staffPermission.middleware";
+import { requireAdminPermission } from "../middlewares/adminPermission.middleware";
 import { csrfProtection } from "../middlewares/csrf.middleware";
 import { validate } from "../middlewares/validate.middleware";
 import {
@@ -11,6 +12,7 @@ import {
   settlementsQuerySchema,
   createSettlementSchema,
   paySettlementSchema,
+  updateSettlementSchema,
 } from "../validators/finance.schema";
 import { createRedisRateLimitStore } from "../lib/rateLimitStore";
 import {
@@ -20,6 +22,7 @@ import {
   getUnsettledOrdersController,
   createSettlementController,
   payForSettlementController,
+  updateSettlementController,
   getSettlementDetailController,
 } from "../controllers/finance.controller";
 
@@ -114,6 +117,19 @@ financeRouter.post(
   settlementCreateLimiter,
   validate(paySettlementSchema),
   payForSettlementController,
+);
+
+// PATCH /api/finance/settlements/:id — correct an unsettled statement's order
+// list (super_admin always allowed; a plain admin needs EDIT_SETTLEMENTS)
+financeRouter.patch(
+  "/settlements/:id",
+  authMiddleware,
+  csrfProtection,
+  authorizeRoles("super_admin", "admin"),
+  requireAdminPermission("EDIT_SETTLEMENTS"),
+  settlementCreateLimiter,
+  validate(updateSettlementSchema),
+  updateSettlementController,
 );
 
 // GET /api/finance/unsettled-orders — unsettled COD orders for rider or vendor

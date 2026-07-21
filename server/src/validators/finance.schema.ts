@@ -59,6 +59,12 @@ export const paySettlementSchema = z.object({
 
 export type CreateSettlementBody = z.infer<typeof createSettlementSchema>;
 
+// ── Edit settlement (body) — only while the statement is still unsettled ─────
+
+export const updateSettlementSchema = z.object({
+  codCollectionIds: z.array(uuidSchema).min(1, "At least one order must be selected"),
+});
+
 // ── Notification list query ───────────────────────────────────────────────────
 
 export const notificationQuerySchema = paginationQuerySchema;

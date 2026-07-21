@@ -11,6 +11,10 @@ export const ADMIN_PERMISSIONS = [
   // Read the system audit logs - they expose actor identity and raw
   // before/after payloads across every entity, so this is a real grant.
   "SYSTEM_LOGS_ACCESS",
+  // Edit an unsettled (not yet paid) COD statement - add/remove orders to
+  // correct a mistake before money moves. Statements already marked settled
+  // can never be edited, permission or not.
+  "EDIT_SETTLEMENTS",
 ] as const;
 
 export type AdminPermission = (typeof ADMIN_PERMISSIONS)[number];

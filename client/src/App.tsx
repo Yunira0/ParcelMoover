@@ -53,6 +53,7 @@ const ForceChangePasswordPage = lazy(() => import('./pages/ForceChangePasswordPa
 const KycApplicationPage = lazy(() => import('./pages/KycApplicationPage'))
 const KycManagement = lazy(() => import('./pages/KycManagement'))
 const SystemLogs = lazy(() => import('./pages/SystemLogs'))
+const VendorNoticeManager = lazy(() => import('./pages/VendorNoticeManager'))
 const ProfilePage = lazy(() => import('./pages/ProfilePage'))
 
 function App() {
@@ -170,6 +171,10 @@ function App() {
           <Route
             path="/sla"
             element={<RoleGuard allowedRoles={['super_admin']}><SlaSettings /></RoleGuard>}
+          />
+          <Route
+            path="/vendor-notices"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']} adminPermission="SETTINGS_ACCESS"><VendorNoticeManager /></RoleGuard>}
           />
           <Route
             path="/pickup"

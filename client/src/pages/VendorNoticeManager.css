@@ -1,0 +1,318 @@
+.vnm-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-4);
+}
+
+.vnm-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.vnm-error {
+  color: var(--color-danger-default);
+  font-size: var(--font-size-sm);
+  margin: 0;
+}
+
+.vnm-muted {
+  color: var(--color-text-caption);
+  font-size: 0.9rem;
+}
+
+/* ── Table ─────────────────────────────────────────────────────────────────── */
+
+.vnm-table-wrap {
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-default);
+  overflow-x: auto;
+}
+
+.vnm-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-sm);
+}
+
+.vnm-table th {
+  text-align: left;
+  padding: var(--space-3) var(--space-4);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-default);
+  background: var(--color-background-canvas);
+  border-bottom: 1px solid var(--color-border-default);
+  white-space: nowrap;
+}
+
+.vnm-table td {
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-border-default);
+  color: var(--color-text-caption);
+  vertical-align: middle;
+}
+
+.vnm-table tr:last-child td {
+  border-bottom: none;
+}
+
+.vnm-table tr:hover td {
+  background: var(--color-background-canvas);
+}
+
+/* ── Badges ────────────────────────────────────────────────────────────────── */
+
+.vnm-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: var(--border-radius-full);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.4;
+}
+
+.vnm-badge-active {
+  background: var(--color-success-surface);
+  color: var(--color-success-default);
+}
+
+.vnm-badge-inactive {
+  background: var(--color-neutral-surface);
+  color: var(--color-text-caption);
+}
+
+/* ── Actions ───────────────────────────────────────────────────────────────── */
+
+.vnm-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.vnm-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-default);
+  background: var(--color-background-surface);
+  color: var(--color-text-caption);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+/* Without an explicit CSS size, an SVG child sized only via its width/height
+   HTML attributes can resolve its flex-basis to 0 inside an inline-flex
+   button and disappear entirely - force it, don't rely on the attributes. */
+.vnm-icon-btn svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.vnm-icon-btn:hover {
+  background: var(--color-background-canvas);
+  color: var(--color-text-default);
+}
+
+.vnm-icon-btn-danger:hover {
+  background: var(--color-danger-surface);
+  color: var(--color-danger-default);
+  border-color: var(--color-danger-border);
+}
+
+/* ── Form modal ────────────────────────────────────────────────────────────── */
+
+.vnm-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4);
+}
+
+.vnm-form-grid .form-group {
+  grid-column: span 2;
+}
+
+.vnm-form-grid .form-group:has(.vnm-inline-toggle) {
+  grid-column: span 2;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.vnm-form-grid .form-group label:not(.vnm-inline-label) {
+  display: block;
+  margin-bottom: var(--space-1);
+}
+
+.vnm-inline-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  cursor: pointer;
+  user-select: none;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-caption);
+}
+
+.vnm-inline-toggle input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--color-primary);
+}
+
+/* ── Image upload ──────────────────────────────────────────────────────────── */
+
+.vnm-image-upload {
+  border: 2px dashed var(--color-border-default);
+  border-radius: var(--border-radius-default);
+  padding: var(--space-4);
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.vnm-image-upload:hover {
+  border-color: var(--color-primary);
+}
+
+.vnm-image-upload input[type="file"] {
+  display: none;
+}
+
+.vnm-image-preview {
+  display: block;
+  width: 240px;
+  aspect-ratio: 16 / 9;
+  border-radius: var(--border-radius-default);
+  margin-top: var(--space-2);
+  object-fit: cover;
+}
+
+.vnm-thumb {
+  display: block;
+  width: 96px;
+  aspect-ratio: 16 / 9;
+  border-radius: var(--border-radius-default);
+  object-fit: cover;
+  border: 1px solid var(--color-border-default);
+}
+
+.vnm-image-remove {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+  color: var(--color-danger-default);
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 0;
+}
+
+.vnm-image-remove svg {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+}
+
+/* ── Vendor select ─────────────────────────────────────────────────────────── */
+
+.vnm-vendor-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+}
+
+.vnm-vendor-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 2px 8px;
+  background: var(--color-background-canvas);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-full);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-caption);
+}
+
+.vnm-vendor-chip button {
+  display: inline-flex;
+  align-items: center;
+  background: none;
+  border: none;
+  color: var(--color-text-caption);
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+}
+
+.vnm-vendor-chip button svg {
+  width: 10px;
+  height: 10px;
+  flex-shrink: 0;
+}
+
+.vnm-vendor-chip button:hover {
+  color: var(--color-danger-default);
+}
+
+/* ── Empty state ───────────────────────────────────────────────────────────── */
+
+.vnm-empty {
+  text-align: center;
+  padding: var(--space-10);
+  color: var(--color-text-caption);
+  font-size: 0.9rem;
+}
+
+/* ── Toggle switch ─────────────────────────────────────────────────────────── */
+
+.vnm-toggle {
+  position: relative;
+  width: 36px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+.vnm-toggle input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.vnm-toggle-slider {
+  position: absolute;
+  inset: 0;
+  background: var(--color-background-elevated);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-full);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.vnm-toggle-slider::before {
+  content: '';
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  left: 2px;
+  top: 2px;
+  background: white;
+  border-radius: 50%;
+  transition: transform 0.2s;
+}
+
+.vnm-toggle input:checked + .vnm-toggle-slider {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+.vnm-toggle input:checked + .vnm-toggle-slider::before {
+  transform: translateX(16px);
+}
