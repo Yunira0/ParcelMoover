@@ -1,4 +1,4 @@
-.vendor-delivery-page {
+﻿.vendor-delivery-page {
   display: flex;
   flex-direction: column;
   gap: var(--space-6);
@@ -20,7 +20,7 @@
 
 .vendor-delivery-search:focus-within {
   border-color: var(--color-border-primary);
-  box-shadow: 0 0 0 2px rgb(194 65 12 / 12%);
+  box-shadow: 0 0 0 2px rgb(226 76 0 / 12%);
 }
 
 .vendor-delivery-search input {
@@ -44,4 +44,23 @@
   color: var(--color-danger-text);
   font-size: var(--font-size-sm);
   margin: 0;
+}
+
+.vendor-delivery-plan {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-top: calc(-1 * var(--space-3));
+}
+
+.vendor-delivery-plan-hint {
+  color: var(--color-text-caption);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-sm);
+}
+
+.vendor-delivery-unset {
+  color: var(--color-text-placeholder);
+  font-style: italic;
 }

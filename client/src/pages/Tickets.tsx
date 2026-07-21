@@ -9,6 +9,7 @@ import Pagination from '../components/Pagination';
 import StatusChip, { type StatusChipTone } from '../components/StatusChip';
 import CreateTicketModal from '../components/CreateTicketModal';
 import FilterDropdown from '../components/FilterDropdown';
+import { isVendorSide } from '../utils/auth';
 import {
   getTickets,
   TICKET_CATEGORY_LABELS,
@@ -26,7 +27,7 @@ type TicketTab = 'all' | TicketStatus;
 
 const PAGE_SIZE = 10;
 
-const TAB_ORDER: TicketTab[] = ['all', 'open', 'pending', 'closed'];
+const TAB_ORDER: TicketTab[] = ['all', 'pending', 'open', 'closed'];
 
 const TAB_LABELS: Record<TicketTab, string> = {
   all: 'All',
@@ -41,8 +42,8 @@ const PRIORITY_TONE: Record<TicketPriority, StatusChipTone> = {
 };
 
 const STATUS_TONE: Record<TicketStatus, StatusChipTone> = {
-  open: 'info',
   pending: 'warning',
+  open: 'info',
   closed: 'success',
 };
 
@@ -74,6 +75,8 @@ const isWithinRange = (createdAt: string, range: DateRange) => {
 const Tickets: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  // Vendors raise tickets; admins/sales only triage them.
+  const vendorSide = isVendorSide();
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [activeTab, setActiveTab] = useState<TicketTab>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -110,8 +113,8 @@ const Tickets: React.FC = () => {
   const statusCounts = useMemo(() => {
     const counts: Record<TicketTab, number> = {
       all: tickets.length,
-      open: 0,
       pending: 0,
+      open: 0,
       closed: 0,
     };
     tickets.forEach((ticket) => { counts[ticket.status] += 1; });
@@ -179,17 +182,21 @@ const Tickets: React.FC = () => {
       className: 'tickets-sn-cell',
     },
     { header: 'TICKET ID', accessor: (ticket: Ticket) => ticket.ticketId, width: '110px', className: 'tickets-id-cell' },
-    {
-      header: 'CUSTOMER',
-      accessor: (ticket: Ticket) => (
-        <div className="tickets-customer-cell">
-          <span>{ticket.customerName}</span>
-          <small>{ticket.customerPhone}</small>
-        </div>
-      ),
-      width: '160px',
-    },
-    { header: 'SUBJECT', accessor: (ticket: Ticket) => ticket.subject, width: '220px', className: 'tickets-subject-cell' },
+    // Vendors are the vendor themselves, so the Vendor column is only useful on
+    // the admin/sales side.
+    ...(vendorSide
+      ? []
+      : [{
+          header: 'VENDOR',
+          accessor: (ticket: Ticket) => (
+            <div className="tickets-customer-cell">
+              <span>{ticket.vendorName || ticket.customerName || '—'}</span>
+              <small>{ticket.vendorPhone || ticket.customerPhone}</small>
+            </div>
+          ),
+          width: '160px',
+        }]),
+    { header: 'REMARKS', accessor: (ticket: Ticket) => ticket.subject, width: '220px', className: 'tickets-subject-cell' },
     { header: 'CATEGORY', accessor: (ticket: Ticket) => TICKET_CATEGORY_LABELS[ticket.category], width: '110px' },
     {
       header: 'PRIORITY',
@@ -205,7 +212,6 @@ const Tickets: React.FC = () => {
       ),
       width: '120px',
     },
-    { header: 'ASSIGNED TO', accessor: (ticket: Ticket) => ticket.assignedTo, width: '120px' },
     { header: 'CREATED AT', accessor: (ticket: Ticket) => toBsDate(ticket.createdAt), width: '110px' },
     {
       header: 'ACTION',
@@ -216,16 +222,16 @@ const Tickets: React.FC = () => {
       ),
       width: '110px',
     },
-  ], [page, visibleTickets, navigate]);
+  ], [page, visibleTickets, navigate, vendorSide]);
 
   return (
     <div className="tickets-container">
       <PageHeader
         title="CX / Tickets"
         subtitle="Manage customer tickets, track status and resolve issues."
-        actionLabel="Create ticket"
-        actionIcon={<Plus size={16} />}
-        onAction={() => setIsCreateOpen(true)}
+        actionLabel={vendorSide ? 'Create ticket' : undefined}
+        actionIcon={vendorSide ? <Plus size={16} /> : undefined}
+        onAction={vendorSide ? () => setIsCreateOpen(true) : undefined}
       />
 
       <SegmentedTabs
@@ -296,7 +302,7 @@ const Tickets: React.FC = () => {
         loading={loading}
         loadingMessage="Loading tickets..."
         emptyMessage="No tickets found."
-        minWidth="1280px"
+        minWidth={vendorSide ? '940px' : '1100px'}
         tableClassName="tickets-table"
       />
 

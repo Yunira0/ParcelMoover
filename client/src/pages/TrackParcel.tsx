@@ -5,6 +5,7 @@ import TrackSearchBox from '../components/TrackSearchBox';
 import StatusChip from '../components/StatusChip';
 import { trackParcelPublic, type PublicTracking } from '../services/orders.service';
 import { getPublicStatusLabel, getPublicStatusTone } from '../utils/publicParcelStatus';
+import { toBsDateTime } from '../utils/nepaliDate';
 import './TrackParcel.css';
 
 type LoadState = 'idle' | 'loading' | 'success' | 'error';
@@ -134,11 +135,11 @@ const TrackParcel: React.FC = () => {
               </div>
               <div>
                 <dt>Booked</dt>
-                <dd>{data.createdAt}</dd>
+                <dd>{toBsDateTime(data.createdAt)}</dd>
               </div>
               <div>
                 <dt>Last updated</dt>
-                <dd>{data.lastUpdatedAt}</dd>
+                <dd>{toBsDateTime(data.lastUpdatedAt)}</dd>
               </div>
             </dl>
 
@@ -154,7 +155,7 @@ const TrackParcel: React.FC = () => {
                           <MapPin size={12} /> {entry.location} ·{' '}
                         </>
                       )}
-                      {entry.createdAt}
+                      {toBsDateTime(entry.createdAt)}
                     </span>
                   </div>
                 </li>

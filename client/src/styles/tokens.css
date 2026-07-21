@@ -6,15 +6,15 @@
   --color-border-default: #d1d5db;
   --color-text-base: #ffffff;
   --color-icon-base: #ffffff;
-  --color-background-primary-default: #c2410c;
-  --color-background-primary-invert-default: #ffedd5;
-  --color-background-primary-subtle: rgb(194 65 12 / 6%);
-  --color-text-primary: #c2410c;
-  --color-icon-primary: #c2410c;
-  --color-border-primary: #c2410c;
-  --color-primary: #c2410c;
-  --color-primary-subtle: rgb(194 65 12 / 6%);
-  --color-primary-hover: #9a3412;
+  --color-background-primary-default: #e24c00;
+  --color-background-primary-invert-default: #ffe0cc;
+  --color-background-primary-subtle: rgb(226 76 0 / 6%);
+  --color-text-primary: #e24c00;
+  --color-icon-primary: #e24c00;
+  --color-border-primary: #e24c00;
+  --color-primary: #e24c00;
+  --color-primary-subtle: rgb(226 76 0 / 6%);
+  --color-primary-hover: #b83d00;
   --color-text-caption: #4b5563;
   --color-text-default: #030712;
   --color-background-elevated: #e5e7eb;
@@ -103,7 +103,7 @@
   --shadow-sm: 0 1px 2px rgb(3 7 18 / 6%);
   --shadow-md: 0 4px 6px -1px rgb(3 7 18 / 10%), 0 2px 4px -2px rgb(3 7 18 / 6%);
   --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.12);
-  --shadow-focus: 0 0 0 3px rgb(194 65 12 / 45%);
+  --shadow-focus: 0 0 0 3px rgb(226 76 0 / 45%);
 
   /* ── Overlay ─────────────────────────────────────────────────────────────── */
   --color-overlay: rgba(0, 0, 0, 0.5);

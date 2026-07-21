@@ -3,8 +3,8 @@ import api from '../utils/api';
 export type RemarkStatus = 'open' | 'pending' | 'closed';
 
 export const REMARK_STATUS_LABELS: Record<RemarkStatus, string> = {
-  open: 'Open',
   pending: 'Pending',
+  open: 'Open',
   closed: 'Closed',
 };
 

@@ -662,6 +662,29 @@ model pricing_settings {
   updated_at           DateTime @default(now()) @updatedAt @db.Timestamptz(6)
 }
 
+// Per-status SLA thresholds (hours). One row per configurable key: each pickup/
+// delivery/transit parcel status plus the singleton 'remarks' and 'return' keys.
+// sla_hours NULL = SLA disabled for that key.
+model sla_settings {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  status_key String   @unique
+  sla_hours  Int?
+  updated_at DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+}
+
+// Configurable settlement payment methods (Cash, Online, eSewa, Bank, ...).
+// Managed by super admins; consumed by the settlement "Make Payment" flow.
+// Soft-disabled via is_active so historical settlements keep referencing the
+// name even after a method is retired.
+model payment_methods {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name       String   @unique
+  is_active  Boolean  @default(true)
+  sort_order Int      @default(0)
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+}
+
 enum exception_status {
   open
   resolved

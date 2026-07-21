@@ -1,10 +1,31 @@
 import { useRef, useState } from 'react'
 import {
-  X, Package, User, Phone, MapPin, Weight,
+  X, Package, User, Phone, MapPin, Weight, Navigation,
   Banknote, CheckCheck, Truck, XCircle, RefreshCw, ChevronRight,
 } from 'lucide-react'
 import type { Parcel, ParcelStatus } from '../lib/api'
-import { updateParcelStatus, RIDER_TRANSITIONS } from '../lib/api'
+import { updateParcelStatus, addParcelRemark, getCachedRider, RIDER_TRANSITIONS } from '../lib/api'
+
+// Dials a number and logs the call as a parcel remark so the office sees it.
+function callAndLog(orderId: string, phone: string, party: 'sender' | 'receiver') {
+  const name = getCachedRider()?.fullName || 'Rider'
+  // Best-effort log — never block or fail the actual call on it.
+  addParcelRemark(orderId, `${name} called ${party} on ${phone}`).catch(() => {})
+  window.location.href = `tel:${phone}`
+}
+
+// Opens Google Maps directions to an address in the native maps app / browser.
+function openDirections(destination: string) {
+  const q = encodeURIComponent(destination)
+  window.open(`https://www.google.com/maps/dir/?api=1&destination=${q}`, '_blank', 'noopener')
+}
+
+// Searches the (free-text) address on Google Maps — Google geocodes the query,
+// so a plain typed address works without stored coordinates.
+function searchOnMaps(address: string) {
+  const q = encodeURIComponent(address)
+  window.open(`https://www.google.com/maps/search/?api=1&query=${q}`, '_blank', 'noopener')
+}
 
 const STATUS_LABELS: Record<ParcelStatus, string> = {
   pickup_ordered:    'Pickup Ordered',
@@ -23,6 +44,10 @@ const STATUS_LABELS: Record<ParcelStatus, string> = {
   failed_pickup:     'Failed Pickup',
   failed_delivery:   'Failed Delivery',
   cancelled:         'Cancelled',
+  follow_up:         'Follow Up',
+  ready_to_return:   'Ready to Return',
+  sent_to_vendor:    'Returning to Vendor',
+  returned_to_vendor: 'Returned to Vendor',
 }
 
 const ACTION_META: Record<string, { label: string; icon: typeof CheckCheck; danger?: boolean; partial?: boolean }> = {
@@ -44,6 +69,9 @@ const STATUS_PILL: Record<string, string> = {
   failed_pickup:     'text-error bg-error/10',
   failed_delivery:   'text-error bg-error/10',
   cancelled:         'text-error bg-error/10',
+  ready_to_return:   'text-yellow-400 bg-yellow-400/10',
+  sent_to_vendor:    'text-blue-400 bg-blue-400/10',
+  returned_to_vendor: 'text-success bg-success/10',
 }
 
 interface Props {
@@ -184,15 +212,32 @@ export default function ParcelActionSheet({ parcel, onClose, onDone }: Props) {
             <User size={13} className="text-text-muted shrink-0" />
             <span className="text-sm font-semibold text-text-primary">{parcel.senderName}</span>
           </div>
-          <div className="flex items-center gap-2">
-            <Phone size={13} className="text-text-muted shrink-0" />
-            <span className="text-sm text-text-secondary">{parcel.senderPhone}</span>
-          </div>
-          {parcel.origin && (
-            <div className="flex items-start gap-2">
+          <button
+            type="button"
+            onClick={() => callAndLog(parcel.id, parcel.senderPhone, 'sender')}
+            className="flex items-center gap-2 text-brand active:opacity-70"
+          >
+            <Phone size={13} className="shrink-0" />
+            <span className="text-sm font-medium underline">{parcel.senderPhone}</span>
+          </button>
+          {(parcel.senderAddress || parcel.origin) && (
+            <button
+              type="button"
+              onClick={() => searchOnMaps(parcel.senderAddress || parcel.origin)}
+              className="flex items-start gap-2 text-left active:opacity-70"
+            >
               <MapPin size={13} className="text-text-muted shrink-0 mt-0.5" />
-              <span className="text-xs text-text-muted leading-snug">{parcel.origin}</span>
-            </div>
+              <span className="text-xs text-text-muted leading-snug underline">{parcel.senderAddress || parcel.origin}</span>
+            </button>
+          )}
+          {(parcel.senderAddress || parcel.origin) && (
+            <button
+              type="button"
+              onClick={() => openDirections(parcel.senderAddress || parcel.origin)}
+              className="flex items-center gap-1.5 text-brand text-xs font-semibold active:opacity-70 mt-0.5"
+            >
+              <Navigation size={13} className="shrink-0" /> Directions
+            </button>
           )}
         </div>
 
@@ -203,15 +248,32 @@ export default function ParcelActionSheet({ parcel, onClose, onDone }: Props) {
             <User size={13} className="text-text-muted shrink-0" />
             <span className="text-sm font-semibold text-text-primary">{parcel.receiverName}</span>
           </div>
-          <div className="flex items-center gap-2">
-            <Phone size={13} className="text-text-muted shrink-0" />
-            <span className="text-sm text-text-secondary">{parcel.receiverPhone}</span>
-          </div>
-          {parcel.destination && (
-            <div className="flex items-start gap-2">
+          <button
+            type="button"
+            onClick={() => callAndLog(parcel.id, parcel.receiverPhone, 'receiver')}
+            className="flex items-center gap-2 text-brand active:opacity-70"
+          >
+            <Phone size={13} className="shrink-0" />
+            <span className="text-sm font-medium underline">{parcel.receiverPhone}</span>
+          </button>
+          {(parcel.receiverAddress || parcel.destination) && (
+            <button
+              type="button"
+              onClick={() => searchOnMaps(parcel.receiverAddress || parcel.destination)}
+              className="flex items-start gap-2 text-left active:opacity-70"
+            >
               <MapPin size={13} className="text-text-muted shrink-0 mt-0.5" />
-              <span className="text-xs text-text-muted leading-snug">{parcel.destination}</span>
-            </div>
+              <span className="text-xs text-text-muted leading-snug underline">{parcel.receiverAddress || parcel.destination}</span>
+            </button>
+          )}
+          {(parcel.receiverAddress || parcel.destination) && (
+            <button
+              type="button"
+              onClick={() => openDirections(parcel.receiverAddress || parcel.destination)}
+              className="flex items-center gap-1.5 text-brand text-xs font-semibold active:opacity-70 mt-0.5"
+            >
+              <Navigation size={13} className="shrink-0" /> Directions
+            </button>
           )}
         </div>
 

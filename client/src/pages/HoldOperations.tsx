@@ -16,8 +16,9 @@ import {
   type OrdersPageMeta,
   type ParcelStatus,
 } from '../services/orders.service';
+import { downloadExcel } from '../utils/excel';
 import { useCursorPagination } from '../hooks/useCursorPagination';
-import { toBsDate } from '../utils/nepaliDate';
+import { toBsDate, toBsDateTime } from '../utils/nepaliDate';
 import { printLabels } from '../utils/printLabels';
 import './HoldOperations.css';
 
@@ -195,16 +196,7 @@ const HoldOperations: React.FC = () => {
       toBsDate(order.lastUpdatedAt) || '',
       order.remarks || '',
     ]);
-    const csv = [headers, ...csvRows]
-      .map((row) => row.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(','))
-      .join('\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'hold-orders.csv';
-    link.click();
-    URL.revokeObjectURL(url);
+    downloadExcel('hold-orders.xlsx', 'Hold Orders', headers, csvRows);
   };
 
   const selectedOrders = orders.filter((order) => selectedIds.has(order.id));
@@ -263,7 +255,7 @@ const HoldOperations: React.FC = () => {
       accessor: (order: Order) => order.lastUpdatedBy || '-',
       width: '155px',
     },
-    { header: 'LAST UPDATED', accessor: (order: Order) => toBsDate(order.lastUpdatedAt) || '-', width: '155px' },
+    { header: 'LAST UPDATED', accessor: (order: Order) => toBsDateTime(order.lastUpdatedAt) || '-', width: '170px' },
     {
       header: 'LAST REMARKS',
       accessor: (order: Order) => (

@@ -14,7 +14,8 @@ import {
   type OrdersPageMeta,
   type ParcelStatus,
 } from '../services/orders.service';
-import { toBsDate } from '../utils/nepaliDate';
+import { downloadExcel } from '../utils/excel';
+import { toBsDate, toBsDateTime } from '../utils/nepaliDate';
 import { printLabels } from '../utils/printLabels';
 import { useCursorPagination } from '../hooks/useCursorPagination';
 import './LossAndDamageOperations.css';
@@ -157,16 +158,7 @@ const LossAndDamageOperations: React.FC = () => {
       order.lastUpdatedBy || '',
       toBsDate(order.lastUpdatedAt) || '',
     ]);
-    const csv = [headers, ...csvRows]
-      .map((row) => row.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(','))
-      .join('\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'loss-and-damage-orders.csv';
-    link.click();
-    URL.revokeObjectURL(url);
+    downloadExcel('loss-and-damage-orders.xlsx', 'Loss and Damage', headers, csvRows);
   };
 
   const selectedOrders = orders.filter((order) => selectedIds.has(order.id));
@@ -225,7 +217,7 @@ const LossAndDamageOperations: React.FC = () => {
       accessor: (order: Order) => order.lastUpdatedBy || '-',
       width: '155px',
     },
-    { header: 'LAST UPDATED', accessor: (order: Order) => toBsDate(order.lastUpdatedAt) || '-', width: '155px' },
+    { header: 'LAST UPDATED', accessor: (order: Order) => toBsDateTime(order.lastUpdatedAt) || '-', width: '170px' },
   ], [pager.request, visibleOrders]);
 
   return (

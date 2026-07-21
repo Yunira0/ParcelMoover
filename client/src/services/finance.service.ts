@@ -69,6 +69,7 @@ export interface SettlementListItem {
   bankAccountNo: string | null;
   bankAccountHolder: string | null;
   transferDate: string | null;
+  createdAt: string;
   orderCount: number;
   amount: number;
   status: 'pending' | 'settled';
@@ -118,7 +119,9 @@ export const getSettlements = async (
   return response.data;
 };
 
-export type PaymentMethod = 'cash' | 'online';
+// Method names are configurable by super admins (Cash, Online, eSewa, Bank, ...),
+// so this is an open string rather than a fixed union.
+export type PaymentMethod = string;
 
 export interface SettlementPayment {
   method: PaymentMethod;
@@ -213,6 +216,7 @@ export interface SettlementDetail {
   payeeEmail: string | null;
   payeeAddress: string | null;
   transferDate: string | null;
+  createdAt: string;
   amount: number;
   payableAmount: number;
   status: 'pending' | 'settled';

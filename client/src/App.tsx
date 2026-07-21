@@ -22,10 +22,12 @@ const VendorFormPage = lazy(() => import('./pages/VendorFormPage'))
 const RiderManagement = lazy(() => import('./pages/RiderManagement'))
 const RiderFormPage = lazy(() => import('./pages/RiderFormPage'))
 const FinanceManagement = lazy(() => import('./pages/FinanceManagement'))
+const ReportsPage = lazy(() => import('./pages/ReportsPage'))
 const SettlementDetailPage = lazy(() => import('./pages/SettlementDetailPage'))
 const SettlementCreatePage = lazy(() => import('./pages/SettlementCreatePage'))
 const DeliveryRateSettings = lazy(() => import('./pages/DeliveryRateSettings'))
 const Settings = lazy(() => import('./pages/settings/Settings'))
+const SlaSettings = lazy(() => import('./pages/SlaSettings'))
 const PickupOperations = lazy(() => import('./pages/PickupOperations'))
 const DispatchOperations = lazy(() => import('./pages/DispatchOperations'))
 const OOVOperations = lazy(() => import('./pages/OOVOperations'))
@@ -149,12 +151,20 @@ function App() {
             element={<RoleGuard allowedRoles={['super_admin', 'admin']}><FinanceManagement /></RoleGuard>}
           />
           <Route
+            path="/reports"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']}><ReportsPage /></RoleGuard>}
+          />
+          <Route
             path="/settings"
             element={<RoleGuard allowedRoles={['super_admin', 'admin']} adminPermission="SETTINGS_ACCESS"><Settings /></RoleGuard>}
           />
           <Route
             path="/settings/delivery-rates"
             element={<RoleGuard allowedRoles={['super_admin', 'admin']} adminPermission="SETTINGS_ACCESS"><DeliveryRateSettings /></RoleGuard>}
+          />
+          <Route
+            path="/sla"
+            element={<RoleGuard allowedRoles={['super_admin']}><SlaSettings /></RoleGuard>}
           />
           <Route
             path="/pickup"

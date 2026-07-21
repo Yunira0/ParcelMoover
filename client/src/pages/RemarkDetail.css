@@ -1,20 +1,48 @@
-/* ============================================================================
+﻿/* ============================================================================
    RemarkDetail.css - Chat-style threaded conversation
    Reuses patterns from OrderDetailPage.css
    ============================================================================ */
 
-/* Page Layout */
+/* Page Layout
+   Rendered inside <main class="dashboard-content">, which already supplies the
+   outer padding, so this container adds none of its own. It spans the full
+   content width (no max-width / centering) so the detail view fills the page
+   next to the sidebar instead of leaving dead space on the right. */
 .page-container {
   width: 100%;
-  max-width: 800px;
-  margin: 0 auto;
-  padding: var(--space-6) var(--space-4);
 }
 
 .page-content {
   display: flex;
   flex-direction: column;
-  gap: var(--space-8);
+  gap: var(--space-6);
+}
+
+/* Two-column detail body: a fixed info sidebar + a flexible conversation column
+   that grows to fill the remaining width. Collapses to a single stacked column
+   on narrower viewports. */
+.detail-body {
+  display: grid;
+  grid-template-columns: 340px minmax(0, 1fr);
+  gap: var(--space-6);
+  align-items: start;
+}
+
+.detail-aside {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.detail-main {
+  min-width: 0;
+}
+
+@media (max-width: 1024px) {
+  .detail-body {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* Back Link */
@@ -263,6 +291,7 @@
 /* Message */
 .rd-chat-msg {
   display: flex;
+  align-items: flex-start;
   gap: var(--space-3);
   padding: var(--space-2) var(--space-2);
   border-radius: var(--border-radius-modal);
@@ -272,6 +301,8 @@
 .rd-chat-msg:hover { background: var(--color-background-canvas); }
 
 .rd-chat-avatar {
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -404,7 +435,7 @@
   flex-shrink: 0;
 }
 
-.rd-bottom-replying-close:hover { background: rgb(194 65 12 / 0.15); }
+.rd-bottom-replying-close:hover { background: rgb(226 76 0 / 0.15); }
 
 .rd-bottom-input-bar {
   display: flex;
@@ -444,6 +475,7 @@
 .rd-bottom-send-btn {
   width: 40px;
   height: 40px;
+  padding: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -457,7 +489,7 @@
 }
 
 .rd-bottom-send-btn:hover:not(:disabled) {
-  background: var(--color-background-primary-hovered);
+  background: var(--color-primary-hover);
 }
 
 .rd-bottom-send-btn:disabled {
@@ -474,13 +506,17 @@
 
 /* Responsive */
 @media (max-width: 768px) {
-  .page-container {
-    padding: var(--space-4) var(--space-3);
+  .page-content {
+    gap: var(--space-4);
   }
 
   .detail-header {
     flex-direction: column;
     gap: var(--space-4);
+  }
+
+  .detail-header-actions {
+    margin-left: 0;
   }
 
   .info-grid {

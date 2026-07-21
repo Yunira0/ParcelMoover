@@ -1,4 +1,4 @@
-.vendor-orders-page {
+﻿.vendor-orders-page {
   display: flex;
   flex-direction: column;
   gap: var(--space-6);
@@ -103,7 +103,7 @@
 
 .vo-date-range-inputs:focus-within {
   border-color: var(--color-border-primary);
-  box-shadow: 0 0 0 2px rgb(194 65 12 / 12%);
+  box-shadow: 0 0 0 2px rgb(226 76 0 / 12%);
 }
 
 /* Create / bulk toolbar -------------------------------------------------- */
@@ -170,7 +170,7 @@
 
 .vo-search-box:focus-within {
   border-color: var(--color-border-primary);
-  box-shadow: 0 0 0 2px rgb(194 65 12 / 12%);
+  box-shadow: 0 0 0 2px rgb(226 76 0 / 12%);
 }
 
 .vo-search-box input {
@@ -273,7 +273,14 @@
   font-size: var(--font-size-sm);
 }
 
-.vo-muted-cell,
+/* This class lands on a <td>, so it must NOT change `display` - overriding a
+   table cell's display (e.g. to -webkit-box) pulls it out of the column grid
+   and misaligns every cell after it. Keep the multi-line clamp on the inner
+   button (.vo-comment-cell) which is a real block element. */
+.vo-muted-cell {
+  color: var(--color-text-caption);
+}
+
 .vo-comment-cell {
   display: -webkit-box;
   -webkit-line-clamp: 3;

@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, CheckCircle2, MessageSquare, RefreshCw, RotateCcw, Send, Tag, User } from 'lucide-react';
+import { ArrowLeft, Building2, CheckCircle2, Clock, FileText, Mail, MapPin, MessageSquare, Phone, RefreshCw, RotateCcw, Send, Tag } from 'lucide-react';
 import Button from '../components/Button';
+import { isAdminSide, isVendorSide } from '../utils/auth';
 import StatusChip, { type StatusChipTone } from '../components/StatusChip';
 import {
   getTicketById,
@@ -10,6 +11,8 @@ import {
   TICKET_CATEGORY_LABELS,
   TICKET_PRIORITY_LABELS,
   TICKET_STATUS_LABELS,
+  type TicketPriority,
+  type TicketStatus,
   type TicketDetail as TicketDetailType,
 } from '../services/tickets.service';
 import { markNotificationsReadByTrackingId } from '../services/notifications.service';
@@ -17,17 +20,26 @@ import './RemarkDetail.css';
 import { toBsDate } from '../utils/nepaliDate';
 import './TicketDetail.css';
 
-const STATUS_TONE: Record<TicketDetailType['status'], StatusChipTone> = {
-  open: 'info',
+const STATUS_TONE: Record<TicketStatus, StatusChipTone> = {
   pending: 'warning',
+  open: 'info',
   closed: 'success',
+};
+
+// Mirrors the priority tones used on the Tickets list, so a ticket reads the
+// same in the table there and on this detail page.
+const PRIORITY_TONE: Record<TicketPriority, StatusChipTone> = {
+  urgent: 'danger',
+  high: 'warning',
+  medium: 'info',
+  low: 'neutral',
 };
 
 const getInitials = (name: string) => name.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2);
 
 const getAvatarColor = (name: string) => {
   const lower = name.toLowerCase();
-  if (lower.includes('admin') || lower.includes('super')) return '#c2410c';
+  if (lower.includes('admin') || lower.includes('super')) return '#e24c00';
   if (lower.includes('vendor') || lower.includes('branch')) return '#0f766e';
   return '#64748b';
 };
@@ -48,6 +60,8 @@ const formatRelativeTime = (dateStr: string) => {
 const TicketDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  // Admins triage/resolve/close; vendors only raise the ticket and converse.
+  const isAdmin = isAdminSide();
   const [ticket, setTicket] = useState<TicketDetailType | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -63,7 +77,20 @@ const TicketDetail: React.FC = () => {
     setError('');
     try {
       const res = await getTicketById(id);
-      if (res?.success && res.data) setTicket(res.data);
+      if (res?.success && res.data) {
+        setTicket(res.data);
+        // Support opening an un-opened ticket acknowledges it: pending → open.
+        // Only staff/sales viewing counts; a vendor viewing their own ticket
+        // shouldn't mark it as opened by support.
+        if (res.data.status === 'pending' && !isVendorSide()) {
+          try {
+            await setTicketStatus(id, 'open');
+            setTicket((prev) => (prev ? { ...prev, status: 'open' } : prev));
+          } catch {
+            // Non-fatal: the ticket still loaded; it just didn't auto-open.
+          }
+        }
+      }
     } catch (err: any) {
       setError(err.response?.data?.message || 'Failed to load ticket');
     } finally {
@@ -144,68 +171,131 @@ const TicketDetail: React.FC = () => {
                   <StatusChip tone={STATUS_TONE[ticket.status]}>
                     {TICKET_STATUS_LABELS[ticket.status]}
                   </StatusChip>
+                  <StatusChip tone={PRIORITY_TONE[ticket.priority]}>
+                    {TICKET_PRIORITY_LABELS[ticket.priority]}
+                  </StatusChip>
                 </div>
                 <p className="tracking-link">{ticket.subject}</p>
               </div>
               <div className="detail-header-actions">
-                {ticket.status !== 'closed' ? (
-                  <Button variant="primary" onClick={() => changeStatus('closed')} disabled={statusUpdating}>
-                    <CheckCircle2 size={16} /> Mark as Done
-                  </Button>
+                {isAdmin ? (
+                  ticket.status !== 'closed' ? (
+                    <Button variant="primary" onClick={() => changeStatus('closed')} disabled={statusUpdating}>
+                      <CheckCircle2 size={16} /> Resolve & Close
+                    </Button>
+                  ) : (
+                    <Button variant="secondary" onClick={() => changeStatus('open')} disabled={statusUpdating}>
+                      <RotateCcw size={16} /> Reopen
+                    </Button>
+                  )
                 ) : (
-                  <Button variant="secondary" onClick={() => changeStatus('open')} disabled={statusUpdating}>
-                    <RotateCcw size={16} /> Reopen
-                  </Button>
+                  // Vendors can't change status - they see where their ticket stands.
+                  <div className={`td-vendor-status td-vendor-status-${ticket.status}`}>
+                    {ticket.status === 'closed' ? (
+                      <><CheckCircle2 size={16} /> Resolved by support</>
+                    ) : (
+                      <><Clock size={16} /> Awaiting support</>
+                    )}
+                  </div>
                 )}
               </div>
             </div>
 
-            <div className="info-grid">
-              <div className="info-card">
-                <div className="info-card-header">
-                  <User size={16} strokeWidth={1.5} />
-                  <span>Customer</span>
-                </div>
-                <p className="info-name">{ticket.customerName || '—'}</p>
-                <p className="info-detail">{ticket.customerPhone || '—'}</p>
-              </div>
-              <div className="info-card">
-                <div className="info-card-header">
-                  <Tag size={16} strokeWidth={1.5} />
-                  <span>Category / Priority</span>
-                </div>
-                <p className="info-name">{TICKET_CATEGORY_LABELS[ticket.category]}</p>
-                <p className="info-detail">{TICKET_PRIORITY_LABELS[ticket.priority]} priority</p>
-              </div>
-            </div>
-
-            <div className="rd-chat-section">
-              <div className="rd-chat-header">
-                <MessageSquare size={18} strokeWidth={1.5} />
-                <h2>Conversation</h2>
-                <span className="rd-chat-count">{ticket.thread.length}</span>
-              </div>
-
-              <div className="rd-chat-thread">
-                {/* Original ticket message as the opening entry */}
-                {ticket.description && (
-                  <div className="rd-chat-group">
-                    <div className="rd-chat-msg">
-                      <div className="rd-chat-avatar" style={{ background: getAvatarColor(ticket.customerName || 'C') }}>
-                        {getInitials(ticket.customerName || 'Customer')}
-                      </div>
-                      <div className="rd-chat-body">
-                        <div className="rd-chat-sender-row">
-                          <span className="rd-chat-name">{ticket.customerName || 'Customer'}</span>
-                          <span className="rd-chat-time">{toBsDate(ticket.createdAt)}</span>
-                        </div>
-                        <div className="rd-chat-bubble"><p>{ticket.description}</p></div>
-                      </div>
+            <div className="detail-body">
+              <aside className="detail-aside">
+                {/* Vendor (client) that raised the ticket - shown first. */}
+                {ticket.vendor && (
+                  <div className="info-card td-vendor-card">
+                    <div className="info-card-header">
+                      <Building2 size={16} strokeWidth={1.5} />
+                      <span>Vendor</span>
+                    </div>
+                    <p className="info-name">{ticket.vendor.name}</p>
+                    {ticket.vendor.contactName && ticket.vendor.contactName !== ticket.vendor.name && (
+                      <p className="info-detail">{ticket.vendor.contactName}</p>
+                    )}
+                    <div className="td-vendor-meta">
+                      {ticket.vendor.phone && (
+                        <span className="td-vendor-line"><Phone size={13} strokeWidth={1.5} />{ticket.vendor.phone}</span>
+                      )}
+                      {ticket.vendor.email && (
+                        <span className="td-vendor-line"><Mail size={13} strokeWidth={1.5} />{ticket.vendor.email}</span>
+                      )}
+                      {(ticket.vendor.address || ticket.vendor.location) && (
+                        <span className="td-vendor-line">
+                          <MapPin size={13} strokeWidth={1.5} />
+                          {[ticket.vendor.address, ticket.vendor.location].filter(Boolean).join(', ')}
+                        </span>
+                      )}
                     </div>
                   </div>
                 )}
 
-                {ticket.thread.map((entry) => (
+                {/* The original request text as a first-class element. */}
+                <div className="info-card">
+                  <div className="info-card-header">
+                    <FileText size={16} strokeWidth={1.5} />
+                    <span>Description</span>
+                  </div>
+                  <p className="td-description">
+                    {ticket.description?.trim() || 'No description provided.'}
+                  </p>
+                </div>
+
+                {/* Ticket attributes as a compact details table. */}
+                <div className="info-card">
+                  <div className="info-card-header">
+                    <Tag size={16} strokeWidth={1.5} />
+                    <span>Ticket details</span>
+                  </div>
+                  <table className="td-detail-table">
+                    <tbody>
+                      <tr>
+                        <th>Category</th>
+                        <td>{TICKET_CATEGORY_LABELS[ticket.category]}</td>
+                      </tr>
+                      <tr>
+                        <th>Priority</th>
+                        <td>
+                          <StatusChip tone={PRIORITY_TONE[ticket.priority]}>
+                            {TICKET_PRIORITY_LABELS[ticket.priority]}
+                          </StatusChip>
+                        </td>
+                      </tr>
+                      <tr>
+                        <th>Status</th>
+                        <td>
+                          <StatusChip tone={STATUS_TONE[ticket.status]}>
+                            {TICKET_STATUS_LABELS[ticket.status]}
+                          </StatusChip>
+                        </td>
+                      </tr>
+                      <tr>
+                        <th>Created</th>
+                        <td>{toBsDate(ticket.createdAt)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </aside>
+
+              <div className="detail-main">
+                <div className="rd-chat-section">
+                  <div className="rd-chat-header">
+                    <MessageSquare size={18} strokeWidth={1.5} />
+                    <h2>Conversation</h2>
+                    <span className="rd-chat-count">{ticket.thread.length}</span>
+                  </div>
+
+                  <div className="rd-chat-thread">
+                    {ticket.thread.length === 0 && (
+                      <div className="rd-chat-empty">
+                        <MessageSquare size={32} strokeWidth={1} />
+                        <p>No replies yet</p>
+                        <span>Reply below to respond to this ticket</span>
+                      </div>
+                    )}
+                    {ticket.thread.map((entry) => (
                   <div className="rd-chat-group" key={entry.id}>
                     <div className="rd-chat-msg">
                       <div className="rd-chat-avatar" style={{ background: getAvatarColor(entry.author) }}>
@@ -249,6 +339,8 @@ const TicketDetail: React.FC = () => {
                 </button>
               </div>
               {replyError && <p className="rd-bottom-error">{replyError}</p>}
+                </div>
+              </div>
             </div>
           </>
         )}

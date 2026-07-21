@@ -1,4 +1,4 @@
-.dispatch-operations-container {
+﻿.dispatch-operations-container {
   display: flex;
   flex-direction: column;
   gap: var(--space-6);
@@ -33,7 +33,7 @@
 
 .dispatch-search:focus-within {
   border-color: var(--color-border-primary);
-  box-shadow: 0 0 0 2px rgb(194 65 12 / 12%);
+  box-shadow: 0 0 0 2px rgb(226 76 0 / 12%);
 }
 
 .dispatch-search input {
@@ -212,7 +212,7 @@
 
 .dispatch-status-option:focus-visible {
   border-color: var(--color-border-primary);
-  box-shadow: 0 0 0 2px rgb(194 65 12 / 18%);
+  box-shadow: 0 0 0 2px rgb(226 76 0 / 18%);
   outline: none;
 }
 
@@ -328,7 +328,7 @@
 .dispatch-partial-textarea:focus,
 .dispatch-partial-input:focus {
   border-color: var(--color-border-primary);
-  box-shadow: 0 0 0 2px rgb(194 65 12 / 12%);
+  box-shadow: 0 0 0 2px rgb(226 76 0 / 12%);
   outline: none;
 }
 

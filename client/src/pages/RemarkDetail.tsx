@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+﻿import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, CheckCircle2, MessageSquare, Package, Phone, RefreshCw, RotateCcw, Send, User, X } from 'lucide-react';
 import Button from '../components/Button';
@@ -17,8 +17,8 @@ import { toBsDate } from '../utils/nepaliDate';
 import './TicketDetail.css';
 
 const STATUS_TONE: Record<RemarkStatus, StatusChipTone> = {
-  open: 'info',
   pending: 'warning',
+  open: 'info',
   closed: 'success',
 };
 
@@ -26,7 +26,7 @@ const getInitials = (name: string) => name.split(' ').map((n) => n[0]).join('').
 
 const getAvatarColor = (name: string) => {
   const lower = name.toLowerCase();
-  if (lower.includes('admin') || lower.includes('super')) return '#c2410c';
+  if (lower.includes('admin') || lower.includes('super')) return '#e24c00';
   if (lower.includes('vendor') || lower.includes('branch')) return '#0f766e';
   if (lower.includes('rider')) return '#16a34a';
   return '#64748b';
@@ -96,14 +96,13 @@ const RemarkDetail: React.FC = () => {
       const res = await getRemarkById(id);
       if (res?.success && res.data) {
         setRemark(res.data);
-        // Viewing a pending remark acknowledges it — moved here (an explicit
-        // status-change call) instead of being a side effect of the GET itself.
+        // Opening an un-opened remark acknowledges it: pending → open.
         if (res.data.status === 'pending') {
           try {
             await setRemarkStatus(id, 'open');
             setRemark((prev) => (prev ? { ...prev, status: 'open' } : prev));
           } catch {
-            // Non-fatal: the remark still loaded fine, just didn't auto-open.
+            // Non-fatal: the remark still loaded; it just didn't auto-open.
           }
         }
       }
@@ -286,33 +285,35 @@ const RemarkDetail: React.FC = () => {
               </div>
             </div>
 
-            {/* Info cards */}
-            <div className="info-grid">
-              <div className="info-card">
-                <div className="info-card-header">
-                  <User size={16} strokeWidth={1.5} />
-                  <span>Sender</span>
+            <div className="detail-body">
+              {/* Info cards */}
+              <aside className="detail-aside">
+                <div className="info-card">
+                  <div className="info-card-header">
+                    <User size={16} strokeWidth={1.5} />
+                    <span>Sender</span>
+                  </div>
+                  <p className="info-name">{remark.senderName}</p>
+                  <p className="info-detail">
+                    <Phone size={14} strokeWidth={1.5} /> {remark.senderPhone}
+                  </p>
                 </div>
-                <p className="info-name">{remark.senderName}</p>
-                <p className="info-detail">
-                  <Phone size={14} strokeWidth={1.5} /> {remark.senderPhone}
-                </p>
-              </div>
 
-              <div className="info-card">
-                <div className="info-card-header">
-                  <User size={16} strokeWidth={1.5} />
-                  <span>Receiver</span>
+                <div className="info-card">
+                  <div className="info-card-header">
+                    <User size={16} strokeWidth={1.5} />
+                    <span>Receiver</span>
+                  </div>
+                  <p className="info-name">{remark.receiverName}</p>
+                  <p className="info-detail">
+                    <Phone size={14} strokeWidth={1.5} /> {remark.receiverPhone}
+                  </p>
                 </div>
-                <p className="info-name">{remark.receiverName}</p>
-                <p className="info-detail">
-                  <Phone size={14} strokeWidth={1.5} /> {remark.receiverPhone}
-                </p>
-              </div>
-            </div>
+              </aside>
 
-            {/* Conversation Thread - Chat style */}
-            <div className="rd-chat-section">
+              {/* Conversation Thread - Chat style */}
+              <div className="detail-main">
+                <div className="rd-chat-section">
               <div className="rd-chat-header">
                 <MessageSquare size={18} strokeWidth={1.5} />
                 <h2>Conversation</h2>
@@ -376,9 +377,11 @@ const RemarkDetail: React.FC = () => {
                   <Send size={18} />
                 </button>
               </div>
-              {(bottomError || inlineError) && (
-                <p className="rd-bottom-error">{bottomError || inlineError}</p>
-              )}
+                {(bottomError || inlineError) && (
+                  <p className="rd-bottom-error">{bottomError || inlineError}</p>
+                )}
+                </div>
+              </div>
             </div>
           </>
         )}

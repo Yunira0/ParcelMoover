@@ -36,6 +36,31 @@ export const listDeliveryRates = async (): Promise<{ success: boolean; data: Del
   return response.data;
 };
 
+export type VendorRateType = 'flat' | 'zone' | 'per_destination';
+
+export interface VendorSelfRate {
+  destinationId: string;
+  destinationName: string;
+  zone: string | null;
+  valley: string | null;
+  homeRate: number | null;
+  branchRate: number | null;
+  note: string | null;
+}
+
+export interface VendorSelfRates {
+  rateType: VendorRateType;
+  freeWeightKg: number;
+  extraWeightPercent: number;
+  rates: VendorSelfRate[];
+}
+
+// The rates that apply to the current vendor, from their own rate model.
+export const getMyDeliveryRates = async (): Promise<{ success: boolean; data: VendorSelfRates }> => {
+  const response = await api.get('/delivery-rates/my-rates');
+  return response.data;
+};
+
 export const upsertDeliveryRate = async (data: UpsertDeliveryRateInput) => {
   const response = await api.post('/delivery-rates', data);
   return response.data;

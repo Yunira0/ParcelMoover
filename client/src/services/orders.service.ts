@@ -67,6 +67,7 @@ export interface Order {
   serviceType: ServiceType;
   senderName: string;
   senderPhone: string;
+  senderAddress?: string;
   receiverName: string;
   receiverPhone: string;
   receiverAlternatePhone?: string;
@@ -187,8 +188,24 @@ export interface DashboardSummary {
     delivered: number;
     inTransit: number;
     returns: number;
+    /** Parcels that became returned_to_vendor today (by status-history date). */
+    returnedToVendor: number;
     remarks: number;
     unclosedComments: number;
+  };
+  /** Counts of orders that have breached their per-status SLA (see SLA settings). */
+  sla: {
+    overduePickup: number;
+    overdueDelivery: number;
+    overdueTransit: number;
+    overdueRemarks: number;
+    overdueReturn: number;
+    /** Representative SLA threshold (hours) per group — null if unset. */
+    pickupHours: number | null;
+    deliveryHours: number | null;
+    transitHours: number | null;
+    remarksHours: number | null;
+    returnHours: number | null;
   };
   codSettlement: {
     totalCod: number;
@@ -231,6 +248,34 @@ export const getOrders = async (params?: ListOrdersParams, signal?: AbortSignal)
 
   const response = await api.get('/orders', { params: query, signal });
   return response.data;
+};
+
+// Fetches every order matching the given filters by walking the keyset-paginated
+// endpoint page by page. Used for exports/reports, where the default flat list is
+// capped (see DEFAULT_LIST_CAP on the server) and would silently drop rows.
+export const getAllOrders = async (
+  params?: Omit<ListOrdersParams, 'page' | 'pageSize' | 'cursor' | 'dir'>,
+  signal?: AbortSignal,
+): Promise<Order[]> => {
+  const PAGE_SIZE = 100; // server MAX_PAGE_SIZE
+  const all: Order[] = [];
+  let cursor: string | undefined;
+
+  // Hard stop guards against an unexpected cursor loop; 1000 pages = 100k rows.
+  for (let page = 0; page < 1000; page += 1) {
+    const res = await getOrders(
+      { ...params, pageSize: PAGE_SIZE, dir: 'next', cursor },
+      signal,
+    );
+    if (!res?.success || !Array.isArray(res.data)) break;
+    all.push(...res.data);
+
+    const next = res.meta?.nextCursor;
+    if (!res.meta?.hasNextPage || !next) break;
+    cursor = next;
+  }
+
+  return all;
 };
 
 export const getDashboardSummary = async (trendDays: 7 | 30 = 7) => {

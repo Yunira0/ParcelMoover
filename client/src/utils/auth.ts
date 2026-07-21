@@ -45,6 +45,19 @@ export function isSalesUser(): boolean {
   return hasAnyRole(['sales']) && !isAdminSide();
 }
 
+/** Roles that actually have a web (admin/vendor/sales) experience. */
+const WEB_ROLES = ['super_admin', 'admin', 'sales', 'vendor', 'vendor_staff'];
+
+/**
+ * True for a rider who has no web-facing role. Riders use the dedicated Rider
+ * app; on the web they must be blocked rather than falling through to the
+ * admin views.
+ */
+export function isRiderOnly(): boolean {
+  const roles = getCurrentUserRoles();
+  return roles.includes('rider') && !roles.some((r) => WEB_ROLES.includes(r));
+}
+
 /** Returns the staff permission codes for the current vendor_staff user. */
 export function getStaffPermissions(): string[] {
   const p = getCurrentUser()?.permissions;

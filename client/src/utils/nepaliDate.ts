@@ -72,6 +72,20 @@ export function toBsDateLabel(value?: string | Date | null): string {
   return `${bs.day} ${BS_MONTHS[bs.month - 1]} ${bs.year}`;
 }
 
+/**
+ * BS date plus Nepal clock time, e.g. "2082-03-21 19:53". When the value is a
+ * plain "YYYY-MM-DD" day (no time component), just the BS date is returned so
+ * date-only records don't show a meaningless "00:00".
+ */
+export function toBsDateTime(value?: string | Date | null): string {
+  if (!value) return '';
+  const date = toBsDate(value);
+  const isDayOnly = typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value.trim());
+  if (isDayOnly) return date;
+  const time = toNptTime(value);
+  return time ? `${date} ${time}` : date;
+}
+
 type BsDayParts = { year: number; monthIndex: number; day: number };
 
 /**

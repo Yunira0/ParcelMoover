@@ -17,7 +17,8 @@ const TICKET_CATEGORY_NOTIFICATIONS: Record<string, { type: string; label: strin
   loss_and_damage: { type: "loss_and_damage", label: "Loss & Damage" },
 };
 
-// The workflow only uses these three; legacy values are normalized on read.
+// Workflow: pending (un-opened) → open (staff opened it) → closed (resolved).
+// Legacy in_progress reads as open; resolved reads as closed.
 const WORKFLOW_STATUSES: TicketStatus[] = ["open", "pending", "closed"];
 
 const DEFAULT_PAGE_SIZE = 20;
@@ -30,11 +31,11 @@ function generateTicketNo(date = new Date()) {
   return `TKT-${getDatePart(date)}-${randomBase32(6)}`;
 }
 
-// Map any stored status onto the open/pending/closed workflow.
+// Map any stored status onto the pending/open/closed workflow.
 function normalizeStatus(status: string): TicketStatus {
-  if (status === "open" || status === "in_progress") return "open";
   if (status === "closed" || status === "resolved") return "closed";
-  return "pending";
+  if (status === "pending") return "pending";
+  return "open"; // open, in_progress, or anything else
 }
 
 function mapTicket(ticket: {
@@ -70,6 +71,46 @@ const TICKET_INCLUDE = {
   users_support_tickets_assigned_toTousers: true,
 } as const;
 
+// Resolves the vendor (name + phone) behind a batch of ticket creators in a
+// couple of queries, so the ticket list can show vendor details without an
+// N+1 lookup. Creators are matched as vendor owners first, then vendor staff.
+async function resolveVendorsByCreators(userIds: string[]) {
+  const map = new Map<string, { name: string; phone: string }>();
+  const ids = [...new Set(userIds)];
+  if (ids.length === 0) return map;
+
+  const owners = await prisma.vendors.findMany({
+    where: { user_id: { in: ids }, deleted_at: null },
+    select: { user_id: true, business_name: true, client_name: true, phone: true },
+  });
+  owners.forEach((v) => {
+    if (v.user_id) map.set(v.user_id, { name: v.business_name || v.client_name, phone: v.phone });
+  });
+
+  const remaining = ids.filter((id) => !map.has(id));
+  if (remaining.length > 0) {
+    const staff = await prisma.vendor_staff.findMany({
+      where: { user_id: { in: remaining }, deleted_at: null },
+      select: { user_id: true, vendor_id: true },
+    });
+    const vendorIds = [...new Set(staff.map((s) => s.vendor_id))];
+    if (vendorIds.length > 0) {
+      const vendors = await prisma.vendors.findMany({
+        where: { id: { in: vendorIds }, deleted_at: null },
+        select: { id: true, business_name: true, client_name: true, phone: true },
+      });
+      const byId = new Map(
+        vendors.map((v) => [v.id, { name: v.business_name || v.client_name, phone: v.phone }]),
+      );
+      staff.forEach((s) => {
+        const v = byId.get(s.vendor_id);
+        if (v && s.user_id) map.set(s.user_id, v);
+      });
+    }
+  }
+  return map;
+}
+
 // Vendors can only touch tickets they created; staff (admin) can touch any;
 // sales see tickets tied to parcels owned by one of their vendors (clients).
 async function scopeWhere(actor: Actor, extra: Record<string, unknown> = {}) {
@@ -101,7 +142,7 @@ export async function createTicket(actor: Actor, input: CreateTicketInput) {
       category: input.category?.trim() || null,
       priority: input.priority?.trim() || null,
       description: input.description?.trim() || null,
-      status: "open",
+      status: "pending", // un-opened until support opens it
       assigned_to: input.assignedTo || null,
       created_by: actor.id,
     },
@@ -140,8 +181,14 @@ export async function createTicket(actor: Actor, input: CreateTicketInput) {
 export async function listTickets(actor: Actor, params: ListTicketsParams = {}) {
   const where: Record<string, unknown> = await scopeWhere(actor);
 
-  if (params.status && WORKFLOW_STATUSES.includes(params.status)) {
-    where.status = params.status;
+  // Group stored statuses into the pending/open/closed workflow so legacy rows
+  // (in_progress, resolved) still land in the right tab.
+  if (params.status === "closed") {
+    where.status = { in: ["closed", "resolved"] };
+  } else if (params.status === "pending") {
+    where.status = "pending";
+  } else if (params.status === "open") {
+    where.status = { in: ["open", "in_progress"] };
   }
   if (params.priority) where.priority = params.priority;
   if (params.category) where.category = params.category;
@@ -178,8 +225,19 @@ export async function listTickets(actor: Actor, params: ListTicketsParams = {}) 
     }),
   ]);
 
+  const vendorByCreator = await resolveVendorsByCreators(
+    tickets.map((t) => t.created_by).filter((x): x is string => !!x),
+  );
+
   return {
-    data: tickets.map(mapTicket),
+    data: tickets.map((t) => {
+      const vendor = t.created_by ? vendorByCreator.get(t.created_by) : undefined;
+      return {
+        ...mapTicket(t),
+        vendorName: vendor?.name || "",
+        vendorPhone: vendor?.phone || "",
+      };
+    }),
     meta: {
       page,
       pageSize: take,
@@ -198,14 +256,56 @@ async function findAccessibleTicket(actor: Actor, id: string) {
   return ticket;
 }
 
-async function buildTicketDetail(ticket: Awaited<ReturnType<typeof findAccessibleTicket>>) {
-  const replies = await prisma.ticket_replies.findMany({
-    where: { ticket_id: ticket.id },
-    orderBy: { created_at: "asc" },
+// The vendor behind a ticket, resolved from its creator. A ticket is raised
+// either by a vendor owner (users -> vendors.user_id) or a vendor's staff
+// member (users -> vendor_staff.user_id -> vendors). Admins see this on the
+// ticket detail page to know which client the issue belongs to.
+async function resolveTicketVendor(createdBy: string | null) {
+  if (!createdBy) return null;
+
+  let vendor = await prisma.vendors.findFirst({
+    where: { user_id: createdBy, deleted_at: null },
+    include: { locations: true },
   });
+
+  if (!vendor) {
+    const staff = await prisma.vendor_staff.findFirst({
+      where: { user_id: createdBy, deleted_at: null },
+      select: { vendor_id: true },
+    });
+    if (staff) {
+      vendor = await prisma.vendors.findFirst({
+        where: { id: staff.vendor_id, deleted_at: null },
+        include: { locations: true },
+      });
+    }
+  }
+
+  if (!vendor) return null;
+
+  return {
+    id: vendor.id,
+    name: vendor.business_name || vendor.client_name,
+    contactName: vendor.client_name,
+    phone: vendor.phone,
+    email: vendor.email || "",
+    address: vendor.address || "",
+    location: vendor.locations?.name || "",
+  };
+}
+
+async function buildTicketDetail(ticket: Awaited<ReturnType<typeof findAccessibleTicket>>) {
+  const [replies, vendor] = await Promise.all([
+    prisma.ticket_replies.findMany({
+      where: { ticket_id: ticket.id },
+      orderBy: { created_at: "asc" },
+    }),
+    resolveTicketVendor(ticket.created_by),
+  ]);
 
   return {
     ...mapTicket(ticket),
+    vendor,
     thread: replies.map((reply) => ({
       id: reply.id,
       message: reply.message,
@@ -220,7 +320,8 @@ export async function getTicketById(actor: Actor, id: string) {
   return buildTicketDetail(ticket);
 }
 
-// Staff reply → "pending" (waiting for vendor); vendor reply → "open" (needs staff attention).
+// Any reply keeps (or brings) the ticket in the "open" state; it only leaves
+// open when a staff member explicitly resolves & closes it.
 export async function addTicketReply(actor: Actor, id: string, message: string) {
   if (!message?.trim()) throw new AppError(400, "Message is required");
   const ticket = await findAccessibleTicket(actor, id);
@@ -230,7 +331,7 @@ export async function addTicketReply(actor: Actor, id: string, message: string) 
     select: { full_name: true },
   });
 
-  const newStatus = isStaff(actor) ? "pending" : "open";
+  const newStatus: TicketStatus = "open";
   await prisma.$transaction([
     prisma.ticket_replies.create({
       data: {

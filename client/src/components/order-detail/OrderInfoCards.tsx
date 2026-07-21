@@ -4,8 +4,10 @@ import { ArrowRight, Banknote, Truck, Package } from 'lucide-react';
 interface OrderInfoCardsProps {
   senderName: string;
   senderPhone: string;
+  senderAddress?: string;
   receiverName: string;
   receiverPhone: string;
+  receiverAddress?: string;
   origin: string;
   destination: string;
   codAmount: number;
@@ -17,8 +19,10 @@ interface OrderInfoCardsProps {
 const OrderInfoCards: React.FC<OrderInfoCardsProps> = ({
   senderName,
   senderPhone,
+  senderAddress,
   receiverName,
   receiverPhone,
+  receiverAddress,
   origin,
   destination,
   codAmount,
@@ -37,6 +41,7 @@ const OrderInfoCards: React.FC<OrderInfoCardsProps> = ({
           </div>
           <p className="od-details-name">{senderName}</p>
           <p className="od-details-phone">{senderPhone}</p>
+          {senderAddress && <p className="od-details-address">{senderAddress}</p>}
         </div>
         <div className="od-details-divider-v" />
         <div className="od-details-half">
@@ -46,6 +51,7 @@ const OrderInfoCards: React.FC<OrderInfoCardsProps> = ({
           </div>
           <p className="od-details-name">{receiverName}</p>
           <p className="od-details-phone">{receiverPhone}</p>
+          {receiverAddress && <p className="od-details-address">{receiverAddress}</p>}
         </div>
       </div>
 

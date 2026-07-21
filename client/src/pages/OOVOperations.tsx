@@ -20,9 +20,10 @@ import {
   type OrdersPageMeta,
   type ParcelStatus,
 } from '../services/orders.service';
+import { downloadExcel } from '../utils/excel';
 import { getLocations, getRiders } from '../services/users.service';
 import { getNcmBranches, handoffToNcm, type NcmBranch } from '../services/ncm.service';
-import { toBsDate } from '../utils/nepaliDate';
+import { toBsDate, toBsDateTime } from '../utils/nepaliDate';
 import { printLabels } from '../utils/printLabels';
 import { useCursorPagination } from '../hooks/useCursorPagination';
 import './OOVOperations.css';
@@ -397,9 +398,9 @@ const OOVOperations: React.FC = () => {
     }
   };
 
-  const buildCsv = (rows: Order[]) => {
+  const buildExportRows = (rows: Order[]) => {
     const headers = ['#', 'Date', 'Tracking ID', 'Order Type', 'Sender', 'Receiver', 'Location', 'Weight', 'COD', 'Last Updated', 'Remarks'];
-    const csvRows = rows.map(order => [
+    const dataRows = rows.map(order => [
       `#${order.orderNumber}`,
       toBsDate(order.createdAt),
       order.trackingId,
@@ -412,9 +413,7 @@ const OOVOperations: React.FC = () => {
       toBsDate(order.lastUpdatedAt) || '',
       order.remarks || '',
     ]);
-    return [headers, ...csvRows]
-      .map(row => row.map(value => `"${String(value).replace(/"/g, '""')}"`).join(','))
-      .join('\n');
+    return { headers, rows: dataRows };
   };
 
   const downloadCsv = async () => {
@@ -429,14 +428,8 @@ const OOVOperations: React.FC = () => {
       // fall back to the currently loaded page
     }
 
-    const csv = buildCsv(rows);
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'oov-orders.csv';
-    link.click();
-    URL.revokeObjectURL(url);
+    const { headers, rows: exportRows } = buildExportRows(rows);
+    downloadExcel('oov-orders.xlsx', 'OOV Orders', headers, exportRows);
   };
 
   const handlePrintLabels = () => {
@@ -493,7 +486,7 @@ const OOVOperations: React.FC = () => {
       accessor: (order: Order) => (
         <div className="oov-updated-cell">
           <span>{order.lastUpdatedBy || '-'}</span>
-          <span>{toBsDate(order.lastUpdatedAt) || '-'}</span>
+          <span>{toBsDateTime(order.lastUpdatedAt) || '-'}</span>
         </div>
       ),
       width: '155px',
