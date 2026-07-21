@@ -7,6 +7,7 @@ import TrackParcel from './pages/TrackParcel'
 import Login from './pages/Login'
 import NotFound from './pages/NotFound'
 import ProtectedRoute from './components/ProtectedRoute'
+import PublicOnlyRoute from './components/PublicOnlyRoute'
 import RoleGuard from './components/RoleGuard'
 import PageLoader from './components/PageLoader'
 import './App.css'
@@ -63,7 +64,7 @@ function App() {
       <Suspense fallback={<PageLoader />}>
       <Routes>
         {/* Public Routes */}
-        <Route path="/" element={<MainLayout><Home /></MainLayout>} />
+        <Route path="/" element={<PublicOnlyRoute><MainLayout><Home /></MainLayout></PublicOnlyRoute>} />
         <Route path="/track" element={<MainLayout><TrackParcel /></MainLayout>} />
         <Route path="/track/:trackingId" element={<MainLayout><TrackParcel /></MainLayout>} />
         <Route path="/login" element={<MainLayout><Login /></MainLayout>} />
