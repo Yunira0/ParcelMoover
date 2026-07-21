@@ -9,12 +9,17 @@ import {
 import './VendorNoticePopup.css';
 
 // Fetches on every mount of DashboardLayout - i.e. every fresh portal open
-// (login, hard refresh, reopening the tab), not on every in-app navigation,
-// since DashboardLayout stays mounted across route changes within one SPA
-// session. Whether a notice reappears is driven entirely by the server's
-// persisted `dismissed` flag (see vendor_notice_dismissals) - there's no
-// local "seen recently" cooldown, so a vendor who hasn't dismissed a notice
-// sees it again the next time they open the portal, not just once at login.
+// (login, reopening in a new tab), not on every in-app navigation, since
+// DashboardLayout stays mounted across route changes within one SPA session.
+// A plain refresh (F5) also remounts DashboardLayout but must NOT re-show the
+// banner, so a sessionStorage flag (scoped to this browser tab, cleared when
+// the tab closes) gates the fetch: set once per tab, surviving reloads, but
+// absent again in a brand-new tab. Whether a notice reappears *across*
+// sessions is driven by the server's persisted `dismissed` flag (see
+// vendor_notice_dismissals) - a vendor who hasn't dismissed a notice still
+// sees it the next time they open the portal in a fresh tab.
+const SESSION_SEEN_KEY = 'vendorNoticePopupSeen';
+
 const VendorNoticePopup: React.FC = () => {
   const [notices, setNotices] = useState<VendorNoticeWithDismissed[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -23,6 +28,12 @@ const VendorNoticePopup: React.FC = () => {
 
   useEffect(() => {
     if (!isVendorSide()) return;
+
+    if (sessionStorage.getItem(SESSION_SEEN_KEY)) {
+      setLoading(false);
+      return;
+    }
+    sessionStorage.setItem(SESSION_SEEN_KEY, '1');
 
     let cancelled = false;
 

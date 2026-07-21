@@ -17,7 +17,7 @@
 /* Banner-only card: the image *is* the notice, no text chrome around it. */
 .vnp-card {
   position: relative;
-  width: 560px;
+  width: 720px;
   max-width: 92vw;
   border-radius: var(--border-radius-xl);
   overflow: hidden;
