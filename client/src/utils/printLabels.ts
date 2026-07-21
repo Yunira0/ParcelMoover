@@ -1,6 +1,7 @@
 import QRCode from 'qrcode';
 import JsBarcode from 'jsbarcode';
 import type { Order } from '../services/orders.service';
+import { toBsDate } from './nepaliDate';
 
 const WEBSITE_URL = 'www.parcelmoover.com';
 
@@ -11,8 +12,7 @@ const ORDER_TYPE_LABELS: Record<string, string> = {
 };
 
 const fmt = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: 0 });
-const fmtDate = (iso: string) =>
-  new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: '2-digit' });
+const fmtDate = (iso: string) => toBsDate(iso);
 
 function barcodeDataUrl(trackingId: string): string {
   const canvas = document.createElement('canvas');

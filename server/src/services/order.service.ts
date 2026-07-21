@@ -1731,7 +1731,9 @@ export async function getOrderByTrackingId(actor: OrderActor, trackingId: string
       : isStaffAuthor(log.users)
         ? "Admin"
         : log.users?.full_name || "Admin";
-    const at = formatDate(log.created_at);
+    // Raw ISO timestamp (carries the time) so the client can render it as a
+    // BS date + Nepal-local time via toBsDateTime.
+    const at = log.created_at.toISOString();
     const rows: {
       id: string;
       field: "cod" | "delivery_charge";

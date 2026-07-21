@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Info, Calendar } from 'lucide-react';
 import type { DashboardTrendDay } from '../services/orders.service';
+import { toBsDate, toBsDateLabel } from '../utils/nepaliDate';
 import './WeeklyStats.css';
 
 interface WeeklyStatsProps {
@@ -58,7 +59,8 @@ const formatDayLabel = (dateStr: string) => {
   if (Number.isNaN(d.getTime())) return { dow: '', md: '' };
   return {
     dow: d.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase(),
-    md: d.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit' }),
+    // BS month/day for the axis tick (e.g. "04/06"), falling back to empty.
+    md: (toBsDate(d).slice(5) || '').replace('-', '/'),
   };
 };
 
@@ -67,9 +69,7 @@ const formatRangeLabel = (data: DashboardTrendDay[]) => {
   const start = new Date(data[0]!.date);
   const end = new Date(data[data.length - 1]!.date);
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return '';
-  const fmt = (d: Date, withYear: boolean) =>
-    d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: withYear ? 'numeric' : undefined });
-  return `${fmt(start, false)} - ${fmt(end, true)}`;
+  return `${toBsDateLabel(start)} - ${toBsDateLabel(end)}`;
 };
 
 const WeeklyStats: React.FC<WeeklyStatsProps> = ({ data, loading, period, onPeriodChange }) => {
@@ -267,11 +267,9 @@ const WeeklyStats: React.FC<WeeklyStatsProps> = ({ data, loading, period, onPeri
                   }}
                 >
                   <div className="chart-tooltip-date">
-                    {new Date(hovered.date).toLocaleDateString('en-US', {
-                      weekday: 'short',
-                      month: 'short',
-                      day: 'numeric',
-                    })}
+                    {new Date(hovered.date).toLocaleDateString('en-US', { weekday: 'short' })}
+                    {', '}
+                    {toBsDateLabel(hovered.date)}
                   </div>
                   {visibleSeries.map((s) => (
                     <div key={s.key} className="chart-tooltip-row">

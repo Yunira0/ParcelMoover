@@ -6,9 +6,9 @@ import SegmentedTabs from '../components/SegmentedTabs';
 import Table from '../components/Table';
 import StatusChip from '../components/StatusChip';
 import Button from '../components/Button';
-import { getOrders, type Order, type ParcelStatus } from '../services/orders.service';
+import { getOrders, getAllOrders, type Order, type ParcelStatus } from '../services/orders.service';
 import { ORDER_STATUS_LABELS, getOrderStatusTone } from '../utils/orderStatus';
-import { toBsDate } from '../utils/nepaliDate';
+import { toBsDate, toBsDateTime } from '../utils/nepaliDate';
 import { downloadExcel } from '../utils/excel';
 import './ReportsPage.css';
 
@@ -65,6 +65,7 @@ const ReportsPage: React.FC = () => {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [downloading, setDownloading] = useState(false);
 
   const statuses = REPORTS[report][bucket];
 
@@ -115,28 +116,66 @@ const ReportsPage: React.FC = () => {
     [],
   );
 
-  const handleDownload = () => {
-    const headers = ['#', 'Tracking ID', 'Vendor', 'Sender', 'Origin', 'Destination', 'Receiver', 'Receiver Phone', 'COD', 'Status', 'Rider', 'Created'];
-    const rows = orders.map((o) => [
-      `#${o.orderNumber}`,
-      o.trackingId,
-      o.vendorName || '',
-      o.senderName,
-      o.origin,
-      o.destination,
-      o.receiverName,
-      o.receiverPhone || '',
-      o.codAmount,
-      ORDER_STATUS_LABELS[o.status],
-      o.riderName || '',
-      toBsDate(o.createdAt) || '',
-    ]);
-    downloadExcel(
-      `${report}-${bucket}-report.xlsx`,
-      `${REPORTS[report].label} ${bucket}`,
-      headers,
-      rows,
-    );
+  const handleDownload = async () => {
+    setDownloading(true);
+    setError('');
+    try {
+      // Export the full result set, not just the capped page shown in the table.
+      // withArrival populates arrivedAtOrigin. Columns mirror the order table.
+      const allOrders = await getAllOrders({ status: statuses, withArrival: true });
+      const headers = [
+        '#',
+        'Tracking ID',
+        'Origin',
+        'Sender',
+        'Sender Phone',
+        'Receiver',
+        'Receiver Phone',
+        'Destination',
+        'COD',
+        'Delivery Charge',
+        'Weight (Kg)',
+        'Status',
+        'Rider',
+        'Remarks',
+        'Last Updated By',
+        'Last Updated At',
+        'Arrived At Origin',
+        'Delivered At',
+        'Created',
+      ];
+      const rows = allOrders.map((o) => [
+        `#${o.orderNumber}`,
+        o.trackingId,
+        o.origin || '',
+        o.senderName,
+        o.senderPhone || '',
+        o.receiverName,
+        o.receiverPhone || '',
+        o.destination || '',
+        o.codAmount,
+        o.deliveryCharge,
+        o.weightKg ?? '',
+        ORDER_STATUS_LABELS[o.status],
+        o.riderName || '',
+        o.remarks || '',
+        o.lastUpdatedBy || '',
+        toBsDateTime(o.lastUpdatedAt) || '',
+        o.arrivedAtOrigin ? toBsDate(o.arrivedAtOrigin) : '',
+        o.deliveredAt ? toBsDate(o.deliveredAt) : '',
+        toBsDate(o.createdAt) || '',
+      ]);
+      downloadExcel(
+        `${report}-${bucket}-report.xlsx`,
+        `${REPORTS[report].label} ${bucket}`,
+        headers,
+        rows,
+      );
+    } catch {
+      setError('Could not export this report. Please try again.');
+    } finally {
+      setDownloading(false);
+    }
   };
 
   return (
@@ -161,8 +200,8 @@ const ReportsPage: React.FC = () => {
           ariaLabel="Completed or pending"
           fullWidth={false}
         />
-        <Button variant="primary" onClick={handleDownload} disabled={loading || orders.length === 0}>
-          <Download size={16} /> Download
+        <Button variant="primary" onClick={handleDownload} disabled={loading || downloading || orders.length === 0}>
+          <Download size={16} /> {downloading ? 'Preparing…' : 'Download'}
         </Button>
       </div>
 

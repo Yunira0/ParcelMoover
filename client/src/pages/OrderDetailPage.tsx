@@ -172,7 +172,7 @@ const OrderDetailPage: React.FC = () => {
           status={order.status}
           orderType={order.orderType}
           serviceType={order.serviceType}
-          createdAt={order.createdAt}
+          createdAt={order.createdAtRaw}
           orderId={order.id}
           onPrint={handlePrint}
         />

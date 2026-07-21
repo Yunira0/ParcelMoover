@@ -167,7 +167,7 @@ const CreateTicketModal: React.FC<CreateTicketModalProps> = ({ isOpen, onClose, 
 
     if (category === 'pickup') {
       const { numberOfParcels, pickupSlot, pickupDate } = form;
-      if (!numberOfParcels.trim() || Number(numberOfParcels) <= 0 || !pickupSlot) {
+      if (!numberOfParcels.trim() || Number(numberOfParcels) <= 0 || !pickupSlot || !description.trim()) {
         return { error: 'Please fill in all fields.' };
       }
       const slot = slots.find((s) => s.id === pickupSlot);
@@ -177,7 +177,7 @@ const CreateTicketModal: React.FC<CreateTicketModalProps> = ({ isOpen, onClose, 
         return { error: 'That pickup slot is no longer available. Please pick another.' };
       }
       const dateLabel = pickupDate === 'tomorrow' ? 'Tomorrow' : 'Today';
-      const composed = `No. of parcels: ${numberOfParcels.trim()}\nPickup date: ${dateLabel}\nPickup time: ${slot.label}`;
+      const composed = `No. of parcels: ${numberOfParcels.trim()}\nPickup date: ${dateLabel}\nPickup time: ${slot.label}\n\n${description.trim()}`;
       return { payload: { category, subject: 'Pickup request', description: composed } };
     }
 
@@ -381,16 +381,14 @@ const CreateTicketModal: React.FC<CreateTicketModalProps> = ({ isOpen, onClose, 
               />
             )}
 
-            {form.category !== 'pickup' && (
-              <FormField
-                label="Description"
-                type="textarea"
-                required
-                className="ticket-field-full"
-                value={form.description}
-                onChange={(value) => update({ description: value })}
-              />
-            )}
+            <FormField
+              label="Description"
+              type="textarea"
+              required
+              className="ticket-field-full"
+              value={form.description}
+              onChange={(value) => update({ description: value })}
+            />
           </div>
 
           {error && <p className="error-text">{error}</p>}

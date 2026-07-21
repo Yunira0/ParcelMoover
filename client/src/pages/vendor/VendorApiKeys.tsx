@@ -9,13 +9,11 @@ import {
   revokeApiKey,
   type ApiKey,
 } from '../../services/apiKeys.service';
+import { toBsDateTime } from '../../utils/nepaliDate';
 import '../../components/Modal.css';
 import './VendorApiKeys.css';
 
-const formatDate = (value: string | null) =>
-  value
-    ? new Date(value).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
-    : '—';
+const formatDate = (value: string | null) => (value ? toBsDateTime(value) : '—');
 
 const VendorApiKeys: React.FC = () => {
   const [keys, setKeys] = useState<ApiKey[]>([]);

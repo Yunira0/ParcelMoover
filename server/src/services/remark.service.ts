@@ -11,9 +11,12 @@ const WORKFLOW_STATUSES: RemarkWorkflowStatus[] = ["open", "pending", "closed"];
 const isStaff = (actor: Actor) =>
   actor.roles.includes("admin") || actor.roles.includes("super_admin");
 
+// Un-opened remarks (null workflow_status, or a legacy "pending") read as
+// "pending" until a staff member opens the remark, which flips it to "open".
+// "closed" is resolved.
 const normalizeStatus = (status: string | null): RemarkWorkflowStatus => {
-  if (status === "open") return "open";
   if (status === "closed") return "closed";
+  if (status === "open") return "open";
   return "pending";
 };
 
@@ -111,6 +114,12 @@ async function resolveLastActivityByParcel(
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 100;
 
+// Author filter for "unclosed comments": only remarks raised by a vendor
+// (owner/staff) or a rider — not internal admin/staff notes.
+const VENDOR_RIDER_AUTHOR = {
+  user_roles: { some: { roles: { code: { in: ["vendor", "vendor_staff", "rider"] } } } },
+};
+
 export async function listRemarks(actor: Actor, params: ListRemarksParams = {}) {
   // Only root remarks are their own table row; replies live inside the thread
   // (see getRemarkById) so posting one doesn't spawn a new row with the reply
@@ -119,8 +128,20 @@ export async function listRemarks(actor: Actor, params: ListRemarksParams = {}) 
 
   if (params.unclosed) {
     where.workflow_status = { not: "closed" };
-  } else if (params.status && WORKFLOW_STATUSES.includes(params.status as RemarkWorkflowStatus)) {
-    where.workflow_status = params.status;
+    // Unclosed comments track only vendor- and rider-raised remarks, not
+    // internal staff/admin notes.
+    where.users = VENDOR_RIDER_AUTHOR;
+  } else if (params.status === "closed") {
+    where.workflow_status = "closed";
+  } else if (params.status === "open") {
+    where.workflow_status = "open";
+  } else if (params.status === "pending") {
+    // Un-opened: neither open nor closed. Prisma `not` also matches NULL rows,
+    // so brand-new remarks (null workflow_status) land here.
+    where.AND = [
+      { workflow_status: { not: "open" } },
+      { workflow_status: { not: "closed" } },
+    ];
   }
 
   if (params.fromDate || params.toDate) {
@@ -243,6 +264,7 @@ export async function getUnclosedRemarksCount(actor: Actor): Promise<number> {
   const where = await scopeWhere(actor, {
     workflow_status: { not: "closed" },
     parent_remark_id: null,
+    users: VENDOR_RIDER_AUTHOR,
   });
   return prisma.parcel_remarks.count({ where });
 }

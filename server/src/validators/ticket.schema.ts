@@ -3,7 +3,9 @@ import { paginationQuerySchema, optionalUuidSchema, isoDateStringSchema } from "
 
 // ── Enums ─────────────────────────────────────────────────────────────────────
 
-export const TICKET_STATUSES = ["open", "in_progress", "pending", "resolved", "closed"] as const;
+// Workflow: pending → open → closed. Legacy values (in_progress, resolved) may
+// still exist in storage but are no longer accepted as input.
+export const TICKET_STATUSES = ["open", "pending", "closed"] as const;
 export const TICKET_PRIORITIES = ["low", "medium", "high", "urgent"] as const;
 
 // ── Create ticket ─────────────────────────────────────────────────────────────

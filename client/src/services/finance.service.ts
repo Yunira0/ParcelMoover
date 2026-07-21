@@ -119,7 +119,9 @@ export const getSettlements = async (
   return response.data;
 };
 
-export type PaymentMethod = 'cash' | 'online';
+// Method names are configurable by super admins (Cash, Online, eSewa, Bank, ...),
+// so this is an open string rather than a fixed union.
+export type PaymentMethod = string;
 
 export interface SettlementPayment {
   method: PaymentMethod;

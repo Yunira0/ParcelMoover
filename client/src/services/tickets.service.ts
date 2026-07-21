@@ -9,7 +9,9 @@ export interface Ticket {
   ticketId: string;
   customerName: string;
   customerPhone: string;
-  vendorName: string;
+  /** Vendor (client) that raised the ticket, resolved from its creator. */
+  vendorName?: string;
+  vendorPhone?: string;
   subject: string;
   category: TicketCategory;
   priority: TicketPriority;
@@ -42,8 +44,8 @@ export interface TicketDetail extends Ticket {
 }
 
 export const TICKET_STATUS_LABELS: Record<TicketStatus, string> = {
-  open: 'Open',
   pending: 'Pending',
+  open: 'Open',
   closed: 'Closed',
 };
 

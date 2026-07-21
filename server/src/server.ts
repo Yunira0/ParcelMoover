@@ -16,6 +16,7 @@ import LocationRoutes from "./routes/location.routes"
 import PricingRoutes from "./routes/pricing.routes"
 import SlaRoutes from "./routes/sla.routes"
 import PickupTimeSlotsRoutes from "./routes/pickupTimeSlots.routes"
+import PaymentMethodRoutes from "./routes/payment-method.routes"
 import NcmRoutes from "./routes/ncm.routes"
 import ApiKeyRoutes from "./routes/apiKey.routes"
 import PublicApiRoutes from "./routes/publicApi.routes"
@@ -144,6 +145,7 @@ app.use("/api/pricing", PricingRoutes)
 app.use("/api/sla", SlaRoutes)
 
 app.use("/api/pickup-time-slots", PickupTimeSlotsRoutes)
+app.use("/api/payment-methods", PaymentMethodRoutes)
 
 // NCM (Nepal Can Move) 3PL integration — includes the public webhook receiver.
 app.use("/api/ncm", NcmRoutes)

@@ -23,7 +23,9 @@ const PAGE_SIZE = 10;
 
 type RemarkTab = 'all' | 'unclosed' | RemarkStatus;
 
-const TAB_ORDER: RemarkTab[] = ['all', 'unclosed', 'open', 'pending', 'closed'];
+// pending (un-opened) → open (opened) → closed workflow. ("unclosed" is retained
+// as a deep-link alias — any non-closed remark — but isn't shown as its own tab.)
+const TAB_ORDER: RemarkTab[] = ['all', 'pending', 'open', 'closed'];
 
 const TAB_LABELS: Record<RemarkTab, string> = {
   all: 'All',
@@ -32,8 +34,8 @@ const TAB_LABELS: Record<RemarkTab, string> = {
 };
 
 const STATUS_TONE: Record<RemarkStatus, StatusChipTone> = {
-  open: 'info',
   pending: 'warning',
+  open: 'info',
   closed: 'success',
 };
 
@@ -122,7 +124,7 @@ const Remarks: React.FC = () => {
   }, [statusParam]);
 
   const statusCounts = useMemo(() => {
-    const counts: Record<RemarkTab, number> = { all: remarks.length, unclosed: 0, open: 0, pending: 0, closed: 0 };
+    const counts: Record<RemarkTab, number> = { all: remarks.length, unclosed: 0, pending: 0, open: 0, closed: 0 };
     remarks.forEach((remark) => {
       counts[remark.status] += 1;
       if (remark.status !== 'closed') counts.unclosed += 1;
@@ -210,7 +212,7 @@ const Remarks: React.FC = () => {
       width: '130px',
     },
     {
-      header: 'CUSTOMER',
+      header: 'VENDOR',
       accessor: (remark: Remark) => (
         <div className="remarks-customer-cell">
           <span>{remark.customerName}</span>
@@ -219,7 +221,7 @@ const Remarks: React.FC = () => {
       ),
       width: '160px',
     },
-    { header: 'SUBJECT', accessor: (remark: Remark) => remark.subject, width: '220px', className: 'remarks-subject-cell' },
+    { header: 'REMARKS', accessor: (remark: Remark) => remark.subject, width: '220px', className: 'remarks-subject-cell' },
     {
       header: 'LAST REMARK',
       accessor: (remark: Remark) => (

@@ -5,6 +5,67 @@
   margin-left: auto;
 }
 
+/* When there's no vendor card, the details card spans the full width. */
+.info-grid-single {
+  grid-template-columns: 1fr;
+}
+
+/* Ticket description text inside its card. */
+.td-description {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  line-height: 1.6;
+  color: var(--color-text-default);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Ticket attributes rendered as a clean label/value table inside the card. */
+.td-detail-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.td-detail-table th,
+.td-detail-table td {
+  padding: var(--space-2) 0;
+  text-align: left;
+  vertical-align: top;
+  border-top: 1px solid var(--color-border-default);
+}
+
+.td-detail-table tr:first-child th,
+.td-detail-table tr:first-child td {
+  border-top: none;
+}
+
+.td-detail-table th {
+  width: 38%;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-caption);
+  white-space: nowrap;
+  padding-right: var(--space-3);
+}
+
+.td-detail-table td {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-default);
+}
+
+.td-detail-strong {
+  display: block;
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-default);
+}
+
+.td-detail-sub {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--font-size-xs, 12px);
+  color: var(--color-text-caption);
+}
+
 /* Vendor-side read-only status pill (vendors can't resolve/close). */
 .td-vendor-status {
   display: inline-flex;

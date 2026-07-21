@@ -9,6 +9,7 @@ import SegmentedTabs from '../components/SegmentedTabs';
 import StatusChip from '../components/StatusChip';
 import type { SettlementListItem } from '../services/finance.service';
 import { getSettlements } from '../services/finance.service';
+import { toBsDate } from '../utils/nepaliDate';
 import './FinanceManagement.css';
 
 type FinanceType = 'rider' | 'vendor';
@@ -95,7 +96,7 @@ const FinanceManagement: React.FC = () => {
       header: 'AMOUNT',
       accessor: (item: SettlementListItem) => `Rs. ${item.amount.toLocaleString()}`,
     },
-    { header: 'SETTLEMENT DATE', accessor: (item: SettlementListItem) => item.transferDate || '-' },
+    { header: 'SETTLEMENT DATE', accessor: (item: SettlementListItem) => (item.transferDate ? toBsDate(item.transferDate) : '-') },
     {
       header: 'BANK DETAILS',
       accessor: (item: SettlementListItem) =>

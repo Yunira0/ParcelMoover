@@ -125,8 +125,10 @@ export interface Parcel {
   orderType: string
   senderName: string
   senderPhone: string
+  senderAddress?: string
   receiverName: string
   receiverPhone: string
+  receiverAddress?: string
   origin: string
   destination: string
   riderName?: string
@@ -224,6 +226,12 @@ export async function updateParcelStatus(
     { status, remarks, codCollected, exchangeReturnReceived },
     { headers: { 'Idempotency-Key': idempotencyKey } }
   )
+}
+
+// Logs a remark on a parcel. Used to record when a rider calls a customer, so
+// the office sees "<rider> called on <number>" in the parcel's remarks thread.
+export async function addParcelRemark(orderId: string, remark: string): Promise<void> {
+  await api.post(`/orders/${orderId}/remarks`, { remark })
 }
 
 // Lightweight session probe. The auth middleware rejects deactivated accounts
