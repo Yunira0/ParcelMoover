@@ -7,7 +7,7 @@ import PageHeader from '../components/PageHeader';
 import SegmentedTabs from '../components/SegmentedTabs';
 import StatusChip from '../components/StatusChip';
 import { getVendors } from '../services/users.service';
-import { isAdminSide, hasAnyRole } from '../utils/auth';
+import { isAdminSide, isSalesUser, hasAnyRole, getCurrentUser } from '../utils/auth';
 import './VendorManagement.css';
 
 interface VendorUser {
@@ -27,13 +27,19 @@ interface VendorUser {
   status: 'active' | 'inactive';
   joined: string;
   lastOrderedDate: string;
+  salesUserId: string | null;
+  salesEditUsed: boolean;
 }
 
 const VendorManagement: React.FC = () => {
   const navigate = useNavigate();
-  // Only admins can edit existing vendors / reset passwords. Sales can onboard
-  // new clients (auto-linked to them) but not edit existing ones.
-  const canManage = isAdminSide();
+  // Admins can edit any vendor and reset passwords. Sales can onboard new
+  // clients (auto-linked to them) and gets exactly one self-service edit on
+  // a vendor assigned to them - see canEditRow below for the per-row check.
+  const isAdmin = isAdminSide();
+  const isPureSales = isSalesUser();
+  const currentUserId = getCurrentUser()?.id;
+  const canManage = isAdmin || isPureSales;
   const canCreate = isAdminSide() || hasAnyRole(['sales']);
   const [filter, setFilter] = useState<'all' | 'high-volume' | 'active'>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -103,15 +109,23 @@ const VendorManagement: React.FC = () => {
     ...(canManage
       ? [{
           header: 'ACTION',
-          accessor: (item: VendorUser) => (
-            <TableRowActions
-              onEdit={() => navigate(`/vendors/${item.id}/edit`)}
-              onUpdatePassword={() => {
-                setActiveVendor(item);
-                setActionMode('password');
-              }}
-            />
-          ),
+          accessor: (item: VendorUser) => {
+            const canEditRow =
+              isAdmin || (isPureSales && item.salesUserId === currentUserId && !item.salesEditUsed);
+            return (
+              <TableRowActions
+                onEdit={canEditRow ? () => navigate(`/vendors/${item.id}/edit`) : undefined}
+                onUpdatePassword={
+                  isAdmin
+                    ? () => {
+                        setActiveVendor(item);
+                        setActionMode('password');
+                      }
+                    : undefined
+                }
+              />
+            );
+          },
           width: '220px',
         }]
       : []),

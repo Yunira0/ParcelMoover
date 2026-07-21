@@ -154,6 +154,12 @@ async function assertCanManageUsers(userId: string, targetType?: ManagedUserType
 
   const roles = user.user_roles.map((userRole) => userRole.roles.code);
   if (!roles.includes("super_admin") && !roles.includes("admin")) {
+    // Narrow carve-out: sales staff may edit a vendor assigned to them (once
+    // - enforced in updateManagedUserProfile via sales_edited_at). Every
+    // other target type, and non-sales roles, stay blocked here.
+    if (targetType === "vendor" && roles.includes("sales")) {
+      return { roles };
+    }
     throw new AppError(403, "Unauthorized");
   }
 
@@ -168,6 +174,10 @@ async function assertCanManageUsers(userId: string, targetType?: ManagedUserType
   }
 
   return { roles };
+}
+
+function isPureSales(roles: string[]) {
+  return !roles.includes("super_admin") && !roles.includes("admin") && roles.includes("sales");
 }
 
 // The root super admin is the very first account ever granted the super_admin
@@ -246,6 +256,17 @@ export async function updateManagedUserProfile(
   const userId = getProfileUserId(profile);
   await assertTargetNotProtected(actorRoles, userId);
   await assertNotRootSuperAdmin(userId);
+
+  const isPureSalesActor = isPureSales(actorRoles);
+  if (isPureSalesActor) {
+    const vendorProfile = profile as { sales_user_id: string | null; sales_edited_at: Date | null };
+    if (vendorProfile.sales_user_id !== actorUserId) {
+      throw new AppError(403, "You can only edit vendors assigned to you");
+    }
+    if (vendorProfile.sales_edited_at) {
+      throw new AppError(403, "You have already used your one-time edit for this vendor");
+    }
+  }
 
   if (data.status && data.status !== "active" && userId === actorUserId) {
     throw new AppError(400, "You cannot deactivate your own account");
@@ -330,6 +351,7 @@ export async function updateManagedUserProfile(
       putRate(u, "branch_zone_inside_valley", data.branchZoneInsideValley);
       if (joinedAt) u.joined_at = joinedAt;
       if (data.status) u.status = data.status;
+      if (isPureSalesActor) u.sales_edited_at = new Date();
       return tx.vendors.update({ where: { id }, data: u });
     }
 
@@ -355,7 +377,7 @@ export async function updateManagedUserProfile(
 // Full editable profile for the edit form, mapped to the create-form field names.
 // Contains bank/PAN/citizenship-level PII, so only admins may fetch it.
 export async function getManagedUserDetail(actorUserId: string, type: ManagedUserType, id: string) {
-  await assertCanManageUsers(actorUserId, type);
+  const { roles: actorRoles } = await assertCanManageUsers(actorUserId, type);
 
   const num = (v: unknown) => (v === null || v === undefined ? null : Number(v));
   const dateStr = (d: Date | null) => (d ? new Date(d).toISOString().slice(0, 10) : "");
@@ -363,11 +385,17 @@ export async function getManagedUserDetail(actorUserId: string, type: ManagedUse
   if (type === "vendor") {
     const v = await prisma.vendors.findUnique({ where: { id }, include: { users: true } });
     if (!v) throw new AppError(404, "Vendor not found");
+    // 404, not 403 - a pure sales actor probing another sales rep's vendor
+    // IDs shouldn't be able to distinguish "not mine" from "doesn't exist".
+    if (isPureSales(actorRoles) && v.sales_user_id !== actorUserId) {
+      throw new AppError(404, "Vendor not found");
+    }
     return {
       type, id: v.id, userId: v.user_id,
       clientName: v.client_name, businessName: v.business_name, phone: v.phone,
       email: v.email, locationId: v.location_id, address: v.address, sales: v.sales,
       salesUserId: v.sales_user_id,
+      salesEditUsed: v.sales_edited_at !== null,
       rateType: v.rate_type,
       flatInsideValley: num(v.flat_inside_valley), flatOutsideValley: num(v.flat_outside_valley),
       zoneMajorCities: num(v.zone_major_cities), zoneUrbanAreas: num(v.zone_urban_areas),

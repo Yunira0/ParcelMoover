@@ -217,20 +217,25 @@ export const TableRowActions = ({
   onUpdatePassword,
   children,
 }: {
-  onEdit: () => void;
-  onUpdatePassword: () => void;
+  /** Omit to hide the Edit action for this row (e.g. a sales user who has used their one-time edit). */
+  onEdit?: () => void;
+  onUpdatePassword?: () => void;
   /** Extra row-level action buttons rendered after the built-in pair. */
   children?: React.ReactNode;
 }) => (
   <div className="action-buttons">
-    <Button variant="outline" size="sm" onClick={onEdit}>
-      <Edit size={14} />
-      Edit
-    </Button>
-    <Button variant="outline" size="sm" onClick={onUpdatePassword}>
-      <KeyRound size={14} />
-      Update password
-    </Button>
+    {onEdit && (
+      <Button variant="outline" size="sm" onClick={onEdit}>
+        <Edit size={14} />
+        Edit
+      </Button>
+    )}
+    {onUpdatePassword && (
+      <Button variant="outline" size="sm" onClick={onUpdatePassword}>
+        <KeyRound size={14} />
+        Update password
+      </Button>
+    )}
     {children}
   </div>
 );

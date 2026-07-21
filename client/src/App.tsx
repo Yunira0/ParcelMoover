@@ -132,7 +132,7 @@ function App() {
           />
           <Route
             path="/vendors/:id/edit"
-            element={<RoleGuard allowedRoles={['super_admin', 'admin']}><VendorFormPage /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'sales']}><VendorFormPage /></RoleGuard>}
           />
           <Route
             path="/kyc-applications"

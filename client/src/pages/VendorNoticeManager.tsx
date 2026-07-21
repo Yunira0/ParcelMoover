@@ -8,7 +8,7 @@ import {
   getVendorNoticeById,
   createVendorNotice,
   updateVendorNotice,
-  deleteVendorNotice,
+  hardDeleteVendorNotice,
   uploadNoticeImage,
   type VendorNotice,
 } from '../services/vendorNotices.service';
@@ -168,12 +168,12 @@ const VendorNoticeManager: React.FC = () => {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Deactivate this notice? Vendors will no longer see it.')) return;
+    if (!confirm('Permanently delete this notice? This cannot be undone.')) return;
     try {
-      await deleteVendorNotice(id);
+      await hardDeleteVendorNotice(id);
       await refreshNotices();
     } catch {
-      setError('Failed to deactivate notice.');
+      setError('Failed to delete notice.');
     }
   };
 
@@ -244,7 +244,7 @@ const VendorNoticeManager: React.FC = () => {
                       <button className="vnm-icon-btn" onClick={() => openEdit(n.id)} title="Edit">
                         <Pencil size={14} />
                       </button>
-                      <button className="vnm-icon-btn vnm-icon-btn-danger" onClick={() => handleDelete(n.id)} title="Deactivate">
+                      <button className="vnm-icon-btn vnm-icon-btn-danger" onClick={() => handleDelete(n.id)} title="Delete permanently">
                         <Trash2 size={14} />
                       </button>
                     </div>
