@@ -154,6 +154,12 @@ app.use("/api/api-keys", ApiKeyRoutes)
 // Public partner API v1 — external e-commerce integrations, API-key-authed.
 app.use("/api/v1", PublicApiRoutes)
 
+// Vendor notice banners aren't sensitive (unlike the KYC docs below) and need
+// to be visible to any logged-in vendor, so they're served unauthenticated
+// from the same persisted `uploads` volume — registered ahead of the
+// KYC-gated /uploads handler so this subpath never hits that auth check.
+app.use("/uploads/notices", express.static(path.join(process.cwd(), "uploads", "notices")));
+
 // KYC/registration documents (citizenship, PAN, licence, bank docs) contain
 // sensitive PII — only staff verifying an account should ever be able to open one.
 app.use(

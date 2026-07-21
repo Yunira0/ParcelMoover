@@ -3,7 +3,10 @@ import path from "path";
 import fs from "fs";
 import { randomBytes } from "crypto";
 
-const UPLOAD_DIR = path.join(process.cwd(), "public", "uploads", "notices");
+// Lives under the persisted `uploads` volume (same one KYC docs use), not
+// `public/` — `public/` is rebuilt from the client bundle on every deploy,
+// which was silently wiping uploaded banners on redeploy.
+const UPLOAD_DIR = path.join(process.cwd(), "uploads", "notices");
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
