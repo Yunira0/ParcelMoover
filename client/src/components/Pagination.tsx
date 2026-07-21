@@ -1,5 +1,5 @@
 import React from 'react';
-import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
+import { ChevronDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
 import './Pagination.css';
 
 /** Navigation callbacks for keyset (cursor) paginated lists. */
@@ -25,7 +25,17 @@ interface PaginationProps {
   cursor?: CursorPaginationControls;
   ariaLabel: string;
   summary?: React.ReactNode;
+  /** Current rows-per-page. When set alongside onPageSizeChange, renders a selector at the end of the row. */
+  pageSize?: number;
+  /** Called when the user picks a different rows-per-page value. */
+  onPageSizeChange?: (size: number) => void;
+  /** Options offered in the rows-per-page selector. Defaults to 10/20/50/100. */
+  pageSizeOptions?: number[];
+  /** Noun shown next to the selector, e.g. "parcels". Defaults to "rows". */
+  pageSizeLabel?: string;
 }
+
+const DEFAULT_PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
 
 const ELLIPSIS = '…';
 
@@ -53,9 +63,21 @@ export function getPageItems(page: number, totalPages: number): Array<number | t
   return items;
 }
 
-const Pagination: React.FC<PaginationProps> = ({ page, totalPages, onPageChange, cursor, ariaLabel, summary }) => {
+const Pagination: React.FC<PaginationProps> = ({
+  page,
+  totalPages,
+  onPageChange,
+  cursor,
+  ariaLabel,
+  summary,
+  pageSize,
+  onPageSizeChange,
+  pageSizeOptions = DEFAULT_PAGE_SIZE_OPTIONS,
+  pageSizeLabel = 'rows',
+}) => {
   const clampedTotal = Math.max(1, totalPages);
   const clampedPage = Math.min(Math.max(page, 1), clampedTotal);
+  const showPageSize = pageSize !== undefined && !!onPageSizeChange;
 
   return (
     <div className="pagination-row">
@@ -118,6 +140,28 @@ const Pagination: React.FC<PaginationProps> = ({ page, totalPages, onPageChange,
           </>
         )}
       </nav>
+      {showPageSize && (
+        <label className="pagination-size">
+          <span className="pagination-size-text">{pageSizeLabel} per page</span>
+          <span className="pagination-size-select">
+            <select
+              aria-label={`${pageSizeLabel} per page`}
+              value={pageSize}
+              onChange={(event) => onPageSizeChange?.(Number(event.target.value))}
+            >
+              {(pageSizeOptions.includes(pageSize!)
+                ? pageSizeOptions
+                : [...pageSizeOptions, pageSize!].sort((a, b) => a - b)
+              ).map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+            <ChevronDown size={16} aria-hidden="true" />
+          </span>
+        </label>
+      )}
     </div>
   );
 };
