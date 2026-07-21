@@ -49,7 +49,9 @@ export const paySettlementSchema = z.object({
   payments: z
     .array(
       z.object({
-        method: z.enum(["cash", "online"]),
+        // Method names are configurable (Cash, Online, eSewa, Bank, ...); the
+        // service validates the value against the currently-active methods.
+        method: z.string().trim().min(1, "Payment method is required").max(40),
         amount: z.number().positive("Payment amount must be greater than 0"),
       }),
     )

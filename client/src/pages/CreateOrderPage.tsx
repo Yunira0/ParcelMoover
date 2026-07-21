@@ -557,7 +557,7 @@ const CreateOrderPage: React.FC = () => {
                 required
                 value={form.address}
                 onChange={value => setField('address', value)}
-                placeholder="Enter address"
+                placeholder="Enter location on Google Maps"
                 error={fieldErrors.address}
               />
             </div>

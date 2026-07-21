@@ -7,6 +7,7 @@ import { formatNepalDate } from "../utils/nepalTime";
 import { getDatePart, randomBase32 } from "../utils/trackingId";
 import { resolveOwnVendorId } from "./vendor-scope.service";
 import { createNotification } from "./notification.service";
+import { getActivePaymentMethodNames } from "./payment-method.service";
 import {
   CodPaymentFilter,
   CreateSettlementInput,
@@ -190,8 +191,15 @@ export async function getPendingCodBill(actor: Actor, vendorIdParam?: string): P
   const collections = await prisma.cod_collections.findMany({
     // Only orders with cash actually collected are billable (excludes
     // not-yet-delivered orders); amounts are on the collected basis so the bill
-    // matches what will be settled.
-    where: { vendor_id: vendor.id, payment_status: payment_status.pending, collected_amount: { gt: 0 } },
+    // matches what will be settled. Orders already bundled into a vendor
+    // statement are excluded - they've moved out of the pending bill and into
+    // that statement, even while it awaits payment.
+    where: {
+      vendor_id: vendor.id,
+      payment_status: payment_status.pending,
+      collected_amount: { gt: 0 },
+      settlement_items: { none: { settlements: { payee_type: "vendor" } } },
+    },
     include: {
       parcels: {
         select: {
@@ -255,14 +263,22 @@ export async function listOrderCod(
   const statusFilter =
     status === "settled" ? payment_status.paid : status === "not_settled" ? payment_status.pending : undefined;
 
+  // An order's COD only exists once cash was actually collected, so this list
+  // (and its settled/not-settled counts) is anchored on collected_amount - the
+  // same honest basis the pending bill, unsettled pool and settlement payout use.
   const where: Prisma.cod_collectionsWhereInput = {
     vendor_id: vendor.id,
+    collected_amount: { gt: 0 },
     ...(statusFilter ? { payment_status: statusFilter } : {}),
   };
 
   const [settledCount, notSettledCount, total, collections] = await Promise.all([
-    prisma.cod_collections.count({ where: { vendor_id: vendor.id, payment_status: payment_status.paid } }),
-    prisma.cod_collections.count({ where: { vendor_id: vendor.id, payment_status: payment_status.pending } }),
+    prisma.cod_collections.count({
+      where: { vendor_id: vendor.id, collected_amount: { gt: 0 }, payment_status: payment_status.paid },
+    }),
+    prisma.cod_collections.count({
+      where: { vendor_id: vendor.id, collected_amount: { gt: 0 }, payment_status: payment_status.pending },
+    }),
     prisma.cod_collections.count({ where }),
     prisma.cod_collections.findMany({
       where,
@@ -291,7 +307,7 @@ export async function listOrderCod(
     createdAt: c.parcels.created_at.toISOString(),
     deliveredAt: c.parcels.delivered_at ? c.parcels.delivered_at.toISOString() : null,
     status: c.payment_status === payment_status.paid ? "settled" : "not_settled",
-    netPayable: Number(c.cod_amount) - Number(c.parcels.delivery_charge),
+    netPayable: Number(c.collected_amount) - Number(c.parcels.delivery_charge),
   }));
 
   const result: OrderCodListResult = {
@@ -501,7 +517,15 @@ export async function getUnsettledOrders(
   // schema comment. Only orders where the rider actually collected cash are
   // eligible.
   const where: Prisma.cod_collectionsWhereInput = riderId
-    ? { rider_id: riderId, rider_payment_status: payment_status.pending, collected_amount: { gt: 0 } }
+    ? {
+        rider_id: riderId,
+        rider_payment_status: payment_status.pending,
+        collected_amount: { gt: 0 },
+        // Not already bundled into a rider statement. The two legs settle the
+        // same collection independently, so this is scoped to rider statements
+        // only - a vendor statement on this collection must not hide it here.
+        settlement_items: { none: { settlements: { payee_type: "rider" } } },
+      }
     : {
         ...(vendorId ? { vendor_id: vendorId } : {}),
         payment_status: payment_status.pending,
@@ -509,6 +533,8 @@ export async function getUnsettledOrders(
         // excludes not-yet-delivered orders (which would otherwise pay out COD
         // that was never collected) and mirrors the rider leg's guard.
         collected_amount: { gt: 0 },
+        // Not already bundled into a vendor statement (see rider leg note).
+        settlement_items: { none: { settlements: { payee_type: "vendor" } } },
       };
 
   const collections = await prisma.cod_collections.findMany({
@@ -569,9 +595,9 @@ function generateStatementId(payeeType: "rider" | "vendor", date = new Date()) {
 }
 
 // Admin-only: bundles a rider's or vendor's selected pending cod_collections
-// into a settlement statement and immediately marks them settled - there is
-// no separate "confirm paid" step elsewhere in the app, so creating a
-// settlement here *is* the settling action.
+// into a pending settlement statement. This only earmarks the orders; the
+// statement is settled (and the underlying collections marked paid) later in
+// payForSettlement, so "paid"/"settled" always reflects money that moved.
 export async function createSettlement(
   actor: Actor,
   input: CreateSettlementInput,
@@ -589,6 +615,11 @@ export async function createSettlement(
   const target =
     payeeType === "rider" ? await resolveRider(actor, targetId) : await resolveVendor(actor, targetId);
 
+  // A collection is eligible only if it isn't already bundled into a statement
+  // of the same leg. Membership - not payment_status - is the double-settlement
+  // guard now, because a collection stays `pending` until its statement is
+  // actually paid (see payForSettlement), so it would otherwise be selectable
+  // twice while a statement sits unpaid.
   const eligibleWhere: Prisma.cod_collectionsWhereInput =
     payeeType === "rider"
       ? {
@@ -596,6 +627,7 @@ export async function createSettlement(
           rider_id: target.id,
           rider_payment_status: payment_status.pending,
           collected_amount: { gt: 0 },
+          settlement_items: { none: { settlements: { payee_type: "rider" } } },
         }
       : {
           id: { in: codCollectionIds },
@@ -604,6 +636,7 @@ export async function createSettlement(
           // Only settle orders where cash was actually collected - never pay a
           // vendor for COD that hasn't been collected yet.
           collected_amount: { gt: 0 },
+          settlement_items: { none: { settlements: { payee_type: "vendor" } } },
         };
 
   const collections = await prisma.cod_collections.findMany({
@@ -650,33 +683,10 @@ export async function createSettlement(
       })),
     });
 
-    // rider_remitted_amount / vendor remitted_amount vary per row (both equal
-    // that row's collected_amount - the cash actually collected), so this can't
-    // be a single shared updateMany.
-    if (payeeType === "rider") {
-      const settledAt = new Date();
-      await Promise.all(
-        collections.map((c) =>
-          tx.cod_collections.update({
-            where: { id: c.id },
-            data: {
-              rider_payment_status: payment_status.paid,
-              rider_remitted_amount: c.collected_amount,
-              rider_settled_at: settledAt,
-            },
-          }),
-        ),
-      );
-    } else {
-      await Promise.all(
-        collections.map((c) =>
-          tx.cod_collections.update({
-            where: { id: c.id },
-            data: { payment_status: payment_status.paid, remitted_amount: c.collected_amount },
-          }),
-        ),
-      );
-    }
+    // The collections are intentionally NOT marked paid here. Creating a
+    // statement only earmarks these orders (enforced by the membership guard in
+    // eligibleWhere); the payment_status / remitted_amount writes happen in
+    // payForSettlement, so "paid" always means money actually moved.
 
     await tx.audit_logs.create({
       data: {
@@ -739,16 +749,28 @@ export async function payForSettlement(
   if (!remark || !remark.trim()) {
     throw new AppError(400, "Remark is required");
   }
+  // Payment methods are configurable (Cash, Online, eSewa, Bank, ...) and
+  // managed by super admins, so validate each submitted method against the
+  // currently-active set rather than a hardcoded list.
+  const activeMethods = await getActivePaymentMethodNames();
+  const activeMethodSet = new Set(activeMethods.map((m) => m.toLowerCase()));
   for (const p of payments) {
-    if (p.method !== "cash" && p.method !== "online") {
-      throw new AppError(400, "Payment method must be 'cash' or 'online'");
+    if (!activeMethodSet.has(p.method.trim().toLowerCase())) {
+      throw new AppError(400, `Unknown payment method "${p.method}"`);
     }
     if (!(p.amount > 0)) {
       throw new AppError(400, "Payment amount must be greater than 0");
     }
   }
 
-  const settlement = await prisma.settlements.findUnique({ where: { id: settlementId } });
+  const settlement = await prisma.settlements.findUnique({
+    where: { id: settlementId },
+    include: {
+      settlement_items: {
+        include: { cod_collections: { select: { id: true, collected_amount: true } } },
+      },
+    },
+  });
   if (!settlement) {
     throw new AppError(404, "Settlement not found");
   }
@@ -757,11 +779,19 @@ export async function payForSettlement(
   }
 
   const payableAmount = Number(settlement.payable_amount ?? settlement.amount);
+  // A negative payable means the COD collected was less than the delivery
+  // charges, so the vendor owes the office rather than the other way round. The
+  // recorded payments then represent cash received FROM the vendor, and must
+  // total the absolute amount owed. (Rider legs are always >= 0.)
+  const vendorOwesOffice = payableAmount < 0;
+  const expectedTotal = Math.abs(payableAmount);
   const paidTotal = payments.reduce((sum, p) => sum + p.amount, 0);
-  if (Math.round(paidTotal * 100) !== Math.round(payableAmount * 100)) {
+  if (Math.round(paidTotal * 100) !== Math.round(expectedTotal * 100)) {
     throw new AppError(
       400,
-      `Payment total (Rs. ${paidTotal}) must equal the payable amount (Rs. ${payableAmount})`,
+      vendorOwesOffice
+        ? `Payment total (Rs. ${paidTotal}) must equal the amount owed by the vendor (Rs. ${expectedTotal})`
+        : `Payment total (Rs. ${paidTotal}) must equal the payable amount (Rs. ${expectedTotal})`,
     );
   }
   const paymentMethodSummary = Array.from(new Set(payments.map((p) => p.method))).join(", ");
@@ -777,6 +807,38 @@ export async function payForSettlement(
         settled_by: actor.id,
       },
     });
+
+    // Money has now actually moved, so mark each bundled collection paid on the
+    // relevant leg. remitted_amount / rider_remitted_amount vary per row (each
+    // equals that row's collected_amount - the cash actually collected), so
+    // this can't be a single shared updateMany.
+    const settledAt = new Date();
+    if (settlement.payee_type === "rider") {
+      await Promise.all(
+        settlement.settlement_items.map((si) =>
+          tx.cod_collections.update({
+            where: { id: si.cod_collection_id },
+            data: {
+              rider_payment_status: payment_status.paid,
+              rider_remitted_amount: si.cod_collections.collected_amount,
+              rider_settled_at: settledAt,
+            },
+          }),
+        ),
+      );
+    } else {
+      await Promise.all(
+        settlement.settlement_items.map((si) =>
+          tx.cod_collections.update({
+            where: { id: si.cod_collection_id },
+            data: {
+              payment_status: payment_status.paid,
+              remitted_amount: si.cod_collections.collected_amount,
+            },
+          }),
+        ),
+      );
+    }
 
     await tx.audit_logs.create({
       data: {

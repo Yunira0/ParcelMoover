@@ -565,7 +565,7 @@ const VendorFormPage: React.FC = () => {
                   required
                   value={form.pickupLandmark}
                   onChange={set('pickupLandmark')}
-                  placeholder="Pickup location details"
+                  placeholder="Enter location on Google Maps"
                 />
                 {fieldErrors.pickupLandmark && (
                   <span className="vfp-field-error">{fieldErrors.pickupLandmark}</span>

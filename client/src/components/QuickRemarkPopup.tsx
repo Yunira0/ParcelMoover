@@ -213,7 +213,7 @@ const QuickRemarkPopup: React.FC<QuickRemarkPopupProps> = ({ orderId, trackingId
               <RefreshCw size={16} />
             </button>
             <button className="qr-header-btn qr-header-btn--close" onClick={onClose} aria-label="Close" title="Close">
-              <span className="qr-close-glyph" aria-hidden="true">Ã—</span>
+              <span className="qr-close-glyph" aria-hidden="true">{'×'}</span>
             </button>
           </div>
         </div>
@@ -261,7 +261,7 @@ const QuickRemarkPopup: React.FC<QuickRemarkPopupProps> = ({ orderId, trackingId
               </span>
             </div>
             <button className="qr-replying-close" onClick={cancelReply} aria-label="Cancel reply" title="Cancel reply">
-              <span className="qr-close-glyph" aria-hidden="true">Ã—</span>
+              <span className="qr-close-glyph" aria-hidden="true">{'×'}</span>
             </button>
           </div>
         )}

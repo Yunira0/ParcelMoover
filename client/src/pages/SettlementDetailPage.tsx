@@ -6,7 +6,7 @@ import StatusChip from '../components/StatusChip';
 import MakePaymentModal from '../components/MakePaymentModal';
 import { getSettlementDetail, type SettlementDetail } from '../services/finance.service';
 import { hasAnyRole } from '../utils/auth';
-import { toBsDateTime } from '../utils/nepaliDate';
+import { toBsDate, toBsDateTime } from '../utils/nepaliDate';
 import './vendor/VendorFinance.css';
 import './SettlementDetailPage.css';
 
@@ -21,7 +21,7 @@ function buildStatementHtml(detail: SettlementDetail): string {
           <td>#${item.orderNumber}</td>
           <td>
             <div style="font-family:monospace">${item.trackingId}</div>
-            ${item.deliveredAt ? `<div class="sub">${new Date(item.deliveredAt).toLocaleString()}</div>` : ''}
+            ${item.deliveredAt ? `<div class="sub">${toBsDateTime(item.deliveredAt)}</div>` : ''}
             ${item.orderType ? `<div class="sub">${item.orderType}</div>` : ''}
           </td>
           <td>${item.receiverName}<div class="sub">${item.receiverPhone}</div><div class="sub">${item.destination}</div></td>
@@ -69,7 +69,7 @@ function buildStatementHtml(detail: SettlementDetail): string {
       </div>
       <div class="meta">
         <div><span class="muted">Statement</span><span>${detail.statementId}</span></div>
-        <div><span class="muted">Statement date</span><span>${detail.transferDate || '-'}</span></div>
+        <div><span class="muted">Statement date</span><span>${detail.transferDate ? toBsDate(detail.transferDate) : '-'}</span></div>
         <div><span class="muted">Payment status</span><span>${detail.status === 'settled' ? 'Settled' : 'Pending'}</span></div>
         ${detail.remark ? `<div><span class="muted">Remark</span><span>${detail.remark}</span></div>` : ''}
       </div>
@@ -198,7 +198,7 @@ const SettlementDetailPage: React.FC = () => {
               </div>
               <div>
                 <span>Statement date</span>
-                <span>{detail.transferDate || '-'}</span>
+                <span>{detail.transferDate ? toBsDate(detail.transferDate) : '-'}</span>
               </div>
               <div>
                 <span>Recorded</span>
@@ -215,7 +215,12 @@ const SettlementDetailPage: React.FC = () => {
                   <span>Payment method</span>
                   <span>
                     {detail.payments
-                      .map((p) => `${p.method === 'cash' ? 'Cash' : 'Online'}: Rs. ${p.amount.toLocaleString()}`)
+                      .map((p) => {
+                        // Method names are configurable now; show them as
+                        // stored, capitalising legacy lowercase values.
+                        const label = p.method.charAt(0).toUpperCase() + p.method.slice(1);
+                        return `${label}: Rs. ${p.amount.toLocaleString()}`;
+                      })
                       .join(', ')}
                   </span>
                 </div>
@@ -254,7 +259,7 @@ const SettlementDetailPage: React.FC = () => {
                       <td>
                         <div style={{ fontFamily: 'monospace' }}>{item.trackingId}</div>
                         {item.deliveredAt && (
-                          <div className="vendor-finance-subtext">{new Date(item.deliveredAt).toLocaleString()}</div>
+                          <div className="vendor-finance-subtext">{toBsDateTime(item.deliveredAt)}</div>
                         )}
                         {item.orderType && <div className="vendor-finance-subtext">{item.orderType}</div>}
                       </td>

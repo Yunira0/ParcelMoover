@@ -1,7 +1,7 @@
 export interface ListRemarksParams {
   search?: string;
   status?: string;
-  /** True selects both "open" and "pending" (any non-closed remark). Takes precedence over `status`. */
+  /** True selects any non-closed remark. Takes precedence over `status`. */
   unclosed?: boolean;
   fromDate?: string;
   toDate?: string;
