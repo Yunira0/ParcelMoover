@@ -144,7 +144,7 @@ const Tickets: React.FC = () => {
       if (categoryFilter && ticket.category !== categoryFilter) return false;
       if (!isWithinRange(ticket.createdAt, dateRange)) return false;
       if (q && !(
-        ticket.vendorName.toLowerCase().includes(q) ||
+        ticket.vendorName?.toLowerCase().includes(q) ||
         ticket.customerPhone.toLowerCase().includes(q) ||
         ticket.ticketId.toLowerCase().includes(q) ||
         ticket.subject.toLowerCase().includes(q)
