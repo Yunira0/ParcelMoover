@@ -29,6 +29,7 @@ const SettlementCreatePage = lazy(() => import('./pages/SettlementCreatePage'))
 const DeliveryRateSettings = lazy(() => import('./pages/DeliveryRateSettings'))
 const Settings = lazy(() => import('./pages/settings/Settings'))
 const SlaSettings = lazy(() => import('./pages/SlaSettings'))
+const PickupTimeSlots = lazy(() => import('./pages/PickupTimeSlots'))
 const PickupOperations = lazy(() => import('./pages/PickupOperations'))
 const DispatchOperations = lazy(() => import('./pages/DispatchOperations'))
 const OOVOperations = lazy(() => import('./pages/OOVOperations'))
@@ -172,6 +173,10 @@ function App() {
           <Route
             path="/sla"
             element={<RoleGuard allowedRoles={['super_admin']}><SlaSettings /></RoleGuard>}
+          />
+          <Route
+            path="/pickup-time-slots"
+            element={<RoleGuard allowedRoles={['super_admin']}><PickupTimeSlots /></RoleGuard>}
           />
           <Route
             path="/vendor-notices"

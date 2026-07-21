@@ -675,6 +675,19 @@ model sla_settings {
   updated_at DateTime @default(now()) @updatedAt @db.Timestamptz(6)
 }
 
+// Pickup windows vendors can choose from when raising a "pickup" support
+// ticket. start_minutes/end_minutes are minutes-since-midnight; the booking
+// cutoff (1hr before end) is derived, not stored.
+model pickup_time_slots {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  start_minutes Int
+  end_minutes   Int
+  is_active     Boolean  @default(true)
+  sort_order    Int      @default(0)
+  created_at    DateTime @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+}
+
 enum exception_status {
   open
   resolved
