@@ -62,7 +62,7 @@ function labelHtml(order: Order, qrDataUrl: string, barcodeUrl: string): string 
       <div class="party-divider"></div>
       <div class="party">
         <span class="party-role">To</span>
-        <span class="party-location">${esc(order.destinationName || order.destination)}</span>
+        <span class="party-location">${esc(order.receiverAddress)}</span>
         <span class="party-name">${esc(order.receiverName)}</span>
         <span class="party-phone">${esc(order.receiverPhone)}</span>
       </div>
