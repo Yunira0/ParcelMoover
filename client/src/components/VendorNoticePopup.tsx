@@ -30,6 +30,7 @@ const VendorNoticePopup: React.FC = () => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [dismissing, setDismissing] = useState(false);
+  const [imageFailed, setImageFailed] = useState(false);
 
   useEffect(() => {
     if (!isVendorSide()) return;
@@ -80,6 +81,7 @@ const VendorNoticePopup: React.FC = () => {
       }
     }
 
+    setImageFailed(false);
     if (currentIndex < notices.length - 1) {
       setCurrentIndex((i) => i + 1);
     } else {
@@ -87,13 +89,27 @@ const VendorNoticePopup: React.FC = () => {
     }
   };
 
+  // Escape hatch for when several notices are queued — closes the whole
+  // popup without stepping through each one individually. Doesn't call the
+  // dismiss API for the untouched ones, so they'll still show next session.
+  const handleSkipAll = () => setNotices([]);
+
   // Don't render if not vendor, loading, or no notices
   if (loading || !currentNotice) return null;
 
   return (
     <div className="vnp-overlay" onClick={currentNotice.isDismissable ? handleDismiss : undefined}>
       <div className="vnp-card" onClick={(e) => e.stopPropagation()}>
-        <img className="vnp-banner" src={currentNotice.imageUrl} alt={currentNotice.title} />
+        {imageFailed ? (
+          <div className="vnp-banner-fallback">{currentNotice.title}</div>
+        ) : (
+          <img
+            className="vnp-banner"
+            src={currentNotice.imageUrl}
+            alt={currentNotice.title}
+            onError={() => setImageFailed(true)}
+          />
+        )}
 
         {currentNotice.isDismissable && (
           <button
@@ -103,6 +119,12 @@ const VendorNoticePopup: React.FC = () => {
             aria-label="Dismiss notice"
           >
             <X size={16} />
+          </button>
+        )}
+
+        {notices.length > 1 && (
+          <button className="vnp-skip-all" onClick={handleSkipAll}>
+            Skip all
           </button>
         )}
 

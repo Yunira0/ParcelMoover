@@ -8,6 +8,7 @@ import EditSettlementModal from '../components/EditSettlementModal';
 import { getSettlementDetail, type SettlementDetail } from '../services/finance.service';
 import { hasAnyRole, hasAdminPermission } from '../utils/auth';
 import { toBsDate, toBsDateTime } from '../utils/nepaliDate';
+import { downloadExcel } from '../utils/excel';
 import './vendor/VendorFinance.css';
 import './SettlementDetailPage.css';
 
@@ -126,6 +127,18 @@ const SettlementDetailPage: React.FC = () => {
     };
   }, [id, reloadKey]);
 
+  const totals = detail
+    ? detail.items.reduce(
+        (acc, item) => {
+          acc.cod += item.codAmount;
+          acc.collected += item.collectedAmount;
+          acc.deliveryCharge += item.deliveryCharge;
+          return acc;
+        },
+        { cod: 0, collected: 0, deliveryCharge: 0 },
+      )
+    : { cod: 0, collected: 0, deliveryCharge: 0 };
+
   const handlePrint = () => {
     if (!detail) return;
     const win = window.open('', '_blank');
@@ -138,28 +151,33 @@ const SettlementDetailPage: React.FC = () => {
 
   const handleDownload = () => {
     if (!detail) return;
-    const blob = new Blob([buildStatementHtml(detail)], { type: 'text/html' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${detail.statementId}.html`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    const headers = [
+      'SN',
+      'Order ID',
+      'Transaction ID',
+      'Receiver',
+      'Receiver Phone',
+      'Destination',
+      'Weight',
+      'COD',
+      'Collected COD',
+      'Delivery Charge',
+    ];
+    const rows = detail.items.map((item, index) => [
+      index + 1,
+      `#${item.orderNumber}`,
+      item.trackingId,
+      item.receiverName,
+      item.receiverPhone,
+      item.destination,
+      item.weightKg === null ? '' : item.weightKg,
+      item.codAmount,
+      item.collectedAmount,
+      item.deliveryCharge,
+    ]);
+    rows.push(['', '', '', '', '', '', '', totals.cod, totals.collected, totals.deliveryCharge]);
+    downloadExcel(`${detail.statementId}.xlsx`, 'Statement', headers, rows);
   };
-
-  const totals = detail
-    ? detail.items.reduce(
-        (acc, item) => {
-          acc.cod += item.codAmount;
-          acc.collected += item.collectedAmount;
-          acc.deliveryCharge += item.deliveryCharge;
-          return acc;
-        },
-        { cod: 0, collected: 0, deliveryCharge: 0 },
-      )
-    : { cod: 0, collected: 0, deliveryCharge: 0 };
 
   return (
     <div className="settlement-detail-page">
