@@ -47,8 +47,7 @@ const VendorSettlements = lazy(() => import('./pages/vendor/VendorSettlements'))
 const VendorPendingCod = lazy(() => import('./pages/vendor/VendorPendingCod'))
 const VendorOrderPayments = lazy(() => import('./pages/vendor/VendorOrderPayments'))
 const VendorUserManagement = lazy(() => import('./pages/vendor/VendorUserManagement'))
-const VendorApiKeys = lazy(() => import('./pages/vendor/VendorApiKeys'))
-const VendorWebhooks = lazy(() => import('./pages/vendor/VendorWebhooks'))
+const VendorDeveloper = lazy(() => import('./pages/vendor/VendorDeveloper'))
 const StaffFormPage = lazy(() => import('./pages/vendor/StaffFormPage'))
 const BulkOrderPage = lazy(() => import('./pages/vendor/BulkOrderPage'))
 const VendorDeliveryCharges = lazy(() => import('./pages/vendor/VendorDeliveryCharges'))
@@ -269,11 +268,11 @@ function App() {
           />
           <Route
             path="/developer/api-keys"
-            element={<RoleGuard allowedRoles={['vendor']}><VendorApiKeys /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['vendor']}><VendorDeveloper /></RoleGuard>}
           />
           <Route
             path="/developer/webhooks"
-            element={<RoleGuard allowedRoles={['vendor']}><VendorWebhooks /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['vendor']}><VendorDeveloper /></RoleGuard>}
           />
           <Route path="/profile" element={<ProfilePage />} />
         </Route>

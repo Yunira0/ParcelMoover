@@ -14,6 +14,35 @@ type Actor = { id: string; roles: string[] };
 const RATE_CACHE_PREFIX = "delivery-rate:";
 const RATE_CACHE_TTL_SECONDS = 5 * 60;
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// Resolves a vendor-supplied destination reference to a real location id -
+// either it's already a location UUID, or it's a hub name/code (e.g.
+// "POKHARA", matching what GET /api/v1/rates lists) that gets looked up
+// case-insensitively against active top-level hubs, the same set
+// bulkImportDeliveryRates matches Excel rows against. A typo'd hub name
+// fails loudly here instead of silently landing on nothing downstream.
+export async function resolveDestinationRef(ref: string): Promise<string> {
+  const trimmed = ref.trim();
+  if (UUID_RE.test(trimmed)) return trimmed;
+
+  const hub = await prisma.locations.findFirst({
+    where: {
+      parent_id: null,
+      is_active: true,
+      OR: [
+        { name: { equals: trimmed, mode: "insensitive" } },
+        { code: { equals: trimmed, mode: "insensitive" } },
+      ],
+    },
+    select: { id: true },
+  });
+  if (!hub) {
+    throw new AppError(400, `Unknown destination hub: "${trimmed}". See GET /api/v1/rates for valid names.`, "DESTINATION_NOT_FOUND");
+  }
+  return hub.id;
+}
+
 interface CachedRate {
   baseCharge: number;
   branchBaseCharge: number | null;

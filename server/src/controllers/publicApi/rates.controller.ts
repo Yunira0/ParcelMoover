@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { getVendorSelfRates, getVendorSingleQuote } from "../../services/delivery-rate.service";
+import { getVendorSelfRates, getVendorSingleQuote, resolveDestinationRef } from "../../services/delivery-rate.service";
 import { PublicQuoteQuery } from "../../validators/publicApi.schema";
 import { actorFrom, sendError } from "./shared";
 
@@ -23,9 +23,10 @@ export async function publicGetRateQuoteController(req: Request, res: Response) 
     }
 
     const query = req.query as unknown as PublicQuoteQuery;
+    const destinationLocationId = await resolveDestinationRef(query.destinationLocationId);
     const data = await getVendorSingleQuote(
       actorFrom(req),
-      query.destinationLocationId,
+      destinationLocationId,
       query.weightKg ?? 1,
       query.serviceType ?? "home_delivery",
     );

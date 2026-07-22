@@ -1,4 +1,4 @@
-import { Response, Request } from "express";
+import { Request } from "express";
 
 // Every public API handler synthesizes a vendor OrderActor from the
 // authenticated API key, so the existing vendor-scoped services enforce
@@ -10,27 +10,8 @@ export function actorFrom(req: Request) {
 export const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-const STATUS_CODE_TO_ERROR_CODE: Record<number, string> = {
-  400: "VALIDATION_ERROR",
-  401: "UNAUTHORIZED",
-  403: "FORBIDDEN",
-  404: "NOT_FOUND",
-  409: "CONFLICT",
-  422: "VALIDATION_ERROR",
-  429: "RATE_LIMITED",
-  500: "INTERNAL_ERROR",
-};
-
-// Every /api/v1 handler's catch block ends here - keeps the existing
-// {success, message} shape every current integration already reads, while
-// additively attaching a stable, machine-readable error.code so new
-// integrations can branch on the failure type instead of parsing message text.
-export function sendError(res: Response, error: any, fallbackMessage: string) {
-  const statusCode = error?.statusCode || 500;
-  const code = error?.code || STATUS_CODE_TO_ERROR_CODE[statusCode] || "INTERNAL_ERROR";
-  return res.status(statusCode).json({
-    success: false,
-    message: error?.message || fallbackMessage,
-    error: { code },
-  });
-}
+// Re-exported so existing `from "./shared"` imports across the public API
+// controllers keep working; the implementation lives in utils/errorResponse.ts
+// so non-/api/v1 surfaces (e.g. the webhook management controller) can use
+// the same structured error envelope without importing from controllers/publicApi.
+export { sendError } from "../../utils/errorResponse";

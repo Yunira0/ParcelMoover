@@ -1,11 +1,23 @@
 import { z } from "zod";
 import { createOrderSchema, PARCEL_STATUSES } from "./order.schema";
 import { createTicketSchema } from "./ticket.schema";
-import { optionalUuidSchema, paginationQuerySchema, uuidSchema } from "./common";
+import { optionalUuidSchema, paginationQuerySchema } from "./common";
 
 // Public partner API (/api/v1) request shapes. Kept separate from the internal
 // order schemas so the public contract can stay stable even if internal
 // endpoints evolve.
+
+// Accepts either a real location UUID or a hub name/code (e.g. "POKHARA" -
+// the same names GET /api/v1/rates lists and the same ones the Excel bulk
+// rate import matches against). Kept permissive at the schema layer since
+// only the database knows which names are real; resolveDestinationRef in
+// delivery-rate.service.ts does the actual strict lookup before the value
+// ever reaches the internal (UUID-only) order-creation service.
+const hubReferenceSchema = z
+  .string()
+  .trim()
+  .min(1, "must not be empty")
+  .max(100, "must not exceed 100 characters");
 
 // vendorId and deliveryCharge are staff-side fields: the vendor is derived
 // from the API key, and vendor delivery charges are always server-quoted.
@@ -18,6 +30,10 @@ export const publicCreateOrderSchema = createOrderSchema
   })
   .extend({
     sender: createOrderSchema.shape.sender.optional(),
+    receiver: createOrderSchema.shape.receiver.extend({
+      locationId: hubReferenceSchema.optional(),
+    }),
+    destinationLocationId: hubReferenceSchema.optional(),
   });
 
 export type PublicCreateOrderInput = z.infer<typeof publicCreateOrderSchema>;
@@ -43,7 +59,7 @@ export type PublicListOrdersQuery = z.infer<typeof publicListOrdersQuerySchema>;
 // ── Rate quote ────────────────────────────────────────────────────────────────
 
 export const publicQuoteQuerySchema = z.object({
-  destinationLocationId: uuidSchema,
+  destinationLocationId: hubReferenceSchema,
   weightKg: z.coerce.number().positive("weightKg must be greater than 0").optional(),
   serviceType: z.enum(["home_delivery", "branch_delivery"]).optional(),
 });

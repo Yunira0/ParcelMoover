@@ -7,6 +7,7 @@ import {
   listOrders,
   updateParcelStatus,
 } from "../../services/order.service";
+import { resolveDestinationRef } from "../../services/delivery-rate.service";
 import { withIdempotency } from "../../services/idempotency.service";
 import { isValidTrackingId } from "../../utils/trackingId";
 import {
@@ -47,6 +48,17 @@ export async function publicCreateOrderController(req: Request, res: Response) {
         ...(profile.address ? { address: profile.address } : {}),
         ...(profile.locationId ? { locationId: profile.locationId } : {}),
       };
+    }
+
+    // destinationLocationId/receiver.locationId accept a hub name ("POKHARA")
+    // as well as a UUID - resolve to a real id here (also before
+    // withIdempotency, same reasoning as sender above) so the internal
+    // (UUID-only) order-creation service never has to know the difference.
+    if (req.body.destinationLocationId) {
+      req.body.destinationLocationId = await resolveDestinationRef(req.body.destinationLocationId);
+    }
+    if (req.body.receiver?.locationId) {
+      req.body.receiver.locationId = await resolveDestinationRef(req.body.receiver.locationId);
     }
 
     const responseBody = await withIdempotency(idempotencyKey, req.body, async () => {

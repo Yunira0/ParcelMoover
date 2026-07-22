@@ -9,6 +9,7 @@ import {
   sendTestWebhookEvent,
   updateWebhookEndpoint,
 } from "../services/webhookEndpoint.service";
+import { sendError } from "../utils/errorResponse";
 
 function actorFrom(req: Request) {
   if (!req.user) return null;
@@ -27,10 +28,7 @@ export async function createWebhookEndpointController(req: Request, res: Respons
       data: result,
     });
   } catch (error: any) {
-    return res.status(error.statusCode || 500).json({
-      success: false,
-      message: error.message || "Failed to create webhook endpoint",
-    });
+    return sendError(res, error, "Failed to create webhook endpoint");
   }
 }
 
@@ -42,10 +40,7 @@ export async function listWebhookEndpointsController(req: Request, res: Response
     const endpoints = await listWebhookEndpoints(actor);
     return res.status(200).json({ success: true, data: endpoints });
   } catch (error: any) {
-    return res.status(error.statusCode || 500).json({
-      success: false,
-      message: error.message || "Failed to load webhook endpoints",
-    });
+    return sendError(res, error, "Failed to load webhook endpoints");
   }
 }
 
@@ -57,10 +52,7 @@ export async function updateWebhookEndpointController(req: Request, res: Respons
     const result = await updateWebhookEndpoint(actor, req.params.id as string, req.body);
     return res.status(200).json({ success: true, data: result });
   } catch (error: any) {
-    return res.status(error.statusCode || 500).json({
-      success: false,
-      message: error.message || "Failed to update webhook endpoint",
-    });
+    return sendError(res, error, "Failed to update webhook endpoint");
   }
 }
 
@@ -72,10 +64,7 @@ export async function deleteWebhookEndpointController(req: Request, res: Respons
     await deleteWebhookEndpoint(actor, req.params.id as string);
     return res.status(200).json({ success: true, message: "Webhook endpoint deleted" });
   } catch (error: any) {
-    return res.status(error.statusCode || 500).json({
-      success: false,
-      message: error.message || "Failed to delete webhook endpoint",
-    });
+    return sendError(res, error, "Failed to delete webhook endpoint");
   }
 }
 
@@ -91,10 +80,7 @@ export async function regenerateWebhookSecretController(req: Request, res: Respo
       data: result,
     });
   } catch (error: any) {
-    return res.status(error.statusCode || 500).json({
-      success: false,
-      message: error.message || "Failed to regenerate secret",
-    });
+    return sendError(res, error, "Failed to regenerate secret");
   }
 }
 
@@ -106,10 +92,7 @@ export async function sendTestWebhookEventController(req: Request, res: Response
     await sendTestWebhookEvent(actor, req.params.id as string);
     return res.status(202).json({ success: true, message: "Test event queued for delivery" });
   } catch (error: any) {
-    return res.status(error.statusCode || 500).json({
-      success: false,
-      message: error.message || "Failed to send test event",
-    });
+    return sendError(res, error, "Failed to send test event");
   }
 }
 
@@ -122,10 +105,7 @@ export async function listWebhookDeliveriesController(req: Request, res: Respons
     const result = await listWebhookDeliveries(actor, req.params.id as string, { page, pageSize });
     return res.status(200).json({ success: true, data: result.data, meta: result.meta });
   } catch (error: any) {
-    return res.status(error.statusCode || 500).json({
-      success: false,
-      message: error.message || "Failed to load deliveries",
-    });
+    return sendError(res, error, "Failed to load deliveries");
   }
 }
 
@@ -137,9 +117,6 @@ export async function retryWebhookDeliveryController(req: Request, res: Response
     await retryWebhookDelivery(actor, req.params.id as string, req.params.deliveryId as string);
     return res.status(200).json({ success: true, message: "Delivery re-queued" });
   } catch (error: any) {
-    return res.status(error.statusCode || 500).json({
-      success: false,
-      message: error.message || "Failed to retry delivery",
-    });
+    return sendError(res, error, "Failed to retry delivery");
   }
 }

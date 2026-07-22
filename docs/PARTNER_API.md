@@ -15,7 +15,7 @@ All requests and responses are JSON (`Content-Type: application/json`).
 
 ## Authentication
 
-Every request must carry an API key. A ParcelMoover vendor account owner generates keys from the dashboard: **Sidebar → Account → API Keys → Generate Key**. The full key (`pm_live_...`) is shown **once** at creation — store it securely.
+Every request must carry an API key. A ParcelMoover vendor account owner generates keys from the dashboard: **Sidebar → Account → Developer → API Keys tab → Generate Key** (webhook endpoints live in the **Webhooks** tab right alongside it). The full key (`pm_live_...`) is shown **once** at creation — store it securely.
 
 Send the key on every request:
 
@@ -75,6 +75,7 @@ Headers: `Authorization`, `Idempotency-Key` (UUID, required), `Content-Type: app
 | `receiver.alternatePhone` | string | — | Same format. |
 | `receiver.email` | string | — | |
 | `receiver.address` | string | — | Max 255 chars. |
+| `receiver.locationId` | UUID or hub name | — | The receiver's destination branch/hub — same value as `destinationLocationId` below. Set both; this is what the ParcelMoover dashboard's own order form does internally too. |
 | `sender` | object | — | Pickup contact. **Omit it and ParcelMoover fills it from your vendor account's registered pickup profile** (business name, phone, pickup landmark). Provide it only to override — e.g. shipping from a different warehouse. Same fields as `receiver` (`name` and `phone` required when provided). |
 | `orderType` | string | — | `delivery` (default), `exchange`, or `return`. |
 | `serviceType` | string | — | `home_delivery` (default) or `branch_delivery`. |
@@ -85,19 +86,34 @@ Headers: `Authorization`, `Idempotency-Key` (UUID, required), `Content-Type: app
 | `deliveryInstruction` | string | — | Max 500 chars. |
 | `pickupAddress` | string | — | Max 255 chars. Overrides the sender address for pickup. |
 | `scheduledPickupAt` | string | — | ISO-8601 datetime with offset, e.g. `2026-07-15T10:00:00+05:45`. |
-| `originLocationId` / `destinationLocationId` | UUID | — | ParcelMoover branch/coverage-area ids. Optional — plain addresses work; ask your ParcelMoover contact for ids if you want precise coverage-area routing. |
+| `originLocationId` | UUID | — | Your pickup hub. Optional — vendors normally have one fixed hub, resolved automatically; only set this if you dispatch from more than one. |
+| `destinationLocationId` | UUID or hub name | — | The destination branch/hub ("To") — see below for how to pick one. Optional (a plain `receiver.address` still works), but setting it gets you precise routing and an accurate rate quote. |
 
 The **delivery charge is computed by ParcelMoover** from your vendor rate agreement — you cannot set it. It appears on the order when you fetch it.
+
+#### Picking a destination (the "To" branch/hub)
+
+`destinationLocationId` (and `receiver.locationId`) accept **either** a location UUID **or** the hub's plain name/code — e.g. `"Kathmandu"` or `"POKHARA"`, matched case-insensitively against the same active hub list `GET /api/v1/rates` returns (the one kept up to date via ParcelMoover's Excel rate import) — so a new integration can skip a lookup call entirely and just send the city/branch name it already has. An unrecognized name is rejected immediately with a clear `DESTINATION_NOT_FOUND` error rather than silently accepted:
+
+```json
+{ "success": false, "message": "Unknown destination hub: \"Notaplace\". See GET /api/v1/rates for valid names.", "error": { "code": "DESTINATION_NOT_FOUND" } }
+```
+
+If you want to show a searchable picker (matching the ParcelMoover dashboard's own order form) or a live shipping-cost estimate before the order is placed, call [`GET /api/v1/rates`](#rates) once to list every valid `destinationName`, and [`GET /api/v1/rates/quote`](#rates) for the price — both also accept the same UUID-or-name value.
 
 #### Example — cURL
 
 ```bash
+# $DESTINATION_ID is a destinationId from GET /api/v1/rates — see "Picking a
+# destination" above. Everything else here matches the dashboard's own form.
 curl -X POST "$BASE/api/v1/orders" \
   -H "Authorization: Bearer $KEY" \
   -H "Idempotency-Key: $(uuidgen)" \
   -H "Content-Type: application/json" \
   -d '{
-    "receiver": { "name": "Ram Sharma", "phone": "9841234567", "address": "Baneshwor, Kathmandu" },
+    "receiver": { "name": "Ram Sharma", "phone": "9841234567", "address": "Baneshwor, Kathmandu", "locationId": "'"$DESTINATION_ID"'" },
+    "destinationLocationId": "'"$DESTINATION_ID"'",
+    "serviceType": "home_delivery",
     "codAmount": 1500,
     "pieces": 1,
     "weightKg": 1.2,
@@ -111,6 +127,9 @@ curl -X POST "$BASE/api/v1/orders" \
 const BASE = process.env.PARCELMOOVER_BASE_URL; // e.g. "https://…/api/v1"
 const KEY  = process.env.PARCELMOOVER_API_KEY;
 
+// destinationId comes from GET /api/v1/rates — see "Picking a destination" above.
+const destinationId = "a350d017-18a6-4610-835c-bc9929a5fb23"; // e.g. POKHARA
+
 const res = await fetch(`${BASE}/orders`, {
   method: "POST",
   headers: {
@@ -119,7 +138,9 @@ const res = await fetch(`${BASE}/orders`, {
     "Content-Type": "application/json",
   },
   body: JSON.stringify({
-    receiver: { name: "Ram Sharma", phone: "9841234567", address: "Baneshwor, Kathmandu" },
+    receiver: { name: "Ram Sharma", phone: "9841234567", address: "Baneshwor, Kathmandu", locationId: destinationId },
+    destinationLocationId: destinationId,
+    serviceType: "home_delivery",
     codAmount: 1500,
     pieces: 1,
     weightKg: 1.2,
@@ -140,6 +161,9 @@ import os, uuid, requests
 BASE = os.environ["PARCELMOOVER_BASE_URL"]  # e.g. "https://…/api/v1"
 KEY  = os.environ["PARCELMOOVER_API_KEY"]
 
+# destination_id comes from GET /api/v1/rates — see "Picking a destination" above.
+destination_id = "a350d017-18a6-4610-835c-bc9929a5fb23"  # e.g. POKHARA
+
 resp = requests.post(
     f"{BASE}/orders",
     headers={
@@ -147,7 +171,9 @@ resp = requests.post(
         "Idempotency-Key": str(uuid.uuid4()),  # persist this to retry safely
     },
     json={
-        "receiver": {"name": "Ram Sharma", "phone": "9841234567", "address": "Baneshwor, Kathmandu"},
+        "receiver": {"name": "Ram Sharma", "phone": "9841234567", "address": "Baneshwor, Kathmandu", "locationId": destination_id},
+        "destinationLocationId": destination_id,
+        "serviceType": "home_delivery",
         "codAmount": 1500,
         "pieces": 1,
         "weightKg": 1.2,
@@ -175,6 +201,8 @@ function uuidv4(): string {
 
 $base = getenv('PARCELMOOVER_BASE_URL'); // e.g. "https://…/api/v1"
 $key  = getenv('PARCELMOOVER_API_KEY');
+// destinationId comes from GET /api/v1/rates — see "Picking a destination" above.
+$destinationId = 'a350d017-18a6-4610-835c-bc9929a5fb23'; // e.g. POKHARA
 
 $ch = curl_init("$base/orders");
 curl_setopt_array($ch, [
@@ -187,7 +215,9 @@ curl_setopt_array($ch, [
         'Content-Type: application/json',
     ],
     CURLOPT_POSTFIELDS => json_encode([
-        'receiver' => ['name' => 'Ram Sharma', 'phone' => '9841234567', 'address' => 'Baneshwor, Kathmandu'],
+        'receiver' => ['name' => 'Ram Sharma', 'phone' => '9841234567', 'address' => 'Baneshwor, Kathmandu', 'locationId' => $destinationId],
+        'destinationLocationId' => $destinationId,
+        'serviceType' => 'home_delivery',
         'codAmount' => 1500,
         'pieces'    => 1,
         'weightKg'  => 1.2,
@@ -509,7 +539,7 @@ Use this to show a shipping cost estimate before checkout, without creating an o
 
 | Query param | Required | Notes |
 |---|---|---|
-| `destinationLocationId` | ✅ | A destination id — get one from `GET /api/v1/rates` above. |
+| `destinationLocationId` | ✅ | A destination id **or** hub name (e.g. `Kathmandu`) — get one from `GET /api/v1/rates` above, or just pass the name directly. |
 | `weightKg` | — | Default `1`. |
 | `serviceType` | — | `home_delivery` (default) or `branch_delivery`. |
 
@@ -683,7 +713,7 @@ An order moves through these `status` values:
 
 ## Webhooks
 
-Register an endpoint at `/developer/webhooks` in your dashboard (or via `POST /api/webhooks`, session-authenticated — this is a dashboard-side call, not part of `/api/v1`) and we'll POST a signed event to it every time one of your orders' status changes.
+Register an endpoint from your dashboard — sidebar **Account → Developer → Webhooks tab** (`/developer/webhooks`), or via `POST /api/webhooks` (session-authenticated — this is a dashboard-side call, not part of `/api/v1`) — and we'll POST a signed event to it every time one of your orders' status changes.
 
 ### Payload
 
