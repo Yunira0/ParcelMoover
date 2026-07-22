@@ -37,9 +37,12 @@ const UnclosedRemarks: React.FC = () => {
   const loadRemarks = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await getRemarks();
+      // Server applies the canonical "unclosed" filter (status != closed,
+      // vendor/rider-raised) - identical for every role and matching the
+      // "Unclosed cmt" badge count, so closed remarks never leak into this list.
+      const res = await getRemarks({ unclosed: true, pageSize: 100 });
       if (res?.success && Array.isArray(res.data)) {
-        setRemarks(res.data.filter((r) => r.status !== 'closed'));
+        setRemarks(res.data);
       }
     } finally {
       setLoading(false);
