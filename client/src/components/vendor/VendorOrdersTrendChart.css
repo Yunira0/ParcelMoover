@@ -11,11 +11,39 @@
   box-sizing: border-box;
 }
 
+.vendor-orders-trend-chart-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
 .vendor-orders-trend-chart .section-title {
   font-size: var(--font-size-lg);
   font-weight: var(--font-weight-bold);
   color: var(--color-text-default);
   margin: 0;
+}
+
+.vendor-orders-trend-chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.vendor-orders-trend-chart-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-caption);
+}
+
+.vendor-orders-trend-chart-legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
 }
 
 .vendor-orders-trend-chart-svg {
@@ -43,6 +71,12 @@
   font-size: 9px;
 }
 
+.vendor-orders-trend-chart-line-total {
+  fill: none;
+  stroke: var(--color-primary);
+  stroke-width: 2;
+}
+
 .vendor-orders-trend-chart-line-delivered {
   fill: none;
   stroke: var(--color-background-success-default);
@@ -55,10 +89,19 @@
   stroke-width: 2;
 }
 
+/* SVG dots are colored via `fill`; the HTML legend swatches reuse the same
+   classes and are colored via `background`. */
+.vendor-orders-trend-chart-dot-total {
+  fill: var(--color-primary);
+  background: var(--color-primary);
+}
+
 .vendor-orders-trend-chart-dot-delivered {
   fill: var(--color-background-success-default);
+  background: var(--color-background-success-default);
 }
 
 .vendor-orders-trend-chart-dot-returned {
   fill: var(--color-danger-default);
+  background: var(--color-danger-default);
 }

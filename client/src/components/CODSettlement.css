@@ -122,6 +122,10 @@
   background-color: var(--color-info-text);
 }
 
+.status-dot.delivery {
+  background-color: var(--color-text-caption);
+}
+
 .status-amount {
   font-weight: var(--font-weight-bold);
   font-size: var(--font-size-md);

@@ -407,6 +407,14 @@ async function createRunSheet(
 async function findOrCreateParty(
   tx: Prisma.TransactionClient,
   partyData: CreateOrderInput["sender"],
+  // Parties are keyed by phone and reused across orders. By default a match is
+  // returned as-is. `refreshExisting` re-syncs the reused record's name/address
+  // to the incoming details - used for the sender, which is the vendor's own
+  // identity: if the vendor's shop details change, their sender should reflect
+  // the current values instead of whatever was first captured. Only provided,
+  // changed fields are written, so an existing email / alternate phone is never
+  // wiped by a sender profile that doesn't carry them.
+  options?: { refreshExisting?: boolean },
 ) {
   const normalizedPhone = partyData.phone.trim().replace(/\s/g, "");
 
@@ -416,6 +424,16 @@ async function findOrCreateParty(
   });
 
   if (existing) {
+    if (options?.refreshExisting) {
+      const nextName = partyData.name.trim();
+      const nextAddress = partyData.address?.trim();
+      const update: Prisma.partiesUpdateInput = {};
+      if (nextName && nextName !== existing.name) update.name = nextName;
+      if (nextAddress && nextAddress !== (existing.address ?? "")) update.address = nextAddress;
+      if (Object.keys(update).length > 0) {
+        return tx.parties.update({ where: { id: existing.id }, data: update });
+      }
+    }
     return existing;
   }
 
@@ -434,7 +452,54 @@ async function createOrderCore(actor: OrderActor, data: CreateOrderInput) {
   return _createOrderImpl(actor, data);
 }
 
+// Same-day duplicate guard for interactive (single) order creation only - bulk
+// imports go through createOrderCore and are intentionally exempt. Flags an
+// order whose vendor already created one today for the same receiver
+// (phone + name + address). Soft guard: throws a DUPLICATE_ORDER 409 the client
+// turns into a "create anyway?" prompt, and is bypassed when the user confirms
+// (data.confirmDuplicate) or when the order isn't attributed to a vendor.
+async function assertNotDuplicateOrder(actor: OrderActor, data: CreateOrderInput) {
+  if (data.confirmDuplicate) return;
+
+  const ownVendorId = await resolveOwnVendorId(actor);
+  const vendorId = ownVendorId ?? data.vendorId ?? null;
+  if (!vendorId) return;
+
+  const receiverPhone = data.receiver.phone.trim().replace(/\s/g, "");
+  const receiverName = data.receiver.name.trim();
+  const receiverAddress = data.receiver.address?.trim() ?? "";
+  if (!receiverPhone || !receiverName) return;
+
+  // Start of today in Nepal local time (parcels.created_at is UTC).
+  const nepalToday = formatDate(new Date());
+  const todayStart = new Date(Date.parse(`${nepalToday}T00:00:00Z`) - NEPAL_UTC_OFFSET_MS);
+
+  const existing = await prisma.parcels.findFirst({
+    where: {
+      vendor_id: vendorId,
+      deleted_at: null,
+      created_at: { gte: todayStart },
+      parties_parcels_receiver_idToparties: {
+        phone: receiverPhone,
+        name: { equals: receiverName, mode: "insensitive" },
+        ...(receiverAddress ? { address: { equals: receiverAddress, mode: "insensitive" } } : {}),
+      },
+    },
+    orderBy: { created_at: "desc" },
+    select: { order_number: true, tracking_id: true },
+  });
+
+  if (existing) {
+    throw new AppError(
+      409,
+      `A similar order for ${receiverName} was already created today (Order #${existing.order_number}, ${existing.tracking_id}).`,
+      "DUPLICATE_ORDER",
+    );
+  }
+}
+
 export async function createOrder(actor: OrderActor, data: CreateOrderInput) {
+  await assertNotDuplicateOrder(actor, data);
   const parcel = await _createOrderImpl(actor, data);
   // Fire-and-forget: Redis latency should never add to the caller's response time.
   invalidateOrderCaches().catch((err) => console.error("[Redis] cache invalidation failed:", err));
@@ -550,7 +615,9 @@ async function _createOrderImpl(actor: OrderActor, data: CreateOrderInput) {
     const trackingId = await generateUniqueTrackingId(tx);
 
     const [sender, receiver] = await Promise.all([
-      findOrCreateParty(tx, data.sender),
+      // Sender is the vendor's own identity - keep it synced with their current
+      // profile so a shop/address change propagates to new orders.
+      findOrCreateParty(tx, data.sender, { refreshExisting: true }),
       findOrCreateParty(tx, data.receiver),
     ]);
 
@@ -1947,16 +2014,13 @@ async function computeDashboardSummary(
     ...(riderId ? { rider_id: riderId } : {}),
   };
 
-  // The COD Settlement card counts only delivered / partially-delivered orders
-  // from the last 30 days (by delivery date). To keep the math honest across
-  // partial deliveries - where the declared cod_amount overstates what was
-  // actually collected - every figure is anchored on collected_amount (the cash
-  // actually in hand), and the settled legs are clamped with LEAST() so a
-  // settlement can never exceed what was collected. Pending is then
-  // collected - settled, so Settled + Pending always equals Total exactly.
-  const COD_WINDOW_DAYS = 30;
-  const codWindowStart = new Date(todayStart);
-  codWindowStart.setDate(codWindowStart.getDate() - COD_WINDOW_DAYS);
+  // The COD Settlement card counts all delivered / partially-delivered orders
+  // (all-time, no date window). To keep the math honest across partial
+  // deliveries - where the declared cod_amount overstates what was actually
+  // collected - every figure is anchored on collected_amount (the cash actually
+  // in hand), and the settled legs are clamped with LEAST() so a settlement can
+  // never exceed what was collected. Pending is then collected - settled, so
+  // Settled + Pending always equals Total exactly.
   const codScopeSql: Prisma.Sql = vendorId
     ? Prisma.sql`AND c.vendor_id = ${vendorId}::uuid`
     : vendorIds
@@ -2106,18 +2170,19 @@ async function computeDashboardSummary(
         settled_to_vendor: string;
         settled_to_rider: string;
         cod_from_rider: string;
+        total_delivery_charge: string;
       }>
     >(Prisma.sql`
       SELECT
         COALESCE(SUM(c.collected_amount), 0) AS total_collected,
         COALESCE(SUM(LEAST(c.remitted_amount, c.collected_amount)), 0) AS settled_to_vendor,
         COALESCE(SUM(LEAST(c.rider_remitted_amount, c.collected_amount)), 0) AS settled_to_rider,
-        COALESCE(SUM(c.collected_amount - LEAST(c.rider_remitted_amount, c.collected_amount)), 0) AS cod_from_rider
+        COALESCE(SUM(c.collected_amount - LEAST(c.rider_remitted_amount, c.collected_amount)), 0) AS cod_from_rider,
+        COALESCE(SUM(p.delivery_charge), 0) AS total_delivery_charge
       FROM cod_collections c
       JOIN parcels p ON p.id = c.parcel_id
       WHERE p.deleted_at IS NULL
         AND p.status::text IN ('delivered', 'partially_delivered')
-        AND p.delivered_at >= ${codWindowStart}
         ${codScopeSql}
     `),
     prisma.cod_collections.count({
@@ -2159,6 +2224,10 @@ async function computeDashboardSummary(
   // Cash riders have collected but not yet remitted to the office - shown on
   // the admin card alongside the settled/pending vendor figures.
   const codFromRider = Number(codRow?.cod_from_rider ?? 0);
+
+  // Total delivery charges (the office's cut) on the same delivered orders the
+  // COD figures above are drawn from - shown as its own line on the COD card.
+  const deliveryCharge = Number(codRow?.total_delivery_charge ?? 0);
 
   const weeklyTrend = trendDayRanges.map(({ start }, index) => {
     const [dayTotalOrders, dayPickedUp, dayDelivered, dayReturned] = trendCounts[index] ?? [0, 0, 0, 0];
@@ -2263,6 +2332,7 @@ async function computeDashboardSummary(
       settledCod,
       pendingCod,
       codFromRider,
+      deliveryCharge,
       pendingCodCount,
       progressPercent: totalCod > 0 ? (settledCod / totalCod) * 100 : 0,
       scopedToRider: Boolean(riderId),
@@ -2316,14 +2386,25 @@ export async function getSenderProfile(actor: OrderActor) {
     throw new AppError(403, "Vendor profile not found or inactive");
   }
 
+  // The sender address is driven by the vendor's selected pickup Location, so
+  // changing the shop's location updates where new orders ship from. The pickup
+  // landmark (a finer detail like "near X chowk") is appended after it, and the
+  // free-text address is only a last-resort fallback when no Location is set.
+  const location = vendor.location_id
+    ? await prisma.locations.findUnique({
+        where: { id: vendor.location_id },
+        select: { name: true, city: true, district: true },
+      })
+    : null;
+  const locationLabel = locationName(location);
+  const address =
+    [locationLabel, vendor.pickup_landmark].filter(Boolean).join(", ") || vendor.address || "";
+
   return {
     id: vendor.id,
     name: vendor.business_name || vendor.client_name,
     phone: vendor.phone,
-    // The vendor's pickup Location (set at vendor creation) is what a rider
-    // actually needs to find the sender - prefer it over the registered/
-    // billing address, which may be a different legal address entirely.
-    address: vendor.pickup_landmark || vendor.address || "",
+    address,
     locationId: vendor.location_id,
   };
 }
