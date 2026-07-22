@@ -75,6 +75,15 @@ const IN_TRANSIT_STATUSES: parcel_status[] = [
   "oov",
 ];
 
+// The "Pending returns" overview card: parcels in the return flow that haven't
+// been handed back yet - flagged for follow up, ready to return, or already
+// sent to the vendor (returned_to_vendor is terminal and excluded).
+const RETURN_PENDING_STATUSES: parcel_status[] = [
+  "follow_up",
+  "ready_to_return",
+  "sent_to_vendor",
+];
+
 // The "Pending deliveries" overview card: parcels that have reached the
 // destination and are in the delivery flow - arrived at destination, ready to
 // deliver, sent out for delivery, or a failed attempt awaiting reattempt.
@@ -265,21 +274,6 @@ async function resolveActiveRider(riderId: string) {
   }
   return rider;
 }
-
-const OPEN_STATUSES: parcel_status[] = [
-  "pickup_ordered",
-  "rider_assigned",
-  "picked_up",
-  "arrived",
-  "ready_to_deliver",
-  "sent_for_delivery",
-  "partially_delivered",
-  "oov",
-  "dispatched",
-  "arrived_at_branch",
-  "hold",
-  "loss_and_damage",
-];
 
 const locationName = (location?: { name: string; city: string | null; district: string | null } | null) => {
   if (!location) return "";
@@ -1790,7 +1784,7 @@ export async function getOrderByTrackingId(actor: OrderActor, trackingId: string
         id: remark.id,
         remark: remark.remark,
         addedBy: maskAuthor ? "Staff" : remark.users?.full_name || "Unknown",
-        createdAt: formatDate(remark.created_at),
+        createdAt: remark.created_at.toISOString(),
         parentRemarkId: remark.parent_remark_id,
         parentAuthor: remark.parent_remark?.users
           ? maskParent
@@ -1960,7 +1954,7 @@ export async function addOrderRemark(
     id: remark.id,
     remark: remark.remark,
     addedBy: remark.users?.full_name || "Unknown",
-    createdAt: formatDate(remark.created_at),
+    createdAt: remark.created_at.toISOString(),
     parentRemarkId: remark.parent_remark_id,
     parentAuthor: remark.parent_remark?.users
       ? maskParent
@@ -2097,7 +2091,7 @@ async function computeDashboardSummary(
     SELECT
       COUNT(*) AS total_orders,
       COUNT(*) FILTER (WHERE status::text = ANY(${PICKUP_PENDING_STATUSES})) AS pending_pickups,
-      COUNT(*) FILTER (WHERE order_type::text = 'return' AND status::text = ANY(${OPEN_STATUSES})) AS pending_returns,
+      COUNT(*) FILTER (WHERE status::text = ANY(${RETURN_PENDING_STATUSES})) AS pending_returns,
       COUNT(*) FILTER (WHERE status::text = ANY(${IN_TRANSIT_STATUSES})) AS in_transit,
       COUNT(*) FILTER (WHERE status::text = ANY(${DELIVERY_PENDING_STATUSES})) AS pending_deliveries,
       COUNT(*) FILTER (WHERE status::text = ANY(ARRAY['delivered','partially_delivered'])) AS total_delivered,
@@ -2108,7 +2102,7 @@ async function computeDashboardSummary(
       COUNT(*) FILTER (WHERE order_type::text = 'return' AND created_at >= ${todayStart}) AS todays_returns,
       COALESCE(SUM(cod_amount), 0) AS total_order_amount,
       COALESCE(SUM(cod_amount) FILTER (WHERE status::text = ANY(${PICKUP_PENDING_STATUSES})), 0) AS pending_pickups_amount,
-      COALESCE(SUM(cod_amount) FILTER (WHERE order_type::text = 'return' AND status::text = ANY(${OPEN_STATUSES})), 0) AS pending_returns_amount,
+      COALESCE(SUM(cod_amount) FILTER (WHERE status::text = ANY(${RETURN_PENDING_STATUSES})), 0) AS pending_returns_amount,
       COALESCE(SUM(cod_amount) FILTER (WHERE status::text = ANY(${IN_TRANSIT_STATUSES})), 0) AS in_transit_amount,
       COALESCE(SUM(cod_amount) FILTER (WHERE status::text = 'delivered'), 0) AS total_delivered_amount,
       COALESCE(SUM(cod_amount) FILTER (WHERE order_type::text = 'return'), 0) AS total_returns_amount
@@ -2452,6 +2446,29 @@ export async function notifyAdmins(
     );
   } catch (error) {
     console.error("[Notifications] Failed to notify admins:", error);
+  }
+}
+
+// Notify the vendor owner of a parcel (fire-and-forget). Resolves the vendor's
+// user_id from the parcel's vendor_id and sends a single notification.
+export async function notifyVendorOfParcel(
+  vendorId: string | null,
+  title: string,
+  body: string | null,
+  trackingId: string | null,
+  type: string,
+  link: string | null,
+) {
+  if (!vendorId) return;
+  try {
+    const vendor = await prisma.vendors.findUnique({
+      where: { id: vendorId },
+      select: { user_id: true },
+    });
+    if (!vendor?.user_id) return;
+    await createNotification(vendor.user_id, title, body, trackingId, type, link);
+  } catch (error) {
+    console.error("[Notifications] Failed to notify vendor:", error);
   }
 }
 
@@ -2830,17 +2847,25 @@ async function _updateParcelStatusImpl(
 
   await invalidateOrderCaches();
 
-  // Status changes (vendor pings, arrival-at-branch and delivery/COD admin
-  // pings) no longer notify - they flooded the feed. Only the auto-raised
-  // return below still notifies, since it's an exceptional, actionable event.
-  if (createdReturn) {
-    notifyAdmins(
-      `Return raised: ${createdReturn.trackingId}`,
-      `Auto-created from exchange order ${parcel.tracking_id}; rider is carrying it back.`,
-      createdReturn.trackingId,
-      "return",
-      `/orders/track/${createdReturn.trackingId}`,
-      actor.id,
+  // Notify the vendor when pickup or delivery fails — these are actionable
+  // events the vendor needs to respond to (re-schedule, contact customer, etc.).
+  if (newStatus === "failed_pickup") {
+    notifyVendorOfParcel(
+      parcel.vendor_id,
+      `Pickup Failed: ${parcel.tracking_id}`,
+      data.remarks || "Pickup attempt failed",
+      parcel.tracking_id,
+      "pickup_failed",
+      `/orders/track/${parcel.tracking_id}`,
+    ).catch(() => {});
+  } else if (newStatus === "failed_delivery") {
+    notifyVendorOfParcel(
+      parcel.vendor_id,
+      `Delivery Failed: ${parcel.tracking_id}`,
+      data.remarks || "Delivery attempt failed",
+      parcel.tracking_id,
+      "delivery_failed",
+      `/orders/track/${parcel.tracking_id}`,
     ).catch(() => {});
   }
 

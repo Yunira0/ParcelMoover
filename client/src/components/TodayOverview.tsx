@@ -26,13 +26,24 @@ const nepalToday = () =>
 const TodayOverview: React.FC<TodayOverviewProps> = ({ today, overview, loading = false }) => {
   const date = nepalToday();
 
+  // Each order row deep-links to the Orders page so a click lands on exactly the
+  // orders behind that number. Two shapes, matching how each figure is counted:
+  //  - Event-of-the-day figures (New orders, Delivered, Returned) are scoped to
+  //    today. "New orders" keys off the created date; Delivered/Returned key off
+  //    the Status Updated date (the delivery/return event), NOT the created date,
+  //    so an order created earlier but delivered today is still included.
+  //  - Snapshot figures (In transit, Pending deliveries, Pending returns) are
+  //    all-time pipeline counts, so they carry no date filter - only the status.
+  const createdToday = `dateFrom=${date}&dateTo=${date}`;
+  const updatedToday = `dateField=lastUpdatedAt&dateFrom=${date}&dateTo=${date}`;
+
   const rows: ActivityRow[] = [
-    { icon: ClipboardList, label: 'New orders', value: today.totalOrders, to: `/orders?dateFrom=${date}&dateTo=${date}` },
-    { icon: Check, label: 'Delivered', value: today.delivered, to: '/orders?tab=delivered', color: 'var(--color-success-default)' },
-    { icon: Truck, label: 'In transit', value: today.inTransit, to: '/orders?tab=inprogress', color: 'var(--color-info-text)' },
-    { icon: Package, label: 'Pending deliveries', value: overview.pendingDeliveries, to: '/orders?tab=inprogress&currentStatus=ready_to_deliver&currentStatus=sent_for_delivery&currentStatus=oov', color: 'var(--color-background-warning-default)' },
-    { icon: RotateCcw, label: 'Returned', value: today.returnedToVendor, to: '/orders?currentStatus=returned_to_vendor', color: 'var(--color-danger-default)' },
-    { icon: Undo2, label: 'Pending returns', value: overview.pendingReturns, to: '/return', color: 'var(--color-background-warning-default)' },
+    { icon: ClipboardList, label: 'New orders', value: today.totalOrders, to: `/orders?${createdToday}` },
+    { icon: Check, label: 'Delivered', value: today.delivered, to: `/orders?${updatedToday}&currentStatus=delivered&currentStatus=partially_delivered`, color: 'var(--color-success-default)' },
+    { icon: Truck, label: 'In transit', value: today.inTransit, to: '/orders?currentStatus=dispatched&currentStatus=oov', color: 'var(--color-info-text)' },
+    { icon: Package, label: 'Pending deliveries', value: overview.pendingDeliveries, to: '/orders?currentStatus=arrived_at_branch&currentStatus=ready_to_deliver&currentStatus=sent_for_delivery&currentStatus=failed_delivery', color: 'var(--color-background-warning-default)' },
+    { icon: RotateCcw, label: 'Returned', value: today.returnedToVendor, to: `/orders?${updatedToday}&currentStatus=returned_to_vendor`, color: 'var(--color-danger-default)' },
+    { icon: Undo2, label: 'Pending returns', value: overview.pendingReturns, to: '/orders?currentStatus=follow_up&currentStatus=ready_to_return&currentStatus=sent_to_vendor', color: 'var(--color-background-warning-default)' },
     { icon: MessageSquare, label: 'Unclosed remarks', value: today.unclosedComments, to: '/unclosed-remarks', color: 'var(--color-primary)' },
   ];
 
