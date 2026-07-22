@@ -45,6 +45,8 @@ function makeMockTx() {
     parcel_status_history: { create: vi.fn(), createMany: vi.fn() },
     parcel_remarks: { create: vi.fn(), createMany: vi.fn() },
     audit_logs: { create: vi.fn(), createMany: vi.fn() },
+    webhook_endpoints: { findMany: vi.fn().mockResolvedValue([]) },
+    webhook_deliveries: { createMany: vi.fn() },
   };
 }
 
