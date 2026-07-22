@@ -26,11 +26,13 @@ function buildStatementHtml(detail: SettlementDetail): string {
             ${item.deliveredAt ? `<div class="sub">${toBsDateTime(item.deliveredAt)}</div>` : ''}
             ${item.orderType ? `<div class="sub">${item.orderType}</div>` : ''}
           </td>
-          <td>${item.receiverName}<div class="sub">${item.receiverPhone}</div><div class="sub">${item.destination}</div></td>
+          <td>${item.receiverName}<div class="sub">${item.destination}</div></td>
+          <td>${item.receiverPhone}</td>
           <td class="r">${item.weightKg === null ? '-' : item.weightKg.toFixed(2)}</td>
           <td class="r">${money(item.codAmount)}</td>
           <td class="r">${money(item.collectedAmount)}</td>
           <td class="r">${money(item.deliveryCharge)}</td>
+          <td class="r">${money(item.settledAmount)}</td>
         </tr>`,
     )
     .join('');
@@ -78,9 +80,10 @@ function buildStatementHtml(detail: SettlementDetail): string {
     </div>
     <table>
       <thead><tr>
-        <th>SN</th><th>Order ID</th><th>Transaction ID</th><th>Receiver</th>
+        <th>SN</th><th>Order ID</th><th>Transaction ID</th><th>Receiver</th><th>Number</th>
         <th class="r">Weight</th><th class="r">COD</th>
         <th class="r">Collected COD</th><th class="r">Delivery Charges</th>
+        <th class="r">Net Payable</th>
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>
@@ -273,10 +276,12 @@ const SettlementDetailPage: React.FC = () => {
                     <th>Order ID</th>
                     <th>Transaction ID</th>
                     <th>Receiver</th>
+                    <th>Number</th>
                     <th style={{ textAlign: 'right' }}>Weight</th>
                     <th style={{ textAlign: 'right' }}>COD</th>
                     <th style={{ textAlign: 'right' }}>Collected COD</th>
                     <th style={{ textAlign: 'right' }}>Delivery Charges</th>
+                    <th style={{ textAlign: 'right' }}>Net Payable</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -293,15 +298,16 @@ const SettlementDetailPage: React.FC = () => {
                       </td>
                       <td>
                         {item.receiverName}
-                        <div className="vendor-finance-subtext">{item.receiverPhone}</div>
                         <div className="vendor-finance-subtext">{item.destination}</div>
                       </td>
+                      <td>{item.receiverPhone}</td>
                       <td style={{ textAlign: 'right' }}>
                         {item.weightKg === null ? '-' : item.weightKg.toFixed(2)}
                       </td>
                       <td style={{ textAlign: 'right' }}>{money(item.codAmount)}</td>
                       <td style={{ textAlign: 'right' }}>{money(item.collectedAmount)}</td>
                       <td style={{ textAlign: 'right' }}>{money(item.deliveryCharge)}</td>
+                      <td style={{ textAlign: 'right' }}>{money(item.settledAmount)}</td>
                     </tr>
                   ))}
                 </tbody>

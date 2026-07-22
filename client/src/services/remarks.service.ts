@@ -25,7 +25,8 @@ export interface Remark {
 
 export interface ListRemarksParams {
   status?: RemarkStatus;
-  /** Server-side filter: workflow_status != 'closed', root remarks only. */
+  /** Server-side "unclosed comments" filter: workflow_status != closed, limited
+   *  to vendor/rider-raised remarks. Matches getUnclosedRemarksCount exactly. */
   unclosed?: boolean;
   search?: string;
   fromDate?: string;

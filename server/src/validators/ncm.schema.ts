@@ -11,3 +11,9 @@ export const ncmHandoffSchema = z.object({
 export const ncmWebhookRegisterSchema = z.object({
   publicBaseUrl: z.string().trim().url("publicBaseUrl must be an absolute URL"),
 });
+
+// NCM's own ticket message cap is 500 chars; matched here since the return
+// comment is stored as an NCM comment the same way.
+export const ncmReturnSchema = z.object({
+  comment: z.string().trim().min(1, "A reason is required").max(500),
+});

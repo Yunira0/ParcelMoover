@@ -8,6 +8,7 @@ import { getLocations, getVendors } from '../services/users.service';
 import { getVendorQuote } from '../services/pricing.service';
 import { createOrder, updateOrder, getSenderProfile, type CreateOrderInput, type UpdateOrderInput, type OrderType, type ServiceType } from '../services/orders.service';
 import { isVendorSide } from '../utils/auth';
+import '../components/Modal.css';
 import './CreateOrderPage.css';
 
 interface VendorOption {
@@ -117,6 +118,8 @@ const CreateOrderPage: React.FC = () => {
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<keyof FormState, string>>>({});
   const [generalError, setGeneralError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
+  // Set when the server flags a same-day duplicate; drives the "create anyway?" popup.
+  const [duplicatePrompt, setDuplicatePrompt] = useState<{ message: string; payload: CreateOrderInput } | null>(null);
 
   const [quote, setQuote] = useState<{ weightSurcharge: number; baseCharge: number; totalPayable: number } | null>(null);
   const [quoteError, setQuoteError] = useState('');
@@ -293,6 +296,50 @@ const CreateOrderPage: React.FC = () => {
     setSuccessMessage('');
   };
 
+  const applyServerErrors = (data: any) => {
+    if (data?.errors?.length) {
+      const mapped: Partial<Record<keyof FormState, string>> = {};
+      const unmapped: string[] = [];
+      for (const e of data.errors as { field: string; message: string }[]) {
+        const key = SERVER_FIELD_MAP[e.field];
+        if (key) {
+          mapped[key] = e.message;
+        } else {
+          unmapped.push(e.message);
+        }
+      }
+      setFieldErrors(mapped);
+      if (unmapped.length > 0) setGeneralError(unmapped[0]);
+    } else {
+      setGeneralError(data?.message || 'Failed to create order. Please try again.');
+    }
+  };
+
+  // Actually creates the order. A same-day duplicate comes back as a
+  // DUPLICATE_ORDER 409 - we surface the "create anyway?" popup instead of an
+  // error and keep the form intact so confirming just resends with the flag.
+  const performCreate = async (payload: CreateOrderInput) => {
+    setSubmitting(true);
+    try {
+      const res = await createOrder(payload);
+      resetForm();
+      setDuplicatePrompt(null);
+      setSuccessMessage(`Order #${res.data.orderNumber} (${res.data.trackingId}) created successfully. You can create another order below.`);
+    } catch (err: any) {
+      const data = err.response?.data;
+      if (data?.code === 'DUPLICATE_ORDER' && !payload.confirmDuplicate) {
+        setDuplicatePrompt({
+          message: data.message || 'A similar order was already created for this customer today.',
+          payload,
+        });
+        return;
+      }
+      applyServerErrors(data);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setGeneralError('');
@@ -380,9 +427,9 @@ const CreateOrderPage: React.FC = () => {
       pickupAddress: selectedVendor?.address || undefined,
     };
 
-    setSubmitting(true);
-    try {
-      if (isEditMode && editOrderId) {
+    if (isEditMode && editOrderId) {
+      setSubmitting(true);
+      try {
         const editPayload: UpdateOrderInput = {
           receiver: payload.receiver,
           // Empty means "leave the route as it is", not "clear it".
@@ -397,32 +444,15 @@ const CreateOrderPage: React.FC = () => {
         };
         const res = await updateOrder(editOrderId, editPayload);
         navigate('/orders', { state: { notice: `Order ${res.data.trackingId} updated.` } });
-        return;
+      } catch (err: any) {
+        applyServerErrors(err.response?.data);
+      } finally {
+        setSubmitting(false);
       }
-      const res = await createOrder(payload);
-      resetForm();
-      setSuccessMessage(`Order #${res.data.orderNumber} (${res.data.trackingId}) created successfully. You can create another order below.`);
-    } catch (err: any) {
-      const data = err.response?.data;
-      if (data?.errors?.length) {
-        const mapped: Partial<Record<keyof FormState, string>> = {};
-        const unmapped: string[] = [];
-        for (const e of data.errors as { field: string; message: string }[]) {
-          const key = SERVER_FIELD_MAP[e.field];
-          if (key) {
-            mapped[key] = e.message;
-          } else {
-            unmapped.push(e.message);
-          }
-        }
-        setFieldErrors(mapped);
-        if (unmapped.length > 0) setGeneralError(unmapped[0]);
-      } else {
-        setGeneralError(data?.message || 'Failed to create order. Please try again.');
-      }
-    } finally {
-      setSubmitting(false);
+      return;
     }
+
+    await performCreate(payload);
   };
 
   // Destinations are top-level locations; covered areas (children with a
@@ -699,6 +729,38 @@ const CreateOrderPage: React.FC = () => {
           </div>
         </div>
       </form>
+
+      {duplicatePrompt && (
+        <div className="modal-overlay">
+          <div className="modal-content" style={{ maxWidth: '440px' }}>
+            <div className="modal-header">
+              <h2>Possible duplicate order</h2>
+            </div>
+            <p style={{ margin: '0 0 8px', fontSize: '14px' }}>{duplicatePrompt.message}</p>
+            <p style={{ margin: '0 0 16px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>
+              Do you still want to create this order?
+            </p>
+            <div className="modal-footer">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setDuplicatePrompt(null)}
+                disabled={submitting}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                variant="primary"
+                onClick={() => performCreate({ ...duplicatePrompt.payload, confirmDuplicate: true })}
+                disabled={submitting}
+              >
+                {submitting ? 'Creating...' : 'Create anyway'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

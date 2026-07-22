@@ -56,6 +56,8 @@ export interface CreateOrderInput {
   pickupAddress?: string;
   scheduledPickupAt?: string;
   vendorId?: string;
+  /** Set true to bypass the same-day duplicate warning after the user confirms. */
+  confirmDuplicate?: boolean;
 }
 
 export interface Order {
@@ -220,6 +222,8 @@ export interface DashboardSummary {
     codFromRider: number;
     /** Delivery charge owed on orders whose COD hasn't been settled yet. */
     pendingDeliveryCharge: number;
+    /** Total delivery charges (office cut) on the delivered orders in the COD window. */
+    deliveryCharge: number;
     progressPercent: number;
     scopedToRider: boolean;
     /** Net amount actually paid to the vendor in the last settlement (COD minus delivery charge). */

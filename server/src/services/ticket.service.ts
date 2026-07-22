@@ -162,11 +162,25 @@ async function scopeWhere(actor: Actor, extra: Record<string, unknown> = {}) {
   if (isStaff(actor)) return extra;
 
   if (actor.roles.includes("sales")) {
+    // Tickets are linked to their creator (created_by), not to a parcel - the
+    // create path never sets parcel_id. So a parcels.vendor_id filter matched
+    // nothing and sales saw no tickets. Scope instead to tickets raised by any
+    // owner or staff account of the vendors this sales rep owns.
     const owned = await prisma.vendors.findMany({
       where: { sales_user_id: actor.id, deleted_at: null },
-      select: { id: true },
+      select: { id: true, user_id: true },
     });
-    return { ...extra, parcels: { vendor_id: { in: owned.map((v) => v.id) } } };
+    const creatorIds = owned
+      .map((v) => v.user_id)
+      .filter((id): id is string => !!id);
+    if (owned.length > 0) {
+      const staff = await prisma.vendor_staff.findMany({
+        where: { vendor_id: { in: owned.map((v) => v.id) }, deleted_at: null },
+        select: { user_id: true },
+      });
+      for (const s of staff) if (s.user_id) creatorIds.push(s.user_id);
+    }
+    return { ...extra, created_by: { in: creatorIds } };
   }
 
   return { ...extra, created_by: actor.id };
@@ -205,19 +219,47 @@ export async function createTicket(actor: Actor, input: CreateTicketInput) {
     );
   }
 
-  // Event-driven fan-out: a vendor-raised Pickup/Delivery/COD Settlement
-  // ticket immediately notifies every admin, badging the matching module
-  // (Pickup Operations / Local Dispatch / COD Management) in real time.
+  // Event-driven fan-out: every vendor-raised ticket notifies all admins.
+  // Mapped categories (Pickup/Delivery/COD/L&D) use a category-specific
+  // notification type so per-module badge buttons keep working; unmapped
+  // categories fall back to a generic "ticket" type.
   const isVendorActor = actor.roles.includes("vendor") || actor.roles.includes("vendor_staff");
-  const target = ticket.category ? TICKET_CATEGORY_NOTIFICATIONS[ticket.category] : undefined;
-  if (isVendorActor && target) {
+  if (isVendorActor) {
+    const target = ticket.category ? TICKET_CATEGORY_NOTIFICATIONS[ticket.category] : undefined;
+    const notifType = target?.type ?? "ticket";
+    const notifLabel = target?.label ?? ticket.category ?? "General";
     await notifyAdmins(
-      `New ${target.label} ticket: ${ticket.ticket_no}`,
+      `New ${notifLabel} Ticket: ${ticket.ticket_no}`,
       ticket.subject,
       ticket.id,
-      target.type,
+      notifType,
       `/tickets/${ticket.id}`,
     );
+  }
+
+  // When an admin/staff creates a ticket linked to a parcel, notify the
+  // vendor who owns that parcel so they can respond promptly.
+  if (isStaff(actor) && input.parcelId) {
+    const parcel = await prisma.parcels.findUnique({
+      where: { id: input.parcelId },
+      select: { vendor_id: true },
+    });
+    if (parcel?.vendor_id) {
+      const parcelVendor = await prisma.vendors.findUnique({
+        where: { id: parcel.vendor_id },
+        select: { user_id: true },
+      });
+      if (parcelVendor?.user_id && parcelVendor.user_id !== actor.id) {
+        await createNotification(
+          parcelVendor.user_id,
+          `New Ticket: ${ticket.ticket_no}`,
+          ticket.subject,
+          ticket.id,
+          "ticket",
+          `/tickets/${ticket.id}`,
+        );
+      }
+    }
   }
 
   const vendor = await resolveTicketVendor(ticket.created_by);
@@ -393,6 +435,40 @@ export async function addTicketReply(actor: Actor, id: string, message: string) 
     }),
   ]);
 
+  // Notify admins when a vendor or rider adds a remark to an existing ticket.
+  // Staff (admin/super_admin) replies do not trigger notifications.
+  const isVendorActor = actor.roles.includes("vendor") || actor.roles.includes("vendor_staff");
+  const isRiderActor = actor.roles.includes("rider");
+  if (isVendorActor || isRiderActor) {
+    const actorLabel = isRiderActor ? "Rider" : "Vendor";
+    const snippet = message.trim().length > 200 ? `${message.trim().slice(0, 200)}…` : message.trim();
+    await notifyAdmins(
+      `${actorLabel} Added a Remark: ${ticket.ticket_no}`,
+      snippet,
+      ticket.id,
+      "ticket_reply",
+      `/tickets/${ticket.id}`,
+    );
+  }
+
+  // Notify the ticket creator when an admin or rider adds a reply.
+  // Vendor/staff replies already notify admins above; this covers the reverse.
+  if (isStaff(actor) || isRiderActor) {
+    const creatorId = ticket.created_by;
+    if (creatorId && creatorId !== actor.id) {
+      const snippet = message.trim().length > 200 ? `${message.trim().slice(0, 200)}…` : message.trim();
+      const actorLabel = isRiderActor ? "Rider" : "Admin";
+      await createNotification(
+        creatorId,
+        `${actorLabel} Added a Remark: ${ticket.ticket_no}`,
+        snippet,
+        ticket.id,
+        "ticket_reply",
+        `/tickets/${ticket.id}`,
+      );
+    }
+  }
+
   // Access was already verified above and only `status` changed by this
   // call - reuse the fetched ticket instead of re-querying it.
   return buildTicketDetail({ ...ticket, status: newStatus });
@@ -402,7 +478,7 @@ export async function setTicketStatus(actor: Actor, id: string, status: TicketSt
   if (!WORKFLOW_STATUSES.includes(status)) {
     throw new AppError(400, "Invalid ticket status");
   }
-  await findAccessibleTicket(actor, id);
+  const existing = await findAccessibleTicket(actor, id);
 
   const ticket = await prisma.support_tickets.update({
     where: { id },
@@ -413,6 +489,26 @@ export async function setTicketStatus(actor: Actor, id: string, status: TicketSt
     },
     include: TICKET_INCLUDE,
   });
+
+  // Notify the ticket creator when the status changes (unless they changed it
+  // themselves). Status labels map to human-readable text for the notification.
+  const STATUS_LABELS: Record<string, string> = {
+    pending: "Pending",
+    open: "Opened",
+    closed: "Resolved",
+  };
+  const creatorId = existing.created_by;
+  if (creatorId && creatorId !== actor.id && existing.status !== status) {
+    const label = STATUS_LABELS[status] || status;
+    await createNotification(
+      creatorId,
+      `Ticket ${label}: ${ticket.ticket_no}`,
+      ticket.subject || `Status changed to ${label}`,
+      ticket.id,
+      "ticket_status",
+      `/tickets/${ticket.id}`,
+    ).catch(() => {});
+  }
 
   const vendor = await resolveTicketVendor(ticket.created_by);
   return mapTicket(ticket, vendor?.name);

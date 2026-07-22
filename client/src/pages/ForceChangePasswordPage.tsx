@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Eye, EyeOff, KeyRound, ShieldAlert } from 'lucide-react';
+import { Eye, EyeOff, KeyRound, LogOut, ShieldAlert } from 'lucide-react';
 import Button from '../components/Button';
-import { changePassword } from '../services/auth.service';
+import { changePassword, logout } from '../services/auth.service';
 import { getCurrentUser } from '../utils/auth';
 import './ForceChangePasswordPage.css';
 
@@ -52,7 +52,22 @@ const ForceChangePasswordPage: React.FC = () => {
   const [next, setNext] = useState('');
   const [confirm, setConfirm] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
   const [error, setError] = useState('');
+
+  // Lets someone bail out of this step to sign in with a different account -
+  // the temporary-password login is otherwise a dead end until completed.
+  const handleLogout = async () => {
+    setLoggingOut(true);
+    try {
+      await logout();
+    } catch {
+      // ignore - fall through to local cleanup regardless
+    } finally {
+      localStorage.removeItem('user');
+      navigate('/login', { replace: true });
+    }
+  };
 
   const validate = (): string | null => {
     if (!current) return 'Current password is required.';
@@ -136,6 +151,16 @@ const ForceChangePasswordPage: React.FC = () => {
           <Button type="submit" variant="primary" fullWidth disabled={submitting}>
             {submitting ? 'Saving…' : 'Set Password & Continue'}
           </Button>
+
+          <button
+            type="button"
+            className="fcp-logout"
+            onClick={handleLogout}
+            disabled={submitting || loggingOut}
+          >
+            <LogOut size={15} />
+            {loggingOut ? 'Logging out…' : 'Log out and use another account'}
+          </button>
         </form>
       </div>
     </div>

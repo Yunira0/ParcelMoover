@@ -5,6 +5,7 @@ import {
   getNcmInfoForParcel,
   handoffParcelsToNcm,
   listNcmBranches,
+  markNcmOrderForReturn,
   processNcmWebhook,
   reconcileNcmStatuses,
   registerNcmWebhook,
@@ -56,6 +57,22 @@ export async function getNcmParcelInfoController(req: Request, res: Response) {
     return res.status(error.statusCode || 500).json({
       success: false,
       message: error.message || "Failed to load NCM info",
+    });
+  }
+}
+
+export async function markNcmReturnController(req: Request, res: Response) {
+  try {
+    await markNcmOrderForReturn(
+      { id: req.user!.id, roles: req.user!.roles ?? [] },
+      req.params.parcelId as string,
+      req.body.comment,
+    );
+    return res.status(200).json({ success: true, message: "Parcel marked for return via NCM" });
+  } catch (error: any) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to mark parcel for NCM return",
     });
   }
 }

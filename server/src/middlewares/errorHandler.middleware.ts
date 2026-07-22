@@ -52,6 +52,8 @@ export function errorHandler(
     res.status(err.statusCode).json({
       success: false,
       message: err.message,
+      // Machine-readable code (e.g. "DUPLICATE_ORDER") clients can branch on.
+      ...(err.code ? { code: err.code } : {}),
     });
     return;
   }

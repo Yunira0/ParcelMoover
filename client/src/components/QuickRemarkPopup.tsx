@@ -2,7 +2,7 @@
 import { MessageSquare, RefreshCw, Send } from 'lucide-react';
 import Button from './Button';
 import { getOrderByTrackingId, addOrderRemark, type OrderRemark } from '../services/orders.service';
-import { toBsDate } from '../utils/nepaliDate';
+import { toBsDate, toBsDateLabel, toNptTime } from '../utils/nepaliDate';
 import './QuickRemarkPopup.css';
 
 interface QuickRemarkPopupProps {
@@ -22,20 +22,13 @@ const getAvatarColor = (name: string) => {
   return '#64748b';
 };
 
-const formatRelativeTime = (dateStr: string) => {
-  const date = new Date(dateStr);
-  if (Number.isNaN(date.getTime())) return dateStr;
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffMins = Math.floor(diffMs / 60000);
-  const diffHours = Math.floor(diffMins / 60);
-  const diffDays = Math.floor(diffHours / 24);
-  if (diffMins < 1) return 'just now';
-  if (diffMins < 60) return `${diffMins}m ago`;
-  if (diffHours < 24) return `${diffHours}h ago`;
-  if (diffDays < 7) return `${diffDays}d ago`;
-  return toBsDate(date);
-};
+function formatTime(dateStr: string): string {
+  if (!dateStr) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+    return toBsDate(dateStr);
+  }
+  return `${toBsDateLabel(dateStr)}, ${toNptTime(dateStr)}`;
+}
 
 const buildTree = (remarks: OrderRemark[]) => {
   const nodeMap: Record<string, any> = {};
@@ -174,7 +167,7 @@ const QuickRemarkPopup: React.FC<QuickRemarkPopupProps> = ({ orderId, trackingId
           <div className="qr-remark-body">
             <div className="qr-remark-meta">
               <span className="qr-remark-author">{node.addedBy}</span>
-              <span className="qr-remark-time">{formatRelativeTime(node.createdAt)}</span>
+              <span className="qr-remark-time">{formatTime(node.createdAt)}</span>
             </div>
             <div className={`qr-remark-bubble ${depth > 0 ? 'qr-remark-bubble-reply' : ''}`}>
               <p>{node.remark}</p>

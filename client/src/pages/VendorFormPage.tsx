@@ -31,6 +31,7 @@ interface VendorFormInput {
   ownerName: string;
   ownerEmail: string;
   ownerContact: string;
+  joinedAt: string;
   sales: string;
   salesUserId: string;
   rateType: string;
@@ -73,6 +74,7 @@ const emptyForm: VendorFormInput = {
   ownerName: '',
   ownerEmail: '',
   ownerContact: '',
+  joinedAt: '',
   sales: '',
   salesUserId: '',
   rateType: 'flat',
@@ -286,6 +288,7 @@ const VendorFormPage: React.FC = () => {
           email: s(d.email),
           ownerContact: s(d.phone),
           businessContact: s(d.phone),
+          joinedAt: s(d.joinedAt),
           pickupLocation: s(d.locationId),
           registeredAddress: s(d.address),
           sales: s(d.sales),
@@ -345,6 +348,7 @@ const VendorFormPage: React.FC = () => {
     else if (!isValidEmail(form.ownerEmail)) errors.ownerEmail = 'Enter a valid email address';
     if (!form.ownerContact.trim()) errors.ownerContact = 'Contact number is required';
     else if (!isValidPhone(form.ownerContact)) errors.ownerContact = 'Enter a 10–15 digit phone number';
+    if (!form.joinedAt.trim()) errors.joinedAt = 'Joined date is required';
     if (!form.registeredAddress.trim()) errors.registeredAddress = 'Address is required';
     // Documents and password are only required when creating a new vendor.
     if (!isEdit) {
@@ -380,6 +384,7 @@ const VendorFormPage: React.FC = () => {
           email: form.ownerEmail,
           clientName: form.ownerName,
           businessName: form.onlineBusinessName,
+          joinedAt: form.joinedAt || undefined,
           locationId: form.pickupLocation,
           address: form.registeredAddress,
           sales: form.sales,
@@ -419,6 +424,7 @@ const VendorFormPage: React.FC = () => {
         phone: normalizePhone(form.ownerContact),
         clientName: form.ownerName,
         businessName: form.onlineBusinessName,
+        joinedAt: form.joinedAt || undefined,
         locationId: form.pickupLocation,
         address: form.registeredAddress,
         sales: form.sales,
@@ -659,6 +665,16 @@ const VendorFormPage: React.FC = () => {
                 />
                 {fieldErrors.ownerContact && (
                   <span className="vfp-field-error">{fieldErrors.ownerContact}</span>
+                )}
+                <FormField
+                  label="Joined Date"
+                  required
+                  type="date"
+                  value={form.joinedAt}
+                  onChange={set('joinedAt')}
+                />
+                {fieldErrors.joinedAt && (
+                  <span className="vfp-field-error">{fieldErrors.joinedAt}</span>
                 )}
               </div>
             </section>

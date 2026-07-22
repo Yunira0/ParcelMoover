@@ -4,7 +4,12 @@ import prisma from "../lib/prisma";
 import redis from "../lib/redis";
 import { ncmFetch, isNcmConfigured } from "../lib/ncmClient";
 import { AppError } from "../utils/AppError";
-import { applyExternalCarrierStatus, invalidateOrderCaches } from "./order.service";
+import {
+  applyExternalCarrierFollowUp,
+  applyExternalCarrierStatus,
+  invalidateOrderCaches,
+  updateParcelStatus,
+} from "./order.service";
 
 /**
  * NCM (Nepal Can Move) — the 3PL that carries our outside-valley leg.
@@ -68,8 +73,9 @@ export type NcmDeliveryType = (typeof NCM_DELIVERY_TYPES)[number];
 // immediately rather than waiting on NCM's pickup webhook) - so "Pickup
 // Complete"/"Dispatched" below are effectively no-ops, caught by the monotonic
 // check in applyExternalCarrierStatus. Pre-pickup statuses ("Pickup Order
-// Created", "Sent for Pickup") and return-flow statuses ("Sent to Vendor")
-// don't map to an automatic transition.
+// Created", "Sent for Pickup") don't map to an automatic transition. "Sent to
+// Vendor" (NCM returning the order to us) is handled separately in
+// reconcileNcmStatuses via applyExternalCarrierFollowUp, not through this map.
 const NCM_STATUS_TO_PARCEL_STATUS: Record<string, parcel_status> = {
   "Pickup Complete": "dispatched",
   Dispatched: "dispatched",
@@ -538,9 +544,20 @@ export async function reconcileNcmStatuses(): Promise<{ checked: number; applied
 
     for (const [orderId, ncmStatus] of Object.entries(response.result ?? {})) {
       const parcelId = orderToParcel.get(orderId);
-      const targetStatus = NCM_STATUS_TO_PARCEL_STATUS[ncmStatus];
-      if (!parcelId || !targetStatus) continue;
+      if (!parcelId) continue;
+
       try {
+        // "Sent to Vendor" is NCM returning the order to *us*, not to the
+        // client vendor - that's our follow_up stage, not a further step
+        // along the carrier-leg sequence, so it's applied separately.
+        if (ncmStatus === "Sent to Vendor") {
+          const result = await applyExternalCarrierFollowUp(parcelId, `NCM: ${ncmStatus} (reconciled)`);
+          if (result.applied) applied += 1;
+          continue;
+        }
+
+        const targetStatus = NCM_STATUS_TO_PARCEL_STATUS[ncmStatus];
+        if (!targetStatus) continue;
         const result = await applyCarrierStatusWithRetry(parcelId, targetStatus, `NCM: ${ncmStatus} (reconciled)`);
         if (result.applied) applied += 1;
       } catch (error) {
@@ -805,6 +822,46 @@ export async function getNcmInfoForParcel(parcelId: string): Promise<NcmParcelIn
     console.error(`[NCM] order detail lookup failed for ${ncmOrderId}:`, error);
     return { handedOff: true, ncmOrderId };
   }
+}
+
+// ── Return to vendor (NCM couldn't deliver) ──────────────────────────────────
+
+/**
+ * Ops-initiated: NCM has no automatic failed-delivery signal (only a plain
+ * comment, e.g. "Phone Not Received Multiple Times"), so a human decides when
+ * to give up and return the order. Calls NCM's vendor-initiated return
+ * endpoint, then moves our side into follow_up - NCM's "Sent to Vendor" means
+ * the parcel is coming back to *us*, not to the client vendor, so from here
+ * ops runs the normal Return-to-Origin ladder with a real internal rider.
+ */
+export async function markNcmOrderForReturn(
+  actor: HandoffActor,
+  parcelId: string,
+  comment: string,
+): Promise<void> {
+  const ncmOrderId = await findNcmOrderIdForParcel(parcelId);
+  if (!ncmOrderId) {
+    throw new AppError(404, "This parcel was never handed off to NCM");
+  }
+
+  await ncmFetch("/api/v2/vendor/order/return", {
+    method: "POST",
+    body: { pk: ncmOrderId, comment },
+    retryOnce: false,
+  });
+
+  await prisma.parcel_remarks.create({
+    data: {
+      parcel_id: parcelId,
+      user_id: actor.id,
+      remark: `[NCM] Marked for return — order #${ncmOrderId}: ${comment}`,
+    },
+  });
+
+  await updateParcelStatus(actor, parcelId, {
+    status: "follow_up",
+    remarks: `NCM: marked for return — ${comment}`,
+  });
 }
 
 // ── Webhook registration ─────────────────────────────────────────────────────

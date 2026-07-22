@@ -59,22 +59,41 @@ type OrderActor = {
 
 const MAX_TRACKING_ID_RETRIES = 5;
 
-const PICKUP_PENDING_STATUSES: parcel_status[] = ["pickup_ordered", "rider_assigned"];
-
-const IN_TRANSIT_STATUSES: parcel_status[] = [
+// The "Pending pickups" overview card: parcels awaiting pickup or in the
+// pickup/origin phase before they are dispatched onward (picked up at origin,
+// arrived at the origin branch).
+const PICKUP_PENDING_STATUSES: parcel_status[] = [
+  "pickup_ordered",
+  "rider_assigned",
   "picked_up",
   "arrived",
+];
+
+// The "In transit" overview card: parcels dispatched and moving between
+// branches (dispatched) or out on the OOV leg (oov).
+const IN_TRANSIT_STATUSES: parcel_status[] = [
   "dispatched",
-  "arrived_at_branch",
-  "ready_to_deliver",
-  "sent_for_delivery",
   "oov",
 ];
 
+// The "Pending returns" overview card: parcels in the return flow that haven't
+// been handed back yet - flagged for follow up, ready to return, or already
+// sent to the vendor (returned_to_vendor is terminal and excluded).
+const RETURN_PENDING_STATUSES: parcel_status[] = [
+  "follow_up",
+  "ready_to_return",
+  "sent_to_vendor",
+];
+
+// The "Pending deliveries" overview card: parcels that have reached the
+// destination and are in the delivery flow - arrived at destination, ready to
+// deliver, sent out for delivery, or a failed attempt awaiting reattempt.
+// Kept disjoint from IN_TRANSIT_STATUSES so a parcel is counted in exactly one.
 const DELIVERY_PENDING_STATUSES: parcel_status[] = [
+  "arrived_at_branch",
   "ready_to_deliver",
   "sent_for_delivery",
-  "oov",
+  "failed_delivery",
 ];
 
 // Hub-level transitions: confirming hub arrival and building/closing a
@@ -89,11 +108,6 @@ const RETURN_WORKFLOW_STATUSES: parcel_status[] = [
   "sent_to_vendor",
   "returned_to_vendor",
 ];
-
-// Same workflow, excluding the terminal returned_to_vendor stage — parcels
-// still moving through the return process rather than already back with the
-// vendor. Used for the "pending returns" / "return process" dashboard figure.
-const RETURN_IN_PROGRESS_STATUSES: parcel_status[] = ["follow_up", "ready_to_return", "sent_to_vendor"];
 
 const TERMINAL_STATUSES: parcel_status[] = [
   "delivered",
@@ -279,21 +293,6 @@ async function resolveActiveRider(riderId: string) {
   return rider;
 }
 
-const OPEN_STATUSES: parcel_status[] = [
-  "pickup_ordered",
-  "rider_assigned",
-  "picked_up",
-  "arrived",
-  "ready_to_deliver",
-  "sent_for_delivery",
-  "partially_delivered",
-  "oov",
-  "dispatched",
-  "arrived_at_branch",
-  "hold",
-  "loss_and_damage",
-];
-
 const locationName = (location?: { name: string; city: string | null; district: string | null } | null) => {
   // Location names already contain the district, so don't append it again.
   return location?.name ?? "";
@@ -430,6 +429,14 @@ async function createRunSheet(
 async function findOrCreateParty(
   tx: Prisma.TransactionClient,
   partyData: CreateOrderInput["sender"],
+  // Parties are keyed by phone and reused across orders. By default a match is
+  // returned as-is. `refreshExisting` re-syncs the reused record's name/address
+  // to the incoming details - used for the sender, which is the vendor's own
+  // identity: if the vendor's shop details change, their sender should reflect
+  // the current values instead of whatever was first captured. Only provided,
+  // changed fields are written, so an existing email / alternate phone is never
+  // wiped by a sender profile that doesn't carry them.
+  options?: { refreshExisting?: boolean },
 ) {
   const normalizedPhone = partyData.phone.trim().replace(/\s/g, "");
 
@@ -439,6 +446,16 @@ async function findOrCreateParty(
   });
 
   if (existing) {
+    if (options?.refreshExisting) {
+      const nextName = partyData.name.trim();
+      const nextAddress = partyData.address?.trim();
+      const update: Prisma.partiesUpdateInput = {};
+      if (nextName && nextName !== existing.name) update.name = nextName;
+      if (nextAddress && nextAddress !== (existing.address ?? "")) update.address = nextAddress;
+      if (Object.keys(update).length > 0) {
+        return tx.parties.update({ where: { id: existing.id }, data: update });
+      }
+    }
     return existing;
   }
 
@@ -457,7 +474,54 @@ async function createOrderCore(actor: OrderActor, data: CreateOrderInput) {
   return _createOrderImpl(actor, data);
 }
 
+// Same-day duplicate guard for interactive (single) order creation only - bulk
+// imports go through createOrderCore and are intentionally exempt. Flags an
+// order whose vendor already created one today for the same receiver
+// (phone + name + address). Soft guard: throws a DUPLICATE_ORDER 409 the client
+// turns into a "create anyway?" prompt, and is bypassed when the user confirms
+// (data.confirmDuplicate) or when the order isn't attributed to a vendor.
+async function assertNotDuplicateOrder(actor: OrderActor, data: CreateOrderInput) {
+  if (data.confirmDuplicate) return;
+
+  const ownVendorId = await resolveOwnVendorId(actor);
+  const vendorId = ownVendorId ?? data.vendorId ?? null;
+  if (!vendorId) return;
+
+  const receiverPhone = data.receiver.phone.trim().replace(/\s/g, "");
+  const receiverName = data.receiver.name.trim();
+  const receiverAddress = data.receiver.address?.trim() ?? "";
+  if (!receiverPhone || !receiverName) return;
+
+  // Start of today in Nepal local time (parcels.created_at is UTC).
+  const nepalToday = formatDate(new Date());
+  const todayStart = new Date(Date.parse(`${nepalToday}T00:00:00Z`) - NEPAL_UTC_OFFSET_MS);
+
+  const existing = await prisma.parcels.findFirst({
+    where: {
+      vendor_id: vendorId,
+      deleted_at: null,
+      created_at: { gte: todayStart },
+      parties_parcels_receiver_idToparties: {
+        phone: receiverPhone,
+        name: { equals: receiverName, mode: "insensitive" },
+        ...(receiverAddress ? { address: { equals: receiverAddress, mode: "insensitive" } } : {}),
+      },
+    },
+    orderBy: { created_at: "desc" },
+    select: { order_number: true, tracking_id: true },
+  });
+
+  if (existing) {
+    throw new AppError(
+      409,
+      `A similar order for ${receiverName} was already created today (Order #${existing.order_number}, ${existing.tracking_id}).`,
+      "DUPLICATE_ORDER",
+    );
+  }
+}
+
 export async function createOrder(actor: OrderActor, data: CreateOrderInput) {
+  await assertNotDuplicateOrder(actor, data);
   const parcel = await _createOrderImpl(actor, data);
   // Fire-and-forget: Redis latency should never add to the caller's response time.
   invalidateOrderCaches().catch((err) => console.error("[Redis] cache invalidation failed:", err));
@@ -583,7 +647,9 @@ async function _createOrderImpl(actor: OrderActor, data: CreateOrderInput) {
     const trackingId = await generateUniqueTrackingId(tx);
 
     const [sender, receiver] = await Promise.all([
-      findOrCreateParty(tx, data.sender),
+      // Sender is the vendor's own identity - keep it synced with their current
+      // profile so a shop/address change propagates to new orders.
+      findOrCreateParty(tx, data.sender, { refreshExisting: true }),
       findOrCreateParty(tx, data.receiver),
     ]);
 
@@ -1770,7 +1836,7 @@ export async function getOrderByTrackingId(actor: OrderActor, trackingId: string
         id: remark.id,
         remark: remark.remark,
         addedBy: maskAuthor ? "Staff" : remark.users?.full_name || "Unknown",
-        createdAt: formatDate(remark.created_at),
+        createdAt: remark.created_at.toISOString(),
         parentRemarkId: remark.parent_remark_id,
         parentAuthor: remark.parent_remark?.users
           ? maskParent
@@ -1940,7 +2006,7 @@ export async function addOrderRemark(
     id: remark.id,
     remark: remark.remark,
     addedBy: remark.users?.full_name || "Unknown",
-    createdAt: formatDate(remark.created_at),
+    createdAt: remark.created_at.toISOString(),
     parentRemarkId: remark.parent_remark_id,
     parentAuthor: remark.parent_remark?.users
       ? maskParent
@@ -2081,7 +2147,7 @@ async function computeDashboardSummary(
     SELECT
       COUNT(*) AS total_orders,
       COUNT(*) FILTER (WHERE status::text = ANY(${PICKUP_PENDING_STATUSES})) AS pending_pickups,
-      COUNT(*) FILTER (WHERE status::text = ANY(${RETURN_IN_PROGRESS_STATUSES})) AS pending_returns,
+      COUNT(*) FILTER (WHERE status::text = ANY(${RETURN_PENDING_STATUSES})) AS pending_returns,
       COUNT(*) FILTER (WHERE status::text = ANY(${IN_TRANSIT_STATUSES})) AS in_transit,
       COUNT(*) FILTER (WHERE status::text = ANY(${DELIVERY_PENDING_STATUSES})) AS pending_deliveries,
       COUNT(*) FILTER (WHERE status::text = ANY(ARRAY['delivered','partially_delivered'])) AS total_delivered,
@@ -2093,7 +2159,7 @@ async function computeDashboardSummary(
       COUNT(*) FILTER (WHERE order_type::text = 'return' AND created_at >= ${todayStart}) AS todays_returns,
       COALESCE(SUM(cod_amount), 0) AS total_order_amount,
       COALESCE(SUM(cod_amount) FILTER (WHERE status::text = ANY(${PICKUP_PENDING_STATUSES})), 0) AS pending_pickups_amount,
-      COALESCE(SUM(cod_amount) FILTER (WHERE status::text = ANY(${RETURN_IN_PROGRESS_STATUSES})), 0) AS pending_returns_amount,
+      COALESCE(SUM(cod_amount) FILTER (WHERE status::text = ANY(${RETURN_PENDING_STATUSES})), 0) AS pending_returns_amount,
       COALESCE(SUM(cod_amount) FILTER (WHERE status::text = ANY(${IN_TRANSIT_STATUSES})), 0) AS in_transit_amount,
       COALESCE(SUM(cod_amount) FILTER (WHERE status::text = ANY(ARRAY['delivered','partially_delivered'])), 0) AS total_delivered_amount,
       COALESCE(SUM(cod_amount) FILTER (WHERE order_type::text = 'return'), 0) AS total_returns_amount,
@@ -2169,6 +2235,7 @@ async function computeDashboardSummary(
         settled_to_rider: string;
         cod_from_rider: string;
         pending_delivery_charge: string;
+        total_delivery_charge: string;
       }>
     >(Prisma.sql`
       SELECT
@@ -2176,7 +2243,8 @@ async function computeDashboardSummary(
         COALESCE(SUM(LEAST(c.remitted_amount, c.collected_amount)), 0) AS settled_to_vendor,
         COALESCE(SUM(LEAST(c.rider_remitted_amount, c.collected_amount)), 0) AS settled_to_rider,
         COALESCE(SUM(c.collected_amount - LEAST(c.rider_remitted_amount, c.collected_amount)), 0) AS cod_from_rider,
-        COALESCE(SUM(p.delivery_charge) FILTER (WHERE c.payment_status::text = 'pending'), 0) AS pending_delivery_charge
+        COALESCE(SUM(p.delivery_charge) FILTER (WHERE c.payment_status::text = 'pending'), 0) AS pending_delivery_charge,
+        COALESCE(SUM(p.delivery_charge), 0) AS total_delivery_charge
       FROM cod_collections c
       JOIN parcels p ON p.id = c.parcel_id
       WHERE p.deleted_at IS NULL
@@ -2227,6 +2295,9 @@ async function computeDashboardSummary(
   // yet - this is deducted from collected_amount at settlement time (see
   // finance.service.ts's payableAmount calc), so it's still "owed" until then.
   const pendingDeliveryCharge = Number(codRow?.pending_delivery_charge ?? 0);
+  // Total delivery charges (the office's cut) on the same delivered orders the
+  // COD figures above are drawn from - shown as its own line on the COD card.
+  const deliveryCharge = Number(codRow?.total_delivery_charge ?? 0);
 
   const weeklyTrend = trendDayRanges.map(({ start }, index) => {
     const [dayTotalOrders, dayPickedUp, dayDelivered, dayReturned] = trendCounts[index] ?? [0, 0, 0, 0];
@@ -2333,6 +2404,7 @@ async function computeDashboardSummary(
       settledCod,
       pendingCod,
       codFromRider,
+      deliveryCharge,
       pendingCodCount,
       pendingDeliveryCharge,
       progressPercent: totalCod > 0 ? (settledCod / totalCod) * 100 : 0,
@@ -2389,14 +2461,25 @@ export async function getSenderProfile(actor: OrderActor) {
     throw new AppError(403, "Vendor profile not found or inactive");
   }
 
+  // The sender address is driven by the vendor's selected pickup Location, so
+  // changing the shop's location updates where new orders ship from. The pickup
+  // landmark (a finer detail like "near X chowk") is appended after it, and the
+  // free-text address is only a last-resort fallback when no Location is set.
+  const location = vendor.location_id
+    ? await prisma.locations.findUnique({
+        where: { id: vendor.location_id },
+        select: { name: true, city: true, district: true },
+      })
+    : null;
+  const locationLabel = locationName(location);
+  const address =
+    [locationLabel, vendor.pickup_landmark].filter(Boolean).join(", ") || vendor.address || "";
+
   return {
     id: vendor.id,
     name: vendor.business_name || vendor.client_name,
     phone: vendor.phone,
-    // The vendor's pickup Location (set at vendor creation) is what a rider
-    // actually needs to find the sender - prefer it over the registered/
-    // billing address, which may be a different legal address entirely.
-    address: vendor.pickup_landmark || vendor.address || "",
+    address,
     locationId: vendor.location_id,
   };
 }
@@ -2434,6 +2517,29 @@ export async function notifyAdmins(
     );
   } catch (error) {
     console.error("[Notifications] Failed to notify admins:", error);
+  }
+}
+
+// Notify the vendor owner of a parcel (fire-and-forget). Resolves the vendor's
+// user_id from the parcel's vendor_id and sends a single notification.
+export async function notifyVendorOfParcel(
+  vendorId: string | null,
+  title: string,
+  body: string | null,
+  trackingId: string | null,
+  type: string,
+  link: string | null,
+) {
+  if (!vendorId) return;
+  try {
+    const vendor = await prisma.vendors.findUnique({
+      where: { id: vendorId },
+      select: { user_id: true },
+    });
+    if (!vendor?.user_id) return;
+    await createNotification(vendor.user_id, title, body, trackingId, type, link);
+  } catch (error) {
+    console.error("[Notifications] Failed to notify vendor:", error);
   }
 }
 
@@ -2851,17 +2957,25 @@ async function _updateParcelStatusImpl(
 
   await invalidateOrderCaches();
 
-  // Status changes (vendor pings, arrival-at-branch and delivery/COD admin
-  // pings) no longer notify - they flooded the feed. Only the auto-raised
-  // return below still notifies, since it's an exceptional, actionable event.
-  if (createdReturn) {
-    notifyAdmins(
-      `Return raised: ${createdReturn.trackingId}`,
-      `Auto-created from exchange order ${parcel.tracking_id}; rider is carrying it back.`,
-      createdReturn.trackingId,
-      "return",
-      `/orders/track/${createdReturn.trackingId}`,
-      actor.id,
+  // Notify the vendor when pickup or delivery fails — these are actionable
+  // events the vendor needs to respond to (re-schedule, contact customer, etc.).
+  if (newStatus === "failed_pickup") {
+    notifyVendorOfParcel(
+      parcel.vendor_id,
+      `Pickup Failed: ${parcel.tracking_id}`,
+      data.remarks || "Pickup attempt failed",
+      parcel.tracking_id,
+      "pickup_failed",
+      `/orders/track/${parcel.tracking_id}`,
+    ).catch(() => {});
+  } else if (newStatus === "failed_delivery") {
+    notifyVendorOfParcel(
+      parcel.vendor_id,
+      `Delivery Failed: ${parcel.tracking_id}`,
+      data.remarks || "Delivery attempt failed",
+      parcel.tracking_id,
+      "delivery_failed",
+      `/orders/track/${parcel.tracking_id}`,
     ).catch(() => {});
   }
 
@@ -3414,6 +3528,78 @@ export async function applyExternalCarrierStatus(
         console.error("[Redis] cache invalidation failed:", err),
       );
     }
+    return { applied: true };
+  });
+}
+
+// A 3PL (NCM) marking an order "Sent to Vendor" means it's coming back to
+// *us*, not to the client vendor - that's our own follow_up review stage, not
+// our "sent_to_vendor" status (which means an internal rider carrying it to
+// the client vendor). This is a one-way exit from the carrier leg, not a
+// further step along CARRIER_LEG_SEQUENCE, so it's a separate small function
+// rather than an extension of applyExternalCarrierStatus's monotonic check.
+const CARRIER_FOLLOW_UP_ELIGIBLE_STATUSES: parcel_status[] = [
+  "oov",
+  "dispatched",
+  "arrived_at_branch",
+  "sent_for_delivery",
+];
+
+/**
+ * Applies an external-carrier-initiated return (NCM's "Sent to Vendor") by
+ * exiting the carrier leg into our own follow_up stage. From there ops runs
+ * the normal, unmodified Return-to-Origin ladder with a real internal rider.
+ */
+export async function applyExternalCarrierFollowUp(
+  parcelId: string,
+  remarks: string,
+): Promise<CarrierStatusResult> {
+  return withParcelStatusLocks([parcelId], async (): Promise<CarrierStatusResult> => {
+    const parcel = await prisma.parcels.findFirst({
+      where: { id: parcelId, deleted_at: null },
+    });
+    if (!parcel) return { applied: false, reason: "Parcel not found" };
+
+    if (!CARRIER_FOLLOW_UP_ELIGIBLE_STATUSES.includes(parcel.status)) {
+      return { applied: false, reason: `Parcel is '${parcel.status}', not on the carrier leg` };
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.parcels.update({ where: { id: parcelId }, data: { status: "follow_up" } });
+      await tx.parcel_status_history.create({
+        data: {
+          parcel_id: parcelId,
+          old_status: parcel.status,
+          new_status: "follow_up",
+          location_id: parcel.current_location_id,
+          changed_by: null,
+          remarks,
+        },
+      });
+      await tx.audit_logs.create({
+        data: {
+          actor_id: null,
+          entity_type: "parcel",
+          entity_id: parcelId,
+          action: "CARRIER_UPDATE_STATUS",
+          old_data: { status: parcel.status },
+          new_data: { status: "follow_up", remarks },
+        },
+      });
+
+      if (parcel.vendor_id) {
+        await emitWebhookEvent(tx, parcel.vendor_id, "order.status_changed", {
+          trackingId: parcel.tracking_id,
+          orderId: parcel.id,
+          vendorId: parcel.vendor_id,
+          oldStatus: parcel.status,
+          newStatus: "follow_up",
+          changedAt: new Date().toISOString(),
+        });
+      }
+    });
+
+    await invalidateOrderCaches();
     return { applied: true };
   });
 }

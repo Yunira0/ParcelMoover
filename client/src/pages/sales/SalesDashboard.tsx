@@ -58,6 +58,7 @@ const EMPTY_SUMMARY: DashboardSummary = {
     pendingCod: 0,
     codFromRider: 0,
     pendingDeliveryCharge: 0,
+    deliveryCharge: 0,
     progressPercent: 0,
     scopedToRider: false,
     lastAmount: 0,

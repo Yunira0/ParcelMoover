@@ -230,10 +230,10 @@
   flex-shrink: 0;
 }
 
-.legend-dot.total { background-color: var(--color-primary); }
+.legend-dot.total { background-color: var(--color-background-warning-default); }
 .legend-dot.picked { background-color: var(--color-info-text); }
 .legend-dot.delivered { background-color: var(--color-success-default); }
-.legend-dot.returned { background-color: var(--color-background-warning-default); }
+.legend-dot.returned { background-color: var(--color-danger-default); }
 
 .legend-item-dim {
   opacity: 0.35;

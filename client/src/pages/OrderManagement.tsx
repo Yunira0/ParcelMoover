@@ -76,7 +76,7 @@ const TAB_GROUPS: Record<FilterTab, ParcelStatus[]> = {
   all: [],
   // Everything still waiting to be picked up: ordered + rider assigned.
   ready_to_pick: ['pickup_ordered', 'rider_assigned'],
-  inprogress: ['picked_up', 'arrived', 'ready_to_deliver', 'sent_for_delivery', 'oov', 'dispatched', 'arrived_at_branch', 'hold'],
+  inprogress: ['picked_up', 'arrived', 'ready_to_deliver', 'sent_for_delivery', 'oov', 'dispatched', 'arrived_at_branch', 'hold', 'failed_delivery'],
   delivered: ['delivered', 'partially_delivered'],
   failed: ['failed_pickup', 'failed_delivery', 'loss_and_damage'],
   // Returns still being worked: not yet handed back to the vendor.
@@ -123,7 +123,9 @@ interface SecondaryFilters {
   /** Multi-select: an order matches if its status is any of these (empty = all). */
   currentStatus: string[];
   orderType: string;
-  /** Inclusive AD dates (YYYY-MM-DD) compared against order.createdAt. */
+  /** Which date the From/To range is compared against. */
+  dateField: 'createdAt' | 'lastUpdatedAt';
+  /** Inclusive AD dates (YYYY-MM-DD) compared against the selected dateField. */
   dateFrom: string;
   dateTo: string;
   /** Multi-select: an order matches if its vendor is any of these (empty = all). */
@@ -153,12 +155,25 @@ const matchesKeyword = (order: Order, keyword: string) => {
 // Filters the backend doesn't have a query param for (origin/rider/keyword/
 // destination/date range/vendor/department) - applied client-side on top of
 // whatever page the server already returned for the active tab + search.
+// Nepal-local (UTC+5:45) AD date "YYYY-MM-DD" for an ISO timestamp - so the
+// status-updated date lines up with the same local-day bucketing createdAt uses.
+const toNepalDate = (iso?: string): string => {
+  if (!iso) return '';
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return '';
+  return new Date(t + (5 * 60 + 45) * 60 * 1000).toISOString().slice(0, 10);
+};
+
 const matchesSecondaryFilters = (order: Order, filters: SecondaryFilters) => {
-  // createdAt is a Nepal-local "YYYY-MM-DD" string, so an inclusive range
-  // check is a plain lexicographic comparison - no timezone math needed.
+  // createdAt is already a Nepal-local "YYYY-MM-DD" string; lastUpdatedAt is a
+  // raw ISO timestamp, so normalise it to the same local date. Either way the
+  // inclusive range check is a plain lexicographic comparison.
+  const compareDate = filters.dateField === 'lastUpdatedAt'
+    ? toNepalDate(order.lastUpdatedAt)
+    : order.createdAt;
   const matchesDateSpan =
-    (!filters.dateFrom || order.createdAt >= filters.dateFrom) &&
-    (!filters.dateTo || order.createdAt <= filters.dateTo);
+    (!filters.dateFrom || (!!compareDate && compareDate >= filters.dateFrom)) &&
+    (!filters.dateTo || (!!compareDate && compareDate <= filters.dateTo));
   const matchesOperation =
     !filters.operationDept ||
     (filters.operationDept === 'pickup' && ['pickup_ordered', 'rider_assigned', 'picked_up'].includes(order.status)) ||
@@ -238,6 +253,9 @@ const OrderManagement: React.FC = () => {
   const [destinationHub, setDestinationHub] = useState(() => searchParams.get('destinationHub') || '');
   const [currentStatus, setCurrentStatus] = useState<string[]>(() => searchParams.getAll('currentStatus'));
   const [orderType, setOrderType] = useState(() => searchParams.get('orderType') || '');
+  const [dateField, setDateField] = useState<'createdAt' | 'lastUpdatedAt'>(
+    () => (searchParams.get('dateField') === 'lastUpdatedAt' ? 'lastUpdatedAt' : 'createdAt'),
+  );
   const [dateFrom, setDateFrom] = useState(() => searchParams.get('dateFrom') || '');
   const [dateTo, setDateTo] = useState(() => searchParams.get('dateTo') || '');
   const [vendor, setVendor] = useState<string[]>(() => searchParams.getAll('vendor'));
@@ -279,11 +297,12 @@ const OrderManagement: React.FC = () => {
   };
 
   const secondaryFilters: SecondaryFilters = {
-    originHub, riderName, keyword, destinationHub, currentStatus, orderType, dateFrom, dateTo, vendor, operationDept,
+    originHub, riderName, keyword, destinationHub, currentStatus, orderType, dateField, dateFrom, dateTo, vendor, operationDept,
   };
   // Arrays are truthy even when empty, so check length for the multi-select filters.
-  const activeFilterCount = Object.values(secondaryFilters).filter(v =>
-    Array.isArray(v) ? v.length > 0 : Boolean(v),
+  // dateField is a mode toggle (not itself a filter), so it never counts as active.
+  const activeFilterCount = Object.entries(secondaryFilters).filter(([key, v]) =>
+    key !== 'dateField' && (Array.isArray(v) ? v.length > 0 : Boolean(v)),
   ).length;
   const hasSecondaryFilters = activeFilterCount > 0;
 
@@ -316,8 +335,19 @@ const OrderManagement: React.FC = () => {
       const scannedTermCount = debouncedSearch ? debouncedSearch.split(',').map(t => t.trim()).filter(Boolean).length : 0;
       const pageSize = scannedTermCount > 1 ? Math.min(100, Math.max(pageSizeChoice, scannedTermCount)) : pageSizeChoice;
 
+      // The status set actually sent to the server. A `currentStatus` selection
+      // is pushed down to the query (not just filtered client-side over one
+      // page) so pagination stays correct and card drill-downs can target
+      // statuses that span tabs (e.g. Pending deliveries includes
+      // failed_delivery). Within a concrete tab it's intersected with that
+      // tab's group; on "all" it's used directly.
+      const effectiveStatus: ParcelStatus[] = currentStatus.length
+        ? (TAB_GROUPS[filter].length
+            ? TAB_GROUPS[filter].filter((s) => currentStatus.includes(s))
+            : (currentStatus as ParcelStatus[]))
+        : TAB_GROUPS[filter];
       const res = await getOrders({
-        status: TAB_GROUPS[filter],
+        status: effectiveStatus,
         search: debouncedSearch || undefined,
         pageSize,
         cursor: pager.request.cursor,
@@ -337,11 +367,11 @@ const OrderManagement: React.FC = () => {
     } finally {
       if (requestId === loadRequestIdRef.current) setLoading(false);
     }
-  }, [filter, debouncedSearch, pager.request, sortBy, sortDir, pageSizeChoice]);
+  }, [filter, currentStatus, debouncedSearch, pager.request, sortBy, sortDir, pageSizeChoice]);
 
   useEffect(() => { loadOrders(); }, [loadOrders]);
   useEffect(() => subscribeToOrderStatusChanged(loadOrders), [loadOrders]);
-  useEffect(() => { pager.reset(); }, [filter, debouncedSearch, originHub, riderName, keyword, destinationHub, currentStatus, orderType, dateFrom, dateTo, vendor, operationDept, sortBy, sortDir, pager.reset]);
+  useEffect(() => { pager.reset(); }, [filter, debouncedSearch, originHub, riderName, keyword, destinationHub, currentStatus, orderType, dateField, dateFrom, dateTo, vendor, operationDept, sortBy, sortDir, pager.reset]);
   // Re-sync when the navbar search re-navigates here with a new ?search= param -
   // but not when the URL change is just our own sync below echoing back.
   useEffect(() => {
@@ -364,6 +394,7 @@ const OrderManagement: React.FC = () => {
     if (destinationHub) next.set('destinationHub', destinationHub);
     currentStatus.forEach(value => next.append('currentStatus', value));
     if (orderType) next.set('orderType', orderType);
+    if (dateField !== 'createdAt') next.set('dateField', dateField);
     if (dateFrom) next.set('dateFrom', dateFrom);
     if (dateTo) next.set('dateTo', dateTo);
     vendor.forEach(value => next.append('vendor', value));
@@ -373,7 +404,7 @@ const OrderManagement: React.FC = () => {
     lastSyncedSearchRef.current = combinedSearch;
     setSearchParams(next, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filter, combinedSearch, originHub, riderName, keyword, destinationHub, currentStatus, orderType, dateFrom, dateTo, vendor, operationDept, sortBy, sortDir]);
+  }, [filter, combinedSearch, originHub, riderName, keyword, destinationHub, currentStatus, orderType, dateField, dateFrom, dateTo, vendor, operationDept, sortBy, sortDir]);
 
   // A separate, tab-scoped (unsearched, unpaginated) fetch purely to keep the
   // filter dropdown option lists representative - the paginated `orders` above
@@ -407,7 +438,7 @@ const OrderManagement: React.FC = () => {
   const filteredOrders = useMemo(
     () => orders.filter(order => matchesSecondaryFilters(order, secondaryFilters)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [orders, originHub, riderName, keyword, destinationHub, currentStatus, orderType, dateFrom, dateTo, vendor, operationDept],
+    [orders, originHub, riderName, keyword, destinationHub, currentStatus, orderType, dateField, dateFrom, dateTo, vendor, operationDept],
   );
 
   const totalPages = meta?.totalPages ?? 1;
@@ -444,6 +475,7 @@ const OrderManagement: React.FC = () => {
     setDestinationHub('');
     setCurrentStatus([]);
     setOrderType('');
+    setDateField('createdAt');
     setDateFrom('');
     setDateTo('');
     setVendor([]);
@@ -730,24 +762,41 @@ const OrderManagement: React.FC = () => {
                 { value: 'return', label: 'Return' },
               ]}
             />
-            <label aria-label="Created from date">
+            <FilterDropdown
+              label="DATE TYPE"
+              value={dateField}
+              onChange={(v) => setDateField(v === 'lastUpdatedAt' ? 'lastUpdatedAt' : 'createdAt')}
+              placeholder="Order Created Date"
+              options={[
+                { value: 'createdAt', label: 'Order Created Date' },
+                { value: 'lastUpdatedAt', label: 'Status Updated Date' },
+              ]}
+            />
+            <label aria-label="From date">
               <span>FROM DATE</span>
               <NepaliDatePicker
                 value={dateFrom}
                 max={dateTo || undefined}
                 onChange={setDateFrom}
-                aria-label="Created from date"
+                aria-label="From date"
               />
             </label>
-            <label aria-label="Created to date">
+            <label aria-label="To date">
               <span>TO DATE</span>
               <NepaliDatePicker
                 value={dateTo}
                 min={dateFrom || undefined}
                 onChange={setDateTo}
-                aria-label="Created to date"
+                aria-label="To date"
               />
             </label>
+            <MultiFilterDropdown
+              label="VENDOR"
+              value={vendor}
+              onChange={setVendor}
+              placeholder="All Vendors"
+              options={filterOptions.vendors.map(value => ({ value, label: value }))}
+            />
             <FilterDropdown
               label="OPERATION DEPT"
               value={operationDept}
@@ -767,25 +816,12 @@ const OrderManagement: React.FC = () => {
               placeholder="Select status"
               options={(Object.keys(STATUS_LABELS) as ParcelStatus[]).map(value => ({ value, label: STATUS_LABELS[value] }))}
             />
-            <MultiFilterDropdown
-              label="VENDOR"
-              value={vendor}
-              onChange={setVendor}
-              placeholder="All Vendors"
-              options={filterOptions.vendors.map(value => ({ value, label: value }))}
-            />
             <Button variant="outline" className="clear-filter-btn" onClick={clearFilters}>
               Clear Filters
             </Button>
           </div>
         )}
       </section>
-
-      {hasSecondaryFilters && (
-        <p className="order-filter-scope-note">
-          Origin/rider/keyword/destination/status/date/vendor/department filters only narrow the current page — use the tabs or tracking search to find matches across the whole list.
-        </p>
-      )}
 
       <div className="order-toolbar">
         <div className="order-toolbar-left">

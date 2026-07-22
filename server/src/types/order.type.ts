@@ -35,6 +35,13 @@ export interface CreateOrderInput {
 
   pickupAddress?: string;
   scheduledPickupAt?: string;
+
+  /**
+   * Set true to bypass the same-day duplicate warning (same vendor + same
+   * receiver phone/name/address created today). The client resends with this
+   * after the user confirms the "create anyway" prompt.
+   */
+  confirmDuplicate?: boolean;
 }
 
 export interface UpdateOrderDetailsInput {
@@ -146,11 +153,14 @@ export const STATUS_TRANSITIONS = {
   rider_assigned:    ["picked_up", "failed_pickup", "cancelled"],
   picked_up:         ["arrived"],
   arrived:           ["ready_to_deliver", "oov"],
-  dispatched:        ["arrived_at_branch"],
-  arrived_at_branch: ["ready_to_deliver"],
+  // "follow_up" on these four is the exit for an NCM-carried parcel NCM is
+  // returning to us (their "Sent to Vendor") - not reachable by an internal
+  // rider, only by the NCM return action/reconcile sweep (see ncm.service.ts).
+  dispatched:        ["arrived_at_branch", "follow_up"],
+  arrived_at_branch: ["ready_to_deliver", "follow_up"],
   ready_to_deliver:  ["sent_for_delivery", "hold"],
-  sent_for_delivery: ["delivered", "partially_delivered", "failed_delivery"],
-  oov:               ["dispatched","hold"],
+  sent_for_delivery: ["delivered", "partially_delivered", "failed_delivery", "follow_up"],
+  oov:               ["dispatched","hold", "follow_up"],
   hold:              ["ready_to_deliver","oov","loss_and_damage"],
   delivered:         [],
   // A partial delivery can be re-attempted, sent into NDR follow-up, or returned
