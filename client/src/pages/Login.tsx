@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import { login } from '../services/auth.service';
 import FormField from '../components/FormField';
 import Button from '../components/Button';
-import { VENDOR_NOTICE_SEEN_KEY } from '../components/VendorNoticePopup';
 
 const Login: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -23,10 +22,6 @@ const Login: React.FC = () => {
         // Save user data to localStorage for ProtectedRoute to verify the session.
         // The accessToken itself lives in an httpOnly cookie, not in this body.
         localStorage.setItem('user', JSON.stringify(response.data));
-        // Re-arm the vendor notice popup for this login - it's tab-scoped
-        // sessionStorage, so without this a log-out/log-back-in in the same
-        // tab would leave it permanently "seen" from the prior session.
-        sessionStorage.removeItem(VENDOR_NOTICE_SEEN_KEY);
         if (response.data?.mustChangePassword) {
           navigate('/change-password', { replace: true });
         } else {

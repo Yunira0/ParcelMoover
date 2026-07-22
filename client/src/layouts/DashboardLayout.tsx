@@ -4,10 +4,9 @@ import { Smartphone } from 'lucide-react';
 import Sidebar from '../components/Sidebar';
 import TopNav from '../components/TopNav';
 import Button from '../components/Button';
-import VendorNoticePopup from '../components/VendorNoticePopup';
 import { StaffPermissionsProvider } from '../context/StaffPermissionsContext';
 import { MobileNavProvider } from '../context/MobileNavContext';
-import { isRiderOnly, isVendorSide } from '../utils/auth';
+import { isRiderOnly } from '../utils/auth';
 import { logout } from '../services/auth.service';
 import './DashboardLayout.css';
 
@@ -49,7 +48,6 @@ const DashboardLayout: React.FC = () => {
               <Outlet />
             </main>
           </div>
-          {isVendorSide() && <VendorNoticePopup />}
         </div>
       </MobileNavProvider>
     </StaffPermissionsProvider>

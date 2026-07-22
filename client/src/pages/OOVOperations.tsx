@@ -23,7 +23,7 @@ import {
 } from '../services/orders.service';
 import { downloadExcel } from '../utils/excel';
 import { getLocations, getRiders } from '../services/users.service';
-import { getNcmBranches, handoffToNcm, type NcmBranch } from '../services/ncm.service';
+import { handoffToNcm } from '../services/ncm.service';
 import { toBsDate, toBsDateTime } from '../utils/nepaliDate';
 import { printLabels } from '../utils/printLabels';
 import { commitScannedTerm, handleScannerPaste } from '../utils/scannerInput';
@@ -134,9 +134,6 @@ const OOVOperations: React.FC = () => {
   const [toLocationId, setToLocationId] = useState('');
   const [riderId, setRiderId] = useState('');
   const [reasonRemarks, setReasonRemarks] = useState('');
-  const [ncmBranches, setNcmBranches] = useState<NcmBranch[]>([]);
-  const [ncmBranchesError, setNcmBranchesError] = useState('');
-  const [ncmBranch, setNcmBranch] = useState('');
 
   // Debounce search input so every keystroke doesn't fire a request.
   useEffect(() => {
@@ -254,28 +251,6 @@ const OOVOperations: React.FC = () => {
     if (isActionOpen) statusPopoverRef.current?.focus();
   }, [isActionOpen]);
 
-  // NCM branch list is only needed once the 3PL method is picked — and the
-  // fetch fails cleanly when the NCM integration isn't configured.
-  useEffect(() => {
-    if (dispatchMethod !== 'tpl' || ncmBranches.length > 0) return;
-    (async () => {
-      try {
-        const res = await getNcmBranches();
-        if (res?.success && Array.isArray(res.data)) {
-          setNcmBranches(res.data);
-          setNcmBranchesError('');
-        }
-      } catch (err: unknown) {
-        const message =
-          typeof err === 'object' && err !== null && 'response' in err &&
-          typeof (err as { response?: { data?: { message?: unknown } } }).response?.data?.message === 'string'
-            ? (err as { response: { data: { message: string } } }).response.data.message
-            : 'Failed to load NCM branches.';
-        setNcmBranchesError(message);
-      }
-    })();
-  }, [dispatchMethod, ncmBranches.length]);
-
   const toggleRowSelection = (orderId: string | number) => {
     const order = visibleOrders.find(o => o.id === orderId);
     if (!order) return;
@@ -334,11 +309,6 @@ const OOVOperations: React.FC = () => {
       return;
     }
 
-    if (isDispatchAction && dispatchMethod === 'tpl' && !ncmBranch) {
-      setActionError('Select the NCM destination branch for this handoff.');
-      return;
-    }
-
     if (isReasonRequiredAction && !reasonRemarks.trim()) {
       setActionError('A reason remark is required to cancel or fail an order.');
       return;
@@ -351,7 +321,7 @@ const OOVOperations: React.FC = () => {
       if (isDispatchAction && dispatchMethod === 'tpl') {
         // Hand off to NCM: creates the NCM orders; parcels stay in Transit
         // until NCM's pickup webhook moves them to In Transit.
-        const res = await handoffToNcm(ids, ncmBranch);
+        const res = await handoffToNcm(ids);
         const failed = (res.data ?? []).filter(item => !item.success);
         if (failed.length > 0) {
           setActionError(
@@ -374,7 +344,6 @@ const OOVOperations: React.FC = () => {
       setSelectedNextStatus('');
       setToLocationId('');
       setRiderId('');
-      setNcmBranch('');
       setDispatchMethod('manifest');
       setReasonRemarks('');
     } catch (err: unknown) {
@@ -644,23 +613,10 @@ const OOVOperations: React.FC = () => {
                 )}
                 {isDispatchAction && dispatchMethod === 'tpl' && (
                   <div className="oov-manifest-fields">
-                    <div className="oov-manifest-field">
-                      <span>NCM destination branch</span>
-                      <SearchableSelect
-                        options={ncmBranches.map(branch => ({
-                          id: branch.name,
-                          label: branch.district ? `${branch.name} (${branch.district})` : branch.name,
-                        }))}
-                        value={ncmBranch}
-                        onChange={setNcmBranch}
-                        placeholder="Select NCM branch"
-                        searchPlaceholder="Search branch..."
-                        emptyMessage={ncmBranchesError || 'No NCM branches found.'}
-                        disabled={statusUpdating}
-                      />
-                    </div>
                     <p className="oov-status-empty">
-                      Orders stay in Transit until NCM confirms pickup, then follow NCM tracking automatically.
+                      NCM destination branch is matched automatically from each order's destination hub. Orders whose
+                      destination has no matching NCM branch are skipped, and orders stay in Transit until NCM
+                      confirms pickup, then follow NCM tracking automatically.
                     </p>
                   </div>
                 )}

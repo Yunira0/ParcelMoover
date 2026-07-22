@@ -259,6 +259,7 @@
       <li><a href="#track">Track an order</a></li>
       <li><a href="#list">List your orders</a></li>
       <li><a href="#statuses">Order statuses</a></li>
+      <li><a href="#webhooks">Webhooks</a></li>
       <li><a href="#errors">Errors</a></li>
       <li><a href="#checklist">Integration checklist</a></li>
     </ol>
@@ -505,7 +506,7 @@ echo $body['data']['trackingId']; // "PM-260713-GFQK93S5YN894-Q"</code></pre></d
 
   <h2 id="track">Track an order</h2>
   <p class="endpoint"><span class="method get">GET</span><span class="path">/api/v1/orders/{trackingId}</span></p>
-  <p>Returns the full current state of one of <strong>your</strong> orders, including remarks and the complete status timeline. An order that isn't yours returns <code>404</code>.</p>
+  <p>Returns the full current state of one of <strong>your</strong> orders, including remarks and the complete status timeline. An order that isn't yours returns <code>404</code>. This is for on-demand lookups and reconciliation, not a status-sync loop; register a <a href="#webhooks">webhook</a> for that instead.</p>
 
   <h3>Example</h3>
   <div class="tabs">
@@ -666,7 +667,53 @@ printf("%d of %d orders", count($body['data']), $body['meta']['total']);</code><
     <tr><td><code>cancelled</code></td><td>Order cancelled.</td></tr>
     <tr><td><code>loss_and_damage</code></td><td>Reported lost or damaged.</td></tr>
   </table></div>
-  <p><strong>Status updates are pull-based:</strong> poll <code>GET /orders/{trackingId}</code> (or list with a <code>status</code> filter). A sensible cadence is every 15–30 minutes — parcels change state a handful of times a day, and polling faster just burns your rate limit. Push webhooks are planned for a future version.</p>
+  <p><strong>Register a webhook</strong> (see below) to be notified the moment an order's status changes. That's the supported way to keep your system in sync, and the only one that doesn't cost you a standing polling loop. <code>GET /orders/{trackingId}</code> still exists for on-demand lookups (a support agent checking one order, or reconciling after your webhook endpoint was down); it isn't meant to be called on a timer.</p>
+
+  <h2 id="webhooks">Webhooks</h2>
+  <p>Register an endpoint from your vendor dashboard at <code>/developer/webhooks</code> and we'll POST a signed event to it every time one of your orders' status changes.</p>
+  <div class="callout"><p>Endpoint management (<code>/api/webhooks/*</code>) is a <strong>dashboard</strong> call, session-authenticated like the rest of your account settings, not part of the API-key-authenticated <code>/api/v1</code> surface described above.</p></div>
+
+  <h3>Payload</h3>
+  <div class="codeblock"><pre><code>{
+  "id": "b6f2...",
+  "type": "order.status_changed",
+  "created_at": "2026-07-22T09:15:00.000Z",
+  "data": {
+    "trackingId": "PM123456",
+    "orderId": "b6f2...",
+    "vendorId": "a1c9...",
+    "oldStatus": "sent_for_delivery",
+    "newStatus": "delivered",
+    "changedAt": "2026-07-22T09:15:00.000Z"
+  }
+}</code></pre></div>
+
+  <h3>Headers</h3>
+  <div class="tablewrap"><table>
+    <tr><th>Header</th><th>Notes</th></tr>
+    <tr><td><code>X-ParcelMoover-Event</code></td><td>The event type — currently <code>order.status_changed</code>, plus <code>webhook.test</code> for test pings sent from the dashboard.</td></tr>
+    <tr><td><code>X-ParcelMoover-Delivery</code></td><td>A UUID unique to this delivery attempt. Use it to de-duplicate retries.</td></tr>
+    <tr><td><code>X-ParcelMoover-Signature</code></td><td><code>t=&lt;unix_seconds&gt;,v1=&lt;hex_hmac_sha256&gt;</code> — HMAC-SHA256 of <code>"&lt;t&gt;.&lt;raw_body&gt;"</code>, keyed with your endpoint's secret (shown once, at creation).</td></tr>
+  </table></div>
+
+  <h3>Verifying the signature</h3>
+  <div class="codeblock"><pre><code>const crypto = require("crypto");
+
+function verifyParcelMooverSignature(rawBody, signatureHeader, secret, toleranceSeconds = 300) {
+  const parts = Object.fromEntries(signatureHeader.split(",").map((p) => p.split("=")));
+  const t = Number(parts.t);
+  if (!t || Math.abs(Date.now() / 1000 - t) > toleranceSeconds) return false; // stale/replayed
+
+  const expected = crypto.createHmac("sha256", secret).update(`${t}.${rawBody}`).digest("hex");
+  const a = Buffer.from(expected, "hex");
+  const b = Buffer.from(parts.v1 || "", "hex");
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}</code></pre></div>
+  <div class="callout"><p>Verify against the <strong>raw</strong> request body, before your framework parses it as JSON. Re-serializing and comparing JSON can produce a different byte sequence than what was signed.</p></div>
+
+  <h3>Retries &amp; reliability</h3>
+  <p>A non-<code>2xx</code> response (or a request that doesn't complete within 10s) is retried with exponential backoff: roughly 30s, 1m, 2m, 4m, and onward, capped at 6h between attempts, for up to 12 attempts spanning about 24 hours. Return <code>2xx</code> promptly; do slow processing after responding, since a slow response counts toward the same 10s timeout as a failed one.</p>
+  <p>An endpoint that fails its entire retry window five times in a row is automatically disabled. Re-enable it from the dashboard once it's fixed — this also resets the failure count.</p>
 
   <h2 id="errors">Errors</h2>
   <p>Every error is JSON with this shape:</p>
@@ -696,7 +743,8 @@ printf("%d of %d orders", count($body['data']), $body['meta']['total']);</code><
     <li>Generate an API key from the vendor dashboard and store it server-side (env var / secrets manager — never in client code).</li>
     <li>On checkout or fulfilment, <code>POST /orders</code> with a fresh UUID <code>Idempotency-Key</code>; persist the returned <code>trackingId</code> against your order.</li>
     <li>Retry failed creates (network error, <code>5xx</code>) with the <strong>same</strong> <code>Idempotency-Key</code>.</li>
-    <li>Poll <code>GET /orders/{trackingId}</code> on a schedule to sync status back to your system; show the <code>trackingId</code> to your customer.</li>
+    <li>Register a webhook endpoint and verify <code>X-ParcelMoover-Signature</code> on every request before trusting the payload; that's how you sync status back to your system. Show the returned <code>trackingId</code> to your customer at creation time.</li>
+    <li>Use <code>GET /orders/{trackingId}</code> only for on-demand lookups or reconciliation (e.g. catching up after your webhook endpoint was down), not as a scheduled polling loop.</li>
     <li>Handle <code>401</code> by alerting yourself (key revoked or rotated) and <code>429</code> with exponential backoff.</li>
     <li>Rotate keys periodically: generate a new key, switch traffic, then revoke the old one (up to 5 active keys per account).</li>
   </ol>

@@ -5,6 +5,7 @@ import {
 } from 'lucide-react'
 import { getRiderParcels, type Parcel, type ParcelStatus } from '../lib/api'
 import ParcelActionSheet from '../components/ParcelActionSheet'
+import PullToRefresh from '../components/PullToRefresh'
 
 // Each dashboard stat drills into the orders behind it. Keyed by the ?view=
 // query param so the Dashboard cards can deep-link straight to a filtered list.
@@ -19,12 +20,19 @@ const VIEWS: Record<string, { title: string; subtitle: string; statuses: ParcelS
     subtitle: 'Orders you have delivered',
     statuses: ['delivered', 'partially_delivered'],
   },
+  return: {
+    title: 'Returns',
+    subtitle: 'Orders being returned to vendor',
+    statuses: ['sent_to_vendor', 'returned_to_vendor'],
+  },
 }
 
 const PILL: Partial<Record<ParcelStatus, { label: string; cls: string }>> = {
   picked_up:           { label: 'Picked Up', cls: 'text-brand bg-brand-dim' },
   delivered:           { label: 'Delivered', cls: 'text-success bg-success/10' },
   partially_delivered: { label: 'Partial',   cls: 'text-yellow-400 bg-yellow-400/10' },
+  sent_to_vendor:      { label: 'Returning', cls: 'text-blue-400 bg-blue-400/10' },
+  returned_to_vendor:  { label: 'Returned',  cls: 'text-success bg-success/10' },
 }
 
 export default function OrderListPage() {
@@ -36,6 +44,7 @@ export default function OrderListPage() {
   const [parcels, setParcels] = useState<Parcel[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [truncated, setTruncated] = useState(false)
   const [selected, setSelected] = useState<Parcel | null>(null)
 
   // Re-fetch on the specific status set — cfg identity is stable per view.
@@ -45,7 +54,9 @@ export default function OrderListPage() {
     setLoading(true)
     setError('')
     try {
-      setParcels(await getRiderParcels(cfg.statuses))
+      const result = await getRiderParcels(cfg.statuses)
+      setParcels(result.data)
+      setTruncated(result.truncated)
     } catch (e: any) {
       setError(e?.message ?? 'Failed to load orders')
     } finally {
@@ -89,7 +100,7 @@ export default function OrderListPage() {
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto">
+      <PullToRefresh onRefresh={load} className="flex-1">
         {error && (
           <div className="mx-5 mt-4 flex items-center gap-3 bg-error/10 border border-error/30 rounded-2xl px-4 py-3">
             <AlertCircle size={15} className="text-error shrink-0" />
@@ -97,6 +108,15 @@ export default function OrderListPage() {
             <button onClick={load} className="text-error cursor-pointer" aria-label="Retry">
               <RefreshCw size={14} />
             </button>
+          </div>
+        )}
+
+        {!error && truncated && (
+          <div className="mx-5 mt-4 flex items-start gap-3 bg-yellow-400/10 border border-yellow-400/30 rounded-2xl px-4 py-3">
+            <AlertCircle size={15} className="text-yellow-400 shrink-0 mt-0.5" />
+            <p className="text-xs text-yellow-400 leading-snug flex-1">
+              You have a large number of orders — some may not be shown below. Contact your hub manager if a parcel is missing.
+            </p>
           </div>
         )}
 
@@ -155,7 +175,7 @@ export default function OrderListPage() {
             })}
           </div>
         )}
-      </div>
+      </PullToRefresh>
 
       {selected && (
         <div className="absolute inset-0 z-10">

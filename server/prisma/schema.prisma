@@ -554,7 +554,6 @@ model users {
   support_tickets_support_tickets_created_byTousers      support_tickets[]       @relation("support_tickets_created_byTousers")
   user_roles                                             user_roles[]
   vendor_staff                                           vendor_staff?
-  vendor_notices                                         vendor_notices[]
   vendors                                                vendors?                @relation("vendor_owner")
   vendors_sales                                          vendors[]               @relation("vendor_sales_user")
 }
@@ -619,8 +618,7 @@ model vendors {
   users                 users?            @relation("vendor_owner", fields: [user_id], references: [id], onUpdate: NoAction)
   sales_user            users?            @relation("vendor_sales_user", fields: [sales_user_id], references: [id], onUpdate: NoAction)
   api_keys              api_keys[]
-  vendor_notice_targets vendor_notice_targets[]
-  vendor_notice_dismissals vendor_notice_dismissals[]
+  webhook_endpoints     webhook_endpoints[]
 
   @@index([location_id], map: "idx_vendors_location_id")
   @@index([sales_user_id], map: "idx_vendors_sales_user_id")
@@ -640,6 +638,50 @@ model api_keys {
   vendors      vendors   @relation(fields: [vendor_id], references: [id], onUpdate: NoAction)
 
   @@index([vendor_id], map: "idx_api_keys_vendor_id")
+}
+
+// Vendor-owned outbound webhook subscriptions for the public /api/v1 surface.
+// secret_encrypted is reversible (AES-256-GCM) — unlike api_keys.key_hash, the
+// server must reuse this secret to sign every future delivery, so it can't be
+// a one-way hash. Only ever displayed to the vendor once, at creation.
+model webhook_endpoints {
+  id                   String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  vendor_id            String               @db.Uuid
+  name                 String
+  url                  String
+  secret_encrypted     String
+  event_types          String[]             @default([])
+  enabled              Boolean              @default(true)
+  consecutive_failures Int                  @default(0)
+  disabled_at          DateTime?            @db.Timestamptz(6)
+  created_at           DateTime             @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime             @default(now()) @updatedAt @db.Timestamptz(6)
+  vendors              vendors              @relation(fields: [vendor_id], references: [id], onUpdate: NoAction)
+  webhook_deliveries   webhook_deliveries[]
+
+  @@index([vendor_id], map: "idx_webhook_endpoints_vendor_id")
+}
+
+// Outbox + delivery log for webhook_endpoints. A row is inserted in the same
+// transaction as the order-status change it describes (transactional outbox),
+// then drained/retried asynchronously by the sweep in index.ts.
+model webhook_deliveries {
+  id                   String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  webhook_endpoint_id  String            @db.Uuid
+  event_type           String
+  event_id             String            @db.Uuid
+  payload              Json
+  status               String            @default("pending")
+  attempt_count        Int               @default(0)
+  next_attempt_at      DateTime          @db.Timestamptz(6)
+  last_attempted_at    DateTime?         @db.Timestamptz(6)
+  last_status_code     Int?
+  last_error           String?
+  created_at           DateTime          @default(now()) @db.Timestamptz(6)
+  webhook_endpoints    webhook_endpoints @relation(fields: [webhook_endpoint_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([status, next_attempt_at], map: "idx_webhook_deliveries_pending_sweep")
+  @@index([webhook_endpoint_id, created_at(sort: Desc)], map: "idx_webhook_deliveries_endpoint_id")
 }
 
 // Single-row global pricing config for zone-based and flat (valley) rate types.
@@ -850,49 +892,3 @@ model vendor_staff {
   @@index([vendor_id], map: "idx_vendor_staff_vendor_id")
 }
 
-// Admin-managed popup banner shown to vendors when they open the portal.
-// Content is a single 16:9 image only (no title/body text rendered to
-// vendors) - `title` is an admin-only label and image alt text. A single
-// active-notices list is cached in Redis (key: "vendor_notices:active") and
-// filtered per-vendor using the dismissals table.
-model vendor_notices {
-  id                        String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  title                     String
-  image_url                 String
-  is_active                 Boolean                     @default(true)
-  is_dismissable            Boolean                     @default(true)
-  target                    String                      @default("all")     // all | specific
-  created_by                String                      @db.Uuid
-  created_at                DateTime                    @default(now()) @db.Timestamptz(6)
-  updated_at                DateTime                    @default(now()) @updatedAt @db.Timestamptz(6)
-  users                     users                       @relation(fields: [created_by], references: [id], onUpdate: NoAction)
-  vendor_notice_targets     vendor_notice_targets[]
-  vendor_notice_dismissals  vendor_notice_dismissals[]
-
-  @@index([is_active], map: "idx_vendor_notices_is_active")
-}
-
-// Maps which specific vendors a notice targets (when target = "specific").
-model vendor_notice_targets {
-  id             String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  notice_id      String         @db.Uuid
-  vendor_id      String         @db.Uuid
-  vendor_notices vendor_notices @relation(fields: [notice_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  vendors        vendors        @relation(fields: [vendor_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-
-  @@unique([notice_id, vendor_id])
-  @@index([vendor_id])
-}
-
-// Tracks which vendors have dismissed a notice (persists across sessions).
-model vendor_notice_dismissals {
-  id             String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  notice_id      String         @db.Uuid
-  vendor_id      String         @db.Uuid
-  dismissed_at   DateTime       @default(now()) @db.Timestamptz(6)
-  vendor_notices vendor_notices @relation(fields: [notice_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  vendors        vendors        @relation(fields: [vendor_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-
-  @@unique([notice_id, vendor_id])
-  @@index([vendor_id])
-}

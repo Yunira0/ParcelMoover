@@ -47,6 +47,7 @@ const VendorPendingCod = lazy(() => import('./pages/vendor/VendorPendingCod'))
 const VendorOrderPayments = lazy(() => import('./pages/vendor/VendorOrderPayments'))
 const VendorUserManagement = lazy(() => import('./pages/vendor/VendorUserManagement'))
 const VendorApiKeys = lazy(() => import('./pages/vendor/VendorApiKeys'))
+const VendorWebhooks = lazy(() => import('./pages/vendor/VendorWebhooks'))
 const StaffFormPage = lazy(() => import('./pages/vendor/StaffFormPage'))
 const BulkOrderPage = lazy(() => import('./pages/vendor/BulkOrderPage'))
 const VendorDeliveryCharges = lazy(() => import('./pages/vendor/VendorDeliveryCharges'))
@@ -55,7 +56,6 @@ const ForceChangePasswordPage = lazy(() => import('./pages/ForceChangePasswordPa
 const KycApplicationPage = lazy(() => import('./pages/KycApplicationPage'))
 const KycManagement = lazy(() => import('./pages/KycManagement'))
 const SystemLogs = lazy(() => import('./pages/SystemLogs'))
-const VendorNoticeManager = lazy(() => import('./pages/VendorNoticeManager'))
 const ProfilePage = lazy(() => import('./pages/ProfilePage'))
 
 function App() {
@@ -179,10 +179,6 @@ function App() {
             element={<RoleGuard allowedRoles={['super_admin']}><PickupTimeSlots /></RoleGuard>}
           />
           <Route
-            path="/vendor-notices"
-            element={<RoleGuard allowedRoles={['super_admin', 'admin']} adminPermission="SETTINGS_ACCESS"><VendorNoticeManager /></RoleGuard>}
-          />
-          <Route
             path="/pickup"
             element={<RoleGuard allowedRoles={['super_admin', 'admin']}><PickupOperations /></RoleGuard>}
           />
@@ -269,6 +265,10 @@ function App() {
           <Route
             path="/developer/api-keys"
             element={<RoleGuard allowedRoles={['vendor']}><VendorApiKeys /></RoleGuard>}
+          />
+          <Route
+            path="/developer/webhooks"
+            element={<RoleGuard allowedRoles={['vendor']}><VendorWebhooks /></RoleGuard>}
           />
           <Route path="/profile" element={<ProfilePage />} />
         </Route>

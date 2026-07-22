@@ -56,7 +56,8 @@ const ncmWebhookLimiter = rateLimit({
   keyGenerator: (req) => ipKeyGenerator(req.ip ?? ""),
 });
 
-// GET /api/ncm/branches — NCM branch list for the handoff dialog (cached 1h).
+// GET /api/ncm/branches — NCM's live branch list (cached 1h), for diagnostics
+// (handoff auto-matches a branch per parcel, so the UI no longer calls this).
 ncmRouter.get(
   "/branches",
   authMiddleware,

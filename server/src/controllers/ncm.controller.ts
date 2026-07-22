@@ -25,11 +25,10 @@ export async function listNcmBranchesController(_req: Request, res: Response) {
 
 export async function ncmHandoffController(req: Request, res: Response) {
   try {
-    const { parcelIds, branch, deliveryType } = req.body;
+    const { parcelIds, deliveryType } = req.body;
     const results = await handoffParcelsToNcm(
       { id: req.user!.id, roles: req.user!.roles ?? [] },
       parcelIds,
-      branch,
       deliveryType,
     );
     const failed = results.filter((r) => !r.success);

@@ -122,6 +122,7 @@ export const updateOrderStatusSchema = z.object({
   remarks: z.string().max(500).optional(),
   riderId: optionalUuidSchema,
   codCollected: z.number().min(0, "COD collected must be non-negative").optional(),
+  exchangeReturnReceived: z.boolean().optional(),
 }).refine(
   (data) => {
     if (data.status === "partially_delivered") {

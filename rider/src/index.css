@@ -33,6 +33,11 @@
 /* ── Global reset ────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; }
 
+/* Hides the scrollbar on horizontally-scrolling chip rows (e.g. Pending's
+   filter tabs) while keeping the element scrollable via touch/drag. */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
 html {
   height: 100%;
   height: -webkit-fill-available;

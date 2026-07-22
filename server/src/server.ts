@@ -19,10 +19,10 @@ import PickupTimeSlotsRoutes from "./routes/pickupTimeSlots.routes"
 import PaymentMethodRoutes from "./routes/payment-method.routes"
 import NcmRoutes from "./routes/ncm.routes"
 import ApiKeyRoutes from "./routes/apiKey.routes"
+import WebhookRoutes from "./routes/webhook.routes"
 import PublicApiRoutes from "./routes/publicApi.routes"
 import MeRoutes from "./routes/me.routes"
 import AuditLogRoutes from "./routes/auditLog.routes"
-import VendorNoticeRoutes from "./routes/vendorNotice.routes"
 import prisma, { pool } from "./lib/prisma";
 import cookiesParser from "cookie-parser";
 import {authMiddleware} from "./middlewares/auth.middleware";
@@ -153,14 +153,11 @@ app.use("/api/ncm", NcmRoutes)
 // Vendor self-service management of partner API keys (dashboard, JWT-authed).
 app.use("/api/api-keys", ApiKeyRoutes)
 
+// Vendor self-service management of outbound webhook endpoints (dashboard, JWT-authed).
+app.use("/api/webhooks", WebhookRoutes)
+
 // Public partner API v1 — external e-commerce integrations, API-key-authed.
 app.use("/api/v1", PublicApiRoutes)
-
-// Vendor notice banners aren't sensitive (unlike the KYC docs below) and need
-// to be visible to any logged-in vendor, so they're served unauthenticated
-// from the same persisted `uploads` volume — registered ahead of the
-// KYC-gated /uploads handler so this subpath never hits that auth check.
-app.use("/uploads/notices", express.static(path.join(process.cwd(), "uploads", "notices")));
 
 // KYC/registration documents (citizenship, PAN, licence, bank docs) contain
 // sensitive PII — only staff verifying an account should ever be able to open one.
@@ -189,8 +186,6 @@ app.use(
 app.use("/api/me", MeRoutes);
 
 app.use("/api/audit-logs", AuditLogRoutes)
-
-app.use("/api/vendor-notices", VendorNoticeRoutes)
 
 // SPA fallback — client-side routes like /dashboard, /vendors, /tickets have
 // no matching Express route or file under public/, so without this they 404

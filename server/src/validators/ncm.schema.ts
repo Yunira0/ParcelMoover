@@ -5,7 +5,6 @@ const NCM_DELIVERY_TYPES = ["Door2Door", "Branch2Door", "Branch2Branch", "Door2B
 
 export const ncmHandoffSchema = z.object({
   parcelIds: z.array(uuidSchema).min(1, "At least one parcel id is required").max(100),
-  branch: z.string().trim().min(1, "NCM destination branch is required").max(100),
   deliveryType: z.enum(NCM_DELIVERY_TYPES).optional(),
 });
 

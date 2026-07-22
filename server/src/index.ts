@@ -43,6 +43,7 @@ async function startServer() {
     verifyMailer();
     startNcmReconciliation();
     startKycDocumentPurge();
+    startWebhookDelivery();
   });
 }
 
@@ -126,6 +127,47 @@ function startKycDocumentPurge() {
       console.error("[KYC] document purge sweep failed:", error);
     }
   }, KYC_PURGE_INTERVAL_MS).unref();
+}
+
+// Drains pending webhook_deliveries (the transactional outbox order.service.ts
+// writes into on every status change) and retries failed ones on backoff.
+// Runs far more often than the sweeps above since vendors expect webhooks to
+// feel close to real-time - short enough that, unlike those, we explicitly
+// release the lock each tick instead of letting a long TTL expire it.
+const WEBHOOK_DELIVERY_INTERVAL_MS = 15 * 1000;
+const WEBHOOK_DELIVERY_LOCK_KEY = "webhook:delivery-lock";
+
+function startWebhookDelivery() {
+  setInterval(async () => {
+    let locked = false;
+    try {
+      locked = Boolean(
+        await redis.set(WEBHOOK_DELIVERY_LOCK_KEY, "1", "PX", WEBHOOK_DELIVERY_INTERVAL_MS - 1000, "NX"),
+      );
+      if (!locked) return;
+    } catch {
+      // Redis down — run anyway; delivery is idempotent (rows only move
+      // forward: pending -> succeeded/failed).
+      locked = false;
+    }
+    try {
+      const { runDeliverySweep } = await import("./services/webhookDispatch.service");
+      const result = await runDeliverySweep();
+      if (result.attempted > 0) {
+        console.log(`[Webhook] delivery sweep: attempted ${result.attempted}`);
+      }
+    } catch (error) {
+      console.error("[Webhook] delivery sweep failed:", error);
+    } finally {
+      if (locked) {
+        try {
+          await redis.del(WEBHOOK_DELIVERY_LOCK_KEY);
+        } catch {
+          // Lock will still expire on its own via PX above.
+        }
+      }
+    }
+  }, WEBHOOK_DELIVERY_INTERVAL_MS).unref();
 }
 
 startServer().catch((error) => {

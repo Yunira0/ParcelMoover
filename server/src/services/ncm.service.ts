@@ -116,6 +116,7 @@ export type HandoffResultItem = {
   success: boolean;
   ncmOrderId?: number;
   alreadyHandedOff?: boolean;
+  branch?: string;
   error?: string;
 };
 
@@ -142,6 +143,29 @@ function defaultDeliveryType(serviceType: string): NcmDeliveryType {
 
 function handoffRemark(ncmOrderId: number, branch: string, deliveryType: string): string {
   return `${HANDOFF_REMARK_PREFIX} — order #${ncmOrderId} → ${branch} (${deliveryType})`;
+}
+
+// Auto-matches a parcel's own destination hub to an NCM branch — district
+// first (both `locations` and NCM branches carry an explicit district field,
+// the more reliable key), falling back to a name/city match since NCM branch
+// names are city labels (e.g. POKHARA, BIRATNAGAR) that sometimes appear
+// inside our own hub names (e.g. "Pokhara Branch"). No match => the caller
+// skips the parcel rather than guessing a branch.
+function matchNcmBranch(
+  destination: { name: string; district: string | null } | null | undefined,
+  branches: NcmBranch[],
+): NcmBranch | undefined {
+  if (!destination) return undefined;
+  const district = destination.district?.trim().toUpperCase();
+  if (district) {
+    const byDistrict = branches.find((b) => b.district?.trim().toUpperCase() === district);
+    if (byDistrict) return byDistrict;
+  }
+  const name = destination.name.trim().toUpperCase();
+  return branches.find((b) => {
+    const branchName = b.name.trim().toUpperCase();
+    return name === branchName || name.includes(branchName);
+  });
 }
 
 async function guardDailyCreateLimit(count: number): Promise<void> {
@@ -187,18 +211,20 @@ async function ensureWebhookRegistered(): Promise<void> {
 
 /**
  * Hands parcels currently at `oov` to NCM: (re-)registers our webhook URL,
- * creates one NCM order per parcel (vref_id = last 15 chars of our tracking
- * id, NCM's field cap — see `ncmVrefId`), records the
- * handoff as a closed parcel remark, caches the order→parcel mapping, and
- * immediately moves the parcel to `dispatched` — same as our own "Via
- * Manifest" dispatch, so it shows under the OOV page's "In Transit" tab right
- * away rather than waiting on NCM's pickup webhook. Idempotent per parcel — a
- * parcel with an existing handoff remark is reported, not re-created.
+ * auto-matches each parcel's own destination hub to an NCM branch (see
+ * `matchNcmBranch` — district first, then a name/city fallback; a parcel
+ * whose destination doesn't match any NCM branch is skipped, not guessed),
+ * creates one NCM order per matched parcel (vref_id = last 15 chars of our
+ * tracking id, NCM's field cap — see `ncmVrefId`), records the handoff as a
+ * closed parcel remark, caches the order→parcel mapping, and immediately
+ * moves the parcel to `dispatched` — same as our own "Via Manifest" dispatch,
+ * so it shows under the OOV page's "In Transit" tab right away rather than
+ * waiting on NCM's pickup webhook. Idempotent per parcel — a parcel with an
+ * existing handoff remark is reported, not re-created.
  */
 export async function handoffParcelsToNcm(
   actor: HandoffActor,
   parcelIds: string[],
-  toBranch: string,
   deliveryTypeOverride?: NcmDeliveryType,
 ): Promise<HandoffResultItem[]> {
   if (!isNcmConfigured()) {
@@ -218,18 +244,13 @@ export async function handoffParcelsToNcm(
     throw new AppError(503, "NCM_FROM_BRANCH is not configured (our hub's branch in NCM's system)");
   }
 
-  // Validate the destination against NCM's live branch list up front — one
-  // clear 400 instead of N identical per-parcel failures.
   const branches = await listNcmBranches();
-  const branch = branches.find((b) => b.name.toUpperCase() === toBranch.trim().toUpperCase());
-  if (!branch) {
-    throw new AppError(400, `'${toBranch}' is not a known NCM branch`);
-  }
 
   const parcels = await prisma.parcels.findMany({
     where: { id: { in: ids }, deleted_at: null },
     include: {
       parties_parcels_receiver_idToparties: true,
+      locations_parcels_destination_location_idTolocations: true,
       parcel_remarks: {
         where: { remark: { startsWith: HANDOFF_REMARK_PREFIX } },
         take: 1,
@@ -265,6 +286,19 @@ export async function handoffParcelsToNcm(
 
     if (parcel.status !== "oov") {
       results.push({ ...base, success: false, error: `Parcel is '${parcel.status}', expected 'oov'` });
+      continue;
+    }
+
+    const destination = parcel.locations_parcels_destination_location_idTolocations;
+    const branch = matchNcmBranch(destination, branches);
+    if (!branch) {
+      results.push({
+        ...base,
+        success: false,
+        error: destination
+          ? `No matching NCM branch for destination '${destination.name}'`
+          : "Parcel has no destination hub set",
+      });
       continue;
     }
 
@@ -339,7 +373,7 @@ export async function handoffParcelsToNcm(
       await cacheOrderParcelMapping(created.orderid, parcel.id);
       dispatched.push({ parcelId: parcel.id, trackingId: parcel.tracking_id, vendorId: parcel.vendor_id });
 
-      results.push({ ...base, success: true, ncmOrderId: created.orderid });
+      results.push({ ...base, success: true, ncmOrderId: created.orderid, branch: branch.name });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       results.push({ ...base, success: false, error: message });

@@ -21,6 +21,7 @@ import { generateRunSheetNo } from "../utils/runSheetNo";
 import { NEPAL_UTC_OFFSET_MS, formatNepalDate as formatDate } from "../utils/nepalTime";
 import { resolveOwnVendorId, isStaffActor } from "./vendor-scope.service";
 import { invalidateVendorFinanceCache } from "./finance.service";
+import { emitWebhookEvent } from "./webhookDispatch.service";
 
 type Party = { name: string; phone: string; alternate_phone?: string | null };
 function buildSearchText(trackingId: string, sender: Party, receiver: Party): string {
@@ -2763,6 +2764,17 @@ async function _updateParcelStatusImpl(
       },
     });
 
+    if (parcel.vendor_id) {
+      await emitWebhookEvent(tx, parcel.vendor_id, "order.status_changed", {
+        trackingId: parcel.tracking_id,
+        orderId: parcel.id,
+        vendorId: parcel.vendor_id,
+        oldStatus: currentStatus,
+        newStatus,
+        changedAt: new Date().toISOString(),
+      });
+    }
+
     // Side-effect: a confirmed exchange delivery hands the customer's return
     // parcel to the rider. Auto-create that return order (customer → vendor,
     // no COD, return-rate charge), already picked up by this delivery rider,
@@ -3225,6 +3237,21 @@ async function _bulkUpdateParcelStatusImpl(
       })),
     });
 
+    // One webhook event per parcel — each has its own tracking ID even though
+    // newStatus is shared across the whole batch.
+    const changedAt = new Date().toISOString();
+    for (const p of parcels) {
+      if (!p.vendor_id) continue;
+      await emitWebhookEvent(tx, p.vendor_id, "order.status_changed", {
+        trackingId: p.tracking_id,
+        orderId: p.id,
+        vendorId: p.vendor_id,
+        oldStatus: p.status,
+        newStatus,
+        changedAt,
+      });
+    }
+
     // Close out manifests once none of their parcels are still "dispatched" -
     // one groupBy instead of a per-dispatch count()+updateMany() loop, since
     // the loop was issuing N sequential round trips while holding transaction locks.
@@ -3368,6 +3395,17 @@ export async function applyExternalCarrierStatus(
           new_data: { status: targetStatus, remarks },
         },
       });
+
+      if (parcel.vendor_id) {
+        await emitWebhookEvent(tx, parcel.vendor_id, "order.status_changed", {
+          trackingId: parcel.tracking_id,
+          orderId: parcel.id,
+          vendorId: parcel.vendor_id,
+          oldStatus: parcel.status,
+          newStatus: targetStatus,
+          changedAt: new Date().toISOString(),
+        });
+      }
     });
 
     await invalidateOrderCaches();
