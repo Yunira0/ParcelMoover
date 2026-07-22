@@ -70,6 +70,13 @@ const CODSettlement: React.FC<CODSettlementProps> = ({ data, loading = false }) 
           </div>
           <span className="status-amount">{loading ? '...' : formatCurrency(data.codFromRider)}</span>
         </div>
+        <div className="settlement-row">
+          <div className="status-label">
+            <span className="status-dot delivery"></span>
+            <span>Delivery charge</span>
+          </div>
+          <span className="status-amount">{loading ? '...' : formatCurrency(data.deliveryCharge)}</span>
+        </div>
       </div>
     </div>
   );

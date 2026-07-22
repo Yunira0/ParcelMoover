@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, ArrowRight, Bell, User, Package, Truck, Banknote, Menu, MessageSquare, X } from 'lucide-react';
+import { Search, ArrowRight, Bell, User, Package, Truck, Banknote, Menu, MessageSquare, X, AlertCircle } from 'lucide-react';
 import Button from './Button';
 import type { AppNotification } from '../services/notifications.service';
 import {
@@ -12,16 +12,12 @@ import {
 } from '../services/notifications.service';
 import { getUnclosedRemarksCount } from '../services/remarks.service';
 import { useMobileNav } from '../context/MobileNavContext';
+import { toBsDateLabel, toNptTime } from '../utils/nepaliDate';
 import './TopNav.css';
 
-const timeAgo = (iso: string) => {
-  const seconds = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
-  if (seconds < 60) return 'just now';
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
+const formatTime = (iso: string) => {
+  if (!iso) return '';
+  return `${toBsDateLabel(iso)}, ${toNptTime(iso)}`;
 };
 
 // Polling interval for SSE fallback (30 seconds)
@@ -116,10 +112,18 @@ const TopNav: React.FC = () => {
     switch (notification.type) {
       case 'pickup':
         return '/pickup-operations';
+      case 'pickup_failed':
+        return '/pickup-operations';
       case 'dispatch':
+        return '/dispatch-operations';
+      case 'delivery_failed':
         return '/dispatch-operations';
       case 'cod_settlement':
         return '/finance';
+      case 'ticket':
+      case 'ticket_reply':
+      case 'ticket_status':
+        return '/tickets';
       default:
         return null;
     }
@@ -158,10 +162,18 @@ const TopNav: React.FC = () => {
     switch (type) {
       case 'pickup':
         return <Package size={14} className="notification-icon notification-icon-pickup" />;
+      case 'pickup_failed':
+        return <AlertCircle size={14} className="notification-icon notification-icon-failed" />;
       case 'dispatch':
         return <Truck size={14} className="notification-icon notification-icon-dispatch" />;
+      case 'delivery_failed':
+        return <AlertCircle size={14} className="notification-icon notification-icon-failed" />;
       case 'cod_settlement':
         return <Banknote size={14} className="notification-icon notification-icon-cod" />;
+      case 'ticket':
+      case 'ticket_reply':
+      case 'ticket_status':
+        return <MessageSquare size={14} className="notification-icon notification-icon-ticket" />;
       default:
         return null;
     }
@@ -279,7 +291,7 @@ const TopNav: React.FC = () => {
                       {notification.body && (
                         <div className="notification-item-body">{notification.body}</div>
                       )}
-                      <div className="notification-item-time">{timeAgo(notification.createdAt)}</div>
+                      <div className="notification-item-time">{formatTime(notification.createdAt)}</div>
                     </button>
                   ))
                 )}

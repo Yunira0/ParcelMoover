@@ -12,6 +12,7 @@ import PageLoader from './components/PageLoader'
 import './App.css'
 
 const DashboardRouter = lazy(() => import('./pages/DashboardRouter'))
+const OverviewOrdersPage = lazy(() => import('./pages/OverviewOrdersPage'))
 const OrdersRouter = lazy(() => import('./pages/OrdersRouter'))
 const CreateOrderPage = lazy(() => import('./pages/CreateOrderPage'))
 const OrderDetailPage = lazy(() => import('./pages/OrderDetailPage'))
@@ -78,6 +79,10 @@ function App() {
           }
         >
           <Route path="/dashboard" element={<DashboardRouter />} />
+          <Route
+            path="/overview/:metric"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']}><OverviewOrdersPage /></RoleGuard>}
+          />
           <Route path="/orders" element={<OrdersRouter />} />
           <Route
             path="/orders/create"

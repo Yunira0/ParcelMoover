@@ -13,7 +13,7 @@ import {
 } from '../services/remarks.service';
 import { addOrderRemark } from '../services/orders.service';
 import './RemarkDetail.css';
-import { toBsDate } from '../utils/nepaliDate';
+import { toBsDate, toBsDateLabel, toNptTime } from '../utils/nepaliDate';
 import './TicketDetail.css';
 
 const STATUS_TONE: Record<RemarkStatus, StatusChipTone> = {
@@ -32,20 +32,13 @@ const getAvatarColor = (name: string) => {
   return '#64748b';
 };
 
-const formatRelativeTime = (dateStr: string) => {
-  const date = new Date(dateStr);
-  if (Number.isNaN(date.getTime())) return dateStr;
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffMins = Math.floor(diffMs / 60000);
-  const diffHours = Math.floor(diffMins / 60);
-  const diffDays = Math.floor(diffHours / 24);
-  if (diffMins < 1) return 'just now';
-  if (diffMins < 60) return `${diffMins}m ago`;
-  if (diffHours < 24) return `${diffHours}h ago`;
-  if (diffDays < 7) return `${diffDays}d ago`;
-  return toBsDate(date);
-};
+function formatTime(dateStr: string): string {
+  if (!dateStr) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+    return toBsDate(dateStr);
+  }
+  return `${toBsDateLabel(dateStr)}, ${toNptTime(dateStr)}`;
+}
 
 const buildTree = (thread: RemarkThreadEntry[]) => {
   const nodeMap: Record<string, any> = {};
@@ -204,7 +197,7 @@ const RemarkDetail: React.FC = () => {
           <div className="rd-chat-body">
             <div className="rd-chat-sender-row">
               <span className="rd-chat-name">{node.addedBy}</span>
-              <span className="rd-chat-time">{formatRelativeTime(node.createdAt)}</span>
+              <span className="rd-chat-time">{formatTime(node.createdAt)}</span>
             </div>
             <div className={`rd-chat-bubble ${depth > 0 ? 'rd-chat-bubble-reply' : ''}`}>
               <p>{node.remark}</p>

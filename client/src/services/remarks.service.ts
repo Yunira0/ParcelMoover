@@ -22,6 +22,9 @@ export interface Remark {
 
 export interface ListRemarksParams {
   status?: RemarkStatus;
+  /** Server-side "unclosed comments" filter: workflow_status != closed, limited
+   *  to vendor/rider-raised remarks. Matches getUnclosedRemarksCount exactly. */
+  unclosed?: boolean;
   search?: string;
   fromDate?: string;
   toDate?: string;
@@ -68,6 +71,7 @@ export interface RemarkDetail {
 export const getRemarks = async (params?: ListRemarksParams): Promise<RemarksListResponse> => {
   const query: Record<string, string> = {};
   if (params?.status) query.status = params.status;
+  if (params?.unclosed) query.unclosed = 'true';
   if (params?.search) query.search = params.search;
   if (params?.fromDate) query.fromDate = params.fromDate;
   if (params?.toDate) query.toDate = params.toDate;

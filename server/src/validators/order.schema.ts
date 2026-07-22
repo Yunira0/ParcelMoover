@@ -87,6 +87,7 @@ export const createOrderSchema = z.object({
   deliveryInstruction: z.string().max(500).optional(),
   pickupAddress: z.string().max(255).optional(),
   scheduledPickupAt: z.string().datetime({ offset: true }).optional(),
+  confirmDuplicate: z.boolean().optional(),
 });
 
 export type CreateOrderInput = z.infer<typeof createOrderSchema>;

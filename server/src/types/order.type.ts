@@ -35,6 +35,13 @@ export interface CreateOrderInput {
 
   pickupAddress?: string;
   scheduledPickupAt?: string;
+
+  /**
+   * Set true to bypass the same-day duplicate warning (same vendor + same
+   * receiver phone/name/address created today). The client resends with this
+   * after the user confirms the "create anyway" prompt.
+   */
+  confirmDuplicate?: boolean;
 }
 
 export interface UpdateOrderDetailsInput {

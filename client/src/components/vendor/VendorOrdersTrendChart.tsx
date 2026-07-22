@@ -21,11 +21,19 @@ const niceMax = (value: number) => {
   return step * TICK_COUNT;
 };
 
+// The three series plotted, in draw order. Total Orders is the widest scale, so
+// it also anchors the y-axis; Delivered/Returned read against it.
+const SERIES = [
+  { key: 'totalOrders', label: 'Total Orders', lineClass: 'vendor-orders-trend-chart-line-total', dotClass: 'vendor-orders-trend-chart-dot-total' },
+  { key: 'delivered', label: 'Delivered', lineClass: 'vendor-orders-trend-chart-line-delivered', dotClass: 'vendor-orders-trend-chart-dot-delivered' },
+  { key: 'returned', label: 'Returned', lineClass: 'vendor-orders-trend-chart-line-returned', dotClass: 'vendor-orders-trend-chart-dot-returned' },
+] as const;
+
 const VendorOrdersTrendChart: React.FC<VendorOrdersTrendChartProps> = ({ data, loading = false }) => {
   const plotWidth = CHART_WIDTH - PADDING_LEFT - PADDING_RIGHT;
   const plotHeight = CHART_HEIGHT - PADDING_TOP - PADDING_BOTTOM;
 
-  const maxValue = niceMax(Math.max(1, ...data.flatMap((d) => [d.delivered, d.returned])));
+  const maxValue = niceMax(Math.max(1, ...data.flatMap((d) => SERIES.map((s) => d[s.key]))));
 
   const xFor = (index: number) =>
     data.length > 1
@@ -33,14 +41,24 @@ const VendorOrdersTrendChart: React.FC<VendorOrdersTrendChartProps> = ({ data, l
       : PADDING_LEFT + plotWidth / 2;
   const yFor = (value: number) => PADDING_TOP + plotHeight - (value / maxValue) * plotHeight;
 
-  const toPoints = (key: 'delivered' | 'returned') =>
+  const toPoints = (key: (typeof SERIES)[number]['key']) =>
     data.map((d, index) => `${xFor(index)},${yFor(d[key])}`).join(' ');
 
   const ticks = Array.from({ length: TICK_COUNT + 1 }, (_, i) => Math.round((maxValue / TICK_COUNT) * i));
 
   return (
     <div className="vendor-orders-trend-chart">
-      <h3 className="section-title">Orders Trend</h3>
+      <div className="vendor-orders-trend-chart-header">
+        <h3 className="section-title">Orders Trend</h3>
+        <div className="vendor-orders-trend-chart-legend">
+          {SERIES.map((s) => (
+            <span key={s.key} className="vendor-orders-trend-chart-legend-item">
+              <span className={`vendor-orders-trend-chart-legend-dot ${s.dotClass}`} />
+              {s.label}
+            </span>
+          ))}
+        </div>
+      </div>
       {loading || data.length === 0 ? (
         <div className="vendor-orders-trend-chart-empty">{loading ? 'Loading...' : 'No data yet'}</div>
       ) : (
@@ -64,13 +82,15 @@ const VendorOrdersTrendChart: React.FC<VendorOrdersTrendChartProps> = ({ data, l
             </g>
           ))}
 
-          <polyline points={toPoints('delivered')} className="vendor-orders-trend-chart-line-delivered" />
-          <polyline points={toPoints('returned')} className="vendor-orders-trend-chart-line-returned" />
+          {SERIES.map((s) => (
+            <polyline key={s.key} points={toPoints(s.key)} className={s.lineClass} />
+          ))}
 
           {data.map((d, index) => (
             <g key={d.date}>
-              <circle cx={xFor(index)} cy={yFor(d.delivered)} r={3} className="vendor-orders-trend-chart-dot-delivered" />
-              <circle cx={xFor(index)} cy={yFor(d.returned)} r={3} className="vendor-orders-trend-chart-dot-returned" />
+              {SERIES.map((s) => (
+                <circle key={s.key} cx={xFor(index)} cy={yFor(d[s.key])} r={3} className={s.dotClass} />
+              ))}
               <text x={xFor(index)} y={CHART_HEIGHT - 6} className="vendor-orders-trend-chart-day" textAnchor="middle">
                 {d.day.toLowerCase()}
               </text>

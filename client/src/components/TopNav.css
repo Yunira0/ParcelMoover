@@ -294,6 +294,14 @@
   color: var(--color-success-default);
 }
 
+.notification-icon-ticket {
+  color: var(--color-text-secondary);
+}
+
+.notification-icon-failed {
+  color: var(--color-background-danger-default);
+}
+
 .notification-panel {
   position: absolute;
   top: calc(100% + var(--space-2));

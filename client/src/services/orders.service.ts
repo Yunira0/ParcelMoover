@@ -56,6 +56,8 @@ export interface CreateOrderInput {
   pickupAddress?: string;
   scheduledPickupAt?: string;
   vendorId?: string;
+  /** Set true to bypass the same-day duplicate warning after the user confirms. */
+  confirmDuplicate?: boolean;
 }
 
 export interface Order {
@@ -213,6 +215,8 @@ export interface DashboardSummary {
     pendingCod: number;
     /** Cash riders have collected but not yet remitted to the office. */
     codFromRider: number;
+    /** Total delivery charges (office cut) on the delivered orders in the COD window. */
+    deliveryCharge: number;
     progressPercent: number;
     scopedToRider: boolean;
     lastAmount: number;

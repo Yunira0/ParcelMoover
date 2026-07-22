@@ -385,7 +385,7 @@ export const getVendorsController = async (req: Request, res: Response) => {
 
     // Aggregate order counts and pending COD per vendor in the DB instead of
     // pulling every parcel/cod_collection row for each vendor into memory.
-    const [statusCounts, codSums] = vendorIds.length
+    const [statusCounts, codSums, lastOrders] = vendorIds.length
       ? await Promise.all([
           prisma.parcels.groupBy({
             by: ["vendor_id", "status"],
@@ -397,8 +397,15 @@ export const getVendorsController = async (req: Request, res: Response) => {
             where: { vendor_id: { in: vendorIds }, payment_status: "pending" },
             _sum: { pending_amount: true },
           }),
+          // last_ordered_at is never denormalised onto vendors, so derive the
+          // most recent order date per vendor straight from their parcels.
+          prisma.parcels.groupBy({
+            by: ["vendor_id"],
+            where: { vendor_id: { in: vendorIds }, deleted_at: null },
+            _max: { created_at: true },
+          }),
         ])
-      : [[], []];
+      : [[], [], []];
 
     const ordersByVendor = new Map<string, { total: number; delivered: number; returned: number }>();
     for (const row of statusCounts) {
@@ -415,6 +422,12 @@ export const getVendorsController = async (req: Request, res: Response) => {
     for (const row of codSums) {
       if (!row.vendor_id) continue;
       codByVendor.set(row.vendor_id, Number(row._sum.pending_amount || 0));
+    }
+
+    const lastOrderByVendor = new Map<string, Date>();
+    for (const row of lastOrders) {
+      if (!row.vendor_id || !row._max.created_at) continue;
+      lastOrderByVendor.set(row.vendor_id, row._max.created_at);
     }
 
     return res.status(200).json({
@@ -439,7 +452,7 @@ export const getVendorsController = async (req: Request, res: Response) => {
         codDue: codByVendor.get(vendor.id) ?? 0,
         status: vendor.status,
         joined: formatDate(vendor.joined_at),
-        lastOrderedDate: formatDate(vendor.last_ordered_at),
+        lastOrderedDate: formatDate(lastOrderByVendor.get(vendor.id) ?? vendor.last_ordered_at),
       })),
       meta: { page, pageSize, total, totalPages: Math.max(1, Math.ceil(total / pageSize)) },
     });

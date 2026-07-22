@@ -21,6 +21,7 @@ interface RiderFormInput {
   riderLocation: string;
   contactNo: string;
   citizenshipNo: string;
+  joinedAt: string;
   // Vehicle & License
   licenceNo: string;
   vehicleNo: string;
@@ -48,6 +49,7 @@ const emptyForm: RiderFormInput = {
   riderLocation: '',
   contactNo: '',
   citizenshipNo: '',
+  joinedAt: '',
   licenceNo: '',
   vehicleNo: '',
   serviceBranch: '',
@@ -174,6 +176,7 @@ const RiderFormPage: React.FC = () => {
           fullName: s(d.fullName),
           email: s(d.email),
           contactNo: s(d.phone),
+          joinedAt: s(d.joinedAt),
           serviceBranch: s(d.locationId),
           riderLocation: s(d.riderLocation),
           citizenshipNo: s(d.citizenshipNo),
@@ -218,6 +221,7 @@ const RiderFormPage: React.FC = () => {
     if (!form.contactNo.trim()) errors.contactNo = 'Contact number is required';
     else if (!isValidPhone(form.contactNo)) errors.contactNo = 'Enter a 10–15 digit phone number';
     if (!form.serviceBranch.trim()) errors.serviceBranch = 'Service branch is required';
+    if (!form.joinedAt.trim()) errors.joinedAt = 'Joined date is required';
     if (!form.email.trim()) errors.email = 'Email is required';
     else if (!isValidEmail(form.email)) errors.email = 'Enter a valid email address';
     // Documents and password only required when creating a new rider.
@@ -253,6 +257,7 @@ const RiderFormPage: React.FC = () => {
           fullName: form.fullName,
           phone: normalizePhone(form.contactNo),
           email: form.email,
+          joinedAt: form.joinedAt || undefined,
           locationId: form.serviceBranch,
           riderLocation: form.riderLocation,
           citizenshipNo: form.citizenshipNo,
@@ -273,6 +278,7 @@ const RiderFormPage: React.FC = () => {
         email: form.email,
         password: form.password,
         phone: normalizePhone(form.contactNo),
+        joinedAt: form.joinedAt || undefined,
         locationId: form.serviceBranch, // the rider's hub / service branch
         riderLocation: form.riderLocation,
         citizenshipNo: form.citizenshipNo,
@@ -388,6 +394,14 @@ const RiderFormPage: React.FC = () => {
                   onChange={set('citizenshipNo')}
                   placeholder="Citizenship number"
                 />
+                <FormField
+                  label="Joined Date"
+                  required
+                  type="date"
+                  value={form.joinedAt}
+                  onChange={set('joinedAt')}
+                />
+                {fieldErrors.joinedAt && <span className="rfp-field-error">{fieldErrors.joinedAt}</span>}
               </div>
             </section>
 

@@ -28,6 +28,7 @@ interface AdminFormInput {
   permanentAddress: string;
   currentAddress: string;
   experience: string;
+  joinedAt: string;
   // Service Info
   locationId: string;
   department: string;
@@ -71,6 +72,7 @@ const emptyForm: AdminFormInput = {
   permanentAddress: '',
   currentAddress: '',
   experience: '',
+  joinedAt: '',
   locationId: '',
   department: '',
   designation: '',
@@ -193,6 +195,7 @@ const AdminFormPage: React.FC = () => {
           permanentAddress: s(d.permanentAddress),
           currentAddress: s(d.currentAddress),
           experience: s(d.experience),
+          joinedAt: s(d.joinedAt),
           locationId: s(d.locationId),
           department: s(d.department),
           designation: s(d.position),
@@ -237,6 +240,7 @@ const AdminFormPage: React.FC = () => {
     if (!form.locationId.trim()) errors.locationId = 'Hub is required';
     if (!form.department.trim()) errors.department = 'Department is required';
     if (!form.designation.trim()) errors.designation = 'Designation is required';
+    if (!form.joinedAt.trim()) errors.joinedAt = 'Joined date is required';
     if (!form.email.trim()) errors.email = 'Email is required';
     else if (!isValidEmail(form.email)) errors.email = 'Enter a valid email address';
     // Document and password only required when creating a new admin.
@@ -273,6 +277,7 @@ const AdminFormPage: React.FC = () => {
           fullName: form.fullName,
           phone: normalizePhone(form.phone),
           email: form.email,
+          joinedAt: form.joinedAt || undefined,
           position: form.designation,
           locationId: form.locationId,
           department: form.department,
@@ -300,6 +305,7 @@ const AdminFormPage: React.FC = () => {
         email: form.email,
         password: form.password,
         phone: normalizePhone(form.phone),
+        joinedAt: form.joinedAt || undefined,
         position: form.designation,
         locationId: form.locationId,
         department: form.department,
@@ -461,6 +467,14 @@ const AdminFormPage: React.FC = () => {
                   onChange={set('experience')}
                   placeholder="e.g. 3 years in logistics"
                 />
+                <FormField
+                  label="Joined Date"
+                  required
+                  type="date"
+                  value={form.joinedAt}
+                  onChange={set('joinedAt')}
+                />
+                {fieldErrors.joinedAt && <span className="afp-field-error">{fieldErrors.joinedAt}</span>}
               </div>
             </section>
 
