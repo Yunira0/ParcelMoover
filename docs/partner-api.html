@@ -258,9 +258,15 @@
       <li><a href="#create">Create an order</a></li>
       <li><a href="#track">Track an order</a></li>
       <li><a href="#list">List your orders</a></li>
+      <li><a href="#cancel-order">Cancel an order</a></li>
+      <li><a href="#bulk-status">Bulk status lookup</a></li>
+      <li><a href="#rates">Rates</a></li>
+      <li><a href="#remarks">Order comments</a></li>
+      <li><a href="#tickets">Support tickets</a></li>
       <li><a href="#statuses">Order statuses</a></li>
       <li><a href="#webhooks">Webhooks</a></li>
       <li><a href="#errors">Errors</a></li>
+      <li><a href="#openapi">OpenAPI spec</a></li>
       <li><a href="#checklist">Integration checklist</a></li>
     </ol>
   </nav>
@@ -343,8 +349,9 @@
     <tr><th>Operations</th><th>Limit</th></tr>
     <tr><td>Reads (<code>GET</code>)</td><td>120 / min</td></tr>
     <tr><td>Writes (<code>POST</code>)</td><td>30 / min</td></tr>
+    <tr><td>Bulk status lookup (<code>POST /orders/statuses</code>)</td><td>20 / min</td></tr>
   </table></div>
-  <p>Exceeding a limit returns <code>429</code>. Standard <code>RateLimit-*</code> response headers indicate your remaining quota — back off and retry after the window resets.</p>
+  <p>Exceeding a limit returns <code>429</code>. Standard <code>RateLimit-*</code> response headers indicate your remaining quota; back off and retry after the window resets.</p>
 
   <h2 id="create">Create an order</h2>
   <p class="endpoint"><span class="method post">POST</span><span class="path">/api/v1/orders</span></p>
@@ -361,7 +368,7 @@
     <tr><td><code>sender.address</code></td><td>string</td><td class="opt">Optional</td><td>Max 255 characters.</td></tr>
     <tr><td><code>receiver</code></td><td>object</td><td class="req">Required</td><td>Delivery contact — your customer. Same fields as <code>sender</code>.</td></tr>
     <tr><td><code>orderType</code></td><td>string</td><td class="opt">Optional</td><td><code>delivery</code> (default), <code>exchange</code>, or <code>return</code>.</td></tr>
-    <tr><td><code>serviceType</code></td><td>string</td><td class="opt">Optional</td><td><code>dtd</code> door-to-door (default), <code>btd</code> branch-to-door, <code>btb</code> branch-to-branch, <code>dtb</code> door-to-branch.</td></tr>
+    <tr><td><code>serviceType</code></td><td>string</td><td class="opt">Optional</td><td><code>home_delivery</code> (default) or <code>branch_delivery</code>.</td></tr>
     <tr><td><code>pieces</code></td><td>integer</td><td class="opt">Optional</td><td>≥ 1. Number of packages.</td></tr>
     <tr><td><code>weightKg</code></td><td>number</td><td class="opt">Optional</td><td>&gt; 0.</td></tr>
     <tr><td><code>codAmount</code></td><td>number</td><td class="opt">Optional</td><td>≥ 0. Cash to collect from the receiver on delivery (NPR). Omit or <code>0</code> for prepaid orders.</td></tr>
@@ -648,6 +655,181 @@ printf("%d of %d orders", count($body['data']), $body['meta']['total']);</code><
   }
 }</code></pre></div>
 
+  <h2 id="cancel-order">Cancel an order</h2>
+  <p class="endpoint"><span class="method post">POST</span><span class="path">/api/v1/orders/{trackingId}/cancel</span></p>
+  <p>Headers: <code>Authorization</code>, <code>Idempotency-Key</code> (UUID, required).</p>
+  <div class="callout"><p>Only works while the order hasn't been picked up yet: status <code>pickup_ordered</code>, <code>rider_assigned</code>, or <code>failed_pickup</code>. Once it's moved past that, this returns <code>409</code>/<code>422</code> instead. Reach out through <a href="#remarks">order comments</a> or a <a href="#tickets">support ticket</a> if you need to intervene later.</p></div>
+
+  <h3>Request body</h3>
+  <div class="tablewrap"><table>
+    <tr><th>Field</th><th>Type</th><th>Required</th><th>Notes</th></tr>
+    <tr><td><code>reason</code></td><td>string</td><td class="opt">Optional</td><td>Max 500 characters. Recorded as a remark on the order.</td></tr>
+  </table></div>
+
+  <h3>Example</h3>
+  <div class="codeblock"><pre><code>curl -X POST "$BASE/api/v1/orders/PM-260713-GFQK93S5YN894-Q/cancel" \
+  -H "Authorization: Bearer $KEY" \
+  -H "Idempotency-Key: $(uuidgen)" \
+  -H "Content-Type: application/json" \
+  -d '{ "reason": "Customer cancelled before dispatch" }'</code></pre></div>
+
+  <h3>Response — 200 OK</h3>
+  <div class="codeblock"><pre><code>{
+  "success": true,
+  "message": "Order cancelled",
+  "data": { "trackingId": "PM-260713-GFQK93S5YN894-Q", "status": "cancelled" }
+}</code></pre></div>
+
+  <h2 id="bulk-status">Bulk status lookup</h2>
+  <p class="endpoint"><span class="method post">POST</span><span class="path">/api/v1/orders/statuses</span></p>
+  <p>Look up the current status of up to 100 orders in a single call, for reconciliation, not a substitute for <a href="#webhooks">webhooks</a>. Tracking IDs that don't exist or aren't yours come back in <code>notFound</code> instead of failing the whole request.</p>
+
+  <h3>Request body</h3>
+  <div class="tablewrap"><table>
+    <tr><th>Field</th><th>Type</th><th>Required</th><th>Notes</th></tr>
+    <tr><td><code>trackingIds</code></td><td>string[]</td><td class="req">Required</td><td>1–100 tracking IDs.</td></tr>
+  </table></div>
+
+  <h3>Example</h3>
+  <div class="codeblock"><pre><code>curl -X POST "$BASE/api/v1/orders/statuses" \
+  -H "Authorization: Bearer $KEY" \
+  -H "Content-Type: application/json" \
+  -d '{ "trackingIds": ["PM-260713-GFQK93S5YN894-Q", "PM-NOPE-00000000000-X"] }'</code></pre></div>
+
+  <h3>Response — 200 OK</h3>
+  <div class="codeblock"><pre><code>{
+  "success": true,
+  "data": [
+    { "trackingId": "PM-260713-GFQK93S5YN894-Q", "status": "delivered", "updatedAt": "2026-07-22T11:16:28.210Z" }
+  ],
+  "notFound": ["PM-NOPE-00000000000-X"]
+}</code></pre></div>
+
+  <h2 id="rates">Rates</h2>
+  <p>Two read-only endpoints for pricing your own shipments, no order needed.</p>
+
+  <h3>Your rate card</h3>
+  <p class="endpoint"><span class="method get">GET</span><span class="path">/api/v1/rates</span></p>
+  <p>Your full rate card: the home-delivery and branch-delivery base rate to every active destination, under your own rate agreement (flat, zone, or per-destination, whichever ParcelMoover has configured for your account).</p>
+  <div class="codeblock"><pre><code>curl "$BASE/api/v1/rates" -H "Authorization: Bearer $KEY"</code></pre></div>
+  <div class="codeblock"><pre><code>{
+  "success": true,
+  "data": {
+    "rateType": "flat",
+    "freeWeightKg": 2,
+    "extraWeightPercent": 5,
+    "rates": [
+      { "destinationId": "a350d017-...", "destinationName": "POKHARA", "zone": "urban_areas",
+        "valley": "outside", "homeRate": 150, "branchRate": 150, "note": null }
+    ]
+  }
+}</code></pre></div>
+
+  <h3>Quote a single destination</h3>
+  <p class="endpoint"><span class="method get">GET</span><span class="path">/api/v1/rates/quote</span></p>
+  <div class="tablewrap"><table>
+    <tr><th>Query param</th><th>Required</th><th>Notes</th></tr>
+    <tr><td><code>destinationLocationId</code></td><td class="req">Required</td><td>A destination id, get one from <code>GET /api/v1/rates</code> above.</td></tr>
+    <tr><td><code>weightKg</code></td><td class="opt">Optional</td><td>Default <code>1</code>.</td></tr>
+    <tr><td><code>serviceType</code></td><td class="opt">Optional</td><td><code>home_delivery</code> (default) or <code>branch_delivery</code>.</td></tr>
+  </table></div>
+  <p>Use this to show a shipping cost estimate before checkout, without creating an order.</p>
+  <div class="codeblock"><pre><code>curl "$BASE/api/v1/rates/quote?destinationLocationId=a350d017-...&amp;weightKg=3" \
+  -H "Authorization: Bearer $KEY"</code></pre></div>
+  <div class="codeblock"><pre><code>{
+  "success": true,
+  "data": {
+    "baseCharge": 150,
+    "weightSurcharge": 7.5,
+    "totalPayable": 157.5,
+    "freeWeightKg": 2,
+    "rateType": "flat",
+    "basis": "Flat home rate (outside valley)",
+    "valley": "outside"
+  }
+}</code></pre></div>
+
+  <h2 id="remarks">Order comments</h2>
+  <p>A lightweight, threaded comment log on an order, visible to both you and ParcelMoover ops. Use it for delivery instructions raised after the fact, or clarifying an address with support, without opening a full ticket.</p>
+
+  <h3>Read the comment thread</h3>
+  <p class="endpoint"><span class="method get">GET</span><span class="path">/api/v1/orders/{trackingId}/remarks</span></p>
+  <div class="codeblock"><pre><code>curl "$BASE/api/v1/orders/PM-260713-GFQK93S5YN894-Q/remarks" -H "Authorization: Bearer $KEY"</code></pre></div>
+
+  <h3>Add a comment</h3>
+  <p class="endpoint"><span class="method post">POST</span><span class="path">/api/v1/orders/{trackingId}/remarks</span></p>
+  <p>Headers: <code>Authorization</code>, <code>Idempotency-Key</code> (UUID, required).</p>
+  <div class="tablewrap"><table>
+    <tr><th>Field</th><th>Type</th><th>Required</th><th>Notes</th></tr>
+    <tr><td><code>remark</code></td><td>string</td><td class="req">Required</td><td>1–2000 characters.</td></tr>
+    <tr><td><code>parentRemarkId</code></td><td>UUID</td><td class="opt">Optional</td><td>Reply to an existing remark from the thread above.</td></tr>
+  </table></div>
+  <div class="codeblock"><pre><code>curl -X POST "$BASE/api/v1/orders/PM-260713-GFQK93S5YN894-Q/remarks" \
+  -H "Authorization: Bearer $KEY" \
+  -H "Idempotency-Key: $(uuidgen)" \
+  -H "Content-Type: application/json" \
+  -d '{ "remark": "Please deliver after 5pm — customer is at work until then" }'</code></pre></div>
+
+  <h3>Response — 201 Created</h3>
+  <div class="codeblock"><pre><code>{
+  "success": true,
+  "message": "Remark added",
+  "data": {
+    "id": "a8d1c6f5-...",
+    "remark": "Please deliver after 5pm — customer is at work until then",
+    "addedBy": "My Store",
+    "createdAt": "2026-07-22T13:55:20.526Z",
+    "parentRemarkId": null,
+    "parentAuthor": null,
+    "parentSnippet": null
+  }
+}</code></pre></div>
+
+  <h2 id="tickets">Support tickets</h2>
+  <p>Raise and track support tickets programmatically instead of using the dashboard.</p>
+
+  <h3>Open a ticket</h3>
+  <p class="endpoint"><span class="method post">POST</span><span class="path">/api/v1/tickets</span></p>
+  <p>Headers: <code>Authorization</code>, <code>Idempotency-Key</code> (UUID, required).</p>
+  <div class="tablewrap"><table>
+    <tr><th>Field</th><th>Type</th><th>Required</th><th>Notes</th></tr>
+    <tr><td><code>subject</code></td><td>string</td><td class="req">Required</td><td>3–200 characters.</td></tr>
+    <tr><td><code>category</code></td><td>string</td><td class="opt">Optional</td><td>Max 50 characters, e.g. <code>"pickup"</code>, <code>"delivery"</code>, <code>"cod_settlement"</code>.</td></tr>
+    <tr><td><code>priority</code></td><td>string</td><td class="opt">Optional</td><td><code>low</code>, <code>medium</code>, <code>high</code>, or <code>urgent</code>.</td></tr>
+    <tr><td><code>description</code></td><td>string</td><td class="opt">Optional</td><td>Max 2000 characters.</td></tr>
+    <tr><td><code>customerName</code> / <code>customerPhone</code></td><td>string</td><td class="opt">Optional</td><td>If the ticket concerns a specific customer.</td></tr>
+  </table></div>
+  <div class="codeblock"><pre><code>curl -X POST "$BASE/api/v1/tickets" \
+  -H "Authorization: Bearer $KEY" \
+  -H "Idempotency-Key: $(uuidgen)" \
+  -H "Content-Type: application/json" \
+  -d '{ "subject": "Wrong COD amount on PM-260713-GFQK93S5YN894-Q",
+       "category": "cod_settlement", "priority": "high" }'</code></pre></div>
+
+  <h3>Response — 201 Created</h3>
+  <div class="codeblock"><pre><code>{
+  "success": true,
+  "message": "Ticket created",
+  "data": {
+    "id": "195d1bd1-...",
+    "ticketId": "TKT-260722-DAMMDS",
+    "subject": "Wrong COD amount on PM-260713-GFQK93S5YN894-Q",
+    "category": "cod_settlement",
+    "priority": "high",
+    "status": "pending",
+    "assignedTo": "Unassigned",
+    "createdAt": "2026-07-22"
+  }
+}</code></pre></div>
+
+  <h3>List, read, and reply</h3>
+  <div class="tablewrap"><table>
+    <tr><th>Call</th><th>Notes</th></tr>
+    <tr><td><span class="method get">GET</span> <code>/api/v1/tickets</code></td><td>List your tickets. Filters: <code>status</code>, <code>priority</code>, <code>category</code>, <code>fromDate</code>, <code>toDate</code>, <code>page</code>, <code>pageSize</code>.</td></tr>
+    <tr><td><span class="method get">GET</span> <code>/api/v1/tickets/{id}</code></td><td>Ticket detail plus reply thread.</td></tr>
+    <tr><td><span class="method post">POST</span> <code>/api/v1/tickets/{id}/replies</code></td><td>Add a reply. Requires <code>Idempotency-Key</code>; body <code>{ "message": "..." }</code>.</td></tr>
+  </table></div>
+
   <h2 id="statuses">Order statuses</h2>
   <p>An order moves through these <code>status</code> values:</p>
   <div class="tablewrap"><table>
@@ -717,35 +899,48 @@ function verifyParcelMooverSignature(rawBody, signatureHeader, secret, tolerance
 
   <h2 id="errors">Errors</h2>
   <p>Every error is JSON with this shape:</p>
-  <div class="codeblock"><pre><code>{ "success": false, "message": "Human-readable explanation" }</code></pre></div>
-  <p>Validation failures (<code>400</code>) additionally include an <code>errors</code> array:</p>
+  <div class="codeblock"><pre><code>{
+  "success": false,
+  "message": "Human-readable explanation",
+  "error": { "code": "STABLE_MACHINE_READABLE_CODE" }
+}</code></pre></div>
+  <p><code>error.code</code> is safe to branch your integration logic on; it won't change even if we reword <code>message</code>. Validation failures (<code>400</code>) additionally include <code>error.fields</code>:</p>
   <div class="codeblock"><pre><code>{
   "success": false,
   "message": "Validation failed",
-  "errors": [
-    { "field": "receiver.phone",
-      "message": "Phone must be 10–15 digits, optionally starting with +" }
-  ]
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "fields": [
+      { "field": "receiver.phone",
+        "message": "Phone must be 10–15 digits, optionally starting with +" }
+    ]
+  }
 }</code></pre></div>
   <div class="tablewrap"><table>
-    <tr><th>Code</th><th>Meaning</th></tr>
-    <tr><td><code>400</code></td><td>Malformed request — missing/invalid fields, missing or non-UUID <code>Idempotency-Key</code>.</td></tr>
-    <tr><td><code>401</code></td><td>Missing, invalid, or revoked API key.</td></tr>
-    <tr><td><code>404</code></td><td>Order not found (or not yours), or unknown endpoint.</td></tr>
-    <tr><td><code>409</code></td><td>Conflict — e.g. an <code>Idempotency-Key</code> replayed with a <em>different</em> request body.</td></tr>
-    <tr><td><code>422</code></td><td>Request understood but not processable (business-rule rejection).</td></tr>
-    <tr><td><code>429</code></td><td>Rate limit exceeded — back off and retry.</td></tr>
-    <tr><td><code>500</code></td><td>Server error — safe to retry <code>POST /orders</code> with the same <code>Idempotency-Key</code>.</td></tr>
+    <tr><th>Status</th><th>error.code</th><th>Meaning</th></tr>
+    <tr><td><code>400</code></td><td><code>VALIDATION_ERROR</code></td><td>Malformed request: missing/invalid fields, missing or non-UUID <code>Idempotency-Key</code>.</td></tr>
+    <tr><td><code>401</code></td><td><code>UNAUTHORIZED</code></td><td>Missing, invalid, or revoked API key.</td></tr>
+    <tr><td><code>403</code></td><td><code>FORBIDDEN</code></td><td>Not allowed for this vendor.</td></tr>
+    <tr><td><code>404</code></td><td><code>NOT_FOUND</code></td><td>Order/ticket not found (or not yours), or unknown endpoint.</td></tr>
+    <tr><td><code>409</code></td><td><code>CONFLICT</code></td><td>E.g. an <code>Idempotency-Key</code> replayed with a <em>different</em> body, or the order is already in a terminal status.</td></tr>
+    <tr><td><code>422</code></td><td><code>VALIDATION_ERROR</code></td><td>Request understood but not processable (invalid status transition, business-rule rejection).</td></tr>
+    <tr><td><code>429</code></td><td><code>RATE_LIMITED</code></td><td>Rate limit exceeded; back off and retry.</td></tr>
+    <tr><td><code>500</code></td><td><code>INTERNAL_ERROR</code></td><td>Server error; safe to retry a <code>POST</code> with the same <code>Idempotency-Key</code>.</td></tr>
   </table></div>
+
+  <h2 id="openapi">OpenAPI spec</h2>
+  <p class="endpoint"><span class="method get">GET</span><span class="path">/api/v1/openapi.json</span></p>
+  <p>The full request/response schema for every endpoint above, generated straight from the same validation the API runs, so it can never drift from what's actually enforced. No API key required to fetch it.</p>
+  <div class="callout"><p>Paste the URL into <a href="https://editor.swagger.io" target="_blank" rel="noreferrer">Swagger Editor</a> or Postman's "Import from link" for a browsable, interactive version, or feed it to an OpenAPI code generator for a typed client in your language of choice.</p></div>
 
   <h2 id="checklist">Integration checklist</h2>
   <ol>
     <li>Generate an API key from the vendor dashboard and store it server-side (env var / secrets manager — never in client code).</li>
     <li>On checkout or fulfilment, <code>POST /orders</code> with a fresh UUID <code>Idempotency-Key</code>; persist the returned <code>trackingId</code> against your order.</li>
-    <li>Retry failed creates (network error, <code>5xx</code>) with the <strong>same</strong> <code>Idempotency-Key</code>.</li>
+    <li>Retry failed creates (network error, <code>5xx</code>) with the <strong>same</strong> <code>Idempotency-Key</code>; extend the same pattern to cancel, remarks, and ticket calls.</li>
     <li>Register a webhook endpoint and verify <code>X-ParcelMoover-Signature</code> on every request before trusting the payload; that's how you sync status back to your system. Show the returned <code>trackingId</code> to your customer at creation time.</li>
-    <li>Use <code>GET /orders/{trackingId}</code> only for on-demand lookups or reconciliation (e.g. catching up after your webhook endpoint was down), not as a scheduled polling loop.</li>
-    <li>Handle <code>401</code> by alerting yourself (key revoked or rotated) and <code>429</code> with exponential backoff.</li>
+    <li>Use <code>GET /orders/{trackingId}</code> and <code>POST /orders/statuses</code> only for on-demand lookups or reconciliation (e.g. catching up after your webhook endpoint was down), not as a scheduled polling loop.</li>
+    <li>Handle <code>401</code> by alerting yourself (key revoked or rotated) and <code>429</code> with exponential backoff; branch on <code>error.code</code> rather than parsing <code>message</code> text.</li>
     <li>Rotate keys periodically: generate a new key, switch traffic, then revoke the old one (up to 5 active keys per account).</li>
   </ol>
 

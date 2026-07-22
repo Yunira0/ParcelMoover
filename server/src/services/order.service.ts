@@ -1906,6 +1906,37 @@ export async function getPublicOrderTracking(trackingId: string) {
   };
 }
 
+// Bulk status lookup for reconciliation - scoped the same way
+// getOrderByTrackingId is. Requested ids that don't resolve (wrong vendor,
+// typo, deleted) land in `notFound` instead of silently vanishing, so a
+// polling client can tell "not mine / doesn't exist" from "still processing."
+export async function getOrderStatusesByTrackingIds(actor: OrderActor, trackingIds: string[]) {
+  const { vendorId, vendorIds, riderId } = await getActorScope(actor);
+
+  const parcels = await prisma.parcels.findMany({
+    where: {
+      tracking_id: { in: trackingIds },
+      deleted_at: null,
+      ...(vendorId ? { vendor_id: vendorId } : {}),
+      ...(vendorIds ? { vendor_id: { in: vendorIds } } : {}),
+      ...(riderId ? { OR: [{ pickup_rider_id: riderId }, { delivery_rider_id: riderId }] } : {}),
+    },
+    select: { tracking_id: true, status: true, updated_at: true },
+  });
+
+  const found = new Set(parcels.map((p) => p.tracking_id));
+  const notFound = trackingIds.filter((id) => !found.has(id));
+
+  return {
+    data: parcels.map((p) => ({
+      trackingId: p.tracking_id,
+      status: p.status,
+      updatedAt: p.updated_at,
+    })),
+    notFound,
+  };
+}
+
 export async function addOrderRemark(
   actor: OrderActor,
   parcelId: string,

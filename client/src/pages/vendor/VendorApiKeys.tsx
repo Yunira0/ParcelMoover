@@ -178,12 +178,30 @@ const VendorApiKeys: React.FC = () => {
         <h3>Quick start</h3>
         <p>
           Send your key on every request as <code>Authorization: Bearer &lt;key&gt;</code>.
+          Endpoints that change something also need a UUID <code>Idempotency-Key</code> header,
+          so a retried request never repeats the action.
         </p>
         <ul>
-          <li><code>POST /api/v1/orders</code> — place an order (requires a UUID <code>Idempotency-Key</code> header)</li>
+          <li><code>POST /api/v1/orders</code> — place an order</li>
           <li><code>GET /api/v1/orders/&#123;trackingId&#125;</code> — track an order</li>
           <li><code>GET /api/v1/orders?status=delivered&amp;page=1</code> — list your orders</li>
+          <li><code>POST /api/v1/orders/&#123;trackingId&#125;/cancel</code> — cancel an order</li>
+          <li><code>POST /api/v1/orders/statuses</code> — bulk status lookup (up to 100 tracking ids)</li>
+          <li><code>GET /api/v1/rates</code> · <code>GET /api/v1/rates/quote</code> — your rate card and single-destination quotes</li>
+          <li><code>GET</code>/<code>POST /api/v1/orders/&#123;trackingId&#125;/remarks</code> — read or add order comments</li>
+          <li><code>POST /api/v1/tickets</code> · <code>GET /api/v1/tickets</code> — open or list support tickets</li>
         </ul>
+        <p>
+          Full request/response shapes:{' '}
+          <a
+            className="api-keys-docs-link"
+            href="/api/v1/openapi.json"
+            target="_blank"
+            rel="noreferrer"
+          >
+            OpenAPI spec
+          </a>
+        </p>
       </div>
 
       {createOpen && (

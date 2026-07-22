@@ -49,8 +49,9 @@ Limits are per API key, per minute:
 |---|---|
 | Reads (`GET`) | 120/min |
 | Writes (`POST`) | 30/min |
+| Bulk status lookup (`POST /orders/statuses`) | 20/min |
 
-Exceeding a limit returns `429` with `{ "success": false, "message": "Too many requests, please slow down" }`. Standard `RateLimit-*` response headers indicate your remaining quota — back off and retry after the window resets.
+Exceeding a limit returns `429` with `{ "success": false, "message": "Too many requests, please slow down", "error": { "code": "RATE_LIMITED" } }`. Standard `RateLimit-*` response headers indicate your remaining quota — back off and retry after the window resets.
 
 ---
 
@@ -76,7 +77,7 @@ Headers: `Authorization`, `Idempotency-Key` (UUID, required), `Content-Type: app
 | `receiver.address` | string | — | Max 255 chars. |
 | `sender` | object | — | Pickup contact. **Omit it and ParcelMoover fills it from your vendor account's registered pickup profile** (business name, phone, pickup landmark). Provide it only to override — e.g. shipping from a different warehouse. Same fields as `receiver` (`name` and `phone` required when provided). |
 | `orderType` | string | — | `delivery` (default), `exchange`, or `return`. |
-| `serviceType` | string | — | `dtd` door-to-door (default), `btd` branch-to-door, `btb` branch-to-branch, `dtb` door-to-branch. |
+| `serviceType` | string | — | `home_delivery` (default) or `branch_delivery`. |
 | `pieces` | integer | — | ≥ 1. Number of packages. |
 | `weightKg` | number | — | > 0. |
 | `codAmount` | number | — | ≥ 0. Cash to collect from the receiver on delivery (NPR). Omit or `0` for prepaid orders. |
@@ -389,6 +390,272 @@ printf("%d of %d orders", count($body['data']), $body['meta']['total']);
 
 ---
 
+### Cancel an order
+
+```
+POST /api/v1/orders/{trackingId}/cancel
+```
+
+Headers: `Authorization`, `Idempotency-Key` (UUID, required).
+
+Only works while the order hasn't been picked up yet — status `pickup_ordered`, `rider_assigned`, or `failed_pickup`. Once it's moved past that, this returns `409`/`422` instead — reach out through [order comments](#remarks) or a [support ticket](#tickets) if you need to intervene on a later stage.
+
+#### Request body
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `reason` | string | — | Max 500 chars. Recorded as a remark on the order. |
+
+#### Example
+
+```bash
+curl -X POST "$BASE/api/v1/orders/PM-260713-GFQK93S5YN894-Q/cancel" \
+  -H "Authorization: Bearer $KEY" \
+  -H "Idempotency-Key: $(uuidgen)" \
+  -H "Content-Type: application/json" \
+  -d '{ "reason": "Customer cancelled before dispatch" }'
+```
+
+#### Response — `200 OK`
+
+```json
+{
+  "success": true,
+  "message": "Order cancelled",
+  "data": { "trackingId": "PM-260713-GFQK93S5YN894-Q", "status": "cancelled" }
+}
+```
+
+---
+
+### Bulk status lookup
+
+```
+POST /api/v1/orders/statuses
+```
+
+Look up the current status of up to 100 orders in a single call — for reconciliation, not a substitute for [webhooks](#webhooks). Tracking IDs that don't exist or aren't yours come back in `notFound` instead of failing the whole request.
+
+#### Request body
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `trackingIds` | string[] | ✅ | 1–100 tracking IDs. |
+
+#### Example
+
+```bash
+curl -X POST "$BASE/api/v1/orders/statuses" \
+  -H "Authorization: Bearer $KEY" \
+  -H "Content-Type: application/json" \
+  -d '{ "trackingIds": ["PM-260713-GFQK93S5YN894-Q", "PM-NOPE-00000000000-X"] }'
+```
+
+#### Response — `200 OK`
+
+```json
+{
+  "success": true,
+  "data": [
+    { "trackingId": "PM-260713-GFQK93S5YN894-Q", "status": "delivered", "updatedAt": "2026-07-22T11:16:28.210Z" }
+  ],
+  "notFound": ["PM-NOPE-00000000000-X"]
+}
+```
+
+---
+
+## Rates
+
+Two read-only endpoints for pricing your own shipments — no order needed.
+
+### Your rate card
+
+```
+GET /api/v1/rates
+```
+
+Returns your full rate card — the home-delivery and branch-delivery base rate to every active destination, under your own rate agreement (flat, zone, or per-destination, whichever ParcelMoover has configured for your account).
+
+#### Example
+
+```bash
+curl "$BASE/api/v1/rates" -H "Authorization: Bearer $KEY"
+```
+
+#### Response — `200 OK` (abridged)
+
+```json
+{
+  "success": true,
+  "data": {
+    "rateType": "flat",
+    "freeWeightKg": 2,
+    "extraWeightPercent": 5,
+    "rates": [
+      { "destinationId": "a350d017-...", "destinationName": "POKHARA", "zone": "urban_areas", "valley": "outside", "homeRate": 150, "branchRate": 150, "note": null }
+    ]
+  }
+}
+```
+
+### Quote a single destination
+
+```
+GET /api/v1/rates/quote?destinationLocationId=<uuid>&weightKg=<n>&serviceType=<home_delivery|branch_delivery>
+```
+
+Use this to show a shipping cost estimate before checkout, without creating an order.
+
+| Query param | Required | Notes |
+|---|---|---|
+| `destinationLocationId` | ✅ | A destination id — get one from `GET /api/v1/rates` above. |
+| `weightKg` | — | Default `1`. |
+| `serviceType` | — | `home_delivery` (default) or `branch_delivery`. |
+
+#### Example
+
+```bash
+curl "$BASE/api/v1/rates/quote?destinationLocationId=a350d017-...&weightKg=3" -H "Authorization: Bearer $KEY"
+```
+
+#### Response — `200 OK`
+
+```json
+{
+  "success": true,
+  "data": {
+    "baseCharge": 150,
+    "weightSurcharge": 7.5,
+    "totalPayable": 157.5,
+    "freeWeightKg": 2,
+    "rateType": "flat",
+    "basis": "Flat home rate (outside valley)",
+    "valley": "outside"
+  }
+}
+```
+
+---
+
+## Order comments
+
+A lightweight, threaded comment log on an order — visible to both you and ParcelMoover ops. Use it for delivery instructions raised after the fact, or clarifying an address with support, without opening a full ticket.
+
+### Read the comment thread
+
+```
+GET /api/v1/orders/{trackingId}/remarks
+```
+
+#### Example
+
+```bash
+curl "$BASE/api/v1/orders/PM-260713-GFQK93S5YN894-Q/remarks" -H "Authorization: Bearer $KEY"
+```
+
+### Add a comment
+
+```
+POST /api/v1/orders/{trackingId}/remarks
+```
+
+Headers: `Authorization`, `Idempotency-Key` (UUID, required).
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `remark` | string | ✅ | 1–2000 chars. |
+| `parentRemarkId` | UUID | — | Reply to an existing remark from the thread above. |
+
+#### Example
+
+```bash
+curl -X POST "$BASE/api/v1/orders/PM-260713-GFQK93S5YN894-Q/remarks" \
+  -H "Authorization: Bearer $KEY" \
+  -H "Idempotency-Key: $(uuidgen)" \
+  -H "Content-Type: application/json" \
+  -d '{ "remark": "Please deliver after 5pm — customer is at work until then" }'
+```
+
+#### Response — `201 Created`
+
+```json
+{
+  "success": true,
+  "message": "Remark added",
+  "data": {
+    "id": "a8d1c6f5-...",
+    "remark": "Please deliver after 5pm — customer is at work until then",
+    "addedBy": "My Store",
+    "createdAt": "2026-07-22T13:55:20.526Z",
+    "parentRemarkId": null,
+    "parentAuthor": null,
+    "parentSnippet": null
+  }
+}
+```
+
+---
+
+## Support tickets
+
+Raise and track support tickets programmatically instead of using the dashboard.
+
+### Open a ticket
+
+```
+POST /api/v1/tickets
+```
+
+Headers: `Authorization`, `Idempotency-Key` (UUID, required).
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `subject` | string | ✅ | 3–200 chars. |
+| `category` | string | — | Max 50 chars, e.g. `"pickup"`, `"delivery"`, `"cod_settlement"`. |
+| `priority` | string | — | `low`, `medium`, `high`, or `urgent`. |
+| `description` | string | — | Max 2000 chars. |
+| `customerName` / `customerPhone` | string | — | If the ticket concerns a specific customer. |
+
+#### Example
+
+```bash
+curl -X POST "$BASE/api/v1/tickets" \
+  -H "Authorization: Bearer $KEY" \
+  -H "Idempotency-Key: $(uuidgen)" \
+  -H "Content-Type: application/json" \
+  -d '{ "subject": "Wrong COD amount on PM-260713-GFQK93S5YN894-Q", "category": "cod_settlement", "priority": "high" }'
+```
+
+#### Response — `201 Created`
+
+```json
+{
+  "success": true,
+  "message": "Ticket created",
+  "data": {
+    "id": "195d1bd1-...",
+    "ticketId": "TKT-260722-DAMMDS",
+    "subject": "Wrong COD amount on PM-260713-GFQK93S5YN894-Q",
+    "category": "cod_settlement",
+    "priority": "high",
+    "status": "pending",
+    "assignedTo": "Unassigned",
+    "createdAt": "2026-07-22"
+  }
+}
+```
+
+### List, read, and reply
+
+```
+GET  /api/v1/tickets                — list your tickets (filters: status, priority, category, fromDate, toDate, page, pageSize)
+GET  /api/v1/tickets/{id}           — ticket detail + reply thread
+POST /api/v1/tickets/{id}/replies   — add a reply (Idempotency-Key required; body: { "message": "..." })
+```
+
+---
+
 ## Order statuses
 
 An order moves through these `status` values:
@@ -472,28 +739,48 @@ A non-2xx response (or a request we can't complete within 10s) is retried with e
 Every error is JSON with this shape:
 
 ```json
-{ "success": false, "message": "Human-readable explanation" }
+{
+  "success": false,
+  "message": "Human-readable explanation",
+  "error": { "code": "STABLE_MACHINE_READABLE_CODE" }
+}
 ```
 
-Validation failures (`400`) additionally include an `errors` array:
+`error.code` is safe to branch your integration logic on — it won't change even if we reword `message`. Validation failures (`400`) additionally include `error.fields`:
 
 ```json
 {
   "success": false,
   "message": "Validation failed",
-  "errors": [ { "field": "receiver.phone", "message": "Phone must be 10–15 digits, optionally starting with +" } ]
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "fields": [ { "field": "receiver.phone", "message": "Phone must be 10–15 digits, optionally starting with +" } ]
+  }
 }
 ```
 
-| Code | Meaning |
-|---|---|
-| `400` | Malformed request — missing/invalid fields, missing or non-UUID `Idempotency-Key`. |
-| `401` | Missing, invalid, or revoked API key. |
-| `404` | Order not found (or not yours), or unknown endpoint. |
-| `409` | Conflict — e.g. an `Idempotency-Key` replayed with a *different* request body. |
-| `422` | Request understood but not processable (business-rule rejection). |
-| `429` | Rate limit exceeded — back off and retry. |
-| `500` | Server error — safe to retry `POST /orders` with the same `Idempotency-Key`. |
+| HTTP status | `error.code` | Meaning |
+|---|---|---|
+| `400` | `VALIDATION_ERROR` | Malformed request — missing/invalid fields, missing or non-UUID `Idempotency-Key`. |
+| `401` | `UNAUTHORIZED` | Missing, invalid, or revoked API key. |
+| `403` | `FORBIDDEN` | Not allowed for this vendor. |
+| `404` | `NOT_FOUND` | Order/ticket not found (or not yours), or unknown endpoint. |
+| `409` | `CONFLICT` | E.g. an `Idempotency-Key` replayed with a *different* body, or the order is already in a terminal status. |
+| `422` | `VALIDATION_ERROR` | Request understood but not processable (invalid status transition, business-rule rejection). |
+| `429` | `RATE_LIMITED` | Rate limit exceeded — back off and retry. |
+| `500` | `INTERNAL_ERROR` | Server error — safe to retry a `POST` with the same `Idempotency-Key`. |
+
+---
+
+## OpenAPI spec
+
+The full request/response schema for every endpoint above, generated straight from the same validation the API runs — so it can never drift from what's actually enforced:
+
+```
+GET /api/v1/openapi.json
+```
+
+No API key required to fetch it. Paste the URL into [Swagger Editor](https://editor.swagger.io) or Postman's "Import from link" for a browsable, interactive version, or feed it to an OpenAPI code generator for a typed client in your language of choice.
 
 ---
 
@@ -501,8 +788,8 @@ Validation failures (`400`) additionally include an `errors` array:
 
 1. Generate an API key from the vendor dashboard and store it server-side (env var / secrets manager — never in client code).
 2. On checkout/fulfilment, `POST /orders` with a fresh UUID `Idempotency-Key`; persist the returned `trackingId` against your order.
-3. Retry failed creates (network error, `5xx`) with the **same** `Idempotency-Key`.
+3. Retry failed creates (network error, `5xx`) with the **same** `Idempotency-Key` — extend the same pattern to cancel, remarks, and ticket calls.
 4. Register a webhook endpoint and verify `X-ParcelMoover-Signature` on every request before trusting the payload; that's how you sync status back to your system. Show the returned `trackingId` to your customer at creation time.
-5. Use `GET /orders/{trackingId}` only for on-demand lookups or reconciliation (e.g. catching up after your webhook endpoint was down) — not as a scheduled polling loop.
-6. Handle `401` by alerting yourself (key revoked/rotated) and `429` with exponential backoff.
+5. Use `GET /orders/{trackingId}` and `POST /orders/statuses` only for on-demand lookups or reconciliation (e.g. catching up after your webhook endpoint was down) — not as a scheduled polling loop.
+6. Handle `401` by alerting yourself (key revoked/rotated) and `429` with exponential backoff; branch on `error.code` rather than parsing `message` text.
 7. Rotate keys periodically: generate a new key, switch traffic, then revoke the old one (up to 5 active keys per account).

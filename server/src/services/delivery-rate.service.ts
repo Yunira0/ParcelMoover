@@ -390,3 +390,21 @@ export async function getVendorSelfRates(actor: Actor) {
     rates: rows,
   };
 }
+
+// Single-destination quick quote for THIS vendor (their own rate model +
+// overrides, same resolution as getVendorSelfRates) - used to price a
+// shipment before booking it, without pulling the whole rate card.
+export async function getVendorSingleQuote(
+  actor: Actor,
+  destinationLocationId: string,
+  weightKg = 1,
+  serviceType: "home_delivery" | "branch_delivery" = "home_delivery",
+) {
+  const vendor = await resolveActorVendor(actor);
+  if (!vendor) throw new AppError(404, "No vendor profile found for this account");
+
+  const overrides = buildVendorOverrides(vendor);
+  const rateType = (vendor.rate_type as RateType) ?? "flat";
+
+  return getVendorQuote(rateType, destinationLocationId, weightKg, overrides, serviceType);
+}

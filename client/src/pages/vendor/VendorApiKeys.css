@@ -163,3 +163,9 @@
   font-size: var(--font-size-xs);
   padding: 1px var(--space-1);
 }
+
+.api-keys-docs-link {
+  color: var(--color-text-primary);
+  font-weight: var(--font-weight-semi-bold);
+  text-decoration: underline;
+}

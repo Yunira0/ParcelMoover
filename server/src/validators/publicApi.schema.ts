@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { createOrderSchema, PARCEL_STATUSES } from "./order.schema";
-import { paginationQuerySchema } from "./common";
+import { createTicketSchema } from "./ticket.schema";
+import { optionalUuidSchema, paginationQuerySchema, uuidSchema } from "./common";
 
 // Public partner API (/api/v1) request shapes. Kept separate from the internal
 // order schemas so the public contract can stay stable even if internal
@@ -38,3 +39,61 @@ export const publicListOrdersQuerySchema = paginationQuerySchema.extend({
 });
 
 export type PublicListOrdersQuery = z.infer<typeof publicListOrdersQuerySchema>;
+
+// ── Rate quote ────────────────────────────────────────────────────────────────
+
+export const publicQuoteQuerySchema = z.object({
+  destinationLocationId: uuidSchema,
+  weightKg: z.coerce.number().positive("weightKg must be greater than 0").optional(),
+  serviceType: z.enum(["home_delivery", "branch_delivery"]).optional(),
+});
+
+export type PublicQuoteQuery = z.infer<typeof publicQuoteQuerySchema>;
+
+// ── Cancel order ──────────────────────────────────────────────────────────────
+
+export const publicCancelOrderSchema = z.object({
+  reason: z.string().trim().max(500, "reason must not exceed 500 characters").optional(),
+});
+
+export type PublicCancelOrderInput = z.infer<typeof publicCancelOrderSchema>;
+
+// ── Bulk status lookup ────────────────────────────────────────────────────────
+
+export const publicBulkStatusSchema = z.object({
+  trackingIds: z
+    .array(z.string())
+    .min(1, "trackingIds must include at least one tracking id")
+    .max(100, "trackingIds cannot exceed 100 per request"),
+});
+
+export type PublicBulkStatusInput = z.infer<typeof publicBulkStatusSchema>;
+
+// ── Order remarks (comments) ──────────────────────────────────────────────────
+
+export const publicAddRemarkSchema = z.object({
+  remark: z.string().trim().min(1, "remark is required").max(2000, "remark must not exceed 2000 characters"),
+  parentRemarkId: optionalUuidSchema,
+});
+
+export type PublicAddRemarkInput = z.infer<typeof publicAddRemarkSchema>;
+
+// ── Tickets ───────────────────────────────────────────────────────────────────
+
+// assignedTo/status are staff-side ticket-routing fields; parcelId isn't
+// exposed publicly today because the internal ticket read shape doesn't
+// surface it back anywhere either (dashboard or API) - wiring only the
+// write side would be a half-finished link.
+export const publicCreateTicketSchema = createTicketSchema.omit({
+  assignedTo: true,
+  status: true,
+  parcelId: true,
+});
+
+export type PublicCreateTicketInput = z.infer<typeof publicCreateTicketSchema>;
+
+export const publicTicketReplySchema = z.object({
+  message: z.string().trim().min(1, "message is required").max(2000, "message must not exceed 2000 characters"),
+});
+
+export type PublicTicketReplyInput = z.infer<typeof publicTicketReplySchema>;
