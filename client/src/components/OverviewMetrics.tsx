@@ -31,7 +31,7 @@ const OverviewMetrics: React.FC<OverviewMetricsProps> = ({ overview, today, load
     { key: 'pendingPickups', icon: ClipboardList, color: 'var(--color-primary)', label: 'Pending pickups', value: overview.pendingPickups, to: '/orders?tab=ready_to_pick' },
     { key: 'pendingReturns', icon: RotateCcw, color: 'var(--color-danger-default)', label: 'Pending returns', value: overview.pendingReturns, to: '/return' },
     { key: 'inTransit', icon: Truck, color: 'var(--color-info-text)', label: 'In transit', value: overview.inTransit, to: '/orders?tab=inprogress' },
-    { key: 'pendingDeliveries', icon: Package, color: 'var(--color-background-warning-default)', label: 'Pending deliveries', value: overview.pendingDeliveries, to: '/orders?tab=inprogress&currentStatus=ready_to_deliver&currentStatus=sent_for_delivery&currentStatus=oov' },
+    { key: 'pendingDeliveries', icon: Package, color: 'var(--color-background-warning-default)', label: 'Pending deliveries', value: overview.pendingDeliveries, to: '/orders?tab=inprogress&currentStatus=arrived_at_branch&currentStatus=ready_to_deliver&currentStatus=sent_for_delivery&currentStatus=failed_delivery' },
     { key: 'deliveredToday', icon: PackageCheck, color: 'var(--color-success-default)', label: 'Delivered today', value: today.delivered, to: '/orders?tab=delivered' },
   ];
 

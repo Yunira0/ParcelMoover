@@ -26,10 +26,10 @@ interface SeriesDef {
 // same way across the app. SVG presentation attributes resolve CSS custom
 // properties same as any other CSS value.
 const SERIES: SeriesDef[] = [
-  { key: 'total', label: 'Total Order', dataKey: 'totalOrders', color: 'var(--color-primary)', dotClass: 'total' },
+  { key: 'total', label: 'Total Order', dataKey: 'totalOrders', color: 'var(--color-background-warning-default)', dotClass: 'total' },
   { key: 'picked', label: 'Picked Up', dataKey: 'pickedUp', color: 'var(--color-info-text)', dotClass: 'picked' },
   { key: 'delivered', label: 'Delivered', dataKey: 'delivered', color: 'var(--color-success-default)', dotClass: 'delivered' },
-  { key: 'returned', label: 'Returned', dataKey: 'returned', color: 'var(--color-background-warning-default)', dotClass: 'returned' },
+  { key: 'returned', label: 'Returned', dataKey: 'returned', color: 'var(--color-danger-default)', dotClass: 'returned' },
 ];
 
 const FILTERS: { key: FilterKey; label: string }[] = [

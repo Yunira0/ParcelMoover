@@ -58,22 +58,32 @@ type OrderActor = {
 
 const MAX_TRACKING_ID_RETRIES = 5;
 
-const PICKUP_PENDING_STATUSES: parcel_status[] = ["pickup_ordered", "rider_assigned"];
-
-const IN_TRANSIT_STATUSES: parcel_status[] = [
+// The "Pending pickups" overview card: parcels awaiting pickup or in the
+// pickup/origin phase before they are dispatched onward (picked up at origin,
+// arrived at the origin branch).
+const PICKUP_PENDING_STATUSES: parcel_status[] = [
+  "pickup_ordered",
+  "rider_assigned",
   "picked_up",
   "arrived",
+];
+
+// The "In transit" overview card: parcels dispatched and moving between
+// branches (dispatched) or out on the OOV leg (oov).
+const IN_TRANSIT_STATUSES: parcel_status[] = [
   "dispatched",
-  "arrived_at_branch",
-  "ready_to_deliver",
-  "sent_for_delivery",
   "oov",
 ];
 
+// The "Pending deliveries" overview card: parcels that have reached the
+// destination and are in the delivery flow - arrived at destination, ready to
+// deliver, sent out for delivery, or a failed attempt awaiting reattempt.
+// Kept disjoint from IN_TRANSIT_STATUSES so a parcel is counted in exactly one.
 const DELIVERY_PENDING_STATUSES: parcel_status[] = [
+  "arrived_at_branch",
   "ready_to_deliver",
   "sent_for_delivery",
-  "oov",
+  "failed_delivery",
 ];
 
 // Hub-level transitions: confirming hub arrival and building/closing a
