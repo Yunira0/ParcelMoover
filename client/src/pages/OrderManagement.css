@@ -130,7 +130,10 @@
   min-width: 0;
 }
 
-.order-filter-panel label span {
+/* Direct child only - this styles the CAPS field label (FROM DATE, VENDOR…).
+   Without `>` it also cascades into nested control spans (e.g. the date
+   picker's placeholder/value), shrinking them to this tiny caption size. */
+.order-filter-panel label > span {
   color: var(--color-text-caption);
   font-family: var(--typography-font-family-default);
   font-size: var(--font-size-xxs);
