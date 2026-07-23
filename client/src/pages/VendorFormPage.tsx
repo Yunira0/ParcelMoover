@@ -23,6 +23,24 @@ const API_FIELD_MAP: Record<string, string> = {
   address: 'registeredAddress',
 };
 
+const scrollToFirstFieldError = () => {
+  window.setTimeout(() => {
+    document.querySelector('.vfp-field-error')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, 0);
+};
+
+const vendorSaveErrorMessage = (err: any, fallback: string) => {
+  if (err?.code === 'ECONNABORTED') {
+    return 'The request timed out. Please check your connection and try again with smaller document files.';
+  }
+
+  if (err?.message === 'Network Error') {
+    return 'Could not reach the server. Please check your connection and try again.';
+  }
+
+  return err?.response?.data?.message || fallback;
+};
+
 interface VendorFormInput {
   onlineBusinessName: string;
   pickupLocation: string;
@@ -388,9 +406,9 @@ const VendorFormPage: React.FC = () => {
     const errors = validate();
     if (Object.keys(errors).length > 0) {
       setFieldErrors(errors);
+      setError('Please fix the highlighted fields before creating the vendor.');
       setLoading(false);
-      const firstError = document.querySelector('.vfp-field-error');
-      firstError?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      scrollToFirstFieldError();
       return;
     }
 
@@ -500,11 +518,9 @@ const VendorFormPage: React.FC = () => {
       if (serverErrors) {
         setFieldErrors(serverErrors.fieldErrors);
         setError(serverErrors.summary);
-        setTimeout(() => {
-          document.querySelector('.vfp-field-error')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }, 0);
+        scrollToFirstFieldError();
       } else {
-        setError(err.response?.data?.message || 'Failed to create vendor. Please try again.');
+        setError(vendorSaveErrorMessage(err, isEdit ? 'Failed to update vendor. Please try again.' : 'Failed to create vendor. Please try again.'));
       }
     } finally {
       setLoading(false);
