@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Info, Calendar } from 'lucide-react';
 import type { DashboardTrendDay } from '../services/orders.service';
 import { toBsDate, toBsDateLabel } from '../utils/nepaliDate';
@@ -40,8 +40,9 @@ const FILTERS: { key: FilterKey; label: string }[] = [
   { key: 'returned', label: 'Returned' },
 ];
 
-const CHART_W = 700;
-const CHART_H = 260;
+// Fallback used before the container has been measured (SSR / first paint).
+const DEFAULT_W = 700;
+const DEFAULT_H = 300;
 const PAD = { top: 16, right: 12, bottom: 24, left: 34 };
 
 // Round the top of the y-axis up to a readable step (5/10/20/50/100...) so
@@ -75,6 +76,26 @@ const formatRangeLabel = (data: DashboardTrendDay[]) => {
 const WeeklyStats: React.FC<WeeklyStatsProps> = ({ data, loading, period, onPeriodChange }) => {
   const [activeFilter, setActiveFilter] = useState<FilterKey>('all');
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+
+  // Drive the SVG viewBox off the container's real pixel size so it maps 1:1 to
+  // the rendered box. A fixed viewBox stretched with preserveAspectRatio="none"
+  // distorted everything non-uniformly - oval dots, uneven line thickness,
+  // squished axis numbers - because the card is far wider/taller than 700x260.
+  const chartRef = useRef<HTMLDivElement>(null);
+  const [size, setSize] = useState({ w: DEFAULT_W, h: DEFAULT_H });
+
+  useLayoutEffect(() => {
+    const el = chartRef.current;
+    if (!el) return;
+    const update = () => setSize({ w: el.clientWidth, h: el.clientHeight });
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const CHART_W = size.w;
+  const CHART_H = size.h;
 
   const visibleSeries = activeFilter === 'all' ? SERIES : SERIES.filter((s) => s.key === activeFilter);
 
@@ -178,7 +199,7 @@ const WeeklyStats: React.FC<WeeklyStatsProps> = ({ data, loading, period, onPeri
       </div>
 
       <div className="graph-placeholder">
-        <div className="chart-area">
+        <div className="chart-area" ref={chartRef}>
           {loading && data.length === 0 ? (
             <div className="chart-loading">Loading chart…</div>
           ) : n === 0 ? (
@@ -188,7 +209,6 @@ const WeeklyStats: React.FC<WeeklyStatsProps> = ({ data, loading, period, onPeri
               <svg
                 className="chart-svg"
                 viewBox={`0 0 ${CHART_W} ${CHART_H}`}
-                preserveAspectRatio="none"
                 role="img"
                 aria-label="Weekly order trend chart"
               >

@@ -41,6 +41,7 @@ export type VendorRateType = 'flat' | 'zone' | 'per_destination';
 export interface VendorSelfRate {
   destinationId: string;
   destinationName: string;
+  coveredAreas: string[];
   zone: string | null;
   valley: string | null;
   homeRate: number | null;

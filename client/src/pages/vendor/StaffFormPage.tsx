@@ -24,6 +24,8 @@ import {
   type StaffInput,
   type StaffPermission,
 } from '../../services/staff.service';
+import { getCurrentUser as fetchMe } from '../../services/auth.service';
+import { isValidEmail, isValidName, isValidPhone } from '../../utils/serverValidation';
 import './StaffFormPage.css';
 
 const PERMISSION_ICONS: Record<StaffPermission, LucideIcon> = {
@@ -51,6 +53,7 @@ const MIN_PASSWORD = 8;
 const emptyForm: StaffInput = {
   name: '',
   email: '',
+  phone: '',
   permissions: ['DASHBOARD_ACCESS'],
   enabled: true,
   password: '',
@@ -126,6 +129,7 @@ const StaffFormPage: React.FC = () => {
       ? {
           name: editingStaff.name,
           email: editingStaff.email,
+          phone: editingStaff.phone ?? '',
           permissions: [...editingStaff.permissions],
           enabled: editingStaff.enabled,
           password: '',
@@ -135,6 +139,15 @@ const StaffFormPage: React.FC = () => {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  // Staff inherit the vendor's hub - show it read-only so the creator sees where
+  // this staff account will operate. Sourced from the logged-in vendor's profile.
+  const [vendorHub, setVendorHub] = useState('');
+
+  React.useEffect(() => {
+    fetchMe()
+      .then((me) => setVendorHub(me.hubName ?? ''))
+      .catch(() => {});
+  }, []);
 
   const togglePermission = (permission: StaffPermission) => {
     setForm((prev) => ({
@@ -147,7 +160,11 @@ const StaffFormPage: React.FC = () => {
 
   const validateClientSide = (): string | null => {
     if (!form.name.trim()) return 'Full name is required.';
+    if (!isValidName(form.name)) return "Enter a valid name (letters, spaces, . ' - only).";
     if (!form.email.trim()) return 'Email address is required.';
+    if (!isValidEmail(form.email)) return 'Enter a valid email address.';
+    if (!form.phone.trim()) return 'Phone number is required.';
+    if (!isValidPhone(form.phone)) return 'Enter a valid Nepali mobile number (e.g. 98XXXXXXXX).';
     if (form.permissions.length === 0) return 'Select at least one permission.';
 
     const password = form.password ?? '';
@@ -174,6 +191,7 @@ const StaffFormPage: React.FC = () => {
       ...form,
       name: form.name.trim(),
       email: form.email.trim(),
+      phone: form.phone.trim(),
       // Send undefined on edit when blank so the backend skips the hash update.
       password: form.password?.trim() || undefined,
     };
@@ -238,6 +256,21 @@ const StaffFormPage: React.FC = () => {
                   onChange={(v) => setForm((f) => ({ ...f, email: v }))}
                   placeholder="e.g. sarah@company.com"
                   autoComplete="email"
+                />
+                <FormField
+                  label="Phone Number"
+                  required
+                  value={form.phone}
+                  onChange={(v) => setForm((f) => ({ ...f, phone: v }))}
+                  placeholder="e.g. 9800000000"
+                  autoComplete="tel"
+                />
+                <FormField
+                  label="Hub"
+                  value={vendorHub || '—'}
+                  onChange={() => {}}
+                  disabled
+                  hint="Staff operate from your vendor hub."
                 />
               </div>
             </section>

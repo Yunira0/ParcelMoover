@@ -5,7 +5,7 @@ import Button from '../components/Button';
 import FormField from '../components/FormField';
 import { registerUser, getLocations, getManagedUser, updateUserProfile } from '../services/users.service';
 import { getCurrentUser } from '../services/auth.service';
-import { extractServerFieldErrors, isValidEmail, isValidPhone, normalizePhone } from '../utils/serverValidation';
+import { extractServerFieldErrors, isValidEmail, isValidName, isValidPhone, normalizePhone } from '../utils/serverValidation';
 import { useHubLock } from '../hooks/useHubLock';
 import './RiderFormPage.css';
 
@@ -217,9 +217,10 @@ const RiderFormPage: React.FC = () => {
   const validate = (): Record<string, string> => {
     const errors: Record<string, string> = {};
     if (!form.fullName.trim()) errors.fullName = 'Rider name is required';
+    else if (!isValidName(form.fullName)) errors.fullName = "Enter a valid name (letters, spaces, . ' - only)";
     if (!form.riderLocation.trim()) errors.riderLocation = 'Rider location is required';
     if (!form.contactNo.trim()) errors.contactNo = 'Contact number is required';
-    else if (!isValidPhone(form.contactNo)) errors.contactNo = 'Enter a 10–15 digit phone number';
+    else if (!isValidPhone(form.contactNo)) errors.contactNo = 'Enter a valid Nepali mobile number (e.g. 98XXXXXXXX)';
     if (!form.serviceBranch.trim()) errors.serviceBranch = 'Service branch is required';
     if (!form.joinedAt.trim()) errors.joinedAt = 'Joined date is required';
     if (!form.email.trim()) errors.email = 'Email is required';

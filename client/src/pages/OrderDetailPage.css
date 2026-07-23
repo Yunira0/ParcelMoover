@@ -478,12 +478,13 @@
 }
 
 .od-bottom-replying-preview {
-  flex: 1; min-width: 0; display: flex; align-items: baseline; gap: var(--space-1-5);
+  flex: 1; min-width: 0; overflow: hidden; display: flex; align-items: baseline; gap: var(--space-1-5);
   font-size: 12px; color: var(--color-text-primary);
 }
 .od-bottom-replying-label { color: var(--color-text-caption); flex-shrink: 0; }
 .od-bottom-replying-preview strong { font-weight: var(--font-weight-bold); flex-shrink: 0; }
 .od-bottom-replying-snippet {
+  flex: 1; min-width: 0;
   color: var(--color-text-caption); font-weight: var(--font-weight-regular);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
@@ -492,9 +493,9 @@
   width: 20px; height: 20px;
   display: flex; align-items: center; justify-content: center;
   background: transparent; border: none; border-radius: 50%;
-  color: var(--color-text-primary); cursor: pointer; transition: all 150ms ease; flex-shrink: 0;
+  color: var(--color-text-default); cursor: pointer; transition: all 150ms ease; flex-shrink: 0;
 }
-.od-bottom-replying-close:hover { background: rgb(226 76 0 / 0.15); }
+.od-bottom-replying-close:hover { background: rgb(226 76 0 / 0.15); color: var(--color-text-primary); }
 
 /* Highlight for newly added remark */
 .od-chat-msg-highlight { animation: od-highlight-flash 2.5s ease; }

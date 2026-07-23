@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useLayoutEffect, useRef, useState } from 'react';
 import type { DashboardTrendDay } from '../../services/orders.service';
 import './VendorOrdersTrendChart.css';
 
@@ -7,8 +7,9 @@ interface VendorOrdersTrendChartProps {
   loading?: boolean;
 }
 
-const CHART_WIDTH = 320;
-const CHART_HEIGHT = 200;
+// Fallback used before the body has been measured (SSR / first paint).
+const DEFAULT_WIDTH = 320;
+const DEFAULT_HEIGHT = 200;
 const PADDING_LEFT = 28;
 const PADDING_RIGHT = 8;
 const PADDING_TOP = 12;
@@ -30,6 +31,25 @@ const SERIES = [
 ] as const;
 
 const VendorOrdersTrendChart: React.FC<VendorOrdersTrendChartProps> = ({ data, loading = false }) => {
+  // Size the viewBox off the body's real pixels so it maps 1:1 to the rendered
+  // box. A fixed viewBox stretched with preserveAspectRatio="none" distorted
+  // everything non-uniformly - oval dots, uneven line thickness, stretched tick
+  // numbers - because the column is wider than 320px.
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const [size, setSize] = useState({ w: DEFAULT_WIDTH, h: DEFAULT_HEIGHT });
+
+  useLayoutEffect(() => {
+    const el = bodyRef.current;
+    if (!el) return;
+    const update = () => setSize({ w: el.clientWidth, h: el.clientHeight });
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const CHART_WIDTH = size.w;
+  const CHART_HEIGHT = size.h;
   const plotWidth = CHART_WIDTH - PADDING_LEFT - PADDING_RIGHT;
   const plotHeight = CHART_HEIGHT - PADDING_TOP - PADDING_BOTTOM;
 
@@ -59,13 +79,13 @@ const VendorOrdersTrendChart: React.FC<VendorOrdersTrendChartProps> = ({ data, l
           ))}
         </div>
       </div>
+      <div className="vendor-orders-trend-chart-body" ref={bodyRef}>
       {loading || data.length === 0 ? (
         <div className="vendor-orders-trend-chart-empty">{loading ? 'Loading...' : 'No data yet'}</div>
       ) : (
         <svg
           className="vendor-orders-trend-chart-svg"
           viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
-          preserveAspectRatio="none"
         >
           {ticks.map((tick) => (
             <g key={tick}>
@@ -98,6 +118,7 @@ const VendorOrdersTrendChart: React.FC<VendorOrdersTrendChartProps> = ({ data, l
           ))}
         </svg>
       )}
+      </div>
     </div>
   );
 };

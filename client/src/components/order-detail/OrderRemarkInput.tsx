@@ -74,7 +74,7 @@ const OrderRemarkInput: React.FC<OrderRemarkInputProps> = ({
               title="Cancel reply"
               aria-label="Cancel reply"
             >
-              <X size={12} />
+              <X size={16} strokeWidth={2.5} />
             </button>
           </div>
         )}

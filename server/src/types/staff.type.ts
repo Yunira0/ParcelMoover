@@ -14,6 +14,7 @@ export type StaffPermission = (typeof STAFF_PERMISSIONS)[number];
 export interface StaffInput {
   name: string;
   email: string;
+  phone?: string;
   permissions: string[];
   enabled?: boolean;
   /** Required on create, optional on update (omit or empty string to keep existing). */

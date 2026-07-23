@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getTickets } from '../../services/tickets.service';
 import './SalesTicketsPanel.css';
@@ -7,9 +7,12 @@ const SalesTicketsPanel: React.FC = () => {
   const navigate = useNavigate();
   const [counts, setCounts] = useState({ open: 0, pending: 0, closed: 0 });
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
 
-  useEffect(() => {
+  const load = useCallback(() => {
     let active = true;
+    setLoading(true);
+    setError(false);
     Promise.all([
       getTickets({ status: 'open', pageSize: 1 }),
       getTickets({ status: 'pending', pageSize: 1 }),
@@ -23,7 +26,10 @@ const SalesTicketsPanel: React.FC = () => {
           closed: closed.meta?.total ?? 0,
         });
       })
-      .catch(() => {})
+      // Don't leave misleading zeros on screen - surface a retry instead.
+      .catch(() => {
+        if (active) setError(true);
+      })
       .finally(() => {
         if (active) setLoading(false);
       });
@@ -31,6 +37,8 @@ const SalesTicketsPanel: React.FC = () => {
       active = false;
     };
   }, []);
+
+  useEffect(() => load(), [load]);
 
   const display = (v: number) => (loading ? '—' : v.toLocaleString());
 
@@ -48,14 +56,23 @@ const SalesTicketsPanel: React.FC = () => {
           View all
         </button>
       </div>
-      <div className="sales-tickets-panel-rows">
-        {rows.map(({ label, value, tone }) => (
-          <div key={label} className="sales-tickets-panel-row">
-            <span className="sales-tickets-panel-label">{label}</span>
-            <span className={`sales-tickets-panel-value sales-tickets-panel-value--${tone}`}>{value}</span>
-          </div>
-        ))}
-      </div>
+      {error ? (
+        <div className="sales-tickets-panel-error">
+          <span>Couldn't load tickets.</span>
+          <button type="button" className="sales-tickets-panel-link" onClick={load}>
+            Try again
+          </button>
+        </div>
+      ) : (
+        <div className="sales-tickets-panel-rows">
+          {rows.map(({ label, value, tone }) => (
+            <div key={label} className="sales-tickets-panel-row">
+              <span className="sales-tickets-panel-label">{label}</span>
+              <span className={`sales-tickets-panel-value sales-tickets-panel-value--${tone}`}>{value}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 };

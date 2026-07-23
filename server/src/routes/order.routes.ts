@@ -123,7 +123,7 @@ orderRouter.post(
   "/",
   authMiddleware,
   csrfProtection,
-  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff"),
+  authorizeRoles("super_admin", "admin", "sales", "vendor", "vendor_staff"),
   requireStaffPermission("ORDER_ACCESS"),
   createOrderLimiter,
   validate(createOrderSchema),

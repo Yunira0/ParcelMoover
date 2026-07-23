@@ -261,6 +261,13 @@
   margin-top: -8px;
 }
 
+.vfp-rate-notice {
+  color: var(--color-text-caption);
+  font-size: 12px;
+  line-height: 16px;
+  margin: 0 0 12px;
+}
+
 /* Document upload fields */
 .vfp-docs {
   display: flex;

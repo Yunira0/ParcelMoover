@@ -70,6 +70,7 @@ function buildStatementHtml(detail: SettlementDetail): string {
         <div>${detail.payeePhone}</div>
         ${detail.payeeEmail ? `<div>${detail.payeeEmail}</div>` : ''}
         ${detail.payeeAddress ? `<div>${detail.payeeAddress}</div>` : ''}
+        ${detail.payeePan ? `<div>PAN: ${detail.payeePan}</div>` : ''}
       </div>
       <div class="meta">
         <div><span class="muted">Statement</span><span>${detail.statementId}</span></div>
@@ -221,6 +222,7 @@ const SettlementDetailPage: React.FC = () => {
               <div>{detail.payeePhone}</div>
               {detail.payeeEmail && <div>{detail.payeeEmail}</div>}
               {detail.payeeAddress && <div>{detail.payeeAddress}</div>}
+              {detail.payeePan && <div>PAN: {detail.payeePan}</div>}
             </div>
             <div className="cod-bill-meta">
               <div>

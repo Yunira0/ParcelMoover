@@ -204,6 +204,10 @@
   color: var(--color-text-default, #1f2937);
 }
 
+.kyc-file-label .required {
+  color: var(--color-danger-default, #dc2626);
+}
+
 .kyc-file-btn,
 .kyc-file-chip {
   display: inline-flex;

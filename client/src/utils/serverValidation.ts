@@ -4,22 +4,50 @@
 // messages inline instead of a generic "Validation failed" banner, and to
 // mirror the server's phone/email format rules before submitting.
 
-/** Matches the server's phoneSchema (server/src/validators/common.ts). */
-export const PHONE_RE = /^\+?[0-9]{10,15}$/;
+/** Nepali mobile number: 10 digits starting 97/98 (Ncell/NTC/Smart), with an
+ *  optional +977 / 977 country code. Matches the server's phoneSchema
+ *  (server/src/validators/common.ts). */
+export const PHONE_RE = /^(?:\+?977)?9[78]\d{8}$/;
 
-/** Strip the separators people naturally type ("984-123 4567") before validating/sending. */
+/** Trim surrounding whitespace before sending. Internal separators are NOT
+ *  stripped - a number with spaces/dashes is rejected by isValidPhone instead. */
 export function normalizePhone(value: string): string {
-  return value.replace(/[\s\-()]/g, '');
+  return value.trim();
 }
 
+// Validate the number as typed (trimmed only): spaces, dashes or any other
+// character make it invalid, so the user is asked for a clean mobile number.
 export function isValidPhone(value: string): boolean {
-  return PHONE_RE.test(normalizePhone(value));
+  return PHONE_RE.test(value.trim());
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function isValidEmail(value: string): boolean {
   return EMAIL_RE.test(value.trim());
+}
+
+/** A person's name: starts with a letter, then only letters, combining marks
+ *  (Devanagari matras), spaces, and . ' ’ - . Rejects digit-only input like
+ *  "123", while accepting Nepali script. Mirrors the server's nameSchema
+ *  (server/src/validators/common.ts). */
+export const NAME_RE = /^\p{L}[\p{L}\p{M}\s.'’-]*$/u;
+
+export function isValidName(value: string): boolean {
+  const t = value.trim();
+  return t.length >= 2 && NAME_RE.test(t);
+}
+
+/** Business/bank names may contain digits (e.g. "3 Star Traders") but must have
+ *  at least one letter — rejects purely numeric or symbol-only input. */
+export function hasLetter(value: string): boolean {
+  return /\p{L}/u.test(value);
+}
+
+/** Digits only, within a length range. For account/registration/PAN numbers. */
+export function isDigits(value: string, min = 1, max = 20): boolean {
+  const t = value.trim();
+  return new RegExp(`^\\d{${min},${max}}$`).test(t);
 }
 
 /**

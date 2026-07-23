@@ -885,6 +885,7 @@ model vendor_staff {
   user_id     String?   @unique @db.Uuid
   name        String
   email       String
+  phone       String?
   permissions String[]
   enabled     Boolean   @default(true)
   created_by  String?   @db.Uuid

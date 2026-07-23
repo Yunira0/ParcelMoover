@@ -4,6 +4,7 @@ import { CheckCircle, ChevronRight, ChevronLeft, Upload, X } from 'lucide-react'
 import Button from '../components/Button';
 import FormField from '../components/FormField';
 import { submitKycApplication, type KycApplicationInput } from '../services/kyc.service';
+import { hasLetter, isValidEmail, isValidName, isValidPhone } from '../utils/serverValidation';
 import './KycApplicationPage.css';
 
 const STEPS = ['Business', 'Owner & Bank', 'Documents'];
@@ -33,11 +34,15 @@ const FileField: React.FC<{
   label: string;
   file: File | null | undefined;
   onChange: (f: File | null) => void;
-}> = ({ label, file, onChange }) => {
+  required?: boolean;
+}> = ({ label, file, onChange, required }) => {
   const ref = useRef<HTMLInputElement>(null);
   return (
     <div className="kyc-file-field">
-      <span className="kyc-file-label">{label}</span>
+      <span className="kyc-file-label">
+        {label}
+        {required && <span className="required"> *</span>}
+      </span>
       {file ? (
         <div className="kyc-file-chip">
           <span>{file.name}</span>
@@ -76,13 +81,22 @@ const KycApplicationPage: React.FC = () => {
   const validateStep = (): string => {
     if (step === 0) {
       if (!form.onlineBusinessName.trim()) return 'Business name is required';
+      if (!hasLetter(form.onlineBusinessName)) return 'Business name must contain letters';
       if (!form.pickupLocation.trim()) return 'Pickup location is required';
       if (!form.businessContact.trim()) return 'Business contact is required';
+      if (!isValidPhone(form.businessContact)) return 'Enter a valid Nepali mobile number (e.g. 98XXXXXXXX)';
     }
     if (step === 1) {
       if (!form.ownerName.trim()) return 'Owner name is required';
+      if (!isValidName(form.ownerName)) return "Enter a valid name (letters, spaces, . ' - only)";
       if (!form.ownerEmail.trim()) return 'Email is required';
+      if (!isValidEmail(form.ownerEmail)) return 'Enter a valid email address';
       if (!form.ownerContact.trim()) return 'Contact number is required';
+      if (!isValidPhone(form.ownerContact)) return 'Enter a valid Nepali mobile number (e.g. 98XXXXXXXX)';
+    }
+    if (step === 2) {
+      if (!form.citizenshipDoc) return 'Citizenship document is required';
+      if (!form.panVatDoc) return 'PAN / VAT document is required';
     }
     return '';
   };
@@ -108,6 +122,8 @@ const KycApplicationPage: React.FC = () => {
       handleNext();
       return;
     }
+    const err = validateStep();
+    if (err) { setError(err); return; }
     setLoading(true);
     setError('');
     try {
@@ -276,8 +292,8 @@ const KycApplicationPage: React.FC = () => {
             <div className="kyc-section">
               <h3>Documents &amp; Review</h3>
               <div className="kyc-grid">
-                <FileField label="Citizenship" file={form.citizenshipDoc} onChange={setFile('citizenshipDoc')} />
-                <FileField label="PAN / VAT Document" file={form.panVatDoc} onChange={setFile('panVatDoc')} />
+                <FileField label="Citizenship" required file={form.citizenshipDoc} onChange={setFile('citizenshipDoc')} />
+                <FileField label="PAN / VAT Document" required file={form.panVatDoc} onChange={setFile('panVatDoc')} />
                 <FileField label="Business Certificate" file={form.businessCertDoc} onChange={setFile('businessCertDoc')} />
               </div>
               <div className="kyc-review">

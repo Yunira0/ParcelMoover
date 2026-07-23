@@ -40,6 +40,7 @@ const VendorManagement: React.FC = () => {
   const isPureSales = isSalesUser();
   const currentUserId = getCurrentUser()?.id;
   const canManage = isAdmin || isPureSales;
+  const canEdit = canManage;
   const canCreate = isAdminSide() || hasAnyRole(['sales']);
   const [filter, setFilter] = useState<'all' | 'high-volume' | 'active'>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -106,7 +107,7 @@ const VendorManagement: React.FC = () => {
     },
     { header: 'JOINED', accessor: 'joined' as keyof VendorUser },
     { header: 'LAST ORDERED DATE', accessor: 'lastOrderedDate' as keyof VendorUser },
-    ...(canManage
+    ...(canEdit
       ? [{
           header: 'ACTION',
           accessor: (item: VendorUser) => {

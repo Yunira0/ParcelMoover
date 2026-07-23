@@ -401,8 +401,8 @@ export interface OrderStatusHistoryEntry {
   newStatus: ParcelStatus;
   remarks: string;
   changedBy: string;
-  /** 'user' for staff-visible attribution, 'branch' when the viewer only gets a branch/company name. */
-  changedByType: 'user' | 'branch';
+  /** 'user' for staff-visible attribution, 'branch' when the viewer only gets a branch/company name, 'rider' for rider-driven milestones. */
+  changedByType: 'user' | 'branch' | 'rider';
   createdAt: string;
 }
 

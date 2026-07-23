@@ -164,6 +164,7 @@ export interface SettlementDetailResult {
   payeePhone: string;
   payeeEmail: string | null;
   payeeAddress: string | null;
+  payeePan: string | null;
   transferDate: string | null;
   createdAt: string;
   amount: number;

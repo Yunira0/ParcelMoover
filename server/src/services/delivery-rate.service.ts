@@ -381,6 +381,21 @@ export async function getVendorSelfRates(actor: Actor) {
     orderBy: { name: "asc" },
   });
 
+  // Covered areas are the active child locations of each destination. Fetch them
+  // all in one query and group by parent so each destination row can list them.
+  const coveredAreaRows = await prisma.locations.findMany({
+    where: { parent_id: { in: destinations.map((d) => d.id) }, is_active: true },
+    orderBy: { name: "asc" },
+    select: { name: true, parent_id: true },
+  });
+  const coveredAreasByDest = new Map<string, string[]>();
+  for (const area of coveredAreaRows) {
+    if (!area.parent_id) continue;
+    const list = coveredAreasByDest.get(area.parent_id) ?? [];
+    list.push(area.name);
+    coveredAreasByDest.set(area.parent_id, list);
+  }
+
   const rows = await Promise.all(
     destinations.map(async (dest) => {
       // weightKg <= free weight so no surcharge - baseCharge is the pure rate.
@@ -400,6 +415,7 @@ export async function getVendorSelfRates(actor: Actor) {
       return {
         destinationId: dest.id,
         destinationName: dest.name,
+        coveredAreas: coveredAreasByDest.get(dest.id) ?? [],
         zone: dest.zone,
         valley: dest.valley,
         homeRate,
