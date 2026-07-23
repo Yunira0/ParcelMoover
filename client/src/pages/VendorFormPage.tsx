@@ -23,11 +23,25 @@ const API_FIELD_MAP: Record<string, string> = {
   address: 'registeredAddress',
 };
 
+const MAX_DOCUMENT_BYTES = 5 * 1024 * 1024;
+const MAX_REGISTRATION_UPLOAD_BYTES = 9 * 1024 * 1024;
+
+const DOCUMENT_LABELS: Partial<Record<keyof VendorFormInput, string>> = {
+  citizenshipDoc: 'Citizenship document',
+  panVatDoc: 'PAN / VAT document',
+  businessCertDoc: 'Business certificate',
+};
+
 const scrollToFirstFieldError = () => {
   window.setTimeout(() => {
     document.querySelector('.vfp-field-error')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }, 0);
 };
+
+const summarizeFieldErrors = (errors: Record<string, string>) =>
+  Object.values(errors).filter(Boolean).join(' · ');
+
+const formatFileSize = (bytes: number) => `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 
 const vendorSaveErrorMessage = (err: any, fallback: string) => {
   if (err?.code === 'ECONNABORTED') {
@@ -359,8 +373,25 @@ const VendorFormPage: React.FC = () => {
     }
   };
 
-  const setFile = (field: keyof VendorFormInput) => (file: File | null) =>
+  const setFile = (field: keyof VendorFormInput) => (file: File | null) => {
+    if (file && file.size > MAX_DOCUMENT_BYTES) {
+      setForm((prev) => ({ ...prev, [field]: null }));
+      setFieldErrors((prev) => ({
+        ...prev,
+        [field]: `${DOCUMENT_LABELS[field] ?? 'Document'} must be 5 MB or smaller. Selected file is ${formatFileSize(file.size)}.`,
+      }));
+      return;
+    }
+
     setForm((prev) => ({ ...prev, [field]: file }));
+    if (fieldErrors[field]) {
+      setFieldErrors((prev) => {
+        const next = { ...prev };
+        delete next[field];
+        return next;
+      });
+    }
+  };
 
   const validate = (): Record<string, string> => {
     const errors: Record<string, string> = {};
@@ -390,6 +421,20 @@ const VendorFormPage: React.FC = () => {
     // Documents and password are only required when creating a new vendor.
     if (!isEdit) {
       if (!form.citizenshipDoc) errors.citizenshipDoc = 'Citizenship document is required';
+      const documents = [
+        ['citizenshipDoc', form.citizenshipDoc],
+        ['panVatDoc', form.panVatDoc],
+        ['businessCertDoc', form.businessCertDoc],
+      ] as const;
+      const totalUploadBytes = documents.reduce((sum, [, file]) => sum + (file?.size ?? 0), 0);
+      documents.forEach(([field, file]) => {
+        if (file && file.size > MAX_DOCUMENT_BYTES) {
+          errors[field] = `${DOCUMENT_LABELS[field]} must be 5 MB or smaller. Selected file is ${formatFileSize(file.size)}.`;
+        }
+      });
+      if (totalUploadBytes > MAX_REGISTRATION_UPLOAD_BYTES) {
+        errors.citizenshipDoc = `Uploaded documents are ${formatFileSize(totalUploadBytes)} total. Please keep all documents under 9 MB combined.`;
+      }
       if (!form.password.trim()) errors.password = 'Password is required';
       else if (form.password.length < 8) errors.password = 'Min. 8 characters';
       if (!form.confirmPassword.trim()) errors.confirmPassword = 'Please confirm the password';
@@ -406,7 +451,7 @@ const VendorFormPage: React.FC = () => {
     const errors = validate();
     if (Object.keys(errors).length > 0) {
       setFieldErrors(errors);
-      setError('Please fix the highlighted fields before creating the vendor.');
+      setError(summarizeFieldErrors(errors) || 'Please fix the highlighted fields before creating the vendor.');
       setLoading(false);
       scrollToFirstFieldError();
       return;
@@ -653,12 +698,18 @@ const VendorFormPage: React.FC = () => {
                   onChange={set('registrationNo')}
                   placeholder="Business registration number"
                 />
+                {fieldErrors.registrationNo && (
+                  <span className="vfp-field-error">{fieldErrors.registrationNo}</span>
+                )}
                 <FormField
                   label="PAN / VAT No."
                   value={form.panVatNo}
                   onChange={set('panVatNo')}
                   placeholder="PAN or VAT number"
                 />
+                {fieldErrors.panVatNo && (
+                  <span className="vfp-field-error">{fieldErrors.panVatNo}</span>
+                )}
               </div>
             </section>
 
@@ -780,11 +831,19 @@ const VendorFormPage: React.FC = () => {
                   file={form.panVatDoc}
                   onChange={setFile('panVatDoc')}
                 />
-                <FileInput
-                  label="Business Certificate"
-                  file={form.businessCertDoc}
-                  onChange={setFile('businessCertDoc')}
-                />
+                {fieldErrors.panVatDoc && (
+                  <span className="vfp-field-error">{fieldErrors.panVatDoc}</span>
+                )}
+                <div>
+                  <FileInput
+                    label="Business Certificate"
+                    file={form.businessCertDoc}
+                    onChange={setFile('businessCertDoc')}
+                  />
+                  {fieldErrors.businessCertDoc && (
+                    <span className="vfp-field-error">{fieldErrors.businessCertDoc}</span>
+                  )}
+                </div>
               </div>
             </section>
             )}
@@ -803,18 +862,27 @@ const VendorFormPage: React.FC = () => {
                   onChange={set('bankName')}
                   placeholder="e.g. Nabil Bank"
                 />
+                {fieldErrors.bankName && (
+                  <span className="vfp-field-error">{fieldErrors.bankName}</span>
+                )}
                 <FormField
                   label="Account No."
                   value={form.bankAccountNo}
                   onChange={set('bankAccountNo')}
                   placeholder="Bank account number"
                 />
+                {fieldErrors.bankAccountNo && (
+                  <span className="vfp-field-error">{fieldErrors.bankAccountNo}</span>
+                )}
                 <FormField
                   label="Name of Account Holder"
                   value={form.bankAccountHolder}
                   onChange={set('bankAccountHolder')}
                   placeholder="Name as on bank account"
                 />
+                {fieldErrors.bankAccountHolder && (
+                  <span className="vfp-field-error">{fieldErrors.bankAccountHolder}</span>
+                )}
               </div>
             </section>
 

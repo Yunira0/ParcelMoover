@@ -148,7 +148,10 @@ export const registerUser = async (data: RegisterUserInput) => {
   });
 
   const response = await api.post('/auth/users/register', form, {
-    headers: { 'Content-Type': 'multipart/form-data' },
+    // Multipart uploads can be slow on production networks, especially with
+    // camera-shot KYC images. Let the browser set the boundary header and give
+    // this write a longer timeout than normal JSON requests.
+    timeout: 120000,
   });
   return response.data;
 };
