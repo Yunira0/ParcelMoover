@@ -179,9 +179,44 @@
   justify-content: center;
   padding: 0 var(--space-3);
   transition: all 150ms ease;
+  white-space: nowrap;
 }
 
 .staff-edit-btn:hover {
+  border-color: var(--color-border-primary);
+  color: var(--color-text-primary);
+}
+
+/* Edit and Update password are two distinct actions, side by side. */
+.staff-actions-cell {
+  align-items: center;
+  display: flex;
+  gap: var(--space-2);
+  justify-content: flex-start;
+  /* Nudge the pair a little left, tighter to the column edge. */
+  margin-left: calc(-1 * var(--space-2));
+}
+
+.staff-password-btn {
+  align-items: center;
+  background: transparent;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-default);
+  color: var(--color-text-caption);
+  cursor: pointer;
+  display: inline-flex;
+  font-family: var(--typography-font-family-default);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  gap: 4px;
+  height: 30px;
+  justify-content: center;
+  padding: 0 var(--space-3);
+  transition: all 150ms ease;
+  white-space: nowrap;
+}
+
+.staff-password-btn:hover {
   border-color: var(--color-border-primary);
   color: var(--color-text-primary);
 }

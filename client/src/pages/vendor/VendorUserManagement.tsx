@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
+  KeyRound,
   LayoutDashboard,
   Mail,
   MessageSquare,
@@ -16,13 +17,17 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import PageHeader from '../../components/PageHeader';
 import Table from '../../components/Table';
+import Button from '../../components/Button';
+import FormField from '../../components/FormField';
 import {
   getStaff,
+  updateStaff,
   PERMISSION_LABELS,
   setStaffEnabled,
   type Staff,
   type StaffPermission,
 } from '../../services/staff.service';
+import '../../components/Modal.css';
 import './VendorUserManagement.css';
 
 const PERMISSION_ICONS: Record<StaffPermission, LucideIcon> = {
@@ -51,6 +56,14 @@ const VendorUserManagement: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [error, setError] = useState('');
+  // Password reset is its own action (separate from Edit): this holds the staff
+  // member whose password is being changed, driving the modal below.
+  const [pwdMember, setPwdMember] = useState<Staff | null>(null);
+  const [newPwd, setNewPwd] = useState('');
+  const [confirmPwd, setConfirmPwd] = useState('');
+  const [pwdErrors, setPwdErrors] = useState<{ password?: string; confirmPassword?: string }>({});
+  const [pwdGeneralError, setPwdGeneralError] = useState('');
+  const [pwdSubmitting, setPwdSubmitting] = useState(false);
 
   const loadStaff = useCallback(async () => {
     setLoading(true);
@@ -77,6 +90,45 @@ const VendorUserManagement: React.FC = () => {
   const openCreate = () => navigate('/user-management/staff/new');
   const openEdit = (member: Staff) =>
     navigate(`/user-management/staff/${member.id}/edit`, { state: { staff: member } });
+
+  const openPassword = (member: Staff) => {
+    setPwdMember(member);
+    setNewPwd('');
+    setConfirmPwd('');
+    setPwdErrors({});
+    setPwdGeneralError('');
+  };
+
+  const closePassword = () => setPwdMember(null);
+
+  const submitPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!pwdMember) return;
+    const errors: { password?: string; confirmPassword?: string } = {};
+    if (newPwd.length < 8) errors.password = 'Password must be at least 8 characters.';
+    if (newPwd !== confirmPwd) errors.confirmPassword = 'Passwords do not match.';
+    if (Object.keys(errors).length > 0) { setPwdErrors(errors); return; }
+
+    setPwdSubmitting(true);
+    setPwdGeneralError('');
+    try {
+      // updateStaff validates the whole record, so resend the member's current
+      // details unchanged alongside the new password.
+      await updateStaff(pwdMember.id, {
+        name: pwdMember.name,
+        email: pwdMember.email,
+        phone: pwdMember.phone,
+        permissions: pwdMember.permissions,
+        enabled: pwdMember.enabled,
+        password: newPwd,
+      });
+      closePassword();
+    } catch (err: any) {
+      setPwdGeneralError(err?.response?.data?.message || 'Failed to update password.');
+    } finally {
+      setPwdSubmitting(false);
+    }
+  };
 
   const toggleEnabled = async (member: Staff) => {
     setTogglingId(member.id);
@@ -160,20 +212,32 @@ const VendorUserManagement: React.FC = () => {
         width: '150px',
       },
       {
-        header: 'EDIT',
+        header: 'ACTIONS',
         accessor: (member: Staff) => (
-          <button
-            type="button"
-            className="staff-edit-btn"
-            onClick={() => openEdit(member)}
-            title="Edit staff"
-            aria-label="Edit staff"
-          >
-            <Pencil size={14} />
-            Edit
-          </button>
+          <div className="staff-actions-cell">
+            <button
+              type="button"
+              className="staff-edit-btn"
+              onClick={() => openEdit(member)}
+              title="Edit staff"
+              aria-label="Edit staff"
+            >
+              <Pencil size={14} />
+              Edit
+            </button>
+            <button
+              type="button"
+              className="staff-password-btn"
+              onClick={() => openPassword(member)}
+              title="Update password"
+              aria-label="Update password"
+            >
+              <KeyRound size={14} />
+              Update password
+            </button>
+          </div>
         ),
-        width: '90px',
+        width: '230px',
       },
     ],
     [visibleStaff, togglingId],
@@ -207,9 +271,51 @@ const VendorUserManagement: React.FC = () => {
         loading={loading}
         loadingMessage="Loading staff..."
         emptyMessage="No staff found."
-        minWidth="980px"
+        minWidth="1080px"
       />
 
+      {pwdMember && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <div className="modal-header">
+              <h2>Update Password — {pwdMember.name}</h2>
+              <Button variant="ghost" size="icon" className="modal-close-btn" onClick={closePassword} type="button">
+                &times;
+              </Button>
+            </div>
+            <form onSubmit={submitPassword}>
+              <div className="form-grid">
+                <FormField
+                  label="New Password"
+                  type="password"
+                  required
+                  minLength={8}
+                  hint="Min. 8 characters"
+                  value={newPwd}
+                  onChange={setNewPwd}
+                  error={pwdErrors.password}
+                />
+                <FormField
+                  label="Confirm Password"
+                  type="password"
+                  required
+                  minLength={8}
+                  value={confirmPwd}
+                  onChange={setConfirmPwd}
+                  error={pwdErrors.confirmPassword}
+                />
+              </div>
+              {pwdGeneralError && <p className="error-text">{pwdGeneralError}</p>}
+              <div className="modal-footer">
+                <Button type="button" variant="secondary" onClick={closePassword}>Cancel</Button>
+                <Button type="submit" variant="primary" disabled={pwdSubmitting}>
+                  {pwdSubmitting ? 'Saving...' : 'Update Password'}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
