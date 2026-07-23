@@ -48,6 +48,7 @@ const settlementCreateLimiter = rateLimit({
   message: { success: false, message: "Too many settlements created, please slow down" },
   standardHeaders: true,
   legacyHeaders: false,
+  passOnStoreError: true,
   store: createRedisRateLimitStore("finance-settlement-create"),
   keyGenerator: actorOrIpKey,
 });

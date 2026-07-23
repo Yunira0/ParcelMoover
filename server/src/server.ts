@@ -101,6 +101,9 @@ const globalLimiter = rateLimit({
   message: { success: false, message: "Too many requests, please slow down" },
   standardHeaders: true,
   legacyHeaders: false,
+  // Redis is an acceleration/shared-state dependency, not a reason to take the
+  // whole API down. Route-specific limiters already use the same fail-open mode.
+  passOnStoreError: true,
   store: createRedisRateLimitStore("global"),
   keyGenerator: (req) => ipKeyGenerator(req.ip ?? "unknown"),
 });
