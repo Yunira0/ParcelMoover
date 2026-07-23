@@ -58,24 +58,28 @@ const VendorDeliveryCharges: React.FC = () => {
 
   const visibleRates = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    if (!q) return rates;
-    return rates.filter(
-      (rate) =>
-        rate.destinationName.toLowerCase().includes(q) ||
-        rate.coveredAreas.some((area) => area.toLowerCase().includes(q)),
-    );
+    const filtered = q
+      ? rates.filter(
+          (rate) =>
+            rate.destinationName.toLowerCase().includes(q) ||
+            rate.coveredAreas.some((area) => area.toLowerCase().includes(q)),
+        )
+      : rates;
+    return filtered.map((rate) => ({ ...rate, id: rate.destinationId }));
   }, [rates, searchQuery]);
+
+  type Row = VendorSelfRate & { id: string };
 
   const columns = useMemo(
     () => [
       {
         header: 'SN',
-        accessor: (rate: VendorSelfRate) => visibleRates.findIndex((r) => r.destinationId === rate.destinationId) + 1,
+        accessor: (rate: Row) => visibleRates.findIndex((r) => r.destinationId === rate.destinationId) + 1,
         width: '50px',
       },
       {
         header: 'DESTINATION',
-        accessor: (rate: VendorSelfRate) => <span className="vendor-delivery-route">{rate.destinationName}</span>,
+        accessor: (rate: Row) => <span className="vendor-delivery-route">{rate.destinationName}</span>,
       },
       {
         header: 'COVERED AREA',
@@ -92,20 +96,20 @@ const VendorDeliveryCharges: React.FC = () => {
         ? [
             {
               header: 'ZONE',
-              accessor: (rate: VendorSelfRate) => (rate.zone ? ZONE_LABELS[rate.zone] || rate.zone : '—'),
+              accessor: (rate: Row) => (rate.zone ? ZONE_LABELS[rate.zone] || rate.zone : '—'),
               width: '150px',
             },
           ]
         : []),
       {
         header: 'DELIVERY RATE',
-        accessor: (rate: VendorSelfRate) =>
+        accessor: (rate: Row) =>
           rate.homeRate !== null ? formatMoney(rate.homeRate) : <span className="vendor-delivery-unset">Not set</span>,
         width: '150px',
       },
       {
         header: 'BRANCH RATE',
-        accessor: (rate: VendorSelfRate) =>
+        accessor: (rate: Row) =>
           rate.branchRate !== null ? formatMoney(rate.branchRate) : <span className="vendor-delivery-unset">—</span>,
         width: '150px',
       },

@@ -6,10 +6,11 @@ import { requireAdminPermission } from "../middlewares/adminPermission.middlewar
 import { csrfProtection } from "../middlewares/csrf.middleware";
 import { validate } from "../middlewares/validate.middleware";
 import { createRedisRateLimitStore } from "../lib/rateLimitStore";
-import { ncmHandoffSchema, ncmWebhookRegisterSchema } from "../validators/ncm.schema";
+import { ncmHandoffSchema, ncmReturnSchema, ncmWebhookRegisterSchema } from "../validators/ncm.schema";
 import {
   getNcmParcelInfoController,
   listNcmBranchesController,
+  markNcmReturnController,
   ncmHandoffController,
   ncmReconcileController,
   ncmWebhookController,
@@ -56,7 +57,8 @@ const ncmWebhookLimiter = rateLimit({
   keyGenerator: (req) => ipKeyGenerator(req.ip ?? ""),
 });
 
-// GET /api/ncm/branches — NCM branch list for the handoff dialog (cached 1h).
+// GET /api/ncm/branches — NCM's live branch list (cached 1h), for diagnostics
+// (handoff auto-matches a branch per parcel, so the UI no longer calls this).
 ncmRouter.get(
   "/branches",
   authMiddleware,
@@ -83,6 +85,18 @@ ncmRouter.get(
   authorizeRoles("super_admin", "admin"),
   ncmReadLimiter,
   getNcmParcelInfoController,
+);
+
+// POST /api/ncm/parcels/:parcelId/return — ops gives up on the NCM delivery
+// attempt: tells NCM to return the order, moves our side into follow_up.
+ncmRouter.post(
+  "/parcels/:parcelId/return",
+  authMiddleware,
+  csrfProtection,
+  authorizeRoles("super_admin", "admin"),
+  ncmWriteLimiter,
+  validate(ncmReturnSchema),
+  markNcmReturnController,
 );
 
 // POST /api/ncm/reconcile — manually trigger the missed-webhook sweep.

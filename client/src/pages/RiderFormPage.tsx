@@ -6,6 +6,7 @@ import FormField from '../components/FormField';
 import { registerUser, getLocations, getManagedUser, updateUserProfile } from '../services/users.service';
 import { getCurrentUser } from '../services/auth.service';
 import { extractServerFieldErrors, isValidEmail, isValidName, isValidPhone, normalizePhone } from '../utils/serverValidation';
+import { useHubLock } from '../hooks/useHubLock';
 import './RiderFormPage.css';
 
 // API validation-error field → form field, for errors returned by the server.
@@ -129,29 +130,28 @@ const RiderFormPage: React.FC = () => {
   const [submitted, setSubmitted] = useState(false);
   const [hubs, setHubs] = useState<Array<{ value: string; label: string }>>([]);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  // A plain admin's riders always land in that admin's own hub; only a
+  // super_admin may pick another service branch (server enforces the same).
+  const { hubLocked, isPlainAdmin } = useHubLock();
+  const hubFieldDisabled = hubLocked || (isEdit && isPlainAdmin);
 
   useEffect(() => {
     const fetchHubs = async () => {
       try {
         const [res, me] = await Promise.all([getLocations(), getCurrentUser().catch(() => null)]);
         let hubList: Array<{ value: string; label: string }> = [];
-        let imadolId = '';
         if (res && res.success && Array.isArray(res.data)) {
           // The service branch is the rider's hub, so only show hub locations.
           hubList = res.data
             .filter((loc: any) => loc.is_hub)
             .map((loc: any) => ({ value: loc.id, label: loc.name }));
           setHubs(hubList);
-          const imadol = res.data.find(
-            (loc: any) => (loc.code || '').toUpperCase() === 'IMADOL' || (loc.name || '').trim().toLowerCase() === 'imadol',
-          );
-          imadolId = imadol?.id || '';
         }
-        // Service branch (hub) is fixed to the Imadol admin hub. Fall back to the
-        // admin's own hub / sole hub only if Imadol isn't present.
+        // Service branch defaults to whichever hub the current staff member
+        // (super_admin or admin) is assigned to. Fall back to the sole hub
+        // only if the actor has none.
         const adminHubId: string | null = me?.hubId ?? null;
-        const defaultHub = imadolId
-          || (adminHubId && hubList.some(h => h.value === adminHubId) ? adminHubId : '')
+        const defaultHub = (adminHubId && hubList.some(h => h.value === adminHubId) ? adminHubId : '')
           || (hubList.length === 1 ? hubList[0].value : '');
         if (defaultHub) {
           setForm(prev => (prev.serviceBranch ? prev : { ...prev, serviceBranch: defaultHub }));
@@ -441,11 +441,11 @@ const RiderFormPage: React.FC = () => {
                   label="Service Branch"
                   type="select"
                   required
-                  disabled
                   value={form.serviceBranch}
                   onChange={set('serviceBranch')}
                   placeholder="Select hub"
                   options={hubs}
+                  disabled={hubFieldDisabled}
                 />
                 {fieldErrors.serviceBranch && <span className="rfp-field-error">{fieldErrors.serviceBranch}</span>}
                 <FormField

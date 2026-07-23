@@ -102,6 +102,8 @@ const CreateOrderPage: React.FC = () => {
   const isEditMode = Boolean(editOrderId);
 
   const isVendorActor = isVendorSide();
+  // Orders keyed in by a plain admin always originate from that admin's own
+  // hub — only a super_admin may pick a different origin (server enforces it).
 
   const [vendors, setVendors] = useState<VendorOption[]>([]);
   // For a vendor/vendor_staff actor, this is their own vendor (fetched via

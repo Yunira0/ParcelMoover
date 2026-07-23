@@ -12,7 +12,6 @@ import {
   bulkUpdateOrderStatus,
   subscribeToOrderStatusChanged,
   type Order,
-  type OrdersPageMeta,
   type ParcelStatus,
 } from '../services/orders.service';
 import { downloadExcel } from '../utils/excel';
@@ -70,10 +69,35 @@ const returnStage = (o: Order): ReturnTab | null => {
 
 const formatMoney = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 0 });
 
+// Every status that can put a parcel into one of the four return tabs, on top
+// of the separate orderType==='return' sweep below (see returnStage).
+const RETURN_STATUS_FILTER: ParcelStatus[] = [
+  'failed_delivery', 'follow_up', 'partially_delivered', 'ready_to_return', 'sent_to_vendor', 'returned_to_vendor',
+];
+const SERVER_FETCH_PAGE_SIZE = 100;
+const MAX_FETCH_PAGES = 20; // safety cap: 2000 orders per sweep
+
+// Cursor-walks one filtered query to exhaustion instead of relying on the
+// backend's capped (200-row, company-wide) unfiltered list default.
+const fetchAllPages = async (params: { status?: ParcelStatus[]; orderType?: 'return' }) => {
+  const all: Order[] = [];
+  let cursor: string | undefined;
+  let truncated = false;
+  for (let i = 0; i < MAX_FETCH_PAGES; i++) {
+    const res = await getOrders({ ...params, pageSize: SERVER_FETCH_PAGE_SIZE, cursor, dir: 'next' });
+    if (!res?.success || !Array.isArray(res.data)) throw new Error('Unexpected orders response');
+    all.push(...res.data);
+    const hasMore = !!res.meta?.hasNextPage && !!res.meta?.nextCursor;
+    if (!hasMore) return { all, truncated };
+    cursor = res.meta!.nextCursor!;
+    if (i === MAX_FETCH_PAGES - 1) truncated = true;
+  }
+  return { all, truncated };
+};
+
 const ReturnOperations: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const [orders, setOrders] = useState<Order[]>([]);
-  const [meta, setMeta] = useState<OrdersPageMeta | null>(null);
   const [activeTab, setActiveTab] = useState<ReturnTab>(() => {
     const fromUrl = searchParams.get('tab');
     return fromUrl && fromUrl in TAB_LABELS ? (fromUrl as ReturnTab) : 'follow_up';
@@ -82,6 +106,7 @@ const ReturnOperations: React.FC = () => {
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
+  const [truncated, setTruncated] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string | number>>(new Set());
   const [actionMsg, setActionMsg] = useState('');
   const [acting, setActing] = useState(false);
@@ -91,19 +116,23 @@ const ReturnOperations: React.FC = () => {
 
   // The follow_up/ready_to_return/sent_to_vendor/returned_to_vendor split
   // depends on orderType *and* status together (see returnStage below), which
-  // the backend's status[] filter can't express - so this still fetches the
-  // (capped, default) unfiltered list rather than a real server-paginated one.
-  // meta.truncated at least surfaces it honestly instead of claiming completeness.
+  // the backend's status[] filter can't express as a single query - so this
+  // runs two exhaustive sweeps (by status, by orderType) and merges them,
+  // rather than relying on the backend's capped (200-row, company-wide)
+  // unfiltered list default, which silently drops older return orders.
   const loadReturns = async () => {
     setLoading(true);
     try {
-      const res = await getOrders();
-      if (res?.success && Array.isArray(res.data)) {
-        // Both kinds of returns: reverse orders + failed deliveries in the RTO flow.
-        setOrders(res.data.filter((order) => returnStage(order) !== null));
-        setMeta(res.meta ?? null);
-        setLoadError('');
-      }
+      const [byStatus, byType] = await Promise.all([
+        fetchAllPages({ status: RETURN_STATUS_FILTER }),
+        fetchAllPages({ orderType: 'return' }),
+      ]);
+      const merged = new Map<string, Order>();
+      for (const order of byStatus.all) merged.set(order.id, order);
+      for (const order of byType.all) merged.set(order.id, order);
+      setOrders(Array.from(merged.values()).filter((order) => returnStage(order) !== null));
+      setTruncated(byStatus.truncated || byType.truncated);
+      setLoadError('');
     } catch {
       setLoadError('Failed to load return orders. Showing the last loaded data, if any.');
     } finally {
@@ -239,7 +268,7 @@ const ReturnOperations: React.FC = () => {
 
   const returnColumns = [
     {
-      header: 'ID',
+      header: 'ORDER ID',
       accessor: (order: Order) => `#${order.orderNumber}`,
       width: '70px',
       className: 'return-sn-cell',
@@ -303,9 +332,9 @@ const ReturnOperations: React.FC = () => {
       />
 
       {loadError && <p className="return-action-msg">{loadError}</p>}
-      {meta?.truncated && (
+      {truncated && (
         <p className="return-action-msg">
-          Showing the most recent {meta.pageSize} of {meta.total} matching orders. Narrow your search to see the rest.
+          Showing a partial list - there are more return orders than could be loaded. Narrow your search to find a specific order.
         </p>
       )}
 

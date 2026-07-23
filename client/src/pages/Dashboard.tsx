@@ -29,6 +29,8 @@ const EMPTY_SUMMARY: DashboardSummary = {
     totalDeliveredAmount: 0,
     totalReturns: 0,
     totalReturnsAmount: 0,
+    totalReturnedToVendor: 0,
+    totalReturnedToVendorAmount: 0,
   },
   today: {
     totalOrders: 0,
@@ -56,6 +58,7 @@ const EMPTY_SUMMARY: DashboardSummary = {
     settledCod: 0,
     pendingCod: 0,
     codFromRider: 0,
+    pendingDeliveryCharge: 0,
     deliveryCharge: 0,
     progressPercent: 0,
     scopedToRider: false,

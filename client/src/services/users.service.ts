@@ -205,6 +205,7 @@ export const ADMIN_PERMISSIONS = [
   { code: 'SETTINGS_ACCESS', label: 'Settings', description: 'Access the Settings section: destinations, rate setup and delivery rates.' },
   { code: 'KYC_ACCESS', label: 'KYC Applications', description: 'Review, approve and reject vendor KYC applications.' },
   { code: 'SYSTEM_LOGS_ACCESS', label: 'System Logs', description: 'Read the system audit logs, including who changed what across the app.' },
+  { code: 'EDIT_SETTLEMENTS', label: 'Edit COD Statements', description: 'Correct an unsettled COD statement (add/remove orders) before it is paid out.' },
 ] as const;
 
 export type AdminPermissionCode = (typeof ADMIN_PERMISSIONS)[number]['code'];

@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import {
   X, Package, User, Phone, MapPin, Weight, Navigation,
-  Banknote, CheckCheck, Truck, XCircle, RefreshCw, ChevronRight,
+  Banknote, CheckCheck, Truck, XCircle, RefreshCw, ChevronRight, RotateCcw,
 } from 'lucide-react'
 import type { Parcel, ParcelStatus } from '../lib/api'
 import { updateParcelStatus, addParcelRemark, getCachedRider, RIDER_TRANSITIONS } from '../lib/api'
@@ -50,12 +50,17 @@ const STATUS_LABELS: Record<ParcelStatus, string> = {
   returned_to_vendor: 'Returned to Vendor',
 }
 
-const ACTION_META: Record<string, { label: string; icon: typeof CheckCheck; danger?: boolean; partial?: boolean }> = {
+const ACTION_META: Record<string, { label: string; icon: typeof CheckCheck; danger?: boolean; partial?: boolean; secondary?: boolean }> = {
   picked_up:         { label: 'Confirm Pickup',          icon: Truck      },
   delivered:         { label: 'Mark as Delivered',       icon: CheckCheck },
   partially_delivered: { label: 'Mark Partial Delivery', icon: CheckCheck, partial: true },
   failed_pickup:     { label: 'Report Failed Pickup',    icon: XCircle,   danger: true },
   failed_delivery:   { label: 'Report Failed Delivery',  icon: XCircle,   danger: true },
+  // Neither target lets the rider re-assign the parcel to themselves (that
+  // stays admin/vendor-only) - this only releases it back into the pool for
+  // dispatch to hand out again, so it's a neutral action, not a danger one.
+  pickup_ordered:    { label: 'Release Back to Queue',   icon: RotateCcw, secondary: true },
+  ready_to_deliver:  { label: 'Release Back to Queue',   icon: RotateCcw, secondary: true },
 }
 
 const STATUS_PILL: Record<string, string> = {
@@ -330,7 +335,7 @@ export default function ParcelActionSheet({ parcel, onClose, onDone }: Props) {
               rows={3}
               value={remarks}
               onChange={e => setRemarks(e.target.value)}
-              placeholder="Reason for failure…"
+              placeholder={remarksFor && ACTION_META[remarksFor]?.secondary ? 'Note for the office…' : 'Reason for failure…'}
               className="w-full bg-surface-2 border border-border rounded-2xl px-4 py-3 text-sm text-text-primary placeholder:text-text-muted outline-none focus:ring-2 focus:ring-brand/40 focus:border-brand resize-none"
             />
           </div>
@@ -466,6 +471,38 @@ export default function ParcelActionSheet({ parcel, onClose, onDone }: Props) {
                     disabled={loading || !remarks.trim()}
                     style={{ touchAction: 'manipulation' }}
                     className="flex items-center justify-center gap-2 h-12 rounded-2xl bg-error text-white text-sm font-semibold cursor-pointer active:opacity-80 disabled:opacity-50"
+                  >
+                    {loading ? <RefreshCw size={16} className="animate-spin" /> : <><Icon size={16} /> Confirm — {meta.label}</>}
+                  </button>
+                )
+              }
+
+              // Neutral action (release back to the queue) - still a
+              // deliberate second tap to confirm, but styled plainly since
+              // it isn't destructive or the happy-path forward action.
+              if (meta.secondary && !selected) {
+                return (
+                  <button key={status}
+                    onClick={() => { setRemarksFor(status as ParcelStatus); setError('') }}
+                    style={{ touchAction: 'manipulation' }}
+                    className="flex items-center justify-between h-12 rounded-2xl px-4 border border-border bg-surface-2 text-text-secondary cursor-pointer active:opacity-70 transition-opacity"
+                  >
+                    <div className="flex items-center gap-3">
+                      <Icon size={17} />
+                      <span className="text-sm font-semibold">{meta.label}</span>
+                    </div>
+                    <ChevronRight size={15} className="opacity-50" />
+                  </button>
+                )
+              }
+
+              if (meta.secondary && selected) {
+                return (
+                  <button key={status}
+                    onClick={() => confirmAction(status as ParcelStatus)}
+                    disabled={loading}
+                    style={{ touchAction: 'manipulation' }}
+                    className="flex items-center justify-center gap-2 h-12 rounded-2xl bg-surface-3 border border-border text-text-primary text-sm font-semibold cursor-pointer active:opacity-80 disabled:opacity-50"
                   >
                     {loading ? <RefreshCw size={16} className="animate-spin" /> : <><Icon size={16} /> Confirm — {meta.label}</>}
                   </button>

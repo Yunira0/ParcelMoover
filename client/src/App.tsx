@@ -7,6 +7,7 @@ import TrackParcel from './pages/TrackParcel'
 import Login from './pages/Login'
 import NotFound from './pages/NotFound'
 import ProtectedRoute from './components/ProtectedRoute'
+import PublicOnlyRoute from './components/PublicOnlyRoute'
 import RoleGuard from './components/RoleGuard'
 import PageLoader from './components/PageLoader'
 import './App.css'
@@ -29,6 +30,7 @@ const SettlementCreatePage = lazy(() => import('./pages/SettlementCreatePage'))
 const DeliveryRateSettings = lazy(() => import('./pages/DeliveryRateSettings'))
 const Settings = lazy(() => import('./pages/settings/Settings'))
 const SlaSettings = lazy(() => import('./pages/SlaSettings'))
+const PickupTimeSlots = lazy(() => import('./pages/PickupTimeSlots'))
 const PickupOperations = lazy(() => import('./pages/PickupOperations'))
 const DispatchOperations = lazy(() => import('./pages/DispatchOperations'))
 const OOVOperations = lazy(() => import('./pages/OOVOperations'))
@@ -46,9 +48,11 @@ const VendorPendingCod = lazy(() => import('./pages/vendor/VendorPendingCod'))
 const VendorOrderPayments = lazy(() => import('./pages/vendor/VendorOrderPayments'))
 const VendorUserManagement = lazy(() => import('./pages/vendor/VendorUserManagement'))
 const VendorApiKeys = lazy(() => import('./pages/vendor/VendorApiKeys'))
+const VendorWebhooks = lazy(() => import('./pages/vendor/VendorWebhooks'))
 const StaffFormPage = lazy(() => import('./pages/vendor/StaffFormPage'))
 const BulkOrderPage = lazy(() => import('./pages/vendor/BulkOrderPage'))
 const VendorDeliveryCharges = lazy(() => import('./pages/vendor/VendorDeliveryCharges'))
+const VendorMetricDetail = lazy(() => import('./pages/vendor/VendorMetricDetail'))
 const ForceChangePasswordPage = lazy(() => import('./pages/ForceChangePasswordPage'))
 const KycApplicationPage = lazy(() => import('./pages/KycApplicationPage'))
 const KycManagement = lazy(() => import('./pages/KycManagement'))
@@ -62,7 +66,7 @@ function App() {
       <Suspense fallback={<PageLoader />}>
       <Routes>
         {/* Public Routes */}
-        <Route path="/" element={<MainLayout><Home /></MainLayout>} />
+        <Route path="/" element={<PublicOnlyRoute><MainLayout><Home /></MainLayout></PublicOnlyRoute>} />
         <Route path="/track" element={<MainLayout><TrackParcel /></MainLayout>} />
         <Route path="/track/:trackingId" element={<MainLayout><TrackParcel /></MainLayout>} />
         <Route path="/login" element={<MainLayout><Login /></MainLayout>} />
@@ -79,6 +83,10 @@ function App() {
           }
         >
           <Route path="/dashboard" element={<DashboardRouter />} />
+          <Route
+            path="/dashboard/metric/:metricId"
+            element={<RoleGuard allowedRoles={['vendor', 'vendor_staff', 'sales']}><VendorMetricDetail /></RoleGuard>}
+          />
           <Route
             path="/overview/:metric"
             element={<RoleGuard allowedRoles={['super_admin', 'admin']}><OverviewOrdersPage /></RoleGuard>}
@@ -172,6 +180,10 @@ function App() {
             element={<RoleGuard allowedRoles={['super_admin']}><SlaSettings /></RoleGuard>}
           />
           <Route
+            path="/pickup-time-slots"
+            element={<RoleGuard allowedRoles={['super_admin']}><PickupTimeSlots /></RoleGuard>}
+          />
+          <Route
             path="/pickup"
             element={<RoleGuard allowedRoles={['super_admin', 'admin']}><PickupOperations /></RoleGuard>}
           />
@@ -258,6 +270,10 @@ function App() {
           <Route
             path="/developer/api-keys"
             element={<RoleGuard allowedRoles={['vendor']}><VendorApiKeys /></RoleGuard>}
+          />
+          <Route
+            path="/developer/webhooks"
+            element={<RoleGuard allowedRoles={['vendor']}><VendorWebhooks /></RoleGuard>}
           />
           <Route path="/profile" element={<ProfilePage />} />
         </Route>

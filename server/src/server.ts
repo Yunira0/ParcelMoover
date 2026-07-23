@@ -1,4 +1,5 @@
 import express, {Express} from 'express';
+import path from 'path';
 import helmet from 'helmet';
 import {config} from 'dotenv';
 import rateLimit, { ipKeyGenerator } from "express-rate-limit";
@@ -14,9 +15,11 @@ import KycRoutes from "./routes/kyc.routes"
 import LocationRoutes from "./routes/location.routes"
 import PricingRoutes from "./routes/pricing.routes"
 import SlaRoutes from "./routes/sla.routes"
+import PickupTimeSlotsRoutes from "./routes/pickupTimeSlots.routes"
 import PaymentMethodRoutes from "./routes/payment-method.routes"
 import NcmRoutes from "./routes/ncm.routes"
 import ApiKeyRoutes from "./routes/apiKey.routes"
+import WebhookRoutes from "./routes/webhook.routes"
 import PublicApiRoutes from "./routes/publicApi.routes"
 import MeRoutes from "./routes/me.routes"
 import AuditLogRoutes from "./routes/auditLog.routes"
@@ -141,6 +144,7 @@ app.use("/api/pricing", PricingRoutes)
 
 app.use("/api/sla", SlaRoutes)
 
+app.use("/api/pickup-time-slots", PickupTimeSlotsRoutes)
 app.use("/api/payment-methods", PaymentMethodRoutes)
 
 // NCM (Nepal Can Move) 3PL integration — includes the public webhook receiver.
@@ -148,6 +152,9 @@ app.use("/api/ncm", NcmRoutes)
 
 // Vendor self-service management of partner API keys (dashboard, JWT-authed).
 app.use("/api/api-keys", ApiKeyRoutes)
+
+// Vendor self-service management of outbound webhook endpoints (dashboard, JWT-authed).
+app.use("/api/webhooks", WebhookRoutes)
 
 // Public partner API v1 — external e-commerce integrations, API-key-authed.
 app.use("/api/v1", PublicApiRoutes)
@@ -188,6 +195,14 @@ app.use("/api/audit-logs", AuditLogRoutes)
 app.use((req, res, next) => {
   if (req.method !== "GET" || req.path.startsWith("/api") || req.path.startsWith("/uploads")) {
     return next();
+  }
+  // A path with a file extension is a missing static asset — typically a
+  // hashed JS/CSS chunk from a previous deploy that an open tab still
+  // references — not a client-side route. Answering it with index.html makes
+  // the browser fail with "'text/html' is not a valid JavaScript MIME type";
+  // a clean 404 lets the client detect the stale deploy and recover.
+  if (path.extname(req.path) !== "") {
+    return res.status(404).end();
   }
   res.sendFile("index.html", { root: "public" });
 });

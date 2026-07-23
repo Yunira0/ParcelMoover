@@ -53,17 +53,20 @@ async function scopeWhere(actor: Actor, extra: Record<string, unknown> = {}) {
   return { ...extra, parcels: { vendor_id: vendorId } };
 }
 
-function mapRemark(remark: {
-  id: string;
-  remark: string;
-  created_at: Date;
-  workflow_status: string | null;
-  parcels: {
-    tracking_id: string;
-    parties_parcels_sender_idToparties: { name: string; phone: string };
-  };
-  users: { full_name: string } | null;
-}) {
+function mapRemark(
+  remark: {
+    id: string;
+    remark: string;
+    created_at: Date;
+    workflow_status: string | null;
+    parcels: {
+      tracking_id: string;
+      parties_parcels_sender_idToparties: { name: string; phone: string };
+    };
+    users: { full_name: string } | null;
+  },
+  lastActivity?: { remark: string; created_at: Date; addedBy: string } | null,
+) {
   return {
     id: remark.id,
     remarkId: `RMK-${remark.id.slice(0, 8).toUpperCase()}`,
@@ -74,7 +77,38 @@ function mapRemark(remark: {
     status: normalizeStatus(remark.workflow_status),
     addedBy: remark.users?.full_name || "Unknown",
     createdAt: remark.created_at.toISOString().slice(0, 10),
+    lastRemark: lastActivity?.remark ?? remark.remark,
+    lastRemarkBy: lastActivity?.addedBy ?? remark.users?.full_name ?? "Unknown",
+    lastRemarkAt: (lastActivity?.created_at ?? remark.created_at).toISOString(),
   };
+}
+
+// The most recent message in each thread (root or reply) - a thread's row in
+// the list stays anchored to its root remark, so this is the only way to
+// surface newer replies without opening the detail page.
+async function resolveLastActivityByParcel(
+  parcelIds: string[],
+): Promise<Map<string, { remark: string; created_at: Date; addedBy: string }>> {
+  const result = new Map<string, { remark: string; created_at: Date; addedBy: string }>();
+  const ids = [...new Set(parcelIds)];
+  if (ids.length === 0) return result;
+
+  const latest = await prisma.parcel_remarks.findMany({
+    where: { parcel_id: { in: ids } },
+    orderBy: [{ parcel_id: "asc" }, { created_at: "desc" }],
+    distinct: ["parcel_id"],
+    select: { parcel_id: true, remark: true, created_at: true, users: { select: { full_name: true } } },
+  });
+
+  latest.forEach((row) => {
+    result.set(row.parcel_id, {
+      remark: row.remark,
+      created_at: row.created_at,
+      addedBy: row.users?.full_name || "Unknown",
+    });
+  });
+
+  return result;
 }
 
 const DEFAULT_PAGE_SIZE = 20;
@@ -87,7 +121,10 @@ const VENDOR_RIDER_AUTHOR = {
 };
 
 export async function listRemarks(actor: Actor, params: ListRemarksParams = {}) {
-  const where: Record<string, unknown> = await scopeWhere(actor);
+  // Only root remarks are their own table row; replies live inside the thread
+  // (see getRemarkById) so posting one doesn't spawn a new row with the reply
+  // text sitting in the SUBJECT column.
+  const where: Record<string, unknown> = await scopeWhere(actor, { parent_remark_id: null });
 
   if (params.unclosed) {
     where.workflow_status = { not: "closed" };
@@ -147,8 +184,10 @@ export async function listRemarks(actor: Actor, params: ListRemarksParams = {}) 
     }),
   ]);
 
+  const lastActivityByParcel = await resolveLastActivityByParcel(remarks.map((r) => r.parcel_id));
+
   return {
-    data: remarks.map(mapRemark),
+    data: remarks.map((remark) => mapRemark(remark, lastActivityByParcel.get(remark.parcel_id))),
     meta: {
       page,
       pageSize: take,
@@ -224,6 +263,7 @@ export async function setRemarkStatus(actor: Actor, id: string, status: RemarkWo
 export async function getUnclosedRemarksCount(actor: Actor): Promise<number> {
   const where = await scopeWhere(actor, {
     workflow_status: { not: "closed" },
+    parent_remark_id: null,
     users: VENDOR_RIDER_AUTHOR,
   });
   return prisma.parcel_remarks.count({ where });

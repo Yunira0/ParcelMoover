@@ -138,6 +138,14 @@ const filtersFromSearchParams = (searchParams: URLSearchParams): VendorOrderFilt
   status: searchParams.get('status') || '',
 });
 
+// The status filter can hold several comma-separated statuses (dashboard cards
+// deep-link like "?status=pickup_ordered,rider_assigned"); the dropdown itself
+// only ever writes a single one.
+const statusesFromFilter = (value: string): ParcelStatus[] | undefined => {
+  const statuses = value.split(',').filter(Boolean) as ParcelStatus[];
+  return statuses.length > 0 ? statuses : undefined;
+};
+
 const VendorOrders: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -156,8 +164,6 @@ const VendorOrders: React.FC = () => {
   const [trackingSearch, setTrackingSearch] = useState(() => searchParams.get('search') || '');
   const [debouncedSearch, setDebouncedSearch] = useState(() => searchParams.get('search') || '');
   const [printWorking, setPrintWorking] = useState(false);
-  const [bulkWorking, setBulkWorking] = useState(false);
-  const [bulkError, setBulkError] = useState('');
   const [openActionId, setOpenActionId] = useState<string | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -186,7 +192,7 @@ const VendorOrders: React.FC = () => {
     setLoading(true);
     try {
       const res = await getOrders({
-        status: applied.status ? [applied.status as ParcelStatus] : undefined,
+        status: statusesFromFilter(applied.status),
         orderType: (applied.orderType as OrderType) || undefined,
         search: debouncedSearch || undefined,
         pageSize: PAGE_SIZE,
@@ -229,7 +235,7 @@ const VendorOrders: React.FC = () => {
     (async () => {
       try {
         const res = await getOrders({
-          status: applied.status ? [applied.status as ParcelStatus] : undefined,
+          status: statusesFromFilter(applied.status),
           orderType: (applied.orderType as OrderType) || undefined,
         });
         if (!cancelled && res?.success && Array.isArray(res.data)) {
@@ -289,25 +295,6 @@ const VendorOrders: React.FC = () => {
       else visibleOrderIds.forEach(id => next.add(id));
       return next;
     });
-  };
-
-  const bulkCancel = async () => {
-    const ids = Array.from(selectedIds);
-    if (ids.length === 0) return;
-    const confirmed = window.confirm(
-      `Cancel ${ids.length} order${ids.length !== 1 ? 's' : ''}? This cannot be undone.`,
-    );
-    if (!confirmed) return;
-    setBulkWorking(true);
-    setBulkError('');
-    try {
-      await bulkUpdateOrderStatus(ids, 'cancelled', { remarks: 'Bulk cancelled by vendor' });
-      setSelectedIds(new Set());
-    } catch (err: any) {
-      setBulkError(err?.response?.data?.message || err?.message || 'Bulk cancel failed');
-    } finally {
-      setBulkWorking(false);
-    }
   };
 
   const handlePrintLabels = async () => {
@@ -396,7 +383,6 @@ const VendorOrders: React.FC = () => {
       accessor: (order: Order) => (
         <div className="vo-id-cell">
           <Link to={`/orders/track/${order.trackingId}`} className="vo-id-link">{order.trackingId}</Link>
-          <span className="vo-id-ref">ref-</span>
           <span className="vo-id-date">{toBsDate(order.createdAt)}</span>
         </div>
       ),
@@ -573,31 +559,6 @@ const VendorOrders: React.FC = () => {
           Bulk Import <FileUp size={16} />
         </Button>
       </div>
-
-      {selectedIds.size > 0 && (
-        <div className="vo-bulk-bar">
-          <span className="vo-bulk-count">{selectedIds.size} order{selectedIds.size !== 1 ? 's' : ''} selected</span>
-          <div className="vo-bulk-actions">
-            {bulkError && <span className="vo-bulk-error">{bulkError}</span>}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => { setSelectedIds(new Set()); setBulkError(''); }}
-              disabled={bulkWorking}
-            >
-              Clear Selection
-            </Button>
-            <Button
-              variant="danger"
-              size="sm"
-              onClick={bulkCancel}
-              disabled={bulkWorking}
-            >
-              {bulkWorking ? 'Cancelling…' : `Cancel ${selectedIds.size} Order${selectedIds.size !== 1 ? 's' : ''}`}
-            </Button>
-          </div>
-        </div>
-      )}
 
       <div className="vo-list-card">
         <div className="vo-list-header">

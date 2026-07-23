@@ -1,4 +1,5 @@
-import React, { useId } from 'react';
+import React, { useId, useState } from 'react';
+import { Eye, EyeOff } from 'lucide-react';
 import SearchableSelect, { type SearchableSelectOption } from './SearchableSelect';
 import NepaliDatePicker from './NepaliDatePicker';
 import './FormField.css';
@@ -61,6 +62,7 @@ const FormField: React.FC<FormFieldProps> = ({
   error,
 }) => {
   const id = useId();
+  const [passwordVisible, setPasswordVisible] = useState(false);
 
   return (
     <div
@@ -133,6 +135,29 @@ const FormField: React.FC<FormFieldProps> = ({
           emptyMessage={emptyMessage}
           disabled={disabled}
         />
+      ) : type === 'password' ? (
+        <div className="form-password-wrap">
+          <input
+            id={id}
+            type={passwordVisible ? 'text' : 'password'}
+            required={required}
+            disabled={disabled}
+            placeholder={placeholder}
+            minLength={minLength}
+            autoComplete={autoComplete}
+            value={value ?? ''}
+            onChange={(e) => onChange(e.target.value)}
+          />
+          <button
+            type="button"
+            className="form-password-toggle"
+            onClick={() => setPasswordVisible((v) => !v)}
+            tabIndex={-1}
+            aria-label={passwordVisible ? 'Hide password' : 'Show password'}
+          >
+            {passwordVisible ? <EyeOff size={16} /> : <Eye size={16} />}
+          </button>
+        </div>
       ) : (
         <input
           id={id}

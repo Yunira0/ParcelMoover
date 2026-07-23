@@ -5,6 +5,7 @@ import {
 } from 'lucide-react'
 import { usePending } from '../context/PendingContext'
 import ParcelActionSheet from '../components/ParcelActionSheet'
+import PullToRefresh from '../components/PullToRefresh'
 import { getRiderParcels, type Parcel, type ParcelStatus } from '../lib/api'
 
 // ── Lanes ──────────────────────────────────────────────────────────────────
@@ -145,14 +146,17 @@ function ParcelCard({ parcel, onTap }: { parcel: Parcel; onTap: () => void }) {
 // ── Page ──────────────────────────────────────────────────────────────────
 
 export default function PendingPage() {
-  const { parcels: queue, loading, error, refresh } = usePending()
+  const { parcels: queue, loading, error, truncated: queueTruncated, refresh } = usePending()
   const [completed, setCompleted] = useState<Parcel[]>([])
+  const [completedTruncated, setCompletedTruncated] = useState(false)
   const [activeFilter, setActiveFilter] = useState<FilterKey>('pickup')
   const [selected, setSelected] = useState<Parcel | null>(null)
 
   async function loadCompleted() {
     try {
-      setCompleted(await getRiderParcels(COMPLETED_STATUSES))
+      const result = await getRiderParcels(COMPLETED_STATUSES)
+      setCompleted(result.data)
+      setCompletedTruncated(result.truncated)
     } catch {
       // Non-fatal: the actionable queue (which drives the badge) still loads;
       // completed/return history just won't appear until the next refresh.
@@ -244,7 +248,7 @@ export default function PendingPage() {
       </div>
 
       {/* ── Scrollable list ── */}
-      <div className="flex-1 overflow-y-auto">
+      <PullToRefresh onRefresh={refreshAll} className="flex-1">
 
         {error && (
           <div className="mx-5 mt-4 flex items-center gap-3 bg-error/10 border border-error/30 rounded-2xl px-4 py-3">
@@ -253,6 +257,15 @@ export default function PendingPage() {
             <button onClick={refreshAll} className="text-error cursor-pointer" aria-label="Retry">
               <RefreshCw size={14} />
             </button>
+          </div>
+        )}
+
+        {!error && (queueTruncated || completedTruncated) && (
+          <div className="mx-5 mt-4 flex items-start gap-3 bg-yellow-400/10 border border-yellow-400/30 rounded-2xl px-4 py-3">
+            <AlertCircle size={15} className="text-yellow-400 shrink-0 mt-0.5" />
+            <p className="text-xs text-yellow-400 leading-snug flex-1">
+              You have a large number of orders — some may not be shown below. Contact your hub manager if a parcel is missing.
+            </p>
           </div>
         )}
 
@@ -282,7 +295,7 @@ export default function PendingPage() {
             ))}
           </div>
         )}
-      </div>
+      </PullToRefresh>
 
       {/* Action sheet overlay */}
       {selected && (

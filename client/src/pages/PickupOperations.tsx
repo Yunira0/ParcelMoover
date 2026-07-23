@@ -7,6 +7,7 @@ import {
   Printer,
   RefreshCw,
   Search,
+  X,
 } from 'lucide-react';
 import Table from '../components/Table';
 import SearchableSelect from '../components/SearchableSelect';
@@ -21,19 +22,24 @@ import {
   subscribeToOrderStatusChanged,
   updateOrderStatus,
   type Order,
-  type OrdersPageMeta,
   type ParcelStatus,
 } from '../services/orders.service';
 import { getRiders } from '../services/users.service';
 import { printLabels } from '../utils/printLabels';
 import { toBsDate, toNptTime } from '../utils/nepaliDate';
-import { useCursorPagination } from '../hooks/useCursorPagination';
 import { formatCurrency } from '../utils/format';
+import { commitScannedTerm, handleScannerPaste } from '../utils/scannerInput';
 import './PickupOperations.css';
 
 type PickupTab = 'pickup_ordered' | 'rider_assigned' | 'picked_up' | 'arrived' | 'failed' | 'cancelled';
 
+// Groups (pickups) per page in the outer table.
 const PAGE_SIZE = 10;
+// The whole tab is fetched up front (server pages of 100) so vendor groups are
+// complete - a pickup's Details panel must show every parcel in it, and piece
+// counts must cover the full pickup, which parcel-level server paging broke.
+const SERVER_FETCH_PAGE_SIZE = 100;
+const MAX_FETCH_PAGES = 30; // safety cap: 3000 parcels per tab
 const SEARCH_DEBOUNCE_MS = 300;
 
 const TAB_LABELS: Record<PickupTab, string> = {
@@ -98,6 +104,19 @@ const STATUS_TRANSITIONS: Record<ParcelStatus, ParcelStatus[]> = {
   ready_to_return: [],
   sent_to_vendor: [],
   returned_to_vendor: [],
+};
+
+// Fringe areas that sit just outside the valley boundary but are close enough
+// to deliver directly from origin without a Transit (OOV) leg.
+const DIRECT_DELIVERY_FRINGE_AREAS = ['kavresthali', 'thali', 'chapagaun', 'budhanilkantha', 'thankot'];
+
+// From "Arrived at Origin", whether a parcel should skip Transit and go
+// straight to Ready to Deliver (inside valley + fringe areas) or must go
+// through Transit/OOV first (everywhere else).
+const destinationSkipsTransit = (order: Order): boolean => {
+  if (order.destinationValley === 'inside') return true;
+  const name = (order.destinationName || '').toLowerCase();
+  return DIRECT_DELIVERY_FRINGE_AREAS.some(area => name.includes(area));
 };
 
 // Small custom ostrich glyph (lucide has none). Stroke style matches the other
@@ -221,6 +240,11 @@ const groupDetailColumns = (group: PickupGroup, onRemarkClick: (order: Order) =>
     width: '60px',
   },
   {
+    header: 'ORDER ID',
+    accessor: (order: Order) => `#${order.orderNumber}`,
+    width: '70px',
+  },
+  {
     header: 'DATE & TIME',
     accessor: (order: Order) => <DateTimeCell iso={order.createdAtRaw} />,
     width: '110px',
@@ -325,14 +349,22 @@ const REASON_REQUIRED_STATUSES: ParcelStatus[] = ['cancelled', 'failed_pickup', 
 const PickupOperations: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const [orders, setOrders] = useState<Order[]>([]);
-  const [meta, setMeta] = useState<OrdersPageMeta | null>(null);
+  const [capped, setCapped] = useState(false);
   const [activeTab, setActiveTab] = useState<PickupTab>(() => {
     const fromUrl = searchParams.get('tab');
     return fromUrl && fromUrl in TAB_LABELS ? (fromUrl as PickupTab) : 'pickup_ordered';
   });
   const [searchQuery, setSearchQuery] = useState(() => searchParams.get('search') || '');
+  // Tracking ids confirmed by pressing Enter (typically a barcode scanner) -
+  // kept separate from the live input buffer so rapid scans never race each
+  // other (see utils/scannerInput.ts). Rendered as chips beside the input.
+  const [scannedIds, setScannedIds] = useState<string[]>([]);
+  const combinedSearch = useMemo(
+    () => [...scannedIds, searchQuery.trim()].filter(Boolean).join(', '),
+    [scannedIds, searchQuery],
+  );
   const [debouncedSearch, setDebouncedSearch] = useState(() => searchParams.get('search') || '');
-  const pager = useCursorPagination();
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [selectedIdsByTab, setSelectedIdsByTab] = useState<Record<PickupTab, Set<string | number>>>(createEmptyTabSelections);
@@ -361,41 +393,59 @@ const PickupOperations: React.FC = () => {
 
   // Debounce search input so every keystroke doesn't fire a request.
   useEffect(() => {
-    const handle = setTimeout(() => setDebouncedSearch(searchQuery.trim()), SEARCH_DEBOUNCE_MS);
+    const handle = setTimeout(() => setDebouncedSearch(combinedSearch), SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(handle);
-  }, [searchQuery]);
+  }, [combinedSearch]);
+
+  // Guards against a slow multi-page fetch landing after the user has already
+  // switched tab or typed a new search - only the latest request may setState.
+  const fetchSeqRef = useRef(0);
 
   const loadPickups = useCallback(async () => {
+    const seq = ++fetchSeqRef.current;
     setLoading(true);
     try {
-      const res = await getOrders({
-        status: TAB_STATUSES[activeTab],
-        search: debouncedSearch || undefined,
-        pageSize: PAGE_SIZE,
-        cursor: pager.request.cursor,
-        dir: pager.request.dir,
-      });
-      if (res?.success && Array.isArray(res.data)) {
-        setOrders(res.data);
-        setMeta(res.meta ?? null);
-        setLoadError('');
+      const all: Order[] = [];
+      let cursor: string | undefined;
+      let hasMore = false;
+      for (let i = 0; i < MAX_FETCH_PAGES; i++) {
+        const res = await getOrders({
+          status: TAB_STATUSES[activeTab],
+          search: debouncedSearch || undefined,
+          pageSize: SERVER_FETCH_PAGE_SIZE,
+          cursor,
+          dir: 'next',
+        });
+        if (seq !== fetchSeqRef.current) return;
+        if (!res?.success || !Array.isArray(res.data)) {
+          throw new Error('Unexpected orders response');
+        }
+        all.push(...res.data);
+        hasMore = !!res.meta?.hasNextPage && !!res.meta?.nextCursor;
+        if (!hasMore) break;
+        cursor = res.meta!.nextCursor!;
       }
+      setOrders(all);
+      setCapped(hasMore);
+      setLoadError('');
     } catch {
+      if (seq !== fetchSeqRef.current) return;
       setLoadError('Failed to load pickup orders. Showing the last loaded data, if any.');
     } finally {
-      setLoading(false);
+      if (seq === fetchSeqRef.current) setLoading(false);
     }
-  }, [activeTab, debouncedSearch, pager.request]);
+  }, [activeTab, debouncedSearch]);
 
   useEffect(() => { loadPickups(); }, [loadPickups]);
   useEffect(() => subscribeToOrderStatusChanged(loadPickups), [loadPickups]);
 
   useEffect(() => {
-    pager.reset();
+    setPage(1);
+    setExpandedGroupId('');
     setIsActionOpen(false);
     setActionError('');
     setRiderId('');
-  }, [activeTab, debouncedSearch, pager.reset]);
+  }, [activeTab, debouncedSearch]);
 
   // Keep tab/search bookmarkable - mirror into the URL (replacing history,
   // not pushing, so the back button doesn't step through every keystroke).
@@ -406,34 +456,52 @@ const PickupOperations: React.FC = () => {
     setSearchParams(next, { replace: true });
   }, [activeTab, debouncedSearch, setSearchParams]);
 
-  // Selection is scoped to a single loaded page - clear it when the page or
-  // tab changes so a bulk action never silently drops ids that scrolled out
-  // of the currently-fetched page.
+  // Every order of the tab stays loaded while flipping through group pages, so
+  // selection can safely span pages - only a tab/search change resets it.
   useEffect(() => {
     setSelectedIdsByTab(prev => ({ ...prev, [activeTab]: new Set() }));
-  }, [activeTab, pager.request]);
+  }, [activeTab, debouncedSearch]);
 
   const visibleOrders = orders;
-  const totalPages = meta?.totalPages ?? 1;
   const selectedIds = selectedIdsByTab[activeTab];
   const groups = useMemo(() => groupOrdersByVendor(visibleOrders), [visibleOrders]);
+  const totalPages = Math.max(1, Math.ceil(groups.length / PAGE_SIZE));
+  // Clamp instead of resetting so a reload that shrinks the list doesn't strand
+  // the pager past the last page.
+  const currentPage = Math.min(page, totalPages);
+  const pagedGroups = groups.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
   // A group's row checkbox reads as checked only once every order inside it
   // is selected - the underlying selection stays order-scoped so bulk status
   // changes keep applying per-order exactly as before grouping was added.
   const checkedGroupIds = new Set(
     groups.filter(group => group.orders.every(order => selectedIds.has(order.id))).map(group => group.id),
   );
-  const allGroupsSelected = groups.length > 0 && groups.every(group => checkedGroupIds.has(group.id));
-  const someGroupsSelected = groups.some(group => group.orders.some(order => selectedIds.has(order.id)));
+  // The header checkbox works on the visible page of groups, not the whole tab.
+  const allGroupsSelected = pagedGroups.length > 0 && pagedGroups.every(group => checkedGroupIds.has(group.id));
+  const someGroupsSelected = pagedGroups.some(group => group.orders.some(order => selectedIds.has(order.id)));
   const selectedOrders = visibleOrders.filter(order => selectedIds.has(order.id));
+  const isOptionValidForOrder = (status: ParcelStatus, order: Order) => {
+    if (!STATUS_TRANSITIONS[order.status].includes(status)) return false;
+    // From "Arrived at Origin", only one of Ready to Deliver / Transit is
+    // actually valid, decided by the destination.
+    if (order.status === 'arrived' && (status === 'ready_to_deliver' || status === 'oov')) {
+      const skipsTransit = destinationSkipsTransit(order);
+      if (skipsTransit && status === 'oov') return false;
+      if (!skipsTransit && status === 'ready_to_deliver') return false;
+    }
+    return true;
+  };
+
   const allowedStatusOptions = useMemo(() => {
     if (selectedOrders.length === 0) return [];
 
     const [firstOrder, ...remainingOrders] = selectedOrders;
-    const firstAllowed = new Set(STATUS_TRANSITIONS[firstOrder.status]);
+    const firstAllowed = new Set(
+      STATUS_TRANSITIONS[firstOrder.status].filter(status => isOptionValidForOrder(status, firstOrder)),
+    );
 
     return Array.from(firstAllowed).filter(status =>
-      remainingOrders.every(order => STATUS_TRANSITIONS[order.status].includes(status)),
+      remainingOrders.every(order => isOptionValidForOrder(status, order)),
     );
   }, [selectedOrders]);
 
@@ -472,7 +540,7 @@ const PickupOperations: React.FC = () => {
   const toggleAllGroups = () => {
     setSelectedIdsByTab(prev => {
       const next = new Set(prev[activeTab]);
-      groups.forEach(group => group.orders.forEach(order => {
+      pagedGroups.forEach(group => group.orders.forEach(order => {
         if (allGroupsSelected) next.delete(order.id);
         else next.add(order.id);
       }));
@@ -784,18 +852,43 @@ const PickupOperations: React.FC = () => {
         </div>
       </div>
 
-      <label className="pickup-search">
-        <Search size={16} />
-        <input
-          value={searchQuery}
-          onChange={event => setSearchQuery(event.target.value)}
-          placeholder="Search tracking id"
-        />
-      </label>
+      <div className="pickup-search-wrap">
+        <label className="pickup-search">
+          <Search size={16} />
+          <input
+            value={searchQuery}
+            onChange={event => setSearchQuery(event.target.value)}
+            onKeyDown={event => commitScannedTerm(event, setScannedIds, setSearchQuery)}
+            onPaste={event => handleScannerPaste(event, setScannedIds, setSearchQuery)}
+            placeholder="Search tracking id"
+          />
+          {(searchQuery || scannedIds.length > 0) && (
+            <button type="button" onClick={() => { setSearchQuery(''); setScannedIds([]); }} aria-label="Clear search">
+              <X size={14} />
+            </button>
+          )}
+        </label>
+        {scannedIds.length > 0 && (
+          <div className="scan-chip-list">
+            {scannedIds.map(id => (
+              <span key={id} className="scan-chip">
+                {id}
+                <button
+                  type="button"
+                  onClick={() => setScannedIds(prev => prev.filter(x => x !== id))}
+                  aria-label={`Remove ${id}`}
+                >
+                  <X size={10} />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
 
       <Table
         columns={pickupColumns}
-        data={groups}
+        data={pagedGroups}
         selectedIds={checkedGroupIds}
         onToggleRow={toggleGroupSelection}
         allSelected={allGroupsSelected}
@@ -821,10 +914,14 @@ const PickupOperations: React.FC = () => {
 
       <Pagination
         ariaLabel="Pickup pagination"
-        page={pager.page}
+        page={currentPage}
         totalPages={totalPages}
-        cursor={pager.controls(meta)}
-        summary={meta ? `${meta.total} order${meta.total === 1 ? '' : 's'}` : undefined}
+        onPageChange={next => { setPage(next); setExpandedGroupId(''); }}
+        summary={
+          `${groups.length} pickup${groups.length === 1 ? '' : 's'} · ` +
+          `${orders.length}${capped ? '+' : ''} order${orders.length === 1 ? '' : 's'}` +
+          (capped ? ` (showing the first ${orders.length})` : '')
+        }
       />
 
       {remarkPopupOrder && (

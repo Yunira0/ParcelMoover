@@ -605,6 +605,9 @@ model vendors {
   status                user_status       @default(active)
   joined_at             DateTime?         @db.Date
   last_ordered_at       DateTime?         @db.Timestamptz(6)
+  // Set the moment the assigned sales rep uses their one allowed self-service
+  // edit on this vendor; a non-null value blocks further sales-side edits.
+  sales_edited_at       DateTime?         @db.Timestamptz(6)
   created_at            DateTime          @default(now()) @db.Timestamptz(6)
   updated_at            DateTime          @default(now()) @updatedAt @db.Timestamptz(6)
   deleted_at            DateTime?         @db.Timestamptz(6)
@@ -615,6 +618,7 @@ model vendors {
   users                 users?            @relation("vendor_owner", fields: [user_id], references: [id], onUpdate: NoAction)
   sales_user            users?            @relation("vendor_sales_user", fields: [sales_user_id], references: [id], onUpdate: NoAction)
   api_keys              api_keys[]
+  webhook_endpoints     webhook_endpoints[]
 
   @@index([location_id], map: "idx_vendors_location_id")
   @@index([sales_user_id], map: "idx_vendors_sales_user_id")
@@ -634,6 +638,50 @@ model api_keys {
   vendors      vendors   @relation(fields: [vendor_id], references: [id], onUpdate: NoAction)
 
   @@index([vendor_id], map: "idx_api_keys_vendor_id")
+}
+
+// Vendor-owned outbound webhook subscriptions for the public /api/v1 surface.
+// secret_encrypted is reversible (AES-256-GCM) — unlike api_keys.key_hash, the
+// server must reuse this secret to sign every future delivery, so it can't be
+// a one-way hash. Only ever displayed to the vendor once, at creation.
+model webhook_endpoints {
+  id                   String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  vendor_id            String               @db.Uuid
+  name                 String
+  url                  String
+  secret_encrypted     String
+  event_types          String[]             @default([])
+  enabled              Boolean              @default(true)
+  consecutive_failures Int                  @default(0)
+  disabled_at          DateTime?            @db.Timestamptz(6)
+  created_at           DateTime             @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime             @default(now()) @updatedAt @db.Timestamptz(6)
+  vendors              vendors              @relation(fields: [vendor_id], references: [id], onUpdate: NoAction)
+  webhook_deliveries   webhook_deliveries[]
+
+  @@index([vendor_id], map: "idx_webhook_endpoints_vendor_id")
+}
+
+// Outbox + delivery log for webhook_endpoints. A row is inserted in the same
+// transaction as the order-status change it describes (transactional outbox),
+// then drained/retried asynchronously by the sweep in index.ts.
+model webhook_deliveries {
+  id                   String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  webhook_endpoint_id  String            @db.Uuid
+  event_type           String
+  event_id             String            @db.Uuid
+  payload              Json
+  status               String            @default("pending")
+  attempt_count        Int               @default(0)
+  next_attempt_at      DateTime          @db.Timestamptz(6)
+  last_attempted_at    DateTime?         @db.Timestamptz(6)
+  last_status_code     Int?
+  last_error           String?
+  created_at           DateTime          @default(now()) @db.Timestamptz(6)
+  webhook_endpoints    webhook_endpoints @relation(fields: [webhook_endpoint_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([status, next_attempt_at], map: "idx_webhook_deliveries_pending_sweep")
+  @@index([webhook_endpoint_id, created_at(sort: Desc)], map: "idx_webhook_deliveries_endpoint_id")
 }
 
 // Single-row global pricing config for zone-based and flat (valley) rate types.
@@ -670,6 +718,19 @@ model sla_settings {
   status_key String   @unique
   sla_hours  Int?
   updated_at DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+}
+
+// Pickup windows vendors can choose from when raising a "pickup" support
+// ticket. start_minutes/end_minutes are minutes-since-midnight; the booking
+// cutoff (1hr before end) is derived, not stored.
+model pickup_time_slots {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  start_minutes Int
+  end_minutes   Int
+  is_active     Boolean  @default(true)
+  sort_order    Int      @default(0)
+  created_at    DateTime @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime @default(now()) @updatedAt @db.Timestamptz(6)
 }
 
 // Configurable settlement payment methods (Cash, Online, eSewa, Bank, ...).
@@ -831,3 +892,4 @@ model vendor_staff {
 
   @@index([vendor_id], map: "idx_vendor_staff_vendor_id")
 }
+

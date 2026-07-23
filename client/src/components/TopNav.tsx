@@ -10,7 +10,7 @@ import {
   markNotificationRead,
   subscribeToNotificationStream,
 } from '../services/notifications.service';
-import { getUnclosedRemarksCount } from '../services/remarks.service';
+import { getUnclosedRemarksCount, subscribeToRemarkStatusChanged } from '../services/remarks.service';
 import { useMobileNav } from '../context/MobileNavContext';
 import { toBsDateLabel, toNptTime } from '../utils/nepaliDate';
 import './TopNav.css';
@@ -41,6 +41,16 @@ const TopNav: React.FC = () => {
     getUnreadNotificationCount().then(setUnreadCount).catch(() => {});
   }, []);
 
+  const refreshUnclosedCount = useCallback(() => {
+    getUnclosedRemarksCount()
+      .then((res) => {
+        if (res?.success && res.data?.count !== undefined) {
+          setUnclosedCount(res.data.count);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   const runSearch = () => {
     const trimmed = query.trim();
     if (!trimmed) return;
@@ -50,13 +60,7 @@ const TopNav: React.FC = () => {
 
   useEffect(() => {
     refreshUnreadCount();
-    getUnclosedRemarksCount()
-      .then((res) => {
-        if (res?.success && res.data?.count !== undefined) {
-          setUnclosedCount(res.data.count);
-        }
-      })
-      .catch(() => {});
+    refreshUnclosedCount();
 
     const unsubscribe = subscribeToNotificationStream((notification) => {
       sseConnectedRef.current = true;
@@ -64,17 +68,24 @@ const TopNav: React.FC = () => {
       setUnreadCount((prev) => prev + 1);
     });
 
-    // Polling fallback: if SSE misses events (tab backgrounded, connection drop),
-    // periodically re-fetch the true unread count from the server.
+    // Remarks have no SSE stream - refetch immediately whenever a remark is
+    // closed/reopened anywhere in this tab (Remarks/UnclosedRemarks/RemarkDetail).
+    const unsubscribeRemarks = subscribeToRemarkStatusChanged(refreshUnclosedCount);
+
+    // Polling fallback: catches changes made in other tabs/by other users, and
+    // covers the notification SSE stream missing events (tab backgrounded,
+    // connection drop).
     const pollTimer = setInterval(() => {
       refreshUnreadCount();
+      refreshUnclosedCount();
     }, POLL_INTERVAL_MS);
 
     return () => {
       unsubscribe();
+      unsubscribeRemarks();
       clearInterval(pollTimer);
     };
-  }, [refreshUnreadCount]);
+  }, [refreshUnreadCount, refreshUnclosedCount]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {

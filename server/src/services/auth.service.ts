@@ -155,10 +155,9 @@ async function assertCanManageUsers(userId: string, targetType?: ManagedUserType
   const roles = user.user_roles.map((userRole) => userRole.roles.code);
   const isStaff = roles.includes("super_admin") || roles.includes("admin");
   if (!isStaff) {
-    // Sales may manage the vendor clients they own (per-vendor ownership is
-    // enforced by the caller via assertSalesOwnsVendor). No other non-staff
-    // role manages users.
-    if (roles.includes("sales") && targetType === "vendor") {
+    // Narrow carve-out: sales staff may read/update an assigned vendor once
+    // (ownership and sales_edited_at are enforced by the callers).
+    if (targetType === "vendor" && roles.includes("sales")) {
       return { roles };
     }
     throw new AppError(403, "Unauthorized");
@@ -187,6 +186,31 @@ async function assertSalesOwnsVendor(actorRoles: string[], actorUserId: string, 
     select: { id: true },
   });
   if (!owned) throw new AppError(403, "Not authorized to manage this client");
+}
+
+function isPureSales(roles: string[]) {
+  return !roles.includes("super_admin") && !roles.includes("admin") && roles.includes("sales");
+}
+
+// The root super admin is the very first account ever granted the super_admin
+// role (the one bootstrapped by create-superadmin.ts). It is the supreme
+// entity of the system: it never appears in Admin Management and no
+// management API may modify it — not even another super_admin. The root
+// account manages itself exclusively through /me (Profile).
+export async function getRootSuperAdminUserId(): Promise<string | null> {
+  const root = await prisma.user_roles.findFirst({
+    where: { roles: { code: "super_admin" } },
+    orderBy: { created_at: "asc" },
+    select: { user_id: true },
+  });
+  return root?.user_id ?? null;
+}
+
+async function assertNotRootSuperAdmin(targetUserId: string) {
+  const rootId = await getRootSuperAdminUserId();
+  if (rootId && targetUserId === rootId) {
+    throw new AppError(403, "The super admin account cannot be modified");
+  }
 }
 
 // Nobody but a super_admin may touch a super_admin's account - not even an
@@ -246,9 +270,27 @@ export async function updateManagedUserProfile(
     delete data.status;
   }
 
+  // Only a super_admin may move an account to another hub; edits by a plain
+  // admin leave the record's existing hub untouched.
+  if (!actorRoles.includes("super_admin")) {
+    delete data.locationId;
+  }
+
   const profile = await getManagedProfile(data.type, id);
   const userId = getProfileUserId(profile);
   await assertTargetNotProtected(actorRoles, userId);
+  await assertNotRootSuperAdmin(userId);
+
+  const isPureSalesActor = isPureSales(actorRoles);
+  if (isPureSalesActor) {
+    const vendorProfile = profile as { sales_user_id: string | null; sales_edited_at: Date | null };
+    if (vendorProfile.sales_user_id !== actorUserId) {
+      throw new AppError(403, "You can only edit vendors assigned to you");
+    }
+    if (vendorProfile.sales_edited_at) {
+      throw new AppError(403, "You have already used your one-time edit for this vendor");
+    }
+  }
 
   if (data.status && data.status !== "active" && userId === actorUserId) {
     throw new AppError(400, "You cannot deactivate your own account");
@@ -333,6 +375,7 @@ export async function updateManagedUserProfile(
       putRate(u, "branch_zone_inside_valley", data.branchZoneInsideValley);
       if (joinedAt) u.joined_at = joinedAt;
       if (data.status) u.status = data.status;
+      if (isPureSalesActor) u.sales_edited_at = new Date();
       return tx.vendors.update({ where: { id }, data: u });
     }
 
@@ -358,8 +401,8 @@ export async function updateManagedUserProfile(
 // Full editable profile for the edit form, mapped to the create-form field names.
 // Contains bank/PAN/citizenship-level PII, so only admins may fetch it.
 export async function getManagedUserDetail(actorUserId: string, type: ManagedUserType, id: string) {
-  const { roles } = await assertCanManageUsers(actorUserId, type);
-  if (type === "vendor") await assertSalesOwnsVendor(roles, actorUserId, id);
+  const { roles: actorRoles } = await assertCanManageUsers(actorUserId, type);
+  if (type === "vendor") await assertSalesOwnsVendor(actorRoles, actorUserId, id);
 
   const num = (v: unknown) => (v === null || v === undefined ? null : Number(v));
   const dateStr = (d: Date | null) => (d ? new Date(d).toISOString().slice(0, 10) : "");
@@ -367,11 +410,17 @@ export async function getManagedUserDetail(actorUserId: string, type: ManagedUse
   if (type === "vendor") {
     const v = await prisma.vendors.findUnique({ where: { id }, include: { users: true } });
     if (!v) throw new AppError(404, "Vendor not found");
+    // 404, not 403 - a pure sales actor probing another sales rep's vendor
+    // IDs shouldn't be able to distinguish "not mine" from "doesn't exist".
+    if (isPureSales(actorRoles) && v.sales_user_id !== actorUserId) {
+      throw new AppError(404, "Vendor not found");
+    }
     return {
       type, id: v.id, userId: v.user_id,
       clientName: v.client_name, businessName: v.business_name, phone: v.phone,
       email: v.email, locationId: v.location_id, address: v.address, sales: v.sales,
       salesUserId: v.sales_user_id,
+      salesEditUsed: v.sales_edited_at !== null,
       rateType: v.rate_type,
       flatInsideValley: num(v.flat_inside_valley), flatOutsideValley: num(v.flat_outside_valley),
       zoneMajorCities: num(v.zone_major_cities), zoneUrbanAreas: num(v.zone_urban_areas),
@@ -434,6 +483,7 @@ export async function updateManagedUserPassword(
   const profile = await getManagedProfile(type, id);
   const userId = getProfileUserId(profile);
   await assertTargetNotProtected(actorRoles, userId);
+  await assertNotRootSuperAdmin(userId);
   const passwordHash = await bcrypt.hash(password, 12);
 
   // An admin resetting someone else's password is exactly the "credentials
@@ -524,6 +574,8 @@ export async function setAdminSuperAdminRole(
   if (admin.user_id === actorUserId) {
     throw new AppError(400, "You cannot change your own super admin role");
   }
+  // The root super admin's role is not negotiable — it stays supreme.
+  await assertNotRootSuperAdmin(admin.user_id);
 
   const role = await prisma.roles.findUnique({ where: { code: "super_admin" } });
   if (!role) {
@@ -636,7 +688,7 @@ export async function registerUserBySuperAdmin(
           roles: true,
         },
       },
-      admins: { select: { permissions: true } },
+      admins: { select: { permissions: true, location_id: true } },
     },
   });
   if (!superAdmin) {
@@ -667,6 +719,13 @@ export async function registerUserBySuperAdmin(
       throw new AppError(403, "Sales can only create vendor accounts");
     }
     data.salesUserId = superAdminUserID;
+  }
+
+  // Hub inheritance: accounts created by anyone below super_admin always land
+  // in the creator's own hub (e.g. an Imadol admin's vendors/riders/admins are
+  // all Imadol). Only a super_admin may choose a different hub.
+  if (!isSuperAdmin && superAdmin.admins?.location_id) {
+    data.locationId = superAdmin.admins.location_id;
   }
 
   validateRegisterInput(data);

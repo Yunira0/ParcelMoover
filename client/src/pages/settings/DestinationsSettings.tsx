@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { Plus, MapPin, Trash2, X, Pencil, Check } from 'lucide-react';
+import { ChevronDown, Plus, MapPin, Trash2, X, Pencil, Check } from 'lucide-react';
 import Button from '../../components/Button';
 import FormField from '../../components/FormField';
+import Pagination from '../../components/Pagination';
 import StatusChip from '../../components/StatusChip';
 import {
   listManagedLocations,
@@ -13,6 +14,8 @@ import {
 import './DestinationsSettings.css';
 
 const emptyDest = { name: '', code: '', province: '', district: '', municipality: '' };
+
+const PAGE_SIZE = 10;
 
 const DestinationsSettings: React.FC = () => {
   const [destinations, setDestinations] = useState<Destination[]>([]);
@@ -30,6 +33,9 @@ const DestinationsSettings: React.FC = () => {
   // Inline delete confirmation: id of item pending confirm
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  const [showTrash, setShowTrash] = useState(false);
+  const [page, setPage] = useState(1);
 
   // Inline area edit: id being edited + working name
   const [editArea, setEditArea] = useState<{ id: string; name: string } | null>(null);
@@ -91,6 +97,8 @@ const DestinationsSettings: React.FC = () => {
         await updateLocation(editDestId, payload);
       } else {
         await createLocation({ ...payload, isHub: true });
+        // The list is newest-first, so jump to page 1 where the new destination shows.
+        setPage(1);
       }
       cancelDestForm();
       await load();
@@ -102,19 +110,30 @@ const DestinationsSettings: React.FC = () => {
   };
 
   const addArea = async (destId: string) => {
-    const name = (areaInputs[destId] || '').trim();
-    if (!name) return;
+    // Comma-separated input adds several areas at once (e.g. "Lakeside, Baidam, Damside").
+    const names = Array.from(new Set(
+      (areaInputs[destId] || '').split(',').map((n) => n.trim()).filter(Boolean),
+    ));
+    if (names.length === 0) return;
     setSavingArea(destId);
     setError('');
-    try {
-      await createLocation({ name, parentId: destId });
-      setAreaInputs((prev) => ({ ...prev, [destId]: '' }));
-      await load();
-    } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to add area.');
-    } finally {
-      setSavingArea(null);
+    const failed: string[] = [];
+    for (const name of names) {
+      try {
+        await createLocation({ name, parentId: destId });
+      } catch {
+        failed.push(name);
+      }
     }
+    if (failed.length > 0) {
+      setError(`Failed to add: ${failed.join(', ')}`);
+      // Keep only the failed names in the input so they can be retried.
+      setAreaInputs((prev) => ({ ...prev, [destId]: failed.join(', ') }));
+    } else {
+      setAreaInputs((prev) => ({ ...prev, [destId]: '' }));
+    }
+    await load();
+    setSavingArea(null);
   };
 
   const saveAreaEdit = async () => {
@@ -158,6 +177,14 @@ const DestinationsSettings: React.FC = () => {
       setDeleting(false);
     }
   };
+
+  const activeDests = destinations.filter((d) => d.isActive);
+  const trashedDests = destinations.filter((d) => !d.isActive);
+
+  const totalPages = Math.max(1, Math.ceil(activeDests.length / PAGE_SIZE));
+  // Clamp instead of resetting state so deletes on the last page don't strand it.
+  const currentPage = Math.min(page, totalPages);
+  const pagedDests = activeDests.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
   return (
     <div className="dest-settings">
@@ -206,9 +233,13 @@ const DestinationsSettings: React.FC = () => {
       ) : destinations.length === 0 ? (
         <p className="dest-muted">No destinations yet. Add one to get started.</p>
       ) : (
+        <>
+        {activeDests.length === 0 ? (
+          <p className="dest-muted">All destinations are in the trash. Restore one below to use it again.</p>
+        ) : (
         <div className="dest-list">
-          {destinations.map((dest) => (
-            <div key={dest.id} className={`dest-card ${dest.isActive ? '' : 'dest-card--inactive'}`}>
+          {pagedDests.map((dest) => (
+            <div key={dest.id} className="dest-card">
               <div className="dest-card-head">
                 <div className="dest-card-title">
                   <MapPin size={16} />
@@ -216,7 +247,12 @@ const DestinationsSettings: React.FC = () => {
                   {dest.code && <span className="dest-code">{dest.code}</span>}
                 </div>
                 <div className="dest-card-actions">
-                  <button type="button" className="dest-toggle" onClick={() => toggleActive(dest.id, dest.isActive)}>
+                  <button
+                    type="button"
+                    className="dest-toggle"
+                    title="Deactivate and move to trash"
+                    onClick={() => toggleActive(dest.id, dest.isActive)}
+                  >
                     <StatusChip tone={dest.isActive ? 'success' : 'danger'}>
                       {dest.isActive ? 'Active' : 'Inactive'}
                     </StatusChip>
@@ -362,7 +398,7 @@ const DestinationsSettings: React.FC = () => {
                   value={areaInputs[dest.id] || ''}
                   onChange={(e) => setAreaInputs((prev) => ({ ...prev, [dest.id]: e.target.value }))}
                   onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addArea(dest.id); } }}
-                  placeholder="Add covered area (e.g. Lakeside)"
+                  placeholder="Add covered areas, comma-separated (e.g. Lakeside, Baidam)"
                 />
                 <Button variant="outline" size="sm" disabled={savingArea === dest.id} onClick={() => addArea(dest.id)}>
                   {savingArea === dest.id ? 'Adding…' : 'Add Area'}
@@ -371,6 +407,86 @@ const DestinationsSettings: React.FC = () => {
             </div>
           ))}
         </div>
+        )}
+
+        {activeDests.length > PAGE_SIZE && (
+          <Pagination
+            page={currentPage}
+            totalPages={totalPages}
+            onPageChange={setPage}
+            ariaLabel="Destinations pages"
+            summary={`Showing ${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, activeDests.length)} of ${activeDests.length} destinations`}
+          />
+        )}
+
+        {trashedDests.length > 0 && (
+          <div className="dest-trash">
+            <button
+              type="button"
+              className="dest-trash-toggle"
+              aria-expanded={showTrash}
+              onClick={() => setShowTrash((v) => !v)}
+            >
+              <Trash2 size={14} />
+              <span>Trash ({trashedDests.length})</span>
+              <ChevronDown
+                size={14}
+                className={`dest-trash-chevron${showTrash ? ' dest-trash-chevron--open' : ''}`}
+              />
+            </button>
+            {showTrash && (
+              <div className="dest-trash-list">
+                {trashedDests.map((dest) => (
+                  <div key={dest.id} className="dest-trash-row">
+                    <div className="dest-trash-info">
+                      <MapPin size={14} />
+                      <span className="dest-trash-name">{dest.name}</span>
+                      {dest.code && <span className="dest-code">{dest.code}</span>}
+                      <span className="dest-trash-count">
+                        {dest.areas.length} area{dest.areas.length !== 1 ? 's' : ''}
+                      </span>
+                    </div>
+                    <div className="dest-card-actions">
+                      <Button variant="outline" size="sm" onClick={() => toggleActive(dest.id, dest.isActive)}>
+                        Restore
+                      </Button>
+                      {confirmDelete === dest.id ? (
+                        <div className="dest-confirm-delete">
+                          <span>Permanently delete destination and all its areas?</span>
+                          <button
+                            type="button"
+                            className="dest-confirm-btn dest-confirm-btn--danger"
+                            disabled={deleting}
+                            onClick={() => handleDelete(dest.id)}
+                          >
+                            {deleting ? 'Deleting…' : 'Yes, delete'}
+                          </button>
+                          <button
+                            type="button"
+                            className="dest-confirm-btn"
+                            onClick={() => setConfirmDelete(null)}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          className="dest-delete-btn"
+                          title="Delete permanently"
+                          onClick={() => setConfirmDelete(dest.id)}
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+        </>
       )}
     </div>
   );

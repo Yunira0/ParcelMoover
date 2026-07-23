@@ -21,7 +21,28 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
     return { hasError: true };
   }
 
+  // After a deploy, a tab opened on the previous version still references the
+  // old hashed chunk files, which no longer exist — lazy route imports then
+  // fail (404 / "not a valid JavaScript MIME type"). These signatures cover
+  // Chrome, Firefox, and Safari wording for that failure.
+  static isStaleChunkError(error: unknown): boolean {
+    const msg = error instanceof Error ? error.message : String(error);
+    return (
+      msg.includes('dynamically imported module') ||
+      msg.includes('is not a valid JavaScript MIME type') ||
+      msg.includes('Importing a module script failed')
+    );
+  }
+
   componentDidCatch(error: unknown, errorInfo: React.ErrorInfo) {
+    // Stale-deploy chunk failure: one forced reload fetches the new
+    // index.html with the current chunk names. The sessionStorage guard
+    // stops a reload loop when the failure has a different cause.
+    if (ErrorBoundary.isStaleChunkError(error) && sessionStorage.getItem('chunk-reloaded') !== '1') {
+      sessionStorage.setItem('chunk-reloaded', '1');
+      window.location.reload();
+      return;
+    }
     console.error('Unhandled error in component tree:', error, errorInfo);
   }
 

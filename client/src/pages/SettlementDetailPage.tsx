@@ -1,12 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Printer, Download, CreditCard } from 'lucide-react';
+import { ArrowLeft, Printer, Download, CreditCard, Pencil } from 'lucide-react';
 import Button from '../components/Button';
 import StatusChip from '../components/StatusChip';
 import MakePaymentModal from '../components/MakePaymentModal';
+import EditSettlementModal from '../components/EditSettlementModal';
 import { getSettlementDetail, type SettlementDetail } from '../services/finance.service';
-import { hasAnyRole } from '../utils/auth';
+import { hasAnyRole, hasAdminPermission } from '../utils/auth';
 import { toBsDate, toBsDateTime } from '../utils/nepaliDate';
+import { downloadExcel } from '../utils/excel';
 import './vendor/VendorFinance.css';
 import './SettlementDetailPage.css';
 
@@ -103,8 +105,12 @@ const SettlementDetailPage: React.FC = () => {
   const [error, setError] = useState('');
   const [reloadKey, setReloadKey] = useState(0);
   const [showPayment, setShowPayment] = useState(false);
+  const [showEdit, setShowEdit] = useState(false);
 
   const canPay = hasAnyRole(['super_admin', 'admin']);
+  // Correcting a mistake before money moves — gated by the delegable
+  // EDIT_SETTLEMENTS permission, same pattern as MANAGE_USERS/SETTINGS_ACCESS.
+  const canEdit = hasAnyRole(['super_admin']) || hasAdminPermission('EDIT_SETTLEMENTS');
 
   useEffect(() => {
     let active = true;
@@ -125,6 +131,18 @@ const SettlementDetailPage: React.FC = () => {
     };
   }, [id, reloadKey]);
 
+  const totals = detail
+    ? detail.items.reduce(
+        (acc, item) => {
+          acc.cod += item.codAmount;
+          acc.collected += item.collectedAmount;
+          acc.deliveryCharge += item.deliveryCharge;
+          return acc;
+        },
+        { cod: 0, collected: 0, deliveryCharge: 0 },
+      )
+    : { cod: 0, collected: 0, deliveryCharge: 0 };
+
   const handlePrint = () => {
     if (!detail) return;
     const win = window.open('', '_blank');
@@ -137,28 +155,33 @@ const SettlementDetailPage: React.FC = () => {
 
   const handleDownload = () => {
     if (!detail) return;
-    const blob = new Blob([buildStatementHtml(detail)], { type: 'text/html' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${detail.statementId}.html`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    const headers = [
+      'SN',
+      'Order ID',
+      'Transaction ID',
+      'Receiver',
+      'Receiver Phone',
+      'Destination',
+      'Weight',
+      'COD',
+      'Collected COD',
+      'Delivery Charge',
+    ];
+    const rows = detail.items.map((item, index) => [
+      index + 1,
+      `#${item.orderNumber}`,
+      item.trackingId,
+      item.receiverName,
+      item.receiverPhone,
+      item.destination,
+      item.weightKg === null ? '' : item.weightKg,
+      item.codAmount,
+      item.collectedAmount,
+      item.deliveryCharge,
+    ]);
+    rows.push(['', '', '', '', '', '', '', totals.cod, totals.collected, totals.deliveryCharge]);
+    downloadExcel(`${detail.statementId}.xlsx`, 'Statement', headers, rows);
   };
-
-  const totals = detail
-    ? detail.items.reduce(
-        (acc, item) => {
-          acc.cod += item.codAmount;
-          acc.collected += item.collectedAmount;
-          acc.deliveryCharge += item.deliveryCharge;
-          return acc;
-        },
-        { cod: 0, collected: 0, deliveryCharge: 0 },
-      )
-    : { cod: 0, collected: 0, deliveryCharge: 0 };
 
   return (
     <div className="settlement-detail-page">
@@ -173,6 +196,11 @@ const SettlementDetailPage: React.FC = () => {
           <Button variant="secondary" onClick={handleDownload} disabled={!detail}>
             <Download size={16} /> Download
           </Button>
+          {canEdit && detail?.status === 'pending' && (
+            <Button variant="secondary" onClick={() => setShowEdit(true)}>
+              <Pencil size={16} /> Edit
+            </Button>
+          )}
           {canPay && detail?.status === 'pending' && (
             <Button variant="primary" onClick={() => setShowPayment(true)}>
               <CreditCard size={16} /> Make Payment
@@ -315,6 +343,17 @@ const SettlementDetailPage: React.FC = () => {
           settlementId={detail.id}
           payableAmount={detail.payableAmount}
           onClose={() => setShowPayment(false)}
+          onSuccess={() => setReloadKey((k) => k + 1)}
+        />
+      )}
+
+      {showEdit && detail && (
+        <EditSettlementModal
+          settlementId={detail.id}
+          payeeType={detail.payeeType}
+          payeeId={detail.payeeId}
+          currentItems={detail.items}
+          onClose={() => setShowEdit(false)}
           onSuccess={() => setReloadKey((k) => k + 1)}
         />
       )}

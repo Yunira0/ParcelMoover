@@ -1,7 +1,7 @@
 import React from 'react';
 import { Banknote } from 'lucide-react';
 import type { DashboardSummary } from '../../services/orders.service';
-import { toBsDateLabel } from '../../utils/nepaliDate';
+import { toBsDateLabel, toNptTime } from '../../utils/nepaliDate';
 import './VendorCodCard.css';
 
 interface VendorCodCardProps {
@@ -15,7 +15,7 @@ const formatSettledDate = (value: string | null) => {
   if (!value) return 'No settlements yet';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return `${date.toLocaleDateString(undefined, { weekday: 'short' })}, ${toBsDateLabel(date)}`;
+  return `${date.toLocaleDateString(undefined, { weekday: 'short' })}, ${toBsDateLabel(date)} · ${toNptTime(date)}`;
 };
 
 const VendorCodCard: React.FC<VendorCodCardProps> = ({ data, loading = false }) => (
@@ -39,7 +39,7 @@ const VendorCodCard: React.FC<VendorCodCardProps> = ({ data, loading = false }) 
         </div>
         <div className="vendor-cod-card-row">
           <span className="vendor-cod-card-row-label">Pending Delivery Charge</span>
-          <span className="vendor-cod-card-row-value vendor-cod-card-row-value--normal">{loading ? '...' : formatCurrency(data.totalCod)}</span>
+          <span className="vendor-cod-card-row-value vendor-cod-card-row-value--normal">{loading ? '...' : formatCurrency(data.pendingDeliveryCharge)}</span>
         </div>
       </div>
     </div>

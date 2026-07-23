@@ -115,6 +115,13 @@ const KycApplicationPage: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    // Pressing Enter in a field fires the browser's implicit form submission
+    // even though earlier steps render no submit button — advance the wizard
+    // (with validation) instead of submitting the application early.
+    if (step < STEPS.length - 1) {
+      handleNext();
+      return;
+    }
     const err = validateStep();
     if (err) { setError(err); return; }
     setLoading(true);
@@ -320,11 +327,17 @@ const KycApplicationPage: React.FC = () => {
               </Button>
             )}
             {step < STEPS.length - 1 ? (
-              <Button type="button" variant="primary" onClick={handleNext}>
+              // Distinct keys keep React from reusing one DOM <button> for
+              // both actions: without them, clicking "Next" on the last
+              // pre-review step re-renders the same element as type="submit"
+              // while the click is still in flight, and the browser's default
+              // click action then submits the form before the vendor ever
+              // sees the documents step.
+              <Button key="next" type="button" variant="primary" onClick={handleNext}>
                 Next <ChevronRight size={16} />
               </Button>
             ) : (
-              <Button type="submit" variant="primary" disabled={loading}>
+              <Button key="submit" type="submit" variant="primary" disabled={loading}>
                 {loading ? 'Submitting...' : 'Submit Application'}
               </Button>
             )}

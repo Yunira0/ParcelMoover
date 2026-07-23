@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { getDashboardSummary, type DashboardSummary } from '../lib/api'
+import PullToRefresh from '../components/PullToRefresh'
 
 export default function DashboardPage() {
   const { rider, logout } = useAuth()
@@ -30,7 +31,7 @@ export default function DashboardPage() {
   useEffect(() => { load() }, [])
 
   return (
-    <div className="flex flex-col flex-1 bg-bg overflow-y-auto">
+    <PullToRefresh onRefresh={load} className="flex flex-col flex-1 bg-bg">
 
       {/* Header */}
       <div className="flex items-center justify-between px-5 pt-6 pb-2">
@@ -103,11 +104,18 @@ export default function DashboardPage() {
                 <span className="text-2xl font-bold text-text-primary">{summary.overview.totalDelivered}</span>
                 <span className="text-xs text-text-muted">Total Delivered</span>
               </button>
-              <div className="flex flex-col gap-2 bg-surface rounded-2xl p-4 border border-border">
-                <RotateCcw size={17} className="text-blue-400" />
+              <button
+                onClick={() => navigate('/orders?view=return')}
+                style={{ touchAction: 'manipulation' }}
+                className="flex flex-col gap-2 bg-surface rounded-2xl p-4 border border-border text-left cursor-pointer active:opacity-70 transition-opacity"
+              >
+                <div className="flex items-center justify-between">
+                  <RotateCcw size={17} className="text-blue-400" />
+                  <ChevronRight size={14} className="text-text-muted" />
+                </div>
                 <span className="text-2xl font-bold text-text-primary">{summary.overview.totalReturns}</span>
                 <span className="text-xs text-text-muted">Total RTV</span>
-              </div>
+              </button>
               <button
                 onClick={() => navigate('/settlements')}
                 style={{ touchAction: 'manipulation' }}
@@ -179,6 +187,6 @@ export default function DashboardPage() {
           {/* Active parcels list */}
         </>
       )}
-    </div>
+    </PullToRefresh>
   )
 }

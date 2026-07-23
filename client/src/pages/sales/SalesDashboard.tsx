@@ -28,6 +28,8 @@ const EMPTY_SUMMARY: DashboardSummary = {
     totalDeliveredAmount: 0,
     totalReturns: 0,
     totalReturnsAmount: 0,
+    totalReturnedToVendor: 0,
+    totalReturnedToVendorAmount: 0,
   },
   today: {
     totalOrders: 0,
@@ -55,6 +57,7 @@ const EMPTY_SUMMARY: DashboardSummary = {
     settledCod: 0,
     pendingCod: 0,
     codFromRider: 0,
+    pendingDeliveryCharge: 0,
     deliveryCharge: 0,
     progressPercent: 0,
     scopedToRider: false,
@@ -119,12 +122,12 @@ const SalesDashboard: React.FC = () => {
           totalOrderAmount={overview.totalOrderAmount}
           delivered={overview.totalDelivered}
           deliveredAmount={overview.totalDeliveredAmount}
-          rtvDelivered={overview.totalReturns}
-          rtvDeliveredAmount={overview.totalReturnsAmount}
+          rtvDelivered={overview.totalReturnedToVendor}
+          rtvDeliveredAmount={overview.totalReturnedToVendorAmount}
           inDelivery={overview.inTransit}
           inDeliveryAmount={overview.inTransitAmount}
-          holdOrders={overview.pendingPickups}
-          holdOrdersAmount={overview.pendingPickupsAmount}
+          pendingPickup={overview.pendingPickups}
+          pendingPickupAmount={overview.pendingPickupsAmount}
           returnProcess={overview.pendingReturns}
           returnProcessAmount={overview.pendingReturnsAmount}
           loading={loading}
@@ -134,7 +137,7 @@ const SalesDashboard: React.FC = () => {
           <div className="sales-dashboard-charts-col">
             <OrdersTrendDonut
               delivered={overview.totalDelivered}
-              returns={overview.totalReturns}
+              returns={overview.totalReturnedToVendor}
               loading={loading}
             />
             <VendorOrdersTrendChart data={weeklyTrend} loading={loading} />
@@ -144,7 +147,7 @@ const SalesDashboard: React.FC = () => {
             <VendorTodayPanel
               orders={today.totalOrders}
               delivered={today.delivered}
-              returns={today.returns}
+              returns={today.returnedToVendor}
               remarks={today.remarks}
               loading={loading}
             />

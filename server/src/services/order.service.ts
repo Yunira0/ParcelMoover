@@ -21,6 +21,7 @@ import { generateRunSheetNo } from "../utils/runSheetNo";
 import { NEPAL_UTC_OFFSET_MS, formatNepalDate as formatDate } from "../utils/nepalTime";
 import { resolveOwnVendorId, isStaffActor } from "./vendor-scope.service";
 import { invalidateVendorFinanceCache } from "./finance.service";
+import { emitWebhookEvent } from "./webhookDispatch.service";
 
 type Party = { name: string; phone: string; alternate_phone?: string | null };
 function buildSearchText(trackingId: string, sender: Party, receiver: Party): string {
@@ -118,6 +119,23 @@ const TERMINAL_STATUSES: parcel_status[] = [
 // pages (HoldOperations / LossAndDamageOperations), both admin-gated in the
 // UI — the API must enforce the same restriction, not just hide the buttons.
 const OPS_RESTRICTED_STATUSES: parcel_status[] = ["hold", "loss_and_damage"];
+
+// Fringe areas that sit just outside the valley boundary in `locations.valley`
+// but are close enough to be delivered directly from origin without a Transit
+// (OOV) leg — routing them through Transit anyway would just add a redundant
+// hop for a same-day-reachable destination.
+const DIRECT_DELIVERY_FRINGE_AREAS = ["kavresthali", "thali", "chapagaun", "budhanilkantha", "thankot"];
+
+// From "arrived" (Arrived at Origin), whether a parcel can go straight to
+// Ready to Deliver (true) or must go to Transit/OOV first (false), based on
+// its destination. Inside-valley destinations, plus the fringe areas above,
+// skip Transit; everything else needs the OOV leg.
+function destinationSkipsTransit(destination: { valley?: string | null; name?: string | null } | null | undefined): boolean {
+  if (!destination) return false;
+  if (destination.valley === "inside") return true;
+  const name = (destination.name ?? "").toLowerCase();
+  return DIRECT_DELIVERY_FRINGE_AREAS.some((area) => name.includes(area));
+}
 
 const MAX_PAGE_SIZE = 100;
 const DEFAULT_PAGE_SIZE = 10;
@@ -276,8 +294,8 @@ async function resolveActiveRider(riderId: string) {
 }
 
 const locationName = (location?: { name: string; city: string | null; district: string | null } | null) => {
-  if (!location) return "";
-  return [location.name, location.district].filter(Boolean).join(" - ");
+  // Location names already contain the district, so don't append it again.
+  return location?.name ?? "";
 };
 
 const moneyToNumber = (value?: Prisma.Decimal | null) => value ? Number(value) : 0;
@@ -537,6 +555,16 @@ async function _createOrderImpl(actor: OrderActor, data: CreateOrderInput) {
   // client) can only ever pick a vendor they own - matches the sales_user_id
   // scoping already enforced on the vendor list / dashboard / tickets.
   const isSalesActor = actor.roles.includes("sales") && !isStaffActor(actor);
+
+  // Hub inheritance: orders keyed in by a plain admin always originate from
+  // that admin's own hub — only a super_admin may pick a different origin.
+  if (isStaffActor(actor) && !actor.roles.includes("super_admin")) {
+    const actorAdmin = await prisma.admins.findFirst({
+      where: { user_id: actor.id },
+      select: { location_id: true },
+    });
+    if (actorAdmin?.location_id) data.originLocationId = actorAdmin.location_id;
+  }
 
   // Run the remaining two independent reads in parallel.
   const [vendor, originLoc, destinationLoc] = await Promise.all([
@@ -1136,9 +1164,21 @@ const ORDERS_INCLUDE = {
   parcel_status_history: {
     orderBy: { created_at: "desc" as const },
     take: 1,
-    include: { users: true },
+    include: { users: { include: { user_roles: { include: { roles: true } } } } },
   },
 } satisfies Prisma.parcelsInclude;
+
+// Role tag appended to "last updated by" so staff can tell at a glance which
+// side of the system touched the parcel. Ordered by precedence: a user with
+// several roles gets the most privileged tag.
+const LAST_UPDATED_BY_ROLE_TAGS: [string, string][] = [
+  ["super_admin", "Super Admin"],
+  ["admin", "Staff"],
+  ["sales", "Sales"],
+  ["rider", "Rider"],
+  ["vendor", "Vendor"],
+  ["vendor_staff", "Vendor Staff"],
+];
 
 export interface ListOrdersResult {
   data: ReturnType<typeof mapOrder>[];
@@ -1177,9 +1217,21 @@ function mapOrder(
   // see which branch/company made the change - never an internal staff name
   // (matches the redaction already applied to getOrderByTrackingId's
   // statusHistory[].changedBy).
-  const lastUpdatedBy = isStaff
-    ? latestHistory?.users?.full_name || ""
-    : locationName(parcel.locations_parcels_origin_location_idTolocations) || vendorName || "Branch";
+  let lastUpdatedBy = "";
+  if (isStaff) {
+    const historyUser = latestHistory?.users;
+    if (historyUser) {
+      const roleCodes = new Set(historyUser.user_roles.map(ur => ur.roles.code));
+      const roleTag = LAST_UPDATED_BY_ROLE_TAGS.find(([code]) => roleCodes.has(code))?.[1];
+      // A vendor account's user name is often just the login contact - the
+      // business name is what staff recognise.
+      const displayName = roleCodes.has("vendor") && vendorName ? vendorName : historyUser.full_name;
+      lastUpdatedBy = roleTag ? `${displayName} (${roleTag})` : displayName;
+    }
+  } else {
+    lastUpdatedBy =
+      locationName(parcel.locations_parcels_origin_location_idTolocations) || vendorName || "Branch";
+  }
 
   return {
     id: parcel.id,
@@ -1205,12 +1257,12 @@ function mapOrder(
       locationName(parcel.locations_parcels_destination_location_idTolocations) ||
       parcel.parties_parcels_receiver_idToparties.address ||
       "",
-    // Raw destination hub name without the "- District" suffix - shipping
-    // labels print this so the district never appears on the label.
+    // Raw destination hub name - shipping labels print this.
     destinationName:
       parcel.locations_parcels_destination_location_idTolocations?.name ||
       parcel.parties_parcels_receiver_idToparties.address ||
       "",
+    destinationValley: parcel.locations_parcels_destination_location_idTolocations?.valley ?? null,
     pieces: parcel.pieces,
     weightKg: parcel.weight_kg === null ? undefined : Number(parcel.weight_kg),
     attemptCount: parcel.attempt_count,
@@ -2052,13 +2104,15 @@ async function computeDashboardSummary(
     ...(riderId ? { rider_id: riderId } : {}),
   };
 
-  // The COD Settlement card counts all delivered / partially-delivered orders
-  // (all-time, no date window). To keep the math honest across partial
-  // deliveries - where the declared cod_amount overstates what was actually
-  // collected - every figure is anchored on collected_amount (the cash actually
-  // in hand), and the settled legs are clamped with LEAST() so a settlement can
-  // never exceed what was collected. Pending is then collected - settled, so
-  // Settled + Pending always equals Total exactly.
+  // The COD Settlement card counts every delivered / partially-delivered
+  // order, all-time - not a rolling window, since "pending" is money still
+  // owed and must never silently drop off just because it's old. To keep the
+  // math honest across partial deliveries - where the declared cod_amount
+  // overstates what was actually collected - every figure is anchored on
+  // collected_amount (the cash actually in hand), and the settled legs are
+  // clamped with LEAST() so a settlement can never exceed what was collected.
+  // Pending is then collected - settled, so Settled + Pending always equals
+  // Total exactly.
   const codScopeSql: Prisma.Sql = vendorId
     ? Prisma.sql`AND c.vendor_id = ${vendorId}::uuid`
     : vendorIds
@@ -2111,6 +2165,7 @@ async function computeDashboardSummary(
       total_delivered: bigint;
       total_picked_up: bigint;
       total_returns: bigint;
+      total_returned_to_vendor: bigint;
       todays_orders: bigint;
       todays_delivered: bigint;
       todays_returns: bigint;
@@ -2120,6 +2175,7 @@ async function computeDashboardSummary(
       in_transit_amount: string;
       total_delivered_amount: string;
       total_returns_amount: string;
+      total_returned_to_vendor_amount: string;
     }>
   >(Prisma.sql`
     SELECT
@@ -2131,6 +2187,7 @@ async function computeDashboardSummary(
       COUNT(*) FILTER (WHERE status::text = ANY(ARRAY['delivered','partially_delivered'])) AS total_delivered,
       COUNT(*) FILTER (WHERE status::text NOT IN ('pickup_ordered','rider_assigned','failed_pickup','cancelled')) AS total_picked_up,
       COUNT(*) FILTER (WHERE order_type::text = 'return') AS total_returns,
+      COUNT(*) FILTER (WHERE status::text = 'returned_to_vendor') AS total_returned_to_vendor,
       COUNT(*) FILTER (WHERE created_at >= ${todayStart}) AS todays_orders,
       COUNT(*) FILTER (WHERE status::text = ANY(ARRAY['delivered','partially_delivered']) AND delivered_at >= ${todayStart}) AS todays_delivered,
       COUNT(*) FILTER (WHERE order_type::text = 'return' AND created_at >= ${todayStart}) AS todays_returns,
@@ -2138,8 +2195,9 @@ async function computeDashboardSummary(
       COALESCE(SUM(cod_amount) FILTER (WHERE status::text = ANY(${PICKUP_PENDING_STATUSES})), 0) AS pending_pickups_amount,
       COALESCE(SUM(cod_amount) FILTER (WHERE status::text = ANY(${RETURN_PENDING_STATUSES})), 0) AS pending_returns_amount,
       COALESCE(SUM(cod_amount) FILTER (WHERE status::text = ANY(${IN_TRANSIT_STATUSES})), 0) AS in_transit_amount,
-      COALESCE(SUM(cod_amount) FILTER (WHERE status::text = 'delivered'), 0) AS total_delivered_amount,
-      COALESCE(SUM(cod_amount) FILTER (WHERE order_type::text = 'return'), 0) AS total_returns_amount
+      COALESCE(SUM(cod_amount) FILTER (WHERE status::text = ANY(ARRAY['delivered','partially_delivered'])), 0) AS total_delivered_amount,
+      COALESCE(SUM(cod_amount) FILTER (WHERE order_type::text = 'return'), 0) AS total_returns_amount,
+      COALESCE(SUM(cod_amount) FILTER (WHERE status::text = 'returned_to_vendor'), 0) AS total_returned_to_vendor_amount
     FROM parcels
     WHERE deleted_at IS NULL ${parcelScopeSql}
   `);
@@ -2152,6 +2210,7 @@ async function computeDashboardSummary(
   const totalDelivered = Number(overviewRow!.total_delivered);
   const totalPickedUp = Number(overviewRow!.total_picked_up);
   const totalReturns = Number(overviewRow!.total_returns);
+  const totalReturnedToVendor = Number(overviewRow!.total_returned_to_vendor);
   const todaysOrders = Number(overviewRow!.todays_orders);
   const todaysDelivered = Number(overviewRow!.todays_delivered);
   const todaysReturns = Number(overviewRow!.todays_returns);
@@ -2161,6 +2220,7 @@ async function computeDashboardSummary(
   const inTransitAmount = Number(overviewRow!.in_transit_amount);
   const totalDeliveredAmount = Number(overviewRow!.total_delivered_amount);
   const totalReturnsAmount = Number(overviewRow!.total_returns_amount);
+  const totalReturnedToVendorAmount = Number(overviewRow!.total_returned_to_vendor_amount);
 
   // Same consolidation for the weekly/monthly trend: previously 4 queries per
   // day (up to 120 for the 30-day view), now one query with 4 conditional
@@ -2169,7 +2229,7 @@ async function computeDashboardSummary(
   const trendSelects = trendDayRanges.map(({ start, end }, i) => Prisma.sql`
     COUNT(*) FILTER (WHERE created_at >= ${start} AND created_at < ${end}) AS ${Prisma.raw(`d${i}_total`)},
     COUNT(*) FILTER (WHERE picked_up_at >= ${start} AND picked_up_at < ${end}) AS ${Prisma.raw(`d${i}_picked_up`)},
-    COUNT(*) FILTER (WHERE status::text = 'delivered' AND delivered_at >= ${start} AND delivered_at < ${end}) AS ${Prisma.raw(`d${i}_delivered`)},
+    COUNT(*) FILTER (WHERE status::text = ANY(ARRAY['delivered','partially_delivered']) AND delivered_at >= ${start} AND delivered_at < ${end}) AS ${Prisma.raw(`d${i}_delivered`)},
     COUNT(*) FILTER (WHERE order_type::text = 'return' AND created_at >= ${start} AND created_at < ${end}) AS ${Prisma.raw(`d${i}_returned`)}
   `);
   const [trendRow] = await prisma.$queryRaw<Array<Record<string, bigint>>>(Prisma.sql`
@@ -2208,6 +2268,7 @@ async function computeDashboardSummary(
         settled_to_vendor: string;
         settled_to_rider: string;
         cod_from_rider: string;
+        pending_delivery_charge: string;
         total_delivery_charge: string;
       }>
     >(Prisma.sql`
@@ -2216,6 +2277,7 @@ async function computeDashboardSummary(
         COALESCE(SUM(LEAST(c.remitted_amount, c.collected_amount)), 0) AS settled_to_vendor,
         COALESCE(SUM(LEAST(c.rider_remitted_amount, c.collected_amount)), 0) AS settled_to_rider,
         COALESCE(SUM(c.collected_amount - LEAST(c.rider_remitted_amount, c.collected_amount)), 0) AS cod_from_rider,
+        COALESCE(SUM(p.delivery_charge) FILTER (WHERE c.payment_status::text = 'pending'), 0) AS pending_delivery_charge,
         COALESCE(SUM(p.delivery_charge), 0) AS total_delivery_charge
       FROM cod_collections c
       JOIN parcels p ON p.id = c.parcel_id
@@ -2231,7 +2293,7 @@ async function computeDashboardSummary(
     prisma.settlements.findFirst({
       where: settlementWhere,
       orderBy: [{ settlement_date: "desc" }, { created_at: "desc" }],
-      select: { amount: true, settlement_date: true, created_at: true },
+      select: { amount: true, payable_amount: true, settlement_date: true, created_at: true },
     }),
     // Parcels whose status *became* returned_to_vendor today (by status-history
     // timestamp, since parcels has no returned_at column). DISTINCT guards
@@ -2263,6 +2325,10 @@ async function computeDashboardSummary(
   // the admin card alongside the settled/pending vendor figures.
   const codFromRider = Number(codRow?.cod_from_rider ?? 0);
 
+  // Delivery charge on orders whose COD hasn't been settled to the vendor
+  // yet - this is deducted from collected_amount at settlement time (see
+  // finance.service.ts's payableAmount calc), so it's still "owed" until then.
+  const pendingDeliveryCharge = Number(codRow?.pending_delivery_charge ?? 0);
   // Total delivery charges (the office's cut) on the same delivered orders the
   // COD figures above are drawn from - shown as its own line on the COD card.
   const deliveryCharge = Number(codRow?.total_delivery_charge ?? 0);
@@ -2355,6 +2421,8 @@ async function computeDashboardSummary(
       totalPickedUp,
       totalReturns,
       totalReturnsAmount,
+      totalReturnedToVendor,
+      totalReturnedToVendorAmount,
     },
     today: {
       totalOrders: todaysOrders,
@@ -2372,12 +2440,15 @@ async function computeDashboardSummary(
       codFromRider,
       deliveryCharge,
       pendingCodCount,
+      pendingDeliveryCharge,
       progressPercent: totalCod > 0 ? (settledCod / totalCod) * 100 : 0,
       scopedToRider: Boolean(riderId),
-      lastAmount: lastSettlement ? moneyToNumber(lastSettlement.amount) : 0,
-      lastSettledAt: lastSettlement
-        ? formatDate(lastSettlement.settlement_date || lastSettlement.created_at)
-        : null,
+      // Net amount the vendor was actually paid (collected COD minus delivery
+      // charge - see finance.service.ts's payableAmount), not the gross total.
+      lastAmount: lastSettlement ? moneyToNumber(lastSettlement.payable_amount ?? lastSettlement.amount) : 0,
+      // Full timestamp, not just the (time-less) settlement_date column, so the
+      // UI can show both date and time of when the settlement was created.
+      lastSettledAt: lastSettlement ? lastSettlement.created_at.toISOString() : null,
     },
     sla: {
       overduePickup: sumStatuses(SLA_GROUPS.pickup),
@@ -2526,6 +2597,7 @@ async function _updateParcelStatusImpl(
       parties_parcels_sender_idToparties: true,
       parties_parcels_receiver_idToparties: true,
       vendors: true,
+      locations_parcels_destination_location_idTolocations: true,
     },
   });
 
@@ -2608,6 +2680,19 @@ async function _updateParcelStatusImpl(
         422,
         `Invalid status transition: '${currentStatus}' → '${newStatus}'. Allowed: [${allowed?.join(", ")}]`,
       );
+    }
+
+    // From "arrived", destination decides whether the parcel skips Transit
+    // (inside valley + fringe areas) or must go through it (everywhere else) —
+    // only one of the two branch-allowed next statuses is actually valid.
+    if (currentStatus === "arrived" && (newStatus === "ready_to_deliver" || newStatus === "oov")) {
+      const skipsTransit = destinationSkipsTransit(parcel.locations_parcels_destination_location_idTolocations);
+      if (skipsTransit && newStatus === "oov") {
+        throw new AppError(422, "Destination is inside the valley: this parcel must go to 'Ready to Deliver', not 'Transit'.");
+      }
+      if (!skipsTransit && newStatus === "ready_to_deliver") {
+        throw new AppError(422, "Destination is outside the valley: this parcel must go to 'Transit' first.");
+      }
     }
   }
 
@@ -2800,6 +2885,20 @@ async function _updateParcelStatusImpl(
         remarks: data.remarks || null,
       },
     });
+    // Also surface the reason as a parcel remark - status_history is an audit
+    // trail nobody browses day-to-day, but the Remarks thread/column is what
+    // vendors and CX actually check, so a failed/cancelled reason typed in
+    // the status-change dialog needs to land there too.
+    if (data.remarks && data.remarks.trim().length > 0) {
+      await tx.parcel_remarks.create({
+        data: {
+          parcel_id: parcelId,
+          user_id: actor.id,
+          location_id: data.locationId || parcel.current_location_id,
+          remark: `Marked ${newStatus.replace(/_/g, " ")}: ${data.remarks.trim()}`,
+        },
+      });
+    }
     // Write to audit log
     await tx.audit_logs.create({
       data: {
@@ -2811,6 +2910,17 @@ async function _updateParcelStatusImpl(
         new_data: { status: newStatus },
       },
     });
+
+    if (parcel.vendor_id) {
+      await emitWebhookEvent(tx, parcel.vendor_id, "order.status_changed", {
+        trackingId: parcel.tracking_id,
+        orderId: parcel.id,
+        vendorId: parcel.vendor_id,
+        oldStatus: currentStatus,
+        newStatus,
+        changedAt: new Date().toISOString(),
+      });
+    }
 
     // Side-effect: a confirmed exchange delivery hands the customer's return
     // parcel to the rider. Auto-create that return order (customer → vendor,
@@ -2910,6 +3020,24 @@ async function _updateParcelStatusImpl(
     ).catch(() => {});
   }
 
+  // Failed pickup/delivery and cancellation are exceptional, actionable
+  // events for the vendor (unlike routine transit pings), so - like the
+  // auto-raised return above - this is worth an exception to the
+  // no-blanket-status-notifications rule.
+  if (REASON_REQUIRED_STATUSES.includes(newStatus as parcel_status)) {
+    const vendorUserId = parcel.vendors?.user_id;
+    if (vendorUserId && vendorUserId !== actor.id) {
+      createNotification(
+        vendorUserId,
+        `Order ${parcel.tracking_id} marked ${newStatus.replace(/_/g, " ")}`,
+        data.remarks || null,
+        parcel.tracking_id,
+        "status_change",
+        `/orders/track/${parcel.tracking_id}`,
+      ).catch(() => {});
+    }
+  }
+
   return updatedParcel;
 }
 
@@ -3006,7 +3134,7 @@ async function _bulkUpdateParcelStatusImpl(
       ...(vendorId ? { vendor_id: vendorId } : {}),
       ...(vendorIds ? { vendor_id: { in: vendorIds } } : {}),
     },
-    include: { pickup_tasks: true },
+    include: { pickup_tasks: true, locations_parcels_destination_location_idTolocations: true },
   });
 
   if (parcels.length !== ids.length) {
@@ -3030,6 +3158,18 @@ async function _bulkUpdateParcelStatusImpl(
           422,
           `Invalid status transition for ${parcel.tracking_id}: '${currentStatus}' → '${newStatus}'`,
         );
+      }
+
+      // From "arrived", destination decides whether the parcel skips Transit
+      // (inside valley + fringe areas) or must go through it (everywhere else).
+      if (currentStatus === "arrived" && (newStatus === "ready_to_deliver" || newStatus === "oov")) {
+        const skipsTransit = destinationSkipsTransit(parcel.locations_parcels_destination_location_idTolocations);
+        if (skipsTransit && newStatus === "oov") {
+          throw new AppError(422, `Parcel ${parcel.tracking_id}: destination is inside the valley, must go to 'Ready to Deliver', not 'Transit'.`);
+        }
+        if (!skipsTransit && newStatus === "ready_to_deliver") {
+          throw new AppError(422, `Parcel ${parcel.tracking_id}: destination is outside the valley, must go to 'Transit' first.`);
+        }
       }
     }
     // Riders may only progress parcels they're actually assigned to, and only
@@ -3233,6 +3373,18 @@ async function _bulkUpdateParcelStatusImpl(
         remarks: data.remarks || null,
       })),
     });
+    // See the single-update path for why this also needs to land in
+    // parcel_remarks, not just parcel_status_history.
+    if (data.remarks && data.remarks.trim().length > 0) {
+      await tx.parcel_remarks.createMany({
+        data: parcels.map((p) => ({
+          parcel_id: p.id,
+          user_id: actor.id,
+          location_id: toLocationId || data.toLocationId || p.current_location_id,
+          remark: `Marked ${(newStatus as string).replace(/_/g, " ")}: ${data.remarks!.trim()}`,
+        })),
+      });
+    }
 
     await tx.audit_logs.createMany({
       data: parcels.map((p) => ({
@@ -3244,6 +3396,21 @@ async function _bulkUpdateParcelStatusImpl(
         new_data: { status: newStatus, dispatchId: dispatch?.id || null },
       })),
     });
+
+    // One webhook event per parcel — each has its own tracking ID even though
+    // newStatus is shared across the whole batch.
+    const changedAt = new Date().toISOString();
+    for (const p of parcels) {
+      if (!p.vendor_id) continue;
+      await emitWebhookEvent(tx, p.vendor_id, "order.status_changed", {
+        trackingId: p.tracking_id,
+        orderId: p.id,
+        vendorId: p.vendor_id,
+        oldStatus: p.status,
+        newStatus,
+        changedAt,
+      });
+    }
 
     // Close out manifests once none of their parcels are still "dispatched" -
     // one groupBy instead of a per-dispatch count()+updateMany() loop, since
@@ -3285,7 +3452,33 @@ async function _bulkUpdateParcelStatusImpl(
   await invalidateOrderCaches();
 
   // Bulk status changes no longer notify vendors or admins (see the single
-  // update path) - a batch would otherwise fire a ping per parcel.
+  // update path) - a batch would otherwise fire a ping per parcel. Failed/
+  // cancelled is the one exception (mirrors the single-update path): one
+  // notification per affected vendor, not per parcel, so a large batch still
+  // can't flood the feed.
+  if (REASON_REQUIRED_STATUSES.includes(newStatus as parcel_status)) {
+    const vendorIds = [...new Set(parcels.map((p) => p.vendor_id).filter((id): id is string => !!id))];
+    if (vendorIds.length > 0) {
+      const vendorUsers = await prisma.vendors.findMany({
+        where: { id: { in: vendorIds }, user_id: { not: null } },
+        select: { id: true, user_id: true },
+      });
+      const label = (newStatus as string).replace(/_/g, " ");
+      for (const vendor of vendorUsers) {
+        if (!vendor.user_id || vendor.user_id === actor.id) continue;
+        const vendorParcels = parcels.filter((p) => p.vendor_id === vendor.id);
+        const single = vendorParcels.length === 1 ? vendorParcels[0] : null;
+        createNotification(
+          vendor.user_id,
+          single ? `Order ${single.tracking_id} marked ${label}` : `${vendorParcels.length} orders marked ${label}`,
+          data.remarks || null,
+          single?.tracking_id ?? null,
+          "status_change",
+          single ? `/orders/track/${single.tracking_id}` : "/orders",
+        ).catch(() => {});
+      }
+    }
+  }
 
   return result;
 }
@@ -3362,6 +3555,17 @@ export async function applyExternalCarrierStatus(
           new_data: { status: targetStatus, remarks },
         },
       });
+
+      if (parcel.vendor_id) {
+        await emitWebhookEvent(tx, parcel.vendor_id, "order.status_changed", {
+          trackingId: parcel.tracking_id,
+          orderId: parcel.id,
+          vendorId: parcel.vendor_id,
+          oldStatus: parcel.status,
+          newStatus: targetStatus,
+          changedAt: new Date().toISOString(),
+        });
+      }
     });
 
     await invalidateOrderCaches();
@@ -3370,6 +3574,78 @@ export async function applyExternalCarrierStatus(
         console.error("[Redis] cache invalidation failed:", err),
       );
     }
+    return { applied: true };
+  });
+}
+
+// A 3PL (NCM) marking an order "Sent to Vendor" means it's coming back to
+// *us*, not to the client vendor - that's our own follow_up review stage, not
+// our "sent_to_vendor" status (which means an internal rider carrying it to
+// the client vendor). This is a one-way exit from the carrier leg, not a
+// further step along CARRIER_LEG_SEQUENCE, so it's a separate small function
+// rather than an extension of applyExternalCarrierStatus's monotonic check.
+const CARRIER_FOLLOW_UP_ELIGIBLE_STATUSES: parcel_status[] = [
+  "oov",
+  "dispatched",
+  "arrived_at_branch",
+  "sent_for_delivery",
+];
+
+/**
+ * Applies an external-carrier-initiated return (NCM's "Sent to Vendor") by
+ * exiting the carrier leg into our own follow_up stage. From there ops runs
+ * the normal, unmodified Return-to-Origin ladder with a real internal rider.
+ */
+export async function applyExternalCarrierFollowUp(
+  parcelId: string,
+  remarks: string,
+): Promise<CarrierStatusResult> {
+  return withParcelStatusLocks([parcelId], async (): Promise<CarrierStatusResult> => {
+    const parcel = await prisma.parcels.findFirst({
+      where: { id: parcelId, deleted_at: null },
+    });
+    if (!parcel) return { applied: false, reason: "Parcel not found" };
+
+    if (!CARRIER_FOLLOW_UP_ELIGIBLE_STATUSES.includes(parcel.status)) {
+      return { applied: false, reason: `Parcel is '${parcel.status}', not on the carrier leg` };
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.parcels.update({ where: { id: parcelId }, data: { status: "follow_up" } });
+      await tx.parcel_status_history.create({
+        data: {
+          parcel_id: parcelId,
+          old_status: parcel.status,
+          new_status: "follow_up",
+          location_id: parcel.current_location_id,
+          changed_by: null,
+          remarks,
+        },
+      });
+      await tx.audit_logs.create({
+        data: {
+          actor_id: null,
+          entity_type: "parcel",
+          entity_id: parcelId,
+          action: "CARRIER_UPDATE_STATUS",
+          old_data: { status: parcel.status },
+          new_data: { status: "follow_up", remarks },
+        },
+      });
+
+      if (parcel.vendor_id) {
+        await emitWebhookEvent(tx, parcel.vendor_id, "order.status_changed", {
+          trackingId: parcel.tracking_id,
+          orderId: parcel.id,
+          vendorId: parcel.vendor_id,
+          oldStatus: parcel.status,
+          newStatus: "follow_up",
+          changedAt: new Date().toISOString(),
+        });
+      }
+    });
+
+    await invalidateOrderCaches();
     return { applied: true };
   });
 }

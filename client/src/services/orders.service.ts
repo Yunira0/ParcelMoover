@@ -76,10 +76,12 @@ export interface Order {
   receiverAddress: string;
   origin: string;
   destination: string;
-  /** Raw destination hub name without the "- District" suffix (used on printed labels). */
+  /** Raw destination hub name (used on printed labels). */
   destinationName?: string;
   originLocationId?: string | null;
   destinationLocationId?: string | null;
+  /** "inside" | "outside" | null — the destination location's valley classification. */
+  destinationValley?: string | null;
   pieces: number;
   weightKg?: number;
   attemptCount: number;
@@ -184,6 +186,9 @@ export interface DashboardSummary {
     totalDeliveredAmount: number;
     totalReturns: number;
     totalReturnsAmount: number;
+    /** Parcels currently at returned_to_vendor status (all-time). */
+    totalReturnedToVendor: number;
+    totalReturnedToVendorAmount: number;
   };
   today: {
     totalOrders: number;
@@ -215,11 +220,15 @@ export interface DashboardSummary {
     pendingCod: number;
     /** Cash riders have collected but not yet remitted to the office. */
     codFromRider: number;
+    /** Delivery charge owed on orders whose COD hasn't been settled yet. */
+    pendingDeliveryCharge: number;
     /** Total delivery charges (office cut) on the delivered orders in the COD window. */
     deliveryCharge: number;
     progressPercent: number;
     scopedToRider: boolean;
+    /** Net amount actually paid to the vendor in the last settlement (COD minus delivery charge). */
     lastAmount: number;
+    /** Full ISO timestamp of the last settlement (has both date and time). */
     lastSettledAt: string | null;
   };
   weeklyTrend: DashboardTrendDay[];
@@ -497,11 +506,12 @@ export const updateOrderStatus = async (
 
 export interface BulkCreateOrderRow {
   sender?: { name: string; phone: string; address?: string };
-  receiver: { name: string; phone: string; alternatePhone?: string; address?: string };
+  receiver: { name: string; phone: string; alternatePhone?: string; address?: string; locationId?: string };
   codAmount?: number;
   weightKg?: number;
   orderType?: OrderType;
   serviceType?: ServiceType;
+  packageType?: string;
   deliveryInstruction?: string;
   originLocationId?: string;
   destinationLocationId?: string;

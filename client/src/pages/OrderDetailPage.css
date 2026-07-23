@@ -533,7 +533,7 @@
 .od-bottom-input::placeholder { color: var(--color-text-placeholder); }
 
 .od-bottom-send {
-  width: 36px; height: 36px; border-radius: 50%;
+  width: 36px; height: 36px; border-radius: 50%; padding: 0;
   border: none; background: var(--color-background-primary-default);
   color: white; display: flex; align-items: center; justify-content: center;
   cursor: pointer; flex-shrink: 0; transition: all 150ms ease;

@@ -13,13 +13,13 @@
 
 .dest-settings-head h2 {
   margin: 0 0 4px;
-  font-size: 1.05rem;
+  font-size: var(--font-size-md);
   color: var(--color-text-default);
 }
 
 .dest-settings-head p {
   margin: 0;
-  font-size: 0.85rem;
+  font-size: var(--font-size-sm);
   color: var(--color-text-caption);
   max-width: 560px;
 }
@@ -51,14 +51,14 @@
 }
 
 .dest-error {
-  color: var(--color-text-danger, #dc2626);
-  font-size: 0.85rem;
+  color: var(--color-danger-text);
+  font-size: var(--font-size-sm);
   margin: 0;
 }
 
 .dest-muted {
   color: var(--color-text-caption);
-  font-size: 0.85rem;
+  font-size: var(--font-size-sm);
 }
 
 .dest-list {
@@ -71,10 +71,6 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
-}
-
-.dest-card--inactive {
-  opacity: 0.65;
 }
 
 .dest-card-head {
@@ -100,12 +96,12 @@
 }
 
 .dest-code {
-  font-size: 0.72rem;
-  font-weight: 600;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
   padding: 2px 8px;
-  border-radius: 12px;
-  background: var(--color-primary-subtle, #ede9fe);
-  color: var(--color-primary, #4f46e5);
+  border-radius: var(--border-radius-full);
+  background: var(--color-primary-subtle);
+  color: var(--color-primary);
 }
 
 .dest-toggle {
@@ -122,11 +118,11 @@
 }
 
 .dest-area-chip {
-  font-size: 0.78rem;
+  font-size: var(--font-size-xs);
   padding: 4px 10px;
-  border-radius: 16px;
+  border-radius: var(--border-radius-full);
   border: 1px solid var(--color-border-default);
-  background: var(--color-background-subtle, #f4f4f5);
+  background: var(--color-background-elevated);
   color: var(--color-text-default);
   cursor: pointer;
 }
@@ -148,6 +144,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 0;
   width: 30px;
   height: 30px;
   padding: 0;
@@ -171,9 +168,9 @@
 }
 
 .dest-delete-btn:hover {
-  border-color: #fecaca;
-  background: #fef2f2;
-  color: #dc2626;
+  border-color: var(--color-danger-border);
+  background: var(--color-danger-surface);
+  color: var(--color-danger-default);
 }
 
 .dest-edit-btn:hover {
@@ -218,13 +215,13 @@
 .dest-confirm-btn:hover { background: var(--color-background-elevated); }
 
 .dest-confirm-btn--danger {
-  border-color: #fca5a5;
-  background: #fef2f2;
-  color: #dc2626;
+  border-color: var(--color-danger-border);
+  background: var(--color-danger-surface);
+  color: var(--color-danger-default);
 }
 
 .dest-confirm-btn--danger:hover {
-  background: #fee2e2;
+  background: var(--color-danger-surface-hover);
 }
 
 /* ── Area chip with remove ── */
@@ -262,8 +259,8 @@
 }
 
 .dest-area-remove:hover {
-  background: #fca5a5;
-  color: #dc2626;
+  background: var(--color-danger-surface-hover);
+  color: var(--color-danger-default);
 }
 
 .dest-area-edit {
@@ -293,7 +290,7 @@
 }
 
 .dest-area-confirm-text {
-  font-size: 0.75rem;
+  font-size: var(--font-size-xs);
   color: var(--color-text-default);
   white-space: nowrap;
 }
@@ -302,7 +299,7 @@
 .dest-area-confirm-no {
   padding: 1px 7px;
   border-radius: var(--border-radius-full);
-  font-size: 0.72rem;
+  font-size: var(--font-size-xs);
   font-weight: var(--font-weight-semibold);
   cursor: pointer;
   font-family: var(--typography-font-family-default);
@@ -311,12 +308,12 @@
 }
 
 .dest-area-confirm-yes {
-  background: #fef2f2;
-  color: #dc2626;
-  border-color: #fca5a5;
+  background: var(--color-danger-surface);
+  color: var(--color-danger-default);
+  border-color: var(--color-danger-border);
 }
 
-.dest-area-confirm-yes:hover { background: #fee2e2; }
+.dest-area-confirm-yes:hover { background: var(--color-danger-surface-hover); }
 
 .dest-area-confirm-no {
   background: var(--color-background-elevated);
@@ -326,12 +323,88 @@
 
 .dest-area-confirm-no:hover { background: var(--color-background-canvas); }
 
+/* ── Trash (inactive destinations) ── */
+.dest-trash {
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-modal);
+  background: var(--color-background-surface);
+}
+
+.dest-trash-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  border: none;
+  background: none;
+  color: var(--color-text-caption);
+  font-family: var(--typography-font-family-default);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+  text-align: left;
+}
+
+.dest-trash-chevron {
+  margin-left: auto;
+  transition: transform 150ms ease-out;
+}
+
+.dest-trash-chevron--open {
+  transform: rotate(180deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dest-trash-chevron {
+    transition: none;
+  }
+}
+
+.dest-trash-list {
+  border-top: 1px solid var(--color-border-default);
+}
+
+.dest-trash-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-border-default);
+}
+
+.dest-trash-row:last-child {
+  border-bottom: none;
+}
+
+.dest-trash-info {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  color: var(--color-text-caption);
+}
+
+.dest-trash-name {
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-default);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dest-trash-count {
+  font-size: var(--font-size-xs);
+  white-space: nowrap;
+}
+
 .dest-add-area input {
   flex: 1;
   padding: 8px 12px;
   border: 1px solid var(--color-border-default);
-  border-radius: 8px;
-  font-size: 0.85rem;
+  border-radius: var(--border-radius-lg);
+  font-size: var(--font-size-sm);
   background: var(--color-background-surface);
   color: var(--color-text-default);
 }

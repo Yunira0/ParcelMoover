@@ -12,11 +12,15 @@ import {
   type TicketCategory,
   type TicketPriority,
 } from '../services/tickets.service';
+import { getActivePickupTimeSlots, type PickupTimeSlot } from '../services/pickupTimeSlots.service';
+import { getCurrentUserRoles } from '../utils/auth';
 
 interface CreateTicketModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
+  /** Pre-select a category when opened from a deep link (e.g. dashboard quick actions). */
+  initialCategory?: TicketCategory;
 }
 
 interface TicketFormState {
@@ -29,6 +33,7 @@ interface TicketFormState {
   accountName: string;
   numberOfParcels: string;
   pickupSlot: string;
+  pickupDate: 'today' | 'tomorrow';
   orderIds: string[];
 }
 
@@ -42,20 +47,9 @@ const initialState: TicketFormState = {
   accountName: '',
   numberOfParcels: '',
   pickupSlot: '',
+  pickupDate: 'today',
   orderIds: [''],
 };
-
-// Pickup slots close 1 hour before they END (e.g. the 9 AM–12 PM slot is
-// bookable until 11 AM), with the final slot capped at 6 PM. `cutoff` is
-// minutes-since-midnight; a slot is selectable while the current time is before it.
-const PICKUP_SLOTS = [
-  { value: '9-12', label: '9 AM – 12 PM', cutoff: 11 * 60 },
-  { value: '2-5', label: '2 PM – 5 PM', cutoff: 16 * 60 },
-  { value: '5-8', label: '5 PM – 8 PM', cutoff: 18 * 60 },
-];
-
-// Latest cutoff across all slots — past this, nothing is bookable today.
-const LAST_PICKUP_CUTOFF = 18 * 60;
 
 const priorityOptions = (Object.keys(TICKET_PRIORITY_LABELS) as TicketPriority[]).map((p) => ({
   value: p,
@@ -67,10 +61,33 @@ const categoryOptions = (Object.keys(TICKET_CATEGORY_LABELS) as TicketCategory[]
   label: TICKET_CATEGORY_LABELS[c],
 }));
 
-const CreateTicketModal: React.FC<CreateTicketModalProps> = ({ isOpen, onClose, onSuccess }) => {
+const CreateTicketModal: React.FC<CreateTicketModalProps> = ({ isOpen, onClose, onSuccess, initialCategory }) => {
   const [form, setForm] = useState<TicketFormState>(initialState);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  // Super admins book pickups on a vendor's behalf and aren't bound by the
+  // same-day cutoff — they can pick any slot for today or tomorrow.
+  const isSuperAdmin = getCurrentUserRoles().includes('super_admin');
+
+  // Slots are admin-configurable (Settings → Pickup Time Slots) rather than hardcoded.
+  const [slots, setSlots] = useState<PickupTimeSlot[]>([]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    getActivePickupTimeSlots()
+      .then((res) => { if (res?.success) setSlots(res.data); })
+      .catch(() => {});
+  }, [isOpen]);
+
+  // Latest cutoff across all slots — past this, nothing is bookable today.
+  const lastPickupCutoff = slots.length ? Math.max(...slots.map((s) => s.cutoffMinutes)) : 0;
+
+  useEffect(() => {
+    if (isOpen && initialCategory) {
+      setForm((prev) => ({ ...prev, category: initialCategory }));
+    }
+  }, [isOpen, initialCategory]);
   // Tick every minute so slot availability stays in sync with the real clock
   // even if the modal is left open across a cutoff.
   const [now, setNow] = useState(() => new Date());
@@ -82,14 +99,25 @@ const CreateTicketModal: React.FC<CreateTicketModalProps> = ({ isOpen, onClose, 
 
   const nowMinutes = now.getHours() * 60 + now.getMinutes();
 
-  // Drop a chosen slot the moment its cutoff passes.
+  // Vendors are auto-rescheduled to tomorrow once every slot today has
+  // closed; super admins are never forced off "today".
+  useEffect(() => {
+    if (isSuperAdmin || form.category !== 'pickup' || slots.length === 0) return;
+    if (nowMinutes >= lastPickupCutoff && form.pickupDate === 'today') {
+      setForm((prev) => ({ ...prev, pickupDate: 'tomorrow', pickupSlot: '' }));
+    }
+  }, [nowMinutes, form.category, form.pickupDate, isSuperAdmin, slots.length, lastPickupCutoff]);
+
+  // Drop a chosen slot the moment its cutoff passes (today only — a
+  // tomorrow slot, or any slot picked by a super admin, never expires here).
   useEffect(() => {
     if (form.category !== 'pickup' || !form.pickupSlot) return;
-    const slot = PICKUP_SLOTS.find((s) => s.value === form.pickupSlot);
-    if (slot && nowMinutes >= slot.cutoff) {
+    if (isSuperAdmin || form.pickupDate !== 'today') return;
+    const slot = slots.find((s) => s.id === form.pickupSlot);
+    if (slot && nowMinutes >= slot.cutoffMinutes) {
       setForm((prev) => ({ ...prev, pickupSlot: '' }));
     }
-  }, [nowMinutes, form.category, form.pickupSlot]);
+  }, [nowMinutes, form.category, form.pickupSlot, form.pickupDate, isSuperAdmin, slots]);
 
   if (!isOpen) return null;
 
@@ -138,15 +166,18 @@ const CreateTicketModal: React.FC<CreateTicketModalProps> = ({ isOpen, onClose, 
     }
 
     if (category === 'pickup') {
-      const { numberOfParcels, pickupSlot } = form;
+      const { numberOfParcels, pickupSlot, pickupDate } = form;
       if (!numberOfParcels.trim() || Number(numberOfParcels) <= 0 || !pickupSlot || !description.trim()) {
         return { error: 'Please fill in all fields.' };
       }
-      const slot = PICKUP_SLOTS.find((s) => s.value === pickupSlot);
-      if (!slot || nowMinutes >= slot.cutoff) {
+      const slot = slots.find((s) => s.id === pickupSlot);
+      if (!slot) return { error: 'Please pick a pickup slot.' };
+      const restrictedByCutoff = !isSuperAdmin && pickupDate === 'today';
+      if (restrictedByCutoff && nowMinutes >= slot.cutoffMinutes) {
         return { error: 'That pickup slot is no longer available. Please pick another.' };
       }
-      const composed = `No. of parcels: ${numberOfParcels.trim()}\nPickup time: ${slot.label}\n\n${description.trim()}`;
+      const dateLabel = pickupDate === 'tomorrow' ? 'Tomorrow' : 'Today';
+      const composed = `No. of parcels: ${numberOfParcels.trim()}\nPickup date: ${dateLabel}\nPickup time: ${slot.label}\n\n${description.trim()}`;
       return { payload: { category, subject: 'Pickup request', description: composed } };
     }
 
@@ -269,6 +300,21 @@ const CreateTicketModal: React.FC<CreateTicketModalProps> = ({ isOpen, onClose, 
                   onChange={(value) => update({ numberOfParcels: value })}
                 />
                 <div className="form-group">
+                  <label htmlFor="pickup-date">Pickup Date<span className="required">*</span></label>
+                  {isSuperAdmin ? (
+                    <select
+                      id="pickup-date"
+                      value={form.pickupDate}
+                      onChange={(e) => update({ pickupDate: e.target.value as 'today' | 'tomorrow' })}
+                    >
+                      <option value="today">Today</option>
+                      <option value="tomorrow">Tomorrow</option>
+                    </select>
+                  ) : (
+                    <input id="pickup-date" type="text" readOnly disabled value={form.pickupDate === 'tomorrow' ? 'Tomorrow' : 'Today'} />
+                  )}
+                </div>
+                <div className="form-group">
                   <label htmlFor="pickup-slot">Pickup Time<span className="required">*</span></label>
                   <select
                     id="pickup-slot"
@@ -277,18 +323,19 @@ const CreateTicketModal: React.FC<CreateTicketModalProps> = ({ isOpen, onClose, 
                     onChange={(e) => update({ pickupSlot: e.target.value })}
                     className={form.pickupSlot ? undefined : 'placeholder-selected'}
                   >
-                    <option value="">Select a slot</option>
-                    {PICKUP_SLOTS.map((slot) => {
-                      const available = nowMinutes < slot.cutoff;
+                    <option value="">{slots.length ? 'Select a slot' : 'No slots configured'}</option>
+                    {slots.map((slot) => {
+                      const restrictedByCutoff = !isSuperAdmin && form.pickupDate === 'today';
+                      const available = !restrictedByCutoff || nowMinutes < slot.cutoffMinutes;
                       return (
-                        <option key={slot.value} value={slot.value} disabled={!available}>
+                        <option key={slot.id} value={slot.id} disabled={!available}>
                           {slot.label}{available ? '' : ' — closed'}
                         </option>
                       );
                     })}
                   </select>
-                  {nowMinutes >= LAST_PICKUP_CUTOFF && (
-                    <small className="ticket-slot-note">No pickup slots left for today.</small>
+                  {!isSuperAdmin && form.pickupDate === 'tomorrow' && (
+                    <small className="ticket-slot-note">No pickup slots left for today — rescheduled for tomorrow.</small>
                   )}
                 </div>
               </>

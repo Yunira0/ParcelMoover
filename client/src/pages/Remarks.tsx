@@ -11,6 +11,7 @@ import FilterDropdown from '../components/FilterDropdown';
 import {
   getRemarks,
   setRemarkStatus,
+  subscribeToRemarkStatusChanged,
   REMARK_STATUS_LABELS,
   type Remark,
   type RemarkStatus,
@@ -96,7 +97,11 @@ const Remarks: React.FC = () => {
   const loadRemarks = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await getRemarks();
+      // This page computes tab counts/filters client-side over the fetched set,
+      // so the default 20-row page silently made every tab (not just Unclosed)
+      // undercount once there were more remarks than that - pull a much larger
+      // page so counts reflect reality.
+      const res = await getRemarks({ pageSize: 100 });
       if (res?.success && Array.isArray(res.data)) {
         setRemarks(res.data);
       }
@@ -106,6 +111,7 @@ const Remarks: React.FC = () => {
   }, []);
 
   useEffect(() => { loadRemarks(); }, [loadRemarks]);
+  useEffect(() => subscribeToRemarkStatusChanged(loadRemarks), [loadRemarks]);
 
   useEffect(() => { setPage(1); }, [searchQuery, activeTab, dateRange]);
 
@@ -217,6 +223,17 @@ const Remarks: React.FC = () => {
     },
     { header: 'REMARKS', accessor: (remark: Remark) => remark.subject, width: '220px', className: 'remarks-subject-cell' },
     {
+      header: 'LAST REMARK',
+      accessor: (remark: Remark) => (
+        <div className="remarks-last-cell">
+          <span>{remark.lastRemark}</span>
+          <small>{remark.lastRemarkBy} · {toBsDate(remark.lastRemarkAt)}</small>
+        </div>
+      ),
+      width: '220px',
+      className: 'remarks-subject-cell',
+    },
+    {
       header: 'STATUS',
       accessor: (remark: Remark) => (
         <StatusChip tone={STATUS_TONE[remark.status]}>{REMARK_STATUS_LABELS[remark.status]}</StatusChip>
@@ -301,7 +318,7 @@ const Remarks: React.FC = () => {
         loading={loading}
         loadingMessage="Loading remarks..."
         emptyMessage="No remarks found."
-        minWidth="1410px"
+        minWidth="1630px"
         tableClassName="remarks-table"
       />
 

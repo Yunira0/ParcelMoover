@@ -38,25 +38,29 @@ function normalizeStatus(status: string): TicketStatus {
   return "open"; // open, in_progress, or anything else
 }
 
-function mapTicket(ticket: {
-  id: string;
-  ticket_no: string;
-  customer_name: string | null;
-  customer_phone: string | null;
-  subject: string | null;
-  issue_type: string;
-  category: string | null;
-  priority: string | null;
-  description: string | null;
-  status: string;
-  created_at: Date;
-  users_support_tickets_assigned_toTousers?: { full_name: string } | null;
-}) {
+function mapTicket(
+  ticket: {
+    id: string;
+    ticket_no: string;
+    customer_name: string | null;
+    customer_phone: string | null;
+    subject: string | null;
+    issue_type: string;
+    category: string | null;
+    priority: string | null;
+    description: string | null;
+    status: string;
+    created_at: Date;
+    users_support_tickets_assigned_toTousers?: { full_name: string } | null;
+  },
+  vendorName?: string | null,
+) {
   return {
     id: ticket.id,
     ticketId: ticket.ticket_no,
     customerName: ticket.customer_name || "",
     customerPhone: ticket.customer_phone || "",
+    vendorName: vendorName || "",
     subject: ticket.subject || ticket.issue_type,
     category: ticket.category || "general",
     priority: ticket.priority || "medium",
@@ -65,6 +69,47 @@ function mapTicket(ticket: {
     assignedTo: ticket.users_support_tickets_assigned_toTousers?.full_name || "Unassigned",
     createdAt: ticket.created_at.toISOString().slice(0, 10),
   };
+}
+
+// Batched counterpart to resolveTicketVendor, for list views where resolving
+// one vendor query per row would be N+1. A ticket's vendor is whichever
+// vendor its creator is the owner of (vendors.user_id) or staff on
+// (vendor_staff.user_id -> vendor_id) - both link columns are unique per user.
+async function resolveVendorNamesBulk(createdByIds: string[]): Promise<Map<string, string>> {
+  const ids = [...new Set(createdByIds)];
+  const result = new Map<string, string>();
+  if (ids.length === 0) return result;
+
+  const ownedVendors = await prisma.vendors.findMany({
+    where: { user_id: { in: ids }, deleted_at: null },
+    select: { user_id: true, business_name: true, client_name: true },
+  });
+  ownedVendors.forEach((v) => {
+    if (v.user_id) result.set(v.user_id, v.business_name || v.client_name);
+  });
+
+  const remaining = ids.filter((id) => !result.has(id));
+  if (remaining.length > 0) {
+    const staffRows = await prisma.vendor_staff.findMany({
+      where: { user_id: { in: remaining }, deleted_at: null },
+      select: { user_id: true, vendor_id: true },
+    });
+    const vendorIds = [...new Set(staffRows.map((s) => s.vendor_id))];
+    if (vendorIds.length > 0) {
+      const staffVendors = await prisma.vendors.findMany({
+        where: { id: { in: vendorIds }, deleted_at: null },
+        select: { id: true, business_name: true, client_name: true },
+      });
+      const vendorById = new Map(staffVendors.map((v) => [v.id, v.business_name || v.client_name]));
+      staffRows.forEach((s) => {
+        if (!s.user_id) return;
+        const name = vendorById.get(s.vendor_id);
+        if (name) result.set(s.user_id, name);
+      });
+    }
+  }
+
+  return result;
 }
 
 const TICKET_INCLUDE = {
@@ -238,13 +283,13 @@ export async function createTicket(actor: Actor, input: CreateTicketInput) {
       select: { vendor_id: true },
     });
     if (parcel?.vendor_id) {
-      const vendor = await prisma.vendors.findUnique({
+      const parcelVendor = await prisma.vendors.findUnique({
         where: { id: parcel.vendor_id },
         select: { user_id: true },
       });
-      if (vendor?.user_id && vendor.user_id !== actor.id) {
+      if (parcelVendor?.user_id && parcelVendor.user_id !== actor.id) {
         await createNotification(
-          vendor.user_id,
+          parcelVendor.user_id,
           `New Ticket: ${ticket.ticket_no}`,
           ticket.subject,
           ticket.id,
@@ -255,7 +300,8 @@ export async function createTicket(actor: Actor, input: CreateTicketInput) {
     }
   }
 
-  return mapTicket(ticket);
+  const vendor = await resolveTicketVendor(ticket.created_by);
+  return mapTicket(ticket, vendor?.name);
 }
 
 export async function listTickets(actor: Actor, params: ListTicketsParams = {}) {
@@ -384,7 +430,7 @@ async function buildTicketDetail(ticket: Awaited<ReturnType<typeof findAccessibl
   ]);
 
   return {
-    ...mapTicket(ticket),
+    ...mapTicket(ticket, vendor?.name),
     vendor,
     thread: replies.map((reply) => ({
       id: reply.id,
@@ -502,5 +548,6 @@ export async function setTicketStatus(actor: Actor, id: string, status: TicketSt
     ).catch(() => {});
   }
 
-  return mapTicket(ticket);
+  const vendor = await resolveTicketVendor(ticket.created_by);
+  return mapTicket(ticket, vendor?.name);
 }

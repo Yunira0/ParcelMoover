@@ -5,6 +5,7 @@ import {
   type PendingCodResult, type SettlementStatement,
 } from '../lib/api'
 import SettlementDetailSheet from '../components/SettlementDetailSheet'
+import PullToRefresh from '../components/PullToRefresh'
 import { toBsDate } from '../lib/nepaliDate'
 
 export default function SettlementsPage() {
@@ -34,7 +35,7 @@ export default function SettlementsPage() {
   useEffect(() => { load() }, [])
 
   return (
-    <div className="flex flex-col flex-1 bg-bg overflow-y-auto">
+    <PullToRefresh onRefresh={load} className="flex flex-col flex-1 bg-bg">
       <div className="flex items-center justify-between px-5 pt-6 pb-2">
         <div>
           <p className="text-[11px] font-semibold text-text-muted uppercase tracking-widest">COD</p>
@@ -163,6 +164,6 @@ export default function SettlementsPage() {
           <SettlementDetailSheet settlementId={selectedId} onClose={() => setSelectedId(null)} />
         </div>
       )}
-    </div>
+    </PullToRefresh>
   )
 }

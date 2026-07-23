@@ -18,6 +18,9 @@ export interface Remark {
   status: RemarkStatus;
   addedBy: string;
   createdAt: string;
+  lastRemark: string;
+  lastRemarkBy: string;
+  lastRemarkAt: string;
 }
 
 export interface ListRemarksParams {
@@ -87,11 +90,23 @@ export const getRemarkById = async (id: string): Promise<{ success: boolean; dat
   return response.data;
 };
 
+const REMARK_STATUS_CHANGED_EVENT = 'parcelmoover:remark-status-changed';
+
+export const notifyRemarkStatusChanged = () => {
+  window.dispatchEvent(new Event(REMARK_STATUS_CHANGED_EVENT));
+};
+
+export const subscribeToRemarkStatusChanged = (handler: () => void) => {
+  window.addEventListener(REMARK_STATUS_CHANGED_EVENT, handler);
+  return () => window.removeEventListener(REMARK_STATUS_CHANGED_EVENT, handler);
+};
+
 export const setRemarkStatus = async (
   id: string,
   status: RemarkStatus,
 ): Promise<{ success: boolean; data: { id: string; status: RemarkStatus } }> => {
   const response = await api.patch(`/remarks/${id}/status`, { status });
+  notifyRemarkStatusChanged();
   return response.data;
 };
 

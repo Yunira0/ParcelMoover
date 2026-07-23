@@ -1,0 +1,249 @@
+.webhooks-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  width: 100%;
+}
+
+.webhooks-error {
+  color: var(--color-danger-text);
+  font-size: var(--font-size-sm);
+  margin: 0;
+}
+
+.webhook-name-cell {
+  align-items: center;
+  color: var(--color-text-default);
+  display: inline-flex;
+  font-weight: var(--font-weight-semi-bold);
+  gap: var(--space-2);
+}
+
+.webhook-name-cell svg {
+  color: var(--color-text-primary);
+  flex-shrink: 0;
+}
+
+.webhook-url-cell {
+  background: var(--color-background-elevated);
+  border-radius: var(--border-radius-default);
+  color: var(--color-text-caption);
+  display: inline-block;
+  font-family: var(--typography-font-family-mono, monospace);
+  font-size: var(--font-size-xs);
+  max-width: 300px;
+  overflow: hidden;
+  padding: 2px var(--space-2);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.webhook-status {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+}
+
+.webhook-status.active {
+  color: #16a34a;
+}
+
+.webhook-status.paused {
+  color: var(--color-text-caption);
+}
+
+.webhook-status.disabled {
+  color: var(--color-danger-text);
+}
+
+.webhook-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.webhook-action-btn {
+  align-items: center;
+  background: transparent;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-default);
+  color: var(--color-text-caption);
+  cursor: pointer;
+  display: inline-flex;
+  font-family: var(--typography-font-family-default);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  gap: var(--space-1);
+  height: 30px;
+  justify-content: center;
+  padding: 0 var(--space-3);
+  transition: all 150ms ease;
+}
+
+.webhook-action-btn:hover {
+  border-color: var(--color-border-primary);
+  color: var(--color-text-default);
+}
+
+.webhook-action-btn.danger:hover {
+  border-color: var(--color-danger-text);
+  color: var(--color-danger-text);
+}
+
+.webhook-action-btn:disabled {
+  cursor: not-allowed;
+  opacity: var(--opacity-60);
+}
+
+/* One-time plaintext secret reveal inside the create/regenerate modal */
+.webhook-secret-reveal {
+  align-items: center;
+  background: var(--color-background-elevated);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-default);
+  display: flex;
+  gap: var(--space-2);
+  margin: var(--space-4) 0;
+  padding: var(--space-3);
+}
+
+.webhook-secret-reveal code {
+  color: var(--color-text-default);
+  flex: 1;
+  font-family: var(--typography-font-family-mono, monospace);
+  font-size: var(--font-size-xs);
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+.webhook-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: var(--space-4) 0;
+}
+
+.webhook-field span {
+  color: var(--color-text-caption);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+}
+
+.webhook-field input {
+  background: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-default);
+  color: var(--color-text-default);
+  font-family: var(--typography-font-family-default);
+  font-size: var(--font-size-sm);
+  min-height: 36px;
+  outline: none;
+  padding: var(--space-2);
+}
+
+.webhook-field input:focus {
+  border-color: var(--color-border-primary);
+  box-shadow: 0 0 0 2px rgb(226 76 0 / 12%);
+}
+
+/* Quick-start endpoint reference under the table */
+.webhooks-docs {
+  background: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-default);
+  padding: var(--space-4);
+}
+
+.webhooks-docs h3 {
+  color: var(--color-text-default);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semi-bold);
+  margin: 0 0 var(--space-2);
+}
+
+.webhooks-docs p {
+  color: var(--color-text-caption);
+  font-size: var(--font-size-sm);
+  margin: 0 0 var(--space-2);
+}
+
+.webhooks-docs ul {
+  color: var(--color-text-caption);
+  display: flex;
+  flex-direction: column;
+  font-size: var(--font-size-sm);
+  gap: var(--space-1);
+  margin: 0;
+  padding-left: var(--space-5);
+}
+
+.webhooks-docs code {
+  background: var(--color-background-elevated);
+  border-radius: var(--border-radius-default);
+  color: var(--color-text-default);
+  font-family: var(--typography-font-family-mono, monospace);
+  font-size: var(--font-size-xs);
+  padding: 1px var(--space-1);
+}
+
+/* Delivery log modal */
+.webhook-deliveries-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+.webhook-delivery-row {
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-default);
+  padding: var(--space-3);
+}
+
+.webhook-delivery-main {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.delivery-status {
+  border-radius: var(--border-radius-default);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semi-bold);
+  padding: 2px var(--space-2);
+  text-transform: capitalize;
+}
+
+.delivery-status.succeeded {
+  background: rgb(22 163 74 / 12%);
+  color: #16a34a;
+}
+
+.delivery-status.pending {
+  background: rgb(202 138 4 / 12%);
+  color: #ca8a04;
+}
+
+.delivery-status.failed {
+  background: rgb(220 38 38 / 12%);
+  color: var(--color-danger-text);
+}
+
+.delivery-event-type {
+  color: var(--color-text-default);
+  font-family: var(--typography-font-family-mono, monospace);
+  font-size: var(--font-size-xs);
+}
+
+.delivery-meta {
+  color: var(--color-text-caption);
+  font-size: var(--font-size-xs);
+}
+
+.delivery-error {
+  color: var(--color-danger-text);
+  font-size: var(--font-size-xs);
+  margin: var(--space-2) 0 0;
+  overflow-wrap: anywhere;
+}

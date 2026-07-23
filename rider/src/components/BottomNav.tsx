@@ -1,5 +1,5 @@
 import { useNavigate, useLocation } from 'react-router-dom'
-import { LayoutGrid, ScanLine, Clock } from 'lucide-react'
+import { LayoutGrid, ScanLine, Clock, Wallet } from 'lucide-react'
 import { usePending } from '../context/PendingContext'
 
 export default function BottomNav() {
@@ -9,9 +9,10 @@ export default function BottomNav() {
   const pendingCount = parcels.length
 
   const tabs = [
-    { path: '/dashboard', icon: LayoutGrid, label: 'Dashboard', badge: 0 },
-    { path: '/scan',      icon: ScanLine,   label: 'Scan',      badge: 0 },
-    { path: '/pending',   icon: Clock,      label: 'Pending',   badge: pendingCount },
+    { path: '/dashboard',   icon: LayoutGrid, label: 'Dashboard',   badge: 0 },
+    { path: '/scan',        icon: ScanLine,   label: 'Scan',        badge: 0 },
+    { path: '/pending',     icon: Clock,      label: 'Pending',     badge: pendingCount },
+    { path: '/settlements', icon: Wallet,     label: 'Settlements', badge: 0 },
   ]
 
   return (

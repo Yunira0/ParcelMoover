@@ -9,6 +9,7 @@ import StatusChip, { type StatusChipTone } from '../components/StatusChip';
 import {
   getRemarks,
   setRemarkStatus,
+  subscribeToRemarkStatusChanged,
   REMARK_STATUS_LABELS,
   type Remark,
   type RemarkStatus,
@@ -37,6 +38,9 @@ const UnclosedRemarks: React.FC = () => {
   const loadRemarks = useCallback(async () => {
     setLoading(true);
     try {
+      // Filter unclosed server-side (not just "the latest 20 of any status") -
+      // otherwise a page full of recently-closed remarks pushes older unclosed
+      // ones off this list entirely while the nav badge's true DB count stays high.
       // Server applies the canonical "unclosed" filter (status != closed,
       // vendor/rider-raised) - identical for every role and matching the
       // "Unclosed cmt" badge count, so closed remarks never leak into this list.
@@ -50,6 +54,7 @@ const UnclosedRemarks: React.FC = () => {
   }, []);
 
   useEffect(() => { loadRemarks(); }, [loadRemarks]);
+  useEffect(() => subscribeToRemarkStatusChanged(loadRemarks), [loadRemarks]);
   useEffect(() => { setPage(1); }, [searchQuery]);
 
   const markAsDone = useCallback(async (remarkId: string) => {

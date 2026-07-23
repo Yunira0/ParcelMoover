@@ -56,7 +56,8 @@ function mapLocation(loc: {
 // Destinations are top-level locations; covered areas are their children. Returns
 // destinations each with their nested areas, for the Settings management screen.
 export async function listManagedLocations() {
-  const all = await prisma.locations.findMany({ orderBy: { name: "asc" } });
+  // Newest first so a freshly added destination/area shows at the top.
+  const all = await prisma.locations.findMany({ orderBy: { created_at: "desc" } });
   const mapped = all.map(mapLocation);
 
   const destinations = mapped.filter((l) => !l.parentId);
@@ -124,6 +125,8 @@ export interface BulkImportDestination {
   zone?: string;
   valley?: string;
   perDestinationRate?: number | null;
+  // Rate for branch delivery (parcel dropped at the branch, not the door).
+  branchPerDestinationRate?: number | null;
   areas: string[];
 }
 
@@ -255,6 +258,7 @@ export async function bulkImportLocations(rows: BulkImportDestination[]) {
             zone: row.zone || null,
             valley: row.valley || null,
             per_destination_rate: row.perDestinationRate ?? null,
+            branch_per_destination_rate: row.branchPerDestinationRate ?? null,
           },
         });
         action = "created";
@@ -272,6 +276,9 @@ export async function bulkImportLocations(rows: BulkImportDestination[]) {
             ...(row.valley !== undefined ? { valley: row.valley || null } : {}),
             ...(row.perDestinationRate !== undefined
               ? { per_destination_rate: row.perDestinationRate }
+              : {}),
+            ...(row.branchPerDestinationRate !== undefined
+              ? { branch_per_destination_rate: row.branchPerDestinationRate }
               : {}),
             updated_at: new Date(),
           },

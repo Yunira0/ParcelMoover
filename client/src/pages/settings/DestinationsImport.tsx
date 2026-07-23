@@ -21,18 +21,23 @@ const COLUMNS = [
   'zone',
   'valley',
   'per_destination_rate',
+  'branch_per_destination_rate',
 ] as const;
 
 type ColumnKey = (typeof COLUMNS)[number];
+
+// Server rejects payloads above this (see bulkImportLocationsController), so
+// larger files are submitted as sequential batches of this size.
+const MAX_DESTINATIONS = 200;
 
 const ZONE_VALUES = ['major_cities', 'urban_areas', 'remote_areas'];
 const VALLEY_VALUES = ['inside', 'outside'];
 
 const SAMPLE_ROWS = [
-  ['Imadol', 'IMD', 'Bagmati', 'Lalitpur', 'Mahalaxmi', 'Sanagaun, Gwarko, Lubhu', 'major_cities', 'inside', '100'],
-  ['Kathmandu', 'KTM', 'Bagmati', 'Kathmandu', 'Kathmandu', 'Thamel, Baneshwor, New Road', 'major_cities', 'inside', '100'],
-  ['Pokhara', 'PKR', 'Gandaki', 'Kaski', 'Pokhara', 'Lakeside, Prithvi Chowk', 'urban_areas', 'outside', '150'],
-  ['Butwal', 'BTW', 'Lumbini', 'Rupandehi', 'Butwal', 'Devinagar, Golpark', 'remote_areas', 'outside', '200'],
+  ['Imadol', 'IMD', 'Bagmati', 'Lalitpur', 'Mahalaxmi', 'Sanagaun, Gwarko, Lubhu', 'major_cities', 'inside', '100', '80'],
+  ['Kathmandu', 'KTM', 'Bagmati', 'Kathmandu', 'Kathmandu', 'Thamel, Baneshwor, New Road', 'major_cities', 'inside', '100', '80'],
+  ['Pokhara', 'PKR', 'Gandaki', 'Kaski', 'Pokhara', 'Lakeside, Prithvi Chowk', 'urban_areas', 'outside', '150', '120'],
+  ['Butwal', 'BTW', 'Lumbini', 'Rupandehi', 'Butwal', 'Devinagar, Golpark', 'remote_areas', 'outside', '200', '160'],
 ];
 
 // ── Template download ─────────────────────────────────────────────────────────
@@ -45,7 +50,7 @@ function downloadTemplate() {
   // Set column widths
   ws['!cols'] = [
     { wch: 22 }, { wch: 18 }, { wch: 14 }, { wch: 16 }, { wch: 18 },
-    { wch: 40 }, { wch: 18 }, { wch: 12 }, { wch: 22 },
+    { wch: 40 }, { wch: 18 }, { wch: 12 }, { wch: 22 }, { wch: 28 },
   ];
 
   XLSX.utils.book_append_sheet(wb, ws, 'Destinations');
@@ -62,6 +67,7 @@ function downloadTemplate() {
     ['zone', 'no', `Pricing zone: ${ZONE_VALUES.join(' | ')}.`],
     ['valley', 'no', `Valley side: ${VALLEY_VALUES.join(' | ')}.`],
     ['per_destination_rate', 'no', 'Delivery rate in NPR. Numeric only.'],
+    ['branch_per_destination_rate', 'no', 'Branch-delivery rate in NPR (parcel dropped at the branch, not the door). Numeric only.'],
   ]);
   notes['!cols'] = [{ wch: 22 }, { wch: 10 }, { wch: 70 }];
   XLSX.utils.book_append_sheet(wb, notes, 'Notes');
@@ -81,8 +87,29 @@ interface ParsedRow {
   zone: string;
   valley: string;
   perDestinationRate: string;
+  branchPerDestinationRate: string;
   _rowIndex: number;
   _error?: string;
+}
+
+// Ratecards write zones many ways - "URBAN AREAS", "Major Cities", or their own
+// "Inside Valley" tier for KTM-valley destinations. Map them onto our three
+// pricing zones; unrecognized values pass through so validation flags them.
+function normalizeZone(value: string): string {
+  const v = value.trim().toLowerCase();
+  if (v.includes('major')) return 'major_cities';
+  if (v.includes('urban')) return 'urban_areas';
+  if (v.includes('remote')) return 'remote_areas';
+  if (v.includes('inside') && v.includes('valley')) return 'major_cities';
+  return value.trim();
+}
+
+// "Outside Valley", "Inside Valley - KTM" → outside / inside.
+function normalizeValley(value: string): string {
+  const v = value.trim().toLowerCase();
+  if (v.includes('inside')) return 'inside';
+  if (v.includes('outside')) return 'outside';
+  return value.trim();
 }
 
 // "Sanagaun, Gwarko, Lubhu" → ["Sanagaun", "Gwarko", "Lubhu"]
@@ -118,17 +145,21 @@ function parseSheet(raw: string[][]): ParsedRow[] {
       const destName = get('destination_name');
       if (!destName) errors.push('destination_name is required');
 
-      const zone = get('zone');
+      const zone = normalizeZone(get('zone'));
       if (zone && !ZONE_VALUES.includes(zone)) {
         errors.push(`zone must be one of: ${ZONE_VALUES.join(', ')}`);
       }
-      const valley = get('valley');
+      const valley = normalizeValley(get('valley'));
       if (valley && !VALLEY_VALUES.includes(valley)) {
         errors.push(`valley must be one of: ${VALLEY_VALUES.join(', ')}`);
       }
       const rateStr = get('per_destination_rate');
       if (rateStr && isNaN(Number(rateStr))) {
         errors.push('per_destination_rate must be a number');
+      }
+      const branchRateStr = get('branch_per_destination_rate');
+      if (branchRateStr && isNaN(Number(branchRateStr))) {
+        errors.push('branch_per_destination_rate must be a number');
       }
 
       return {
@@ -141,6 +172,7 @@ function parseSheet(raw: string[][]): ParsedRow[] {
         zone,
         valley,
         perDestinationRate: rateStr,
+        branchPerDestinationRate: branchRateStr,
         _rowIndex: i + (isHeader ? 2 : 1),
         _error: errors.length ? errors.join('; ') : undefined,
       };
@@ -165,6 +197,9 @@ function groupRows(rows: ParsedRow[]): BulkImportDestinationInput[] {
         zone: row.zone || undefined,
         valley: row.valley || undefined,
         perDestinationRate: row.perDestinationRate ? Number(row.perDestinationRate) : undefined,
+        branchPerDestinationRate: row.branchPerDestinationRate
+          ? Number(row.branchPerDestinationRate)
+          : undefined,
         areas: [],
       });
     }
@@ -188,12 +223,14 @@ const DestinationsImport: React.FC = () => {
   const [fileName, setFileName] = useState('');
   const [parsedRows, setParsedRows] = useState<ParsedRow[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [batchStatus, setBatchStatus] = useState('');
   const [error, setError] = useState('');
   const [results, setResults] = useState<BulkImportResult[] | null>(null);
 
   const validRows = parsedRows.filter((r) => !r._error);
   const invalidRows = parsedRows.filter((r) => r._error);
   const grouped = groupRows(validRows);
+  const batchCount = Math.ceil(grouped.length / MAX_DESTINATIONS);
 
   const handleFile = (file: File) => {
     setFileName(file.name);
@@ -231,13 +268,45 @@ const DestinationsImport: React.FC = () => {
     if (grouped.length === 0) { setError('No valid destinations to import.'); return; }
     setSubmitting(true);
     setError('');
+
+    const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+    const batches: BulkImportDestinationInput[][] = [];
+    for (let i = 0; i < grouped.length; i += MAX_DESTINATIONS) {
+      batches.push(grouped.slice(i, i + MAX_DESTINATIONS));
+    }
+
+    const collected: BulkImportResult[] = [];
     try {
-      const res = await bulkImportLocations(grouped);
-      setResults(res.data);
+      for (let b = 0; b < batches.length; b++) {
+        if (batches.length > 1) setBatchStatus(`Importing batch ${b + 1} of ${batches.length}…`);
+        // The bulk-import route is rate-limited (5/min), so big files can hit
+        // 429 mid-run — wait it out and retry the same batch instead of failing.
+        for (let attempt = 0; ; attempt++) {
+          try {
+            const res = await bulkImportLocations(batches[b]);
+            collected.push(...res.data);
+            break;
+          } catch (err: any) {
+            if (err?.response?.status !== 429 || attempt >= 6) throw err;
+            const retryAfter = Number(err.response.headers?.['retry-after']);
+            const waitSec = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : 20;
+            setBatchStatus(`Rate limit reached — retrying batch ${b + 1} of ${batches.length} in ${waitSec}s…`);
+            await sleep(waitSec * 1000);
+          }
+        }
+      }
+      setResults(collected);
     } catch (err: any) {
-      setError(err?.response?.data?.message || err?.message || 'Import failed.');
+      const msg = err?.response?.data?.message || err?.message || 'Import failed.';
+      if (collected.length > 0) {
+        setError(`Import stopped partway — ${collected.length} of ${grouped.length} destination(s) were processed before it failed: ${msg}`);
+        setResults(collected);
+      } else {
+        setError(msg);
+      }
     } finally {
       setSubmitting(false);
+      setBatchStatus('');
     }
   };
 
@@ -250,6 +319,7 @@ const DestinationsImport: React.FC = () => {
 
     return (
       <div className="di-result">
+        {error && <p role="alert" className="di-error">{error}</p>}
         <div className="di-result-counts">
           <div className="di-stat di-stat--success">
             <CheckCircle2 size={26} />
@@ -295,7 +365,7 @@ const DestinationsImport: React.FC = () => {
         </div>
 
         <div className="di-result-actions">
-          <Button variant="secondary" onClick={() => { setResults(null); setParsedRows([]); setFileName(''); }}>
+          <Button variant="secondary" onClick={() => { setResults(null); setParsedRows([]); setFileName(''); setError(''); }}>
             Import Another File
           </Button>
         </div>
@@ -339,7 +409,7 @@ const DestinationsImport: React.FC = () => {
         ) : (
           <>
             <span className="di-dropzone-primary">Drop file here or click to browse</span>
-            <span className="di-dropzone-hint">Accepts .xlsx, .xls, .csv</span>
+            <span className="di-dropzone-hint">Accepts .xlsx, .xls, .csv — large files import in batches of {MAX_DESTINATIONS} automatically</span>
           </>
         )}
       </div>
@@ -385,9 +455,16 @@ const DestinationsImport: React.FC = () => {
                 {' '}{grouped.length} unique destination(s)
               </p>
             </div>
-            {invalidRows.length > 0 && (
-              <span className="di-badge di-badge--warn">{invalidRows.length} row(s) will be skipped</span>
-            )}
+            <div className="di-preview-badges">
+              {invalidRows.length > 0 && (
+                <span className="di-badge di-badge--warn">{invalidRows.length} row(s) will be skipped</span>
+              )}
+              {batchCount > 1 && (
+                <span className="di-badge di-badge--info">
+                  Will import automatically in {batchCount} batches of up to {MAX_DESTINATIONS}
+                </span>
+              )}
+            </div>
           </div>
 
           <div className="di-preview-wrap">
@@ -404,6 +481,7 @@ const DestinationsImport: React.FC = () => {
                   <th>Zone</th>
                   <th>Valley</th>
                   <th>Rate</th>
+                  <th>Branch Rate</th>
                   <th>Status</th>
                 </tr>
               </thead>
@@ -411,15 +489,22 @@ const DestinationsImport: React.FC = () => {
                 {parsedRows.map((row, i) => (
                   <tr key={i} className={row._error ? 'di-row--error' : 'di-row--ok'}>
                     <td className="di-cell-num">{row._rowIndex}</td>
-                    <td>{row.destinationName || <span className="di-empty">—</span>}</td>
+                    <td className="di-cell-clip" title={row.destinationName}>
+                      {row.destinationName || <span className="di-empty">—</span>}
+                    </td>
                     <td>{row.destinationCode || <span className="di-empty">—</span>}</td>
                     <td>{row.province || <span className="di-empty">—</span>}</td>
                     <td>{row.district || <span className="di-empty">—</span>}</td>
-                    <td>{row.municipality || <span className="di-empty">—</span>}</td>
-                    <td>{splitAreas(row.coveredAreas).join(', ') || <span className="di-empty">—</span>}</td>
+                    <td className="di-cell-clip" title={row.municipality}>
+                      {row.municipality || <span className="di-empty">—</span>}
+                    </td>
+                    <td className="di-cell-areas" title={splitAreas(row.coveredAreas).join(', ')}>
+                      {splitAreas(row.coveredAreas).join(', ') || <span className="di-empty">—</span>}
+                    </td>
                     <td>{row.zone || <span className="di-empty">—</span>}</td>
                     <td>{row.valley || <span className="di-empty">—</span>}</td>
                     <td>{row.perDestinationRate || <span className="di-empty">—</span>}</td>
+                    <td>{row.branchPerDestinationRate || <span className="di-empty">—</span>}</td>
                     <td>
                       {row._error ? (
                         <span className="di-status di-status--error" title={row._error}>
@@ -451,6 +536,9 @@ const DestinationsImport: React.FC = () => {
             ? 'Importing…'
             : `Import ${grouped.length} Destination${grouped.length !== 1 ? 's' : ''}`}
         </Button>
+        {submitting && batchStatus && (
+          <span className="di-batch-status" role="status">{batchStatus}</span>
+        )}
       </div>
     </div>
   );

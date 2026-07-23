@@ -147,6 +147,13 @@ export interface Parcel {
 export const RIDER_TRANSITIONS: Partial<Record<ParcelStatus, ParcelStatus[]>> = {
   rider_assigned:    ['picked_up', 'failed_pickup'],
   sent_for_delivery: ['delivered', 'partially_delivered', 'failed_delivery'],
+  // A failed attempt isn't a dead end - the server lets the assigned rider
+  // release it back into the dispatch pool themselves (pickup_ordered /
+  // ready_to_deliver) rather than leaving it stuck until an admin
+  // intervenes. Neither target lets the rider self-assign back onto it
+  // (that's still admin/vendor-only), so this can't be used to self-deal.
+  failed_pickup:     ['pickup_ordered'],
+  failed_delivery:   ['ready_to_deliver'],
 }
 
 // Statuses shown in the rider's "Pending" queue - broader than
@@ -191,11 +198,19 @@ export async function getDashboardSummary(): Promise<DashboardSummary> {
   return data.data
 }
 
-export async function getRiderParcels(statuses?: ParcelStatus[]): Promise<Parcel[]> {
-  const { data } = await api.get<{ success: boolean; data: Parcel[] }>('/orders', {
-    params: statuses?.length ? { status: statuses.join(',') } : undefined,
-  })
-  return data.data ?? []
+export interface RiderParcelsResult {
+  data: Parcel[]
+  /** True when the server's row cap on this (unpaginated) call cut off some
+   *  matching parcels — the rider is only seeing part of this status set. */
+  truncated: boolean
+}
+
+export async function getRiderParcels(statuses?: ParcelStatus[]): Promise<RiderParcelsResult> {
+  const { data } = await api.get<{ success: boolean; data: Parcel[]; meta?: { truncated?: boolean } }>(
+    '/orders',
+    { params: statuses?.length ? { status: statuses.join(',') } : undefined },
+  )
+  return { data: data.data ?? [], truncated: !!data.meta?.truncated }
 }
 
 export async function getParcelByTrackingId(trackingId: string, signal?: AbortSignal): Promise<Parcel> {

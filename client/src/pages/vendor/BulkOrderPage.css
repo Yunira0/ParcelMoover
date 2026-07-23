@@ -42,7 +42,6 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
-  max-width: 900px;
 }
 
 /* ── Section card ──────────────────────────────────────────────── */
@@ -53,6 +52,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-5);
+  max-width: 900px;
   padding: var(--space-6);
 }
 
@@ -116,7 +116,7 @@
 }
 .bop-dropzone-hint {
   color: var(--color-text-caption);
-  font-size: 12px;
+  font-size: var(--font-size-xs);
 }
 .bop-dropzone-filename {
   color: var(--color-text-default);
@@ -127,14 +127,14 @@
 /* ── Preview table ─────────────────────────────────────────────── */
 .bop-preview-badge {
   border-radius: var(--border-radius-full);
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   font-weight: var(--font-weight-medium);
   padding: var(--space-1) var(--space-3);
   white-space: nowrap;
 }
 .bop-preview-badge--warn {
-  background: #fef3c7;
-  color: #92400e;
+  background: var(--color-warning-surface);
+  color: var(--color-background-warning-default);
 }
 
 .bop-preview-wrap {
@@ -143,16 +143,24 @@
   border: 1px solid var(--color-border-default);
 }
 
+/* The editable preview spans 14 columns - let it breathe past the 900px form. */
+.bop-section--preview {
+  max-width: none;
+}
+
 .bop-preview-table {
   border-collapse: collapse;
   font-size: var(--font-size-sm);
   min-width: 700px;
   width: 100%;
 }
+.bop-preview-table--edit {
+  min-width: 1240px;
+}
 .bop-preview-table th {
   background: var(--color-background-elevated);
   color: var(--color-text-caption);
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   font-weight: var(--font-weight-medium);
   padding: var(--space-2) var(--space-3);
   text-align: left;
@@ -164,24 +172,71 @@
   padding: var(--space-2) var(--space-3);
   vertical-align: middle;
 }
-.bop-row--error td { background: #fff8f8; }
+.bop-preview-table--edit td {
+  padding: var(--space-1) var(--space-1-5);
+}
+.bop-row--error td { background: var(--color-danger-surface); }
 .bop-cell-num {
   color: var(--color-text-caption);
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   text-align: center;
   width: 36px;
 }
 .bop-empty { color: var(--color-text-caption); }
 
+/* ── Editable cells ────────────────────────────────────────────── */
+.bop-cell-input {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--border-radius-default);
+  color: var(--color-text-default);
+  font-family: var(--typography-font-family-default);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  min-width: 96px;
+  padding: var(--space-1) var(--space-2);
+  width: 100%;
+}
+.bop-cell-input:hover { border-color: var(--color-border-default); }
+.bop-cell-input:focus {
+  background: var(--color-background-surface);
+  border-color: var(--color-border-primary);
+  outline: none;
+}
+.bop-cell-input--num { min-width: 72px; }
+.bop-cell-input--wide { min-width: 150px; }
+.bop-cell-input--invalid {
+  background: var(--color-danger-surface);
+  border-color: var(--color-danger-border);
+}
+select.bop-cell-input { cursor: pointer; min-width: 110px; }
+
+.bop-cell-remove { text-align: center; width: 36px; }
+.bop-remove {
+  align-items: center;
+  background: transparent;
+  border: none;
+  border-radius: var(--border-radius-default);
+  color: var(--color-text-caption);
+  cursor: pointer;
+  display: inline-flex;
+  justify-content: center;
+  padding: var(--space-1);
+}
+.bop-remove:hover {
+  background: var(--color-danger-surface);
+  color: var(--color-danger-default);
+}
+
 .bop-status {
   align-items: center;
   display: inline-flex;
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   font-weight: var(--font-weight-medium);
   gap: var(--space-1);
   white-space: nowrap;
 }
-.bop-status--ok { color: #15803d; }
+.bop-status--ok { color: var(--color-success-default); }
 .bop-status--error { color: var(--color-danger-text); }
 
 /* ── Result ────────────────────────────────────────────────────── */
@@ -207,11 +262,11 @@
   flex-direction: column;
   gap: var(--space-1);
 }
-.bop-result-stat--success { color: #15803d; }
+.bop-result-stat--success { color: var(--color-success-default); }
 .bop-result-stat--fail { color: var(--color-danger-text); }
 
 .bop-result-num {
-  font-size: 36px;
+  font-size: var(--font-size-4xl);
   font-weight: var(--font-weight-bold);
   line-height: 1;
 }
@@ -235,7 +290,7 @@
 .bop-result-table th {
   background: var(--color-background-elevated);
   color: var(--color-text-caption);
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   font-weight: var(--font-weight-medium);
   padding: var(--space-2) var(--space-3);
   text-align: left;

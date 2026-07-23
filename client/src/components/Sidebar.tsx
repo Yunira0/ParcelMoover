@@ -15,6 +15,7 @@ import {
   Map,
   Settings,
   Timer,
+  Clock,
   Ticket,
   MessageSquare,
   Receipt,
@@ -25,6 +26,7 @@ import {
   ClipboardCheck,
   ScrollText,
   KeyRound,
+  Webhook,
   LogOut,
   ChevronLeft,
   ChevronRight,
@@ -162,6 +164,7 @@ const VendorSidebar: React.FC = () => {
         <SidebarItem to="/tickets" icon={Ticket} label="Tickets" />
         <SidebarItem to="/delivery-charges" icon={Truck} label="Delivery Charges" />
         <SidebarItem to="/developer/api-keys" icon={KeyRound} label="API Keys" />
+        <SidebarItem to="/developer/webhooks" icon={Webhook} label="Webhooks" />
       </div>
 
       <div className="sidebar-footer">
@@ -255,6 +258,7 @@ const AdminSidebar: React.FC<{ isSuperAdmin: boolean }> = ({ isSuperAdmin }) => 
         <SidebarItem to="/finance" icon={Wallet} label="COD Management" />
         {(isSuperAdmin || hasAdminPermission('SETTINGS_ACCESS')) && <SidebarItem to="/settings" icon={Settings} label="Settings" />}
         {isSuperAdmin && <SidebarItem to="/sla" icon={Timer} label="SLA" />}
+        {isSuperAdmin && <SidebarItem to="/pickup-time-slots" icon={Clock} label="Pickup Time Slots" />}
         {(isSuperAdmin || hasAdminPermission('SYSTEM_LOGS_ACCESS')) && <SidebarItem to="/system-logs" icon={ScrollText} label="System Logs" />}
 
         <SidebarSection label="Operations" />

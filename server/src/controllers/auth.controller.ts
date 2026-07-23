@@ -8,6 +8,7 @@ import {
   updateManagedUserPassword,
   updateManagedUserProfile,
   getManagedUserDetail,
+  getRootSuperAdminUserId,
 } from "../services/auth.service";
 import { AppError } from "../utils/AppError";
 import { sendSuccess } from "../utils/ApiResponse";
@@ -25,8 +26,8 @@ const isManagedUserType = (value: unknown): value is ManagedUserType =>
   typeof value === "string" && managedUserTypes.includes(value as ManagedUserType);
 
 const locationLabel = (location?: { name: string; city: string | null; district: string | null } | null) => {
-  if (!location) return "";
-  return [location.name, location.district].filter(Boolean).join(" - ");
+  // Location names already contain the district, so don't append it again.
+  return location?.name ?? "";
 };
 
 const LIST_DEFAULT_PAGE_SIZE = 20;
@@ -308,21 +309,29 @@ const ADMINS_LIST_CAP = 500;
 
 export const getAdminsController = async (_req: Request, res: Response) => {
   try {
-    const admins = await prisma.admins.findMany({
-      where: {
-        users: { is: { deleted_at: null } },
-      },
-      include: {
-        users: { include: { user_roles: { include: { roles: true } } } },
-        locations: true,
-      },
-      orderBy: { created_at: "desc" },
-      take: ADMINS_LIST_CAP,
-    });
+    // The root super admin never appears in Admin Management — its profile
+    // lives on its own Profile page. Super admins *granted* the role later
+    // still show, so the grant stays visible and revocable.
+    const [admins, rootSuperAdminUserId] = await Promise.all([
+      prisma.admins.findMany({
+        where: {
+          users: { is: { deleted_at: null } },
+        },
+        include: {
+          users: { include: { user_roles: { include: { roles: true } } } },
+          locations: true,
+        },
+        orderBy: { created_at: "desc" },
+        take: ADMINS_LIST_CAP,
+      }),
+      getRootSuperAdminUserId(),
+    ]);
 
     return res.status(200).json({
       success: true,
-      data: admins.map((admin, index) => ({
+      data: admins
+        .filter((admin) => admin.user_id !== rootSuperAdminUserId)
+        .map((admin, index) => ({
         id: admin.id,
         userId: admin.user_id,
         sn: index + 1,
@@ -333,7 +342,7 @@ export const getAdminsController = async (_req: Request, res: Response) => {
         locationId: admin.location_id,
         position: admin.position || "",
         department: admin.department || "",
-        joined: formatDate(admin.joined_at),
+        joined: formatDate(admin.joined_at ?? admin.created_at),
         status: admin.users.status,
         permissions: admin.permissions,
         isSuperAdmin: admin.users.user_roles.some((ur) => ur.roles.code === "super_admin"),
@@ -448,6 +457,7 @@ export const getVendorsController = async (req: Request, res: Response) => {
         address: vendor.pickup_landmark || vendor.address || "",
         sales: vendor.sales || "",
         salesUserId: vendor.sales_user_id,
+        salesEditUsed: vendor.sales_edited_at !== null,
         orders: ordersByVendor.get(vendor.id) ?? { total: 0, delivered: 0, returned: 0 },
         codDue: codByVendor.get(vendor.id) ?? 0,
         status: vendor.status,

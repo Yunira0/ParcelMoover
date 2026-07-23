@@ -48,7 +48,7 @@
 }
 
 .searchable-select-placeholder {
-  color: var(--color-text-caption);
+  color: var(--color-text-placeholder);
 }
 
 .searchable-select-icon {
