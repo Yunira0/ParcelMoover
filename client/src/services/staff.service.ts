@@ -13,6 +13,7 @@ export interface Staff {
   id: string;
   name: string;
   email: string;
+  phone: string;
   permissions: StaffPermission[];
   enabled: boolean;
 }
@@ -20,6 +21,7 @@ export interface Staff {
 export interface StaffInput {
   name: string;
   email: string;
+  phone: string;
   permissions: StaffPermission[];
   enabled: boolean;
   /** Required on create. Optional on edit — leave blank to keep the existing password. */

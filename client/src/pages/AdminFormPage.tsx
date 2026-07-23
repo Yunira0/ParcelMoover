@@ -4,7 +4,7 @@ import { ArrowLeft, CheckCircle, Upload, X, User, Building2, FileText, CreditCar
 import Button from '../components/Button';
 import FormField from '../components/FormField';
 import { registerUser, getManagedUser, updateUserProfile, getLocations } from '../services/users.service';
-import { extractServerFieldErrors, isValidEmail, isValidPhone, normalizePhone } from '../utils/serverValidation';
+import { extractServerFieldErrors, isValidEmail, isValidName, isValidPhone, normalizePhone } from '../utils/serverValidation';
 import './AdminFormPage.css';
 
 // API validation-error field → form field, for errors returned by the server.
@@ -234,6 +234,7 @@ const AdminFormPage: React.FC = () => {
   const validate = (): Record<string, string> => {
     const errors: Record<string, string> = {};
     if (!form.fullName.trim()) errors.fullName = 'Name is required';
+    else if (!isValidName(form.fullName)) errors.fullName = "Enter a valid name (letters, spaces, . ' - only)";
     if (!form.address.trim()) errors.address = 'Address is required';
     if (!form.phone.trim()) errors.phone = 'Phone number is required';
     else if (!isValidPhone(form.phone)) errors.phone = 'Enter a valid Nepali mobile number (e.g. 98XXXXXXXX)';

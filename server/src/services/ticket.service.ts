@@ -111,10 +111,48 @@ async function resolveVendorsByCreators(userIds: string[]) {
   return map;
 }
 
-// Vendors can only touch tickets they created; staff (admin) can touch any;
-// sales see tickets tied to parcels owned by one of their vendors (clients).
+// Every user ID (owner + all staff) belonging to the same vendor org as this
+// actor. The vendor portal is a shared workspace: an owner must see and act on
+// tickets their staff raised, and staff see the org's tickets too - scoping to
+// created_by = self hid staff tickets from the owner entirely.
+async function vendorOrgCreatorIds(actor: Actor): Promise<string[]> {
+  // Resolve the vendor this actor belongs to - as owner first, then as staff.
+  const asOwner = await prisma.vendors.findFirst({
+    where: { user_id: actor.id, deleted_at: null },
+    select: { id: true },
+  });
+  let vendorId = asOwner?.id ?? null;
+  if (!vendorId) {
+    const asStaff = await prisma.vendor_staff.findFirst({
+      where: { user_id: actor.id, deleted_at: null },
+      select: { vendor_id: true },
+    });
+    vendorId = asStaff?.vendor_id ?? null;
+  }
+  // Not linked to any vendor (shouldn't happen for these roles) - fall back to
+  // just this actor's own tickets rather than leaking anything.
+  if (!vendorId) return [actor.id];
+
+  const [vendor, staff] = await Promise.all([
+    prisma.vendors.findFirst({ where: { id: vendorId, deleted_at: null }, select: { user_id: true } }),
+    prisma.vendor_staff.findMany({ where: { vendor_id: vendorId, deleted_at: null }, select: { user_id: true } }),
+  ]);
+  const ids = new Set<string>([actor.id]);
+  if (vendor?.user_id) ids.add(vendor.user_id);
+  for (const s of staff) if (s.user_id) ids.add(s.user_id);
+  return [...ids];
+}
+
+// Vendors see every ticket their org (owner + staff) raised; staff (admin) can
+// touch any; sales see tickets tied to parcels owned by one of their vendors
+// (clients); riders see only their own.
 async function scopeWhere(actor: Actor, extra: Record<string, unknown> = {}) {
   if (isStaff(actor)) return extra;
+
+  if (actor.roles.includes("vendor") || actor.roles.includes("vendor_staff")) {
+    const creatorIds = await vendorOrgCreatorIds(actor);
+    return { ...extra, created_by: { in: creatorIds } };
+  }
 
   if (actor.roles.includes("sales")) {
     // Tickets are linked to their creator (created_by), not to a parcel - the

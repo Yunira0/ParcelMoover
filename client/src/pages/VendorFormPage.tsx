@@ -7,7 +7,7 @@ import { registerUser, getLocations, getAdmins, getManagedUser, updateUserProfil
 import { getCurrentUser } from '../services/auth.service';
 import { getCurrentUser as getCachedUser, getCurrentUserRoles } from '../utils/auth';
 import { getPricingSettings } from '../services/pricing.service';
-import { extractServerFieldErrors, isValidEmail, isValidPhone, normalizePhone } from '../utils/serverValidation';
+import { extractServerFieldErrors, isValidEmail, isValidName, isValidPhone, hasLetter, isDigits, normalizePhone } from '../utils/serverValidation';
 import './VendorFormPage.css';
 
 // API validation-error field → form field, for errors returned by the server.
@@ -347,17 +347,28 @@ const VendorFormPage: React.FC = () => {
   const validate = (): Record<string, string> => {
     const errors: Record<string, string> = {};
     if (!form.onlineBusinessName.trim()) errors.onlineBusinessName = 'Business name is required';
+    else if (!hasLetter(form.onlineBusinessName)) errors.onlineBusinessName = 'Business name must contain letters';
     if (!form.pickupLocation.trim()) errors.pickupLocation = 'Hub is required';
     if (!form.pickupLandmark.trim()) errors.pickupLandmark = 'Location is required';
     if (!form.businessContact.trim()) errors.businessContact = 'Contact number is required';
     else if (!isValidPhone(form.businessContact)) errors.businessContact = 'Enter a valid Nepali mobile number (e.g. 98XXXXXXXX)';
     if (!form.ownerName.trim()) errors.ownerName = 'Owner name is required';
+    else if (!isValidName(form.ownerName)) errors.ownerName = "Enter a valid name (letters, spaces, . ' - only)";
     if (!form.ownerEmail.trim()) errors.ownerEmail = 'Email is required';
     else if (!isValidEmail(form.ownerEmail)) errors.ownerEmail = 'Enter a valid email address';
     if (!form.ownerContact.trim()) errors.ownerContact = 'Contact number is required';
     else if (!isValidPhone(form.ownerContact)) errors.ownerContact = 'Enter a valid Nepali mobile number (e.g. 98XXXXXXXX)';
     if (!form.joinedAt.trim()) errors.joinedAt = 'Joined date is required';
     if (!form.registeredAddress.trim()) errors.registeredAddress = 'Address is required';
+    // Optional identity/bank fields: validate format only when provided.
+    if (form.registrationNo.trim() && !/^[\p{L}\d\s/-]+$/u.test(form.registrationNo.trim()))
+      errors.registrationNo = 'Enter a valid registration number';
+    if (form.panVatNo.trim() && !isDigits(form.panVatNo, 9, 9)) errors.panVatNo = 'PAN/VAT must be 9 digits';
+    if (form.bankName.trim() && !hasLetter(form.bankName)) errors.bankName = 'Enter a valid bank name';
+    if (form.bankAccountNo.trim() && !isDigits(form.bankAccountNo, 6, 20))
+      errors.bankAccountNo = 'Account number must be 6–20 digits';
+    if (form.bankAccountHolder.trim() && !isValidName(form.bankAccountHolder))
+      errors.bankAccountHolder = 'Enter a valid account holder name';
     // Documents and password are only required when creating a new vendor.
     if (!isEdit) {
       if (!form.citizenshipDoc) errors.citizenshipDoc = 'Citizenship document is required';

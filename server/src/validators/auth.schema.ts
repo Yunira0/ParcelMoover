@@ -1,6 +1,6 @@
 import { z } from "zod";
 import {
-  nameSchema,
+  personNameSchema,
   phoneSchema,
   emailSchema,
   requiredEmailSchema,
@@ -49,7 +49,7 @@ export const registerUserSchema = z
     type: z.enum(MANAGED_USER_TYPES, {
       error: `type must be one of: ${MANAGED_USER_TYPES.join(", ")}`,
     }),
-    fullName: nameSchema,
+    fullName: personNameSchema,
     email: requiredEmailSchema,
     phone: phoneSchema,
     password: passwordSchema,
@@ -140,7 +140,7 @@ const optionalAlternatePhone = z
   );
 
 export const updateManagedUserSchema = z.object({
-  fullName: nameSchema.optional(),
+  fullName: personNameSchema.optional(),
   email: emailSchema,
   phone: phoneSchema.optional(),
   locationId: optionalUuidSchema,

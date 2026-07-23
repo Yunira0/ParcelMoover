@@ -31,6 +31,8 @@ function sanitizePermissions(permissions: unknown): StaffPermission[] {
 
 const MAX_NAME_LENGTH = 100;
 const MAX_EMAIL_LENGTH = 255;
+// Nepali mobile: 10 digits starting 97/98, optional +977 (mirrors phoneSchema).
+const PHONE_RE = /^(?:\+?977)?9[78]\d{8}$/;
 
 function validateInput(input: StaffInput) {
   if (!input.name?.trim()) throw new AppError(400, "Name is required");
@@ -39,9 +41,14 @@ function validateInput(input: StaffInput) {
   const email = input.email.trim().toLowerCase();
   if (email.length > MAX_EMAIL_LENGTH) throw new AppError(400, `Email must be ${MAX_EMAIL_LENGTH} characters or fewer`);
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new AppError(400, "Invalid email address");
+  // Phone is required; must be a valid Nepali mobile number.
+  const phone = input.phone?.trim() ?? "";
+  if (!phone) throw new AppError(400, "Phone number is required");
+  if (!PHONE_RE.test(phone)) throw new AppError(400, "Enter a valid Nepali mobile number (e.g. 98XXXXXXXX)");
   return {
     name: input.name.trim(),
     email,
+    phone,
     permissions: sanitizePermissions(input.permissions),
     enabled: input.enabled ?? true,
   };
@@ -77,6 +84,7 @@ function mapStaff(staff: {
   id: string;
   name: string;
   email: string;
+  phone: string | null;
   permissions: string[];
   enabled: boolean;
 }) {
@@ -84,6 +92,7 @@ function mapStaff(staff: {
     id: staff.id,
     name: staff.name,
     email: staff.email,
+    phone: staff.phone ?? "",
     permissions: staff.permissions,
     enabled: staff.enabled,
   };
@@ -128,6 +137,7 @@ export async function createStaff(actor: Actor, input: StaffInput) {
       data: {
         full_name: data.name,
         email: data.email,
+        phone: data.phone,
         password_hash: passwordHash,
         status: "active",
         must_change_password: true,
@@ -143,6 +153,7 @@ export async function createStaff(actor: Actor, input: StaffInput) {
         created_by: actor.id,
         name: data.name,
         email: data.email,
+        phone: data.phone,
         permissions: data.permissions,
         enabled: data.enabled,
       },
@@ -174,6 +185,7 @@ export async function updateStaff(actor: Actor, id: string, input: StaffInput) {
       // Staff already has a linked user — update name/email/password as needed.
       const userUpdate: Record<string, unknown> = {
         full_name: data.name,
+        phone: data.phone,
         updated_at: new Date(),
       };
 
@@ -200,6 +212,7 @@ export async function updateStaff(actor: Actor, id: string, input: StaffInput) {
         data: {
           full_name: data.name,
           email: data.email,
+          phone: data.phone,
           password_hash: await bcrypt.hash(newPassword, 12),
           status: data.enabled ? "active" : "inactive",
         },
@@ -215,6 +228,7 @@ export async function updateStaff(actor: Actor, id: string, input: StaffInput) {
       data: {
         name: data.name,
         email: data.email,
+        phone: data.phone,
         permissions: data.permissions,
         enabled: data.enabled,
         updated_at: new Date(),

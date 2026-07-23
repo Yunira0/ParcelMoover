@@ -23,7 +23,12 @@ const STATUS_TABS: { value: StatusFilter; label: string }[] = [
   { value: 'rejected', label: 'Rejected' },
 ];
 
-const API_BASE = import.meta.env.VITE_API_URL?.replace('/api', '') ?? 'http://localhost:3000';
+// Documents live behind the API origin's authenticated /uploads route. Derive
+// that origin the same way api.ts derives the API base - default to same-origin
+// when VITE_API_URL is unset (stripping only a trailing "/api"). The old
+// localhost:3000 fallback broke every doc link in deploys that rely on the
+// relative "/api" default, which is why the vendor's uploaded docs "didn't show".
+const API_BASE = (import.meta.env.VITE_API_URL || '/api').replace(/\/api\/?$/, '');
 
 const DocLink: React.FC<{ path: string | null; label: string }> = ({ path, label }) => {
   if (!path) return <span className="kyc-doc-missing">—</span>;

@@ -59,7 +59,11 @@ const VendorDeliveryCharges: React.FC = () => {
   const visibleRates = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     if (!q) return rates;
-    return rates.filter((rate) => rate.destinationName.toLowerCase().includes(q));
+    return rates.filter(
+      (rate) =>
+        rate.destinationName.toLowerCase().includes(q) ||
+        rate.coveredAreas.some((area) => area.toLowerCase().includes(q)),
+    );
   }, [rates, searchQuery]);
 
   const columns = useMemo(
@@ -72,6 +76,16 @@ const VendorDeliveryCharges: React.FC = () => {
       {
         header: 'DESTINATION',
         accessor: (rate: VendorSelfRate) => <span className="vendor-delivery-route">{rate.destinationName}</span>,
+      },
+      {
+        header: 'COVERED AREA',
+        accessor: (rate: VendorSelfRate) =>
+          rate.coveredAreas.length > 0 ? (
+            <span className="vendor-delivery-covered">{rate.coveredAreas.join(', ')}</span>
+          ) : (
+            <span className="vendor-delivery-unset">—</span>
+          ),
+        width: '240px',
       },
       // Zone is only meaningful for zone-rate vendors.
       ...(data?.rateType === 'zone'
@@ -124,7 +138,7 @@ const VendorDeliveryCharges: React.FC = () => {
         <input
           value={searchQuery}
           onChange={(event) => setSearchQuery(event.target.value)}
-          placeholder="Search by destination"
+          placeholder="Search by destination or covered area"
         />
       </label>
 
@@ -137,7 +151,7 @@ const VendorDeliveryCharges: React.FC = () => {
         loading={loading}
         loadingMessage="Loading delivery charges..."
         emptyMessage="No delivery charges available."
-        minWidth="820px"
+        minWidth="1000px"
       />
     </div>
   );

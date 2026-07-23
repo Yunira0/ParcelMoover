@@ -913,6 +913,7 @@ export async function getSettlementDetail(actor: Actor, settlementId: string): P
           phone: true,
           email: true,
           address: true,
+          pan_vat_no: true,
           user_id: true,
           sales_user_id: true,
         },
@@ -952,6 +953,7 @@ export async function getSettlementDetail(actor: Actor, settlementId: string): P
   const payeePhone = settlement.riders?.phone || settlement.vendors?.phone || "";
   const payeeEmail = settlement.vendors?.email ?? null;
   const payeeAddress = settlement.vendors?.address ?? null;
+  const payeePan = settlement.vendors?.pan_vat_no ?? null;
 
   const items: SettlementDetailItem[] = settlement.settlement_items.map((si) => {
     const parcel = si.cod_collections.parcels;
@@ -981,6 +983,7 @@ export async function getSettlementDetail(actor: Actor, settlementId: string): P
     payeePhone,
     payeeEmail,
     payeeAddress,
+    payeePan,
     transferDate: settlement.settlement_date ? formatNepalDate(settlement.settlement_date) : null,
     createdAt: settlement.created_at.toISOString(),
     amount: Number(settlement.amount),

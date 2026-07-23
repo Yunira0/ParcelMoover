@@ -27,6 +27,29 @@ export function isValidEmail(value: string): boolean {
   return EMAIL_RE.test(value.trim());
 }
 
+/** A person's name: starts with a letter, then only letters, combining marks
+ *  (Devanagari matras), spaces, and . ' ’ - . Rejects digit-only input like
+ *  "123", while accepting Nepali script. Mirrors the server's nameSchema
+ *  (server/src/validators/common.ts). */
+export const NAME_RE = /^\p{L}[\p{L}\p{M}\s.'’-]*$/u;
+
+export function isValidName(value: string): boolean {
+  const t = value.trim();
+  return t.length >= 2 && NAME_RE.test(t);
+}
+
+/** Business/bank names may contain digits (e.g. "3 Star Traders") but must have
+ *  at least one letter — rejects purely numeric or symbol-only input. */
+export function hasLetter(value: string): boolean {
+  return /\p{L}/u.test(value);
+}
+
+/** Digits only, within a length range. For account/registration/PAN numbers. */
+export function isDigits(value: string, min = 1, max = 20): boolean {
+  const t = value.trim();
+  return new RegExp(`^\\d{${min},${max}}$`).test(t);
+}
+
 /**
  * Map the API's validation errors onto form field names.
  * `fieldMap` translates API field → form field; unmapped fields pass through

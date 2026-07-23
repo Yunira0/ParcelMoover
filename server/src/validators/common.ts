@@ -8,6 +8,19 @@ export const nameSchema = z
   .min(2, "Name must be at least 2 characters")
   .max(100, "Name must not exceed 100 characters");
 
+// A person's name: must start with a letter, then only letters, combining marks
+// (Devanagari matras), spaces, and . ' ’ - . Rejects digit-only or symbol junk
+// like "123" that a plain length check let through, while accepting Nepali
+// script and names like "St. Xavier's" / "O’Brien". Used for user account names
+// (fullName); order sender/receiver names keep the looser nameSchema since a
+// receiver can be a business like "Store 24".
+export const NAME_RE = /^\p{L}[\p{L}\p{M}\s.'’-]*$/u;
+
+export const personNameSchema = nameSchema.regex(
+  NAME_RE,
+  "Name can only contain letters, spaces, and . ' -",
+);
+
 // Enforces a Nepali mobile number: 10 digits starting 97/98, optional +977
 // country code. Only surrounding whitespace is trimmed - internal spaces,
 // dashes or any other character are rejected, not silently stripped.

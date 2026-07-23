@@ -36,6 +36,13 @@ export interface KycApplicationInput {
 }
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// Person name: starts with a letter, then letters/marks/spaces/. ' ’ - (Unicode
+// aware, so Nepali/Devanagari names pass).
+const NAME_REGEX = /^\p{L}[\p{L}\p{M}\s.'’-]*$/u;
+// Names/labels that may contain digits but must have at least one letter.
+const LETTER_REGEX = /\p{L}/u;
+// Nepali mobile: 10 digits starting 97/98, optional +977 (mirrors phoneSchema).
+const PHONE_REGEX = /^(?:\+?977)?9[78]\d{8}$/;
 const MAX_SHORT_FIELD_LENGTH = 200;
 const MAX_LONG_FIELD_LENGTH = 1000;
 
@@ -44,12 +51,21 @@ const MAX_LONG_FIELD_LENGTH = 1000;
 // email gets format-checked instead of just a truthy check.
 function validateKycInput(input: KycApplicationInput) {
   if (!input.onlineBusinessName?.trim()) throw new AppError(400, "Online business name is required");
+  if (!LETTER_REGEX.test(input.onlineBusinessName)) throw new AppError(400, "Business name must contain letters");
   if (!input.pickupLocation?.trim()) throw new AppError(400, "Pickup location is required");
   if (!input.businessContact?.trim()) throw new AppError(400, "Business contact number is required");
+  if (!PHONE_REGEX.test(input.businessContact.trim())) throw new AppError(400, "Enter a valid Nepali mobile number");
   if (!input.ownerName?.trim()) throw new AppError(400, "Owner name is required");
+  if (!NAME_REGEX.test(input.ownerName.trim())) throw new AppError(400, "Enter a valid owner name (letters, spaces, . ' - only)");
   if (!input.ownerEmail?.trim()) throw new AppError(400, "Owner email is required");
   if (!EMAIL_REGEX.test(input.ownerEmail.trim())) throw new AppError(400, "Invalid owner email address");
   if (!input.ownerContact?.trim()) throw new AppError(400, "Owner contact number is required");
+  if (!PHONE_REGEX.test(input.ownerContact.trim())) throw new AppError(400, "Enter a valid Nepali mobile number");
+
+  // Citizenship and PAN/VAT scans are mandatory to verify against; the business
+  // certificate stays optional.
+  if (!input.citizenshipDocPath) throw new AppError(400, "Citizenship document is required");
+  if (!input.panVatDocPath) throw new AppError(400, "PAN/VAT document is required");
 
   const shortFields: Array<[string, string | undefined]> = [
     ["Online business name", input.onlineBusinessName],
