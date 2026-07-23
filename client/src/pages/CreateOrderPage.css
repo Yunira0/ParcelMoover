@@ -118,6 +118,16 @@
   margin: 0;
 }
 
+.order-form-warning {
+  color: var(--color-background-warning-default);
+  font-size: var(--font-size-sm);
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-background-warning-default);
+  border-radius: var(--border-radius-default);
+  background: var(--color-background-warning-subtle, transparent);
+}
+
 .create-order-actions {
   display: flex;
   gap: var(--space-4);

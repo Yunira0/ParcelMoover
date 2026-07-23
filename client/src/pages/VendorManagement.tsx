@@ -31,9 +31,11 @@ interface VendorUser {
 
 const VendorManagement: React.FC = () => {
   const navigate = useNavigate();
-  // Only admins can edit existing vendors / reset passwords. Sales can onboard
-  // new clients (auto-linked to them) but not edit existing ones.
+  // Admins can edit any vendor and reset passwords. Sales can onboard new
+  // clients and edit the ones they own (server-enforced), but not reset
+  // passwords.
   const canManage = isAdminSide();
+  const canEdit = isAdminSide() || hasAnyRole(['sales']);
   const canCreate = isAdminSide() || hasAnyRole(['sales']);
   const [filter, setFilter] = useState<'all' | 'high-volume' | 'active'>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -100,16 +102,16 @@ const VendorManagement: React.FC = () => {
     },
     { header: 'JOINED', accessor: 'joined' as keyof VendorUser },
     { header: 'LAST ORDERED DATE', accessor: 'lastOrderedDate' as keyof VendorUser },
-    ...(canManage
+    ...(canEdit
       ? [{
           header: 'ACTION',
           accessor: (item: VendorUser) => (
             <TableRowActions
               onEdit={() => navigate(`/vendors/${item.id}/edit`)}
-              onUpdatePassword={() => {
+              onUpdatePassword={canManage ? () => {
                 setActiveVendor(item);
                 setActionMode('password');
-              }}
+              } : undefined}
             />
           ),
           width: '220px',

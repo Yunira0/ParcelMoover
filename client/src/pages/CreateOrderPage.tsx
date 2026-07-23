@@ -8,7 +8,6 @@ import { getLocations, getVendors } from '../services/users.service';
 import { getVendorQuote } from '../services/pricing.service';
 import { createOrder, updateOrder, getSenderProfile, type CreateOrderInput, type UpdateOrderInput, type OrderType, type ServiceType } from '../services/orders.service';
 import { isVendorSide } from '../utils/auth';
-import '../components/Modal.css';
 import './CreateOrderPage.css';
 
 interface VendorOption {
@@ -116,8 +115,10 @@ const CreateOrderPage: React.FC = () => {
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<keyof FormState, string>>>({});
   const [generalError, setGeneralError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
-  // Set when the server flags a same-day duplicate; drives the "create anyway?" popup.
-  const [duplicatePrompt, setDuplicatePrompt] = useState<{ message: string; payload: CreateOrderInput } | null>(null);
+  // Set when the server flags a same-day duplicate. Shown inline as a warning;
+  // while it's set, the next "Create Order" click resends with confirmDuplicate
+  // to create the order anyway.
+  const [duplicateWarning, setDuplicateWarning] = useState('');
 
   const [quote, setQuote] = useState<{ weightSurcharge: number; baseCharge: number; totalPayable: number } | null>(null);
   const [quoteError, setQuoteError] = useState('');
@@ -276,6 +277,9 @@ const CreateOrderPage: React.FC = () => {
     });
     if (generalError) setGeneralError('');
     if (successMessage) setSuccessMessage('');
+    // Editing any detail invalidates a prior duplicate confirmation, so the
+    // changed order is re-checked (and re-warned) rather than force-created.
+    if (duplicateWarning) setDuplicateWarning('');
   };
 
   const resetForm = () => {
@@ -292,6 +296,7 @@ const CreateOrderPage: React.FC = () => {
     setFieldErrors({});
     setGeneralError('');
     setSuccessMessage('');
+    setDuplicateWarning('');
   };
 
   const applyServerErrors = (data: any) => {
@@ -314,22 +319,19 @@ const CreateOrderPage: React.FC = () => {
   };
 
   // Actually creates the order. A same-day duplicate comes back as a
-  // DUPLICATE_ORDER 409 - we surface the "create anyway?" popup instead of an
-  // error and keep the form intact so confirming just resends with the flag.
+  // DUPLICATE_ORDER 409. The first time, we show it inline as a warning and stop
+  // (the form is untouched); clicking Create Order again resends with
+  // confirmDuplicate so the order is created anyway.
   const performCreate = async (payload: CreateOrderInput) => {
     setSubmitting(true);
     try {
       const res = await createOrder(payload);
       resetForm();
-      setDuplicatePrompt(null);
       setSuccessMessage(`Order #${res.data.orderNumber} (${res.data.trackingId}) created successfully. You can create another order below.`);
     } catch (err: any) {
       const data = err.response?.data;
       if (data?.code === 'DUPLICATE_ORDER' && !payload.confirmDuplicate) {
-        setDuplicatePrompt({
-          message: data.message || 'A similar order was already created for this customer today.',
-          payload,
-        });
+        setDuplicateWarning(data.message || 'A similar order was already created for this customer today.');
         return;
       }
       applyServerErrors(data);
@@ -450,7 +452,9 @@ const CreateOrderPage: React.FC = () => {
       return;
     }
 
-    await performCreate(payload);
+    // A duplicate warning is already on screen, so this second click is the
+    // user confirming - resend with the flag set to bypass the guard.
+    await performCreate(duplicateWarning ? { ...payload, confirmDuplicate: true } : payload);
   };
 
   // Destinations are top-level locations; covered areas (children with a
@@ -708,12 +712,21 @@ const CreateOrderPage: React.FC = () => {
 
           {successMessage && <p className="order-form-success">{successMessage}</p>}
           {generalError && <p className="order-form-error">{generalError}</p>}
+          {duplicateWarning && (
+            <p className="order-form-warning">
+              {duplicateWarning} Click <strong>Create anyway</strong> to create it regardless.
+            </p>
+          )}
 
           <div className="create-order-actions">
             <Button type="submit" variant="primary" grow disabled={submitting}>
               {isEditMode
                 ? (submitting ? 'Saving...' : 'Save Changes')
-                : (submitting ? 'Creating...' : 'Create Order')}
+                : submitting
+                  ? 'Creating...'
+                  : duplicateWarning
+                    ? 'Create anyway'
+                    : 'Create Order'}
             </Button>
             {isEditMode ? (
               <Button type="button" variant="secondary" onClick={() => navigate('/orders')} disabled={submitting}>
@@ -727,38 +740,6 @@ const CreateOrderPage: React.FC = () => {
           </div>
         </div>
       </form>
-
-      {duplicatePrompt && (
-        <div className="modal-overlay">
-          <div className="modal-content" style={{ maxWidth: '440px' }}>
-            <div className="modal-header">
-              <h2>Possible duplicate order</h2>
-            </div>
-            <p style={{ margin: '0 0 8px', fontSize: '14px' }}>{duplicatePrompt.message}</p>
-            <p style={{ margin: '0 0 16px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>
-              Do you still want to create this order?
-            </p>
-            <div className="modal-footer">
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={() => setDuplicatePrompt(null)}
-                disabled={submitting}
-              >
-                Cancel
-              </Button>
-              <Button
-                type="button"
-                variant="primary"
-                onClick={() => performCreate({ ...duplicatePrompt.payload, confirmDuplicate: true })}
-                disabled={submitting}
-              >
-                {submitting ? 'Creating...' : 'Create anyway'}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

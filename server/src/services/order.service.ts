@@ -746,9 +746,19 @@ export async function updateOrderDetails(
   data: UpdateOrderDetailsInput,
 ) {
   const ownVendorId = await resolveOwnVendorId(actor);
+  // Defense in depth: sales aren't currently routed here, but if they ever are,
+  // scope them to parcels of the vendors they own.
+  const isStaffActor = actor.roles.some((r) => ["admin", "super_admin"].includes(r));
+  const salesVendorIds = !ownVendorId && !isStaffActor && actor.roles.includes("sales")
+    ? (await getActorScope(actor)).vendorIds
+    : undefined;
 
   const parcel = await prisma.parcels.findFirst({
-    where: { id: parcelId, ...(ownVendorId ? { vendor_id: ownVendorId } : {}) },
+    where: {
+      id: parcelId,
+      ...(ownVendorId ? { vendor_id: ownVendorId } : {}),
+      ...(salesVendorIds ? { vendor_id: { in: salesVendorIds } } : {}),
+    },
     include: {
       parties_parcels_sender_idToparties: true,
       parties_parcels_receiver_idToparties: true,
@@ -1700,6 +1710,13 @@ const ORDER_DETAIL_INCLUDE = {
 // remarks and status changes are attributed to a generic "Staff" instead.
 const STAFF_ROLE_CODES = new Set(["super_admin", "admin"]);
 
+// NCM 3PL bookkeeping remarks. The handoff remark is an internal audit/link
+// row (see ncm.service.ts) and must not show in the user-facing thread.
+// Inbound NCM-staff comments carry a "[NCM Staff]" tag we strip for display,
+// attributing them to a generic "Staff" (they have no local user).
+const NCM_HANDOFF_PREFIX = "[NCM] Handed off";
+const NCM_STAFF_PREFIX = "[NCM Staff]";
+
 function isStaffAuthor(
   user: { user_roles?: { roles: { code: string } }[] } | null | undefined,
 ): boolean {
@@ -1777,13 +1794,19 @@ export async function getOrderByTrackingId(actor: OrderActor, trackingId: string
     // Staff see the real author name; vendors/riders see a generic "Staff"
     // label in place of any internal staff member's name (their own / other
     // non-staff authors still show normally).
-    remarks: parcel.parcel_remarks.map((remark) => {
+    remarks: parcel.parcel_remarks
+      .filter((remark) => !remark.remark.startsWith(NCM_HANDOFF_PREFIX))
+      .map((remark) => {
+      const isNcmStaff = remark.remark.startsWith(NCM_STAFF_PREFIX);
+      const remarkText = isNcmStaff
+        ? remark.remark.slice(NCM_STAFF_PREFIX.length).trim()
+        : remark.remark;
       const maskAuthor = !isStaff && isStaffAuthor(remark.users);
       const maskParent = !isStaff && isStaffAuthor(remark.parent_remark?.users);
       return {
         id: remark.id,
-        remark: remark.remark,
-        addedBy: maskAuthor ? "Staff" : remark.users?.full_name || "Unknown",
+        remark: remarkText,
+        addedBy: isNcmStaff ? "Staff" : maskAuthor ? "Staff" : remark.users?.full_name || "Unknown",
         createdAt: remark.created_at.toISOString(),
         parentRemarkId: remark.parent_remark_id,
         parentAuthor: remark.parent_remark?.users
@@ -1800,11 +1823,22 @@ export async function getOrderByTrackingId(actor: OrderActor, trackingId: string
     statusHistory: parcel.parcel_status_history.map((entry) => {
       const branchLabel = entry.locations?.name || vendorName || "Branch";
       const nonStaffLabel = isStaffAuthor(entry.users) ? "Staff" : branchLabel;
+      // Rider-driven milestones surface the assigned rider's name next to the
+      // status ("Rider Assigned (Sunita Devi)"): pickup rider for
+      // "rider_assigned", delivery rider for "sent_for_delivery". "changedBy"
+      // below still shows who performed the assignment.
+      const riderName =
+        entry.new_status === "rider_assigned"
+          ? parcel.riders_parcels_pickup_rider_idToriders?.name
+          : entry.new_status === "sent_for_delivery"
+            ? parcel.riders_parcels_delivery_rider_idToriders?.name
+            : null;
       return {
         id: entry.id,
         oldStatus: entry.old_status,
         newStatus: entry.new_status,
         remarks: entry.remarks || "",
+        riderName: riderName || null,
         changedBy: isStaff ? entry.users?.full_name || "System" : nonStaffLabel,
         changedByType: isStaff ? ("user" as const) : ("branch" as const),
         // Full timestamp so the timeline shows the time of each status change.
@@ -2531,6 +2565,13 @@ async function _updateParcelStatusImpl(
       if (parcel.vendor_id !== vendorId) {
         throw new AppError(404, "Parcel not found");
       }
+    } else if (actor.roles.includes("sales")) {
+      // Defense in depth: sales are not currently routed to status updates, but
+      // if they ever are, scope them to parcels of the vendors they own.
+      const { vendorIds } = await getActorScope(actor);
+      if (!vendorIds || !parcel.vendor_id || !vendorIds.includes(parcel.vendor_id)) {
+        throw new AppError(404, "Parcel not found");
+      }
     } else if (isRiderActor) {
       // Assigning a rider to a parcel (rider_assigned / sent_for_delivery /
       // sent_to_vendor) is an admin/vendor operation done via the ops
@@ -2945,10 +2986,14 @@ async function _bulkUpdateParcelStatusImpl(
     throw new AppError(403, "Only vendors or admins can cancel orders");
   }
 
-  // Resolve vendor/rider scope so non-admins can only act on their own parcels.
-  const { vendorId, riderId: actorRiderId } = isVendorActor || isRiderActor
-    ? await getActorScope(actor)
-    : { vendorId: undefined, riderId: undefined };
+  // Resolve vendor/rider/sales scope so non-admins can only act on their own
+  // parcels. Sales (not currently routed here) are scoped to their vendors as
+  // defence in depth via the vendorIds IN filter below.
+  const isSalesActor = actor.roles.includes("sales") && !isAdmin;
+  const { vendorId, vendorIds, riderId: actorRiderId } =
+    isVendorActor || isRiderActor || isSalesActor
+      ? await getActorScope(actor)
+      : { vendorId: undefined, vendorIds: undefined, riderId: undefined };
 
   if (isRiderActor && !actorRiderId) {
     throw new AppError(403, "Rider profile not found or inactive");
@@ -2959,6 +3004,7 @@ async function _bulkUpdateParcelStatusImpl(
       id: { in: ids },
       deleted_at: null,
       ...(vendorId ? { vendor_id: vendorId } : {}),
+      ...(vendorIds ? { vendor_id: { in: vendorIds } } : {}),
     },
     include: { pickup_tasks: true },
   });

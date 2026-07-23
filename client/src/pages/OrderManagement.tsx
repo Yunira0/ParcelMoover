@@ -35,6 +35,7 @@ import {
   type ParcelStatus,
 } from '../services/orders.service';
 import { printLabels } from '../utils/printLabels';
+import { getCurrentUserRoles } from '../utils/auth';
 import { useCursorPagination } from '../hooks/useCursorPagination';
 import './OrderManagement.css';
 
@@ -449,6 +450,12 @@ const OrderManagement: React.FC = () => {
     setOperationDept('');
   };
 
+  // Who may create a single order - mirrors the /orders/create route's allowed
+  // roles (the server scopes a sales actor to the vendors they own).
+  const canCreateSingleOrder = getCurrentUserRoles().some((r) =>
+    ['super_admin', 'admin', 'sales', 'vendor', 'vendor_staff'].includes(r),
+  );
+
   const openCreateModal = () => {
     navigate('/orders/create');
   };
@@ -792,9 +799,11 @@ const OrderManagement: React.FC = () => {
 
       <div className="order-toolbar">
         <div className="order-toolbar-left">
-          <Button variant="primary" onClick={openCreateModal}>
-            New Order <Plus size={16} />
-          </Button>
+          {canCreateSingleOrder && (
+            <Button variant="primary" onClick={openCreateModal}>
+              New Order <Plus size={16} />
+            </Button>
+          )}
           <Button variant="secondary" onClick={() => navigate('/orders/bulk-create')}>Bulk Order</Button>
         </div>
         <div className="order-toolbar-right">

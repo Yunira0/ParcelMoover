@@ -8,12 +8,17 @@ export const nameSchema = z
   .min(2, "Name must be at least 2 characters")
   .max(100, "Name must not exceed 100 characters");
 
-// Tolerates the separators people naturally type ("984-123 4567", "(01) 4123456")
-// by stripping them before validating; the stored value is always bare digits.
+// Enforces a Nepali mobile number: 10 digits starting 97/98, optional +977
+// country code. Only surrounding whitespace is trimmed - internal spaces,
+// dashes or any other character are rejected, not silently stripped.
 export const phoneSchema = z
   .string()
-  .transform((val) => val.trim().replace(/[\s\-()]/g, ""))
-  .pipe(z.string().regex(/^\+?[0-9]{10,15}$/, "Phone must be 10–15 digits, optionally starting with +"));
+  .transform((val) => val.trim())
+  .pipe(
+    z
+      .string()
+      .regex(/^(?:\+?977)?9[78]\d{8}$/, "Enter a valid Nepali mobile number (e.g. 98XXXXXXXX)"),
+  );
 
 // Optional email: empty string or undefined → undefined; otherwise validate
 export const emailSchema = z

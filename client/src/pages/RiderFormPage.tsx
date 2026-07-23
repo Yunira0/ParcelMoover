@@ -219,7 +219,7 @@ const RiderFormPage: React.FC = () => {
     if (!form.fullName.trim()) errors.fullName = 'Rider name is required';
     if (!form.riderLocation.trim()) errors.riderLocation = 'Rider location is required';
     if (!form.contactNo.trim()) errors.contactNo = 'Contact number is required';
-    else if (!isValidPhone(form.contactNo)) errors.contactNo = 'Enter a 10–15 digit phone number';
+    else if (!isValidPhone(form.contactNo)) errors.contactNo = 'Enter a valid Nepali mobile number (e.g. 98XXXXXXXX)';
     if (!form.serviceBranch.trim()) errors.serviceBranch = 'Service branch is required';
     if (!form.joinedAt.trim()) errors.joinedAt = 'Joined date is required';
     if (!form.email.trim()) errors.email = 'Email is required';

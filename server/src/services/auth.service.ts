@@ -153,7 +153,14 @@ async function assertCanManageUsers(userId: string, targetType?: ManagedUserType
   }
 
   const roles = user.user_roles.map((userRole) => userRole.roles.code);
-  if (!roles.includes("super_admin") && !roles.includes("admin")) {
+  const isStaff = roles.includes("super_admin") || roles.includes("admin");
+  if (!isStaff) {
+    // Sales may manage the vendor clients they own (per-vendor ownership is
+    // enforced by the caller via assertSalesOwnsVendor). No other non-staff
+    // role manages users.
+    if (roles.includes("sales") && targetType === "vendor") {
+      return { roles };
+    }
     throw new AppError(403, "Unauthorized");
   }
 
@@ -168,6 +175,18 @@ async function assertCanManageUsers(userId: string, targetType?: ManagedUserType
   }
 
   return { roles };
+}
+
+// A sales account may only read/update a vendor it owns (sales_user_id). Staff
+// are unrestricted. No-op for non-sales actors (already gated elsewhere).
+async function assertSalesOwnsVendor(actorRoles: string[], actorUserId: string, vendorId: string) {
+  const isStaff = actorRoles.includes("super_admin") || actorRoles.includes("admin");
+  if (isStaff || !actorRoles.includes("sales")) return;
+  const owned = await prisma.vendors.findFirst({
+    where: { id: vendorId, sales_user_id: actorUserId, deleted_at: null },
+    select: { id: true },
+  });
+  if (!owned) throw new AppError(403, "Not authorized to manage this client");
 }
 
 // Nobody but a super_admin may touch a super_admin's account - not even an
@@ -214,6 +233,18 @@ export async function updateManagedUserProfile(
   data: UpdateManagedUserInput,
 ) {
   const { roles: actorRoles } = await assertCanManageUsers(actorUserId, data.type);
+  if (data.type === "vendor") await assertSalesOwnsVendor(actorRoles, actorUserId, id);
+
+  const isStaff = actorRoles.includes("super_admin") || actorRoles.includes("admin");
+  const actorIsSales = !isStaff && actorRoles.includes("sales");
+  if (actorIsSales) {
+    // A sales rep edits their client's details, but may not reassign it to
+    // another sales rep or change its active status.
+    data = { ...data };
+    delete data.salesUserId;
+    delete data.sales;
+    delete data.status;
+  }
 
   const profile = await getManagedProfile(data.type, id);
   const userId = getProfileUserId(profile);
@@ -327,7 +358,8 @@ export async function updateManagedUserProfile(
 // Full editable profile for the edit form, mapped to the create-form field names.
 // Contains bank/PAN/citizenship-level PII, so only admins may fetch it.
 export async function getManagedUserDetail(actorUserId: string, type: ManagedUserType, id: string) {
-  await assertCanManageUsers(actorUserId, type);
+  const { roles } = await assertCanManageUsers(actorUserId, type);
+  if (type === "vendor") await assertSalesOwnsVendor(roles, actorUserId, id);
 
   const num = (v: unknown) => (v === null || v === undefined ? null : Number(v));
   const dateStr = (d: Date | null) => (d ? new Date(d).toISOString().slice(0, 10) : "");
@@ -979,9 +1011,26 @@ export async function getCurrentUserProfile(userId: string) {
     include: {
       user_roles: { include: { roles: true } },
       admins: { include: { locations: true } },
+      // A vendor owner's hub is their vendor's pickup Location.
+      vendors: { include: { locations: true } },
+      vendor_staff: true,
     },
   });
   if (!user) throw new AppError(404, "User not found");
+
+  // Resolve the account's hub: admins carry their own location, vendor owners
+  // use their vendor's pickup Location, and vendor staff inherit the hub of the
+  // vendor they belong to (no direct relation, so look it up).
+  let hubId = user.admins?.location_id ?? user.vendors?.location_id ?? null;
+  let hubName = user.admins?.locations?.name ?? user.vendors?.locations?.name ?? null;
+  if (!hubId && user.vendor_staff?.vendor_id) {
+    const staffVendor = await prisma.vendors.findUnique({
+      where: { id: user.vendor_staff.vendor_id },
+      include: { locations: true },
+    });
+    hubId = staffVendor?.location_id ?? null;
+    hubName = staffVendor?.locations?.name ?? null;
+  }
 
   return {
     id: user.id,
@@ -990,8 +1039,8 @@ export async function getCurrentUserProfile(userId: string) {
     phone: user.phone,
     status: user.status,
     roles: user.user_roles.map((userRole) => userRole.roles.code),
-    hubId: user.admins?.location_id ?? null,
-    hubName: user.admins?.locations?.name ?? null,
+    hubId,
+    hubName,
     // Delegated permissions for plain admin accounts (super_admin holds all).
     permissions: user.admins?.permissions ?? [],
   };

@@ -189,6 +189,11 @@ const VendorFormPage: React.FC = () => {
   // by hub whenever the selected pickup location changes.
   const [salesAdmins, setSalesAdmins] = useState<Array<{ userId: string; name: string; locationId: string | null }>>([]);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  // Set if the global default rates couldn't be fetched to pre-fill the rate
+  // fields. Non-blocking: blank rate fields mean "use the Settings default"
+  // server-side, so the vendor is still created correctly - we just tell the
+  // creator the fields weren't pre-filled.
+  const [pricingDefaultsFailed, setPricingDefaultsFailed] = useState(false);
 
   useEffect(() => {
     const fetchHubs = async () => {
@@ -269,7 +274,10 @@ const VendorFormPage: React.FC = () => {
           extraWeightPercent: prev.extraWeightPercent || str(d.extraWeightPercent),
         }));
       })
-      .catch(() => {});
+      .catch((err) => {
+        console.error('Failed to load default delivery rates:', err);
+        setPricingDefaultsFailed(true);
+      });
   }, []);
 
   // Edit mode: load the vendor's saved data and prefill the form.
@@ -342,12 +350,12 @@ const VendorFormPage: React.FC = () => {
     if (!form.pickupLocation.trim()) errors.pickupLocation = 'Hub is required';
     if (!form.pickupLandmark.trim()) errors.pickupLandmark = 'Location is required';
     if (!form.businessContact.trim()) errors.businessContact = 'Contact number is required';
-    else if (!isValidPhone(form.businessContact)) errors.businessContact = 'Enter a 10–15 digit phone number';
+    else if (!isValidPhone(form.businessContact)) errors.businessContact = 'Enter a valid Nepali mobile number (e.g. 98XXXXXXXX)';
     if (!form.ownerName.trim()) errors.ownerName = 'Owner name is required';
     if (!form.ownerEmail.trim()) errors.ownerEmail = 'Email is required';
     else if (!isValidEmail(form.ownerEmail)) errors.ownerEmail = 'Enter a valid email address';
     if (!form.ownerContact.trim()) errors.ownerContact = 'Contact number is required';
-    else if (!isValidPhone(form.ownerContact)) errors.ownerContact = 'Enter a 10–15 digit phone number';
+    else if (!isValidPhone(form.ownerContact)) errors.ownerContact = 'Enter a valid Nepali mobile number (e.g. 98XXXXXXXX)';
     if (!form.joinedAt.trim()) errors.joinedAt = 'Joined date is required';
     if (!form.registeredAddress.trim()) errors.registeredAddress = 'Address is required';
     // Documents and password are only required when creating a new vendor.
@@ -790,6 +798,12 @@ const VendorFormPage: React.FC = () => {
                 title="Delivery Rate"
                 description="Choose how this vendor is charged for deliveries"
               />
+              {pricingDefaultsFailed && (
+                <p className="vfp-rate-notice">
+                  Couldn't load the default rates, so these fields aren't pre-filled. Any left blank
+                  will use the current Settings default.
+                </p>
+              )}
               <div className="vfp-rate-options">
                 {[
                   { value: 'per_destination', title: 'Per-destination', desc: "Each destination's own configured rate." },

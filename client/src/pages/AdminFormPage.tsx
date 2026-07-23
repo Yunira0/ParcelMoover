@@ -236,7 +236,7 @@ const AdminFormPage: React.FC = () => {
     if (!form.fullName.trim()) errors.fullName = 'Name is required';
     if (!form.address.trim()) errors.address = 'Address is required';
     if (!form.phone.trim()) errors.phone = 'Phone number is required';
-    else if (!isValidPhone(form.phone)) errors.phone = 'Enter a 10–15 digit phone number';
+    else if (!isValidPhone(form.phone)) errors.phone = 'Enter a valid Nepali mobile number (e.g. 98XXXXXXXX)';
     if (!form.locationId.trim()) errors.locationId = 'Hub is required';
     if (!form.department.trim()) errors.department = 'Department is required';
     if (!form.designation.trim()) errors.designation = 'Designation is required';

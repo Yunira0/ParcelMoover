@@ -86,7 +86,7 @@ function App() {
           <Route path="/orders" element={<OrdersRouter />} />
           <Route
             path="/orders/create"
-            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'vendor', 'vendor_staff']} requiredPermission="ORDER_ACCESS"><CreateOrderPage /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'sales', 'vendor', 'vendor_staff']} requiredPermission="ORDER_ACCESS"><CreateOrderPage /></RoleGuard>}
           />
           {/* vendor/vendor_staff bulk-import for themselves via GET /orders/sender-profile;
               admin/super_admin/sales pick which vendor via a dropdown instead
@@ -129,7 +129,7 @@ function App() {
           />
           <Route
             path="/vendors/:id/edit"
-            element={<RoleGuard allowedRoles={['super_admin', 'admin']}><VendorFormPage /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'sales']}><VendorFormPage /></RoleGuard>}
           />
           <Route
             path="/kyc-applications"

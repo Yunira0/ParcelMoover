@@ -4,16 +4,21 @@
 // messages inline instead of a generic "Validation failed" banner, and to
 // mirror the server's phone/email format rules before submitting.
 
-/** Matches the server's phoneSchema (server/src/validators/common.ts). */
-export const PHONE_RE = /^\+?[0-9]{10,15}$/;
+/** Nepali mobile number: 10 digits starting 97/98 (Ncell/NTC/Smart), with an
+ *  optional +977 / 977 country code. Matches the server's phoneSchema
+ *  (server/src/validators/common.ts). */
+export const PHONE_RE = /^(?:\+?977)?9[78]\d{8}$/;
 
-/** Strip the separators people naturally type ("984-123 4567") before validating/sending. */
+/** Trim surrounding whitespace before sending. Internal separators are NOT
+ *  stripped - a number with spaces/dashes is rejected by isValidPhone instead. */
 export function normalizePhone(value: string): string {
-  return value.replace(/[\s\-()]/g, '');
+  return value.trim();
 }
 
+// Validate the number as typed (trimmed only): spaces, dashes or any other
+// character make it invalid, so the user is asked for a clean mobile number.
 export function isValidPhone(value: string): boolean {
-  return PHONE_RE.test(normalizePhone(value));
+  return PHONE_RE.test(value.trim());
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;

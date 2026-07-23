@@ -53,16 +53,52 @@ export const subscribeToNotificationStream = (
   onNotification: (notification: AppNotification) => void,
 ): (() => void) => {
   const baseURL = (import.meta.env.VITE_API_URL || '/api') as string;
-  const source = new EventSource(`${baseURL}/notifications/stream`, { withCredentials: true });
+  const url = `${baseURL}/notifications/stream`;
 
-  source.onmessage = (event) => {
-    try {
-      const notification = JSON.parse(event.data) as AppNotification;
-      onNotification(notification);
-    } catch {
-      // heartbeat/comment lines have no `data:` payload and won't reach here
-    }
+  let source: EventSource | null = null;
+  let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  let attempts = 0;
+  let closed = false;
+
+  const connect = () => {
+    if (closed) return;
+    source = new EventSource(url, { withCredentials: true });
+
+    // Stream is live again - reset the backoff so the next drop retries quickly.
+    source.onopen = () => {
+      attempts = 0;
+    };
+
+    source.onmessage = (event) => {
+      try {
+        const notification = JSON.parse(event.data) as AppNotification;
+        onNotification(notification);
+      } catch {
+        // heartbeat/comment lines have no `data:` payload and won't reach here
+      }
+    };
+
+    // Native EventSource retries on its own, but with a fixed interval and
+    // forever (even after an auth failure). Take control: tear down and
+    // reconnect with capped exponential backoff (1s → 30s).
+    source.onerror = () => {
+      source?.close();
+      source = null;
+      if (closed || reconnectTimer) return;
+      const delay = Math.min(30_000, 1000 * 2 ** attempts);
+      attempts += 1;
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        connect();
+      }, delay);
+    };
   };
 
-  return () => source.close();
+  connect();
+
+  return () => {
+    closed = true;
+    if (reconnectTimer) clearTimeout(reconnectTimer);
+    source?.close();
+  };
 };
