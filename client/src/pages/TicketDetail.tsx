@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Building2, CheckCircle2, Clock, FileText, Mail, MapPin, MessageSquare, Phone, RefreshCw, RotateCcw, Send, Tag } from 'lucide-react';
 import Button from '../components/Button';
 import { isAdminSide, isVendorSide } from '../utils/auth';
@@ -254,6 +254,16 @@ const TicketDetail: React.FC = () => {
                         <th>Category</th>
                         <td>{TICKET_CATEGORY_LABELS[ticket.category]}</td>
                       </tr>
+                      {ticket.trackingId && (
+                        <tr>
+                          <th>Order</th>
+                          <td>
+                            <Link to={`/orders/track/${ticket.trackingId}`} className="tracking-id-link">
+                              {ticket.trackingId}
+                            </Link>
+                          </td>
+                        </tr>
+                      )}
                       <tr>
                         <th>Priority</th>
                         <td>

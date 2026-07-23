@@ -288,6 +288,10 @@ model parcels {
   package_type                                         String?
   delivery_instruction                                 String?
   attempt_count                                        Int                     @default(0)
+  // Vendor-declared at order creation: this shipment may be accepted in part
+  // (e.g. multi-item order) without failing the whole delivery. Informational
+  // only — does not gate the partially_delivered transition itself.
+  allow_partial_delivery                               Boolean                 @default(false)
   partial_delivery_remarks                             String?
   partial_cod_collected                                Decimal?                @db.Decimal(12, 2)
   // For an auto-created return parcel: the exchange order it was generated from.

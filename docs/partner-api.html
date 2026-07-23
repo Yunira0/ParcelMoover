@@ -18,6 +18,8 @@
     --code-bg: #f4f2ef;
     --get: #15803d;
     --get-soft: rgb(21 128 61 / 8%);
+    --patch: #1d4ed8;
+    --patch-soft: rgb(29 78 216 / 8%);
     --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
     --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   }
@@ -33,17 +35,21 @@
       --code-bg: #241f1c;
       --get: #4ade80;
       --get-soft: rgb(74 222 128 / 10%);
+      --patch: #60a5fa;
+      --patch-soft: rgb(96 165 250 / 12%);
     }
   }
   :root[data-theme="light"] {
     --bg: #faf9f7; --surface: #ffffff; --ink: #1c1917; --muted: #78716c;
     --border: #e7e5e2; --accent: #c2410c; --accent-soft: rgb(194 65 12 / 8%);
     --code-bg: #f4f2ef; --get: #15803d; --get-soft: rgb(21 128 61 / 8%);
+    --patch: #1d4ed8; --patch-soft: rgb(29 78 216 / 8%);
   }
   :root[data-theme="dark"] {
     --bg: #171412; --surface: #1f1b18; --ink: #e8e4e0; --muted: #a8a29e;
     --border: #35302c; --accent: #e8622c; --accent-soft: rgb(232 98 44 / 12%);
     --code-bg: #241f1c; --get: #4ade80; --get-soft: rgb(74 222 128 / 10%);
+    --patch: #60a5fa; --patch-soft: rgb(96 165 250 / 12%);
   }
 
   body {
@@ -188,6 +194,7 @@
   }
   .method.post { background: var(--accent-soft); color: var(--accent); }
   .method.get { background: var(--get-soft); color: var(--get); }
+  .method.patch { background: var(--patch-soft); color: var(--patch); }
   .path { font-family: var(--mono); font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
 
   .callout {
@@ -246,7 +253,7 @@
 <div class="page">
   <p class="eyebrow">ParcelMoover · Developer Reference</p>
   <h1>Partner API v1</h1>
-  <p class="lede">Connect your e-commerce store to ParcelMoover's courier network: place delivery orders, track them, and list your shipments — all from your own backend.</p>
+  <p class="lede">Connect your e-commerce store to ParcelMoover's courier network: place delivery orders (including exchanges), track and edit them pre-dispatch, request returns, list your shipments, and read your COD/settlement finance data, all from your own backend.</p>
 
   <nav class="toc" aria-label="Contents">
     <p class="toc-label">Contents</p>
@@ -258,11 +265,14 @@
       <li><a href="#create">Create an order</a></li>
       <li><a href="#track">Track an order</a></li>
       <li><a href="#list">List your orders</a></li>
+      <li><a href="#edit-order">Edit an order</a></li>
+      <li><a href="#return-request">Request a return</a></li>
       <li><a href="#cancel-order">Cancel an order</a></li>
       <li><a href="#bulk-status">Bulk status lookup</a></li>
       <li><a href="#rates">Rates</a></li>
       <li><a href="#remarks">Order comments</a></li>
       <li><a href="#tickets">Support tickets</a></li>
+      <li><a href="#finance">Finance</a></li>
       <li><a href="#statuses">Order statuses</a></li>
       <li><a href="#webhooks">Webhooks</a></li>
       <li><a href="#errors">Errors</a></li>
@@ -348,7 +358,7 @@
   <div class="tablewrap"><table>
     <tr><th>Operations</th><th>Limit</th></tr>
     <tr><td>Reads (<code>GET</code>)</td><td>120 / min</td></tr>
-    <tr><td>Writes (<code>POST</code>)</td><td>30 / min</td></tr>
+    <tr><td>Writes (<code>POST</code>, <code>PATCH</code>)</td><td>30 / min</td></tr>
     <tr><td>Bulk status lookup (<code>POST /orders/statuses</code>)</td><td>20 / min</td></tr>
   </table></div>
   <p>Exceeding a limit returns <code>429</code>. Standard <code>RateLimit-*</code> response headers indicate your remaining quota; back off and retry after the window resets.</p>
@@ -368,7 +378,7 @@
     <tr><td><code>sender.address</code></td><td>string</td><td class="opt">Optional</td><td>Max 255 characters.</td></tr>
     <tr><td><code>receiver</code></td><td>object</td><td class="req">Required</td><td>Delivery contact — your customer. Same fields as <code>sender</code>.</td></tr>
     <tr><td><code>receiver.locationId</code></td><td>UUID or hub name</td><td class="opt">Optional</td><td>The receiver's destination branch/hub — same value as <code>destinationLocationId</code> below. Set both; the ParcelMoover dashboard's own order form does this internally too.</td></tr>
-    <tr><td><code>orderType</code></td><td>string</td><td class="opt">Optional</td><td><code>delivery</code> (default), <code>exchange</code>, or <code>return</code>.</td></tr>
+    <tr><td><code>orderType</code></td><td>string</td><td class="opt">Optional</td><td><code>delivery</code> (default), <code>exchange</code>, or <code>return</code>. On an <code>exchange</code> order, ops confirming delivery auto-creates a linked return parcel — find it later via <code>sourceOrderId</code> on the new parcel (see <a href="#track">Track an order</a>).</td></tr>
     <tr><td><code>serviceType</code></td><td>string</td><td class="opt">Optional</td><td><code>home_delivery</code> (default) or <code>branch_delivery</code>.</td></tr>
     <tr><td><code>pieces</code></td><td>integer</td><td class="opt">Optional</td><td>≥ 1. Number of packages.</td></tr>
     <tr><td><code>weightKg</code></td><td>number</td><td class="opt">Optional</td><td>&gt; 0.</td></tr>
@@ -605,6 +615,10 @@ echo $body['data']['status']; // e.g. "picked_up"</code></pre></div>
     "codAmount": 1500,
     "deliveryCharge": 100,
     "deliveryInstruction": "Call before delivery",
+    "allowPartialDelivery": false,
+    "partialDeliveryRemarks": null,
+    "partialCodCollected": null,
+    "sourceOrderId": null,
     "statusHistory": [
       {
         "oldStatus": "pickup_ordered",
@@ -684,6 +698,59 @@ printf("%d of %d orders", count($body['data']), $body['meta']['total']);</code><
     "hasNextPage": true,
     "hasPrevPage": false
   }
+}</code></pre></div>
+
+  <h2 id="edit-order">Edit an order (pre-dispatch only)</h2>
+  <p class="endpoint"><span class="method patch">PATCH</span><span class="path">/api/v1/orders/{trackingId}</span></p>
+  <p>Headers: <code>Authorization</code>, <code>Idempotency-Key</code> (UUID, required), <code>Content-Type: application/json</code>.</p>
+  <p>Corrects details on an order that's still in your hands, including a receiver address/phone "redirect" before it's ever dispatched. Accepts the same fields as create (minus <code>sender</code>/<code>pickupAddress</code>/<code>scheduledPickupAt</code>): <code>receiver</code>, <code>originLocationId</code>, <code>destinationLocationId</code>, <code>orderType</code>, <code>serviceType</code>, <code>pieces</code>, <code>weightKg</code>, <code>codAmount</code>, <code>packageType</code>, <code>deliveryInstruction</code> — at least one is required.</p>
+  <div class="callout"><p>Only works from <code>pickup_ordered</code>, <code>rider_assigned</code>, or <code>failed_pickup</code> — the same window <a href="#cancel-order">cancel</a> allows. Once the order is picked up and moving through the network, this returns <code>409</code> ("contact support to change it").</p></div>
+
+  <h3>Example</h3>
+  <div class="codeblock"><pre><code>curl -X PATCH "$BASE/api/v1/orders/PM-260713-GFQK93S5YN894-Q" \
+  -H "Authorization: Bearer $KEY" \
+  -H "Idempotency-Key: $(uuidgen)" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "receiver": { "name": "Ram Sharma", "phone": "9841234567", "address": "New Baneshwor, Kathmandu" }
+  }'</code></pre></div>
+
+  <h3>Response — 200 OK</h3>
+  <div class="codeblock"><pre><code>{
+  "success": true,
+  "message": "Order updated",
+  "data": {
+    "id": "59d2df43-1463-42f4-a571-6c514a31f451",
+    "trackingId": "PM-260713-GFQK93S5YN894-Q",
+    "status": "pickup_ordered",
+    "updatedAt": "2026-07-23T09:12:00.000Z"
+  }
+}</code></pre></div>
+
+  <h2 id="return-request">Request a return</h2>
+  <p class="endpoint"><span class="method post">POST</span><span class="path">/api/v1/orders/{trackingId}/return-request</span></p>
+  <p>Headers: <code>Authorization</code>, <code>Idempotency-Key</code> (UUID, required), <code>Content-Type: application/json</code>.</p>
+  <p>Opens a <strong>pending request for ops staff to review</strong> — it does not itself move the order through the return-to-vendor workflow (<code>follow_up</code> → <code>ready_to_return</code> → <code>sent_to_vendor</code> → <code>returned_to_vendor</code>), which stays staff-managed. Track its resolution via <code>GET /tickets/{id}</code> using the <code>ticketId</code> in the response, or watch the order's own status/your <a href="#webhooks">webhook</a> for the RTO stages once staff act on it. Returns <code>409</code> if the order is already <code>cancelled</code> or <code>returned_to_vendor</code>.</p>
+
+  <h3>Request body</h3>
+  <div class="tablewrap"><table>
+    <tr><th>Field</th><th>Type</th><th>Required</th><th>Notes</th></tr>
+    <tr><td><code>reason</code></td><td>string</td><td class="req">Required</td><td>3–500 characters.</td></tr>
+    <tr><td><code>notes</code></td><td>string</td><td class="opt">Optional</td><td>Max 2000 characters.</td></tr>
+  </table></div>
+
+  <h3>Example</h3>
+  <div class="codeblock"><pre><code>curl -X POST "$BASE/api/v1/orders/PM-260713-GFQK93S5YN894-Q/return-request" \
+  -H "Authorization: Bearer $KEY" \
+  -H "Idempotency-Key: $(uuidgen)" \
+  -H "Content-Type: application/json" \
+  -d '{ "reason": "Customer refused package", "notes": "Left at the door, customer unreachable" }'</code></pre></div>
+
+  <h3>Response — 201 Created</h3>
+  <div class="codeblock"><pre><code>{
+  "success": true,
+  "message": "Return request submitted",
+  "data": { "id": "8b1e...", "ticketId": "TKT-260723-AB12CD", "status": "pending" }
 }</code></pre></div>
 
   <h2 id="cancel-order">Cancel an order</h2>
@@ -861,6 +928,33 @@ printf("%d of %d orders", count($body['data']), $body['meta']['total']);</code><
     <tr><td><span class="method post">POST</span> <code>/api/v1/tickets/{id}/replies</code></td><td>Add a reply. Requires <code>Idempotency-Key</code>; body <code>{ "message": "..." }</code>.</td></tr>
   </table></div>
 
+  <h2 id="finance">Finance</h2>
+  <p>Read-only endpoints mirroring the dashboard's Finance views, always scoped to your own vendor account. There is no create/edit-settlement endpoint here; recording a payment against a statement stays an admin-only dashboard action.</p>
+  <div class="tablewrap"><table>
+    <tr><th>Call</th><th>Notes</th></tr>
+    <tr><td><span class="method get">GET</span> <code>/api/v1/finance/pending-cod</code></td><td>Your current pending COD statement.</td></tr>
+    <tr><td><span class="method get">GET</span> <code>/api/v1/finance/order-cod</code></td><td>Per-order COD payment status. Filters: <code>status</code> (<code>settled</code> | <code>not_settled</code>), <code>page</code>, <code>pageSize</code>.</td></tr>
+    <tr><td><span class="method get">GET</span> <code>/api/v1/finance/settlements</code></td><td>Your settlement statements. Filters: <code>fromDate</code>, <code>toDate</code>, <code>page</code>, <code>pageSize</code>.</td></tr>
+    <tr><td><span class="method get">GET</span> <code>/api/v1/finance/settlements/{id}</code></td><td>Line-item detail of one statement.</td></tr>
+    <tr><td><span class="method get">GET</span> <code>/api/v1/finance/unsettled-orders</code></td><td>Orders with COD collected but not yet settled.</td></tr>
+  </table></div>
+
+  <h3>Example</h3>
+  <div class="codeblock"><pre><code>curl "$BASE/api/v1/finance/pending-cod" -H "Authorization: Bearer $KEY"</code></pre></div>
+
+  <h3>Response — 200 OK (abridged, pending-cod)</h3>
+  <div class="codeblock"><pre><code>{
+  "success": true,
+  "data": {
+    "vendor": { "id": "...", "name": "My Store", "phone": "9810000005", "email": null, "address": null },
+    "statementDate": "2026-07-23T09:00:00.000Z",
+    "items": [
+      { "orderNumber": 658266, "trackingId": "PM-260713-GFQK93S5YN894-Q", "receiverName": "Ram Sharma", "receiverPhone": "9841234567", "destination": "Baneshwor, Kathmandu", "codAmount": 1500, "deliveryCharge": 100 }
+    ],
+    "totals": { "totalCod": 1500, "deliveryCharges": 100, "payableAmount": 1400 }
+  }
+}</code></pre></div>
+
   <h2 id="statuses">Order statuses</h2>
   <p>An order moves through these <code>status</code> values:</p>
   <div class="tablewrap"><table>
@@ -872,11 +966,11 @@ printf("%d of %d orders", count($body['data']), $body['meta']['total']);</code><
     <tr><td><code>dispatched</code> / <code>arrived_at_branch</code></td><td>Moving between branches.</td></tr>
     <tr><td><code>ready_to_deliver</code> / <code>sent_for_delivery</code></td><td>Out for delivery.</td></tr>
     <tr><td><code>delivered</code></td><td>Delivered; COD (if any) collected.</td></tr>
-    <tr><td><code>partially_delivered</code></td><td>Delivered with partial COD collection — see order remarks.</td></tr>
+    <tr><td><code>partially_delivered</code></td><td>Delivered with partial COD collection — see <code>partialDeliveryRemarks</code>/<code>partialCodCollected</code> on the order, or <code>allowPartialDelivery</code> if you flagged this shipment as partial-delivery-eligible at creation.</td></tr>
     <tr><td><code>failed_pickup</code> / <code>failed_delivery</code></td><td>Attempt failed; will be retried or followed up.</td></tr>
     <tr><td><code>hold</code></td><td>Temporarily held — see remarks.</td></tr>
     <tr><td><code>oov</code></td><td>Out of coverage — handed to a partner carrier for the last leg.</td></tr>
-    <tr><td><code>follow_up</code>, <code>ready_to_return</code>, <code>sent_to_vendor</code>, <code>returned_to_vendor</code></td><td>Return-to-vendor flow after failed delivery.</td></tr>
+    <tr><td><code>follow_up</code>, <code>ready_to_return</code>, <code>sent_to_vendor</code>, <code>returned_to_vendor</code></td><td>Return-to-vendor flow, driven by ops staff, not the API. A <a href="#return-request">return request</a> only opens a pending review; staff then advance these stages from the dashboard.</td></tr>
     <tr><td><code>cancelled</code></td><td>Order cancelled.</td></tr>
     <tr><td><code>loss_and_damage</code></td><td>Reported lost or damaged.</td></tr>
   </table></div>

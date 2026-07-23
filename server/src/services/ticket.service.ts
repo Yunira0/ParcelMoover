@@ -15,6 +15,9 @@ const TICKET_CATEGORY_NOTIFICATIONS: Record<string, { type: string; label: strin
   delivery: { type: "dispatch", label: "Delivery" },
   cod_settlement: { type: "cod_settlement", label: "COD Settlement" },
   loss_and_damage: { type: "loss_and_damage", label: "Loss & Damage" },
+  // Raised by the Partner API (POST /api/v1/orders/:trackingId/return-request) -
+  // never auto-advances the RTO workflow, staff must review and action it.
+  return_request: { type: "return_request", label: "Return Request" },
 };
 
 // Workflow: pending (un-opened) → open (staff opened it) → closed (resolved).
@@ -52,6 +55,7 @@ function mapTicket(
     status: string;
     created_at: Date;
     users_support_tickets_assigned_toTousers?: { full_name: string } | null;
+    parcels?: { tracking_id: string } | null;
   },
   vendorName?: string | null,
 ) {
@@ -68,6 +72,9 @@ function mapTicket(
     status: normalizeStatus(ticket.status),
     assignedTo: ticket.users_support_tickets_assigned_toTousers?.full_name || "Unassigned",
     createdAt: ticket.created_at.toISOString().slice(0, 10),
+    // Set only for tickets linked to an order (e.g. return_request) - lets
+    // staff jump straight from the ticket to the order.
+    trackingId: ticket.parcels?.tracking_id ?? null,
   };
 }
 
@@ -114,6 +121,7 @@ async function resolveVendorNamesBulk(createdByIds: string[]): Promise<Map<strin
 
 const TICKET_INCLUDE = {
   users_support_tickets_assigned_toTousers: true,
+  parcels: { select: { tracking_id: true } },
 } as const;
 
 // Resolves the vendor (name + phone) behind a batch of ticket creators in a
@@ -204,6 +212,7 @@ export async function createTicket(actor: Actor, input: CreateTicketInput) {
       status: "pending", // un-opened until support opens it
       assigned_to: input.assignedTo || null,
       created_by: actor.id,
+      parcel_id: input.parcelId || null,
     },
     include: TICKET_INCLUDE,
   });

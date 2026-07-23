@@ -672,6 +672,7 @@ async function _createOrderImpl(actor: OrderActor, data: CreateOrderInput) {
         delivery_charge: deliveryCharge,
         package_type: data.packageType || null,
         delivery_instruction: data.deliveryInstruction || null,
+        allow_partial_delivery: data.allowPartialDelivery ?? false,
         created_by: actor.id,
       },
     });
@@ -1265,6 +1266,15 @@ function mapOrder(
     vendorLocation: parcel.vendors?.pickup_landmark || "",
     riderName: rider?.name || "",
     remarks: parcel.parcel_remarks[0]?.remark || "",
+    // Vendor-declared eligibility at creation, plus the actual outcome once a
+    // rider/admin marks the parcel partially_delivered (both null/false until then).
+    allowPartialDelivery: parcel.allow_partial_delivery,
+    partialDeliveryRemarks: parcel.partial_delivery_remarks || null,
+    partialCodCollected:
+      parcel.partial_cod_collected === null ? null : Number(parcel.partial_cod_collected),
+    // Set only on an auto-created return leg — points back at the exchange
+    // order it was generated from (see order_type "exchange" + exchangeReturnReceived).
+    sourceOrderId: parcel.source_order_id,
     lastUpdatedBy,
     // Full timestamp (not just the day) so the UI can show the time alongside
     // the date; date-only consumers still render fine via toBsDate().

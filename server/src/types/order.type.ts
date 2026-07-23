@@ -42,6 +42,9 @@ export interface CreateOrderInput {
    * after the user confirms the "create anyway" prompt.
    */
   confirmDuplicate?: boolean;
+
+  /** Vendor-declared: this shipment may be accepted in part without failing the whole delivery. */
+  allowPartialDelivery?: boolean;
 }
 
 export interface UpdateOrderDetailsInput {

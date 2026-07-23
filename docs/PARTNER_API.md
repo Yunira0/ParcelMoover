@@ -1,6 +1,6 @@
 # ParcelMoover Partner API v1
 
-Integrate your e-commerce store with ParcelMoover: place delivery orders, track them, and list your shipments programmatically.
+Integrate your e-commerce store with ParcelMoover: place delivery orders (including exchanges), track and edit them pre-dispatch, request returns, list shipments, and read your COD/settlement finance data programmatically.
 
 **Base URL**
 
@@ -48,7 +48,7 @@ Limits are per API key, per minute:
 | Operations | Limit |
 |---|---|
 | Reads (`GET`) | 120/min |
-| Writes (`POST`) | 30/min |
+| Writes (`POST`, `PATCH`) | 30/min |
 | Bulk status lookup (`POST /orders/statuses`) | 20/min |
 
 Exceeding a limit returns `429` with `{ "success": false, "message": "Too many requests, please slow down", "error": { "code": "RATE_LIMITED" } }`. Standard `RateLimit-*` response headers indicate your remaining quota — back off and retry after the window resets.
@@ -77,7 +77,7 @@ Headers: `Authorization`, `Idempotency-Key` (UUID, required), `Content-Type: app
 | `receiver.address` | string | — | Max 255 chars. |
 | `receiver.locationId` | UUID or hub name | — | The receiver's destination branch/hub — same value as `destinationLocationId` below. Set both; this is what the ParcelMoover dashboard's own order form does internally too. |
 | `sender` | object | — | Pickup contact. **Omit it and ParcelMoover fills it from your vendor account's registered pickup profile** (business name, phone, pickup landmark). Provide it only to override — e.g. shipping from a different warehouse. Same fields as `receiver` (`name` and `phone` required when provided). |
-| `orderType` | string | — | `delivery` (default), `exchange`, or `return`. |
+| `orderType` | string | — | `delivery` (default), `exchange`, or `return`. On an `exchange` order, ops confirming delivery auto-creates a linked return parcel — it isn't something you create yourself; find it later via `sourceOrderId` on the new parcel (see [Track an order](#track-an-order)). |
 | `serviceType` | string | — | `home_delivery` (default) or `branch_delivery`. |
 | `pieces` | integer | — | ≥ 1. Number of packages. |
 | `weightKg` | number | — | > 0. |
@@ -88,6 +88,7 @@ Headers: `Authorization`, `Idempotency-Key` (UUID, required), `Content-Type: app
 | `scheduledPickupAt` | string | — | ISO-8601 datetime with offset, e.g. `2026-07-15T10:00:00+05:45`. |
 | `originLocationId` | UUID | — | Your pickup hub. Optional — vendors normally have one fixed hub, resolved automatically; only set this if you dispatch from more than one. |
 | `destinationLocationId` | UUID or hub name | — | The destination branch/hub ("To") — see below for how to pick one. Optional (a plain `receiver.address` still works), but setting it gets you precise routing and an accurate rate quote. |
+| `allowPartialDelivery` | boolean | — | Flags that this shipment (e.g. a multi-item order) may be accepted in part without failing the whole delivery. Informational only — the actual outcome is still reported by the rider/ops side; you read it back via `partialDeliveryRemarks`/`partialCodCollected` on the order once it happens. |
 
 The **delivery charge is computed by ParcelMoover** from your vendor rate agreement — you cannot set it. It appears on the order when you fetch it.
 
@@ -330,6 +331,10 @@ echo $body['data']['status']; // e.g. "picked_up"
     "deliveryCharge": 100,
     "packageType": "",
     "deliveryInstruction": "Call before delivery",
+    "allowPartialDelivery": false,
+    "partialDeliveryRemarks": null,
+    "partialCodCollected": null,
+    "sourceOrderId": null,
     "statusHistory": [
       {
         "oldStatus": "pickup_ordered",
@@ -415,6 +420,86 @@ printf("%d of %d orders", count($body['data']), $body['meta']['total']);
     "hasNextPage": true,
     "hasPrevPage": false
   }
+}
+```
+
+---
+
+### Edit an order (pre-dispatch only)
+
+```
+PATCH /api/v1/orders/{trackingId}
+```
+
+Headers: `Authorization`, `Idempotency-Key` (UUID, required), `Content-Type: application/json`.
+
+Corrects details on an order that's still in your hands — including a receiver address/phone "redirect" before it's ever dispatched. Accepts the same fields as create (minus `sender`/`pickupAddress`/`scheduledPickupAt`): `receiver`, `originLocationId`, `destinationLocationId`, `orderType`, `serviceType`, `pieces`, `weightKg`, `codAmount`, `packageType`, `deliveryInstruction` — at least one is required.
+
+Only works from `pickup_ordered`, `rider_assigned`, or `failed_pickup` — the same window [cancel](#cancel-an-order) allows. Once the order is picked up and moving through the network, this returns `409` ("contact support to change it").
+
+#### Example — cURL
+
+```bash
+curl -X PATCH "$BASE/api/v1/orders/PM-260713-GFQK93S5YN894-Q" \
+  -H "Authorization: Bearer $KEY" \
+  -H "Idempotency-Key: $(uuidgen)" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "receiver": { "name": "Ram Sharma", "phone": "9841234567", "address": "New Baneshwor, Kathmandu" }
+  }'
+```
+
+#### Response — `200 OK`
+
+```json
+{
+  "success": true,
+  "message": "Order updated",
+  "data": {
+    "id": "59d2df43-1463-42f4-a571-6c514a31f451",
+    "trackingId": "PM-260713-GFQK93S5YN894-Q",
+    "status": "pickup_ordered",
+    "updatedAt": "2026-07-23T09:12:00.000Z"
+  }
+}
+```
+
+---
+
+### Request a return
+
+```
+POST /api/v1/orders/{trackingId}/return-request
+```
+
+Headers: `Authorization`, `Idempotency-Key` (UUID, required), `Content-Type: application/json`.
+
+Opens a **pending request for ops staff to review** — it does not itself move the order through the return-to-vendor workflow (`follow_up` → `ready_to_return` → `sent_to_vendor` → `returned_to_vendor`), which stays staff-managed. Track its resolution via `GET /tickets/{id}` using the `ticketId` in the response, or watch the order's own `status`/your [webhook](#webhooks) for the RTO stages once staff act on it. Returns `409` if the order is already `cancelled` or `returned_to_vendor`.
+
+#### Request body
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `reason` | string | ✅ | 3–500 chars. |
+| `notes` | string | — | Max 2000 chars. |
+
+#### Example — cURL
+
+```bash
+curl -X POST "$BASE/api/v1/orders/PM-260713-GFQK93S5YN894-Q/return-request" \
+  -H "Authorization: Bearer $KEY" \
+  -H "Idempotency-Key: $(uuidgen)" \
+  -H "Content-Type: application/json" \
+  -d '{ "reason": "Customer refused package", "notes": "Left at the door, customer unreachable" }'
+```
+
+#### Response — `201 Created`
+
+```json
+{
+  "success": true,
+  "message": "Return request submitted",
+  "data": { "id": "8b1e...", "ticketId": "TKT-260723-AB12CD", "status": "pending" }
 }
 ```
 
@@ -686,6 +771,42 @@ POST /api/v1/tickets/{id}/replies   — add a reply (Idempotency-Key required; b
 
 ---
 
+## Finance
+
+Read-only endpoints mirroring the dashboard's Finance views — always scoped to your own vendor account. There is no create/edit-settlement endpoint here; recording a payment against a statement stays an admin-only dashboard action.
+
+```
+GET /api/v1/finance/pending-cod                        — your current pending COD statement
+GET /api/v1/finance/order-cod?status=&page=&pageSize=   — per-order COD payment status (status: settled | not_settled)
+GET /api/v1/finance/settlements?fromDate=&toDate=&page=&pageSize=  — your settlement statements
+GET /api/v1/finance/settlements/{id}                    — line-item detail of one statement
+GET /api/v1/finance/unsettled-orders                    — orders with COD collected but not yet settled
+```
+
+#### Example — cURL
+
+```bash
+curl "$BASE/api/v1/finance/pending-cod" -H "Authorization: Bearer $KEY"
+```
+
+#### Response — `200 OK` (abridged, `pending-cod`)
+
+```json
+{
+  "success": true,
+  "data": {
+    "vendor": { "id": "...", "name": "My Store", "phone": "9810000005", "email": null, "address": null },
+    "statementDate": "2026-07-23T09:00:00.000Z",
+    "items": [
+      { "orderNumber": 658266, "trackingId": "PM-260713-GFQK93S5YN894-Q", "receiverName": "Ram Sharma", "receiverPhone": "9841234567", "destination": "Baneshwor, Kathmandu", "codAmount": 1500, "deliveryCharge": 100 }
+    ],
+    "totals": { "totalCod": 1500, "deliveryCharges": 100, "payableAmount": 1400 }
+  }
+}
+```
+
+---
+
 ## Order statuses
 
 An order moves through these `status` values:
@@ -699,11 +820,11 @@ An order moves through these `status` values:
 | `dispatched` / `arrived_at_branch` | Moving between branches. |
 | `ready_to_deliver` / `sent_for_delivery` | Out for delivery. |
 | `delivered` | Delivered; COD (if any) collected. |
-| `partially_delivered` | Delivered with partial COD collection — see order remarks. |
+| `partially_delivered` | Delivered with partial COD collection — see `partialDeliveryRemarks`/`partialCodCollected` on the order, or `allowPartialDelivery` if you flagged this shipment as partial-delivery-eligible at creation. |
 | `failed_pickup` / `failed_delivery` | Attempt failed; will be retried or followed up. |
 | `hold` | Temporarily held — see remarks. |
 | `oov` | Out of coverage — handed to a partner carrier for the last leg. |
-| `follow_up`, `ready_to_return`, `sent_to_vendor`, `returned_to_vendor` | Return-to-vendor flow after failed delivery. |
+| `follow_up`, `ready_to_return`, `sent_to_vendor`, `returned_to_vendor` | Return-to-vendor flow, driven by ops staff — not something you move through the API directly. A [return request](#request-a-return) only opens a pending review; staff then advance these stages from the dashboard. |
 | `cancelled` | Order cancelled. |
 | `loss_and_damage` | Reported lost or damaged. |
 

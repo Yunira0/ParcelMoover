@@ -102,6 +102,13 @@ export interface Order {
   arrivedAtOrigin?: string;
   /** AD "YYYY-MM-DD" the parcel was delivered, or '' if not delivered. */
   deliveredAt?: string;
+  /** Vendor-declared at creation: this shipment may be accepted in part. */
+  allowPartialDelivery?: boolean;
+  /** Set once a rider/admin marks the parcel partially_delivered. */
+  partialDeliveryRemarks?: string | null;
+  partialCodCollected?: number | null;
+  /** Set only on an auto-created return leg — points back at its source exchange order. */
+  sourceOrderId?: string | null;
 }
 
 export const ORDER_SORT_FIELDS = ['createdAt', 'codAmount', 'deliveryCharge', 'trackingId', 'status'] as const;

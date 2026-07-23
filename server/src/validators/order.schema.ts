@@ -88,6 +88,9 @@ export const createOrderSchema = z.object({
   pickupAddress: z.string().max(255).optional(),
   scheduledPickupAt: z.string().datetime({ offset: true }).optional(),
   confirmDuplicate: z.boolean().optional(),
+  // Vendor-declared: this shipment may be accepted in part without failing
+  // the whole delivery. Informational only — see allow_partial_delivery on parcels.
+  allowPartialDelivery: z.boolean().optional(),
 });
 
 export type CreateOrderInput = z.infer<typeof createOrderSchema>;

@@ -10,8 +10,12 @@ import {
   publicCreateOrderSchema,
   publicCreateTicketSchema,
   publicListOrdersQuerySchema,
+  publicOrderCodQuerySchema,
   publicQuoteQuerySchema,
+  publicReturnRequestSchema,
+  publicSettlementsQuerySchema,
   publicTicketReplySchema,
+  publicUpdateOrderSchema,
 } from "../validators/publicApi.schema";
 import { listTicketsQuerySchema } from "../validators/ticket.schema";
 import { buildOpenApiDocument } from "../lib/openapi";
@@ -21,6 +25,7 @@ import {
   publicCreateOrderController,
   publicGetOrderController,
   publicListOrdersController,
+  publicUpdateOrderController,
 } from "../controllers/publicApi/orders.controller";
 import {
   publicGetRateQuoteController,
@@ -36,6 +41,14 @@ import {
   publicGetTicketController,
   publicListTicketsController,
 } from "../controllers/publicApi/tickets.controller";
+import { publicCreateReturnRequestController } from "../controllers/publicApi/returns.controller";
+import {
+  publicGetPendingCodController,
+  publicGetSettlementController,
+  publicGetUnsettledOrdersController,
+  publicListOrderCodController,
+  publicListSettlementsController,
+} from "../controllers/publicApi/finance.controller";
 
 // Public partner API v1 — external e-commerce integrations authenticate with
 // vendor API keys (header-only, no cookies → no CSRF middleware here).
@@ -117,6 +130,27 @@ publicApiRouter.get(
 // GET /api/v1/orders/:trackingId — track one of your own orders.
 publicApiRouter.get("/orders/:trackingId", publicReadLimiter, publicGetOrderController);
 
+// PATCH /api/v1/orders/:trackingId — pre-dispatch edit (receiver/address,
+// route, service type, pieces/weight, COD, package details). Requires UUID
+// Idempotency-Key header. Only allowed while the order hasn't left your hands
+// yet (pickup_ordered/rider_assigned/failed_pickup); enforced inside updateOrderDetails.
+publicApiRouter.patch(
+  "/orders/:trackingId",
+  publicWriteLimiter,
+  validate(publicUpdateOrderSchema),
+  publicUpdateOrderController,
+);
+
+// POST /api/v1/orders/:trackingId/return-request — open a pending return
+// request for staff review (requires UUID Idempotency-Key header). Does not
+// move the parcel through the RTO workflow itself — that stays staff-only.
+publicApiRouter.post(
+  "/orders/:trackingId/return-request",
+  publicWriteLimiter,
+  validate(publicReturnRequestSchema),
+  publicCreateReturnRequestController,
+);
+
 // POST /api/v1/orders/:trackingId/cancel — cancel your own order (requires
 // UUID Idempotency-Key header). Only allowed from the same pre-pickup states
 // the dashboard allows a vendor to cancel from; enforced inside updateParcelStatus.
@@ -187,6 +221,35 @@ publicApiRouter.post(
   publicWriteLimiter,
   validate(publicTicketReplySchema),
   publicAddTicketReplyController,
+);
+
+// GET /api/v1/finance/pending-cod — your current pending COD statement.
+publicApiRouter.get("/finance/pending-cod", publicReadLimiter, publicGetPendingCodController);
+
+// GET /api/v1/finance/order-cod — per-order COD payment status (?status=settled|not_settled).
+publicApiRouter.get(
+  "/finance/order-cod",
+  publicReadLimiter,
+  validate(publicOrderCodQuerySchema, "query"),
+  publicListOrderCodController,
+);
+
+// GET /api/v1/finance/settlements — your settlement statements (?fromDate=&toDate=).
+publicApiRouter.get(
+  "/finance/settlements",
+  publicReadLimiter,
+  validate(publicSettlementsQuerySchema, "query"),
+  publicListSettlementsController,
+);
+
+// GET /api/v1/finance/settlements/:id — line-item detail of one statement.
+publicApiRouter.get("/finance/settlements/:id", publicReadLimiter, publicGetSettlementController);
+
+// GET /api/v1/finance/unsettled-orders — orders with COD collected but not yet settled.
+publicApiRouter.get(
+  "/finance/unsettled-orders",
+  publicReadLimiter,
+  publicGetUnsettledOrdersController,
 );
 
 // Express's default 404 responds with HTML; API clients should always get JSON.

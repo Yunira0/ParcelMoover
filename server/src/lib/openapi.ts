@@ -6,8 +6,12 @@ import {
   publicCreateOrderSchema,
   publicCreateTicketSchema,
   publicListOrdersQuerySchema,
+  publicOrderCodQuerySchema,
   publicQuoteQuerySchema,
+  publicReturnRequestSchema,
+  publicSettlementsQuerySchema,
   publicTicketReplySchema,
+  publicUpdateOrderSchema,
 } from "../validators/publicApi.schema";
 import { listTicketsQuerySchema } from "../validators/ticket.schema";
 
@@ -91,11 +95,17 @@ export function buildOpenApiDocument(baseUrl: string) {
     openapi: "3.1.0",
     info: {
       title: "ParcelMoover Partner API",
-      version: "1.0.0",
+      version: "1.1.0",
       description:
         "Vendor-facing API for placing and tracking orders, quoting delivery rates, and raising support tickets. " +
         "Every request authenticates with a vendor API key (Settings → Developer → API Keys). " +
-        "Mutating endpoints require a client-generated `Idempotency-Key` header (a UUID) so retries never double-execute.",
+        "Mutating endpoints require a client-generated `Idempotency-Key` header (a UUID) so retries never double-execute. " +
+        "Orders can be created with `orderType: \"exchange\"`; once ops confirms delivery, a linked return parcel is " +
+        "auto-created and surfaced back on the original order as `sourceOrderId` on the new one. Orders can also set " +
+        "`allowPartialDelivery: true` to flag that a partial delivery is acceptable - the outcome (`partialDeliveryRemarks`, " +
+        "`partialCodCollected`) is still reported by ops/rider, readable via the order endpoints. Returns raised via " +
+        "`POST /orders/{trackingId}/return-request` open a pending request for staff review rather than moving the " +
+        "order through the return-to-vendor workflow directly.",
     },
     servers: [{ url: `${baseUrl}/api/v1` }],
     security: [{ ApiKeyAuth: [] }],
@@ -129,6 +139,30 @@ export function buildOpenApiDocument(baseUrl: string) {
           responses: {
             200: { description: "Order detail", content: { "application/json": { schema: { type: "object" } } } },
             ...errorResponses(400, 401, 404, 429),
+          },
+        },
+        patch: {
+          summary: "Edit an order (pre-dispatch only)",
+          description: "Update receiver/address, route, service type, pieces/weight, COD, or package details. Only allowed while the order is still pickup_ordered, rider_assigned, or failed_pickup - once it's in the delivery network, returns 409.",
+          operationId: "updateOrder",
+          parameters: [trackingIdParam, idempotencyKeyHeader],
+          requestBody: jsonRequestBody("UpdateOrderRequest"),
+          responses: {
+            200: { description: "Order updated", content: { "application/json": { schema: { type: "object" } } } },
+            ...errorResponses(400, 401, 404, 409, 429),
+          },
+        },
+      },
+      "/orders/{trackingId}/return-request": {
+        post: {
+          summary: "Request a return (pending staff review)",
+          description: "Opens a pending return request for ops staff to review - it does not itself move the order through the return-to-vendor workflow, which stays staff-managed. Track its resolution via GET /tickets/{id}.",
+          operationId: "createReturnRequest",
+          parameters: [trackingIdParam, idempotencyKeyHeader],
+          requestBody: jsonRequestBody("ReturnRequestRequest"),
+          responses: {
+            201: { description: "Return request submitted", content: { "application/json": { schema: { type: "object" } } } },
+            ...errorResponses(400, 401, 404, 409, 429),
           },
         },
       },
@@ -243,6 +277,61 @@ export function buildOpenApiDocument(baseUrl: string) {
           },
         },
       },
+      "/finance/pending-cod": {
+        get: {
+          summary: "Your current pending COD statement",
+          operationId: "getPendingCod",
+          responses: {
+            200: { description: "Pending COD bill", content: { "application/json": { schema: { type: "object" } } } },
+            ...errorResponses(401, 403, 429),
+          },
+        },
+      },
+      "/finance/order-cod": {
+        get: {
+          summary: "Per-order COD payment status",
+          operationId: "listOrderCod",
+          parameters: queryParams(publicOrderCodQuerySchema),
+          responses: {
+            200: { description: "Paginated order COD list", content: { "application/json": { schema: { type: "object" } } } },
+            ...errorResponses(400, 401, 403, 429),
+          },
+        },
+      },
+      "/finance/settlements": {
+        get: {
+          summary: "Your settlement statements",
+          operationId: "listSettlements",
+          parameters: queryParams(publicSettlementsQuerySchema),
+          responses: {
+            200: { description: "Paginated settlement list", content: { "application/json": { schema: { type: "object" } } } },
+            ...errorResponses(400, 401, 403, 429),
+          },
+        },
+      },
+      "/finance/settlements/{id}": {
+        get: {
+          summary: "Settlement statement detail",
+          operationId: "getSettlement",
+          parameters: [
+            { name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } },
+          ],
+          responses: {
+            200: { description: "Line-item settlement detail", content: { "application/json": { schema: { type: "object" } } } },
+            ...errorResponses(401, 403, 404, 429),
+          },
+        },
+      },
+      "/finance/unsettled-orders": {
+        get: {
+          summary: "Orders with COD collected but not yet settled",
+          operationId: "getUnsettledOrders",
+          responses: {
+            200: { description: "Unsettled order list", content: { "application/json": { schema: { type: "object" } } } },
+            ...errorResponses(401, 403, 429),
+          },
+        },
+      },
     },
     components: {
       securitySchemes: {
@@ -272,6 +361,8 @@ export function buildOpenApiDocument(baseUrl: string) {
           },
         },
         CancelOrderRequest: toSchema(publicCancelOrderSchema),
+        UpdateOrderRequest: toSchema(publicUpdateOrderSchema),
+        ReturnRequestRequest: toSchema(publicReturnRequestSchema),
         BulkStatusRequest: toSchema(publicBulkStatusSchema),
         AddRemarkRequest: toSchema(publicAddRemarkSchema),
         CreateTicketRequest: toSchema(publicCreateTicketSchema),

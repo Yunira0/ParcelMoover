@@ -2,7 +2,13 @@ import api from '../utils/api';
 
 export type TicketStatus = 'open' | 'pending' | 'closed';
 export type TicketPriority = 'low' | 'medium' | 'high' | 'urgent';
-export type TicketCategory = 'delivery' | 'cod_settlement' | 'pickup' | 'general' | 'loss_and_damage';
+export type TicketCategory =
+  | 'delivery'
+  | 'cod_settlement'
+  | 'pickup'
+  | 'general'
+  | 'loss_and_damage'
+  | 'return_request';
 
 export interface Ticket {
   id: string;
@@ -18,6 +24,8 @@ export interface Ticket {
   status: TicketStatus;
   assignedTo: string;
   createdAt: string;
+  /** Set only for tickets linked to an order (e.g. a Partner API return request). */
+  trackingId?: string | null;
 }
 
 export interface TicketThreadEntry {
@@ -62,6 +70,7 @@ export const TICKET_CATEGORY_LABELS: Record<TicketCategory, string> = {
   pickup: 'Pickup',
   loss_and_damage: 'Loss & Damage',
   general: 'General',
+  return_request: 'Return Request',
 };
 
 export interface ListTicketsParams {

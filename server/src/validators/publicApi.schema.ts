@@ -1,7 +1,7 @@
 import { z } from "zod";
-import { createOrderSchema, PARCEL_STATUSES } from "./order.schema";
+import { createOrderSchema, updateOrderDetailsSchema, PARCEL_STATUSES } from "./order.schema";
 import { createTicketSchema } from "./ticket.schema";
-import { optionalUuidSchema, paginationQuerySchema } from "./common";
+import { isoDateStringSchema, optionalUuidSchema, paginationQuerySchema } from "./common";
 
 // Public partner API (/api/v1) request shapes. Kept separate from the internal
 // order schemas so the public contract can stay stable even if internal
@@ -37,6 +37,21 @@ export const publicCreateOrderSchema = createOrderSchema
   });
 
 export type PublicCreateOrderInput = z.infer<typeof publicCreateOrderSchema>;
+
+// ── Update order (pre-dispatch edit / address change) ──────────────────────────
+// Same VENDOR_EDITABLE_STATUSES restriction the dashboard's own vendor users
+// have: only while the parcel is still pickup_ordered/rider_assigned/failed_pickup,
+// enforced inside updateOrderDetails - not re-implemented here.
+
+export const publicUpdateOrderSchema = updateOrderDetailsSchema.safeExtend({
+  receiver: updateOrderDetailsSchema.shape.receiver
+    .unwrap()
+    .safeExtend({ locationId: hubReferenceSchema.optional() })
+    .optional(),
+  destinationLocationId: hubReferenceSchema.optional(),
+});
+
+export type PublicUpdateOrderInput = z.infer<typeof publicUpdateOrderSchema>;
 
 export const publicListOrdersQuerySchema = paginationQuerySchema.extend({
   pageSize: z.coerce
@@ -113,3 +128,31 @@ export const publicTicketReplySchema = z.object({
 });
 
 export type PublicTicketReplyInput = z.infer<typeof publicTicketReplySchema>;
+
+// ── Return request (pending, staff-actioned — does not move parcel status) ────
+
+export const publicReturnRequestSchema = z.object({
+  reason: z
+    .string()
+    .trim()
+    .min(3, "reason must be at least 3 characters")
+    .max(500, "reason must not exceed 500 characters"),
+  notes: z.string().trim().max(2000, "notes must not exceed 2000 characters").optional(),
+});
+
+export type PublicReturnRequestInput = z.infer<typeof publicReturnRequestSchema>;
+
+// ── Finance (COD / settlements) — read-only, always scoped to the key's own vendor ─
+
+export const publicOrderCodQuerySchema = paginationQuerySchema.extend({
+  status: z.enum(["settled", "not_settled"]).optional(),
+});
+
+export type PublicOrderCodQuery = z.infer<typeof publicOrderCodQuerySchema>;
+
+export const publicSettlementsQuerySchema = paginationQuerySchema.extend({
+  fromDate: isoDateStringSchema,
+  toDate: isoDateStringSchema,
+});
+
+export type PublicSettlementsQuery = z.infer<typeof publicSettlementsQuerySchema>;

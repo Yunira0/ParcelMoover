@@ -5,6 +5,7 @@ import {
   getOrderStatusesByTrackingIds,
   getSenderProfile,
   listOrders,
+  updateOrderDetails,
   updateParcelStatus,
 } from "../../services/order.service";
 import { resolveDestinationRef } from "../../services/delivery-rate.service";
@@ -133,6 +134,78 @@ export async function publicListOrdersController(req: Request, res: Response) {
     });
   } catch (error: any) {
     return sendError(res, error, "Failed to load orders");
+  }
+}
+
+// PATCH /api/v1/orders/:trackingId — pre-dispatch edit (receiver/address,
+// route, service type, pieces/weight, COD, package details). Only allowed
+// while the parcel is still pickup_ordered/rider_assigned/failed_pickup —
+// enforced inside updateOrderDetails, same as the dashboard's own vendor edit.
+export async function publicUpdateOrderController(req: Request, res: Response) {
+  try {
+    if (!req.apiKey) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const { trackingId } = req.params;
+    if (typeof trackingId !== "string" || !isValidTrackingId(trackingId)) {
+      return res.status(400).json({ success: false, message: "Invalid tracking id" });
+    }
+
+    const idempotencyKey = req.headers["idempotency-key"] as string | undefined;
+    if (!idempotencyKey) {
+      return res.status(400).json({
+        success: false,
+        message: "Idempotency-Key header is required",
+      });
+    }
+    if (!UUID_REGEX.test(idempotencyKey)) {
+      return res.status(400).json({
+        success: false,
+        message: "Idempotency-Key must be a valid UUID",
+      });
+    }
+
+    // destinationLocationId/receiver.locationId accept a hub name as well as a
+    // UUID, same as order creation - resolve before withIdempotency so the
+    // replay-detection hash sees the same effective payload.
+    if (req.body.destinationLocationId) {
+      req.body.destinationLocationId = await resolveDestinationRef(req.body.destinationLocationId);
+    }
+    if (req.body.receiver?.locationId) {
+      req.body.receiver.locationId = await resolveDestinationRef(req.body.receiver.locationId);
+    }
+
+    const actor = actorFrom(req);
+
+    const responseBody = await withIdempotency(
+      `order-update:${trackingId}:${idempotencyKey}`,
+      req.body,
+      async () => {
+        const order = await getOrderByTrackingId(actor, trackingId);
+        const updated = await updateOrderDetails(actor, order.id, req.body);
+
+        const respBody = {
+          success: true,
+          message: "Order updated",
+          data: {
+            id: updated.id,
+            trackingId: updated.tracking_id,
+            status: updated.status,
+            updatedAt: updated.updated_at,
+          },
+        };
+
+        return {
+          result: respBody,
+          response: { statusCode: 200, body: respBody, resourceID: order.id },
+        };
+      },
+    );
+
+    return res.status(200).json(responseBody);
+  } catch (error: any) {
+    return sendError(res, error, "Failed to update order");
   }
 }
 
