@@ -11,6 +11,17 @@ COPY client/ ./
 RUN npm run build
 
 #######################################
+# Stage 1.5 — build the rider PWA
+#######################################
+FROM node:20-alpine AS rider-build
+WORKDIR /app/rider
+COPY rider/package.json rider/package-lock.json ./
+RUN npm ci
+COPY rider/ ./
+RUN npm run build
+
+
+#######################################
 # Stage 2 — install server deps, generate Prisma client, compile TypeScript
 #######################################
 FROM node:20-alpine AS server-build
@@ -50,6 +61,7 @@ COPY --from=server-build /app/prisma ./prisma
 COPY --from=server-build /app/prisma.config.ts ./prisma.config.ts
 # server.ts does `express.static("public")` — this is where the built SPA lives.
 COPY --from=client-build /app/client/dist ./public
+COPY --from=rider-build /app/rider/dist ./public/rider 
 
 RUN mkdir -p uploads && chown -R app:app /app
 USER app

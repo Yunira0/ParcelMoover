@@ -81,6 +81,9 @@ app.use(express.json({ limit: "1mb" }));
 app.use(cookiesParser());
 app.use(express.static("public"));
 
+// ADD: Serve rider PWA
+app.use("/rider", express.static("public/rider"));
+
 // Liveness/readiness probe for load balancers and container orchestration -
 // deliberately ahead of rate limiting/auth so it's always fast and unthrottled.
 // Checks the database since the app can't do anything useful without it.
@@ -208,6 +211,11 @@ app.use((req, res, next) => {
   // a clean 404 lets the client detect the stale deploy and recover.
   if (path.extname(req.path) !== "") {
     return res.status(404).end();
+  }
+
+  // ADD: Handle rider routes
+  if (req.path.startsWith("/rider")) {
+    return res.sendFile("index.html", {root: "public"});
   }
   res.sendFile("index.html", { root: "public" });
 });
