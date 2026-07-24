@@ -9,7 +9,6 @@ import StatusChip, { type StatusChipTone } from '../components/StatusChip';
 import {
   getRemarks,
   setRemarkStatus,
-  subscribeToRemarkStatusChanged,
   REMARK_STATUS_LABELS,
   type Remark,
   type RemarkStatus,
@@ -54,7 +53,6 @@ const UnclosedRemarks: React.FC = () => {
   }, []);
 
   useEffect(() => { loadRemarks(); }, [loadRemarks]);
-  useEffect(() => subscribeToRemarkStatusChanged(loadRemarks), [loadRemarks]);
   useEffect(() => { setPage(1); }, [searchQuery]);
 
   const markAsDone = useCallback(async (remarkId: string) => {
@@ -76,20 +74,20 @@ const UnclosedRemarks: React.FC = () => {
     setSearchParams(next, { replace: true });
   }, [searchQuery, setSearchParams]);
 
-  const openCount = remarks.filter((r) => r.status === 'open').length;
-  const pendingCount = remarks.filter((r) => r.status === 'pending').length;
-
   const filtered = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    if (!q) return remarks;
-    return remarks.filter(
-      (r) =>
+    return remarks
+      .filter((r) => r.status !== 'closed')
+      .filter((r) => !q ||
         r.customerName.toLowerCase().includes(q) ||
         r.customerPhone.toLowerCase().includes(q) ||
         r.trackingId.toLowerCase().includes(q) ||
         r.subject.toLowerCase().includes(q),
-    );
+      );
   }, [remarks, searchQuery]);
+
+  const openCount = filtered.filter((r) => r.status === 'open').length;
+  const pendingCount = filtered.filter((r) => r.status === 'pending').length;
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const visible = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
@@ -144,14 +142,16 @@ const UnclosedRemarks: React.FC = () => {
             <Button variant="outline" size="sm" onClick={() => navigate(`/remarks/${r.id}`)}>
               <Eye size={14} /> View
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => markAsDone(r.id)}
-              disabled={markingDoneId === r.id}
-            >
-              <CheckCircle2 size={14} /> {markingDoneId === r.id ? 'Saving…' : 'Mark as Done'}
-            </Button>
+            {r.status !== 'closed' && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => markAsDone(r.id)}
+                disabled={markingDoneId === r.id}
+              >
+                <CheckCircle2 size={14} /> {markingDoneId === r.id ? 'Saving…' : 'Mark as Done'}
+              </Button>
+            )}
           </div>
         ),
         width: '240px',
@@ -169,7 +169,7 @@ const UnclosedRemarks: React.FC = () => {
 
       <div className="ucr-stats">
         <div className="ucr-stat-chip">
-          <span className="ucr-stat-value">{remarks.length}</span>
+          <span className="ucr-stat-value">{filtered.length}</span>
           <span className="ucr-stat-label">Total unclosed</span>
         </div>
         <div className="ucr-stat-chip ucr-stat-open">

@@ -50,6 +50,20 @@
   border-radius: var(--border-radius-modal);
 }
 
+/* ── Status toggle cell ─────────────────────────────────────────────── */
+
+.admin-status-cell {
+  align-items: center;
+  display: flex;
+  gap: var(--space-2);
+}
+
+.admin-status-error {
+  color: var(--color-text-danger, #dc2626);
+  font-size: var(--font-size-sm);
+  margin-bottom: var(--space-4);
+}
+
 /* ── Delegated permissions modal (super_admin only) ─────────────────────── */
 
 .admin-permission-chips {

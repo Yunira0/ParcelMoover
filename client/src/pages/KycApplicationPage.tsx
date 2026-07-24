@@ -96,7 +96,6 @@ const KycApplicationPage: React.FC = () => {
     }
     if (step === 2) {
       if (!form.citizenshipDoc) return 'Citizenship document is required';
-      if (!form.panVatDoc) return 'PAN / VAT document is required';
     }
     return '';
   };
@@ -293,7 +292,7 @@ const KycApplicationPage: React.FC = () => {
               <h3>Documents &amp; Review</h3>
               <div className="kyc-grid">
                 <FileField label="Citizenship" required file={form.citizenshipDoc} onChange={setFile('citizenshipDoc')} />
-                <FileField label="PAN / VAT Document" required file={form.panVatDoc} onChange={setFile('panVatDoc')} />
+                <FileField label="PAN / VAT Document" file={form.panVatDoc} onChange={setFile('panVatDoc')} />
                 <FileField label="Business Certificate" file={form.businessCertDoc} onChange={setFile('businessCertDoc')} />
               </div>
               <div className="kyc-review">
