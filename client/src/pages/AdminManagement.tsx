@@ -8,7 +8,7 @@ import SegmentedTabs from '../components/SegmentedTabs';
 import StatusChip from '../components/StatusChip';
 import Button from '../components/Button';
 import ToggleSwitch from '../components/ToggleSwitch';
-import { getAdmins, updateAdminPermissions, updateAdminRole, ADMIN_PERMISSIONS } from '../services/users.service';
+import { getAdmins, updateAdminPermissions, updateAdminRole, updateUserStatus, ADMIN_PERMISSIONS } from '../services/users.service';
 import { getCurrentUserRoles, hasAdminPermission } from '../utils/auth';
 import '../components/Modal.css';
 import './AdminManagement.css';
@@ -52,6 +52,10 @@ const AdminManagement: React.FC = () => {
   const [superAdminDraft, setSuperAdminDraft] = useState(false);
   const [permSaving, setPermSaving] = useState(false);
   const [permError, setPermError] = useState('');
+
+  // Status toggle
+  const [statusSavingIds, setStatusSavingIds] = useState<Set<string>>(new Set());
+  const [statusError, setStatusError] = useState('');
 
   const loadAdmins = async () => {
     try {
@@ -110,6 +114,27 @@ const AdminManagement: React.FC = () => {
     }
   };
 
+  // Optimistic toggle: flip the row immediately, revert if the server rejects it.
+  const toggleAdminStatus = async (admin: AdminUser) => {
+    const nextStatus = admin.status === 'active' ? 'inactive' : 'active';
+    setStatusError('');
+    setStatusSavingIds(prev => new Set(prev).add(admin.id));
+    setAdmins(prev => prev.map(a => (a.id === admin.id ? { ...a, status: nextStatus } : a)));
+    try {
+      await updateUserStatus('admin', admin.id, nextStatus);
+    } catch (err) {
+      console.error('Failed to update admin status:', err);
+      setAdmins(prev => prev.map(a => (a.id === admin.id ? { ...a, status: admin.status } : a)));
+      setStatusError(`Failed to set ${admin.name} ${nextStatus}. Please try again.`);
+    } finally {
+      setStatusSavingIds(prev => {
+        const next = new Set(prev);
+        next.delete(admin.id);
+        return next;
+      });
+    }
+  };
+
   const columns = [
     { header: 'SN', accessor: 'sn' as keyof AdminUser, width: '50px' },
     { header: 'NAME', accessor: 'name' as keyof AdminUser },
@@ -140,10 +165,19 @@ const AdminManagement: React.FC = () => {
     {
       header: 'STATUS',
       accessor: (item: AdminUser) => (
-        <StatusChip variant="solid" tone={item.status === 'active' ? 'success' : 'danger'}>
-          {item.status}
-        </StatusChip>
-      )
+        <div className="admin-status-cell">
+          <ToggleSwitch
+            checked={item.status === 'active'}
+            disabled={statusSavingIds.has(item.id)}
+            onChange={() => toggleAdminStatus(item)}
+            ariaLabel={`Set ${item.name} ${item.status === 'active' ? 'inactive' : 'active'}`}
+          />
+          <StatusChip variant="solid" tone={item.status === 'active' ? 'success' : 'danger'}>
+            {item.status}
+          </StatusChip>
+        </div>
+      ),
+      width: '150px'
     },
     // Editing fellow admins is MANAGE_USERS-gated server-side, so admins
     // without the grant get a read-only listing with no dead action buttons.
@@ -220,6 +254,8 @@ const AdminManagement: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {statusError && <p className="admin-status-error">{statusError}</p>}
 
       {loading ? (
         <div className="loading-state">Loading admins...</div>

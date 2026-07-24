@@ -62,10 +62,9 @@ function validateKycInput(input: KycApplicationInput) {
   if (!input.ownerContact?.trim()) throw new AppError(400, "Owner contact number is required");
   if (!PHONE_REGEX.test(input.ownerContact.trim())) throw new AppError(400, "Enter a valid Nepali mobile number");
 
-  // Citizenship and PAN/VAT scans are mandatory to verify against; the business
-  // certificate stays optional.
+  // Citizenship is mandatory to verify against; PAN/VAT and business
+  // certificate scans are optional.
   if (!input.citizenshipDocPath) throw new AppError(400, "Citizenship document is required");
-  if (!input.panVatDocPath) throw new AppError(400, "PAN/VAT document is required");
 
   const shortFields: Array<[string, string | undefined]> = [
     ["Online business name", input.onlineBusinessName],
