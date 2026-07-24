@@ -61,7 +61,7 @@ COPY --from=server-build /app/prisma ./prisma
 COPY --from=server-build /app/prisma.config.ts ./prisma.config.ts
 # server.ts does `express.static("public")` — this is where the built SPA lives.
 COPY --from=client-build /app/client/dist ./public
-COPY --from=rider-build /app/rider/dist ./public/rider 
+COPY --from=rider-build /app/rider/dist ./public/.rider 
 
 RUN mkdir -p uploads && chown -R app:app /app
 USER app

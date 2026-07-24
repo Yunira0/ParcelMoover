@@ -81,7 +81,7 @@ app.use(express.json({ limit: "1mb" }));
 app.use(cookiesParser());
 // app.use(express.static("public"));
 app.use((req, res, next) => {
-  const root = req.hostname.includes("sslip.io") ? "public/rider" : "public";
+  const root = req.hostname.includes("sslip.io") ? "public/.rider" : "public";
   express.static(root)(req, res, next);
 });
 
@@ -217,7 +217,7 @@ app.use((req, res, next) => {
       });
     }
     // SPA routes: serve rider index.html
-    return res.sendFile("index.html", { root: "public/rider" });
+    return res.sendFile("index.html", { root: "public/.rider" });
   }
   // A path with a file extension is a missing static asset — typically a
   // hashed JS/CSS chunk from a previous deploy that an open tab still
