@@ -4,7 +4,7 @@ import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 
 export default defineConfig({
-  base: 'rider',
+  base: '/',
   server: {
     port: 5200,
     strictPort: true,
@@ -39,8 +39,8 @@ export default defineConfig({
         background_color: '#111827',
         display: 'standalone',
         orientation: 'portrait',
-        scope: 'rider',
-        start_url: 'rider',
+        scope: '/',
+        start_url: '/',
         // These PNGs aren't padded with a maskable safe zone, so they only
         // declare "any" — claiming "maskable" on an unpadded icon lets
         // Android crop into the artwork on adaptive-icon home screens.

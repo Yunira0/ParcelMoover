@@ -79,10 +79,14 @@ app.use(cors({
 }));
 app.use(express.json({ limit: "1mb" }));
 app.use(cookiesParser());
-app.use(express.static("public"));
+// app.use(express.static("public"));
+app.use((req, res, next) => {
+  const root = req.hostname.includes("sslip.io") ? "public/rider" : "public";
+  express.static(root)(req, res, next);
+});
 
 // ADD: Serve rider PWA
-app.use("/rider", express.static("public/rider"));
+// app.use("/rider", express.static("public/rider"));
 
 // Liveness/readiness probe for load balancers and container orchestration -
 // deliberately ahead of rate limiting/auth so it's always fast and unthrottled.
