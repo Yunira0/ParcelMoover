@@ -74,7 +74,7 @@ function PublicLayout() {
 export default function App() {
   return (
     <AuthProvider>
-      <BrowserRouter basename='/rider'>
+      <BrowserRouter>
         <OfflineBanner />
         <AuthRouter />
       </BrowserRouter>

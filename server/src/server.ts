@@ -204,6 +204,17 @@ app.use((req, res, next) => {
   if (req.method !== "GET" || req.path.startsWith("/api") || req.path.startsWith("/uploads")) {
     return next();
   }
+  // Rider PWA domain — serve from /public/rider
+  if (req.hostname.includes("sslip.io")) {
+    if (path.extname(req.path) !== "") {
+      // Static assets: serve from rider directory
+      return res.sendFile(req.path, { root: "public/rider" }, (err) => {
+        if (err) return res.status(404).end();
+      });
+    }
+    // SPA routes: serve rider index.html
+    return res.sendFile("index.html", { root: "public/rider" });
+  }
   // A path with a file extension is a missing static asset — typically a
   // hashed JS/CSS chunk from a previous deploy that an open tab still
   // references — not a client-side route. Answering it with index.html makes
@@ -211,11 +222,6 @@ app.use((req, res, next) => {
   // a clean 404 lets the client detect the stale deploy and recover.
   if (path.extname(req.path) !== "") {
     return res.status(404).end();
-  }
-
-  // ADD: Handle rider routes
-  if (req.path.startsWith("/rider")) {
-    return res.sendFile("index.html", {root: "public"});
   }
   res.sendFile("index.html", { root: "public" });
 });
