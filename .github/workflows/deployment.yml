@@ -71,13 +71,14 @@ jobs:
         run: |
           npm ci
           npm run build
+          
 
       # Add after "Install client deps & build" step
       - name: Install rider deps & build
-      working-directory: rider
-      run: |
-      npm ci
-      npm run build
+        working-directory: rider
+        run: |
+          npm ci
+          npm run build
 
   # ── Stage 2: build the image HERE, not on the 1GB production box.
   # Building on the server OOM-killed it on 2026-07-16 and locked out SSH.
