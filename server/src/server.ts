@@ -68,6 +68,8 @@ app.use(helmet({
       ...helmet.contentSecurityPolicy.getDefaultDirectives(),
       "upgrade-insecure-requests": null,
       "img-src": ["'self'", "data:", "https://images.unsplash.com"],
+      // SheetJS (xlsx) creates web workers from blob URLs for parsing.
+      "worker-src": ["'self'", "blob:"],
     },
   },
 }));
