@@ -8,7 +8,7 @@ Everything needed to deploy, back up, roll back, and rebuild production from scr
 Your Mac (~/parcelmoover-beta, git repo — source of truth)
    │  rsync (git archive HEAD → staging → /opt/parcelmoover, no --delete)
    ▼
-EC2 ubuntu@51.21.199.242  (domain: 51-21-199-242.sslip.io)
+EC2 ubuntu@<YOUR_EC2_IP>  (domain: portal.parcelmoover.com)
    /opt/parcelmoover          ← synced source, used only at build time (no .git!)
    docker build → parcelmoover:latest
    docker compose (deploy/docker-compose.prod.yml):
@@ -16,13 +16,13 @@ EC2 ubuntu@51.21.199.242  (domain: 51-21-199-242.sslip.io)
      deploy-db-1     postgres 16, volume deploy_db-data   (external, REAL DATA)
      deploy-redis-1  redis 7
    nginx: TLS on 80/443 → proxy to 127.0.0.1:3000
-   Rider PWA: static at /var/www/rider-pwa (nginx-served, NOT in Docker)
+   Rider PWA: served at /rider by Express from public/.rider (inside Docker)
 ```
 
 SSH access:
 
 ```bash
-ssh -i ~/Documents/dep/paecelmoover.pem ubuntu@51.21.199.242
+ssh -i ~/Documents/dep/paecelmoover.pem ubuntu@<YOUR_EC2_IP>
 # filename really is "paecelmoover.pem"; chmod 400 it if perms error
 ```
 
@@ -83,8 +83,8 @@ Push to `main` (or trigger manually from the Actions tab) and the pipeline runs:
 cd ~/parcelmoover-beta
 TMP=$(mktemp -d) && git archive HEAD | tar -x -C "$TMP"
 rsync -az -e "ssh -i ~/Documents/dep/paecelmoover.pem" \
-  "$TMP"/ ubuntu@51.21.199.242:/opt/parcelmoover-staging/
-ssh -i ~/Documents/dep/paecelmoover.pem ubuntu@51.21.199.242 '
+  "$TMP"/ ubuntu@<YOUR_EC2_IP>:/opt/parcelmoover-staging/
+ssh -i ~/Documents/dep/paecelmoover.pem ubuntu@<YOUR_EC2_IP> '
   rsync -a /opt/parcelmoover-staging/ /opt/parcelmoover/ &&
   cd /opt/parcelmoover &&
   sudo docker build -t parcelmoover:latest . &&
@@ -92,13 +92,11 @@ ssh -i ~/Documents/dep/paecelmoover.pem ubuntu@51.21.199.242 '
     --env-file deploy/.env.production up -d'
 ```
 
-### Rider PWA (separate — no Docker involved)
+### Rider PWA
 
-```bash
-cd rider && npm run build
-rsync -az -e "ssh -i ~/Documents/dep/paecelmoover.pem" \
-  dist/ ubuntu@51.21.199.242:/var/www/rider-pwa/
-```
+The Rider PWA is built into the Docker image (at `public/.rider`) and served
+by Express at `portal.parcelmoover.com/rider`. No separate deployment step —
+`docker build` handles it.
 
 ## Never do
 

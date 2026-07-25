@@ -81,12 +81,17 @@ app.use(express.json({ limit: "1mb" }));
 app.use(cookiesParser());
 // app.use(express.static("public"));
 app.use((req, res, next) => {
-  const root = req.hostname.includes("sslip.io") ? "public/.rider" : "public";
-  express.static(root)(req, res, next);
+  if (req.path.startsWith("/rider")) {
+    const originalUrl = req.url;
+    req.url = req.url.replace(/^\/rider/, '') || '/';
+    express.static("public/.rider")(req, res, (err) => {
+      req.url = originalUrl;
+      if (err) return next(err);
+    });
+  } else {
+    express.static("public")(req, res, next);
+  }
 });
-
-// ADD: Serve rider PWA
-// app.use("/rider", express.static("public/rider"));
 
 // Liveness/readiness probe for load balancers and container orchestration -
 // deliberately ahead of rate limiting/auth so it's always fast and unthrottled.
@@ -208,22 +213,17 @@ app.use((req, res, next) => {
   if (req.method !== "GET" || req.path.startsWith("/api") || req.path.startsWith("/uploads")) {
     return next();
   }
-  // Rider PWA domain — serve from /public/rider
-  if (req.hostname.includes("sslip.io")) {
-    if (path.extname(req.path) !== "") {
-      // Static assets: serve from rider directory
-      return res.sendFile(req.path, { root: "public/rider" }, (err) => {
+
+  if (req.path.startsWith("/rider")) {
+    const stripped = req.path.replace(/^\/rider/, '') || '/';
+    if (path.extname(stripped) !== "") {
+      return res.sendFile(stripped, { root: "public/.rider" }, (err) => {
         if (err) return res.status(404).end();
       });
     }
-    // SPA routes: serve rider index.html
     return res.sendFile("index.html", { root: "public/.rider" });
   }
-  // A path with a file extension is a missing static asset — typically a
-  // hashed JS/CSS chunk from a previous deploy that an open tab still
-  // references — not a client-side route. Answering it with index.html makes
-  // the browser fail with "'text/html' is not a valid JavaScript MIME type";
-  // a clean 404 lets the client detect the stale deploy and recover.
+
   if (path.extname(req.path) !== "") {
     return res.status(404).end();
   }
