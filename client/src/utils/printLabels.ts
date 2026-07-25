@@ -3,12 +3,16 @@ import JsBarcode from 'jsbarcode';
 import type { Order } from '../services/orders.service';
 import { toBsDate } from './nepaliDate';
 
-const WEBSITE_URL = 'www.parcelmoover.com';
-
 const ORDER_TYPE_LABELS: Record<string, string> = {
   delivery: 'DELIVERY',
   exchange: 'EXCHANGE',
   return: 'RETURN',
+};
+
+const TYPE_COLORS: Record<string, { bg: string; text: string }> = {
+  delivery: { bg: '#d1fae5', text: '#065f46' },
+  exchange: { bg: '#dbeafe', text: '#1e40af' },
+  return: { bg: '#fee2e2', text: '#991b1b' },
 };
 
 const fmt = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: 0 });
@@ -20,84 +24,69 @@ function barcodeDataUrl(trackingId: string): string {
     format: 'CODE128',
     displayValue: false,
     margin: 0,
-    height: 40,
-    width: 2,
+    height: 55,
+    width: 1.8,
   });
   return canvas.toDataURL('image/png');
 }
 
 function labelHtml(order: Order, qrDataUrl: string, barcodeUrl: string): string {
   const typeLabel = ORDER_TYPE_LABELS[order.orderType] ?? order.orderType.toUpperCase();
-  const codLine = order.codAmount > 0 ? `NPR ${fmt(order.codAmount)}` : 'No COD';
+  const typeColor = TYPE_COLORS[order.orderType] ?? { bg: '#f3f4f6', text: '#374151' };
+  const codLine = order.codAmount > 0 ? `NPR ${fmt(order.codAmount)}` : '—';
   const weightLine = order.weightKg ? `${order.weightKg} kg` : '—';
   const packageLine = order.packageType || '—';
+  const destination = esc(order.destinationName || order.destination);
+  const valleyLabel = order.destinationValley === 'inside' ? 'Inside Valley' : order.destinationValley === 'outside' ? 'Outside Valley' : '';
+  const addrParts = [order.destinationName, order.receiverAddress].filter(Boolean);
+  const fullAddress = addrParts.length > 0 ? esc(addrParts.join(', ')) : '—';
 
   return `
 <div class="label">
-  <div class="label-header">
-    <div class="brand-block">
-      <div class="brand">ParcelMoover</div>
-      <div class="website">${esc(WEBSITE_URL)}</div>
+  <div class="hdr">
+    <div class="brand">
+      <div class="brand-name">ParcelMoover</div>
+      <div class="brand-url">portal.parcelmoover.com</div>
     </div>
-    <div class="type-badge type-${order.orderType}">${typeLabel}</div>
+    <div class="badge" style="background:${typeColor.bg};color:${typeColor.text}">${typeLabel}</div>
   </div>
 
-  <div class="meta-row">
-    <span class="meta-item">Order #${esc(String(order.orderNumber))}</span>
-    <span class="tracking-id">${esc(order.trackingId)}</span>
+  <div class="track">
+    <span class="order-num">Order #${esc(String(order.orderNumber))}</span>
+    <span class="track-id">${esc(order.trackingId)}</span>
   </div>
 
-  <div class="route-row">
+  <div class="route">
     <span class="route-hub">${esc(order.origin)}</span>
-    <span class="route-arrow">&#8594;</span>
-    <span class="route-hub">${esc(order.destinationName || order.destination)}</span>
+    <span class="route-arrow">&rarr;</span>
+    ${valleyLabel ? `<span class="route-valley">${valleyLabel} -</span>` : ''}
+    <span class="route-hub">${destination}</span>
   </div>
 
-  <div class="label-main">
-    <div class="parties">
-      <div class="party">
-        <span class="party-role">From</span>
-        <span class="party-name">${esc(order.senderName)}</span>
-      </div>
-      <div class="party-divider"></div>
-      <div class="party">
-        <span class="party-role">To</span>
-        <span class="party-location">${esc(order.receiverAddress)}</span>
-        <span class="party-name">${esc(order.receiverName)}</span>
-        <span class="party-phone">${esc(order.receiverPhone)}</span>
-      </div>
+  <div class="body">
+    <div class="from-col">
+      <span class="party-label">FROM</span>
+      <span class="party-name">${esc(order.senderName)}</span>
     </div>
-    <div class="code-block">
-      <img src="${qrDataUrl}" alt="QR ${esc(order.trackingId)}" class="qr-img" />
-      <img src="${barcodeUrl}" alt="Barcode ${esc(order.trackingId)}" class="barcode-img" />
+    <div class="to-col">
+      <span class="party-label">TO</span>
+      <span class="party-name">${esc(order.receiverName)}</span>
+      <span class="party-phone">${esc(order.receiverPhone)}</span>
+      <span class="party-addr">${fullAddress}</span>
+    </div>
+    <div class="codes">
+      <img src="${qrDataUrl}" class="qr" />
+      <img src="${barcodeUrl}" class="bc" />
     </div>
   </div>
 
-  <div class="instruction-row">
-    <span class="instruction-label">Note:</span>
-    <span class="instruction-text">${esc(order.deliveryInstruction || 'None')}</span>
-  </div>
+  ${order.deliveryInstruction ? `<div class="note"><span class="note-label">NOTE:</span> <span class="note-text">${esc(order.deliveryInstruction)}</span></div>` : ''}
 
-  <div class="label-footer">
-    <div class="footer-item">
-      <span class="footer-label">COD</span>
-      <span class="footer-value">${codLine}</span>
-    </div>
-    <div class="footer-divider"></div>
-    <div class="footer-item">
-      <span class="footer-label">Weight</span>
-      <span class="footer-value">${weightLine}</span>
-    </div>
-    <div class="footer-divider"></div>
-    <div class="footer-item">
-      <span class="footer-label">Package</span>
-      <span class="footer-value">${esc(packageLine)}</span>
-    </div>
-    <div class="footer-divider"></div>
-    <div class="footer-item">
-      <span class="footer-label">Date</span>
-      <span class="footer-value">${fmtDate(order.createdAt)}</span>
-    </div>
+  <div class="foot">
+    <div class="fc"><span class="fk">COD</span><span class="fv">${codLine}</span></div>
+    <div class="fc"><span class="fk">WEIGHT</span><span class="fv">${weightLine}</span></div>
+    <div class="fc"><span class="fk">PACKAGE</span><span class="fv">${esc(packageLine)}</span></div>
+    <div class="fc"><span class="fk">DATE</span><span class="fv">${fmtDate(order.createdAt)}</span></div>
   </div>
 </div>`;
 }
@@ -111,268 +100,160 @@ function esc(str: string) {
 }
 
 const CSS = `
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: #fff; font-family: Arial, sans-serif; }
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#fff;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif}
 
-  .label {
-    width: 100mm;
-    height: 75mm;
-    border: 1px solid #000;
-    display: flex;
-    flex-direction: column;
-    padding: 3mm;
-    overflow: hidden;
-  }
+.label{
+  width:100mm;height:75mm;
+  border:2px solid #000;
+  display:flex;flex-direction:column;
+  padding:0;overflow:hidden;
+  page-break-after:always;break-after:page;
+  background:#fff;
+}
 
-  .label-header {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 4px;
-    padding-bottom: 1.5mm;
-    border-bottom: 1px solid #000;
-  }
+/* ── Header ── */
+.hdr{
+  display:flex;align-items:flex-start;justify-content:space-between;
+  padding:2.5mm 3.5mm 2mm;
+  border-bottom:2px solid #000;
+}
+.brand-name{font-size:15px;font-weight:800;color:#000;line-height:1.1}
+.brand-url{font-size:8px;color:#6b7280;line-height:1.15;margin-top:0.2mm}
+.badge{
+  font-size:9px;font-weight:700;
+  padding:1mm 3mm;
+  border-radius:2.5mm;
+  text-transform:uppercase;letter-spacing:0.3px;
+  white-space:nowrap;
+}
 
-  .brand-block {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5px;
-  }
+/* ── Tracking ── */
+.track{
+  display:flex;align-items:baseline;justify-content:space-between;
+  padding:2mm 3.5mm;
+  border-bottom:1px dashed #ccc;
+}
+.order-num{font-size:10px;font-weight:600;color:#374151}
+.track-id{
+  font-size:13px;font-weight:900;letter-spacing:0.8px;
+  font-family:'Courier New',Consolas,monospace;
+  color:#000;line-height:1.15;
+  overflow-wrap:break-word;
+  word-break:normal;
+  text-align:right;
+}
 
-  .brand {
-    font-size: 11px;
-    font-weight: 800;
-    letter-spacing: 0.3px;
-    white-space: nowrap;
-  }
+/* ── Route ── */
+.route{
+  display:flex;align-items:center;justify-content:center;
+  padding:2mm 3.5mm;
+  gap:3mm;
+  border-bottom:2px solid #000;
+}
+.route-hub{
+  font-size:12px;font-weight:800;color:#000;
+  letter-spacing:0.5px;text-transform:uppercase;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  max-width:40%;
+}
+.route-arrow{font-size:14px;color:#000;font-weight:400;flex-shrink:0}
+.route-valley{
+  font-size:9px;font-weight:700;color:#374151;
+  text-transform:uppercase;letter-spacing:0.3px;
+  white-space:nowrap;flex-shrink:0;
+}
 
-  .website {
-    font-size: 7px;
-    color: #555;
-    letter-spacing: 0.2px;
-  }
+/* ── Body ── */
+.body{
+  display:flex;flex:1;gap:0;
+  padding:2mm 3.5mm;min-height:0;
+  overflow:hidden;
+}
+.from-col{
+  flex:0 0 26%;display:flex;flex-direction:column;
+  gap:0.3mm;min-width:0;
+  padding-right:2.5mm;
+  overflow:hidden;
+}
+.to-col{
+  flex:1;display:flex;flex-direction:column;
+  gap:0.3mm;min-width:0;
+  padding-left:2.5mm;
+  border-left:1.5px solid #000;
+  overflow:hidden;
+}
+.party-label{
+  font-size:6.5px;font-weight:700;color:#6b7280;
+  text-transform:uppercase;letter-spacing:1.2px;
+  line-height:1;
+}
+.party-name{
+  font-size:13px;font-weight:800;color:#000;
+  line-height:1.2;word-wrap:break-word;overflow-wrap:break-word;
+  hyphens:auto;
+}
+.party-phone{
+  font-size:10.5px;font-weight:600;color:#374151;
+  font-family:'Courier New',Consolas,monospace;
+  letter-spacing:0.5px;line-height:1.2;
+}
+.party-addr{
+  font-size:8.5px;font-weight:600;color:#6b7280;
+  line-height:1.25;word-wrap:break-word;overflow-wrap:break-word;
+  hyphens:auto;
+  text-transform:uppercase;
+}
+.codes{
+  flex-shrink:0;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:1.5mm;
+  padding-left:2.5mm;border-left:1.5px solid #000;
+}
+.qr{width:18mm;height:18mm;display:block}
+.bc{width:22mm;height:7mm;display:block}
 
-  .type-badge {
-    font-size: 8px;
-    font-weight: 700;
-    padding: 2px 6px;
-    border-radius: 8px;
-    letter-spacing: 0.3px;
-    text-transform: uppercase;
-    white-space: nowrap;
-  }
-  .type-delivery  { background: #d1fae5; color: #065f46; }
-  .type-return    { background: #fee2e2; color: #991b1b; }
-  .type-exchange  { background: #fef3c7; color: #92400e; }
+/* ── Note ── */
+.note{
+  padding:1.5mm 3.5mm;
+  border-top:1px dashed #ccc;
+}
+.note-label{font-size:9px;font-weight:700;color:#374151}
+.note-text{
+  font-size:9px;color:#374151;font-style:italic;
+  line-height:1.2;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;
+  overflow:hidden;
+}
 
-  .meta-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 1.5mm 0;
-    border-bottom: 1px dashed #999;
-  }
+/* ── Footer ── */
+.foot{
+  display:flex;align-items:stretch;
+  padding:2mm 3.5mm;
+  border-top:2px solid #000;
+  gap:0;
+}
+.fc{
+  flex:1;display:flex;flex-direction:column;
+  align-items:center;gap:0;
+  padding:0 1.5mm;
+  border-right:1px solid #d1d5db;
+}
+.fc:last-child{border-right:none}
+.fk{
+  font-size:6px;color:#6b7280;text-transform:uppercase;
+  letter-spacing:0.5px;font-weight:700;line-height:1;
+}
+.fv{
+  font-size:10px;font-weight:800;color:#000;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  max-width:100%;line-height:1.3;
+}
 
-  .meta-item {
-    font-size: 9px;
-    font-weight: 700;
-    color: #333;
-  }
-
-  .tracking-id {
-    font-size: 13px;
-    font-weight: 900;
-    letter-spacing: 1px;
-    font-family: 'Courier New', monospace;
-  }
-
-  .route-row {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 5px;
-    padding: 1.5mm 0;
-    border-bottom: 1px solid #000;
-  }
-
-  .route-hub {
-    font-size: 10px;
-    font-weight: 700;
-    color: #000;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    max-width: 38mm;
-  }
-
-  .route-arrow {
-    font-size: 10px;
-    color: #666;
-  }
-
-  .label-main {
-    display: flex;
-    flex: 1;
-    align-items: center;
-    gap: 3mm;
-    padding: 1.5mm 0;
-  }
-
-  .parties {
-    flex: 1;
-    display: flex;
-    align-items: stretch;
-    gap: 3mm;
-    min-width: 0;
-  }
-
-  .party {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    gap: 1px;
-    min-width: 0;
-  }
-
-  .party-divider {
-    width: 1px;
-    background: #ccc;
-  }
-
-  .party-role {
-    font-size: 7px;
-    font-weight: 700;
-    color: #666;
-    letter-spacing: 1px;
-    text-transform: uppercase;
-  }
-
-  .party-location {
-    font-size: 8px;
-    font-weight: 700;
-    color: #555;
-    text-transform: uppercase;
-    letter-spacing: 0.2px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .party-name {
-    font-size: 12px;
-    font-weight: 700;
-    color: #000;
-    line-height: 1.25;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .party-phone {
-    font-size: 10px;
-    color: #333;
-  }
-
-  .code-block {
-    flex-shrink: 0;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 1.5mm;
-    padding-left: 3mm;
-    border-left: 1px solid #000;
-  }
-
-  .qr-img {
-    width: 18mm;
-    height: 18mm;
-    display: block;
-  }
-
-  .barcode-img {
-    width: 20mm;
-    height: 7mm;
-    display: block;
-  }
-
-  .instruction-row {
-    display: flex;
-    align-items: baseline;
-    gap: 4px;
-    padding: 1.5mm 0;
-    border-top: 1px dashed #999;
-    overflow: hidden;
-  }
-
-  .instruction-label {
-    font-size: 8px;
-    font-weight: 700;
-    color: #666;
-    text-transform: uppercase;
-    letter-spacing: 0.3px;
-    white-space: nowrap;
-  }
-
-  .instruction-text {
-    font-size: 9px;
-    color: #333;
-    font-style: italic;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .label-footer {
-    display: flex;
-    align-items: center;
-    padding-top: 2mm;
-    border-top: 1px solid #000;
-    gap: 0;
-  }
-
-  .footer-item {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 1px;
-  }
-
-  .footer-divider {
-    width: 1px;
-    height: 18px;
-    background: #ccc;
-  }
-
-  .footer-label {
-    font-size: 7px;
-    color: #777;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    font-weight: 600;
-  }
-
-  .footer-value {
-    font-size: 10px;
-    font-weight: 700;
-    color: #000;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  @media print {
-    body { margin: 0; }
-    .label { border: 1px solid #000; }
-    /* Each label is its own physical page, not one continuous strip - every
-       label but the last forces a page break right after it. */
-    .label:not(:last-child) {
-      page-break-after: always;
-      break-after: page;
-    }
-  }
+@media print{
+  body{margin:0}
+  .label{border:2px solid #000}
+  .label:not(:last-child){page-break-after:always;break-after:page}
+}
 `;
 
 function printMediaCss(): string {
@@ -389,9 +270,6 @@ function printMediaCss(): string {
 export async function printLabels(orders: Order[]): Promise<void> {
   if (orders.length === 0) return;
 
-  // Open the window synchronously, still inside the click's call stack -
-  // popup blockers (Safari especially) kill window.open() called after an
-  // await, even a fast one, so this can't wait for the QR/barcode data first.
   const win = window.open('', '_blank', 'width=480,height=420');
   if (!win) {
     alert('Please allow popups for this site to print labels.');
@@ -400,18 +278,13 @@ export async function printLabels(orders: Order[]): Promise<void> {
 
   const qrUrls = await Promise.all(
     orders.map((o) =>
-      QRCode.toDataURL(o.trackingId, { width: 240, margin: 1, color: { dark: '#000000', light: '#ffffff' } }),
+      QRCode.toDataURL(o.trackingId, { width: 260, margin: 1, color: { dark: '#000000', light: '#ffffff' } }),
     ),
   );
   const barcodeUrls = orders.map((o) => barcodeDataUrl(o.trackingId));
 
   const labelsMarkup = orders.map((o, i) => labelHtml(o, qrUrls[i]!, barcodeUrls[i]!)).join('\n');
 
-  // Print as soon as this one document finishes loading - no "Preparing…"
-  // placeholder page, and only a single document.write() pass. A prior
-  // placeholder write followed by a second open()/write() left the popup's
-  // `load` event firing unreliably, sometimes leaving it sitting unprinted
-  // until the user manually hit Ctrl/Cmd+P.
   win.onload = () => {
     win.focus();
     win.print();

@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { ChevronDown, Plus, MapPin, Trash2, X, Pencil, Check } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { ChevronDown, Plus, MapPin, Search, Trash2, X, Pencil, Check } from 'lucide-react';
 import Button from '../../components/Button';
 import FormField from '../../components/FormField';
 import Pagination from '../../components/Pagination';
@@ -36,6 +36,7 @@ const DestinationsSettings: React.FC = () => {
 
   const [showTrash, setShowTrash] = useState(false);
   const [page, setPage] = useState(1);
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Inline area edit: id being edited + working name
   const [editArea, setEditArea] = useState<{ id: string; name: string } | null>(null);
@@ -117,17 +118,14 @@ const DestinationsSettings: React.FC = () => {
     if (names.length === 0) return;
     setSavingArea(destId);
     setError('');
-    const failed: string[] = [];
-    for (const name of names) {
-      try {
-        await createLocation({ name, parentId: destId });
-      } catch {
-        failed.push(name);
-      }
-    }
+
+    const results = await Promise.allSettled(
+      names.map((name) => createLocation({ name, parentId: destId })),
+    );
+
+    const failed = names.filter((_, i) => results[i].status === 'rejected');
     if (failed.length > 0) {
       setError(`Failed to add: ${failed.join(', ')}`);
-      // Keep only the failed names in the input so they can be retried.
       setAreaInputs((prev) => ({ ...prev, [destId]: failed.join(', ') }));
     } else {
       setAreaInputs((prev) => ({ ...prev, [destId]: '' }));
@@ -181,10 +179,24 @@ const DestinationsSettings: React.FC = () => {
   const activeDests = destinations.filter((d) => d.isActive);
   const trashedDests = destinations.filter((d) => !d.isActive);
 
-  const totalPages = Math.max(1, Math.ceil(activeDests.length / PAGE_SIZE));
+  const filteredActive = useMemo(() => {
+    if (!searchQuery.trim()) return activeDests;
+    const q = searchQuery.toLowerCase();
+    return activeDests.filter(
+      (d) =>
+        d.name.toLowerCase().includes(q) ||
+        (d.code && d.code.toLowerCase().includes(q)) ||
+        d.areas.some((a) => a.name.toLowerCase().includes(q)),
+    );
+  }, [activeDests, searchQuery]);
+
+  // Reset to page 1 when search query changes.
+  useEffect(() => { setPage(1); }, [searchQuery]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredActive.length / PAGE_SIZE));
   // Clamp instead of resetting state so deletes on the last page don't strand it.
   const currentPage = Math.min(page, totalPages);
-  const pagedDests = activeDests.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  const pagedDests = filteredActive.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
   return (
     <div className="dest-settings">
@@ -197,6 +209,24 @@ const DestinationsSettings: React.FC = () => {
           <Plus size={16} /> Add Destination
         </Button>
       </div>
+
+      {!loading && destinations.length > 0 && (
+        <div className="dest-search">
+          <Search size={15} className="dest-search-icon" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search destinations, codes, or areas…"
+            className="dest-search-input"
+          />
+          {searchQuery && (
+            <button type="button" className="dest-search-clear" onClick={() => setSearchQuery('')}>
+              <X size={14} />
+            </button>
+          )}
+        </div>
+      )}
 
       {showDestForm && (
         <form className="dest-form" onSubmit={addDestination}>
@@ -236,6 +266,8 @@ const DestinationsSettings: React.FC = () => {
         <>
         {activeDests.length === 0 ? (
           <p className="dest-muted">All destinations are in the trash. Restore one below to use it again.</p>
+        ) : filteredActive.length === 0 ? (
+          <p className="dest-muted">No destinations match "{searchQuery}".</p>
         ) : (
         <div className="dest-list">
           {pagedDests.map((dest) => (
@@ -409,13 +441,13 @@ const DestinationsSettings: React.FC = () => {
         </div>
         )}
 
-        {activeDests.length > PAGE_SIZE && (
+        {filteredActive.length > PAGE_SIZE && (
           <Pagination
             page={currentPage}
             totalPages={totalPages}
             onPageChange={setPage}
             ariaLabel="Destinations pages"
-            summary={`Showing ${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, activeDests.length)} of ${activeDests.length} destinations`}
+            summary={`Showing ${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, filteredActive.length)} of ${filteredActive.length} destinations`}
           />
         )}
 

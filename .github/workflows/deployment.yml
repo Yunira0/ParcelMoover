@@ -231,8 +231,10 @@ jobs:
               | grep -q deploy_db-data || { echo "WRONG DB VOLUME MOUNTED"; exit 1; }
 
             # old images pile up fast on a 19GB disk — keep the rollback
-            # target and current, prune the rest
-            sudo docker image prune -f >/dev/null
+            # target and current, prune the rest (including old tagged images)
+            sudo docker image prune -a -f >/dev/null
+            # also clean build cache that accumulates from manual builds
+            sudo docker builder prune -f >/dev/null 2>&1 || true
           EOF
 
       - name: Health check (retry up to 60s)
