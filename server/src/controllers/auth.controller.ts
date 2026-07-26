@@ -289,6 +289,7 @@ export const login = async (req: Request, res: Response) => {
       success: true,
       message: "Login successful",
       data: result.user,
+      accessToken: result.token,
       csrfToken,
     });
   } catch (error: any) {

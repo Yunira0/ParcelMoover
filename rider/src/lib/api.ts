@@ -2,24 +2,37 @@ import axios from 'axios'
 
 const BASE_URL = import.meta.env.VITE_API_URL ?? '/api'
 
+// ── Token storage ──────────────────────────────────────────────────────────
+// Capacitor WebView cookies are unreliable for cross-origin requests, so we
+// store the access token in localStorage and send it as a Bearer header.
+const TOKEN_KEY = 'riderToken'
+function getStoredToken(): string | null {
+  try { return localStorage.getItem(TOKEN_KEY) } catch { return null }
+}
+function setStoredToken(token: string) {
+  localStorage.setItem(TOKEN_KEY, token)
+}
+export function clearStoredToken() {
+  localStorage.removeItem(TOKEN_KEY)
+}
+
 export const api = axios.create({
   baseURL: BASE_URL,
   withCredentials: true,
   timeout: 12000,
 })
 
-// The server already sets csrfToken as a non-httpOnly cookie on login (it has
-// to be JS-readable for the double-submit pattern below to work at all) - so
-// reading it from there instead of keeping a second copy in localStorage adds
-// no XSS exposure beyond what already exists, while avoiding a manually
-// managed, easily-stale duplicate of the same value.
 function getCookie(name: string): string | null {
   const match = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`))
   return match ? decodeURIComponent(match[1]) : null
 }
 
-// Attach CSRF token from the cookie on every mutating request
+// Attach access token (Bearer) and CSRF token on every request
 api.interceptors.request.use((config) => {
+  const token = getStoredToken()
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`
+  }
   const csrf = getCookie('csrfToken')
   if (csrf && ['post', 'patch', 'put', 'delete'].includes(config.method ?? '')) {
     config.headers['X-CSRF-Token'] = csrf
@@ -67,6 +80,7 @@ api.interceptors.response.use(
     const isLoginRequest = error.config?.url?.includes('/auth/login')
     if (error.response?.status === 401 && !isLoginRequest) {
       localStorage.removeItem('rider')
+      clearStoredToken()
       onUnauthorized?.(isAccountInactiveError(error) ? 'deactivated' : undefined)
     }
 
@@ -93,6 +107,7 @@ export async function loginRider(payload: LoginPayload): Promise<RiderUser> {
     success: boolean
     message: string
     data: RiderUser
+    accessToken: string
     csrfToken: string
   }>('/auth/login', payload)
 
@@ -101,11 +116,11 @@ export async function loginRider(payload: LoginPayload): Promise<RiderUser> {
     throw new Error('Access denied. This app is for riders only.')
   }
 
-  // The login response's Set-Cookie header already wrote the csrfToken
-  // cookie the request interceptor reads from - only the profile needs a
-  // client-side cache, to hydrate AuthContext without a round trip on boot.
+  // Persist the access token for Bearer auth (cookie handling is unreliable
+  // in the Capacitor WebView's cross-origin context).
+  if (data.accessToken) setStoredToken(data.accessToken)
+
   localStorage.setItem('rider', JSON.stringify(data.data))
-  // A successful login proves the account is active again.
   clearDeactivatedFlag()
   return data.data
 }
@@ -350,13 +365,10 @@ export async function logoutRider() {
   try {
     await api.post('/auth/logout')
   } catch (err) {
-    // Best-effort: even if the server call fails (e.g. offline), still clear
-    // the local session so the app doesn't look logged in.
     console.error('Failed to revoke session on logout:', err)
   } finally {
-    // The server call above clears the csrfToken/accessToken cookies via
-    // Set-Cookie; only the profile cache is ours to clear here.
     localStorage.removeItem('rider')
+    clearStoredToken()
   }
 }
 
