@@ -43,6 +43,7 @@ export default function ScannerPage() {
   const resumeTimer = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const [cameraError,    setCameraError]    = useState<string | null>(null)
+  const [cameraKey,      setCameraKey]      = useState(0)
   const [torchOn,        setTorchOn]        = useState(false)
   const [torchSupported, setTorchSupported] = useState(false)
   const [zoomSupported,  setZoomSupported]  = useState(false)
@@ -213,56 +214,92 @@ export default function ScannerPage() {
   }, [manualMode])
 
   useEffect(() => {
+    const video = videoRef.current
+    if (!video) return
+
     const reader = new BrowserMultiFormatReader(HINTS, { delayBetweenScanAttempts: 200 })
     let mounted  = true
-
-    const startWithConstraints = async (constraints: MediaStreamConstraints) => {
-      const controls = await reader.decodeFromConstraints(
-        constraints,
-        videoRef.current!,
-        (res, err) => {
-          if (!mounted) return
-          if (res) {
-            onCodeDetected(res.getText())
-          } else if (err && !(err instanceof NotFoundException)) {
-            // IndexSizeError = canvas 0×0 at startup; harmless, ZXing recovers automatically
-            if (err.name !== 'IndexSizeError') {
-              console.warn('[scanner]', err)
-            }
-          }
-        }
-      )
-      if (!mounted) controls.stop()
-      else controlsRef.current = controls
-    }
+    let activeStream: MediaStream | null = null
 
     async function start() {
       try {
-        // 1280x720 has plenty of resolution for a QR/barcode at normal scanning
-        // distance, at under half the pixels of 1080p to decode every frame -
-        // see the HINTS comment above for why frame cost matters here.
-        await startWithConstraints({
+        // In standalone PWA mode on some mobile browsers, mediaDevices may be
+        // undefined when the page is not served over HTTPS (secure context).
+        if (!navigator.mediaDevices?.getUserMedia) {
+          setCameraError(
+            'Camera API unavailable. Make sure the app is served over HTTPS and your browser supports camera access.',
+          )
+          return
+        }
+
+        // Get camera stream ourselves — avoids @zxing/browser's internal
+        // getUserMedia + play() race conditions with React StrictMode.
+        const stream = await navigator.mediaDevices.getUserMedia({
           video: {
             facingMode: { ideal: 'environment' },
             width:  { ideal: 1280 },
             height: { ideal: 720 },
           },
         })
+        if (!mounted) { stream.getTracks().forEach(t => t.stop()); return }
+        activeStream = stream
+
+        video!.srcObject = stream
+
+        // Let zxing decode from the video element (it handles play + canvas loop)
+        const controls = await reader.decodeFromVideoElement(
+          video!,
+          (res, err) => {
+            if (!mounted) return
+            if (res) {
+              onCodeDetected(res.getText())
+            } else if (err && !(err instanceof NotFoundException)) {
+              // IndexSizeError = canvas 0×0 at startup; harmless, ZXing recovers automatically
+              // AbortError = React StrictMode cleanup interrupted play(); ignore it
+              if (err.name !== 'IndexSizeError' && err.name !== 'AbortError') {
+                console.warn('[scanner]', err)
+              }
+            }
+          }
+        )
+        if (!mounted) controls.stop()
+        else controlsRef.current = controls
       } catch (err: any) {
         if (!mounted) return
-        // Relax constraints on overconstrained / device-busy errors
+        // AbortError from React StrictMode double-mount is harmless
+        if (err.name === 'AbortError') return
+        // If preferred resolution fails, retry with any rear camera
         if (err.name === 'OverconstrainedError' || err.name === 'NotReadableError') {
           try {
-            await startWithConstraints({ video: { facingMode: 'environment' } })
+            activeStream?.getTracks().forEach(t => t.stop())
+            const fallback = await navigator.mediaDevices.getUserMedia({
+              video: { facingMode: 'environment' },
+            })
+            if (!mounted) { fallback.getTracks().forEach(t => t.stop()); return }
+            activeStream = fallback
+            video!.srcObject = fallback
+            const controls = await reader.decodeFromVideoElement(video!, (res, err) => {
+              if (!mounted) return
+              if (res) onCodeDetected(res.getText())
+              else if (err && !(err instanceof NotFoundException)
+                && err.name !== 'IndexSizeError' && err.name !== 'AbortError')
+                console.warn('[scanner]', err)
+            })
+            if (!mounted) controls.stop()
+            else controlsRef.current = controls
             return
           } catch { /* fall through */ }
         }
         setCameraError(
           err.name === 'NotAllowedError'
-            ? 'Camera permission denied. Allow camera access in your browser settings.'
+            ? 'Camera permission denied. Tap Retry, then allow camera access when prompted.'
             : err.name === 'NotFoundError'
               ? 'No camera found on this device.'
-              : 'Could not start camera.'
+              : err.name === 'NotReadableError'
+                ? 'Camera is in use by another app. Close other apps using the camera and tap Retry.'
+                : err.name === 'OverconstrainedError'
+                  ? 'Camera does not meet the required constraints. Tap Retry to try with lower resolution.'
+                  : `Could not start camera (${err.name ?? 'unknown error'}). Tap Retry to try again.`
         )
       }
     }
@@ -273,11 +310,11 @@ export default function ScannerPage() {
       clearResumeTimer()
       abortRef.current?.abort()
       controlsRef.current?.stop()
-      // Ensure torch is off when leaving the scanner
-      const track = liveTrack(videoRef.current)
-      if (track) track.applyConstraints({ advanced: [{ torch: false } as any] }).catch(() => {})
+      controlsRef.current = null
+      // Stop all camera tracks on cleanup
+      activeStream?.getTracks().forEach(t => t.stop())
     }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [cameraKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="relative flex-1 bg-black overflow-hidden">
@@ -297,7 +334,7 @@ export default function ScannerPage() {
           </div>
           <p className="text-sm text-text-secondary leading-relaxed">{cameraError}</p>
           <button
-            onClick={() => window.location.reload()}
+            onClick={() => { setCameraError(null); setCameraKey(k => k + 1) }}
             style={{ touchAction: 'manipulation' }}
             className="flex items-center gap-2 bg-brand text-white rounded-full px-5 py-2.5 text-sm font-semibold cursor-pointer"
           >
@@ -335,7 +372,7 @@ export default function ScannerPage() {
               {scanState === 'scanning' && (
                 <div className="absolute inset-x-3 overflow-hidden" style={{ top: '6%', bottom: '6%' }}>
                   <div
-                    className="w-full h-[2px] rounded-full bg-brand"
+                    className="absolute left-0 right-0 h-[2px] rounded-full bg-brand"
                     style={{
                       animation: 'scanBeam 2s ease-in-out infinite',
                       boxShadow: '0 0 12px 5px rgba(249,115,22,0.55)',
@@ -509,26 +546,6 @@ export default function ScannerPage() {
           )}
         </>
       )}
-
-      <style>{`
-        @keyframes scanBeam {
-          0%   { transform: translateY(0%);  opacity: 0.5; }
-          50%  { transform: translateY(88%); opacity: 1;   }
-          100% { transform: translateY(0%);  opacity: 0.5; }
-        }
-        @keyframes slideUp {
-          from { transform: translateY(100%); opacity: 0; }
-          to   { transform: translateY(0);    opacity: 1; }
-        }
-        @keyframes fadeIn {
-          from { opacity: 0; transform: translateY(8px); }
-          to   { opacity: 1; transform: translateY(0);   }
-        }
-        @keyframes popIn {
-          from { opacity: 0; transform: scale(0.6); }
-          to   { opacity: 1; transform: scale(1);   }
-        }
-      `}</style>
     </div>
   )
 }

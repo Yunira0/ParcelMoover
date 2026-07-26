@@ -1,10 +1,9 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { HashRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { Suspense, lazy } from 'react'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { PendingProvider } from './context/PendingContext'
 import BottomNav from './components/BottomNav'
 import OfflineBanner from './components/OfflineBanner'
-import WelcomePage from './pages/WelcomePage'
 import LoginPage from './pages/LoginPage'
 import DeactivatedPage from './pages/DeactivatedPage'
 import DashboardPage from './pages/DashboardPage'
@@ -26,7 +25,7 @@ function ScannerFallback() {
 
 function ProtectedLayout() {
   const { rider } = useAuth()
-  if (!rider) return <Navigate to="/welcome" replace />
+  if (!rider) return <Navigate to="/login" replace />
   // A pending forced password change blocks every other screen — the backend
   // rejects every other authenticated call anyway, so there's nothing else
   // useful to show until this is resolved.
@@ -63,9 +62,8 @@ function PublicLayout() {
     <div className="flex flex-col h-full min-h-dvh">
       <OfflineBanner />
       <Routes>
-        <Route path="/welcome" element={<WelcomePage />} />
         <Route path="/login"   element={<LoginPage />} />
-        <Route path="*"        element={<Navigate to="/welcome" replace />} />
+        <Route path="*"        element={<Navigate to="/login" replace />} />
       </Routes>
     </div>
   )
@@ -74,10 +72,10 @@ function PublicLayout() {
 export default function App() {
   return (
     <AuthProvider>
-      <BrowserRouter basename="/rider">
+      <HashRouter>
         <OfflineBanner />
         <AuthRouter />
-      </BrowserRouter>
+      </HashRouter>
     </AuthProvider>
   )
 }

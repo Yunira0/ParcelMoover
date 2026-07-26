@@ -1,8 +1,9 @@
 import { useState, useRef, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ChevronLeft, Package, AlertCircle } from 'lucide-react'
+import { ChevronLeft, AlertCircle, Download } from 'lucide-react'
 import { isAccountInactiveError, loginRider } from '../lib/api'
 import { useAuth } from '../context/AuthContext'
+import usePwaInstall from '../lib/usePwaInstall'
 import Button from '../components/Button'
 import Input from '../components/Input'
 
@@ -12,6 +13,8 @@ export default function LoginPage() {
   const navigate   = useNavigate()
   const { login, markDeactivated } = useAuth()
   const emailRef   = useRef<HTMLInputElement>(null)
+  const { canInstall, hasNativePrompt, install } = usePwaInstall()
+  const [showInstructions, setShowInstructions] = useState(false)
 
   const [loading,   setLoading]   = useState(false)
   const [formError, setFormError] = useState('')
@@ -77,17 +80,9 @@ export default function LoginPage() {
       <div className="flex flex-col flex-1 px-5 pt-4 pb-10 gap-8">
 
         {/* Brand heading */}
-        <div className="flex flex-col gap-3">
-          <div
-            className="w-12 h-12 rounded-2xl bg-brand flex items-center justify-center"
-            style={{ boxShadow: '0 4px 20px rgba(249,115,22,0.35)' }}
-          >
-            <Package size={22} className="text-white" strokeWidth={2} />
-          </div>
-          <div className="flex flex-col gap-1">
-            <h1 className="text-2xl font-bold text-text-primary tracking-tight">Welcome back</h1>
-            <p className="text-sm text-text-secondary">Sign in with your rider credentials</p>
-          </div>
+        <div className="flex flex-col gap-1">
+          <h1 className="text-2xl font-bold text-text-primary tracking-tight">Welcome back</h1>
+          <p className="text-sm text-text-secondary">Sign in with your rider credentials</p>
         </div>
 
         {/* Error banner */}
@@ -131,10 +126,43 @@ export default function LoginPage() {
         </form>
 
         {/* Footer note */}
-        <div className="mt-auto flex flex-col items-center gap-1 text-center">
+        <div className="mt-auto flex flex-col items-center gap-3 text-center">
           <p className="text-xs text-text-muted">
             Forgot password? Your manager can reset it.
           </p>
+
+          {canInstall && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                if (hasNativePrompt) {
+                  install()
+                } else {
+                  setShowInstructions(true)
+                }
+              }}
+            >
+              <Download size={16} />
+              Download App
+            </Button>
+          )}
+
+          {showInstructions && (
+            <div className="rounded-2xl px-4 py-3.5 border border-border bg-surface-2 text-left">
+              <p className="text-sm text-text-primary font-medium mb-1">Add to Home Screen</p>
+              <p className="text-xs text-text-secondary leading-relaxed">
+                Tap the <strong>Share</strong> button in Safari, then select{' '}
+                <strong>Add to Home Screen</strong> to install the app.
+              </p>
+              <button
+                onClick={() => setShowInstructions(false)}
+                className="mt-2 text-xs text-brand font-medium cursor-pointer"
+              >
+                Got it
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>
