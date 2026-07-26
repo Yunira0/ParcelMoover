@@ -50,8 +50,6 @@ export default function LoginPage() {
       login(user)
       navigate('/scan', { replace: true })
     } catch (err: any) {
-      // A deactivated account isn't a bad-credentials problem - route to the
-      // dedicated lockout screen instead of showing an inline form error.
       if (isAccountInactiveError(err)) {
         markDeactivated()
         return

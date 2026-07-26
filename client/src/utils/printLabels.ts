@@ -36,10 +36,12 @@ function labelHtml(order: Order, qrDataUrl: string, barcodeUrl: string): string 
   const codLine = order.codAmount > 0 ? `NPR ${fmt(order.codAmount)}` : '—';
   const weightLine = order.weightKg ? `${order.weightKg} kg` : '—';
   const packageLine = order.packageType || '—';
-  const destination = esc(order.destinationName || order.destination);
+  let cleanDestination = (order.destinationName || order.destination || '')
+    .replace(/^(inside\s+valley\s*[-–—]?\s*|outside\s+valley\s*[-–—]?\s*)/i, '')
+    .trim();
+  const destination = esc(cleanDestination || order.destinationName || order.destination);
   const valleyLabel = order.destinationValley === 'inside' ? 'Inside Valley' : order.destinationValley === 'outside' ? 'Outside Valley' : '';
-  const addrParts = [order.destinationName, order.receiverAddress].filter(Boolean);
-  const fullAddress = addrParts.length > 0 ? esc(addrParts.join(', ')) : '—';
+  const fullAddress = order.receiverAddress ? esc(order.receiverAddress) : '—';
 
   return `
 <div class="label">
@@ -59,8 +61,8 @@ function labelHtml(order: Order, qrDataUrl: string, barcodeUrl: string): string 
   <div class="route">
     <span class="route-hub">${esc(order.origin)}</span>
     <span class="route-arrow">&rarr;</span>
-    ${valleyLabel ? `<span class="route-valley">${valleyLabel} -</span>` : ''}
-    <span class="route-hub">${destination}</span>
+    ${valleyLabel ? `<span class="route-valley">${valleyLabel}</span>` : ''}
+    ${order.destinationValley !== 'inside' ? `<span class="route-hub">${destination}</span>` : ''}
   </div>
 
   <div class="body">
@@ -154,8 +156,8 @@ body{background:#fff;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif}
 .route-hub{
   font-size:12px;font-weight:800;color:#000;
   letter-spacing:0.5px;text-transform:uppercase;
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
-  max-width:40%;
+  word-wrap:break-word;overflow-wrap:break-word;
+  hyphens:auto;min-width:0;
 }
 .route-arrow{font-size:14px;color:#000;font-weight:400;flex-shrink:0}
 .route-valley{
@@ -168,20 +170,20 @@ body{background:#fff;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif}
 .body{
   display:flex;flex:1;gap:0;
   padding:2mm 3.5mm;min-height:0;
-  overflow:hidden;
+  overflow:visible;
 }
 .from-col{
   flex:0 0 26%;display:flex;flex-direction:column;
   gap:0.3mm;min-width:0;
   padding-right:2.5mm;
-  overflow:hidden;
+  overflow:visible;
 }
 .to-col{
   flex:1;display:flex;flex-direction:column;
   gap:0.3mm;min-width:0;
   padding-left:2.5mm;
   border-left:1.5px solid #000;
-  overflow:hidden;
+  overflow:visible;
 }
 .party-label{
   font-size:6.5px;font-weight:700;color:#6b7280;
@@ -194,12 +196,12 @@ body{background:#fff;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif}
   hyphens:auto;
 }
 .party-phone{
-  font-size:10.5px;font-weight:600;color:#374151;
+  font-size:12px;font-weight:600;color:#374151;
   font-family:'Courier New',Consolas,monospace;
   letter-spacing:0.5px;line-height:1.2;
 }
 .party-addr{
-  font-size:8.5px;font-weight:600;color:#6b7280;
+  font-size:10px;font-weight:600;color:#6b7280;
   line-height:1.25;word-wrap:break-word;overflow-wrap:break-word;
   hyphens:auto;
   text-transform:uppercase;
