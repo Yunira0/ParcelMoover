@@ -153,6 +153,9 @@ jobs:
       - name: Rsync release to staging dir on host
         run: |
           rsync -az --delete \
+            --exclude='client' \
+            --exclude='docs' \
+            --exclude='readme.md' \
             -e "ssh -i ~/.ssh/deploy_key" \
             /tmp/release/ \
             ubuntu@"$SSH_HOST":/var/www/parcelmoover-staging/
@@ -204,6 +207,9 @@ jobs:
               --exclude='deploy/.env.production' \
               --exclude='deploy/.env.production.*' \
               --exclude='deploy/.last-good-image' \
+              --exclude='client' \
+              --exclude='docs' \
+              --exclude='readme.md' \
               /var/www/parcelmoover-staging/ "$APP_DIR"/
 
             echo "$GHCR_TOKEN" | sudo docker login ghcr.io -u "$GHCR_USER" --password-stdin
