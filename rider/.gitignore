@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Capacitor Android build (regenerate with: npx cap add android && npx cap sync)
+android/
