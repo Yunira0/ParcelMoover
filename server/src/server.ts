@@ -79,18 +79,8 @@ app.use(cors({
 }));
 app.use(express.json({ limit: "1mb" }));
 app.use(cookiesParser());
-// app.use(express.static("public"));
 app.use((req, res, next) => {
-  if (req.path.startsWith("/rider")) {
-    const originalUrl = req.url;
-    req.url = req.url.replace(/^\/rider/, '') || '/';
-    express.static("public/.rider")(req, res, (err) => {
-      req.url = originalUrl;
-      if (err) return next(err);
-    });
-  } else {
-    express.static("public")(req, res, next);
-  }
+  express.static("public")(req, res, next);
 });
 
 // Liveness/readiness probe for load balancers and container orchestration -

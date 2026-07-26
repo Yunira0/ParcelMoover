@@ -154,3 +154,6 @@ skills-lock.json
 .claude/settings.local.json
 .claude/launch.json
 .codex/
+
+# Rider PWA / Capacitor app — built and maintained locally, not on the server
+rider/
