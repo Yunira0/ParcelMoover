@@ -17,6 +17,7 @@ import {
   PublicListOrdersQuery,
 } from "../../validators/publicApi.schema";
 import { actorFrom, sendError, UUID_REGEX } from "./shared";
+import { getVendorStatusLabel } from "../../utils/orderStatusLabel";
 
 export async function publicCreateOrderController(req: Request, res: Response) {
   try {
@@ -72,6 +73,7 @@ export async function publicCreateOrderController(req: Request, res: Response) {
           id: order.id,
           trackingId: order.tracking_id,
           status: order.status,
+          statusLabel: getVendorStatusLabel(order.status),
           createdAt: order.created_at,
         },
       };

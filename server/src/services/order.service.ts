@@ -22,6 +22,7 @@ import { NEPAL_UTC_OFFSET_MS, formatNepalDate as formatDate } from "../utils/nep
 import { resolveOwnVendorId, isStaffActor } from "./vendor-scope.service";
 import { invalidateVendorFinanceCache } from "./finance.service";
 import { emitWebhookEvent } from "./webhookDispatch.service";
+import { getVendorStatusLabel } from "../utils/orderStatusLabel";
 
 type Party = { name: string; phone: string; alternate_phone?: string | null };
 function buildSearchText(trackingId: string, sender: Party, receiver: Party): string {
@@ -1239,6 +1240,7 @@ function mapOrder(
     orderNumber: parcel.order_number,
     trackingId: parcel.tracking_id,
     status: parcel.status,
+    statusLabel: getVendorStatusLabel(parcel.status),
     orderType: parcel.order_type,
     serviceType: parcel.service_type,
     senderName: parcel.parties_parcels_sender_idToparties.name,
@@ -1936,6 +1938,7 @@ export async function getPublicOrderTracking(trackingId: string) {
   return {
     trackingId: parcel.tracking_id,
     status: parcel.status,
+    statusLabel: getVendorStatusLabel(parcel.status),
     serviceType: parcel.service_type,
     pieces: parcel.pieces,
     origin: locationName(parcel.locations_parcels_origin_location_idTolocations) || "",
@@ -1975,6 +1978,7 @@ export async function getOrderStatusesByTrackingIds(actor: OrderActor, trackingI
     data: parcels.map((p) => ({
       trackingId: p.tracking_id,
       status: p.status,
+      statusLabel: getVendorStatusLabel(p.status),
       updatedAt: p.updated_at,
     })),
     notFound,
