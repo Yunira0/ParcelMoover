@@ -476,9 +476,9 @@ async function createOrderCore(actor: OrderActor, data: CreateOrderInput) {
 
 // Same-day duplicate guard for interactive (single) order creation only - bulk
 // imports go through createOrderCore and are intentionally exempt. Flags an
-// order whose vendor already created one today for the same receiver
-// (phone + name + address). Soft guard: throws a DUPLICATE_ORDER 409 the client
-// turns into a "create anyway?" prompt, and is bypassed when the user confirms
+// order whose vendor already created one today for the same receiver phone
+// number. Soft guard: throws a DUPLICATE_ORDER 409 the client turns into a
+// "create anyway?" prompt, and is bypassed when the user confirms
 // (data.confirmDuplicate) or when the order isn't attributed to a vendor.
 async function assertNotDuplicateOrder(actor: OrderActor, data: CreateOrderInput) {
   if (data.confirmDuplicate) return;
@@ -488,9 +488,7 @@ async function assertNotDuplicateOrder(actor: OrderActor, data: CreateOrderInput
   if (!vendorId) return;
 
   const receiverPhone = data.receiver.phone.trim().replace(/\s/g, "");
-  const receiverName = data.receiver.name.trim();
-  const receiverAddress = data.receiver.address?.trim() ?? "";
-  if (!receiverPhone || !receiverName) return;
+  if (!receiverPhone) return;
 
   // Start of today in Nepal local time (parcels.created_at is UTC).
   const nepalToday = formatDate(new Date());
@@ -503,8 +501,6 @@ async function assertNotDuplicateOrder(actor: OrderActor, data: CreateOrderInput
       created_at: { gte: todayStart },
       parties_parcels_receiver_idToparties: {
         phone: receiverPhone,
-        name: { equals: receiverName, mode: "insensitive" },
-        ...(receiverAddress ? { address: { equals: receiverAddress, mode: "insensitive" } } : {}),
       },
     },
     orderBy: { created_at: "desc" },
@@ -514,7 +510,7 @@ async function assertNotDuplicateOrder(actor: OrderActor, data: CreateOrderInput
   if (existing) {
     throw new AppError(
       409,
-      `A similar order for ${receiverName} was already created today (Order #${existing.order_number}, ${existing.tracking_id}).`,
+      `A similar order for ${receiverPhone} was already created today (Order #${existing.order_number}, ${existing.tracking_id}).`,
       "DUPLICATE_ORDER",
     );
   }
@@ -537,6 +533,9 @@ async function _createOrderImpl(actor: OrderActor, data: CreateOrderInput) {
   }
   if (data.codAmount !== undefined && (!Number.isFinite(data.codAmount) || data.codAmount < 0)) {
     throw new AppError(400, "codAmount cannot be negative");
+  }
+  if (data.itemValue !== undefined && (!Number.isFinite(data.itemValue) || data.itemValue < 0)) {
+    throw new AppError(400, "itemValue cannot be negative");
   }
   if (data.deliveryCharge !== undefined && (!Number.isFinite(data.deliveryCharge) || data.deliveryCharge < 0)) {
     throw new AppError(400, "deliveryCharge cannot be negative");
@@ -607,6 +606,7 @@ async function _createOrderImpl(actor: OrderActor, data: CreateOrderInput) {
   // (a percent of the normal rate, see below) which is billed via settlement.
   const isReturnOrder = (data.orderType || "delivery") === "return";
   const codAmount = isReturnOrder ? 0 : data.codAmount || 0;
+  const itemValue = data.itemValue || 0;
 
   // Payable is computed server-side so the client can't spoof the charge. Vendor
   // orders price by the vendor's chosen rate model (per-destination / zone / flat);
@@ -669,6 +669,7 @@ async function _createOrderImpl(actor: OrderActor, data: CreateOrderInput) {
         pieces: data.pieces || 1,
         weight_kg: weightKg,
         cod_amount: codAmount,
+        item_value: itemValue,
         delivery_charge: deliveryCharge,
         package_type: data.packageType || null,
         delivery_instruction: data.deliveryInstruction || null,
@@ -867,6 +868,8 @@ export async function updateOrderDetails(
     note("weight", currentWeight, data.weightKg);
   if (data.codAmount !== undefined && data.codAmount !== Number(parcel.cod_amount))
     note("COD amount", Number(parcel.cod_amount), data.codAmount);
+  if (data.itemValue !== undefined && data.itemValue !== Number(parcel.item_value))
+    note("Item value", Number(parcel.item_value), data.itemValue);
   if (data.packageType !== undefined && data.packageType !== (parcel.package_type || undefined))
     note("package type", parcel.package_type, data.packageType);
   if (data.deliveryInstruction !== undefined && data.deliveryInstruction !== (parcel.delivery_instruction || undefined))
@@ -934,6 +937,7 @@ export async function updateOrderDetails(
         pieces: data.pieces ?? parcel.pieces,
         weight_kg: weightKg,
         cod_amount: data.codAmount ?? parcel.cod_amount,
+        item_value: data.itemValue ?? parcel.item_value,
         delivery_charge: deliveryCharge,
         package_type: data.packageType !== undefined ? data.packageType || null : parcel.package_type,
         delivery_instruction:
@@ -965,6 +969,7 @@ export async function updateOrderDetails(
             receiverId: parcel.receiver_id,
             destinationLocationId: parcel.destination_location_id,
             codAmount: Number(parcel.cod_amount),
+            itemValue: Number(parcel.item_value),
             weightKg: currentWeight ?? null,
             deliveryCharge: Number(parcel.delivery_charge),
           },
@@ -973,6 +978,7 @@ export async function updateOrderDetails(
             receiverId,
             destinationLocationId,
             codAmount: Number(updatedParcel.cod_amount),
+            itemValue: Number(updatedParcel.item_value),
             weightKg: Number(updatedParcel.weight_kg),
             deliveryCharge: Number(updatedParcel.delivery_charge),
           },
@@ -1267,6 +1273,7 @@ function mapOrder(
     weightKg: parcel.weight_kg === null ? undefined : Number(parcel.weight_kg),
     attemptCount: parcel.attempt_count,
     codAmount: Number(parcel.cod_amount),
+    itemValue: Number(parcel.item_value),
     deliveryCharge: Number(parcel.delivery_charge),
     packageType: parcel.package_type || "",
     deliveryInstruction: parcel.delivery_instruction || "",
@@ -3648,4 +3655,39 @@ export async function applyExternalCarrierFollowUp(
     await invalidateOrderCaches();
     return { applied: true };
   });
+}
+
+// Returns per-status-group counts for the operation-page tab badges. Accepts a
+// record like { pickup_ordered: ["pickup_ordered"], rider_assigned:
+// ["rider_assigned"], … } and returns { pickup_ordered: 12, rider_assigned: 5 }.
+export async function getStatusCounts(
+  actor: OrderActor,
+  statusGroups: Record<string, string[]>,
+): Promise<Record<string, number>> {
+  const scope = await getActorScope(actor);
+  const allStatuses = [...new Set(Object.values(statusGroups).flat())];
+
+  const scopeSql: Prisma.Sql = scope.vendorId
+    ? Prisma.sql`AND vendor_id = ${scope.vendorId}::uuid`
+    : scope.vendorIds
+      ? Prisma.sql`AND vendor_id = ANY(${scope.vendorIds}::uuid[])`
+      : scope.riderId
+        ? Prisma.sql`AND (pickup_rider_id = ${scope.riderId}::uuid OR delivery_rider_id = ${scope.riderId}::uuid)`
+        : Prisma.empty;
+
+  const rows = await prisma.$queryRaw<{ status: string; cnt: bigint }[]>(Prisma.sql`
+    SELECT status::text AS status, COUNT(*) AS cnt
+    FROM parcels
+    WHERE deleted_at IS NULL
+      AND status::text = ANY(${allStatuses})
+      ${scopeSql}
+    GROUP BY status
+  `);
+
+  const statusMap = new Map(rows.map((r) => [r.status, Number(r.cnt)]));
+  const result: Record<string, number> = {};
+  for (const [group, statuses] of Object.entries(statusGroups)) {
+    result[group] = statuses.reduce((sum, s) => sum + (statusMap.get(s) ?? 0), 0);
+  }
+  return result;
 }

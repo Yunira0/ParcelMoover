@@ -71,43 +71,27 @@
   stroke-width: 1;
 }
 
-.vendor-orders-trend-chart-tick,
-.vendor-orders-trend-chart-day {
+.vendor-orders-trend-chart-tick {
   fill: var(--color-text-caption);
   font-size: 9px;
 }
 
-.vendor-orders-trend-chart-line-total {
-  fill: none;
-  stroke: var(--color-primary);
-  stroke-width: 2;
+.vendor-orders-trend-chart-day {
+  fill: var(--color-text-caption);
+  font-size: 7px;
 }
 
-.vendor-orders-trend-chart-line-delivered {
-  fill: none;
-  stroke: var(--color-background-success-default);
-  stroke-width: 2;
-}
-
-.vendor-orders-trend-chart-line-returned {
-  fill: none;
-  stroke: var(--color-danger-default);
-  stroke-width: 2;
-}
-
-/* SVG dots are colored via `fill`; the HTML legend swatches reuse the same
-   classes and are colored via `background`. */
-.vendor-orders-trend-chart-dot-total {
+.vendor-orders-trend-chart-bar-total {
   fill: var(--color-primary);
   background: var(--color-primary);
 }
 
-.vendor-orders-trend-chart-dot-delivered {
+.vendor-orders-trend-chart-bar-delivered {
   fill: var(--color-background-success-default);
   background: var(--color-background-success-default);
 }
 
-.vendor-orders-trend-chart-dot-returned {
+.vendor-orders-trend-chart-bar-returned {
   fill: var(--color-danger-default);
   background: var(--color-danger-default);
 }

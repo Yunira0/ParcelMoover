@@ -1,4 +1,4 @@
-import React, { useLayoutEffect, useRef, useState } from 'react';
+import React, { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { DashboardTrendDay } from '../../services/orders.service';
 import './VendorOrdersTrendChart.css';
 
@@ -25,10 +25,15 @@ const niceMax = (value: number) => {
 // The three series plotted, in draw order. Total Orders is the widest scale, so
 // it also anchors the y-axis; Delivered/Returned read against it.
 const SERIES = [
-  { key: 'totalOrders', label: 'Total Orders', lineClass: 'vendor-orders-trend-chart-line-total', dotClass: 'vendor-orders-trend-chart-dot-total' },
-  { key: 'delivered', label: 'Delivered', lineClass: 'vendor-orders-trend-chart-line-delivered', dotClass: 'vendor-orders-trend-chart-dot-delivered' },
-  { key: 'returned', label: 'Returned', lineClass: 'vendor-orders-trend-chart-line-returned', dotClass: 'vendor-orders-trend-chart-dot-returned' },
+  { key: 'totalOrders', label: 'Total Orders', barClass: 'vendor-orders-trend-chart-bar-total' },
+  { key: 'delivered', label: 'Delivered', barClass: 'vendor-orders-trend-chart-bar-delivered' },
+  { key: 'returned', label: 'Returned', barClass: 'vendor-orders-trend-chart-bar-returned' },
 ] as const;
+
+const DAY_FULL: Record<string, string> = {
+  sun: 'Sunday', mon: 'Monday', tue: 'Tuesday', wed: 'Wednesday',
+  thu: 'Thursday', fri: 'Friday', sat: 'Saturday',
+};
 
 const VendorOrdersTrendChart: React.FC<VendorOrdersTrendChartProps> = ({ data, loading = false }) => {
   // Size the viewBox off the body's real pixels so it maps 1:1 to the rendered
@@ -55,14 +60,13 @@ const VendorOrdersTrendChart: React.FC<VendorOrdersTrendChartProps> = ({ data, l
 
   const maxValue = niceMax(Math.max(1, ...data.flatMap((d) => SERIES.map((s) => d[s.key]))));
 
-  const xFor = (index: number) =>
-    data.length > 1
-      ? PADDING_LEFT + (index / (data.length - 1)) * plotWidth
-      : PADDING_LEFT + plotWidth / 2;
+  const slotW = data.length > 0 ? plotWidth / data.length : 0;
+  const xFor = (index: number) => PADDING_LEFT + slotW / 2 + index * slotW;
   const yFor = (value: number) => PADDING_TOP + plotHeight - (value / maxValue) * plotHeight;
 
-  const toPoints = (key: (typeof SERIES)[number]['key']) =>
-    data.map((d, index) => `${xFor(index)},${yFor(d[key])}`).join(' ');
+  const sortedData = useMemo(() =>
+    [...data].sort((a, b) => new Date(a.date).getDay() - new Date(b.date).getDay()),
+  [data]);
 
   const ticks = Array.from({ length: TICK_COUNT + 1 }, (_, i) => Math.round((maxValue / TICK_COUNT) * i));
 
@@ -73,7 +77,7 @@ const VendorOrdersTrendChart: React.FC<VendorOrdersTrendChartProps> = ({ data, l
         <div className="vendor-orders-trend-chart-legend">
           {SERIES.map((s) => (
             <span key={s.key} className="vendor-orders-trend-chart-legend-item">
-              <span className={`vendor-orders-trend-chart-legend-dot ${s.dotClass}`} />
+              <span className={`vendor-orders-trend-chart-legend-dot ${s.barClass}`} />
               {s.label}
             </span>
           ))}
@@ -102,19 +106,33 @@ const VendorOrdersTrendChart: React.FC<VendorOrdersTrendChartProps> = ({ data, l
             </g>
           ))}
 
-          {SERIES.map((s) => (
-            <polyline key={s.key} points={toPoints(s.key)} className={s.lineClass} />
-          ))}
+          {sortedData.map((d, index) => {
+            const cx = xFor(index);
+            const nVis = SERIES.length;
+            const singleBarW = nVis > 0 ? slotW * 0.7 / nVis : 0;
+            const totalBarsW = singleBarW * nVis;
+            return SERIES.map((s, si) => {
+              const val = d[s.key];
+              const barH = (val / maxValue) * plotHeight;
+              const barY = PADDING_TOP + plotHeight - barH;
+              return (
+                <rect
+                  key={`${s.key}-${index}`}
+                  x={cx - totalBarsW / 2 + si * singleBarW}
+                  y={barY}
+                  width={singleBarW}
+                  height={barH}
+                  className={`${s.barClass}`}
+                  rx={2}
+                />
+              );
+            });
+          })}
 
-          {data.map((d, index) => (
-            <g key={d.date}>
-              {SERIES.map((s) => (
-                <circle key={s.key} cx={xFor(index)} cy={yFor(d[s.key])} r={3} className={s.dotClass} />
-              ))}
-              <text x={xFor(index)} y={CHART_HEIGHT - 6} className="vendor-orders-trend-chart-day" textAnchor="middle">
-                {d.day.toLowerCase()}
-              </text>
-            </g>
+          {sortedData.map((d, index) => (
+            <text key={`label-${index}`} x={xFor(index)} y={CHART_HEIGHT - 6} className="vendor-orders-trend-chart-day" textAnchor="middle">
+              {DAY_FULL[d.day.toLowerCase()] || d.day}
+            </text>
           ))}
         </svg>
       )}

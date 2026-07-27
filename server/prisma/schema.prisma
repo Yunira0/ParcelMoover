@@ -284,6 +284,7 @@ model parcels {
   pieces                                               Int                     @default(1)
   weight_kg                                            Decimal?                @db.Decimal(10, 3)
   cod_amount                                           Decimal                 @default(0) @db.Decimal(12, 2)
+  item_value                                           Decimal                 @default(0) @db.Decimal(12, 2)
   delivery_charge                                      Decimal                 @default(0) @db.Decimal(12, 2)
   package_type                                         String?
   delivery_instruction                                 String?

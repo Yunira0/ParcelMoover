@@ -228,6 +228,7 @@ const OrderDetailPage: React.FC = () => {
           origin={order.origin}
           destination={order.destination}
           codAmount={order.codAmount}
+          itemValue={order.itemValue}
           deliveryCharge={order.deliveryCharge}
           pieces={order.pieces}
           weightKg={order.weightKg}

@@ -151,7 +151,7 @@ const OverviewOrdersPage: React.FC = () => {
     <div className="overview-orders-page">
       <div className="overview-orders-header">
         <div className="overview-orders-title">
-          <button type="button" className="overview-orders-back" onClick={() => navigate('/dashboard')} aria-label="Back to dashboard">
+          <button type="button" className="overview-orders-back" onClick={() => navigate('/dashboard')} aria-label="Back to dashboard" style={{ background: '#fff', color: '#000', border: '1px solid #d1d5db', padding: 0 }}>
             <ArrowLeft size={18} />
           </button>
           <div>

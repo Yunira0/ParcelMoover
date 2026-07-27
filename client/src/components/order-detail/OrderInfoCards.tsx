@@ -11,6 +11,7 @@ interface OrderInfoCardsProps {
   origin: string;
   destination: string;
   codAmount: number;
+  itemValue: number;
   deliveryCharge: number;
   pieces: number;
   weightKg?: number;
@@ -26,6 +27,7 @@ const OrderInfoCards: React.FC<OrderInfoCardsProps> = ({
   origin,
   destination,
   codAmount,
+  itemValue,
   deliveryCharge,
   pieces,
   weightKg,
@@ -86,6 +88,11 @@ const OrderInfoCards: React.FC<OrderInfoCardsProps> = ({
           <Banknote size={14} />
           <span className="od-finance-label">COD</span>
           <span className="od-finance-value">NPR {codAmount.toLocaleString()}</span>
+        </div>
+        <div className="od-finance-item">
+          <Banknote size={14} />
+          <span className="od-finance-label">Item Value</span>
+          <span className="od-finance-value">NPR {itemValue.toLocaleString()}</span>
         </div>
         <div className="od-finance-item">
           <Truck size={14} />

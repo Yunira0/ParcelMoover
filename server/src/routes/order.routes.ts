@@ -23,6 +23,7 @@ import {
   getOrderByTrackingIdController,
   getPublicOrderTrackingController,
   getSenderProfileController,
+  getStatusCountsController,
   listOrdersController,
   riderRunSheetController,
   updateOrderDetailsController,
@@ -137,6 +138,17 @@ orderRouter.get(
   requireStaffPermission("DASHBOARD_ACCESS"),
   orderReadLimiter,
   dashboardSummaryController,
+);
+
+// GET /orders/status-counts — lightweight per-status-group counts for operation
+// page tab badges. Accepts a JSON-encoded groups map as a query param.
+orderRouter.get(
+  "/status-counts",
+  authMiddleware,
+  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider", "sales"),
+  requireStaffPermission("ORDER_ACCESS"),
+  orderReadLimiter,
+  getStatusCountsController,
 );
 
 // GET /orders/sender-profile — the calling vendor/vendor_staff's own business identity,

@@ -23,8 +23,8 @@ import {
  * our tracking id, NCM's vref_id field cap (order → parcel).
  */
 
-const HANDOFF_REMARK_PREFIX = "[NCM] Handed off";
-const HANDOFF_REMARK_ORDER_RE = /\[NCM\] Handed off[^#]*#(\d+)/;
+const HANDOFF_REMARK_PREFIX = "Parcel dispatched to destination";
+const HANDOFF_REMARK_ORDER_RE = /Parcel dispatched to destination[^#]*#(\d+)/;
 
 const ORDER_PARCEL_CACHE_PREFIX = "ncm:order-parcel:"; // ncm order id -> parcel id
 const MAPPING_TTL_SECONDS = 60 * 24 * 60 * 60; // 60 days, refreshed on access
@@ -355,7 +355,7 @@ export async function handoffParcelsToNcm(
             new_status: "dispatched",
             location_id: parcel.current_location_id,
             changed_by: actor.id,
-            remarks: `Handed off to NCM — order #${created.orderid} → ${branch.name}`,
+            remarks: `Parcel dispatched to destination — order #${created.orderid} → ${branch.name}`,
           },
         }),
         prisma.parcel_remarks.create({

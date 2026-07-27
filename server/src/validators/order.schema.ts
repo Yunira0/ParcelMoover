@@ -82,6 +82,7 @@ export const createOrderSchema = z.object({
   pieces: z.number().int("pieces must be an integer").min(1, "pieces must be at least 1").optional(),
   weightKg: z.number().positive("weightKg must be a positive number").optional(),
   codAmount: z.number().min(0, "codAmount cannot be negative").optional(),
+  itemValue: z.number().min(0, "itemValue cannot be negative").optional(),
   deliveryCharge: z.number().min(0, "deliveryCharge cannot be negative").optional(),
   packageType: z.string().max(50).optional(),
   deliveryInstruction: z.string().max(500).optional(),
@@ -104,6 +105,7 @@ export const updateOrderDetailsSchema = z
     pieces: z.number().int("pieces must be an integer").min(1, "pieces must be at least 1").optional(),
     weightKg: z.number().positive("weightKg must be a positive number").optional(),
     codAmount: z.number().min(0, "codAmount cannot be negative").optional(),
+    itemValue: z.number().min(0, "itemValue cannot be negative").optional(),
     packageType: z.string().max(50).optional(),
     deliveryInstruction: z.string().max(500).optional(),
   })

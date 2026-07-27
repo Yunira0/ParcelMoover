@@ -49,6 +49,8 @@ export interface CreateOrderInput {
   pieces: number;
   weightKg?: number;
   codAmount?: number;
+  /** Declared value of the items in the parcel. */
+  itemValue?: number;
   /** Unused by the new Create Order page - kept for type compat with older flows; the server computes the real charge from the route's delivery rate. */
   deliveryCharge?: number;
   packageType?: string;
@@ -86,6 +88,7 @@ export interface Order {
   weightKg?: number;
   attemptCount: number;
   codAmount: number;
+  itemValue: number;
   deliveryCharge: number;
   packageType?: string;
   deliveryInstruction?: string;
@@ -294,6 +297,18 @@ export const getAllOrders = async (
 export const getDashboardSummary = async (trendDays: 7 | 30 = 7) => {
   const response = await api.get('/orders/dashboard-summary', { params: { trendDays } });
   return response.data;
+};
+
+// Returns per-status-group counts for operation page tab badges.
+// Accepts a record like { pickup_ordered: ["pickup_ordered"], rider_assigned: ["rider_assigned"] }
+// and returns { pickup_ordered: 12, rider_assigned: 5 }.
+export const getStatusCounts = async (
+  groups: Record<string, string[]>,
+): Promise<Record<string, number>> => {
+  const response = await api.get('/orders/status-counts', {
+    params: { groups: JSON.stringify(groups) },
+  });
+  return response.data.data;
 };
 
 // ── Rider run sheet ───────────────────────────────────────────────────────────

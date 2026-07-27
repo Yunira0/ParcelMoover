@@ -61,6 +61,7 @@ const defaultFormState = {
   address: '',
   weightKg: '1',
   codAmount: '',
+  itemValue: '0',
   packageType: 'Parcel',
   packageTypeOther: '',
   deliveryInstruction: 'Cannot open the parcel',
@@ -83,6 +84,7 @@ const SERVER_FIELD_MAP: Record<string, keyof FormState> = {
   'receiver.locationId': 'destinationLocationId',
   weightKg: 'weightKg',
   codAmount: 'codAmount',
+  itemValue: 'itemValue',
   packageType: 'packageType',
   deliveryInstruction: 'deliveryInstruction',
 };
@@ -203,6 +205,7 @@ const CreateOrderPage: React.FC = () => {
       address: prefillInitialData.receiver?.address || '',
       weightKg: prefillInitialData.weightKg !== undefined ? String(prefillInitialData.weightKg) : '',
       codAmount: prefillInitialData.codAmount !== undefined ? String(prefillInitialData.codAmount) : '',
+      itemValue: prefillInitialData.itemValue !== undefined ? String(prefillInitialData.itemValue) : '0',
       packageType: isKnownPackageType ? incomingPackageType : OTHER_PACKAGE_TYPE,
       packageTypeOther: isKnownPackageType ? '' : incomingPackageType,
       deliveryInstruction: incomingInstruction
@@ -424,6 +427,7 @@ const CreateOrderPage: React.FC = () => {
       pieces: 1,
       weightKg: weightKgNumber,
       codAmount: Number(form.codAmount) || 0,
+      itemValue: Number(form.itemValue) || 0,
       packageType: effectivePackageType || undefined,
       deliveryInstruction: effectiveDeliveryInstruction || undefined,
       pickupAddress: selectedVendor?.address || undefined,
@@ -441,6 +445,7 @@ const CreateOrderPage: React.FC = () => {
           serviceType: payload.serviceType,
           weightKg: payload.weightKg,
           codAmount: payload.codAmount,
+          itemValue: payload.itemValue,
           packageType: payload.packageType,
           deliveryInstruction: payload.deliveryInstruction,
         };
@@ -622,6 +627,15 @@ const CreateOrderPage: React.FC = () => {
                 onChange={value => setField('codAmount', value)}
                 placeholder="Enter COD amount"
                 error={fieldErrors.codAmount}
+              />
+              <FormField
+                label="Item Value"
+                type="number"
+                min={0}
+                value={form.itemValue}
+                onChange={value => setField('itemValue', value)}
+                placeholder="Enter item value"
+                error={fieldErrors.itemValue}
               />
               <FormField
                 label="Package Type"

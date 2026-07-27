@@ -27,6 +27,8 @@ export interface CreateOrderInput {
   weightKg?: number;
 
   codAmount?: number;
+  /** Declared value of the items in the parcel. */
+  itemValue?: number;
   /** Fallback only - used when origin/destination locations aren't both set, so no route rate can be looked up. */
   deliveryCharge?: number;
 
@@ -56,6 +58,7 @@ export interface UpdateOrderDetailsInput {
   pieces?: number;
   weightKg?: number;
   codAmount?: number;
+  itemValue?: number;
 
   packageType?: string;
   deliveryInstruction?: string;

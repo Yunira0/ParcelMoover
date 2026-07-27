@@ -19,6 +19,7 @@ import TicketCategoryButton from '../components/TicketCategoryButton';
 import Pagination from '../components/Pagination';
 import {
   getOrders,
+  getStatusCounts,
   subscribeToOrderStatusChanged,
   updateOrderStatus,
   type Order,
@@ -336,7 +337,7 @@ const PickupGroupDetailPanel: React.FC<{
       allSelected={allSelected}
       someSelected={someSelected}
       onToggleAll={onToggleAll}
-      minWidth="1650px"
+      minWidth="1850px"
       tableClassName="pickup-group-table"
       emptyMessage="No orders in this pickup."
     />
@@ -377,6 +378,30 @@ const PickupOperations: React.FC = () => {
   const [reasonRemarks, setReasonRemarks] = useState('');
   const [expandedGroupId, setExpandedGroupId] = useState('');
   const [remarkPopupOrder, setRemarkPopupOrder] = useState<Order | null>(null);
+  const [tabCounts, setTabCounts] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const counts = await getStatusCounts(TAB_STATUSES);
+        setTabCounts(counts);
+      } catch {
+        // non-fatal; tabs just won't show counts
+      }
+    })();
+  }, []);
+
+  // Refresh tab counts whenever an order status changes anywhere in the app.
+  useEffect(() => {
+    return subscribeToOrderStatusChanged(async () => {
+      try {
+        const counts = await getStatusCounts(TAB_STATUSES);
+        setTabCounts(counts);
+      } catch {
+        // ignore
+      }
+    });
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -746,7 +771,7 @@ const PickupOperations: React.FC = () => {
         ariaLabel="Pickup operation filters"
         value={activeTab}
         onChange={setActiveTab}
-        options={(Object.keys(TAB_LABELS) as PickupTab[]).map(tab => ({ value: tab, label: TAB_LABELS[tab] }))}
+        options={(Object.keys(TAB_LABELS) as PickupTab[]).map(tab => ({ value: tab, label: TAB_LABELS[tab], count: tabCounts[tab] }))}
       />
 
       {loadError && <p className="pickup-action-error">{loadError}</p>}
@@ -898,7 +923,7 @@ const PickupOperations: React.FC = () => {
         loading={loading}
         loadingMessage="Loading pickup orders..."
         emptyMessage="No pickup orders found."
-        minWidth="1300px"
+        minWidth="1100px"
         tableClassName="pickup-table"
         expandedRowId={expandedGroupId}
         renderExpandedRow={group => (

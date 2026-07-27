@@ -18,6 +18,7 @@ import QuickRemarkPopup from '../components/QuickRemarkPopup';
 import {
   bulkUpdateOrderStatus,
   getOrders,
+  getStatusCounts,
   subscribeToOrderStatusChanged,
   type Order,
   type OrdersPageMeta,
@@ -152,6 +153,29 @@ const DispatchOperations: React.FC = () => {
   const [partialCodCollected, setPartialCodCollected] = useState('');
   const [reasonRemarks, setReasonRemarks] = useState('');
   const [remarkPopupOrder, setRemarkPopupOrder] = useState<Order | null>(null);
+  const [tabCounts, setTabCounts] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const counts = await getStatusCounts(TAB_STATUSES);
+        setTabCounts(counts);
+      } catch {
+        // non-fatal; tabs just won't show counts
+      }
+    })();
+  }, []);
+
+  useEffect(() => {
+    return subscribeToOrderStatusChanged(async () => {
+      try {
+        const counts = await getStatusCounts(TAB_STATUSES);
+        setTabCounts(counts);
+      } catch {
+        // ignore
+      }
+    });
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -533,7 +557,7 @@ const DispatchOperations: React.FC = () => {
           setActionError('');
           setRiderId('');
         }}
-        options={(Object.keys(TAB_LABELS) as DispatchTab[]).map(tab => ({ value: tab, label: TAB_LABELS[tab] }))}
+        options={(Object.keys(TAB_LABELS) as DispatchTab[]).map(tab => ({ value: tab, label: TAB_LABELS[tab], count: tabCounts[tab] }))}
       />
 
       {loadError && <p className="dispatch-action-error">{loadError}</p>}

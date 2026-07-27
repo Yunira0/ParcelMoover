@@ -59,8 +59,7 @@ const formatDayLabel = (dateStr: string) => {
   const d = new Date(dateStr);
   if (Number.isNaN(d.getTime())) return { dow: '', md: '' };
   return {
-    dow: d.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase(),
-    // BS month/day for the axis tick (e.g. "04/06"), falling back to empty.
+    dow: d.toLocaleDateString('en-US', { weekday: 'long' }),
     md: (toBsDate(d).slice(5) || '').replace('-', '/'),
   };
 };
@@ -111,19 +110,20 @@ const WeeklyStats: React.FC<WeeklyStatsProps> = ({ data, loading, period, onPeri
   const innerW = CHART_W - PAD.left - PAD.right;
   const innerH = CHART_H - PAD.top - PAD.bottom;
   const n = data.length;
-  const xStep = n > 1 ? innerW / (n - 1) : 0;
-  const xAt = (i: number) => PAD.left + (n > 1 ? i * xStep : innerW / 2);
-  const yAt = (v: number) => PAD.top + innerH - (v / yMax) * innerH;
+  const slotW = n > 0 ? innerW / n : 0;
+  const xAt = (i: number) => PAD.left + slotW / 2 + i * slotW;
 
-  const linePath = (dataKey: SeriesDef['dataKey']) =>
-    data.map((d, i) => `${i === 0 ? 'M' : 'L'} ${xAt(i)} ${yAt(d[dataKey])}`).join(' ');
+  const sortedData = useMemo(() => {
+    if (period !== 7) return data;
+    return [...data].sort((a, b) => new Date(a.date).getDay() - new Date(b.date).getDay());
+  }, [data, period]);
 
   // Show every tick for 7 days; thin out to ~6 labels for 30 to avoid collisions.
   const labelStride = n <= 10 ? 1 : Math.ceil(n / 6);
 
   const gridLines = [0, 0.25, 0.5, 0.75, 1];
 
-  const hovered = hoverIndex !== null ? data[hoverIndex] : null;
+  const hovered = hoverIndex !== null ? sortedData[hoverIndex] : null;
   const tooltipLeftPct = hoverIndex !== null ? (xAt(hoverIndex) / CHART_W) * 100 : 0;
   const tooltipFlip = tooltipLeftPct > 65;
 
@@ -131,7 +131,7 @@ const WeeklyStats: React.FC<WeeklyStatsProps> = ({ data, loading, period, onPeri
     if (n === 0) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const relX = ((e.clientX - rect.left) / rect.width) * CHART_W;
-    const idx = n > 1 ? Math.round((relX - PAD.left) / xStep) : 0;
+    const idx = Math.floor((relX - PAD.left) / slotW);
     setHoverIndex(Math.min(n - 1, Math.max(0, idx)));
   };
 
@@ -231,40 +231,38 @@ const WeeklyStats: React.FC<WeeklyStatsProps> = ({ data, loading, period, onPeri
                 })}
 
                 {hoverIndex !== null && (
-                  <line
-                    x1={xAt(hoverIndex)}
-                    x2={xAt(hoverIndex)}
-                    y1={PAD.top}
-                    y2={CHART_H - PAD.bottom}
-                    className="chart-crosshair"
+                  <rect
+                    x={xAt(hoverIndex) - slotW / 2}
+                    y={PAD.top}
+                    width={slotW}
+                    height={innerH}
+                    className="chart-day-highlight"
                   />
                 )}
 
-                {/* Always render every series and toggle visibility with a class
-                    (same pattern as the legend's dim state) rather than adding/
-                    removing SVG nodes - lets the filter change crossfade instead
-                    of snapping the line in and out. */}
-                {SERIES.map((s) => (
-                  <path
-                    key={s.key}
-                    d={linePath(s.dataKey)}
-                    className={`chart-line ${visibleSeries.includes(s) ? '' : 'chart-line-hidden'}`}
-                    stroke={s.color}
-                  />
-                ))}
-
-                {SERIES.map((s) =>
-                  data.map((d, i) => (
-                    <circle
-                      key={`${s.key}-${i}`}
-                      cx={xAt(i)}
-                      cy={yAt(d[s.dataKey])}
-                      r={hoverIndex === i ? 4 : 2.5}
-                      fill={s.color}
-                      className={`chart-point ${visibleSeries.includes(s) ? '' : 'chart-point-hidden'}`}
-                    />
-                  )),
-                )}
+                {sortedData.map((d, i) => {
+                  const cx = xAt(i);
+                  const nVis = visibleSeries.length;
+                  const singleBarW = nVis > 0 ? slotW * 0.7 / nVis : 0;
+                  const totalBarsW = singleBarW * nVis;
+                  return visibleSeries.map((s, si) => {
+                    const val = d[s.dataKey];
+                    const barH = (val / yMax) * innerH;
+                    const barY = PAD.top + innerH - barH;
+                    return (
+                      <rect
+                        key={`${s.key}-${i}`}
+                        x={cx - totalBarsW / 2 + si * singleBarW}
+                        y={barY}
+                        width={singleBarW}
+                        height={barH}
+                        fill={s.color}
+                        className={`chart-bar ${hoverIndex !== null && hoverIndex !== i ? 'chart-bar-dim' : ''}`}
+                        rx={2}
+                      />
+                    );
+                  });
+                })}
 
                 <rect
                   x={PAD.left}
@@ -305,7 +303,7 @@ const WeeklyStats: React.FC<WeeklyStatsProps> = ({ data, loading, period, onPeri
         </div>
 
         <div className="chart-labels">
-          {data.map((d, i) => {
+          {sortedData.map((d, i) => {
             const show = i % labelStride === 0 || i === n - 1;
             const { dow, md } = show ? formatDayLabel(d.date) : { dow: '', md: '' };
             return (

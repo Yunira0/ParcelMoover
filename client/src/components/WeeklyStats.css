@@ -284,39 +284,23 @@
   fill: var(--color-text-caption);
 }
 
-.chart-crosshair {
-  stroke: var(--color-border-default);
-  stroke-width: 1;
-  stroke-dasharray: 3 3;
+.chart-day-highlight {
+  fill: var(--color-background-canvas);
+  opacity: 0.5;
+  pointer-events: none;
 }
 
-.chart-line {
-  fill: none;
-  stroke-width: 2;
-  stroke-linejoin: round;
-  stroke-linecap: round;
-  /* Hover/crosshair interaction is owned by the transparent overlay rect;
-     the line itself should never intercept pointer events. */
-  pointer-events: none;
+.chart-bar {
   transition: opacity 150ms ease-out;
-}
-
-.chart-line-hidden {
-  opacity: 0;
-}
-
-.chart-point {
   pointer-events: none;
-  transition: r 0.1s ease, opacity 150ms ease-out;
 }
 
-.chart-point-hidden {
-  opacity: 0;
+.chart-bar-dim {
+  opacity: 0.35;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .chart-line,
-  .chart-point {
+  .chart-bar {
     transition: none;
   }
 }
@@ -362,8 +346,8 @@
 
 .chart-labels {
   display: flex;
-  justify-content: space-around;
-  padding: 8px 0;
+  justify-content: space-between;
+  padding: 8px 12px 8px 34px;
   color: var(--color-text-caption);
   font-size: var(--font-size-xxs);
 }
@@ -373,6 +357,7 @@
   flex-direction: column;
   align-items: center;
   min-height: 28px;
+  white-space: nowrap;
 }
 
 .chart-label span:first-child {

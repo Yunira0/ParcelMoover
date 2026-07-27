@@ -9,6 +9,7 @@ import {
   getPublicOrderTracking,
   getRiderRunSheet,
   getSenderProfile,
+  getStatusCounts,
   listOrders,
   updateOrderDetails,
   updateParcelStatus,
@@ -104,6 +105,7 @@ export async function createOrderController(req: Request, res: Response) {
       return res.status(409).json({
         success: false,
         message: error.message,
+        ...(error.code ? { code: error.code } : {}),
       });
     }
     if (error.statusCode === 422) {
@@ -693,6 +695,30 @@ export async function updateOrderStatusController(req: Request, res: Response) {
     return res.status(error.statusCode || 500).json({
       success: false,
       message: error.message || "Failed to update order status",
+    });
+  }
+}
+
+// GET /orders/status-counts?groups={…}
+export async function getStatusCountsController(req: Request, res: Response) {
+  try {
+    if (!req.user) return res.status(401).json({ success: false, message: "Unauthorized" });
+
+    const groupsRaw = req.query.groups;
+    if (typeof groupsRaw !== "string") {
+      return res.status(400).json({ success: false, message: "groups query param is required" });
+    }
+    const groups = JSON.parse(groupsRaw) as Record<string, string[]>;
+    if (typeof groups !== "object" || groups === null || Array.isArray(groups)) {
+      return res.status(400).json({ success: false, message: "groups must be a JSON object" });
+    }
+
+    const counts = await getStatusCounts({ id: req.user.id, roles: req.user.roles }, groups);
+    return res.status(200).json({ success: true, data: counts });
+  } catch (error: any) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to load status counts",
     });
   }
 }

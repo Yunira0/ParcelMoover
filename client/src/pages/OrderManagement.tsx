@@ -643,9 +643,9 @@ const OrderManagement: React.FC = () => {
           {STATUS_LABELS[order.status]}
         </StatusChip>
       ),
-      width: '120px',
+      width: '160px',
     },
-    { header: 'RIDER', accessor: (order: Order) => order.riderName || '-', width: '120px' },
+    { header: 'RIDER', accessor: (order: Order) => order.riderName || '-', width: '140px' },
     { header: 'REMARKS', accessor: (order: Order) => (
       <button
         type="button"
@@ -903,7 +903,7 @@ const OrderManagement: React.FC = () => {
         loading={loading && orders.length === 0}
         loadingMessage="Loading orders..."
         emptyMessage="No orders found."
-        minWidth="2075px"
+        minWidth="2115px"
         tableClassName="orders-table"
       />
 

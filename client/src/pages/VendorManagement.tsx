@@ -6,7 +6,8 @@ import UserActionModal from '../components/UserActionModal';
 import PageHeader from '../components/PageHeader';
 import SegmentedTabs from '../components/SegmentedTabs';
 import StatusChip from '../components/StatusChip';
-import { getVendors } from '../services/users.service';
+import ToggleSwitch from '../components/ToggleSwitch';
+import { getVendors, updateUserStatus } from '../services/users.service';
 import { isAdminSide, isSalesUser, hasAnyRole, getCurrentUser } from '../utils/auth';
 import './VendorManagement.css';
 
@@ -51,6 +52,8 @@ const VendorManagement: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [actionMode, setActionMode] = useState<'edit' | 'password'>('edit');
   const [activeVendor, setActiveVendor] = useState<VendorUser | null>(null);
+  const [statusSavingIds, setStatusSavingIds] = useState<Set<string>>(new Set());
+  const [statusError, setStatusError] = useState('');
 
   const loadVendors = async () => {
     try {
@@ -76,6 +79,27 @@ const VendorManagement: React.FC = () => {
     loadVendors();
   }, []);
 
+  // Optimistic toggle: flip the row immediately, revert if the server rejects it.
+  const toggleVendorStatus = async (vendor: VendorUser) => {
+    const nextStatus = vendor.status === 'active' ? 'inactive' : 'active';
+    setStatusError('');
+    setStatusSavingIds(prev => new Set(prev).add(vendor.id));
+    setVendors(prev => prev.map(v => (v.id === vendor.id ? { ...v, status: nextStatus } : v)));
+    try {
+      await updateUserStatus('vendor', vendor.id, nextStatus);
+    } catch (err) {
+      console.error('Failed to update vendor status:', err);
+      setVendors(prev => prev.map(v => (v.id === vendor.id ? { ...v, status: vendor.status } : v)));
+      setStatusError(`Failed to set ${vendor.client} ${nextStatus}. Please try again.`);
+    } finally {
+      setStatusSavingIds(prev => {
+        const next = new Set(prev);
+        next.delete(vendor.id);
+        return next;
+      });
+    }
+  };
+
   const columns = [
     { header: 'SN', accessor: 'sn' as keyof VendorUser, width: '50px' },
     { header: 'CLIENT', accessor: 'client' as keyof VendorUser },
@@ -100,10 +124,19 @@ const VendorManagement: React.FC = () => {
     { 
       header: 'STATUS', 
       accessor: (item: VendorUser) => (
-        <StatusChip variant="solid" tone={item.status === 'active' ? 'success' : 'danger'}>
-          {item.status}
-        </StatusChip>
-      )
+        <div className="vendor-status-cell">
+          <ToggleSwitch
+            checked={item.status === 'active'}
+            disabled={statusSavingIds.has(item.id)}
+            onChange={() => toggleVendorStatus(item)}
+            ariaLabel={`Set ${item.client} ${item.status === 'active' ? 'inactive' : 'active'}`}
+          />
+          <StatusChip variant="solid" tone={item.status === 'active' ? 'success' : 'danger'}>
+            {item.status}
+          </StatusChip>
+        </div>
+      ),
+      width: '150px',
     },
     { header: 'JOINED', accessor: 'joined' as keyof VendorUser },
     { header: 'LAST ORDERED DATE', accessor: 'lastOrderedDate' as keyof VendorUser },
@@ -219,6 +252,8 @@ const VendorManagement: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {statusError && <p className="vendor-status-error">{statusError}</p>}
 
       {loading ? (
         <div className="loading-state">Loading vendors...</div>
