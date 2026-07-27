@@ -5,6 +5,7 @@ import {
   getLocationsController,
   getRidersController,
   getVendorsController,
+  getVendorsDropdownController,
   getManagedUserController,
   login,
   logoutController,
@@ -122,6 +123,13 @@ authRouter.get(
   authorizeRoles("super_admin", "admin", "sales", "vendor", "vendor_staff"),
   authReadLimiter,
   getVendorsController,
+);
+authRouter.get(
+  "/users/vendors/dropdown",
+  authMiddleware,
+  authorizeRoles("super_admin", "admin", "sales", "vendor", "vendor_staff"),
+  authReadLimiter,
+  getVendorsDropdownController,
 );
 authRouter.get(
   "/users/riders",

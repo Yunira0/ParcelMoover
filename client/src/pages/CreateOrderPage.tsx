@@ -1,10 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Info } from 'lucide-react';
 import FormField from '../components/FormField';
+import SearchableSelectAsync from '../components/SearchableSelectAsync';
 import PageHeader from '../components/PageHeader';
 import Button from '../components/Button';
-import { getLocations, getVendors } from '../services/users.service';
+import { getLocations, searchVendors } from '../services/users.service';
 import { getVendorQuote } from '../services/pricing.service';
 import { createOrder, updateOrder, getSenderProfile, type CreateOrderInput, type UpdateOrderInput, type OrderType, type ServiceType } from '../services/orders.service';
 import { isVendorSide } from '../utils/auth';
@@ -105,12 +106,13 @@ const CreateOrderPage: React.FC = () => {
   // Orders keyed in by a plain admin always originate from that admin's own
   // hub — only a super_admin may pick a different origin (server enforces it).
 
-  const [vendors, setVendors] = useState<VendorOption[]>([]);
   // For a vendor/vendor_staff actor, this is their own vendor (fetched via
   // /orders/sender-profile, which resolves correctly for both roles - unlike
   // matching the vendors list by userId, which only ever matched the vendor
   // owner's account, never a staff member's).
   const [myVendorProfile, setMyVendorProfile] = useState<VendorOption | null>(null);
+  // Stores the full details of the vendor selected from the async dropdown.
+  const [selectedVendorDetails, setSelectedVendorDetails] = useState<VendorOption | null>(null);
   const [locationOptions, setLocationOptions] = useState<LocationOption[]>([]);
   const [form, setForm] = useState<FormState>(defaultFormState);
   const [submitting, setSubmitting] = useState(false);
@@ -147,24 +149,6 @@ const CreateOrderPage: React.FC = () => {
           }
         } catch (err) {
           console.error('Failed to load vendor profile:', err);
-        }
-      })();
-    } else {
-      (async () => {
-        try {
-          const res = await getVendors();
-          if (res?.success && Array.isArray(res.data)) {
-            setVendors(res.data.map((v: any) => ({
-              id: v.id,
-              userId: v.userId,
-              label: v.company || v.client,
-              phone: v.phone,
-              address: v.address || '',
-              locationId: v.locationId ?? null,
-            })));
-          }
-        } catch (err) {
-          console.error('Failed to load vendors:', err);
         }
       })();
     }
@@ -215,7 +199,22 @@ const CreateOrderPage: React.FC = () => {
 
   // When actor is a vendor (or vendor_staff), their own sender identity is
   // implicit - no Vendor picker shown.
-  const selectedVendor = isVendorActor ? myVendorProfile ?? undefined : vendors.find(v => v.id === form.vendorId);
+  const selectedVendor = isVendorActor ? myVendorProfile ?? undefined : selectedVendorDetails ?? undefined;
+
+  // Async search for vendor dropdown — fetches from server on each keystroke.
+  const handleVendorSearch = useCallback(async (search: string) => {
+    const res = await searchVendors(search);
+    if (res?.success && Array.isArray(res.data)) {
+      return res.data.map((v: any) => ({
+        id: v.id,
+        label: v.label,
+        phone: v.phone,
+        address: v.address,
+        locationId: v.locationId,
+      }));
+    }
+    return [];
+  }, []);
 
   // The single admin hub all orders originate from. Matched by code first, name as fallback.
   const imadolHub = locationOptions.find(
@@ -236,7 +235,9 @@ const CreateOrderPage: React.FC = () => {
   // (per-destination / zone / flat) — mirrors the server-side charge in
   // order.service.ts so the displayed number matches what gets saved.
   useEffect(() => {
-    const vendorId = selectedVendor?.id;
+    // For admin actors, use form.vendorId directly (set synchronously on selection).
+    // For vendor actors, use selectedVendor.id resolved from their own profile.
+    const vendorId = isVendorActor ? selectedVendor?.id : form.vendorId;
     // Need a destination, a weight, and a resolvable vendor (admins must pick one).
     if (!form.destinationLocationId || !weightKgNumber || (!isVendorActor && !form.vendorId)) {
       setQuote(null);
@@ -283,6 +284,27 @@ const CreateOrderPage: React.FC = () => {
     // changed order is re-checked (and re-warned) rather than force-created.
     if (duplicateWarning) setDuplicateWarning('');
   };
+
+  // When a vendor is selected from the async dropdown, store full details.
+  const handleVendorSelect = useCallback((id: string) => {
+    setField('vendorId', id);
+    // Fetch the full details for this vendor to use in form submission.
+    searchVendors(id, 1).then(res => {
+      if (res?.success && Array.isArray(res.data)) {
+        const v = res.data.find((x: any) => x.id === id);
+        if (v) {
+          setSelectedVendorDetails({
+            id: v.id,
+            userId: null,
+            label: v.label,
+            phone: v.phone,
+            address: v.address || '',
+            locationId: v.locationId ?? null,
+          });
+        }
+      }
+    }).catch(() => {});
+  }, [setField]);
 
   const resetForm = () => {
     // For a vendor actor, origin is always their own hub and the field is
@@ -497,17 +519,13 @@ const CreateOrderPage: React.FC = () => {
           {!isVendorActor && (
             <div className="order-card">
               <h2>Vendor</h2>
-              <FormField
-                label="Vendor Name"
-                required
-                type="searchable-select"
-                searchableOptions={vendors.map(v => ({ id: v.id, label: v.label }))}
+              <SearchableSelectAsync
+                asyncSearch={handleVendorSearch}
                 value={form.vendorId}
-                onChange={id => setField('vendorId', id)}
+                onChange={handleVendorSelect}
                 placeholder="Select vendor"
                 searchPlaceholder="Search vendor by name..."
                 emptyMessage="No vendors found."
-                error={fieldErrors.vendorId}
                 disabled={isEditMode}
               />
             </div>

@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Search, ChevronDown } from 'lucide-react';
 import Table, { TableRowActions } from '../components/Table';
 import UserActionModal from '../components/UserActionModal';
 import PageHeader from '../components/PageHeader';
+import Pagination from '../components/Pagination';
 import SegmentedTabs from '../components/SegmentedTabs';
 import StatusChip from '../components/StatusChip';
 import { getVendors } from '../services/users.service';
@@ -31,11 +32,10 @@ interface VendorUser {
   salesEditUsed: boolean;
 }
 
+const PAGE_SIZE = 20;
+
 const VendorManagement: React.FC = () => {
   const navigate = useNavigate();
-  // Admins can edit any vendor and reset passwords. Sales can onboard new
-  // clients (auto-linked to them) and gets exactly one self-service edit on
-  // a vendor assigned to them - see canEditRow below for the per-row check.
   const isAdmin = isAdminSide();
   const isPureSales = isSalesUser();
   const currentUserId = getCurrentUser()?.id;
@@ -45,23 +45,29 @@ const VendorManagement: React.FC = () => {
   const [filter, setFilter] = useState<'all' | 'high-volume' | 'active'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [activeStatus, setActiveStatus] = useState('all');
-  const [companyFilter, setCompanyFilter] = useState('all');
-  const [locationFilter, setLocationFilter] = useState('all');
   const [vendors, setVendors] = useState<VendorUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionMode, setActionMode] = useState<'edit' | 'password'>('edit');
   const [activeVendor, setActiveVendor] = useState<VendorUser | null>(null);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [total, setTotal] = useState(0);
 
-  const loadVendors = async () => {
+  const loadVendors = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await getVendors();
+      const params: Record<string, string | number> = { page, pageSize: PAGE_SIZE };
+      if (searchQuery) params.search = searchQuery;
+      if (activeStatus !== 'all') params.status = activeStatus;
+
+      const res = await getVendors(params);
       if (res && res.success && Array.isArray(res.data)) {
         setVendors(res.data);
-      } else if (Array.isArray(res)) {
-        setVendors(res);
+        if (res.meta) {
+          setTotalPages(res.meta.totalPages);
+          setTotal(res.meta.total);
+        }
       } else {
-        console.error('Unexpected vendors response shape:', res);
         setVendors([]);
       }
     } catch (err) {
@@ -70,11 +76,21 @@ const VendorManagement: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [page, searchQuery, activeStatus]);
 
   useEffect(() => {
     loadVendors();
-  }, []);
+  }, [loadVendors]);
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setPage(1);
+  }, [searchQuery, activeStatus, filter]);
+
+  // Client-side filter for tab (high-volume requires order count which comes from server)
+  const displayVendors = filter === 'high-volume'
+    ? vendors.filter(v => v.orders.total > 100)
+    : vendors;
 
   const columns = [
     { header: 'SN', accessor: 'sn' as keyof VendorUser, width: '50px' },
@@ -132,29 +148,6 @@ const VendorManagement: React.FC = () => {
       : []),
   ];
 
-  // Dynamic filter options
-  const companies = ['all', ...Array.from(new Set(vendors.map(v => v.company)))];
-  const locations = ['all', ...Array.from(new Set(vendors.map(v => v.location)))];
-
-  const filteredVendors = vendors.filter(vendor => {
-    const matchesSearch = searchQuery === '' || 
-      vendor.client.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      vendor.company.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      vendor.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      vendor.phone.includes(searchQuery) ||
-      vendor.location.toLowerCase().includes(searchQuery.toLowerCase());
-    
-    const matchesTab = filter === 'all' || 
-      (filter === 'active' && vendor.status === 'active') ||
-      (filter === 'high-volume' && vendor.orders.total > 100);
-
-    const matchesStatus = activeStatus === 'all' || vendor.status === activeStatus;
-    const matchesCompany = companyFilter === 'all' || vendor.company === companyFilter;
-    const matchesLocation = locationFilter === 'all' || vendor.location === locationFilter;
-    
-    return matchesSearch && matchesTab && matchesStatus && matchesCompany && matchesLocation;
-  });
-
   return (
     <div className="vendor-management-container">
       <PageHeader
@@ -197,33 +190,23 @@ const VendorManagement: React.FC = () => {
             </select>
             <ChevronDown size={12} style={{ color: 'var(--color-text-caption)', flexShrink: 0 }} />
           </div>
-
-          <div className="dropdown-filter">
-            <select value={companyFilter} onChange={(e) => setCompanyFilter(e.target.value)}>
-              <option value="all">Company</option>
-              {companies.filter(c => c !== 'all').map(company => (
-                <option key={company} value={company}>{company}</option>
-              ))}
-            </select>
-            <ChevronDown size={12} style={{ color: 'var(--color-text-caption)', flexShrink: 0 }} />
-          </div>
-
-          <div className="dropdown-filter">
-            <select value={locationFilter} onChange={(e) => setLocationFilter(e.target.value)}>
-              <option value="all">Location</option>
-              {locations.filter(l => l !== 'all').map(location => (
-                <option key={location} value={location}>{location}</option>
-              ))}
-            </select>
-            <ChevronDown size={12} style={{ color: 'var(--color-text-caption)', flexShrink: 0 }} />
-          </div>
         </div>
       </div>
 
       {loading ? (
         <div className="loading-state">Loading vendors...</div>
       ) : (
-        <Table columns={columns} data={filteredVendors} selectable={false} />
+        <>
+          <Table columns={columns} data={displayVendors} selectable={false} />
+          <Pagination
+            page={page}
+            totalPages={totalPages}
+            onPageChange={setPage}
+            ariaLabel="Vendor management pagination"
+            summary={`${total} vendor${total !== 1 ? 's' : ''} total`}
+            pageSize={PAGE_SIZE}
+          />
+        </>
       )}
 
       <UserActionModal

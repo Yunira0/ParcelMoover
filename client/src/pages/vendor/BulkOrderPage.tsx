@@ -1,9 +1,10 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import { ArrowLeft, CheckCircle2, Download, Trash2, Upload, XCircle } from 'lucide-react';
 import Button from '../../components/Button';
 import FormField from '../../components/FormField';
+import SearchableSelectAsync from '../../components/SearchableSelectAsync';
 import {
   bulkCreateOrders,
   getSenderProfile,
@@ -13,7 +14,7 @@ import {
   type SenderProfile,
   type ServiceType,
 } from '../../services/orders.service';
-import { getLocations, getVendors } from '../../services/users.service';
+import { getLocations, searchVendors } from '../../services/users.service';
 import { isVendorSide } from '../../utils/auth';
 import './BulkOrderPage.css';
 
@@ -243,7 +244,7 @@ const BulkOrderPage: React.FC = () => {
   const [senderProfile, setSenderProfile] = useState<SenderProfile | null>(null);
   const [senderLoading, setSenderLoading] = useState(true);
   const [senderError, setSenderError] = useState('');
-  const [vendorOptions, setVendorOptions] = useState<VendorOption[]>([]);
+  const [selectedVendorDetails, setSelectedVendorDetails] = useState<VendorOption | null>(null);
   const [selectedVendorId, setSelectedVendorId] = useState('');
   const [locations, setLocations] = useState<LocationOption[]>([]);
   const [rows, setRows] = useState<DraftRow[]>([]);
@@ -259,19 +260,7 @@ const BulkOrderPage: React.FC = () => {
     let cancelled = false;
     (async () => {
       try {
-        if (actingForVendor) {
-          const res = await getVendors();
-          if (!cancelled && res?.success && Array.isArray(res.data)) {
-            setVendorOptions(res.data.map((v: any) => ({
-              id: v.id,
-              client: v.client,
-              company: v.company,
-              phone: v.phone,
-              address: v.address || '',
-              locationId: v.locationId ?? null,
-            })));
-          }
-        } else {
+        if (!actingForVendor) {
           const res = await getSenderProfile();
           if (!cancelled && res?.success) setSenderProfile(res.data);
         }
@@ -300,15 +289,51 @@ const BulkOrderPage: React.FC = () => {
   // in for the auto-fetched sender profile used by the vendor-side flow.
   useEffect(() => {
     if (!actingForVendor) return;
-    const vendor = vendorOptions.find(v => v.id === selectedVendorId);
-    setSenderProfile(vendor ? {
-      id: vendor.id,
-      name: vendor.company || vendor.client,
-      phone: vendor.phone,
-      address: vendor.address,
-      locationId: vendor.locationId,
+    setSenderProfile(selectedVendorDetails ? {
+      id: selectedVendorDetails.id,
+      name: selectedVendorDetails.company || selectedVendorDetails.client,
+      phone: selectedVendorDetails.phone,
+      address: selectedVendorDetails.address,
+      locationId: selectedVendorDetails.locationId,
     } : null);
-  }, [actingForVendor, selectedVendorId, vendorOptions]);
+  }, [actingForVendor, selectedVendorId, selectedVendorDetails]);
+
+  // Async search for vendor dropdown — fetches from server on each keystroke.
+  const handleVendorSearch = useCallback(async (search: string) => {
+    const res = await searchVendors(search);
+    if (res?.success && Array.isArray(res.data)) {
+      return res.data.map((v: any) => ({
+        id: v.id,
+        label: v.company || v.client,
+        phone: v.phone,
+        address: v.address,
+        locationId: v.locationId,
+        client: v.client,
+        company: v.company,
+      }));
+    }
+    return [];
+  }, []);
+
+  // When a vendor is selected from the async dropdown, store full details.
+  const handleVendorSelect = useCallback((id: string) => {
+    setSelectedVendorId(id);
+    searchVendors(id, 1).then(res => {
+      if (res?.success && Array.isArray(res.data)) {
+        const v = res.data.find((x: any) => x.id === id);
+        if (v) {
+          setSelectedVendorDetails({
+            id: v.id,
+            client: v.client || '',
+            company: v.company || '',
+            phone: v.phone,
+            address: v.address || '',
+            locationId: v.locationId ?? null,
+          });
+        }
+      }
+    }).catch(() => {});
+  }, []);
 
   // Same rule as the Create Order page: destinations are top-level locations;
   // covered areas (children with a parentId) are zones within them.
@@ -549,18 +574,19 @@ const BulkOrderPage: React.FC = () => {
             <p role="alert" className="bop-error">{senderError}</p>
           ) : actingForVendor ? (
             <div className="bop-sender-fields">
-              <FormField
-                label="Vendor"
-                type="searchable-select"
-                required
-                value={selectedVendorId}
-                onChange={setSelectedVendorId}
-                searchableOptions={vendorOptions.map(v => ({ id: v.id, label: v.company || v.client, description: v.phone }))}
-                placeholder="Select which vendor this import is for"
-                searchPlaceholder="Search vendors..."
-                emptyMessage="No vendors available."
-                gridColumn="1 / -1"
-              />
+              <div style={{ gridColumn: '1 / -1' }}>
+                <label>
+                  Vendor <span className="required">*</span>
+                </label>
+                <SearchableSelectAsync
+                  asyncSearch={handleVendorSearch}
+                  value={selectedVendorId}
+                  onChange={handleVendorSelect}
+                  placeholder="Select which vendor this import is for"
+                  searchPlaceholder="Search vendors..."
+                  emptyMessage="No vendors available."
+                />
+              </div>
               {senderProfile && (
                 <>
                   <FormField label="Sender Name" value={senderProfile.name} onChange={() => {}} disabled />

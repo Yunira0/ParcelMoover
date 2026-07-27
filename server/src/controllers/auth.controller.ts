@@ -376,7 +376,31 @@ export const getVendorsController = async (req: Request, res: Response) => {
       });
       scope = { id: staffRecord?.vendor_id ?? "__none__" };
     }
-    const where = { deleted_at: null, ...scope };
+    const where: Record<string, unknown> = { deleted_at: null, ...scope };
+
+    // Optional server-side filters for the vendor management page.
+    const search = typeof req.query.search === "string" ? req.query.search.trim() : "";
+    const statusFilter = typeof req.query.status === "string" ? req.query.status.trim() : "";
+    const companyFilter = typeof req.query.company === "string" ? req.query.company.trim() : "";
+    const locationFilter = typeof req.query.location === "string" ? req.query.location.trim() : "";
+
+    if (search) {
+      where.OR = [
+        { client_name: { contains: search, mode: "insensitive" } },
+        { business_name: { contains: search, mode: "insensitive" } },
+        { email: { contains: search, mode: "insensitive" } },
+        { phone: { contains: search } },
+      ];
+    }
+    if (statusFilter && (statusFilter === "active" || statusFilter === "inactive")) {
+      where.status = statusFilter;
+    }
+    if (companyFilter) {
+      where.business_name = companyFilter;
+    }
+    if (locationFilter) {
+      where.locations = { name: locationFilter };
+    }
 
     const { page, pageSize, skip } = paginationFromQuery(req);
 
@@ -466,6 +490,73 @@ export const getVendorsController = async (req: Request, res: Response) => {
         lastOrderedDate: formatDate(lastOrderByVendor.get(vendor.id) ?? vendor.last_ordered_at),
       })),
       meta: { page, pageSize, total, totalPages: Math.max(1, Math.ceil(total / pageSize)) },
+    });
+  } catch (error: any) {
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Failed to load vendors",
+    });
+  }
+};
+
+const DROPDOWN_DEFAULT_LIMIT = 20;
+const DROPDOWN_MAX_LIMIT = 50;
+
+export const getVendorsDropdownController = async (req: Request, res: Response) => {
+  try {
+    const roles = req.user?.roles ?? [];
+    const isStaff = roles.includes("super_admin") || roles.includes("admin");
+    let scope: Record<string, unknown> = {};
+    if (roles.includes("sales") && !isStaff) {
+      scope = { sales_user_id: req.user!.id };
+    } else if (roles.includes("vendor") && !isStaff) {
+      scope = { user_id: req.user!.id };
+    } else if (roles.includes("vendor_staff") && !isStaff) {
+      const staffRecord = await prisma.vendor_staff.findFirst({
+        where: { user_id: req.user!.id, deleted_at: null, enabled: true },
+        select: { vendor_id: true },
+      });
+      scope = { id: staffRecord?.vendor_id ?? "__none__" };
+    }
+
+    const search = typeof req.query.search === "string" ? req.query.search.trim() : "";
+    const limit = Number.isFinite(Number(req.query.limit))
+      ? Math.min(DROPDOWN_MAX_LIMIT, Math.max(1, Number(req.query.limit)))
+      : DROPDOWN_DEFAULT_LIMIT;
+
+    const where: Record<string, unknown> = { deleted_at: null, ...scope };
+
+    if (search) {
+      where.OR = [
+        { business_name: { contains: search, mode: "insensitive" } },
+        { client_name: { contains: search, mode: "insensitive" } },
+      ];
+    }
+
+    const vendors = await prisma.vendors.findMany({
+      where,
+      select: {
+        id: true,
+        business_name: true,
+        client_name: true,
+        phone: true,
+        location_id: true,
+        pickup_landmark: true,
+        address: true,
+      },
+      orderBy: { created_at: "desc" },
+      take: limit,
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: vendors.map((v) => ({
+        id: v.id,
+        label: v.business_name || v.client_name,
+        phone: v.phone,
+        address: v.pickup_landmark || v.address || "",
+        locationId: v.location_id,
+      })),
     });
   } catch (error: any) {
     return res.status(500).json({

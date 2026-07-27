@@ -161,8 +161,22 @@ export const getAdmins = async () => {
   return response.data;
 };
 
-export const getVendors = async () => {
-  const response = await api.get('/auth/users/vendors');
+export const getVendors = async (params?: {
+  page?: number;
+  pageSize?: number;
+  search?: string;
+  status?: string;
+  company?: string;
+  location?: string;
+}) => {
+  const response = await api.get('/auth/users/vendors', { params });
+  return response.data;
+};
+
+export const searchVendors = async (search: string, limit = 20) => {
+  const response = await api.get('/auth/users/vendors/dropdown', {
+    params: { search, limit },
+  });
   return response.data;
 };
 
