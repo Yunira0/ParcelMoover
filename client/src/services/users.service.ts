@@ -156,8 +156,13 @@ export const registerUser = async (data: RegisterUserInput) => {
   return response.data;
 };
 
-export const getAdmins = async () => {
-  const response = await api.get('/auth/users/admins'); 
+export const getAdmins = async (params?: {
+  page?: number;
+  pageSize?: number;
+  search?: string;
+  status?: string;
+}) => {
+  const response = await api.get('/auth/users/admins', { params });
   return response.data;
 };
 
@@ -180,8 +185,13 @@ export const searchVendors = async (search: string, limit = 20) => {
   return response.data;
 };
 
-export const getRiders = async () => {
-  const response = await api.get('/auth/users/riders');
+export const getRiders = async (params?: {
+  page?: number;
+  pageSize?: number;
+  search?: string;
+  status?: string;
+}) => {
+  const response = await api.get('/auth/users/riders', { params });
   return response.data;
 };
 

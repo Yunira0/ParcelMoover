@@ -644,6 +644,12 @@ async function _createOrderImpl(actor: OrderActor, data: CreateOrderInput) {
     deliveryCharge = quote.totalPayable;
   }
 
+  const senderPhone = data.sender.phone.trim().replace(/\s/g, "");
+  const receiverPhone = data.receiver.phone.trim().replace(/\s/g, "");
+  if (senderPhone === receiverPhone) {
+    throw new AppError(400, "Sender and receiver cannot have the same phone number");
+  }
+
   const parcel = await prisma.$transaction(async (tx) => {
     const trackingId = await generateUniqueTrackingId(tx);
 

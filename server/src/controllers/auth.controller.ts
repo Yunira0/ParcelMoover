@@ -302,40 +302,52 @@ export const login = async (req: Request, res: Response) => {
   }
 };
 
-// No page/pageSize params here (unlike getVendorsController/getRidersController) -
-// the admin list UI (AdminManagement.tsx) renders the full list client-side with
-// no pagination controls. This cap is just a defensive ceiling against unbounded
-// growth, not real pagination; adding that would need a matching frontend change.
-const ADMINS_LIST_CAP = 500;
-
-export const getAdminsController = async (_req: Request, res: Response) => {
+export const getAdminsController = async (req: Request, res: Response) => {
   try {
+    const { page, pageSize, skip } = paginationFromQuery(req);
+
+    const search = typeof req.query.search === "string" ? req.query.search.trim() : "";
+    const statusFilter = typeof req.query.status === "string" ? req.query.status.trim() : "";
+
     // The root super admin never appears in Admin Management — its profile
     // lives on its own Profile page. Super admins *granted* the role later
     // still show, so the grant stays visible and revocable.
-    const [admins, rootSuperAdminUserId] = await Promise.all([
+    const rootSuperAdminUserId = await getRootSuperAdminUserId();
+
+    const where: Record<string, unknown> = {
+      users: { is: { deleted_at: null, ...(statusFilter && statusFilter !== "all" ? { status: statusFilter } : {}) } },
+      user_id: { not: rootSuperAdminUserId },
+    };
+
+    if (search) {
+      where.OR = [
+        { users: { is: { full_name: { contains: search, mode: "insensitive" } } } },
+        { users: { is: { email: { contains: search, mode: "insensitive" } } } },
+        { users: { is: { phone: { contains: search } } } },
+        { position: { contains: search, mode: "insensitive" } } as any,
+      ];
+    }
+
+    const [total, admins] = await Promise.all([
+      prisma.admins.count({ where }),
       prisma.admins.findMany({
-        where: {
-          users: { is: { deleted_at: null } },
-        },
+        where,
         include: {
           users: { include: { user_roles: { include: { roles: true } } } },
           locations: true,
         },
         orderBy: { created_at: "desc" },
-        take: ADMINS_LIST_CAP,
+        skip,
+        take: pageSize,
       }),
-      getRootSuperAdminUserId(),
     ]);
 
     return res.status(200).json({
       success: true,
-      data: admins
-        .filter((admin) => admin.user_id !== rootSuperAdminUserId)
-        .map((admin, index) => ({
+      data: admins.map((admin, index) => ({
         id: admin.id,
         userId: admin.user_id,
-        sn: index + 1,
+        sn: skip + index + 1,
         name: admin.users.full_name,
         email: admin.users.email || "",
         phone: admin.users.phone || "",
@@ -348,6 +360,7 @@ export const getAdminsController = async (_req: Request, res: Response) => {
         permissions: admin.permissions,
         isSuperAdmin: admin.users.user_roles.some((ur) => ur.roles.code === "super_admin"),
       })),
+      meta: { page, pageSize, total, totalPages: Math.max(1, Math.ceil(total / pageSize)) },
     });
   } catch (error: any) {
     return res.status(500).json({
@@ -528,8 +541,10 @@ export const getVendorsDropdownController = async (req: Request, res: Response) 
 
     if (search) {
       where.OR = [
+        { id: { equals: search } },
         { business_name: { contains: search, mode: "insensitive" } },
         { client_name: { contains: search, mode: "insensitive" } },
+        { phone: { contains: search, mode: "insensitive" } },
       ];
     }
 

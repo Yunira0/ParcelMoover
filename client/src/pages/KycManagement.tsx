@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { CheckCircle, XCircle, Eye, X, FileText, ExternalLink } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import Table from '../components/Table';
+import Pagination from '../components/Pagination';
 import StatusChip from '../components/StatusChip';
 import SegmentedTabs from '../components/SegmentedTabs';
 import Button from '../components/Button';
@@ -23,16 +24,11 @@ const STATUS_TABS: { value: StatusFilter; label: string }[] = [
   { value: 'rejected', label: 'Rejected' },
 ];
 
-// Documents live behind the API origin's authenticated /uploads route. Derive
-// that origin the same way api.ts derives the API base - default to same-origin
-// when VITE_API_URL is unset (stripping only a trailing "/api"). The old
-// localhost:3000 fallback broke every doc link in deploys that rely on the
-// relative "/api" default, which is why the vendor's uploaded docs "didn't show".
 const API_BASE = (import.meta.env.VITE_API_URL || '/api').replace(/\/api\/?$/, '');
+const PAGE_SIZE = 20;
 
 const DocLink: React.FC<{ path: string | null; label: string }> = ({ path, label }) => {
   if (!path) return <span className="kyc-doc-missing">—</span>;
-  // Strip any leading absolute path segments — only keep from "uploads/" onward
   const relative = path.replace(/\\/g, '/').replace(/^.*?(uploads\/)/, '$1');
   return (
     <a
@@ -57,20 +53,35 @@ const KycManagement: React.FC = () => {
   const [rejectionReason, setRejectionReason] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [actionError, setActionError] = useState('');
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [total, setTotal] = useState(0);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await getKycApplications(statusFilter === 'all' ? undefined : statusFilter);
+      const res = await getKycApplications(
+        statusFilter === 'all' ? undefined : statusFilter,
+        page,
+        PAGE_SIZE,
+      );
       setApplications(res.data ?? []);
+      if (res.meta) {
+        setTotalPages(res.meta.totalPages);
+        setTotal(res.meta.total);
+      }
     } catch {
       setApplications([]);
     } finally {
       setLoading(false);
     }
-  }, [statusFilter]);
+  }, [statusFilter, page]);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [statusFilter]);
 
   const openDetail = (app: KycApplication) => {
     setSelected(app);
@@ -176,6 +187,15 @@ const KycManagement: React.FC = () => {
         loadingMessage="Loading applications…"
         emptyMessage="No applications found."
         minWidth="700px"
+      />
+
+      <Pagination
+        page={page}
+        totalPages={totalPages}
+        onPageChange={setPage}
+        ariaLabel="KYC applications pagination"
+        summary={`${total} application${total !== 1 ? 's' : ''} total`}
+        pageSize={PAGE_SIZE}
       />
 
       {detailOpen && selected && (

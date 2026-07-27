@@ -376,6 +376,13 @@ const CreateOrderPage: React.FC = () => {
     if (!isVendorActor && !form.vendorId && !isEditMode) {
       errors.vendorId = 'Please select a vendor.';
     }
+    // The sender is auto-filled from the vendor profile. If selectedVendor
+    // hasn't loaded yet, sender would fall back to the same form fields as
+    // the receiver, making them identical regardless of what's typed.
+    if (!selectedVendor) {
+      setGeneralError('Vendor profile is still loading. Please wait a moment and try again.');
+      return;
+    }
     // Edit mode: older/imported parcels may predate route locations — leaving
     // them unset means "unchanged", so only creation demands them.
     if (!form.originLocationId && !isEditMode) {
