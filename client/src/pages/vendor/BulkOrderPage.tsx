@@ -299,23 +299,30 @@ const BulkOrderPage: React.FC = () => {
   }, [actingForVendor, selectedVendorId, selectedVendorDetails]);
 
   // Async search for vendor dropdown — fetches from server on each keystroke.
-  const handleVendorSearch = useCallback(async (search: string) => {
-    const res = await searchVendors(search);
+  const handleVendorSearch = useCallback(async (search: string, offset: number) => {
+    const res = await searchVendors(search, 50, offset);
     if (res?.success && Array.isArray(res.data)) {
-      return res.data.map((v: any) => ({
-        id: v.id,
-        label: v.company || v.client,
-        phone: v.phone,
-        address: v.address,
-        locationId: v.locationId,
-        client: v.client,
-        company: v.company,
-      }));
+      return {
+        results: res.data.map((v: any) => ({
+          id: v.id,
+          label: v.label,
+          phone: v.phone,
+          address: v.address,
+          locationId: v.locationId,
+          client: v.label,
+          company: v.label,
+        })),
+        hasMore: res.hasMore ?? false,
+      };
     }
-    return [];
+    return { results: [], hasMore: false };
   }, []);
 
   // When a vendor is selected from the async dropdown, store full details.
+  // The /auth/users/vendors/dropdown endpoint returns { id, label, phone,
+  // address, locationId } — there's no `client`/`company` field, so populate
+  // both from `label` (VendorOption keeps client/company for the sender-name
+  // fallback at line ~294).
   const handleVendorSelect = useCallback((id: string) => {
     setSelectedVendorId(id);
     searchVendors(id, 1).then(res => {
@@ -324,8 +331,8 @@ const BulkOrderPage: React.FC = () => {
         if (v) {
           setSelectedVendorDetails({
             id: v.id,
-            client: v.client || '',
-            company: v.company || '',
+            client: v.label || '',
+            company: v.label || '',
             phone: v.phone,
             address: v.address || '',
             locationId: v.locationId ?? null,

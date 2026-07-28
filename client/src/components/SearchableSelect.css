@@ -200,3 +200,9 @@
   animation: searchable-select-spin 0.6s linear infinite;
   color: var(--color-text-caption);
 }
+
+.searchable-select-loading-more {
+  display: flex;
+  justify-content: center;
+  padding: var(--space-2);
+}

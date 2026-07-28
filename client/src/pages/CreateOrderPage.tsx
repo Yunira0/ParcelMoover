@@ -202,18 +202,21 @@ const CreateOrderPage: React.FC = () => {
   const selectedVendor = isVendorActor ? myVendorProfile ?? undefined : selectedVendorDetails ?? undefined;
 
   // Async search for vendor dropdown — fetches from server on each keystroke.
-  const handleVendorSearch = useCallback(async (search: string) => {
-    const res = await searchVendors(search);
+  const handleVendorSearch = useCallback(async (search: string, offset: number) => {
+    const res = await searchVendors(search, 50, offset);
     if (res?.success && Array.isArray(res.data)) {
-      return res.data.map((v: any) => ({
-        id: v.id,
-        label: v.label,
-        phone: v.phone,
-        address: v.address,
-        locationId: v.locationId,
-      }));
+      return {
+        results: res.data.map((v: any) => ({
+          id: v.id,
+          label: v.label,
+          phone: v.phone,
+          address: v.address,
+          locationId: v.locationId,
+        })),
+        hasMore: res.hasMore ?? false,
+      };
     }
-    return [];
+    return { results: [], hasMore: false };
   }, []);
 
   // The single admin hub all orders originate from. Matched by code first, name as fallback.

@@ -8,9 +8,14 @@ export interface SearchableSelectAsyncOption {
   description?: string;
 }
 
+export interface SearchableSelectAsyncResult {
+  results: SearchableSelectAsyncOption[];
+  hasMore: boolean;
+}
+
 interface SearchableSelectAsyncProps {
   /** Called on every keystroke (debounced) to fetch options from the server. */
-  asyncSearch: (query: string) => Promise<SearchableSelectAsyncOption[]>;
+  asyncSearch: (query: string, offset: number) => Promise<SearchableSelectAsyncResult>;
   value: string;
   onChange: (id: string) => void;
   placeholder?: string;
@@ -38,46 +43,68 @@ const SearchableSelectAsync: React.FC<SearchableSelectAsyncProps> = ({
   const [query, setQuery] = useState('');
   const [options, setOptions] = useState<SearchableSelectAsyncOption[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const optionsRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const abortRef = useRef(0);
+  const offsetRef = useRef(0);
 
   const selectedOption = options.find(o => o.id === value);
 
-  // Fetch options from server.
   const fetchOptions = useCallback(
-    (search: string) => {
+    (search: string, offset: number, append: boolean) => {
       if (search.length < minChars) {
         setOptions([]);
+        setHasMore(false);
         return;
       }
       const callId = ++abortRef.current;
-      setLoading(true);
-      asyncSearch(search)
+      if (append) {
+        setLoadingMore(true);
+      } else {
+        setLoading(true);
+      }
+      asyncSearch(search, offset)
         .then((res) => {
           if (callId === abortRef.current) {
-            setOptions(res);
+            setOptions(prev => append ? [...prev, ...res.results] : res.results);
+            setHasMore(res.hasMore);
             setLoading(false);
+            setLoadingMore(false);
+            offsetRef.current = offset + res.results.length;
           }
         })
         .catch(() => {
           if (callId === abortRef.current) {
-            setOptions([]);
+            if (!append) setOptions([]);
+            setHasMore(false);
             setLoading(false);
+            setLoadingMore(false);
           }
         });
     },
     [asyncSearch, minChars],
   );
 
+  const prevQueryRef = useRef(query);
+
+  // Reset activeIndex when query changes (not inside the fetch effect to avoid setState-in-effect).
+  useEffect(() => {
+    if (prevQueryRef.current !== query) {
+      setActiveIndex(0);
+      prevQueryRef.current = query;
+    }
+  }, [query]);
+
   // Debounced search: fires on query change and on dropdown open (empty query).
   useEffect(() => {
     if (!isOpen) return;
-    setActiveIndex(0);
+    offsetRef.current = 0;
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => fetchOptions(query), debounceMs);
+    debounceRef.current = setTimeout(() => fetchOptions(query, 0, false), debounceMs);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, [query, isOpen, fetchOptions, debounceMs]);
 
@@ -94,7 +121,8 @@ const SearchableSelectAsync: React.FC<SearchableSelectAsyncProps> = ({
 
   const normalizedQuery = query.trim().toLowerCase();
 
-  const highlight = (text: string): React.ReactNode => {
+  const highlight = (text: string | undefined): React.ReactNode => {
+    if (!text) return '';
     if (!normalizedQuery) return text;
     const lower = text.toLowerCase();
     const parts: React.ReactNode[] = [];
@@ -122,6 +150,15 @@ const SearchableSelectAsync: React.FC<SearchableSelectAsyncProps> = ({
       ?.querySelector('.searchable-select-option.active')
       ?.scrollIntoView({ block: 'nearest' });
   }, [activeIndex, options, loading]);
+
+  const handleScroll = useCallback(() => {
+    const el = optionsRef.current;
+    if (!el || loading || loadingMore || !hasMore) return;
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 30;
+    if (nearBottom) {
+      fetchOptions(query, offsetRef.current, true);
+    }
+  }, [query, loading, loadingMore, hasMore, fetchOptions]);
 
   const handleSearchKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
     if (event.key === 'ArrowDown') {
@@ -156,7 +193,7 @@ const SearchableSelectAsync: React.FC<SearchableSelectAsyncProps> = ({
 
       {isOpen && (
         <div className="searchable-select-panel">
-          <label className="searchable-select-search">
+          <div className="searchable-select-search">
             <Search size={14} />
             <input
               autoFocus
@@ -166,8 +203,12 @@ const SearchableSelectAsync: React.FC<SearchableSelectAsyncProps> = ({
               placeholder={searchPlaceholder}
             />
             {loading && <Loader2 size={14} className="searchable-select-spinner" />}
-          </label>
-          <div className="searchable-select-options" ref={optionsRef}>
+          </div>
+          <div
+            className="searchable-select-options"
+            ref={optionsRef}
+            onScroll={handleScroll}
+          >
             {options.length === 0 && !loading ? (
               <p className="searchable-select-empty">{emptyMessage}</p>
             ) : options.map((option, index) => (
@@ -182,6 +223,11 @@ const SearchableSelectAsync: React.FC<SearchableSelectAsyncProps> = ({
                 {option.description && <small>{highlight(option.description)}</small>}
               </button>
             ))}
+            {loadingMore && (
+              <div className="searchable-select-loading-more">
+                <Loader2 size={14} className="searchable-select-spinner" />
+              </div>
+            )}
           </div>
         </div>
       )}

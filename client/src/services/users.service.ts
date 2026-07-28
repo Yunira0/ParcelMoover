@@ -178,9 +178,9 @@ export const getVendors = async (params?: {
   return response.data;
 };
 
-export const searchVendors = async (search: string, limit = 20) => {
+export const searchVendors = async (search: string, limit = 50, offset = 0) => {
   const response = await api.get('/auth/users/vendors/dropdown', {
-    params: { search, limit },
+    params: { search, limit, offset },
   });
   return response.data;
 };

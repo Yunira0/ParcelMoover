@@ -512,8 +512,14 @@ export const getVendorsController = async (req: Request, res: Response) => {
   }
 };
 
-const DROPDOWN_DEFAULT_LIMIT = 20;
-const DROPDOWN_MAX_LIMIT = 50;
+const DROPDOWN_DEFAULT_LIMIT = 50;
+const DROPDOWN_MAX_LIMIT = 200;
+
+// Used to guard the { id: { equals: search } } clause below - the vendors.id
+// column is @db.Uuid, so a non-UUID search string (e.g. "kath") makes Postgres
+// throw "invalid input syntax for type uuid" and 500 every typed search. Only
+// match by id when the search string actually looks like a UUID.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export const getVendorsDropdownController = async (req: Request, res: Response) => {
   try {
@@ -536,32 +542,42 @@ export const getVendorsDropdownController = async (req: Request, res: Response) 
     const limit = Number.isFinite(Number(req.query.limit))
       ? Math.min(DROPDOWN_MAX_LIMIT, Math.max(1, Number(req.query.limit)))
       : DROPDOWN_DEFAULT_LIMIT;
+    const offset = Number.isFinite(Number(req.query.offset))
+      ? Math.max(0, Number(req.query.offset))
+      : 0;
 
     const where: Record<string, unknown> = { deleted_at: null, ...scope };
 
     if (search) {
       where.OR = [
-        { id: { equals: search } },
+        ...(UUID_RE.test(search) ? [{ id: { equals: search } }] : []),
         { business_name: { contains: search, mode: "insensitive" } },
         { client_name: { contains: search, mode: "insensitive" } },
         { phone: { contains: search, mode: "insensitive" } },
+        { email: { contains: search, mode: "insensitive" } },
       ];
     }
 
-    const vendors = await prisma.vendors.findMany({
-      where,
-      select: {
-        id: true,
-        business_name: true,
-        client_name: true,
-        phone: true,
-        location_id: true,
-        pickup_landmark: true,
-        address: true,
-      },
-      orderBy: { created_at: "desc" },
-      take: limit,
-    });
+    const [vendors, totalCount] = await Promise.all([
+      prisma.vendors.findMany({
+        where,
+        select: {
+          id: true,
+          business_name: true,
+          client_name: true,
+          phone: true,
+          location_id: true,
+          pickup_landmark: true,
+          address: true,
+        },
+        orderBy: { created_at: "desc" },
+        skip: offset,
+        take: limit,
+      }),
+      prisma.vendors.count({ where }),
+    ]);
+
+    const hasMore = offset + vendors.length < totalCount;
 
     return res.status(200).json({
       success: true,
@@ -572,6 +588,7 @@ export const getVendorsDropdownController = async (req: Request, res: Response) 
         address: v.pickup_landmark || v.address || "",
         locationId: v.location_id,
       })),
+      hasMore,
     });
   } catch (error: any) {
     return res.status(500).json({
