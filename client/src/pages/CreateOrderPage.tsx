@@ -66,6 +66,7 @@ const defaultFormState = {
   packageTypeOther: '',
   deliveryInstruction: 'Cannot open the parcel',
   deliveryInstructionOther: '',
+  remarks: '',
 };
 
 type FormState = typeof defaultFormState;
@@ -430,6 +431,7 @@ const CreateOrderPage: React.FC = () => {
       itemValue: Number(form.itemValue) || 0,
       packageType: effectivePackageType || undefined,
       deliveryInstruction: effectiveDeliveryInstruction || undefined,
+      remarks: form.remarks.trim() || undefined,
       pickupAddress: selectedVendor?.address || undefined,
     };
 
@@ -494,7 +496,7 @@ const CreateOrderPage: React.FC = () => {
         title={isEditMode ? 'Edit Order' : 'Create Order'}
         subtitle={isEditMode
           ? `Update parcel details for ${editTrackingId || 'this order'}. Changes are recorded in the parcel history.`
-          : 'Set up and submit new package orders through the system.'}
+          : 'Set up and submit new package orders through the system. (Enter item value for parcel exceeding Rs 5000)'}
       />
 
       <form className="create-order-body" onSubmit={handleSubmit}>
@@ -664,6 +666,15 @@ const CreateOrderPage: React.FC = () => {
                 value={form.deliveryInstruction}
                 onChange={value => setField('deliveryInstruction', value)}
                 error={fieldErrors.deliveryInstruction}
+              />
+              <FormField
+                label="Remarks"
+                type="textarea"
+                rows={1}
+                value={form.remarks}
+                onChange={value => setField('remarks', value)}
+                placeholder="Any additional notes (optional)"
+                error={fieldErrors.remarks}
               />
               {form.deliveryInstruction === OTHER_DELIVERY_INSTRUCTION && (
                 <FormField

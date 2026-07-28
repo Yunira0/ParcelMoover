@@ -677,7 +677,7 @@ async function _createOrderImpl(actor: OrderActor, data: CreateOrderInput) {
       },
     });
 
-    // All four secondary writes are independent — run them in parallel.
+    // All secondary writes are independent — run them in parallel.
     await Promise.all([
       tx.parcel_status_history.create({
         data: {
@@ -718,6 +718,17 @@ async function _createOrderImpl(actor: OrderActor, data: CreateOrderInput) {
           },
         },
       }),
+      ...(data.remarks?.trim()
+        ? [
+            tx.parcel_remarks.create({
+              data: {
+                parcel_id: parcel.id,
+                user_id: actor.id,
+                remark: data.remarks.trim(),
+              },
+            }),
+          ]
+        : []),
     ]);
 
     return parcel;

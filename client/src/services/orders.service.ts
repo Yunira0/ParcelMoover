@@ -55,6 +55,7 @@ export interface CreateOrderInput {
   deliveryCharge?: number;
   packageType?: string;
   deliveryInstruction?: string;
+  remarks?: string;
   pickupAddress?: string;
   scheduledPickupAt?: string;
   vendorId?: string;

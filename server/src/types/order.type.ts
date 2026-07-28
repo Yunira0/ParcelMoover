@@ -34,6 +34,7 @@ export interface CreateOrderInput {
 
   packageType?: string;
   deliveryInstruction?: string;
+  remarks?: string;
 
   pickupAddress?: string;
   scheduledPickupAt?: string;

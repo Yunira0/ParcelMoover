@@ -98,6 +98,7 @@ const FormField: React.FC<FormFieldProps> = ({
           rows={rows}
           value={value ?? ''}
           onChange={(e) => onChange(e.target.value)}
+          style={rows <= 1 ? { height: 36, minHeight: 'unset', resize: 'vertical' } : undefined}
         />
       ) : type === 'combobox' ? (
         <>

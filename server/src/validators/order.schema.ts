@@ -86,6 +86,7 @@ export const createOrderSchema = z.object({
   deliveryCharge: z.number().min(0, "deliveryCharge cannot be negative").optional(),
   packageType: z.string().max(50).optional(),
   deliveryInstruction: z.string().max(500).optional(),
+  remarks: z.string().max(1000).optional(),
   pickupAddress: z.string().max(255).optional(),
   scheduledPickupAt: z.string().datetime({ offset: true }).optional(),
   confirmDuplicate: z.boolean().optional(),
