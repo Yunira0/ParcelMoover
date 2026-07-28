@@ -4,7 +4,7 @@ import { ArrowLeft, Users, ListChecks } from 'lucide-react';
 import Button from '../components/Button';
 import FormField from '../components/FormField';
 import { getUnsettledOrders, createSettlement, type UnsettledOrderItem } from '../services/finance.service';
-import { getRiders, getVendors } from '../services/users.service';
+import { getRiders, searchVendors } from '../services/users.service';
 import './SettlementCreatePage.css';
 
 type PayeeType = 'rider' | 'vendor';
@@ -39,25 +39,16 @@ const SettlementCreatePage: React.FC = () => {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    const fetchEntities = async () => {
+    if (payeeType !== 'rider') return;
+    const fetchRiders = async () => {
       setFetching(true);
       try {
-        if (payeeType === 'rider') {
-          const res = await getRiders();
-          if (res?.success && Array.isArray(res.data)) {
-            setEntityOptions(res.data.map((r: any) => ({
-              value: r.id,
-              label: r.name || r.client_name || '',
-            })));
-          }
-        } else {
-          const res = await getVendors();
-          if (res?.success && Array.isArray(res.data)) {
-            setEntityOptions(res.data.map((v: any) => ({
-              value: v.id,
-              label: v.company || v.client || '',
-            })));
-          }
+        const res = await getRiders();
+        if (res?.success && Array.isArray(res.data)) {
+          setEntityOptions(res.data.map((r: any) => ({
+            value: r.id,
+            label: r.name || r.client_name || '',
+          })));
         }
       } catch {
         setEntityOptions([]);
@@ -65,8 +56,23 @@ const SettlementCreatePage: React.FC = () => {
         setFetching(false);
       }
     };
-    fetchEntities();
+    fetchRiders();
   }, [payeeType]);
+
+  // Vendor picker is server-side searched instead (see handleVendorSearch) -
+  // getRiders() above has no pagination cap that matters at rider scale, but
+  // vendors easily run into the hundreds and a single unpaginated fetch would
+  // silently cut the list off.
+  const handleVendorSearch = async (search: string, offset: number) => {
+    const res = await searchVendors(search, 50, offset);
+    if (res?.success && Array.isArray(res.data)) {
+      return {
+        results: res.data.map((v: any) => ({ id: v.id, label: v.label })),
+        hasMore: res.hasMore ?? false,
+      };
+    }
+    return { results: [], hasMore: false };
+  };
 
   useEffect(() => {
     if (!selectedEntityId) {
@@ -168,19 +174,36 @@ const SettlementCreatePage: React.FC = () => {
           />
           <div className="scp-row">
             <div className="scp-field">
-              <FormField
-                label={payeeType === 'rider' ? 'Rider' : 'Vendor'}
-                type="select"
-                required
-                value={selectedEntityId}
-                onChange={(value) => {
-                  setSelectedEntityId(value);
-                  setSelected(new Set());
-                }}
-                placeholder={fetching ? 'Loading...' : `Select ${payeeType}`}
-                options={entityOptions}
-                disabled={fetching}
-              />
+              {payeeType === 'rider' ? (
+                <FormField
+                  label="Rider"
+                  type="select"
+                  required
+                  value={selectedEntityId}
+                  onChange={(value) => {
+                    setSelectedEntityId(value);
+                    setSelected(new Set());
+                  }}
+                  placeholder={fetching ? 'Loading...' : 'Select rider'}
+                  options={entityOptions}
+                  disabled={fetching}
+                />
+              ) : (
+                <FormField
+                  label="Vendor"
+                  type="searchable-select-async"
+                  required
+                  value={selectedEntityId}
+                  onChange={(value) => {
+                    setSelectedEntityId(value);
+                    setSelected(new Set());
+                  }}
+                  placeholder="Select vendor"
+                  searchPlaceholder="Search vendor by name..."
+                  emptyMessage="No vendors found."
+                  asyncSearch={handleVendorSearch}
+                />
+              )}
             </div>
             <div className="scp-field">
               <FormField

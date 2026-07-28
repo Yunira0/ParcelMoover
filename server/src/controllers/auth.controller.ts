@@ -398,12 +398,10 @@ export const getVendorsController = async (req: Request, res: Response) => {
     const locationFilter = typeof req.query.location === "string" ? req.query.location.trim() : "";
 
     if (search) {
-      where.OR = [
-        { client_name: { contains: search, mode: "insensitive" } },
-        { business_name: { contains: search, mode: "insensitive" } },
-        { email: { contains: search, mode: "insensitive" } },
-        { phone: { contains: search } },
-      ];
+      // search_text (business_name + client_name + phone + email, lowercased)
+      // is GIN-trigram indexed - a single `contains` on it stays fast at any
+      // vendor count, unlike ILIKE-ing four separate unindexed columns.
+      where.search_text = { contains: search.toLowerCase(), mode: "insensitive" };
     }
     if (statusFilter && (statusFilter === "active" || statusFilter === "inactive")) {
       where.status = statusFilter;
@@ -549,12 +547,12 @@ export const getVendorsDropdownController = async (req: Request, res: Response) 
     const where: Record<string, unknown> = { deleted_at: null, ...scope };
 
     if (search) {
+      // Same search_text fast-path as getVendorsController above - a plain
+      // OR across business_name/client_name/phone/email has no supporting
+      // index and would full-scan the table on every keystroke.
       where.OR = [
         ...(UUID_RE.test(search) ? [{ id: { equals: search } }] : []),
-        { business_name: { contains: search, mode: "insensitive" } },
-        { client_name: { contains: search, mode: "insensitive" } },
-        { phone: { contains: search, mode: "insensitive" } },
-        { email: { contains: search, mode: "insensitive" } },
+        { search_text: { contains: search.toLowerCase(), mode: "insensitive" } },
       ];
     }
 

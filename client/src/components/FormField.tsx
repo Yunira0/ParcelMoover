@@ -1,12 +1,15 @@
 import React, { useId, useState } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 import SearchableSelect, { type SearchableSelectOption } from './SearchableSelect';
+import SearchableSelectAsync, {
+  type SearchableSelectAsyncResult,
+} from './SearchableSelectAsync';
 import NepaliDatePicker from './NepaliDatePicker';
 import './FormField.css';
 
 export type FormFieldOption = { value: string; label: string };
 
-export type FormFieldType = 'text' | 'email' | 'password' | 'number' | 'date' | 'datetime-local' | 'select' | 'searchable-select' | 'combobox' | 'textarea';
+export type FormFieldType = 'text' | 'email' | 'password' | 'number' | 'date' | 'datetime-local' | 'select' | 'searchable-select' | 'searchable-select-async' | 'combobox' | 'textarea';
 
 interface FormFieldProps {
   label: string;
@@ -25,6 +28,8 @@ interface FormFieldProps {
   options?: FormFieldOption[];
   /** Options for type="searchable-select". */
   searchableOptions?: SearchableSelectOption[];
+  /** Server-side search callback for type="searchable-select-async". */
+  asyncSearch?: (query: string, offset: number) => Promise<SearchableSelectAsyncResult>;
   searchPlaceholder?: string;
   emptyMessage?: string;
   className?: string;
@@ -53,6 +58,7 @@ const FormField: React.FC<FormFieldProps> = ({
   autoComplete,
   options = [],
   searchableOptions = [],
+  asyncSearch,
   searchPlaceholder,
   emptyMessage,
   className,
@@ -70,7 +76,7 @@ const FormField: React.FC<FormFieldProps> = ({
       style={gridColumn ? { gridColumn } : undefined}
     >
       {label && (
-        <label htmlFor={type === 'searchable-select' ? undefined : id}>
+        <label htmlFor={type === 'searchable-select' || type === 'searchable-select-async' ? undefined : id}>
           {label}
           {required && <span className="required">*</span>}
         </label>
@@ -128,6 +134,16 @@ const FormField: React.FC<FormFieldProps> = ({
       ) : type === 'searchable-select' ? (
         <SearchableSelect
           options={searchableOptions}
+          value={value === undefined ? '' : String(value)}
+          onChange={onChange}
+          placeholder={placeholder}
+          searchPlaceholder={searchPlaceholder}
+          emptyMessage={emptyMessage}
+          disabled={disabled}
+        />
+      ) : type === 'searchable-select-async' ? (
+        <SearchableSelectAsync
+          asyncSearch={asyncSearch!}
           value={value === undefined ? '' : String(value)}
           onChange={onChange}
           placeholder={placeholder}

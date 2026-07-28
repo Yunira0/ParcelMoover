@@ -615,6 +615,11 @@ model vendors {
   created_at            DateTime          @default(now()) @db.Timestamptz(6)
   updated_at            DateTime          @default(now()) @updatedAt @db.Timestamptz(6)
   deleted_at            DateTime?         @db.Timestamptz(6)
+  // Lowercased business_name + client_name + phone + email, kept in sync by
+  // trg_refresh_vendor_search_text. Backs the GIN trigram index below so the
+  // vendor picker/filter search stays fast regardless of vendor count -
+  // matches the parcels.search_text pattern.
+  search_text           String?
   cod_collections       cod_collections[]
   parcels               parcels[]
   settlements           settlements[]
@@ -626,6 +631,7 @@ model vendors {
 
   @@index([location_id], map: "idx_vendors_location_id")
   @@index([sales_user_id], map: "idx_vendors_sales_user_id")
+  @@index([search_text(ops: raw("gin_trgm_ops"))], map: "idx_vendors_search_text", type: Gin)
 }
 
 // Partner API keys — vendor-owned credentials for the public /api/v1 surface.

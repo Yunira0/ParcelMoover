@@ -19,6 +19,7 @@ import Pagination from '../components/Pagination';
 import StatusChip, { type StatusChipTone } from '../components/StatusChip';
 import FilterDropdown from '../components/FilterDropdown';
 import MultiFilterDropdown from '../components/MultiFilterDropdown';
+import MultiFilterDropdownAsync from '../components/MultiFilterDropdownAsync';
 import QuickRemarkPopup from '../components/QuickRemarkPopup';
 import { toBsDate, toBsDateTime } from '../utils/nepaliDate';
 import { downloadExcel } from '../utils/excel';
@@ -34,6 +35,7 @@ import {
   type OrderSortField,
   type ParcelStatus,
 } from '../services/orders.service';
+import { searchVendors } from '../services/users.service';
 import { printLabels } from '../utils/printLabels';
 import { getCurrentUserRoles } from '../utils/auth';
 import { commitScannedTerm, handleScannerPaste } from '../utils/scannerInput';
@@ -425,12 +427,26 @@ const OrderManagement: React.FC = () => {
     return () => { cancelled = true; };
   }, [filter]);
 
+  // The VENDOR filter is matched against order.vendorName (a display string,
+  // not an id - see the `filters.vendor.includes(...)` check below), so this
+  // search callback keys options by name too, matching that scheme instead of
+  // introducing a separate id-space just for this one filter.
+  const handleVendorFilterSearch = useCallback(async (search: string, offset: number) => {
+    const res = await searchVendors(search, 50, offset);
+    if (res?.success && Array.isArray(res.data)) {
+      const results = (res.data as { label?: string }[])
+        .filter((v): v is { label: string } => Boolean(v.label))
+        .map(v => ({ id: v.label, label: v.label }));
+      return { results, hasMore: res.hasMore ?? false };
+    }
+    return { results: [], hasMore: false };
+  }, []);
+
   const filterOptions = useMemo(() => {
     return {
       origins: uniqueValues(optionsOrders.map(order => order.origin)),
       riders: uniqueValues(optionsOrders.map(order => order.riderName || '')),
       destinations: uniqueValues(optionsOrders.map(order => order.destination)),
-      vendors: uniqueValues(optionsOrders.map(order => order.vendorName || order.senderName)),
     };
   }, [optionsOrders]);
 
@@ -797,12 +813,13 @@ const OrderManagement: React.FC = () => {
                 aria-label="To date"
               />
             </label>
-            <MultiFilterDropdown
+            <MultiFilterDropdownAsync
               label="VENDOR"
               value={vendor}
               onChange={setVendor}
               placeholder="All Vendors"
-              options={filterOptions.vendors.map(value => ({ value, label: value }))}
+              searchPlaceholder="Search vendor by name..."
+              asyncSearch={handleVendorFilterSearch}
             />
             <FilterDropdown
               label="OPERATION DEPT"
