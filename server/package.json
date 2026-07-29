@@ -11,6 +11,7 @@
     "redis": "redis-server --save \"\" --appendonly no",
     "server:dev": "nodemon -L ./src/index.ts",
     "dev": "concurrently -n redis,server -c magenta,cyan npm:redis npm:server:dev",
+    "docs:build": "ts-node --transpile-only scripts/build-partner-docs.ts",
     "seed:roles": "ts-node --transpile-only prisma/seed-roles.ts",
     "seed:vendors-staff": "ts-node --transpile-only prisma/seed-vendors-staff.ts",
     "migrate:encrypt-uploads": "ts-node --transpile-only scripts/encrypt-existing-uploads.ts",

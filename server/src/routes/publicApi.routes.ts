@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Response, Router } from "express";
 import { rateLimit, ipKeyGenerator } from "express-rate-limit";
 import { apiKeyAuthMiddleware } from "../middlewares/apiKeyAuth.middleware";
 import { validate } from "../middlewares/validate.middleware";
@@ -108,6 +108,38 @@ publicApiRouter.get("/openapi.json", (req, res) => {
   const baseUrl = `${req.protocol}://${req.get("host")}`;
   res.json(buildOpenApiDocument(baseUrl));
 });
+
+// GET /api/v1/docs — the human-readable reference; /docs/console is the
+// try-it playground. Both unauthenticated for the same reason openapi.json is:
+// a vendor dev reads them before they have a key.
+//
+// The path is cwd-relative and identical in both environments: in dev the
+// server runs from server/ (so this is server/docs-static/), and the runtime
+// image copies the same directory to /app/docs-static alongside WORKDIR.
+function sendDocPage(res: Response, file: string) {
+  // Both pages are single self-contained files with inline <style> and
+  // <script>, which the app-wide helmet CSP (script-src 'self') would block.
+  // Scoped to these static, no-user-content routes rather than loosened globally.
+  res.setHeader(
+    "Content-Security-Policy",
+    "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https:; " +
+      "font-src 'self' https: data:; img-src 'self' data:; connect-src 'self'",
+  );
+  res.sendFile(file, { root: "docs-static" }, (err) => {
+    if (err) {
+      res.status(404).json({
+        success: false,
+        message: "Documentation not found",
+        error: { code: "NOT_FOUND" },
+      });
+    }
+  });
+}
+
+publicApiRouter.get("/docs", (_req, res) => sendDocPage(res, "partner-api-reference.html"));
+
+// The interactive try-it console. Both are exact paths, so they never collide.
+publicApiRouter.get("/docs/console", (_req, res) => sendDocPage(res, "partner-api.html"));
 
 publicApiRouter.use(apiKeyAuthMiddleware);
 

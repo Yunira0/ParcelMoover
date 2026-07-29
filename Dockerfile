@@ -54,6 +54,9 @@ COPY --from=server-build /app/prisma ./prisma
 COPY --from=server-build /app/prisma.config.ts ./prisma.config.ts
 # server.ts does `express.static("public")` — this is where the built SPA lives.
 COPY --from=client-build /app/client/dist ./public
+# Partner API reference page, served at GET /api/v1/docs. tsc doesn't copy
+# non-TS files into dist/, so this comes across from the server build context.
+COPY --from=server-build /app/docs-static ./docs-static
 
 RUN mkdir -p uploads && chown -R app:app /app
 USER app

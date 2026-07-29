@@ -9,10 +9,19 @@ import {
 
 const baseReceiver = { name: "Jane Doe", phone: "9800000000" };
 
+// Smallest payload the public create schema accepts: a destination, a street
+// address for the default home_delivery, and explicit COD + weight.
+const baseOrder = {
+  receiver: { ...baseReceiver, address: "Baneshwor, Kathmandu" },
+  destinationLocationId: "KATHMANDU",
+  codAmount: 0,
+  weightKg: 1,
+};
+
 describe("publicCreateOrderSchema", () => {
   it("accepts orderType: exchange (the Partner API create-order path already supports it)", () => {
     const result = publicCreateOrderSchema.safeParse({
-      receiver: baseReceiver,
+      ...baseOrder,
       orderType: "exchange",
     });
     expect(result.success).toBe(true);
@@ -21,11 +30,56 @@ describe("publicCreateOrderSchema", () => {
 
   it("accepts allowPartialDelivery as a boolean flag", () => {
     const result = publicCreateOrderSchema.safeParse({
-      receiver: baseReceiver,
+      ...baseOrder,
       allowPartialDelivery: true,
     });
     expect(result.success).toBe(true);
     if (result.success) expect(result.data.allowPartialDelivery).toBe(true);
+  });
+
+  // A missing destination used to book the order at a delivery_charge of 0,
+  // because createOrder skips rate quoting when it can't resolve one.
+  it("rejects an order with no destination at all", () => {
+    const { destinationLocationId, ...noDestination } = baseOrder;
+    const result = publicCreateOrderSchema.safeParse(noDestination);
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts receiver.locationId as the destination instead of destinationLocationId", () => {
+    const { destinationLocationId, ...rest } = baseOrder;
+    const result = publicCreateOrderSchema.safeParse({
+      ...rest,
+      receiver: { ...rest.receiver, locationId: "POKHARA" },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("requires receiver.address for home_delivery but not for branch_delivery", () => {
+    const { address, ...receiverNoAddress } = baseOrder.receiver;
+
+    expect(
+      publicCreateOrderSchema.safeParse({ ...baseOrder, receiver: receiverNoAddress }).success,
+    ).toBe(false);
+
+    expect(
+      publicCreateOrderSchema.safeParse({
+        ...baseOrder,
+        receiver: receiverNoAddress,
+        serviceType: "branch_delivery",
+      }).success,
+    ).toBe(true);
+  });
+
+  it("requires codAmount and weightKg to be sent explicitly", () => {
+    const { codAmount, ...noCod } = baseOrder;
+    expect(publicCreateOrderSchema.safeParse(noCod).success).toBe(false);
+
+    const { weightKg, ...noWeight } = baseOrder;
+    expect(publicCreateOrderSchema.safeParse(noWeight).success).toBe(false);
+
+    // 0 is a valid COD (prepaid) - only *absent* is rejected.
+    expect(publicCreateOrderSchema.safeParse({ ...baseOrder, codAmount: 0 }).success).toBe(true);
+    expect(publicCreateOrderSchema.safeParse({ ...baseOrder, weightKg: 0 }).success).toBe(false);
   });
 });
 

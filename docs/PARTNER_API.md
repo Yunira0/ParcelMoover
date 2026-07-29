@@ -6,10 +6,12 @@ Integrate your e-commerce store with ParcelMoover: place delivery orders (includ
 
 | Environment | URL |
 |---|---|
-| Production | `https://<your-parcelmoover-domain>/api/v1` |
+| Production | `https://portal.parcelmoover.com/api/v1` |
 | Local development | `http://localhost:3000/api/v1` |
 
 All requests and responses are JSON (`Content-Type: application/json`).
+
+**Read this online instead:** this whole reference is served as a browsable web page at **`GET /api/v1/docs`**, and a console for trying every endpoint against your own API key lives at **`GET /api/v1/docs/console`**. Neither needs a key to open. The machine-readable OpenAPI 3.1 spec is at **`GET /api/v1/openapi.json`**, also unauthenticated, and is generated from the same validators the API enforces, so it can't drift.
 
 ---
 
@@ -71,23 +73,23 @@ Headers: `Authorization`, `Idempotency-Key` (UUID, required), `Content-Type: app
 |---|---|---|---|
 | `receiver` | object | ✅ | Delivery contact — your customer. |
 | `receiver.name` | string | ✅ | 2–100 chars. |
-| `receiver.phone` | string | ✅ | 10–15 digits, optional leading `+`. |
-| `receiver.alternatePhone` | string | — | Same format. |
+| `receiver.phone` | string | ✅ | **Nepali mobile number only** — 10 digits starting `97` or `98`, with an optional `+977`/`977` country code. `9841234567` and `+9779841234567` are both fine; landlines and non-Nepali numbers are rejected. Must differ from the sender's phone. |
+| `receiver.alternatePhone` | string | — | Looser: any 10–15 digits with an optional leading `+`. |
 | `receiver.email` | string | — | |
-| `receiver.address` | string | — | Max 255 chars. |
-| `receiver.locationId` | UUID or hub name | — | The receiver's destination branch/hub — same value as `destinationLocationId` below. Set both; this is what the ParcelMoover dashboard's own order form does internally too. |
-| `sender` | object | — | Pickup contact. **Omit it and ParcelMoover fills it from your vendor account's registered pickup profile** (business name, phone, pickup landmark). Provide it only to override — e.g. shipping from a different warehouse. Same fields as `receiver` (`name` and `phone` required when provided). |
+| `receiver.address` | string | — | Max 255 chars. **Required unless `serviceType` is `branch_delivery`** — a home delivery with no street address is rejected. |
+| `receiver.locationId` | UUID or hub name | — | The receiver's destination branch/hub — same value as `destinationLocationId` below. Setting either one satisfies the destination requirement; the dashboard's own order form sets both. |
+| `sender` | object | — | Pickup contact. **Omit it and ParcelMoover fills it from your vendor account's registered pickup profile** (business name, phone, pickup landmark). Provide it only to override — e.g. shipping from a different warehouse. Same fields as `receiver` (`name` and `phone` required when provided; `phone` has the same Nepali-mobile rule). |
 | `orderType` | string | — | `delivery` (default), `exchange`, or `return`. On an `exchange` order, ops confirming delivery auto-creates a linked return parcel — it isn't something you create yourself; find it later via `sourceOrderId` on the new parcel (see [Track an order](#track-an-order)). |
 | `serviceType` | string | — | `home_delivery` (default) or `branch_delivery`. |
 | `pieces` | integer | — | ≥ 1. Number of packages. |
-| `weightKg` | number | — | > 0. |
-| `codAmount` | number | — | ≥ 0. Cash to collect from the receiver on delivery (NPR). Omit or `0` for prepaid orders. |
+| `weightKg` | number | ✅ | > 0. Billable weight — this is what your rate is quoted against, so it must be sent explicitly rather than defaulted. |
+| `codAmount` | number | ✅ | ≥ 0. Cash to collect from the receiver on delivery (NPR). Send `0` explicitly for prepaid orders — the field can't be omitted, so a forgotten COD can never silently ship as prepaid. |
 | `packageType` | string | — | Max 50 chars, e.g. `"electronics"`. |
 | `deliveryInstruction` | string | — | Max 500 chars. |
 | `pickupAddress` | string | — | Max 255 chars. Overrides the sender address for pickup. |
 | `scheduledPickupAt` | string | — | ISO-8601 datetime with offset, e.g. `2026-07-15T10:00:00+05:45`. |
 | `originLocationId` | UUID | — | Your pickup hub. Optional — vendors normally have one fixed hub, resolved automatically; only set this if you dispatch from more than one. |
-| `destinationLocationId` | UUID or hub name | — | The destination branch/hub ("To") — see below for how to pick one. Optional (a plain `receiver.address` still works), but setting it gets you precise routing and an accurate rate quote. |
+| `destinationLocationId` | UUID or hub name | ✅* | The destination branch/hub ("To") — see below for how to pick one. \*Required unless you set `receiver.locationId` instead; one of the two must be present, and sending both (to the same value) is fine. |
 | `allowPartialDelivery` | boolean | — | Flags that this shipment (e.g. a multi-item order) may be accepted in part without failing the whole delivery. Informational only — the actual outcome is still reported by the rider/ops side; you read it back via `partialDeliveryRemarks`/`partialCodCollected` on the order once it happens. |
 
 The **delivery charge is computed by ParcelMoover** from your vendor rate agreement — you cannot set it. It appears on the order when you fetch it.
@@ -513,7 +515,7 @@ POST /api/v1/orders/{trackingId}/cancel
 
 Headers: `Authorization`, `Idempotency-Key` (UUID, required).
 
-Only works while the order hasn't been picked up yet — status `pickup_ordered`, `rider_assigned`, or `failed_pickup`. Once it's moved past that, this returns `409`/`422` instead — reach out through [order comments](#remarks) or a [support ticket](#tickets) if you need to intervene on a later stage.
+Only works while the order hasn't been picked up yet — status `pickup_ordered`, `rider_assigned`, or `failed_pickup`. Once it's moved past that, this returns `409`/`422` instead — reach out through [order comments](#order-comments) or a [support ticket](#support-tickets) if you need to intervene on a later stage.
 
 #### Request body
 
@@ -905,7 +907,7 @@ Every error is JSON with this shape:
   "message": "Validation failed",
   "error": {
     "code": "VALIDATION_ERROR",
-    "fields": [ { "field": "receiver.phone", "message": "Phone must be 10–15 digits, optionally starting with +" } ]
+    "fields": [ { "field": "receiver.phone", "message": "Enter a valid Nepali mobile number (e.g. 98XXXXXXXX)" } ]
   }
 }
 ```

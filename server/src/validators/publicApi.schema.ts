@@ -23,6 +23,12 @@ const hubReferenceSchema = z
 // from the API key, and vendor delivery charges are always server-quoted.
 // sender is optional here (unlike the internal schema): when omitted, the
 // controller fills it from the key owner's vendor profile via getSenderProfile.
+//
+// codAmount and weightKg are optional internally (staff fill them in as the
+// parcel is handled) but required here: the internal defaults - 0 COD and 1kg -
+// are both silent money bugs for an integration. A forgotten codAmount ships
+// the goods and collects nothing; a forgotten weightKg underbills the vendor,
+// and createOrder only reprices on a later edit.
 export const publicCreateOrderSchema = createOrderSchema
   .omit({
     vendorId: true,
@@ -34,6 +40,32 @@ export const publicCreateOrderSchema = createOrderSchema
       locationId: hubReferenceSchema.optional(),
     }),
     destinationLocationId: hubReferenceSchema.optional(),
+    codAmount: z.number().min(0, "codAmount cannot be negative"),
+    weightKg: z.number().positive("weightKg must be a positive number"),
+  })
+  .superRefine((data, ctx) => {
+    // createOrder resolves the destination as destinationLocationId ||
+    // receiver.locationId, and skips rate quoting entirely when both are
+    // absent - which silently books the order at a delivery_charge of 0.
+    // Either field satisfies this; neither does not.
+    if (!data.destinationLocationId && !data.receiver.locationId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["destinationLocationId"],
+        message:
+          "A destination is required: set destinationLocationId (or receiver.locationId) to a hub name or UUID from GET /api/v1/rates",
+      });
+    }
+
+    // serviceType defaults to home_delivery, so an absent one counts as one.
+    // A branch_delivery is collected at the hub and needs no street address.
+    if ((data.serviceType ?? "home_delivery") === "home_delivery" && !data.receiver.address) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["receiver", "address"],
+        message: "receiver.address is required for home_delivery orders",
+      });
+    }
   });
 
 export type PublicCreateOrderInput = z.infer<typeof publicCreateOrderSchema>;

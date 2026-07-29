@@ -78,6 +78,17 @@
       color: var(--slate-caption);
     }
 
+    .sidebar-brand .docs-link {
+      display: block;
+      margin-top: 10px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--rust);
+      text-decoration: none;
+    }
+
+    .sidebar-brand .docs-link:hover { text-decoration: underline; }
+
     .nav-item {
       display: flex;
       align-items: center;
@@ -634,6 +645,7 @@
       <div class="sidebar-brand">
         <h1>ParcelMoover</h1>
         <span>Partner Dashboard</span>
+        <a class="docs-link" href="/api/v1/docs">&larr; Back to API reference</a>
       </div>
       <button class="nav-item active" data-tab="settings">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
@@ -717,12 +729,13 @@
                   <input type="email" id="ord-receiver-email">
                 </div>
                 <div class="form-group">
-                  <label>Receiver Address</label>
-                  <input type="text" id="ord-receiver-address" maxlength="255">
+                  <label>Receiver Address <span class="required">*</span></label>
+                  <input type="text" id="ord-receiver-address" maxlength="255"
+                         placeholder="Required for home delivery">
                 </div>
                 <div class="form-group">
-                  <label>Destination (Hub Name or UUID)</label>
-                  <input type="text" id="ord-destination" placeholder="e.g. Kathmandu">
+                  <label>Destination (Hub Name or UUID) <span class="required">*</span></label>
+                  <input type="text" id="ord-destination" placeholder="e.g. Kathmandu" required>
                 </div>
                 <div class="form-group">
                   <label>Order Type</label>
@@ -1129,10 +1142,16 @@
   </div>
 
   <script>
+    // Default to this page's own origin — the console is served from the same
+    // host as the API (dev: localhost:3000, prod: portal.parcelmoover.com), so
+    // deriving it here means the default is always correct instead of needing
+    // an edit whenever this file moves between environments.
+    const DEFAULT_BASE_URL = window.location.origin + '/api/v1';
+
     const App = {
       config: {
         apiKey: localStorage.getItem('pm_api_key') || '',
-        baseURL: localStorage.getItem('pm_base_url') || 'http://localhost:3000/api/v1'
+        baseURL: localStorage.getItem('pm_base_url') || DEFAULT_BASE_URL
       },
       orders: { page: 1, data: [], meta: null },
       tickets: { data: [] },
@@ -1200,7 +1219,7 @@
 
     function saveConfig() {
       App.config.apiKey = document.getElementById('cfg-api-key').value.trim();
-      App.config.baseURL = document.getElementById('cfg-base-url').value.trim() || 'http://localhost:3000/api/v1';
+      App.config.baseURL = document.getElementById('cfg-base-url').value.trim() || DEFAULT_BASE_URL;
       localStorage.setItem('pm_api_key', App.config.apiKey);
       localStorage.setItem('pm_base_url', App.config.baseURL);
       toast('Configuration saved', 'success');
@@ -1209,7 +1228,7 @@
 
     function clearConfig() {
       App.config.apiKey = '';
-      App.config.baseURL = 'http://localhost:3000/api/v1';
+      App.config.baseURL = DEFAULT_BASE_URL;
       localStorage.removeItem('pm_api_key');
       localStorage.removeItem('pm_base_url');
       document.getElementById('cfg-api-key').value = '';
@@ -1259,15 +1278,21 @@
 
       const body = { receiver };
       const dest = document.getElementById('ord-destination').value.trim();
-      if (dest) {
-        body.destinationLocationId = dest;
-        receiver.locationId = dest;
-      }
+      if (!dest) { toast('A destination hub is required', 'error'); return; }
+      body.destinationLocationId = dest;
+      receiver.locationId = dest;
 
       const orderType = document.getElementById('ord-type').value;
       const serviceType = document.getElementById('ord-service').value;
       if (orderType !== 'delivery') body.orderType = orderType;
       if (serviceType !== 'home_delivery') body.serviceType = serviceType;
+
+      // Address is only required for home delivery - a branch delivery is
+      // collected at the hub, so don't block it on an address the API won't ask for.
+      if (serviceType === 'home_delivery' && !receiver.address) {
+        toast('Receiver address is required for home delivery', 'error');
+        return;
+      }
 
       const pieces = parseInt(document.getElementById('ord-pieces').value);
       const weight = parseFloat(document.getElementById('ord-weight').value);
@@ -1276,8 +1301,10 @@
       const instruction = document.getElementById('ord-instruction').value.trim();
 
       if (pieces > 1) body.pieces = pieces;
-      if (weight > 1) body.weightKg = weight;
-      if (cod > 0) body.codAmount = cod;
+      // weightKg and codAmount are required by the API and must be sent even at
+      // their default values - a 1kg prepaid order still has to say so.
+      body.weightKg = weight;
+      body.codAmount = cod;
       if (pkgType) body.packageType = pkgType;
       if (instruction) body.deliveryInstruction = instruction;
 

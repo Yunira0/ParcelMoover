@@ -113,6 +113,16 @@ export function buildOpenApiDocument(baseUrl: string) {
       "/orders": {
         post: {
           summary: "Create an order",
+          // Two rules can't be expressed in the generated JSON schema: the
+          // either/or destination, and the address requirement that depends on
+          // serviceType. Both are enforced and both 400 - so spell them out
+          // here, or a dev generating a client from this spec won't see them.
+          description:
+            "A destination is required: send `destinationLocationId` **or** `receiver.locationId` (a hub name like \"POKHARA\" or a UUID from GET /rates). " +
+            "`receiver.address` is required unless `serviceType` is `branch_delivery`. " +
+            "`codAmount` (0 for prepaid) and `weightKg` must both be sent explicitly. " +
+            "Sender defaults to your registered pickup profile when omitted, and the delivery charge is always quoted server-side from your rate agreement. " +
+            "Sender and receiver phone numbers must differ. A second order to the same receiver on the same day returns 409 DUPLICATE_ORDER unless you resend with `confirmDuplicate: true`.",
           operationId: "createOrder",
           parameters: [idempotencyKeyHeader],
           requestBody: jsonRequestBody("CreateOrderRequest"),
