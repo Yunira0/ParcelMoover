@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Download } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import SegmentedTabs from '../components/SegmentedTabs';
@@ -60,6 +60,7 @@ const formatMoney = (value: number) =>
   `Rs. ${value.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 
 const ReportsPage: React.FC = () => {
+  const navigate = useNavigate();
   const [report, setReport] = useState<ReportKey>('pickup');
   const [bucket, setBucket] = useState<Bucket>('pending');
   const [orders, setOrders] = useState<Order[]>([]);
@@ -183,6 +184,7 @@ const ReportsPage: React.FC = () => {
       <PageHeader
         title="Reports"
         subtitle="Pickup, dispatch, transit, and return orders — pending and delivered."
+        onBack={() => navigate('/dashboard')}
       />
 
       <SegmentedTabs

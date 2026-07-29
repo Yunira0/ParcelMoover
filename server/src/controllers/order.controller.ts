@@ -9,7 +9,9 @@ import {
   getPublicOrderTracking,
   getRiderRunSheet,
   getSenderProfile,
+  getStatusCounts,
   listOrders,
+  redirectOrder,
   updateOrderDetails,
   updateParcelStatus,
 } from "../services/order.service";
@@ -104,6 +106,7 @@ export async function createOrderController(req: Request, res: Response) {
       return res.status(409).json({
         success: false,
         message: error.message,
+        ...(error.code ? { code: error.code } : {}),
       });
     }
     if (error.statusCode === 422) {
@@ -595,6 +598,58 @@ export async function updateOrderDetailsController(req: Request, res: Response) 
   }
 }
 
+export async function redirectOrderController(req: Request, res: Response) {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const rawId = req.params.id;
+    if (typeof rawId !== "string" || !rawId) {
+      return res.status(400).json({ success: false, message: "Invalid order id" });
+    }
+
+    const idempotencyKey = req.headers["idempotency-key"] as string | undefined;
+    if (!idempotencyKey || !UUID_REGEX.test(idempotencyKey)) {
+      return res.status(400).json({ success: false, message: "Valid Idempotency-Key header is required" });
+    }
+
+    const body = await withIdempotency(
+      `order-redirect:${rawId}:${idempotencyKey}`,
+      req.body,
+      async () => {
+        const result = await redirectOrder(
+          { id: req.user!.id, roles: req.user!.roles },
+          rawId,
+          req.body,
+        );
+
+        const responseBody = {
+          success: true,
+          message: `Order redirected to ${result.destination}`,
+          data: result,
+        };
+
+        return {
+          result: responseBody,
+          response: {
+            statusCode: 200,
+            body: responseBody,
+            resourceID: result.id,
+          },
+        };
+      },
+    );
+
+    return res.status(200).json(body);
+  } catch (error: any) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to redirect order",
+    });
+  }
+}
+
 export async function updateOrderStatusController(req: Request, res: Response) {
   try {
     if (!req.user) {
@@ -693,6 +748,30 @@ export async function updateOrderStatusController(req: Request, res: Response) {
     return res.status(error.statusCode || 500).json({
       success: false,
       message: error.message || "Failed to update order status",
+    });
+  }
+}
+
+// GET /orders/status-counts?groups={…}
+export async function getStatusCountsController(req: Request, res: Response) {
+  try {
+    if (!req.user) return res.status(401).json({ success: false, message: "Unauthorized" });
+
+    const groupsRaw = req.query.groups;
+    if (typeof groupsRaw !== "string") {
+      return res.status(400).json({ success: false, message: "groups query param is required" });
+    }
+    const groups = JSON.parse(groupsRaw) as Record<string, string[]>;
+    if (typeof groups !== "object" || groups === null || Array.isArray(groups)) {
+      return res.status(400).json({ success: false, message: "groups must be a JSON object" });
+    }
+
+    const counts = await getStatusCounts({ id: req.user.id, roles: req.user.roles }, groups);
+    return res.status(200).json({ success: true, data: counts });
+  } catch (error: any) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to load status counts",
     });
   }
 }

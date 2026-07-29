@@ -82,9 +82,11 @@ export const createOrderSchema = z.object({
   pieces: z.number().int("pieces must be an integer").min(1, "pieces must be at least 1").optional(),
   weightKg: z.number().positive("weightKg must be a positive number").optional(),
   codAmount: z.number().min(0, "codAmount cannot be negative").optional(),
+  itemValue: z.number().min(0, "itemValue cannot be negative").optional(),
   deliveryCharge: z.number().min(0, "deliveryCharge cannot be negative").optional(),
   packageType: z.string().max(50).optional(),
   deliveryInstruction: z.string().max(500).optional(),
+  remarks: z.string().max(1000).optional(),
   pickupAddress: z.string().max(255).optional(),
   scheduledPickupAt: z.string().datetime({ offset: true }).optional(),
   confirmDuplicate: z.boolean().optional(),
@@ -108,6 +110,7 @@ export const updateOrderDetailsSchema = z
     pieces: z.number().int("pieces must be an integer").min(1, "pieces must be at least 1").optional(),
     weightKg: z.number().positive("weightKg must be a positive number").optional(),
     codAmount: z.number().min(0, "codAmount cannot be negative").optional(),
+    itemValue: z.number().min(0, "itemValue cannot be negative").optional(),
     packageType: z.string().max(50).optional(),
     deliveryInstruction: z.string().max(500).optional(),
   })
@@ -116,6 +119,22 @@ export const updateOrderDetailsSchema = z
   });
 
 export type UpdateOrderDetailsInput = z.infer<typeof updateOrderDetailsSchema>;
+
+// ── Redirect an order to a different destination ──────────────────────────────
+// The customer moved after booking. Unlike a plain edit this always carries a
+// reason and a diversion charge, and it is logged as its own record.
+
+export const redirectOrderSchema = z.object({
+  destinationLocationId: uuidSchema,
+  address: z.string().trim().min(1, "New delivery address is required").max(500),
+  reason: z.string().trim().min(1, "Reason is required").max(500),
+  redirectCharge: z
+    .number({ error: "Redirect charge is required" })
+    .min(0, "Redirect charge cannot be negative")
+    .max(1_000_000, "Redirect charge is unrealistically large"),
+});
+
+export type RedirectOrderInput = z.infer<typeof redirectOrderSchema>;
 
 // ── Update single order status ────────────────────────────────────────────────
 

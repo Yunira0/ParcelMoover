@@ -97,10 +97,6 @@
   justify-content: space-between;
 }
 
-.oov-toolbar .oov-search-wrap {
-  max-width: 360px;
-}
-
 .oov-selected-count {
   color: var(--color-text-caption);
   font-size: var(--font-size-sm);
@@ -111,7 +107,6 @@
   align-items: center;
   display: flex;
   gap: var(--space-4);
-  margin-left: auto;
 }
 
 .oov-table th,
@@ -376,10 +371,6 @@
   .oov-toolbar {
     align-items: stretch;
     flex-direction: column;
-  }
-
-  .oov-toolbar .oov-search-wrap {
-    max-width: none;
   }
 
   .oov-toolbar-actions,

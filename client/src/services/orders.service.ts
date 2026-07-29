@@ -49,10 +49,13 @@ export interface CreateOrderInput {
   pieces: number;
   weightKg?: number;
   codAmount?: number;
+  /** Declared value of the items in the parcel. */
+  itemValue?: number;
   /** Unused by the new Create Order page - kept for type compat with older flows; the server computes the real charge from the route's delivery rate. */
   deliveryCharge?: number;
   packageType?: string;
   deliveryInstruction?: string;
+  remarks?: string;
   pickupAddress?: string;
   scheduledPickupAt?: string;
   vendorId?: string;
@@ -86,6 +89,7 @@ export interface Order {
   weightKg?: number;
   attemptCount: number;
   codAmount: number;
+  itemValue: number;
   deliveryCharge: number;
   packageType?: string;
   deliveryInstruction?: string;
@@ -303,6 +307,18 @@ export const getDashboardSummary = async (trendDays: 7 | 30 = 7) => {
   return response.data;
 };
 
+// Returns per-status-group counts for operation page tab badges.
+// Accepts a record like { pickup_ordered: ["pickup_ordered"], rider_assigned: ["rider_assigned"] }
+// and returns { pickup_ordered: 12, rider_assigned: 5 }.
+export const getStatusCounts = async (
+  groups: Record<string, string[]>,
+): Promise<Record<string, number>> => {
+  const response = await api.get('/orders/status-counts', {
+    params: { groups: JSON.stringify(groups) },
+  });
+  return response.data.data;
+};
+
 // ── Rider run sheet ───────────────────────────────────────────────────────────
 // Run sheets are persisted hand-off records: one numbered sheet per batch of
 // parcels sent out for delivery with a rider.
@@ -416,11 +432,29 @@ export interface PriceLogEntry {
   createdAt: string;
 }
 
+/** One destination change made because the customer moved after booking. */
+export interface RedirectLogEntry {
+  id: string;
+  fromBranch: string | null;
+  toBranch: string;
+  fromAddress: string | null;
+  toAddress: string | null;
+  reason: string;
+  statusAtRedirect: ParcelStatus;
+  oldDeliveryCharge: number;
+  redirectCharge: number;
+  newDeliveryCharge: number;
+  redirectedBy: string;
+  createdAt: string;
+}
+
 export interface OrderDetail extends Omit<Order, 'remarks'> {
   remarks: OrderRemark[];
   statusHistory: OrderStatusHistoryEntry[];
   /** COD / delivery-charge changes made after creation, newest first. */
   priceLog: PriceLogEntry[];
+  /** Destination redirects, newest first. */
+  redirectLog: RedirectLogEntry[];
   /** True when the viewer is allowed to change this order's status (super_admin/admin). */
   canChangeStatus: boolean;
 }
@@ -483,6 +517,24 @@ export type UpdateOrderInput = Partial<Omit<CreateOrderInput, 'sender' | 'delive
 export const updateOrder = async (orderId: string, data: UpdateOrderInput) => {
   const idempotencyKey = uuidv4();
   const response = await api.patch(`/orders/${orderId}`, data, {
+    headers: { 'Idempotency-Key': idempotencyKey },
+  });
+  notifyOrderStatusChanged();
+  return response.data;
+};
+
+export interface RedirectOrderInput {
+  destinationLocationId: string;
+  address: string;
+  reason: string;
+  /** Diversion fee added on top of the existing delivery charge. */
+  redirectCharge: number;
+}
+
+/** Admin-only: send a parcel to a different destination because the customer moved. */
+export const redirectOrder = async (orderId: string, data: RedirectOrderInput) => {
+  const idempotencyKey = uuidv4();
+  const response = await api.post(`/orders/${orderId}/redirect`, data, {
     headers: { 'Idempotency-Key': idempotencyKey },
   });
   notifyOrderStatusChanged();

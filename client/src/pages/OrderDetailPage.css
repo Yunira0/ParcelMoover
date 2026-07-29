@@ -276,6 +276,17 @@
   color: var(--color-text-caption); font-size: var(--font-size-xxs); font-weight: var(--font-weight-semibold);
 }
 
+/* Right-aligned action inside a section header (e.g. "Redirect order"). */
+.od-section-action {
+  margin-left: auto; padding: var(--space-1-5) var(--space-3);
+  border: 1px solid var(--color-border-default); border-radius: var(--border-radius-md);
+  background: var(--color-background-surface); color: var(--color-text-default);
+  font-size: var(--font-size-xs); font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+}
+
+.od-section-action:hover { background: var(--color-background-canvas); }
+
 /* ============================================================================
    Timeline
    ============================================================================ */

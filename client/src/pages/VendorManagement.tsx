@@ -99,8 +99,8 @@ const VendorManagement: React.FC = () => {
     { header: 'EMAIL', accessor: 'email' as keyof VendorUser },
     { header: 'PHONE', accessor: 'phone' as keyof VendorUser },
     { header: 'LOCATION', accessor: 'location' as keyof VendorUser },
-    { 
-      header: 'ORDERS', 
+    {
+      header: 'ORDERS',
       accessor: (item: VendorUser) => (
         <div className="orders-info">
           <span>TOTAL ORDERS: {item.orders.total}</span>
@@ -109,12 +109,12 @@ const VendorManagement: React.FC = () => {
         </div>
       )
     },
-    { 
-      header: 'COD DUE', 
+    {
+      header: 'COD DUE',
       accessor: (item: VendorUser) => `Rs. ${item.codDue}`
     },
-    { 
-      header: 'STATUS', 
+    {
+      header: 'STATUS',
       accessor: (item: VendorUser) => (
         <StatusChip variant="solid" tone={item.status === 'active' ? 'success' : 'danger'}>
           {item.status}
@@ -174,9 +174,9 @@ const VendorManagement: React.FC = () => {
         <div className="search-and-dropdowns">
           <div className="search-box">
             <Search size={16} style={{ color: 'var(--color-text-caption)' }} />
-            <input 
-              type="text" 
-              placeholder="Search client, phone, email, company..." 
+            <input
+              type="text"
+              placeholder="Search client, phone, email, company..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />

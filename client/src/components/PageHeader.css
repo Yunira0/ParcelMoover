@@ -11,6 +11,38 @@
   gap: var(--space-3);
 }
 
+.page-header-back {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-default);
+  background: var(--color-background-surface);
+  color: #000;
+  font-size: 0;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background-color 0.15s ease-out;
+}
+
+.page-header-back:hover {
+  background: var(--color-background-canvas);
+}
+
+.page-header-back:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+
+.page-header-info {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
 .page-header-info h1 {
   font-family: var(--typography-font-family-default);
   font-size: var(--font-size-2xl);

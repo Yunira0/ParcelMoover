@@ -13,6 +13,7 @@ import {
   listOrdersQuerySchema,
   addOrderRemarkSchema,
   runSheetQuerySchema,
+  redirectOrderSchema,
 } from "../validators/order.schema";
 import {
   addOrderRemarkController,
@@ -23,7 +24,9 @@ import {
   getOrderByTrackingIdController,
   getPublicOrderTrackingController,
   getSenderProfileController,
+  getStatusCountsController,
   listOrdersController,
+  redirectOrderController,
   riderRunSheetController,
   updateOrderDetailsController,
   updateOrderStatusController,
@@ -139,6 +142,17 @@ orderRouter.get(
   dashboardSummaryController,
 );
 
+// GET /orders/status-counts — lightweight per-status-group counts for operation
+// page tab badges. Accepts a JSON-encoded groups map as a query param.
+orderRouter.get(
+  "/status-counts",
+  authMiddleware,
+  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider", "sales"),
+  requireStaffPermission("ORDER_ACCESS"),
+  orderReadLimiter,
+  getStatusCountsController,
+);
+
 // GET /orders/sender-profile — the calling vendor/vendor_staff's own business identity,
 // used to auto-fill "sender" on order creation instead of asking them to type it in.
 orderRouter.get(
@@ -238,6 +252,21 @@ orderRouter.patch(
   validate(uuidParamSchema, "params"),
   validate(updateOrderDetailsSchema),
   updateOrderDetailsController,
+);
+
+// POST /orders/:id/redirect — customer moved: point the parcel at a different
+// destination branch/address, with a reason and a diversion charge. Admin-only;
+// vendors go through support so the fee is always an ops decision.
+orderRouter.post(
+  "/:id/redirect",
+  authMiddleware,
+  csrfProtection,
+  authorizeRoles("super_admin", "admin"),
+  requireStaffPermission("ORDER_ACCESS"),
+  statusUpdateLimiter,
+  validate(uuidParamSchema, "params"),
+  validate(redirectOrderSchema),
+  redirectOrderController,
 );
 
 // POST /orders/:id/remarks - leave a remark on a parcel (visible to anyone with access to it)

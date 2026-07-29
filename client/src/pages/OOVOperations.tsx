@@ -16,6 +16,7 @@ import QuickRemarkPopup from '../components/QuickRemarkPopup';
 import {
   bulkUpdateOrderStatus,
   getOrders,
+  getStatusCounts,
   subscribeToOrderStatusChanged,
   type Order,
   type OrdersPageMeta,
@@ -134,6 +135,29 @@ const OOVOperations: React.FC = () => {
   const [toLocationId, setToLocationId] = useState('');
   const [riderId, setRiderId] = useState('');
   const [reasonRemarks, setReasonRemarks] = useState('');
+  const [tabCounts, setTabCounts] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const counts = await getStatusCounts(TAB_STATUSES);
+        setTabCounts(counts);
+      } catch {
+        // non-fatal; tabs just won't show counts
+      }
+    })();
+  }, []);
+
+  useEffect(() => {
+    return subscribeToOrderStatusChanged(async () => {
+      try {
+        const counts = await getStatusCounts(TAB_STATUSES);
+        setTabCounts(counts);
+      } catch {
+        // ignore
+      }
+    });
+  }, []);
 
   // Debounce search input so every keystroke doesn't fire a request.
   useEffect(() => {
@@ -495,7 +519,7 @@ const OOVOperations: React.FC = () => {
       >
         {order.remarks || '-'}
       </button>
-    ), width: '84px', className: 'oov-remarks-cell' },
+    ), width: '160px', className: 'oov-remarks-cell' },
   ];
 
   return (
@@ -506,45 +530,13 @@ const OOVOperations: React.FC = () => {
         ariaLabel="Order operation filters"
         value={activeTab}
         onChange={setActiveTab}
-        options={(Object.keys(TAB_LABELS) as OOVTab[]).map(tab => ({ value: tab, label: TAB_LABELS[tab] }))}
+        options={(Object.keys(TAB_LABELS) as OOVTab[]).map(tab => ({ value: tab, label: TAB_LABELS[tab], count: tabCounts[tab] }))}
       />
 
       {loadError && <p className="oov-action-error">{loadError}</p>}
 
       <div className="oov-toolbar">
-        <div className="oov-search-wrap">
-          <label className="oov-search">
-            <Search size={16} />
-            <input
-              value={searchQuery}
-              onChange={event => setSearchQuery(event.target.value)}
-              onKeyDown={event => commitScannedTerm(event, setScannedIds, setSearchQuery)}
-              onPaste={event => handleScannerPaste(event, setScannedIds, setSearchQuery)}
-              placeholder="Search tracking id"
-            />
-            {(searchQuery || scannedIds.length > 0) && (
-              <button type="button" onClick={() => { setSearchQuery(''); setScannedIds([]); }} aria-label="Clear search">
-                <X size={14} />
-              </button>
-            )}
-          </label>
-          {scannedIds.length > 0 && (
-            <div className="scan-chip-list">
-              {scannedIds.map(id => (
-                <span key={id} className="scan-chip">
-                  {id}
-                  <button
-                    type="button"
-                    onClick={() => setScannedIds(prev => prev.filter(x => x !== id))}
-                    aria-label={`Remove ${id}`}
-                  >
-                    <X size={10} />
-                  </button>
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
+        <div />
         <div className="oov-toolbar-actions">
           {selectedIds.size > 0 && (
             <span className="oov-selected-count">
@@ -690,6 +682,40 @@ const OOVOperations: React.FC = () => {
             <Printer size={14} /> {selectedOrders.length > 0 ? `Print ${selectedOrders.length} Selected` : `Print All (${visibleOrders.length})`}
           </Button>
         </div>
+      </div>
+
+      <div className="oov-search-wrap">
+        <label className="oov-search">
+          <Search size={16} />
+          <input
+            value={searchQuery}
+            onChange={event => setSearchQuery(event.target.value)}
+            onKeyDown={event => commitScannedTerm(event, setScannedIds, setSearchQuery)}
+            onPaste={event => handleScannerPaste(event, setScannedIds, setSearchQuery)}
+            placeholder="Search tracking id"
+          />
+          {(searchQuery || scannedIds.length > 0) && (
+            <button type="button" onClick={() => { setSearchQuery(''); setScannedIds([]); }} aria-label="Clear search">
+              <X size={14} />
+            </button>
+          )}
+        </label>
+        {scannedIds.length > 0 && (
+          <div className="scan-chip-list">
+            {scannedIds.map(id => (
+              <span key={id} className="scan-chip">
+                {id}
+                <button
+                  type="button"
+                  onClick={() => setScannedIds(prev => prev.filter(x => x !== id))}
+                  aria-label={`Remove ${id}`}
+                >
+                  <X size={10} />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
       </div>
 
       <Table

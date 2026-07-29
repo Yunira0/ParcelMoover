@@ -210,7 +210,7 @@ const LossAndDamageOperations: React.FC = () => {
     {
       header: 'PREVIOUS STATUS',
       accessor: () => <StatusChip tone="info">{REVERT_STATUS_LABEL}</StatusChip>,
-      width: '130px',
+      width: '160px',
     },
     {
       header: 'LAST UPDATED BY',
@@ -270,7 +270,7 @@ const LossAndDamageOperations: React.FC = () => {
         loading={loading}
         loadingMessage="Loading loss & damage orders..."
         emptyMessage="No loss or damage orders found."
-        minWidth="1400px"
+        minWidth="1430px"
         tableClassName="lossdamage-table"
       />
 

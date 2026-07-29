@@ -166,6 +166,15 @@ const ReturnOperations: React.FC = () => {
     });
   }, [orders, activeTab, searchQuery]);
 
+  const tabCounts = useMemo(() => {
+    const counts: Record<ReturnTab, number> = { follow_up: 0, ready_to_return: 0, sent_to_vendor: 0, returned_to_vendor: 0 };
+    for (const order of orders) {
+      const stage = returnStage(order);
+      if (stage) counts[stage]++;
+    }
+    return counts;
+  }, [orders]);
+
   const totalPages = Math.max(1, Math.ceil(filteredOrders.length / PAGE_SIZE));
   const visibleOrders = filteredOrders.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const visibleOrderIds = visibleOrders.map((order) => order.id);
@@ -289,7 +298,7 @@ const ReturnOperations: React.FC = () => {
           {order.orderType === 'return' ? 'Return order' : 'RTO'}
         </StatusChip>
       ),
-      width: '110px',
+      width: '140px',
     },
     {
       header: 'SENDER',
@@ -314,7 +323,7 @@ const ReturnOperations: React.FC = () => {
           {STATUS_LABELS[order.status] || order.status}
         </StatusChip>
       ),
-      width: '150px',
+      width: '170px',
     },
   ];
 
@@ -328,7 +337,7 @@ const ReturnOperations: React.FC = () => {
         ariaLabel="Return operation filters"
         value={activeTab}
         onChange={setActiveTab}
-        options={(Object.keys(TAB_LABELS) as ReturnTab[]).map((tab) => ({ value: tab, label: TAB_LABELS[tab] }))}
+        options={(Object.keys(TAB_LABELS) as ReturnTab[]).map((tab) => ({ value: tab, label: TAB_LABELS[tab], count: tabCounts[tab] }))}
       />
 
       {loadError && <p className="return-action-msg">{loadError}</p>}
@@ -339,6 +348,7 @@ const ReturnOperations: React.FC = () => {
       )}
 
       <div className="return-toolbar">
+        <div />
         <div className="return-toolbar-actions">
           {activeTab === 'follow_up' && (
             <>
@@ -360,8 +370,6 @@ const ReturnOperations: React.FC = () => {
               Mark returned to vendor
             </Button>
           )}
-        </div>
-        <div className="return-toolbar-actions">
           <Button variant="secondary" onClick={downloadCsv}><Download size={14} /> Download</Button>
           <Button variant="secondary" onClick={handlePrintLabels} disabled={visibleOrders.length === 0}>
             <Printer size={14} /> {selectedOrders.length > 0 ? `Print ${selectedOrders.length} Selected` : `Print All (${visibleOrders.length})`}
@@ -391,7 +399,7 @@ const ReturnOperations: React.FC = () => {
         loading={loading}
         loadingMessage="Loading return orders..."
         emptyMessage="No return orders in this stage."
-        minWidth="1130px"
+        minWidth="1180px"
         tableClassName="return-table"
       />
 

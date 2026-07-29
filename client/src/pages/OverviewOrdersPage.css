@@ -37,12 +37,14 @@
   justify-content: center;
   width: 36px;
   height: 36px;
+  padding: 0;
   border: 1px solid var(--color-border-default);
   border-radius: var(--border-radius-default);
-  background: none;
-  color: var(--color-text-caption);
+  background: var(--color-background-surface);
+  color: #000;
+  font-size: 0;
   cursor: pointer;
-  transition: background-color 0.15s ease-out, color 0.15s ease-out;
+  transition: background-color 0.15s ease-out;
 }
 
 .overview-orders-back:hover {

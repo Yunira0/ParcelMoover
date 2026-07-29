@@ -3,6 +3,7 @@ import './SegmentedTabs.css';
 export interface SegmentedTabOption<T extends string> {
   value: T;
   label: string;
+  count?: number;
 }
 
 interface SegmentedTabsProps<T extends string> {
@@ -40,6 +41,9 @@ function SegmentedTabs<T extends string>({
           onClick={() => onChange(opt.value)}
         >
           {opt.label}
+          {opt.count !== undefined && (
+            <span className="segmented-tab-count">{opt.count}</span>
+          )}
         </button>
       ))}
     </div>

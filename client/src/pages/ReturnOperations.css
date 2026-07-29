@@ -17,6 +17,7 @@
   align-items: center;
   display: flex;
   gap: var(--space-3);
+  margin-left: auto;
 }
 
 .return-action-msg {

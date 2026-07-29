@@ -27,11 +27,14 @@ export interface CreateOrderInput {
   weightKg?: number;
 
   codAmount?: number;
+  /** Declared value of the items in the parcel. */
+  itemValue?: number;
   /** Fallback only - used when origin/destination locations aren't both set, so no route rate can be looked up. */
   deliveryCharge?: number;
 
   packageType?: string;
   deliveryInstruction?: string;
+  remarks?: string;
 
   pickupAddress?: string;
   scheduledPickupAt?: string;
@@ -60,9 +63,19 @@ export interface UpdateOrderDetailsInput {
   pieces?: number;
   weightKg?: number;
   codAmount?: number;
+  itemValue?: number;
 
   packageType?: string;
   deliveryInstruction?: string;
+}
+
+/** Customer moved: point the parcel at a different destination branch/address. */
+export interface RedirectOrderInput {
+  destinationLocationId: string;
+  address: string;
+  reason: string;
+  /** Diversion fee added on top of the parcel's existing delivery charge. */
+  redirectCharge: number;
 }
 
 export type ParcelStatus =

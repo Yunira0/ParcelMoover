@@ -2,7 +2,6 @@
   background-color: var(--color-background-surface);
   border: 1px solid var(--color-border-default);
   border-radius: var(--border-radius-md);
-  overflow: hidden;
 }
 
 .segmented-tabs-full {
@@ -27,9 +26,11 @@
   font-family: var(--typography-font-family-default);
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-medium);
+  gap: 0;
   height: 32px;
   justify-content: center;
   line-height: var(--line-height-sm);
+  overflow: visible;
   padding: 0 var(--space-3);
   white-space: nowrap;
 }
@@ -42,6 +43,27 @@
   background: var(--color-background-primary-invert-default);
   color: var(--color-text-primary);
   font-weight: var(--font-weight-semi-bold);
+}
+
+.segmented-tab-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 18px;
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--color-background-canvas);
+  color: var(--color-text-caption);
+  font-size: 10px;
+  font-weight: var(--font-weight-semi-bold);
+  line-height: 1;
+}
+
+.segmented-tab.active .segmented-tab-count {
+  background: rgba(255, 255, 255, 0.25);
+  color: inherit;
 }
 
 @media (max-width: 900px) {

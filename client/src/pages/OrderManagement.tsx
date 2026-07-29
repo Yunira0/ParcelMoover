@@ -9,8 +9,10 @@ import {
   Plus,
   Printer,
   Search,
+  Shuffle,
   X,
 } from 'lucide-react';
+import RedirectOrderModal from '../components/RedirectOrderModal';
 import Table from '../components/Table';
 import PageHeader from '../components/PageHeader';
 import Button from '../components/Button';
@@ -27,6 +29,7 @@ import NepaliDatePicker from '../components/NepaliDatePicker';
 import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react';
 import {
   getOrders,
+  redirectOrder,
   subscribeToOrderStatusChanged,
   ORDER_SORT_FIELDS,
   type CreateOrderInput,
@@ -41,6 +44,23 @@ import { getCurrentUserRoles } from '../utils/auth';
 import { commitScannedTerm, handleScannerPaste } from '../utils/scannerInput';
 import { useCursorPagination } from '../hooks/useCursorPagination';
 import './OrderManagement.css';
+
+// Mirrors REDIRECT_ALLOWED_STATUSES in order.service.ts — once a parcel is
+// delivered, cancelled or in the RTO chain, its destination is history.
+const REDIRECTABLE_STATUSES: ParcelStatus[] = [
+  'pickup_ordered',
+  'rider_assigned',
+  'picked_up',
+  'arrived',
+  'ready_to_deliver',
+  'sent_for_delivery',
+  'oov',
+  'dispatched',
+  'arrived_at_branch',
+  'hold',
+  'failed_delivery',
+  'follow_up',
+];
 
 const STATUS_LABELS: Record<ParcelStatus, string> = {
   pickup_ordered: 'Pickup Ordered',
@@ -509,6 +529,33 @@ const OrderManagement: React.FC = () => {
     navigate('/orders/create');
   };
 
+  // Redirect (customer moved) — admin/super_admin only, matching the server route.
+  const canRedirect = getCurrentUserRoles().some((r) => ['super_admin', 'admin'].includes(r));
+  const [redirectOrderRow, setRedirectOrderRow] = useState<Order | null>(null);
+  const [redirectSaving, setRedirectSaving] = useState(false);
+  const [redirectError, setRedirectError] = useState('');
+
+  const handleRedirect = async (data: {
+    destinationLocationId: string;
+    address: string;
+    reason: string;
+    redirectCharge: number;
+  }) => {
+    if (!redirectOrderRow) return;
+    try {
+      setRedirectSaving(true);
+      setRedirectError('');
+      await redirectOrder(redirectOrderRow.id, data);
+      setRedirectOrderRow(null);
+      setNotice(`Order ${redirectOrderRow.trackingId} redirected.`);
+      await loadOrders();
+    } catch (err: any) {
+      setRedirectError(err?.response?.data?.message ?? 'Failed to redirect order');
+    } finally {
+      setRedirectSaving(false);
+    }
+  };
+
   const openPrefilledModal = (order: Order, mode: 'copy' | 'edit') => {
     setOpenActionId(null);
     navigate('/orders/create', {
@@ -659,9 +706,9 @@ const OrderManagement: React.FC = () => {
           {STATUS_LABELS[order.status]}
         </StatusChip>
       ),
-      width: '120px',
+      width: '160px',
     },
-    { header: 'RIDER', accessor: (order: Order) => order.riderName || '-', width: '120px' },
+    { header: 'RIDER', accessor: (order: Order) => order.riderName || '-', width: '140px' },
     { header: 'REMARKS', accessor: (order: Order) => (
       <button
         type="button"
@@ -704,6 +751,18 @@ const OrderManagement: React.FC = () => {
               <button type="button" onClick={() => openPrefilledModal(order, 'copy')}>
                 <Copy size={14} /> Copy Order
               </button>
+              {canRedirect && REDIRECTABLE_STATUSES.includes(order.status) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOpenActionId(null);
+                    setRedirectError('');
+                    setRedirectOrderRow(order);
+                  }}
+                >
+                  <Shuffle size={14} /> Redirect
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -920,7 +979,7 @@ const OrderManagement: React.FC = () => {
         loading={loading && orders.length === 0}
         loadingMessage="Loading orders..."
         emptyMessage="No orders found."
-        minWidth="2075px"
+        minWidth="2115px"
         tableClassName="orders-table"
       />
 
@@ -947,6 +1006,20 @@ const OrderManagement: React.FC = () => {
           orderId={remarkPopupOrder.id}
           trackingId={remarkPopupOrder.trackingId}
           onClose={() => setRemarkPopupOrder(null)}
+        />
+      )}
+
+      {redirectOrderRow && (
+        <RedirectOrderModal
+          isOpen
+          trackingId={redirectOrderRow.trackingId}
+          currentBranch={redirectOrderRow.destination}
+          currentAddress={redirectOrderRow.receiverAddress}
+          currentDeliveryCharge={redirectOrderRow.deliveryCharge}
+          busy={redirectSaving}
+          error={redirectError}
+          onClose={() => setRedirectOrderRow(null)}
+          onConfirm={handleRedirect}
         />
       )}
     </div>

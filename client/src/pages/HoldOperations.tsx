@@ -248,7 +248,7 @@ const HoldOperations: React.FC = () => {
     {
       header: 'PREVIOUS STATUS',
       accessor: () => <StatusChip tone="info">{REVERT_STATUS_LABEL}</StatusChip>,
-      width: '130px',
+      width: '160px',
     },
     {
       header: 'LAST UPDATED BY',
@@ -328,7 +328,7 @@ const HoldOperations: React.FC = () => {
         loading={loading}
         loadingMessage="Loading held orders..."
         emptyMessage="No held orders found."
-        minWidth="1400px"
+        minWidth="1590px"
         tableClassName="hold-table"
       />
 
