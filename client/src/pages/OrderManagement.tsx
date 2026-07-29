@@ -129,7 +129,7 @@ interface SecondaryFilters {
   /** Inclusive AD dates (YYYY-MM-DD) compared against the selected dateField. */
   dateFrom: string;
   dateTo: string;
-  /** Multi-select: an order matches if its vendor is any of these (empty = all). */
+  /** Multi-select vendor ids; pushed to the server, empty = all. */
   vendor: string[];
   operationDept: string;
 }
@@ -154,8 +154,10 @@ const matchesKeyword = (order: Order, keyword: string) => {
 };
 
 // Filters the backend doesn't have a query param for (origin/rider/keyword/
-// destination/date range/vendor/department) - applied client-side on top of
-// whatever page the server already returned for the active tab + search.
+// destination/date range/department) - applied client-side on top of whatever
+// page the server already returned for the active tab + search. Status and
+// vendor are also re-checked here, but only as a no-op safety net: both are
+// pushed down to the query, so the rows are already narrowed server-side.
 // Nepal-local (UTC+5:45) AD date "YYYY-MM-DD" for an ISO timestamp - so the
 // status-updated date lines up with the same local-day bucketing createdAt uses.
 const toNepalDate = (iso?: string): string => {
@@ -188,7 +190,7 @@ const matchesSecondaryFilters = (order: Order, filters: SecondaryFilters) => {
     (filters.currentStatus.length === 0 || filters.currentStatus.includes(order.status)) &&
     (!filters.orderType || order.orderType === filters.orderType) &&
     matchesDateSpan &&
-    (filters.vendor.length === 0 || filters.vendor.includes(order.vendorName || order.senderName)) &&
+    (filters.vendor.length === 0 || (!!order.vendorId && filters.vendor.includes(order.vendorId))) &&
     matchesOperation;
 };
 
@@ -350,6 +352,10 @@ const OrderManagement: React.FC = () => {
       const res = await getOrders({
         status: effectiveStatus,
         search: debouncedSearch || undefined,
+        // Pushed down for the same reason as `currentStatus`: filtering vendors
+        // client-side only ever narrowed the page already fetched, so picking a
+        // vendor with no parcels on the current page showed an empty table.
+        vendorId: vendor.length ? vendor : undefined,
         pageSize,
         cursor: pager.request.cursor,
         dir: pager.request.dir,
@@ -368,7 +374,7 @@ const OrderManagement: React.FC = () => {
     } finally {
       if (requestId === loadRequestIdRef.current) setLoading(false);
     }
-  }, [filter, currentStatus, debouncedSearch, pager.request, sortBy, sortDir, pageSizeChoice]);
+  }, [filter, currentStatus, vendor, debouncedSearch, pager.request, sortBy, sortDir, pageSizeChoice]);
 
   useEffect(() => { loadOrders(); }, [loadOrders]);
   useEffect(() => subscribeToOrderStatusChanged(loadOrders), [loadOrders]);
@@ -426,11 +432,21 @@ const OrderManagement: React.FC = () => {
   }, [filter]);
 
   const filterOptions = useMemo(() => {
+    // Vendor options are {id, name} pairs so the selection can be sent to the
+    // server as ids. Orders with no vendor (staff-created) have nothing to
+    // filter on, so they're left out rather than listed under their sender.
+    const vendorsById = new Map<string, string>();
+    optionsOrders.forEach(order => {
+      if (order.vendorId && !vendorsById.has(order.vendorId)) {
+        vendorsById.set(order.vendorId, order.vendorName || order.senderName);
+      }
+    });
     return {
       origins: uniqueValues(optionsOrders.map(order => order.origin)),
       riders: uniqueValues(optionsOrders.map(order => order.riderName || '')),
       destinations: uniqueValues(optionsOrders.map(order => order.destination)),
-      vendors: uniqueValues(optionsOrders.map(order => order.vendorName || order.senderName)),
+      vendors: Array.from(vendorsById, ([value, label]) => ({ value, label }))
+        .sort((a, b) => a.label.localeCompare(b.label)),
     };
   }, [optionsOrders]);
 
@@ -802,7 +818,7 @@ const OrderManagement: React.FC = () => {
               value={vendor}
               onChange={setVendor}
               placeholder="All Vendors"
-              options={filterOptions.vendors.map(value => ({ value, label: value }))}
+              options={filterOptions.vendors}
             />
             <FilterDropdown
               label="OPERATION DEPT"
