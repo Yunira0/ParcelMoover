@@ -109,6 +109,9 @@ export interface ListOrdersQuery {
   status?: ParcelStatus[];
   orderType?: OrderType;
   search?: string;
+  // Narrow the list to these vendors. Always intersected with the actor's own
+  // scope, so it can only ever shrink what a vendor/sales actor already sees.
+  vendorId?: string[];
   // Display-only page hint echoed back in meta; the actual position comes
   // from the keyset cursor, never from a row offset.
   page?: number;

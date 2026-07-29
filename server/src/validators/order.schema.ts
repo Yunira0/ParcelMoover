@@ -193,6 +193,16 @@ export const listOrdersQuerySchema = paginationQuerySchema.extend({
     }, z.array(z.enum(PARCEL_STATUSES)).optional())
     .optional(),
   orderType: z.enum(ORDER_TYPES).optional(),
+  // Multi-select vendor filter, sent as a comma-separated list of vendor ids
+  // (or repeated params). Intersected with the actor's scope server-side.
+  vendorId: z
+    .preprocess((val) => {
+      if (!val) return undefined;
+      const raw = Array.isArray(val) ? val : String(val).split(",");
+      const ids = raw.map((s) => String(s).trim()).filter(Boolean);
+      return ids.length ? ids : undefined;
+    }, z.array(uuidSchema).max(100).optional())
+    .optional(),
   // A barcode scanner builds this up as a comma-separated list of full
   // tracking ids (~27 chars each incl. separator) - 100 chars only fit ~3
   // scans before every further scan gets rejected outright. Sized for the

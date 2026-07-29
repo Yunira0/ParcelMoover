@@ -1192,6 +1192,14 @@ function buildOrdersWhere(
   if (query.orderType) {
     conditions.push({ order_type: query.orderType });
   }
+  // Explicit vendor filter from the UI. Pushed into the query (rather than
+  // filtered client-side over one page) so pagination, totals and the tab
+  // counts all reflect the selected vendors. It's a separate AND condition
+  // from the scope ones above, so a vendor/sales actor can only ever narrow
+  // their own scope with it, never escape it.
+  if (query.vendorId?.length) {
+    conditions.push({ vendor_id: { in: query.vendorId } });
+  }
 
   const search = query.search?.trim();
   if (search) {
@@ -1541,7 +1549,7 @@ export async function listOrders(
   // encoded in the cache key either, so it also has to skip the cache.
   const isDefaultUnfilteredQuery =
     !paginated && !query.status?.length && !query.orderType && !query.search &&
-    !query.sortBy && vendorIds === undefined;
+    !query.vendorId?.length && !query.sortBy && vendorIds === undefined;
   // Export requests (withArrival) skip the shared cache so the enriched rows
   // never pollute the lean list cache and vice-versa.
   const cacheKey =
