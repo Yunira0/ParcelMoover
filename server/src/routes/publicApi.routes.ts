@@ -143,6 +143,18 @@ publicApiRouter.get("/docs/console", (_req, res) => sendDocPage(res, "partner-ap
 
 publicApiRouter.use(apiKeyAuthMiddleware);
 
+// GET /api/v1/ping — the first call a new integration should make: confirms
+// the key is valid and which vendor account it resolves to, with zero risk
+// of side effects (no order, no DB write beyond the auth middleware's own
+// last_used_at touch) and no other endpoint's business logic to go wrong.
+publicApiRouter.get("/ping", publicReadLimiter, (req, res) => {
+  res.status(200).json({
+    success: true,
+    message: "pong",
+    data: { vendorId: req.apiKey!.vendorId },
+  });
+});
+
 // POST /api/v1/orders — place an order (requires UUID Idempotency-Key header).
 publicApiRouter.post(
   "/orders",

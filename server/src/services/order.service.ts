@@ -677,7 +677,11 @@ async function _createOrderImpl(actor: OrderActor, data: CreateOrderInput) {
         weight_kg: weightKg,
         cod_amount: codAmount,
         delivery_charge: deliveryCharge,
-        package_type: data.packageType || null,
+        // "Parcel" matches the dashboard's own create-order form, which
+        // pre-fills the same value - so an order created with no package
+        // type set (most API callers, since it's rarely relevant to them)
+        // looks the same everywhere staff view it, instead of showing blank.
+        package_type: data.packageType || "Parcel",
         delivery_instruction: data.deliveryInstruction || null,
         allow_partial_delivery: data.allowPartialDelivery ?? false,
         created_by: actor.id,

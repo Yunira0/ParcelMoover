@@ -110,6 +110,35 @@ export function buildOpenApiDocument(baseUrl: string) {
     servers: [{ url: `${baseUrl}/api/v1` }],
     security: [{ ApiKeyAuth: [] }],
     paths: {
+      "/ping": {
+        get: {
+          summary: "Test connectivity and API key validity",
+          description:
+            "The first call any new integration should make: confirms your key is valid and which vendor account it resolves to. Has no side effects beyond the same last_used_at touch every authenticated call makes.",
+          operationId: "ping",
+          responses: {
+            200: {
+              description: "pong",
+              content: {
+                "application/json": {
+                  schema: {
+                    type: "object",
+                    properties: {
+                      success: { type: "boolean" },
+                      message: { type: "string", example: "pong" },
+                      data: {
+                        type: "object",
+                        properties: { vendorId: { type: "string", format: "uuid" } },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+            ...errorResponses(401, 429),
+          },
+        },
+      },
       "/orders": {
         post: {
           summary: "Create an order",

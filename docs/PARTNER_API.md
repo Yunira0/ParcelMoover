@@ -21,7 +21,7 @@ New to this API? This is the fast path to your first order — everything here i
 
 ### Generate an API key {.qs-step}
 
-This is the only credential you actually need to get started — everything below this step is optional until you want it.
+This is the only credential you actually need to place a first test order. The webhook step further down isn't optional for a real integration, though — see why once you get there.
 
 ```diagram
 <div class="ui-mock">
@@ -55,6 +55,21 @@ This is the only credential you actually need to get started — everything belo
 
 > Full detail on sending the key, revoking it, and its scope: see [Authentication](#authentication) below.
 
+### Test your connection {.qs-step}
+
+Before building anything real, confirm the key actually works — one call, no side effects, nothing to clean up if you got it wrong:
+
+```bash
+curl "https://portal.parcelmoover.com/api/v1/ping" \
+  -H "Authorization: Bearer $KEY"
+```
+
+```json
+{ "success": true, "message": "pong", "data": { "vendorId": "a1c9..." } }
+```
+
+A `401` here means the key itself is wrong, expired, or revoked — fix that before debugging anything downstream, since every other endpoint will fail the same way for the same reason. `vendorId` in the response is your own account's id — worth checking once so you know which vendor account a given key belongs to (useful if your team has more than one).
+
 ### Make your first request {.qs-step}
 
 Every request needs the key above, plus a client-generated `Idempotency-Key` UUID on any `POST`. This creates a single delivery order:
@@ -77,9 +92,9 @@ curl -X POST "$BASE/orders" \
 
 You'll get back a `trackingId` — that's what you show your customer and use for every follow-up call. Full field-by-field reference, plus Node.js/Python/PHP equivalents: see [Create an order](#create-an-order) below.
 
-### Set up a webhook (optional) {.qs-step}
+### Set up a webhook (essential for production) {.qs-step}
 
-Skip this if you're just getting started — `POST /orders/statuses` works fine for polling. Come back here once you want push notifications instead of asking on a timer.
+**Do this before you go live.** The API will technically accept orders without a webhook registered — `POST /orders/statuses` exists for polling — but every real integration needs to know the moment a status changes: delivered, failed, cancelled. Polling on a timer means either hammering the API with requests that come back unchanged, or missing time-sensitive changes between polls. A webhook is the only way to know immediately, and it's what every serious integration ends up building regardless. Treat this step as required, not optional, for anything beyond a first test order.
 
 ```diagram
 <div class="ui-mock">
@@ -141,6 +156,14 @@ Orders you create belong to the vendor account that owns the key, and you can on
 
 **Never** embed the key in browser/mobile client code — call the API from your server only.
 
+### Confirm your key works
+
+```
+GET /api/v1/ping
+```
+
+Returns `{ "success": true, "message": "pong", "data": { "vendorId": "..." } }` for a valid key, or `401` if it's wrong, expired, or revoked — with zero side effects either way. This is the fastest way to isolate "my key is bad" from "something else is wrong" before debugging further; see [Test your connection](#test-your-connection) in Quick Start for the full walkthrough.
+
 ---
 
 ## Idempotency
@@ -186,7 +209,7 @@ Headers: `Authorization`, `Idempotency-Key` (UUID, required), `Content-Type: app
 | `receiver.phone` | string | ✅ | **Nepali mobile number only** — 10 digits starting `97` or `98`, with an optional `+977`/`977` country code. `9841234567` and `+9779841234567` are both fine; landlines and non-Nepali numbers are rejected. Must differ from the sender's phone. |
 | `receiver.alternatePhone` | string | — | Looser: any 10–15 digits with an optional leading `+`. |
 | `receiver.email` | string | — | |
-| `receiver.address` | string | — | Max 255 chars. **Required unless `serviceType` is `branch_delivery`** — a home delivery with no street address is rejected. |
+| `receiver.address` | string | — | **Free text, any string** — up to 255 chars, not validated against a real address database or a fixed list. **Required unless `serviceType` is `branch_delivery`** — a home delivery with no street address is rejected. Unlike the destination hub above/below, there's nothing here for ParcelMoover to reject as "unrecognized." |
 | `receiver.locationId` | UUID or hub name | — | The receiver's destination branch/hub — same value as `destinationLocationId` below. Setting either one satisfies the destination requirement; the dashboard's own order form sets both. |
 | `sender` | object | — | Pickup contact. **Omit it and ParcelMoover fills it from your vendor account's registered pickup profile** (business name, phone, pickup landmark). Provide it only to override — e.g. shipping from a different warehouse. Same fields as `receiver` (`name` and `phone` required when provided; `phone` has the same Nepali-mobile rule). |
 | `orderType` | string | — | `delivery` (default), `exchange`, or `return`. On an `exchange` order, ops confirming delivery auto-creates a linked return parcel — it isn't something you create yourself; find it later via `sourceOrderId` on the new parcel (see [Track an order](#track-an-order)). |
@@ -194,7 +217,7 @@ Headers: `Authorization`, `Idempotency-Key` (UUID, required), `Content-Type: app
 | `pieces` | integer | — | ≥ 1. Number of packages. |
 | `weightKg` | number | ✅ | > 0. Billable weight — this is what your rate is quoted against, so it must be sent explicitly rather than defaulted. |
 | `codAmount` | number | ✅ | ≥ 0. Cash to collect from the receiver on delivery (NPR). Send `0` explicitly for prepaid orders — the field can't be omitted, so a forgotten COD can never silently ship as prepaid. |
-| `packageType` | string | — | Max 50 chars, e.g. `"electronics"`. |
+| `packageType` | string | — | Free text, max 50 chars, e.g. `"electronics"`. Defaults to `"Parcel"` if omitted — same as what the dashboard's own order form pre-fills, so an order created via the API looks the same as one created by staff. |
 | `deliveryInstruction` | string | — | Max 500 chars. |
 | `pickupAddress` | string | — | Max 255 chars. Overrides the sender address for pickup. |
 | `scheduledPickupAt` | string | — | ISO-8601 datetime with offset, e.g. `2026-07-15T10:00:00+05:45`. |
@@ -206,13 +229,17 @@ The **delivery charge is computed by ParcelMoover** from your vendor rate agreem
 
 #### Picking a destination (the "To" branch/hub)
 
-`destinationLocationId` (and `receiver.locationId`) accept **either** a location UUID **or** the hub's plain name/code — e.g. `"Kathmandu"` or `"POKHARA"`, matched case-insensitively against the same active hub list `GET /api/v1/rates` returns (the one kept up to date via ParcelMoover's Excel rate import) — so a new integration can skip a lookup call entirely and just send the city/branch name it already has. An unrecognized name is rejected immediately with a clear `DESTINATION_NOT_FOUND` error rather than silently accepted:
+**This must be one of ParcelMoover's existing destination hubs — not an arbitrary place name.** You're picking from a fixed, known list of branches/cities ParcelMoover actually delivers to, the same list the dashboard's own order form picks from — you can't ship to a hub that isn't already in our system, and there's no "add a new destination" available through the API.
+
+`destinationLocationId` (and `receiver.locationId`) accept **either** a location UUID **or** the hub's plain name/code — e.g. `"Kathmandu"` or `"POKHARA"`. Matching is an **exact** (case-insensitive) match against `destinationName` or its code, both drawn from `GET /api/v1/rates` — not a fuzzy or partial match, so `"Kathmandu Valley"` or `"KTM"` (unless that's the literal code) will fail even though a human would recognize what you meant. Call [`GET /api/v1/rates`](#rates) once, cache the list of `destinationId`/`destinationName` pairs, and use one of those exact values — that also matches the ParcelMoover Excel rate import's own naming, so it stays in sync automatically as hubs are added. An unrecognized name is rejected immediately with a clear `DESTINATION_NOT_FOUND` error rather than silently accepted:
 
 ```json
 { "success": false, "message": "Unknown destination hub: \"Notaplace\". See GET /api/v1/rates for valid names.", "error": { "code": "DESTINATION_NOT_FOUND" } }
 ```
 
 If you want to show a searchable picker (matching the ParcelMoover dashboard's own order form) or a live shipping-cost estimate before the order is placed, call [`GET /api/v1/rates`](#rates) once to list every valid `destinationName`, and [`GET /api/v1/rates/quote`](#rates) for the price — both also accept the same UUID-or-name value.
+
+**Contrast this with `receiver.address` / `sender.address`, right below** — those are free text with no such restriction. The destination hub is a controlled selection (must already exist in ParcelMoover); the street address underneath it is not (any string you send is stored as-is).
 
 #### Example — cURL
 
@@ -441,7 +468,7 @@ echo $body['data']['status']; // e.g. "picked_up"
     "attemptCount": 0,
     "codAmount": 1500,
     "deliveryCharge": 100,
-    "packageType": "",
+    "packageType": "Parcel",
     "deliveryInstruction": "Call before delivery",
     "allowPartialDelivery": false,
     "partialDeliveryRemarks": null,
@@ -946,6 +973,8 @@ An order moves through these `status` values:
 
 ## Webhooks
 
+**Set this up before going to production.** It's not enforced by the API — you can create and track orders with nothing but the endpoints above — but every real integration ends up needing this: it's the only way to learn about a status change (delivered, failed, cancelled) the moment it happens, instead of discovering it late on a poll or missing it between polls entirely.
+
 Register an endpoint from your dashboard — sidebar **Account → Developer → Webhooks tab** (`/developer/webhooks`), or via `POST /api/webhooks` (session-authenticated — this is a dashboard-side call, not part of `/api/v1`) — and we'll POST a signed event to it every time one of your orders' status changes.
 
 ### Payload
@@ -1120,9 +1149,10 @@ No API key required to fetch it. Paste the URL into [Swagger Editor](https://edi
 ## Integration checklist
 
 1. Generate an API key from the vendor dashboard and store it server-side (env var / secrets manager — never in client code).
-2. On checkout/fulfilment, `POST /orders` with a fresh UUID `Idempotency-Key`; persist the returned `trackingId` against your order.
-3. Retry failed creates (network error, `5xx`) with the **same** `Idempotency-Key` — extend the same pattern to cancel, remarks, and ticket calls.
-4. Register a webhook endpoint and verify `X-ParcelMoover-Signature` on every request before trusting the payload; that's how you sync status back to your system. Show the returned `trackingId` to your customer at creation time.
-5. Use `GET /orders/{trackingId}` and `POST /orders/statuses` only for on-demand lookups or reconciliation (e.g. catching up after your webhook endpoint was down) — not as a scheduled polling loop.
-6. Handle `401` by alerting yourself (key revoked/rotated) and `429` with exponential backoff; branch on `error.code` rather than parsing `message` text.
-7. Rotate keys periodically: generate a new key, switch traffic, then revoke the old one (up to 5 active keys per account).
+2. Call `GET /ping` once to confirm the key works before writing any other integration code.
+3. On checkout/fulfilment, `POST /orders` with a fresh UUID `Idempotency-Key`; persist the returned `trackingId` against your order.
+4. Retry failed creates (network error, `5xx`) with the **same** `Idempotency-Key` — extend the same pattern to cancel, remarks, and ticket calls.
+5. **Register a webhook endpoint before going live** and verify `X-ParcelMoover-Signature` on every request before trusting the payload; that's how you sync status back to your system without polling. Show the returned `trackingId` to your customer at creation time.
+6. Use `GET /orders/{trackingId}` and `POST /orders/statuses` only for on-demand lookups or reconciliation (e.g. catching up after your webhook endpoint was down) — not as a scheduled polling loop.
+7. Handle `401` by alerting yourself (key revoked/rotated) and `429` with exponential backoff; branch on `error.code` rather than parsing `message` text.
+8. Rotate keys periodically: generate a new key, switch traffic, then revoke the old one (up to 5 active keys per account).
