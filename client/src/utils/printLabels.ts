@@ -10,9 +10,9 @@ const ORDER_TYPE_LABELS: Record<string, string> = {
 };
 
 const TYPE_COLORS: Record<string, { bg: string; text: string }> = {
-  delivery: { bg: '#d1fae5', text: '#065f46' },
-  exchange: { bg: '#dbeafe', text: '#1e40af' },
-  return: { bg: '#fee2e2', text: '#991b1b' },
+  delivery: { bg: '#fff', text: '#000' },
+  exchange: { bg: '#fff', text: '#000' },
+  return: { bg: '#fff', text: '#000' },
 };
 
 const fmt = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: 0 });
@@ -32,7 +32,7 @@ function barcodeDataUrl(trackingId: string): string {
 
 function labelHtml(order: Order, qrDataUrl: string, barcodeUrl: string): string {
   const typeLabel = ORDER_TYPE_LABELS[order.orderType] ?? order.orderType.toUpperCase();
-  const typeColor = TYPE_COLORS[order.orderType] ?? { bg: '#f3f4f6', text: '#374151' };
+  const typeColor = TYPE_COLORS[order.orderType] ?? { bg: '#fff', text: '#000' };
   const codLine = order.codAmount > 0 ? `NPR ${fmt(order.codAmount)}` : '—';
   const weightLine = order.weightKg ? `${order.weightKg} kg` : '—';
   const packageLine = order.packageType || '—';
@@ -40,7 +40,7 @@ function labelHtml(order: Order, qrDataUrl: string, barcodeUrl: string): string 
     .replace(/^(inside\s+valley\s*[-–—]?\s*|outside\s+valley\s*[-–—]?\s*)/i, '')
     .trim();
   const destination = esc(cleanDestination || order.destinationName || order.destination);
-  const valleyLabel = order.destinationValley === 'inside' ? 'Inside Valley' : order.destinationValley === 'outside' ? 'Outside Valley' : '';
+  const valleyLabel = order.destinationValley === 'inside' ? 'Inside Valley' : '';
   const fullAddress = order.receiverAddress ? esc(order.receiverAddress) : '—';
 
   return `
@@ -121,10 +121,11 @@ body{background:#fff;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif}
   border-bottom:2px solid #000;
 }
 .brand-name{font-size:15px;font-weight:800;color:#000;line-height:1.1}
-.brand-url{font-size:8px;color:#6b7280;line-height:1.15;margin-top:0.2mm}
+.brand-url{font-size:8px;font-weight:700;color:#000;line-height:1.15;margin-top:0.2mm}
 .badge{
-  font-size:9px;font-weight:700;
+  font-size:11px;font-weight:800;
   padding:1mm 3mm;
+  border:1.5px solid #000;
   border-radius:2.5mm;
   text-transform:uppercase;letter-spacing:0.3px;
   white-space:nowrap;
@@ -134,9 +135,9 @@ body{background:#fff;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif}
 .track{
   display:flex;align-items:baseline;justify-content:space-between;
   padding:2mm 3.5mm;
-  border-bottom:1px dashed #ccc;
+  border-bottom:1px dashed #000;
 }
-.order-num{font-size:10px;font-weight:600;color:#374151}
+.order-num{font-size:10px;font-weight:700;color:#000}
 .track-id{
   font-size:13px;font-weight:900;letter-spacing:0.8px;
   font-family:'Courier New',Consolas,monospace;
@@ -159,9 +160,9 @@ body{background:#fff;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif}
   word-wrap:break-word;overflow-wrap:break-word;
   hyphens:auto;min-width:0;
 }
-.route-arrow{font-size:14px;color:#000;font-weight:400;flex-shrink:0}
+.route-arrow{font-size:14px;color:#000;font-weight:700;flex-shrink:0}
 .route-valley{
-  font-size:9px;font-weight:700;color:#374151;
+  font-size:9px;font-weight:700;color:#000;
   text-transform:uppercase;letter-spacing:0.3px;
   white-space:nowrap;flex-shrink:0;
 }
@@ -186,7 +187,7 @@ body{background:#fff;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif}
   overflow:visible;
 }
 .party-label{
-  font-size:6.5px;font-weight:700;color:#6b7280;
+  font-size:6.5px;font-weight:700;color:#000;
   text-transform:uppercase;letter-spacing:1.2px;
   line-height:1;
 }
@@ -196,12 +197,12 @@ body{background:#fff;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif}
   hyphens:auto;
 }
 .party-phone{
-  font-size:12px;font-weight:600;color:#374151;
+  font-size:14px;font-weight:700;color:#000;
   font-family:'Courier New',Consolas,monospace;
   letter-spacing:0.5px;line-height:1.2;
 }
 .party-addr{
-  font-size:10px;font-weight:600;color:#6b7280;
+  font-size:12px;font-weight:700;color:#000;
   line-height:1.25;word-wrap:break-word;overflow-wrap:break-word;
   hyphens:auto;
   text-transform:uppercase;
@@ -217,11 +218,11 @@ body{background:#fff;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif}
 /* ── Note ── */
 .note{
   padding:1.5mm 3.5mm;
-  border-top:1px dashed #ccc;
+  border-top:1px dashed #000;
 }
-.note-label{font-size:9px;font-weight:700;color:#374151}
+.note-label{font-size:9px;font-weight:700;color:#000}
 .note-text{
-  font-size:9px;color:#374151;font-style:italic;
+  font-size:9px;font-weight:700;color:#000;font-style:italic;
   line-height:1.2;
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;
   overflow:hidden;
@@ -238,15 +239,15 @@ body{background:#fff;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif}
   flex:1;display:flex;flex-direction:column;
   align-items:center;gap:0;
   padding:0 1.5mm;
-  border-right:1px solid #d1d5db;
+  border-right:1px solid #000;
 }
 .fc:last-child{border-right:none}
 .fk{
-  font-size:6px;color:#6b7280;text-transform:uppercase;
-  letter-spacing:0.5px;font-weight:700;line-height:1;
+  font-size:8px;color:#000;text-transform:uppercase;
+  letter-spacing:0.5px;font-weight:700;line-height:1.1;
 }
 .fv{
-  font-size:10px;font-weight:800;color:#000;
+  font-size:13px;font-weight:800;color:#000;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
   max-width:100%;line-height:1.3;
 }
