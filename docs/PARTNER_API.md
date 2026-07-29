@@ -15,6 +15,115 @@ All requests and responses are JSON (`Content-Type: application/json`).
 
 ---
 
+## Quick Start
+
+New to this API? This is the fast path to your first order — everything here is covered again in full depth further down; treat this as the on-ramp, not the whole reference.
+
+### Generate an API key {.qs-step}
+
+This is the only credential you actually need to get started — everything below this step is optional until you want it.
+
+```diagram
+<div class="ui-mock">
+  <div class="ui-mock-bar">
+    <span class="ui-mock-dot"></span><span class="ui-mock-dot"></span><span class="ui-mock-dot"></span>
+    <span class="ui-mock-url">portal.parcelmoover.com/developer/api-keys</span>
+  </div>
+  <div class="ui-mock-body">
+    <div class="ui-mock-nav">
+      <div class="ui-mock-nav-item">Dashboard</div>
+      <div class="ui-mock-nav-item">Orders</div>
+      <div class="ui-mock-nav-item active">Account</div>
+      <div class="ui-mock-nav-sub">Profile</div>
+      <div class="ui-mock-nav-sub active">Developer</div>
+    </div>
+    <div class="ui-mock-content">
+      <div class="ui-mock-heading">API Keys</div>
+      <span class="ui-mock-btn">+ Generate Key</span>
+      <div class="ui-mock-secret">
+        <code>pm_live_9f2a...c7e1</code>
+        <span class="ui-mock-chip">shown once</span>
+      </div>
+    </div>
+  </div>
+</div>
+```
+
+1. Log into the dashboard as your vendor account owner.
+2. Go to **Account → Developer → API Keys tab**.
+3. Click **Generate Key** and copy it immediately — `pm_live_...` is shown once and can't be retrieved again if you navigate away.
+
+> Full detail on sending the key, revoking it, and its scope: see [Authentication](#authentication) below.
+
+### Make your first request {.qs-step}
+
+Every request needs the key above, plus a client-generated `Idempotency-Key` UUID on any `POST`. This creates a single delivery order:
+
+```bash
+BASE="https://portal.parcelmoover.com/api/v1"
+KEY="pm_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+
+curl -X POST "$BASE/orders" \
+  -H "Authorization: Bearer $KEY" \
+  -H "Idempotency-Key: $(uuidgen)" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "receiver": { "name": "Ram Sharma", "phone": "9841234567", "address": "Baneshwor, Kathmandu" },
+    "destinationLocationId": "Kathmandu",
+    "codAmount": 1500,
+    "weightKg": 1.2
+  }'
+```
+
+You'll get back a `trackingId` — that's what you show your customer and use for every follow-up call. Full field-by-field reference, plus Node.js/Python/PHP equivalents: see [Create an order](#create-an-order) below.
+
+### Set up a webhook (optional) {.qs-step}
+
+Skip this if you're just getting started — `POST /orders/statuses` works fine for polling. Come back here once you want push notifications instead of asking on a timer.
+
+```diagram
+<div class="ui-mock">
+  <div class="ui-mock-bar">
+    <span class="ui-mock-dot"></span><span class="ui-mock-dot"></span><span class="ui-mock-dot"></span>
+    <span class="ui-mock-url">portal.parcelmoover.com/developer/webhooks</span>
+  </div>
+  <div class="ui-mock-body">
+    <div class="ui-mock-nav">
+      <div class="ui-mock-nav-item">Dashboard</div>
+      <div class="ui-mock-nav-item">Orders</div>
+      <div class="ui-mock-nav-item active">Account</div>
+      <div class="ui-mock-nav-sub">Developer</div>
+      <div class="ui-mock-nav-sub active">Webhooks</div>
+    </div>
+    <div class="ui-mock-content">
+      <div class="ui-mock-heading">Add Endpoint</div>
+      <div class="ui-mock-field">
+        <label>URL</label>
+        <div class="ui-mock-input">https://yourapp.example/webhooks/parcelmoover</div>
+      </div>
+      <span class="ui-mock-btn">Save Endpoint</span>
+      <div class="ui-mock-secret">
+        <code>whsec_4b7d...a12f</code>
+        <span class="ui-mock-chip">shown once</span>
+      </div>
+    </div>
+  </div>
+</div>
+```
+
+1. Go to **Account → Developer → Webhooks tab**.
+2. Click **Add Endpoint**, name it, and give it your `https://` receiving URL.
+3. Copy the secret immediately — `whsec_...` is shown once. You'll use it to verify every delivery's signature.
+
+> Full detail — payload shape, signature verification code, retry/reliability guarantees, and what "shown once" means for regeneration: see [Webhooks](#webhooks) below.
+
+### You're integrated
+
+- Try every endpoint live against your own key, no code required: **`GET /api/v1/docs/console`**.
+- Full endpoint-by-endpoint reference starts at [Authentication](#authentication) and continues through [Errors](#errors).
+
+---
+
 ## Authentication
 
 Every request must carry an API key. A ParcelMoover vendor account owner generates keys from the dashboard: **Sidebar → Account → Developer → API Keys tab → Generate Key** (webhook endpoints live in the **Webhooks** tab right alongside it). The full key (`pm_live_...`) is shown **once** at creation — store it securely.
@@ -861,7 +970,7 @@ Register an endpoint from your dashboard — sidebar **Account → Developer →
 Every request carries:
 
 - `X-ParcelMoover-Event` — the event type (currently always `order.status_changed`, plus `webhook.test` for test pings sent from the dashboard).
-- `X-ParcelMoover-Delivery` — a UUID unique to this delivery attempt; use it to de-duplicate retries.
+- `X-ParcelMoover-Delivery` — a UUID identifying this event, **the same value as the payload's own `id` field**. It stays identical across every retry of the same event, so either one works as your dedup key.
 - `X-ParcelMoover-Signature` — `t=<unix_seconds>,v1=<hex_hmac_sha256>`, where the HMAC is computed over `"<t>.<raw_request_body>"` using your endpoint's secret (shown once when you create the endpoint).
 
 ```js
@@ -881,9 +990,19 @@ function verifyParcelMooverSignature(rawBody, signatureHeader, secret, tolerance
 
 Always verify against the **raw** request body (before your framework parses it as JSON) — re-serializing and comparing JSON can produce a different byte sequence than what was signed.
 
+### Delivery guarantees
+
+Webhooks are **at-least-once, not exactly-once, and not ordered**:
+
+- **Expect duplicates.** A delivery is retried whenever we can't confirm success — including when your server *did* process it but the response was lost (a timeout, a network blip, your load balancer dropping the connection). Make your handler idempotent, keyed on the delivery id described above, rather than assuming a fresh id on every call.
+- **Expect out-of-order arrival.** Two events for the *same* order can be delivered out of order if the earlier one hits a slow retry cycle while a later one succeeds on the first attempt. Don't treat "most recently received" as "most recent state" — compare `data.changedAt` (or trust `data.newStatus` only if it's ahead of what you already have) instead of blindly overwriting on every webhook.
+- **Expect the occasional gap.** If your endpoint is down long enough to exhaust the retry window below, that one event is gone for good — retries don't continue past 12 attempts. Poll `POST /orders/statuses` periodically regardless of whether you use webhooks, so a missed event self-heals instead of leaving your system stuck on a stale status.
+
 ### Retries
 
-A non-2xx response (or a request we can't complete within 10s) is retried with exponential backoff — roughly 30s, 1m, 2m, 4m, ... capped at 6h between attempts, for up to 12 attempts spanning about 24 hours. If an endpoint fails its **entire** retry window five times in a row, it's automatically disabled; re-enable it from the dashboard once it's fixed (this also resets the failure count). Return `2xx` promptly — do the actual processing after responding if it's slow, since a slow response counts toward the same 10s timeout as a failed one.
+A non-2xx response (or a request we can't complete within 10s) is retried with exponential backoff — roughly 30s, 1m, 2m, 4m, ... capped at 6h between attempts, for up to 12 attempts spanning about 24 hours. Return `2xx` promptly — do the actual processing after responding if it's slow, since a slow response counts toward the same 10s timeout as a failed one.
+
+If an endpoint fails its **entire** retry window five separate times in a row (so, on the order of days of continuous failure with no successful delivery in between), it's automatically disabled and you'll get an email at your account's registered address — delivery of new events stops until you fix and re-enable it from the dashboard (which also resets the failure count). Re-enabling does **not** replay what was missed while disabled; reconcile with `POST /orders/statuses` after fixing it.
 
 ---
 

@@ -8,9 +8,18 @@
  * does, and a rendering bug can never break the production image build.
  *
  * The renderer only covers the constructs PARTNER_API.md actually uses -
- * headings, fenced code (json/bash/js/python/php), tables, rules, and lists.
- * There is no raw HTML, no images, and no nesting to handle. If you add a
- * construct to the Markdown, add it here too rather than assuming it renders.
+ * headings, fenced code (json/bash/js/python/php), tables, rules, lists, and
+ * blockquotes. There is no nesting to handle. If you add a construct to the
+ * Markdown, add it here too rather than assuming it renders.
+ *
+ * One deliberate escape hatch: a ```diagram fence is emitted verbatim, not
+ * escaped or highlighted - the only way to get raw HTML (the onboarding
+ * illustrations) into an otherwise-plain-Markdown source of truth without
+ * inventing a second templating layer. Content inside must be hand-verified
+ * safe (it's fixed docs source, not user input) and self-contained: it can
+ * reference the page's own CSS custom properties (var(--rust) etc.) since
+ * it's inlined into the same document, but must bring its own component
+ * classes if the standard stylesheet below doesn't already define them.
  */
 import * as fs from "fs";
 import * as path from "path";
@@ -128,6 +137,14 @@ function render(md: string): { html: string; headings: Heading[] } {
       i++;
       while (i < lines.length && !lines[i].startsWith("```")) body.push(lines[i++]);
       i++; // closing fence
+
+      if (lang === "diagram") {
+        // Raw HTML passthrough - see the file-header comment. Not a code
+        // sample, so no copy button/lang badge/highlighting.
+        out.push(body.join("\n"));
+        continue;
+      }
+
       const label = lang ? `<span class="code-lang">${lang}</span>` : "";
       out.push(
         `<div class="code-block">${label}` +
@@ -157,20 +174,27 @@ function render(md: string): { html: string; headings: Heading[] } {
       continue;
     }
 
-    // Heading
-    const h = line.match(/^(#{1,6})\s+(.*)$/);
+    // Heading, with an optional trailing {.class-name} - the one bit of
+    // Pandoc-style attribute syntax this renderer supports, since headings
+    // are emitted flat (siblings, not nested under their h2), so a rule like
+    // "#some-section h3 {...}" can never match a real h3 - it's not a
+    // descendant of anything. A class is the only way to scope styling to a
+    // specific heading without a bigger restructure into <section> wrappers.
+    const h = line.match(/^(#{1,6})\s+(.*?)(?:\s*\{\.([\w-]+)\})?$/);
     if (h) {
       closeList(listStack);
       const level = h[1].length;
       const text = h[2].trim();
+      const className = h[3];
       let slug = slugify(text);
       // Duplicate headings (several "#### Example") would collide otherwise.
       let n = 1;
       while (seenSlugs.has(slug)) slug = `${slugify(text)}-${n++}`;
       seenSlugs.add(slug);
       if (level <= 3) headings.push({ level, text, slug });
+      const classAttr = className ? ` class="${className}"` : "";
       out.push(
-        `<h${level} id="${slug}">${inline(text)}` +
+        `<h${level} id="${slug}"${classAttr}>${inline(text)}` +
           `<a class="anchor" href="#${slug}" aria-label="Link to this section">#</a></h${level}>`,
       );
       i++;
@@ -181,6 +205,20 @@ function render(md: string): { html: string; headings: Heading[] } {
       closeList(listStack);
       out.push("<hr>");
       i++;
+      continue;
+    }
+
+    // Blockquote: a run of "> " lines becomes one callout box. No nested
+    // blockquotes/lists inside - PARTNER_API.md only uses these for
+    // single-paragraph asides.
+    if (line.startsWith(">")) {
+      closeList(listStack);
+      const body: string[] = [];
+      while (i < lines.length && lines[i].startsWith(">")) {
+        body.push(lines[i].replace(/^>\s?/, ""));
+        i++;
+      }
+      out.push(`<div class="callout">${inline(body.join(" "))}</div>`);
       continue;
     }
 
@@ -224,7 +262,8 @@ function render(md: string): { html: string; headings: Heading[] } {
       lines[i].trim() !== "---" &&
       !lines[i].trim().startsWith("|") &&
       !lines[i].match(/^(\d+)\.\s/) &&
-      !lines[i].match(/^\s*[-*]\s/)
+      !lines[i].match(/^\s*[-*]\s/) &&
+      !lines[i].startsWith(">")
     ) {
       para.push(lines[i++]);
     }
@@ -400,6 +439,86 @@ tbody tr:last-child td{border-bottom:0}
 tbody tr:hover{background:var(--canvas)}
 td:first-child{white-space:nowrap; font-family:var(--mono); font-size:12px}
 td code{background:none; padding:0}
+
+/* Note/callout boxes (> blockquotes). Left accent, not a shadow card - same
+   same-plane-surface rule as everything else, just with a one-color tell. */
+.callout{
+  margin:16px 0; padding:12px 16px; border:1px solid var(--border);
+  border-left:3px solid var(--rust); border-radius:0 6px 6px 0;
+  background:var(--elevated); font-size:13.5px; color:var(--muted);
+}
+.callout code{background:var(--surface)}
+
+/* Quick Start step numbering - a CSS counter driven by document order (works
+   without real DOM nesting, unlike a descendant selector - headings render
+   as flat siblings, see the heading-parsing comment above). The Markdown
+   source just tags the relevant h3s "{.qs-step}"; this numbers them 1..n in
+   the order they appear, wherever body{counter-reset} sits relative to them. */
+body{counter-reset:qs-step}
+h3.qs-step{counter-increment:qs-step; display:flex; align-items:center; gap:12px}
+h3.qs-step::before{
+  content:counter(qs-step); flex:none; width:28px; height:28px; border-radius:50%;
+  background:var(--rust); color:#fff; font-size:14px; font-weight:700;
+  display:flex; align-items:center; justify-content:center;
+}
+
+/* ── UI mockups (the "diagram" fence passthrough) ──────────────────────────
+   Fake browser chrome + a simplified dashboard, built from div/CSS rather
+   than screenshots: never goes stale when the real UI's pixels shift, no
+   image assets to ship, and it inherits light/dark mode for free via the
+   page's own custom properties. Not meant to be pixel-accurate - just
+   enough shape (sidebar, tabs, a button, a reveal-once secret) that a
+   first-time reader recognizes the real dashboard when they get there. */
+.ui-mock{
+  margin:20px 0 28px; border:1px solid var(--border); border-radius:8px;
+  overflow:hidden; background:var(--surface);
+}
+.ui-mock-bar{
+  display:flex; align-items:center; gap:6px; padding:9px 12px;
+  background:var(--elevated); border-bottom:1px solid var(--border);
+}
+.ui-mock-dot{width:9px; height:9px; border-radius:50%; background:var(--border)}
+.ui-mock-url{
+  margin-left:8px; padding:3px 10px; border-radius:5px; background:var(--surface);
+  border:1px solid var(--border); font-family:var(--mono); font-size:11px; color:var(--faint);
+}
+.ui-mock-body{display:flex; min-height:180px}
+.ui-mock-nav{
+  width:150px; flex:none; padding:14px 0; border-right:1px solid var(--border);
+  background:var(--canvas); font-size:12px;
+}
+.ui-mock-nav-item{padding:7px 16px; color:var(--muted)}
+.ui-mock-nav-item.active{
+  color:var(--rust); font-weight:650; background:var(--rust-soft);
+  border-right:2px solid var(--rust);
+}
+.ui-mock-nav-sub{padding:6px 16px 6px 28px; color:var(--faint); font-size:11.5px}
+.ui-mock-nav-sub.active{color:var(--rust); font-weight:650}
+.ui-mock-content{flex:1; padding:18px 20px}
+.ui-mock-heading{font-size:14px; font-weight:700; margin-bottom:12px}
+.ui-mock-btn{
+  display:inline-flex; align-items:center; gap:6px; padding:6px 14px;
+  background:var(--rust); color:#fff; font-size:12px; font-weight:650;
+  border-radius:5px;
+}
+.ui-mock-field{
+  display:flex; flex-direction:column; gap:3px; margin-bottom:10px; max-width:320px;
+}
+.ui-mock-field label{font-size:11px; color:var(--faint); font-weight:650}
+.ui-mock-field .ui-mock-input{
+  padding:6px 10px; border:1px solid var(--border); border-radius:5px;
+  background:var(--canvas); font-size:12px; color:var(--muted);
+}
+.ui-mock-secret{
+  margin-top:12px; padding:10px 12px; border:1px dashed var(--rust); border-radius:6px;
+  background:var(--rust-soft); display:flex; align-items:center; justify-content:space-between; gap:10px;
+}
+.ui-mock-secret code{background:none; color:var(--ink); font-size:12.5px}
+.ui-mock-chip{
+  flex:none; padding:2px 8px; border-radius:9999px; background:var(--rust); color:#fff;
+  font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.04em;
+}
+@media (max-width:560px){ .ui-mock-nav{display:none} }
 
 @media (max-width:900px){
   .layout{grid-template-columns:1fr}

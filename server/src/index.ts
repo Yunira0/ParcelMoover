@@ -146,8 +146,10 @@ function startWebhookDelivery() {
       );
       if (!locked) return;
     } catch {
-      // Redis down — run anyway; delivery is idempotent (rows only move
-      // forward: pending -> succeeded/failed).
+      // Redis down — run anyway rather than stalling delivery entirely.
+      // webhookDispatch.service.ts has its own in-process reentrancy guard
+      // for exactly this case, so a Redis outage degrades to "no cross-tick
+      // coordination" rather than "sweeps race each other every 15s."
       locked = false;
     }
     try {

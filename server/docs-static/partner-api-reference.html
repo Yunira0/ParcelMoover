@@ -144,6 +144,86 @@ tbody tr:hover{background:var(--canvas)}
 td:first-child{white-space:nowrap; font-family:var(--mono); font-size:12px}
 td code{background:none; padding:0}
 
+/* Note/callout boxes (> blockquotes). Left accent, not a shadow card - same
+   same-plane-surface rule as everything else, just with a one-color tell. */
+.callout{
+  margin:16px 0; padding:12px 16px; border:1px solid var(--border);
+  border-left:3px solid var(--rust); border-radius:0 6px 6px 0;
+  background:var(--elevated); font-size:13.5px; color:var(--muted);
+}
+.callout code{background:var(--surface)}
+
+/* Quick Start step numbering - a CSS counter driven by document order (works
+   without real DOM nesting, unlike a descendant selector - headings render
+   as flat siblings, see the heading-parsing comment above). The Markdown
+   source just tags the relevant h3s "{.qs-step}"; this numbers them 1..n in
+   the order they appear, wherever body{counter-reset} sits relative to them. */
+body{counter-reset:qs-step}
+h3.qs-step{counter-increment:qs-step; display:flex; align-items:center; gap:12px}
+h3.qs-step::before{
+  content:counter(qs-step); flex:none; width:28px; height:28px; border-radius:50%;
+  background:var(--rust); color:#fff; font-size:14px; font-weight:700;
+  display:flex; align-items:center; justify-content:center;
+}
+
+/* ── UI mockups (the "diagram" fence passthrough) ──────────────────────────
+   Fake browser chrome + a simplified dashboard, built from div/CSS rather
+   than screenshots: never goes stale when the real UI's pixels shift, no
+   image assets to ship, and it inherits light/dark mode for free via the
+   page's own custom properties. Not meant to be pixel-accurate - just
+   enough shape (sidebar, tabs, a button, a reveal-once secret) that a
+   first-time reader recognizes the real dashboard when they get there. */
+.ui-mock{
+  margin:20px 0 28px; border:1px solid var(--border); border-radius:8px;
+  overflow:hidden; background:var(--surface);
+}
+.ui-mock-bar{
+  display:flex; align-items:center; gap:6px; padding:9px 12px;
+  background:var(--elevated); border-bottom:1px solid var(--border);
+}
+.ui-mock-dot{width:9px; height:9px; border-radius:50%; background:var(--border)}
+.ui-mock-url{
+  margin-left:8px; padding:3px 10px; border-radius:5px; background:var(--surface);
+  border:1px solid var(--border); font-family:var(--mono); font-size:11px; color:var(--faint);
+}
+.ui-mock-body{display:flex; min-height:180px}
+.ui-mock-nav{
+  width:150px; flex:none; padding:14px 0; border-right:1px solid var(--border);
+  background:var(--canvas); font-size:12px;
+}
+.ui-mock-nav-item{padding:7px 16px; color:var(--muted)}
+.ui-mock-nav-item.active{
+  color:var(--rust); font-weight:650; background:var(--rust-soft);
+  border-right:2px solid var(--rust);
+}
+.ui-mock-nav-sub{padding:6px 16px 6px 28px; color:var(--faint); font-size:11.5px}
+.ui-mock-nav-sub.active{color:var(--rust); font-weight:650}
+.ui-mock-content{flex:1; padding:18px 20px}
+.ui-mock-heading{font-size:14px; font-weight:700; margin-bottom:12px}
+.ui-mock-btn{
+  display:inline-flex; align-items:center; gap:6px; padding:6px 14px;
+  background:var(--rust); color:#fff; font-size:12px; font-weight:650;
+  border-radius:5px;
+}
+.ui-mock-field{
+  display:flex; flex-direction:column; gap:3px; margin-bottom:10px; max-width:320px;
+}
+.ui-mock-field label{font-size:11px; color:var(--faint); font-weight:650}
+.ui-mock-field .ui-mock-input{
+  padding:6px 10px; border:1px solid var(--border); border-radius:5px;
+  background:var(--canvas); font-size:12px; color:var(--muted);
+}
+.ui-mock-secret{
+  margin-top:12px; padding:10px 12px; border:1px dashed var(--rust); border-radius:6px;
+  background:var(--rust-soft); display:flex; align-items:center; justify-content:space-between; gap:10px;
+}
+.ui-mock-secret code{background:none; color:var(--ink); font-size:12.5px}
+.ui-mock-chip{
+  flex:none; padding:2px 8px; border-radius:9999px; background:var(--rust); color:#fff;
+  font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.04em;
+}
+@media (max-width:560px){ .ui-mock-nav{display:none} }
+
 @media (max-width:900px){
   .layout{grid-template-columns:1fr}
   .sidebar{position:static; height:auto; border-right:0; border-bottom:1px solid var(--border)}
@@ -161,6 +241,11 @@ td code{background:none; padding:0}
       <span class="brand-badge">v1</span>
       <a class="console-link" href="/api/v1/docs/console">Open try-it console &rarr;</a>
     </div>
+<a class="toc-link toc-h2" href="#quick-start" data-slug="quick-start">Quick Start</a>
+<a class="toc-link toc-h3" href="#generate-an-api-key" data-slug="generate-an-api-key">Generate an API key</a>
+<a class="toc-link toc-h3" href="#make-your-first-request" data-slug="make-your-first-request">Make your first request</a>
+<a class="toc-link toc-h3" href="#set-up-a-webhook-optional" data-slug="set-up-a-webhook-optional">Set up a webhook (optional)</a>
+<a class="toc-link toc-h3" href="#youre-integrated" data-slug="youre-integrated">You're integrated</a>
 <a class="toc-link toc-h2" href="#authentication" data-slug="authentication">Authentication</a>
 <a class="toc-link toc-h2" href="#idempotency" data-slug="idempotency">Idempotency</a>
 <a class="toc-link toc-h2" href="#rate-limits" data-slug="rate-limits">Rate limits</a>
@@ -186,6 +271,7 @@ td code{background:none; padding:0}
 <a class="toc-link toc-h2" href="#webhooks" data-slug="webhooks">Webhooks</a>
 <a class="toc-link toc-h3" href="#payload" data-slug="payload">Payload</a>
 <a class="toc-link toc-h3" href="#verifying-the-signature" data-slug="verifying-the-signature">Verifying the signature</a>
+<a class="toc-link toc-h3" href="#delivery-guarantees" data-slug="delivery-guarantees">Delivery guarantees</a>
 <a class="toc-link toc-h3" href="#retries" data-slug="retries">Retries</a>
 <a class="toc-link toc-h2" href="#errors" data-slug="errors">Errors</a>
 <a class="toc-link toc-h2" href="#openapi-spec" data-slug="openapi-spec">OpenAPI spec</a>
@@ -198,6 +284,96 @@ td code{background:none; padding:0}
 <div class="table-wrap"><table><thead><tr><th>Environment</th><th>URL</th></tr></thead><tbody><tr><td>Production</td><td><code>https://portal.parcelmoover.com/api/v1</code></td></tr><tr><td>Local development</td><td><code>http://localhost:3000/api/v1</code></td></tr></tbody></table></div>
 <p>All requests and responses are JSON (<code>Content-Type: application/json</code>).</p>
 <p><strong>Read this online instead:</strong> this whole reference is served as a browsable web page at <strong><code>GET /api/v1/docs</code></strong>, and a console for trying every endpoint against your own API key lives at <strong><code>GET /api/v1/docs/console</code></strong>. Neither needs a key to open. The machine-readable OpenAPI 3.1 spec is at <strong><code>GET /api/v1/openapi.json</code></strong>, also unauthenticated, and is generated from the same validators the API enforces, so it can't drift.</p>
+<hr>
+<h2 id="quick-start">Quick Start<a class="anchor" href="#quick-start" aria-label="Link to this section">#</a></h2>
+<p>New to this API? This is the fast path to your first order — everything here is covered again in full depth further down; treat this as the on-ramp, not the whole reference.</p>
+<h3 id="generate-an-api-key" class="qs-step">Generate an API key<a class="anchor" href="#generate-an-api-key" aria-label="Link to this section">#</a></h3>
+<p>This is the only credential you actually need to get started — everything below this step is optional until you want it.</p>
+<div class="ui-mock">
+  <div class="ui-mock-bar">
+    <span class="ui-mock-dot"></span><span class="ui-mock-dot"></span><span class="ui-mock-dot"></span>
+    <span class="ui-mock-url">portal.parcelmoover.com/developer/api-keys</span>
+  </div>
+  <div class="ui-mock-body">
+    <div class="ui-mock-nav">
+      <div class="ui-mock-nav-item">Dashboard</div>
+      <div class="ui-mock-nav-item">Orders</div>
+      <div class="ui-mock-nav-item active">Account</div>
+      <div class="ui-mock-nav-sub">Profile</div>
+      <div class="ui-mock-nav-sub active">Developer</div>
+    </div>
+    <div class="ui-mock-content">
+      <div class="ui-mock-heading">API Keys</div>
+      <span class="ui-mock-btn">+ Generate Key</span>
+      <div class="ui-mock-secret">
+        <code>pm_live_9f2a...c7e1</code>
+        <span class="ui-mock-chip">shown once</span>
+      </div>
+    </div>
+  </div>
+</div>
+<ol>
+<li>Log into the dashboard as your vendor account owner.</li>
+<li>Go to <strong>Account → Developer → API Keys tab</strong>.</li>
+<li>Click <strong>Generate Key</strong> and copy it immediately — <code>pm_live_...</code> is shown once and can't be retrieved again if you navigate away.</li>
+</ol>
+<div class="callout">Full detail on sending the key, revoking it, and its scope: see <a href="#authentication">Authentication</a> below.</div>
+<h3 id="make-your-first-request" class="qs-step">Make your first request<a class="anchor" href="#make-your-first-request" aria-label="Link to this section">#</a></h3>
+<p>Every request needs the key above, plus a client-generated <code>Idempotency-Key</code> UUID on any <code>POST</code>. This creates a single delivery order:</p>
+<div class="code-block"><span class="code-lang">bash</span><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code>BASE=&quot;https://portal.parcelmoover.com/api/v1&quot;
+KEY=&quot;pm_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx&quot;
+
+<span class="t-kw">curl</span> -X POST &quot;<span class="t-var">$BASE</span>/orders&quot; \
+  -H &quot;Authorization: Bearer <span class="t-var">$KEY</span>&quot; \
+  -H &quot;Idempotency-Key: $(uuidgen)&quot; \
+  -H &quot;Content-Type: application/json&quot; \
+  -d <span class="t-str">'{
+    &quot;receiver&quot;: { &quot;name&quot;: &quot;Ram Sharma&quot;, &quot;phone&quot;: &quot;9841234567&quot;, &quot;address&quot;: &quot;Baneshwor, Kathmandu&quot; },
+    &quot;destinationLocationId&quot;: &quot;Kathmandu&quot;,
+    &quot;codAmount&quot;: 1500,
+    &quot;weightKg&quot;: 1.2
+  }'</span></code></pre></div>
+<p>You'll get back a <code>trackingId</code> — that's what you show your customer and use for every follow-up call. Full field-by-field reference, plus Node.js/Python/PHP equivalents: see <a href="#create-an-order">Create an order</a> below.</p>
+<h3 id="set-up-a-webhook-optional" class="qs-step">Set up a webhook (optional)<a class="anchor" href="#set-up-a-webhook-optional" aria-label="Link to this section">#</a></h3>
+<p>Skip this if you're just getting started — <code>POST /orders/statuses</code> works fine for polling. Come back here once you want push notifications instead of asking on a timer.</p>
+<div class="ui-mock">
+  <div class="ui-mock-bar">
+    <span class="ui-mock-dot"></span><span class="ui-mock-dot"></span><span class="ui-mock-dot"></span>
+    <span class="ui-mock-url">portal.parcelmoover.com/developer/webhooks</span>
+  </div>
+  <div class="ui-mock-body">
+    <div class="ui-mock-nav">
+      <div class="ui-mock-nav-item">Dashboard</div>
+      <div class="ui-mock-nav-item">Orders</div>
+      <div class="ui-mock-nav-item active">Account</div>
+      <div class="ui-mock-nav-sub">Developer</div>
+      <div class="ui-mock-nav-sub active">Webhooks</div>
+    </div>
+    <div class="ui-mock-content">
+      <div class="ui-mock-heading">Add Endpoint</div>
+      <div class="ui-mock-field">
+        <label>URL</label>
+        <div class="ui-mock-input">https://yourapp.example/webhooks/parcelmoover</div>
+      </div>
+      <span class="ui-mock-btn">Save Endpoint</span>
+      <div class="ui-mock-secret">
+        <code>whsec_4b7d...a12f</code>
+        <span class="ui-mock-chip">shown once</span>
+      </div>
+    </div>
+  </div>
+</div>
+<ol>
+<li>Go to <strong>Account → Developer → Webhooks tab</strong>.</li>
+<li>Click <strong>Add Endpoint</strong>, name it, and give it your <code>https://</code> receiving URL.</li>
+<li>Copy the secret immediately — <code>whsec_...</code> is shown once. You'll use it to verify every delivery's signature.</li>
+</ol>
+<div class="callout">Full detail — payload shape, signature verification code, retry/reliability guarantees, and what &quot;shown once&quot; means for regeneration: see <a href="#webhooks">Webhooks</a> below.</div>
+<h3 id="youre-integrated">You're integrated<a class="anchor" href="#youre-integrated" aria-label="Link to this section">#</a></h3>
+<ul>
+<li>Try every endpoint live against your own key, no code required: <strong><code>GET /api/v1/docs/console</code></strong>.</li>
+<li>Full endpoint-by-endpoint reference starts at <a href="#authentication">Authentication</a> and continues through <a href="#errors">Errors</a>.</li>
+</ul>
 <hr>
 <h2 id="authentication">Authentication<a class="anchor" href="#authentication" aria-label="Link to this section">#</a></h2>
 <p>Every request must carry an API key. A ParcelMoover vendor account owner generates keys from the dashboard: <strong>Sidebar → Account → Developer → API Keys tab → Generate Key</strong> (webhook endpoints live in the <strong>Webhooks</strong> tab right alongside it). The full key (<code>pm_live_...</code>) is shown <strong>once</strong> at creation — store it securely.</p>
@@ -709,7 +885,7 @@ GET /api/v1/finance/unsettled-orders                    — orders with COD coll
 <p>Every request carries:</p>
 <ul>
 <li><code>X-ParcelMoover-Event</code> — the event type (currently always <code>order.status_changed</code>, plus <code>webhook.test</code> for test pings sent from the dashboard).</li>
-<li><code>X-ParcelMoover-Delivery</code> — a UUID unique to this delivery attempt; use it to de-duplicate retries.</li>
+<li><code>X-ParcelMoover-Delivery</code> — a UUID identifying this event, <strong>the same value as the payload's own <code>id</code> field</strong>. It stays identical across every retry of the same event, so either one works as your dedup key.</li>
 <li><code>X-ParcelMoover-Signature</code> — <code>t=&lt;unix_seconds&gt;,v1=&lt;hex_hmac_sha256&gt;</code>, where the HMAC is computed over <code>&quot;&lt;t&gt;.&lt;raw_request_body&gt;&quot;</code> using your endpoint's secret (shown once when you create the endpoint).</li>
 </ul>
 <div class="code-block"><span class="code-lang">js</span><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code><span class="t-var">const</span> crypto = require(&quot;crypto&quot;);
@@ -725,8 +901,16 @@ GET /api/v1/finance/unsettled-orders                    — orders with COD coll
   <span class="t-var">return</span> a.length === b.length &amp;&amp; crypto.timingSafeEqual(a, b);
 }</code></pre></div>
 <p>Always verify against the <strong>raw</strong> request body (before your framework parses it as JSON) — re-serializing and comparing JSON can produce a different byte sequence than what was signed.</p>
+<h3 id="delivery-guarantees">Delivery guarantees<a class="anchor" href="#delivery-guarantees" aria-label="Link to this section">#</a></h3>
+<p>Webhooks are <strong>at-least-once, not exactly-once, and not ordered</strong>:</p>
+<ul>
+<li><strong>Expect duplicates.</strong> A delivery is retried whenever we can't confirm success — including when your server <em>did</em> process it but the response was lost (a timeout, a network blip, your load balancer dropping the connection). Make your handler idempotent, keyed on the delivery id described above, rather than assuming a fresh id on every call.</li>
+<li><strong>Expect out-of-order arrival.</strong> Two events for the <em>same</em> order can be delivered out of order if the earlier one hits a slow retry cycle while a later one succeeds on the first attempt. Don't treat &quot;most recently received&quot; as &quot;most recent state&quot; — compare <code>data.changedAt</code> (or trust <code>data.newStatus</code> only if it's ahead of what you already have) instead of blindly overwriting on every webhook.</li>
+<li><strong>Expect the occasional gap.</strong> If your endpoint is down long enough to exhaust the retry window below, that one event is gone for good — retries don't continue past 12 attempts. Poll <code>POST /orders/statuses</code> periodically regardless of whether you use webhooks, so a missed event self-heals instead of leaving your system stuck on a stale status.</li>
+</ul>
 <h3 id="retries">Retries<a class="anchor" href="#retries" aria-label="Link to this section">#</a></h3>
-<p>A non-2xx response (or a request we can't complete within 10s) is retried with exponential backoff — roughly 30s, 1m, 2m, 4m, ... capped at 6h between attempts, for up to 12 attempts spanning about 24 hours. If an endpoint fails its <strong>entire</strong> retry window five times in a row, it's automatically disabled; re-enable it from the dashboard once it's fixed (this also resets the failure count). Return <code>2xx</code> promptly — do the actual processing after responding if it's slow, since a slow response counts toward the same 10s timeout as a failed one.</p>
+<p>A non-2xx response (or a request we can't complete within 10s) is retried with exponential backoff — roughly 30s, 1m, 2m, 4m, ... capped at 6h between attempts, for up to 12 attempts spanning about 24 hours. Return <code>2xx</code> promptly — do the actual processing after responding if it's slow, since a slow response counts toward the same 10s timeout as a failed one.</p>
+<p>If an endpoint fails its <strong>entire</strong> retry window five separate times in a row (so, on the order of days of continuous failure with no successful delivery in between), it's automatically disabled and you'll get an email at your account's registered address — delivery of new events stops until you fix and re-enable it from the dashboard (which also resets the failure count). Re-enabling does <strong>not</strong> replay what was missed while disabled; reconcile with <code>POST /orders/statuses</code> after fixing it.</p>
 <hr>
 <h2 id="errors">Errors<a class="anchor" href="#errors" aria-label="Link to this section">#</a></h2>
 <p>Every error is JSON with this shape:</p>
