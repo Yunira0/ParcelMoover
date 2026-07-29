@@ -386,8 +386,19 @@ h1:hover .anchor,h2:hover .anchor,h3:hover .anchor,h4:hover .anchor{opacity:1}
 p{margin:12px 0}
 a{color:var(--rust); text-decoration:underline; text-underline-offset:2px}
 strong{font-weight:680}
+/* hr is always hidden - h2 already carries its own border-top as the visual
+   divider, so a "---" right before every "## Heading" (the doc's own
+   convention) would otherwise double it up. There used to be a second rule
+   here (h2 plus-selector hr, and hr plus-selector h2), meant to reinforce
+   that - but the second half of that pair doesn't mean "an hr followed by
+   h2", it means "an h2 that follows an hr", and matched (hid, with zero
+   layout box) almost every h2 in the document, permanently. That's what
+   broke every top-level TOC link (nothing to scroll to) and the scrollspy
+   (getBoundingClientRect() on a display:none element is always all-zero, so
+   it looked "active" no matter the real scroll position). The base rule
+   below already covers the original concern on its own - nothing else is
+   needed. */
 hr{border:0; border-top:1px solid var(--border); margin:32px 0; display:none}
-h2+hr,hr+h2{display:none}
 
 ul,ol{margin:12px 0 12px 22px}
 li{margin:6px 0}
@@ -440,11 +451,10 @@ tbody tr:hover{background:var(--canvas)}
 td:first-child{white-space:nowrap; font-family:var(--mono); font-size:12px}
 td code{background:none; padding:0}
 
-/* Note/callout boxes (> blockquotes). Left accent, not a shadow card - same
-   same-plane-surface rule as everything else, just with a one-color tell. */
+/* Note/callout boxes (> blockquotes). Plain 1px border, same-plane surface
+   rule as every other box on this page - no accent border. */
 .callout{
-  margin:16px 0; padding:12px 16px; border:1px solid var(--border);
-  border-left:3px solid var(--rust); border-radius:0 6px 6px 0;
+  margin:16px 0; padding:12px 16px; border:1px solid var(--border); border-radius:6px;
   background:var(--elevated); font-size:13.5px; color:var(--muted);
 }
 .callout code{background:var(--surface)}
@@ -522,7 +532,14 @@ h3.qs-step::before{
 
 @media (max-width:900px){
   .layout{grid-template-columns:1fr}
-  .sidebar{position:static; height:auto; border-right:0; border-bottom:1px solid var(--border)}
+  /* A 30+ entry TOC dumped inline, un-bounded, above the content pushes a
+     first-time reader through a full screen of links before they reach any
+     actual doc - bound it to a scrollable strip instead, same as it already
+     behaves as a sticky panel on desktop. */
+  .sidebar{
+    position:static; height:auto; max-height:220px; overflow-y:auto;
+    border-right:0; border-bottom:1px solid var(--border);
+  }
   main{padding:32px 20px 80px}
   h1{font-size:30px} h2{font-size:23px} h3{font-size:18px}
 }
@@ -561,7 +578,12 @@ document.querySelectorAll('.toc-link').forEach(function(a){ links[a.dataset.slug
 var targets = Object.keys(links).map(function(s){ return document.getElementById(s); }).filter(Boolean);
 var current = null;
 function sync(){
-  var best = null;
+  // Default to the first section, not null: before you've scrolled past
+  // Quick Start's heading (true for the entire top of the page, since it
+  // sits below the intro paragraph and base-URL table), every target's top
+  // is > 100 and nothing satisfied the loop below - so nothing was ever
+  // marked active until you scrolled past the first heading.
+  var best = targets[0] || null;
   for (var i = 0; i < targets.length; i++) {
     if (targets[i].getBoundingClientRect().top <= 100) best = targets[i];
   }

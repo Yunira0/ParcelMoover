@@ -90,8 +90,19 @@ h1:hover .anchor,h2:hover .anchor,h3:hover .anchor,h4:hover .anchor{opacity:1}
 p{margin:12px 0}
 a{color:var(--rust); text-decoration:underline; text-underline-offset:2px}
 strong{font-weight:680}
+/* hr is always hidden - h2 already carries its own border-top as the visual
+   divider, so a "---" right before every "## Heading" (the doc's own
+   convention) would otherwise double it up. There used to be a second rule
+   here (h2 plus-selector hr, and hr plus-selector h2), meant to reinforce
+   that - but the second half of that pair doesn't mean "an hr followed by
+   h2", it means "an h2 that follows an hr", and matched (hid, with zero
+   layout box) almost every h2 in the document, permanently. That's what
+   broke every top-level TOC link (nothing to scroll to) and the scrollspy
+   (getBoundingClientRect() on a display:none element is always all-zero, so
+   it looked "active" no matter the real scroll position). The base rule
+   below already covers the original concern on its own - nothing else is
+   needed. */
 hr{border:0; border-top:1px solid var(--border); margin:32px 0; display:none}
-h2+hr,hr+h2{display:none}
 
 ul,ol{margin:12px 0 12px 22px}
 li{margin:6px 0}
@@ -144,11 +155,10 @@ tbody tr:hover{background:var(--canvas)}
 td:first-child{white-space:nowrap; font-family:var(--mono); font-size:12px}
 td code{background:none; padding:0}
 
-/* Note/callout boxes (> blockquotes). Left accent, not a shadow card - same
-   same-plane-surface rule as everything else, just with a one-color tell. */
+/* Note/callout boxes (> blockquotes). Plain 1px border, same-plane surface
+   rule as every other box on this page - no accent border. */
 .callout{
-  margin:16px 0; padding:12px 16px; border:1px solid var(--border);
-  border-left:3px solid var(--rust); border-radius:0 6px 6px 0;
+  margin:16px 0; padding:12px 16px; border:1px solid var(--border); border-radius:6px;
   background:var(--elevated); font-size:13.5px; color:var(--muted);
 }
 .callout code{background:var(--surface)}
@@ -226,7 +236,14 @@ h3.qs-step::before{
 
 @media (max-width:900px){
   .layout{grid-template-columns:1fr}
-  .sidebar{position:static; height:auto; border-right:0; border-bottom:1px solid var(--border)}
+  /* A 30+ entry TOC dumped inline, un-bounded, above the content pushes a
+     first-time reader through a full screen of links before they reach any
+     actual doc - bound it to a scrollable strip instead, same as it already
+     behaves as a sticky panel on desktop. */
+  .sidebar{
+    position:static; height:auto; max-height:220px; overflow-y:auto;
+    border-right:0; border-bottom:1px solid var(--border);
+  }
   main{padding:32px 20px 80px}
   h1{font-size:30px} h2{font-size:23px} h3{font-size:18px}
 }
@@ -271,6 +288,9 @@ h3.qs-step::before{
 <a class="toc-link toc-h2" href="#webhooks" data-slug="webhooks">Webhooks</a>
 <a class="toc-link toc-h3" href="#payload" data-slug="payload">Payload</a>
 <a class="toc-link toc-h3" href="#verifying-the-signature" data-slug="verifying-the-signature">Verifying the signature</a>
+<a class="toc-link toc-h3" href="#a-minimal-handler-nodeexpress" data-slug="a-minimal-handler-nodeexpress">A minimal handler (Node/Express)</a>
+<a class="toc-link toc-h3" href="#receiving-webhooks-locally" data-slug="receiving-webhooks-locally">Receiving webhooks locally</a>
+<a class="toc-link toc-h3" href="#testing-your-endpoint-is-connected" data-slug="testing-your-endpoint-is-connected">Testing your endpoint is connected</a>
 <a class="toc-link toc-h3" href="#delivery-guarantees" data-slug="delivery-guarantees">Delivery guarantees</a>
 <a class="toc-link toc-h3" href="#retries" data-slug="retries">Retries</a>
 <a class="toc-link toc-h2" href="#errors" data-slug="errors">Errors</a>
@@ -365,10 +385,11 @@ KEY=&quot;pm_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx&quot;
 </div>
 <ol>
 <li>Go to <strong>Account → Developer → Webhooks tab</strong>.</li>
-<li>Click <strong>Add Endpoint</strong>, name it, and give it your <code>https://</code> receiving URL.</li>
+<li>Click <strong>Add Endpoint</strong>, name it, and give it your <code>https://</code> receiving URL. Developing locally? <code>localhost</code> won't be accepted — see <a href="#receiving-webhooks-locally">Receiving webhooks locally</a> below for the one extra step (a tunnel like ngrok) that fixes this.</li>
 <li>Copy the secret immediately — <code>whsec_...</code> is shown once. You'll use it to verify every delivery's signature.</li>
+<li>Click <strong>Test</strong> on the endpoint and confirm you get a <code>succeeded</code> delivery before wiring up real order flows — see <a href="#testing-your-endpoint-is-connected">Testing your endpoint is connected</a>.</li>
 </ol>
-<div class="callout">Full detail — payload shape, signature verification code, retry/reliability guarantees, and what &quot;shown once&quot; means for regeneration: see <a href="#webhooks">Webhooks</a> below.</div>
+<div class="callout">Full detail — payload shape, signature verification code, a minimal handler, local dev via ngrok, and retry/reliability guarantees: see <a href="#webhooks">Webhooks</a> below.</div>
 <h3 id="youre-integrated">You're integrated<a class="anchor" href="#youre-integrated" aria-label="Link to this section">#</a></h3>
 <ul>
 <li>Try every endpoint live against your own key, no code required: <strong><code>GET /api/v1/docs/console</code></strong>.</li>
@@ -901,6 +922,45 @@ GET /api/v1/finance/unsettled-orders                    — orders with COD coll
   <span class="t-var">return</span> a.length === b.length &amp;&amp; crypto.timingSafeEqual(a, b);
 }</code></pre></div>
 <p>Always verify against the <strong>raw</strong> request body (before your framework parses it as JSON) — re-serializing and comparing JSON can produce a different byte sequence than what was signed.</p>
+<h3 id="a-minimal-handler-nodeexpress">A minimal handler (Node/Express)<a class="anchor" href="#a-minimal-handler-nodeexpress" aria-label="Link to this section">#</a></h3>
+<div class="code-block"><span class="code-lang">js</span><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code><span class="t-var">const</span> express = require(&quot;express&quot;);
+<span class="t-var">const</span> app = express();
+
+<span class="t-com">// express.raw(), not express.json() - signature verification needs the exact</span>
+<span class="t-com">// bytes ParcelMoover sent, not a re-serialized copy of the parsed object.</span>
+app.post(&quot;/webhooks/parcelmoover&quot;, express.raw({ type: &quot;application/json&quot; }), (req, res) =&gt; {
+  <span class="t-var">const</span> signature = req.headers[&quot;x-parcelmoover-signature&quot;];
+  <span class="t-var">if</span> (!verifyParcelMooverSignature(req.body, signature, process.env.PARCELMOOVER_WEBHOOK_SECRET)) {
+    <span class="t-var">return</span> res.status(<span class="t-kw">401</span>).end();
+  }
+
+  <span class="t-var">const</span> event = JSON.parse(req.body);
+
+  <span class="t-com">// Respond first - see &quot;Retries&quot; below for why a slow response counts as a</span>
+  <span class="t-com">// failure. Do the real work (enqueue, update your DB, etc.) after this.</span>
+  res.status(<span class="t-kw">200</span>).end();
+
+  console.log(event.type, event.data.trackingId, event.data.newStatus);
+});
+
+app.listen(<span class="t-kw">4000</span>);</code></pre></div>
+<p><code>verifyParcelMooverSignature</code> is the function defined above. Whatever port you pick here (<code>4000</code> above) is what you'll point a tunnel at in the next section if you're developing locally.</p>
+<h3 id="receiving-webhooks-locally">Receiving webhooks locally<a class="anchor" href="#receiving-webhooks-locally" aria-label="Link to this section">#</a></h3>
+<p>Every webhook you register is checked against the <strong>same hosted API</strong> as everywhere else in this doc (<code>https://portal.parcelmoover.com</code>) — so <code>http://localhost:4000</code> is never accepted as an endpoint URL, even while you're still developing on your own machine. ParcelMoover's servers have to reach yours over the public internet, so registration always requires a real, publicly reachable <code>https://</code> URL.</p>
+<p>The standard fix is a tunnel that exposes your local server on a public HTTPS URL — <a href="https://ngrok.com" target="_blank" rel="noopener noreferrer">ngrok</a> is the most common:</p>
+<div class="code-block"><span class="code-lang">bash</span><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code><span class="t-com"># Point this at whatever port your handler above is listening on</span>
+ngrok http 4000</code></pre></div>
+<p>ngrok prints a forwarding URL that looks like <code>https://a1b2-203-0-113-1.ngrok-free.app</code>. Register <code>https://a1b2-203-0-113-1.ngrok-free.app/webhooks/parcelmoover</code> as your endpoint URL — the <code>/webhooks/parcelmoover</code> path is just a convention matching the handler above, not a requirement; use whatever path your app actually listens on. Any HTTPS tunnel works the same way (Cloudflare Tunnel, localtunnel, etc.); ngrok is just the one most people already have.</p>
+<div class="callout">On ngrok's free tier the forwarding URL changes every time you restart it. Update your registered endpoint URL each time you restart the tunnel, or deliveries will start bouncing with a connection error until you do.</div>
+<h3 id="testing-your-endpoint-is-connected">Testing your endpoint is connected<a class="anchor" href="#testing-your-endpoint-is-connected" aria-label="Link to this section">#</a></h3>
+<p>Once registered, confirm the whole path works before wiring up real order flows:</p>
+<ol>
+<li>Open the endpoint in the dashboard and click <strong>Test</strong> (or <code>POST /api/webhooks/{id}/test</code>) — this queues a synthetic <code>webhook.test</code> event through the exact same delivery pipeline real events use.</li>
+<li>Check your own server logs, or ngrok's local request inspector at <code>http://127.0.0.1:4040</code>, to confirm the <code>POST</code> actually arrived.</li>
+<li>Check the endpoint's <strong>Deliveries</strong> list in the dashboard (or <code>GET /api/webhooks/{id}/deliveries</code>) for the result — a <code>succeeded</code> row with a <code>2xx</code> status code means you're fully connected, signature check included.</li>
+</ol>
+<div class="table-wrap"><table><thead><tr><th>What you see</th><th>What it means</th></tr></thead><tbody><tr><td>No delivery row appears at all</td><td>The test didn't queue — make sure you clicked <strong>Test</strong> on the endpoint you actually registered.</td></tr><tr><td><code>last_error</code> mentions a connection failure or timeout</td><td>ParcelMoover couldn't reach the URL — the tunnel isn't running, the port doesn't match, or the URL is a stale ngrok session from an earlier restart.</td></tr><tr><td><code>last_status_code</code> is non-2xx (e.g. <code>401</code>, <code>500</code>)</td><td>Your handler received the request but rejected or errored on it. <code>401</code> almost always means signature verification failed — check you're verifying the raw body, not <code>req.body</code> from <code>express.json()</code>. <code>500</code> means your handler threw before responding.</td></tr><tr><td><code>succeeded</code> with a <code>2xx</code> code</td><td>You're connected end-to-end.</td></tr></tbody></table></div>
+<p>A failed test retries on the same backoff schedule as real events (see <a href="#retries">Retries</a> below) — you don't have to wait it out. Fix the issue and click <strong>Test</strong> again, or manually retry that one delivery from the Deliveries list.</p>
 <h3 id="delivery-guarantees">Delivery guarantees<a class="anchor" href="#delivery-guarantees" aria-label="Link to this section">#</a></h3>
 <p>Webhooks are <strong>at-least-once, not exactly-once, and not ordered</strong>:</p>
 <ul>
@@ -965,7 +1025,12 @@ document.querySelectorAll('.toc-link').forEach(function(a){ links[a.dataset.slug
 var targets = Object.keys(links).map(function(s){ return document.getElementById(s); }).filter(Boolean);
 var current = null;
 function sync(){
-  var best = null;
+  // Default to the first section, not null: before you've scrolled past
+  // Quick Start's heading (true for the entire top of the page, since it
+  // sits below the intro paragraph and base-URL table), every target's top
+  // is > 100 and nothing satisfied the loop below - so nothing was ever
+  // marked active until you scrolled past the first heading.
+  var best = targets[0] || null;
   for (var i = 0; i < targets.length; i++) {
     if (targets[i].getBoundingClientRect().top <= 100) best = targets[i];
   }

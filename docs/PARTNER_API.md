@@ -112,10 +112,11 @@ Skip this if you're just getting started — `POST /orders/statuses` works fine 
 ```
 
 1. Go to **Account → Developer → Webhooks tab**.
-2. Click **Add Endpoint**, name it, and give it your `https://` receiving URL.
+2. Click **Add Endpoint**, name it, and give it your `https://` receiving URL. Developing locally? `localhost` won't be accepted — see [Receiving webhooks locally](#receiving-webhooks-locally) below for the one extra step (a tunnel like ngrok) that fixes this.
 3. Copy the secret immediately — `whsec_...` is shown once. You'll use it to verify every delivery's signature.
+4. Click **Test** on the endpoint and confirm you get a `succeeded` delivery before wiring up real order flows — see [Testing your endpoint is connected](#testing-your-endpoint-is-connected).
 
-> Full detail — payload shape, signature verification code, retry/reliability guarantees, and what "shown once" means for regeneration: see [Webhooks](#webhooks) below.
+> Full detail — payload shape, signature verification code, a minimal handler, local dev via ngrok, and retry/reliability guarantees: see [Webhooks](#webhooks) below.
 
 ### You're integrated
 
@@ -989,6 +990,66 @@ function verifyParcelMooverSignature(rawBody, signatureHeader, secret, tolerance
 ```
 
 Always verify against the **raw** request body (before your framework parses it as JSON) — re-serializing and comparing JSON can produce a different byte sequence than what was signed.
+
+### A minimal handler (Node/Express)
+
+```js
+const express = require("express");
+const app = express();
+
+// express.raw(), not express.json() - signature verification needs the exact
+// bytes ParcelMoover sent, not a re-serialized copy of the parsed object.
+app.post("/webhooks/parcelmoover", express.raw({ type: "application/json" }), (req, res) => {
+  const signature = req.headers["x-parcelmoover-signature"];
+  if (!verifyParcelMooverSignature(req.body, signature, process.env.PARCELMOOVER_WEBHOOK_SECRET)) {
+    return res.status(401).end();
+  }
+
+  const event = JSON.parse(req.body);
+
+  // Respond first - see "Retries" below for why a slow response counts as a
+  // failure. Do the real work (enqueue, update your DB, etc.) after this.
+  res.status(200).end();
+
+  console.log(event.type, event.data.trackingId, event.data.newStatus);
+});
+
+app.listen(4000);
+```
+
+`verifyParcelMooverSignature` is the function defined above. Whatever port you pick here (`4000` above) is what you'll point a tunnel at in the next section if you're developing locally.
+
+### Receiving webhooks locally
+
+Every webhook you register is checked against the **same hosted API** as everywhere else in this doc (`https://portal.parcelmoover.com`) — so `http://localhost:4000` is never accepted as an endpoint URL, even while you're still developing on your own machine. ParcelMoover's servers have to reach yours over the public internet, so registration always requires a real, publicly reachable `https://` URL.
+
+The standard fix is a tunnel that exposes your local server on a public HTTPS URL — [ngrok](https://ngrok.com) is the most common:
+
+```bash
+# Point this at whatever port your handler above is listening on
+ngrok http 4000
+```
+
+ngrok prints a forwarding URL that looks like `https://a1b2-203-0-113-1.ngrok-free.app`. Register `https://a1b2-203-0-113-1.ngrok-free.app/webhooks/parcelmoover` as your endpoint URL — the `/webhooks/parcelmoover` path is just a convention matching the handler above, not a requirement; use whatever path your app actually listens on. Any HTTPS tunnel works the same way (Cloudflare Tunnel, localtunnel, etc.); ngrok is just the one most people already have.
+
+> On ngrok's free tier the forwarding URL changes every time you restart it. Update your registered endpoint URL each time you restart the tunnel, or deliveries will start bouncing with a connection error until you do.
+
+### Testing your endpoint is connected
+
+Once registered, confirm the whole path works before wiring up real order flows:
+
+1. Open the endpoint in the dashboard and click **Test** (or `POST /api/webhooks/{id}/test`) — this queues a synthetic `webhook.test` event through the exact same delivery pipeline real events use.
+2. Check your own server logs, or ngrok's local request inspector at `http://127.0.0.1:4040`, to confirm the `POST` actually arrived.
+3. Check the endpoint's **Deliveries** list in the dashboard (or `GET /api/webhooks/{id}/deliveries`) for the result — a `succeeded` row with a `2xx` status code means you're fully connected, signature check included.
+
+| What you see | What it means |
+|---|---|
+| No delivery row appears at all | The test didn't queue — make sure you clicked **Test** on the endpoint you actually registered. |
+| `last_error` mentions a connection failure or timeout | ParcelMoover couldn't reach the URL — the tunnel isn't running, the port doesn't match, or the URL is a stale ngrok session from an earlier restart. |
+| `last_status_code` is non-2xx (e.g. `401`, `500`) | Your handler received the request but rejected or errored on it. `401` almost always means signature verification failed — check you're verifying the raw body, not `req.body` from `express.json()`. `500` means your handler threw before responding. |
+| `succeeded` with a `2xx` code | You're connected end-to-end. |
+
+A failed test retries on the same backoff schedule as real events (see [Retries](#retries) below) — you don't have to wait it out. Fix the issue and click **Test** again, or manually retry that one delivery from the Deliveries list.
 
 ### Delivery guarantees
 
