@@ -198,6 +198,8 @@ export interface SettlementDetailItem {
   receiverName: string;
   receiverPhone: string;
   destination: string;
+  vendorName: string | null;
+  vendorPhone: string | null;
   orderType: string | null;
   pieces: number | null;
   weightKg: number | null;

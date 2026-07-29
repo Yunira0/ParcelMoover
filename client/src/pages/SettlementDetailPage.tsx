@@ -15,6 +15,10 @@ import './SettlementDetailPage.css';
 const money = (value: number) => `Rs. ${value.toLocaleString()}`;
 
 function buildStatementHtml(detail: SettlementDetail): string {
+  // On a vendor statement the vendor is already the payee in BILL TO, so the
+  // per-row column would repeat the same name on every line.
+  const showVendor = detail.payeeType === 'rider';
+
   const rows = detail.items
     .map(
       (item, index) => `
@@ -26,6 +30,13 @@ function buildStatementHtml(detail: SettlementDetail): string {
             ${item.deliveredAt ? `<div class="sub">${toBsDateTime(item.deliveredAt)}</div>` : ''}
             ${item.orderType ? `<div class="sub">${item.orderType}</div>` : ''}
           </td>
+          ${
+            showVendor
+              ? `<td>${item.vendorName ?? '-'}${
+                  item.vendorPhone ? `<div class="sub">${item.vendorPhone}</div>` : ''
+                }</td>`
+              : ''
+          }
           <td>${item.receiverName}<div class="sub">${item.destination}</div></td>
           <td>${item.receiverPhone}</td>
           <td class="r">${item.weightKg === null ? '-' : item.weightKg.toFixed(2)}</td>
@@ -81,7 +92,7 @@ function buildStatementHtml(detail: SettlementDetail): string {
     </div>
     <table>
       <thead><tr>
-        <th>SN</th><th>Order ID</th><th>Transaction ID</th><th>Receiver</th><th>Number</th>
+        <th>SN</th><th>Order ID</th><th>Transaction ID</th>${showVendor ? '<th>Vendor</th>' : ''}<th>Receiver</th><th>Number</th>
         <th class="r">Weight</th><th class="r">COD</th>
         <th class="r">Collected COD</th><th class="r">Delivery Charges</th>
         <th class="r">Net Payable</th>
@@ -111,6 +122,9 @@ const SettlementDetailPage: React.FC = () => {
   // Correcting a mistake before money moves — gated by the delegable
   // EDIT_SETTLEMENTS permission, same pattern as MANAGE_USERS/SETTINGS_ACCESS.
   const canEdit = hasAnyRole(['super_admin']) || hasAdminPermission('EDIT_SETTLEMENTS');
+  // See buildStatementHtml - only rider statements mix parcels from several
+  // vendors, so only there does a per-row vendor column carry information.
+  const showVendor = detail?.payeeType === 'rider';
 
   useEffect(() => {
     let active = true;
@@ -159,6 +173,7 @@ const SettlementDetailPage: React.FC = () => {
       'SN',
       'Order ID',
       'Transaction ID',
+      ...(showVendor ? ['Vendor', 'Vendor Phone'] : []),
       'Receiver',
       'Receiver Phone',
       'Destination',
@@ -171,6 +186,7 @@ const SettlementDetailPage: React.FC = () => {
       index + 1,
       `#${item.orderNumber}`,
       item.trackingId,
+      ...(showVendor ? [item.vendorName ?? '', item.vendorPhone ?? ''] : []),
       item.receiverName,
       item.receiverPhone,
       item.destination,
@@ -179,7 +195,10 @@ const SettlementDetailPage: React.FC = () => {
       item.collectedAmount,
       item.deliveryCharge,
     ]);
-    rows.push(['', '', '', '', '', '', '', totals.cod, totals.collected, totals.deliveryCharge]);
+    // Totals sit under the last three columns, so pad out however many
+    // leading columns this variant of the sheet happens to have.
+    const leadingBlanks = new Array(headers.length - 3).fill('');
+    rows.push([...leadingBlanks, totals.cod, totals.collected, totals.deliveryCharge]);
     downloadExcel(`${detail.statementId}.xlsx`, 'Statement', headers, rows);
   };
 
@@ -277,6 +296,7 @@ const SettlementDetailPage: React.FC = () => {
                     <th>SN</th>
                     <th>Order ID</th>
                     <th>Transaction ID</th>
+                    {showVendor && <th>Vendor</th>}
                     <th>Receiver</th>
                     <th>Number</th>
                     <th style={{ textAlign: 'right' }}>Weight</th>
@@ -298,6 +318,14 @@ const SettlementDetailPage: React.FC = () => {
                         )}
                         {item.orderType && <div className="vendor-finance-subtext">{item.orderType}</div>}
                       </td>
+                      {showVendor && (
+                        <td>
+                          {item.vendorName ?? '-'}
+                          {item.vendorPhone && (
+                            <div className="vendor-finance-subtext">{item.vendorPhone}</div>
+                          )}
+                        </td>
+                      )}
                       <td>
                         {item.receiverName}
                         <div className="vendor-finance-subtext">{item.destination}</div>

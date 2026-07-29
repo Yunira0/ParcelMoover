@@ -144,6 +144,11 @@ export interface SettlementDetailItem {
   receiverName: string;
   receiverPhone: string;
   destination: string;
+  // Whose money this line is. Null for parcels booked without a vendor
+  // (walk-in / direct orders). Mainly useful on rider statements, where
+  // every line can belong to a different vendor.
+  vendorName: string | null;
+  vendorPhone: string | null;
   orderType: string;
   pieces: number;
   weightKg: number | null;
