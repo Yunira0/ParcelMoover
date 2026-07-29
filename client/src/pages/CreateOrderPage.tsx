@@ -288,15 +288,19 @@ const CreateOrderPage: React.FC = () => {
     if (duplicateWarning) setDuplicateWarning('');
   };
 
-  const resetForm = () => {
+  // keepVendor is set after a successful create: an admin keying in a batch of
+  // orders for one vendor shouldn't have to re-pick that vendor every time. The
+  // manual "Reset" button passes nothing, so it still clears the vendor too.
+  const resetForm = (keepVendor = false) => {
     // For a vendor actor, origin is always their own hub and the field is
     // disabled - the effect that fills it from myVendorProfile only re-runs
     // when selectedVendor?.locationId changes, which it doesn't on reset, so
     // it must be restored here or the form is stuck with a required-but-unfixable field.
-    setForm({
+    setForm(prev => ({
       ...defaultFormState,
       originLocationId: fixedOriginId ?? '',
-    });
+      vendorId: keepVendor ? prev.vendorId : defaultFormState.vendorId,
+    }));
     setQuote(null);
     setQuoteError('');
     setFieldErrors({});
@@ -332,7 +336,7 @@ const CreateOrderPage: React.FC = () => {
     setSubmitting(true);
     try {
       const res = await createOrder(payload);
-      resetForm();
+      resetForm(true);
       setSuccessMessage(`Order #${res.data.orderNumber} (${res.data.trackingId}) created successfully. You can create another order below.`);
     } catch (err: any) {
       const data = err.response?.data;
@@ -760,7 +764,7 @@ const CreateOrderPage: React.FC = () => {
                 Cancel
               </Button>
             ) : (
-              <Button type="button" variant="secondary" onClick={resetForm} disabled={submitting}>
+              <Button type="button" variant="secondary" onClick={() => resetForm()} disabled={submitting}>
                 Reset
               </Button>
             )}
