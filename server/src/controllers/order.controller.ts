@@ -31,6 +31,25 @@ const VALID_STATUSES = new Set(Object.keys(STATUS_TRANSITIONS));
 const VALID_ORDER_TYPES: OrderType[] = ["delivery", "exchange", "return"];
 const MAX_BULK_IDS = 200;
 
+// Multi-select vendor filter: repeated `?vendorId=` params or one
+// comma-separated list. Capped so a hand-crafted URL can't build an
+// unbounded IN (...) list.
+const MAX_VENDOR_FILTER_IDS = 100;
+
+function parseVendorIdQuery(raw: unknown): string[] | undefined {
+  if (!raw) return undefined;
+  const values = Array.isArray(raw) ? raw : String(raw).split(",");
+  const ids = values.map((v) => String(v).trim()).filter(Boolean);
+  if (ids.length === 0) return undefined;
+  if (ids.length > MAX_VENDOR_FILTER_IDS) {
+    throw new Error(`vendorId accepts at most ${MAX_VENDOR_FILTER_IDS} ids`);
+  }
+  if (!ids.every((id) => UUID_REGEX.test(id))) {
+    throw new Error("vendorId must be a UUID or comma-separated list of UUIDs");
+  }
+  return ids;
+}
+
 function parseStatusQuery(raw: unknown): ParcelStatus[] | undefined {
   if (!raw) return undefined;
   const values = Array.isArray(raw) ? raw : String(raw).split(",");
@@ -184,6 +203,13 @@ export async function listOrdersController(req: Request, res: Response) {
       return res.status(400).json({ success: false, message: e.message });
     }
 
+    let vendorIdFilter: string[] | undefined;
+    try {
+      vendorIdFilter = parseVendorIdQuery(req.query.vendorId);
+    } catch (e: any) {
+      return res.status(400).json({ success: false, message: e.message });
+    }
+
     const search = typeof req.query.search === "string" ? req.query.search : undefined;
 
     let orderType: OrderType | undefined;
@@ -252,6 +278,7 @@ export async function listOrdersController(req: Request, res: Response) {
       {
         ...(status ? { status } : {}),
         ...(orderType ? { orderType } : {}),
+        ...(vendorIdFilter ? { vendorId: vendorIdFilter } : {}),
         ...(search ? { search } : {}),
         ...(page !== undefined ? { page } : {}),
         ...(pageSize !== undefined ? { pageSize } : {}),

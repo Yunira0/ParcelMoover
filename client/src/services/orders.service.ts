@@ -122,6 +122,8 @@ export interface ListOrdersParams {
   status?: ParcelStatus[];
   orderType?: OrderType;
   search?: string;
+  /** Narrow to these vendors. Server intersects it with the caller's own scope. */
+  vendorId?: string[];
   /** Display-only page hint echoed back in meta; position comes from the cursor. */
   page?: number;
   pageSize?: number;
@@ -261,6 +263,7 @@ export const getOrders = async (params?: ListOrdersParams, signal?: AbortSignal)
   const query: Record<string, string> = {};
   if (params?.status?.length) query.status = params.status.join(',');
   if (params?.orderType) query.orderType = params.orderType;
+  if (params?.vendorId?.length) query.vendorId = params.vendorId.join(',');
   if (params?.search) query.search = params.search;
   if (params?.page !== undefined) query.page = String(params.page);
   if (params?.pageSize !== undefined) query.pageSize = String(params.pageSize);
