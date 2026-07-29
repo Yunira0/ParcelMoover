@@ -789,6 +789,14 @@ export async function updateOrderDetails(
     ? (await getActorScope(actor)).vendorIds
     : undefined;
 
+  // Reassigning the order to a different vendor is an ops-staff action only —
+  // a vendor/vendor_staff actor is already scoped to their own vendor_id via
+  // the `parcel` lookup below, so letting them also pick a new vendorId here
+  // would let them hand their parcel off to (or take one from) another vendor.
+  if (data.vendorId !== undefined && ownVendorId) {
+    throw new AppError(403, "Vendors cannot reassign the vendor on an order");
+  }
+
   const parcel = await prisma.parcels.findFirst({
     where: {
       id: parcelId,
@@ -810,18 +818,23 @@ export async function updateOrderDetails(
     throw new AppError(409, "This parcel is already in the delivery network — contact support to change it");
   }
 
-  const [originLoc, destinationLoc] = await Promise.all([
+  const [originLoc, destinationLoc, newVendor] = await Promise.all([
     data.originLocationId
       ? prisma.locations.findUnique({ where: { id: data.originLocationId } })
       : Promise.resolve(null),
     data.destinationLocationId
       ? prisma.locations.findUnique({ where: { id: data.destinationLocationId } })
       : Promise.resolve(null),
+    data.vendorId
+      ? prisma.vendors.findFirst({ where: { id: data.vendorId, deleted_at: null, status: "active" } })
+      : Promise.resolve(null),
   ]);
   if (data.originLocationId && (!originLoc || !originLoc.is_active))
     throw new AppError(400, "Origin location not found or inactive");
   if (data.destinationLocationId && (!destinationLoc || !destinationLoc.is_active))
     throw new AppError(400, "Destination location not found or inactive");
+  if (data.vendorId && !newVendor) throw new AppError(404, "Vendor not found or inactive");
+  const vendorChanged = data.vendorId !== undefined && data.vendorId !== parcel.vendor_id;
 
   const currentReceiver = parcel.parties_parcels_receiver_idToparties;
   const currentWeight = parcel.weight_kg === null ? undefined : Number(parcel.weight_kg);
@@ -843,6 +856,9 @@ export async function updateOrderDetails(
     const show = (v: unknown) => (v === null || v === undefined || v === "" ? "—" : String(v));
     changedFields.push(`${key}: ${show(oldValue)} → ${show(newValue)}`);
   };
+  if (vendorChanged) {
+    note("vendor", parcel.vendors?.business_name || parcel.vendors?.client_name, newVendor?.business_name || newVendor?.client_name);
+  }
   if (data.receiver) {
     const normalizedPhone = data.receiver.phone.trim().replace(/\s/g, "");
     if (data.receiver.name.trim() !== currentReceiver.name)
@@ -889,10 +905,12 @@ export async function updateOrderDetails(
   const originLocationId = data.originLocationId ?? parcel.origin_location_id;
   const weightKg = data.weightKg ?? currentWeight ?? 1;
   const repriceNeeded =
-    changedKeys.has("weight") || changedKeys.has("destination") || changedKeys.has("origin");
+    changedKeys.has("weight") || changedKeys.has("destination") || changedKeys.has("origin") || vendorChanged;
+  // A vendor reassignment reprices against the NEW vendor's rate model, not the old one.
+  const effectiveVendor = vendorChanged ? newVendor : parcel.vendors;
   if (repriceNeeded && destinationLocationId) {
-    if (parcel.vendors) {
-      const vendor = parcel.vendors;
+    if (effectiveVendor) {
+      const vendor = effectiveVendor;
       const overrides = {
         flatInsideValley: vendor.flat_inside_valley === null ? null : Number(vendor.flat_inside_valley),
         flatOutsideValley: vendor.flat_outside_valley === null ? null : Number(vendor.flat_outside_valley),
@@ -931,9 +949,30 @@ export async function updateOrderDetails(
       receiverId = receiver.id;
     }
 
+    // Sender is the vendor's own identity (same as order creation) — when the
+    // vendor is reassigned, the sender party is re-resolved from the NEW
+    // vendor's profile instead of staying pinned to the old one.
+    let senderId = parcel.sender_id;
+    let sender = parcel.parties_parcels_sender_idToparties;
+    if (vendorChanged && newVendor) {
+      sender = await findOrCreateParty(
+        tx,
+        {
+          name: newVendor.business_name || newVendor.client_name,
+          phone: newVendor.phone,
+          ...(newVendor.address ? { address: newVendor.address } : {}),
+          ...(newVendor.location_id ? { locationId: newVendor.location_id } : {}),
+        },
+        { refreshExisting: true },
+      );
+      senderId = sender.id;
+    }
+
     const updatedParcel = await tx.parcels.update({
       where: { id: parcel.id },
       data: {
+        vendor_id: vendorChanged ? newVendor!.id : parcel.vendor_id,
+        sender_id: senderId,
         receiver_id: receiverId,
         origin_location_id: originLocationId,
         destination_location_id: destinationLocationId,
@@ -946,7 +985,7 @@ export async function updateOrderDetails(
         package_type: data.packageType !== undefined ? data.packageType || null : parcel.package_type,
         delivery_instruction:
           data.deliveryInstruction !== undefined ? data.deliveryInstruction || null : parcel.delivery_instruction,
-        search_text: buildSearchText(parcel.tracking_id, parcel.parties_parcels_sender_idToparties, receiver),
+        search_text: buildSearchText(parcel.tracking_id, sender, receiver),
       },
     });
 
@@ -987,11 +1026,18 @@ export async function updateOrderDetails(
         },
       }),
     ];
-    if (data.codAmount !== undefined && changedKeys.has("COD amount")) {
+    // cod_collections.vendor_id is denormalized off the parcel for fast
+    // per-vendor settlement queries — keep it in sync on reassignment.
+    // Scoped to still-pending rows, same as the codAmount sync below: once
+    // collected/settled, EDIT_BLOCKED_STATUSES already forbids editing the parcel.
+    if (vendorChanged || (data.codAmount !== undefined && changedKeys.has("COD amount"))) {
       writes.push(
         tx.cod_collections.updateMany({
           where: { parcel_id: parcel.id, payment_status: "pending" },
-          data: { cod_amount: data.codAmount },
+          data: {
+            ...(data.codAmount !== undefined && changedKeys.has("COD amount") ? { cod_amount: data.codAmount } : {}),
+            ...(vendorChanged ? { vendor_id: newVendor!.id } : {}),
+          },
         }),
       );
     }
@@ -1003,6 +1049,11 @@ export async function updateOrderDetails(
   invalidateOrderCaches().catch((err) => console.error("[Redis] cache invalidation failed:", err));
   if (parcel.vendor_id) {
     invalidateVendorFinanceCache(parcel.vendor_id).catch((err) =>
+      console.error("[Redis] cache invalidation failed:", err),
+    );
+  }
+  if (vendorChanged && newVendor) {
+    invalidateVendorFinanceCache(newVendor.id).catch((err) =>
       console.error("[Redis] cache invalidation failed:", err),
     );
   }

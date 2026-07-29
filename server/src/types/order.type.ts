@@ -48,6 +48,7 @@ export interface CreateOrderInput {
 }
 
 export interface UpdateOrderDetailsInput {
+  vendorId?: string;
   receiver?: OrderPartyInput;
 
   originLocationId?: string;

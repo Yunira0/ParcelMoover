@@ -99,6 +99,7 @@ export type CreateOrderInput = z.infer<typeof createOrderSchema>;
 
 export const updateOrderDetailsSchema = z
   .object({
+    vendorId: optionalUuidSchema,
     receiver: orderPartySchema.optional(),
     originLocationId: optionalUuidSchema,
     destinationLocationId: optionalUuidSchema,

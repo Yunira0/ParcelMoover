@@ -478,7 +478,7 @@ export const createOrder = async (data: CreateOrderInput) => {
   return response.data;
 };
 
-export type UpdateOrderInput = Partial<Omit<CreateOrderInput, 'sender' | 'vendorId' | 'deliveryCharge' | 'pickupAddress' | 'scheduledPickupAt'>>;
+export type UpdateOrderInput = Partial<Omit<CreateOrderInput, 'sender' | 'deliveryCharge' | 'pickupAddress' | 'scheduledPickupAt'>>;
 
 export const updateOrder = async (orderId: string, data: UpdateOrderInput) => {
   const idempotencyKey = uuidv4();

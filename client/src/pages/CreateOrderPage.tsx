@@ -309,6 +309,30 @@ const CreateOrderPage: React.FC = () => {
     }).catch(() => {});
   }, [setField]);
 
+  // Edit mode: the vendor picker is disabled (vendor is fixed), so
+  // handleVendorSelect never fires to populate selectedVendorDetails.
+  // Fetch it directly from the prefilled vendorId, or submission always
+  // fails with "Vendor profile is still loading."
+  useEffect(() => {
+    if (!isEditMode || isVendorActor || !form.vendorId || selectedVendorDetails) return;
+    let cancelled = false;
+    searchVendors(form.vendorId, 1).then(res => {
+      if (cancelled || !res?.success || !Array.isArray(res.data)) return;
+      const v = res.data.find((x: any) => x.id === form.vendorId);
+      if (v) {
+        setSelectedVendorDetails({
+          id: v.id,
+          userId: null,
+          label: v.label,
+          phone: v.phone,
+          address: v.address || '',
+          locationId: v.locationId ?? null,
+        });
+      }
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [isEditMode, isVendorActor, form.vendorId, selectedVendorDetails]);
+
   const resetForm = () => {
     // For a vendor actor, origin is always their own hub and the field is
     // disabled - the effect that fills it from myVendorProfile only re-runs
@@ -465,6 +489,9 @@ const CreateOrderPage: React.FC = () => {
       setSubmitting(true);
       try {
         const editPayload: UpdateOrderInput = {
+          // Empty means "leave it as it is", not "unassign" — matches the
+          // origin/destination convention right below.
+          vendorId: !isVendorActor && payload.vendorId ? payload.vendorId : undefined,
           receiver: payload.receiver,
           // Empty means "leave the route as it is", not "clear it".
           originLocationId: payload.originLocationId || undefined,
@@ -536,7 +563,7 @@ const CreateOrderPage: React.FC = () => {
                 placeholder="Select vendor"
                 searchPlaceholder="Search vendor by name..."
                 emptyMessage="No vendors found."
-                disabled={isEditMode}
+                initialLabel={selectedVendor?.label}
               />
             </div>
           )}

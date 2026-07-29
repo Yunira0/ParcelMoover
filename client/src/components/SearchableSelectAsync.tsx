@@ -26,6 +26,11 @@ interface SearchableSelectAsyncProps {
   minChars?: number;
   /** Debounce delay in ms. Default: 300. */
   debounceMs?: number;
+  /**
+   * Label to show for `value` before it's ever appeared in a fetched page —
+   * e.g. a value set from a prefilled record rather than a user search.
+   */
+  initialLabel?: string;
 }
 
 const SearchableSelectAsync: React.FC<SearchableSelectAsyncProps> = ({
@@ -38,6 +43,7 @@ const SearchableSelectAsync: React.FC<SearchableSelectAsyncProps> = ({
   disabled = false,
   minChars = 0,
   debounceMs = 300,
+  initialLabel,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -52,7 +58,8 @@ const SearchableSelectAsync: React.FC<SearchableSelectAsyncProps> = ({
   const abortRef = useRef(0);
   const offsetRef = useRef(0);
 
-  const selectedOption = options.find(o => o.id === value);
+  const selectedOption = options.find(o => o.id === value)
+    ?? (value && initialLabel ? { id: value, label: initialLabel } : undefined);
 
   const fetchOptions = useCallback(
     (search: string, offset: number, append: boolean) => {
