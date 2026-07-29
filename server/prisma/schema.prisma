@@ -175,6 +175,8 @@ model locations {
   locations                                                        locations?              @relation("locationsTolocations", fields: [parent_id], references: [id], onUpdate: NoAction)
   other_locations                                                  locations[]             @relation("locationsTolocations")
   parcel_remarks                                                   parcel_remarks[]
+  parcel_redirects_from                                            parcel_redirects[]      @relation("parcel_redirects_from_locationTolocations")
+  parcel_redirects_to                                              parcel_redirects[]      @relation("parcel_redirects_to_locationTolocations")
   parcel_status_history                                            parcel_status_history[]
   parcels_parcels_current_location_idTolocations                   parcels[]               @relation("parcels_current_location_idTolocations")
   parcels_parcels_destination_location_idTolocations               parcels[]               @relation("parcels_destination_location_idTolocations")
@@ -246,6 +248,33 @@ model parcel_remarks {
   @@index([user_id], map: "idx_parcel_remarks_user_id")
 }
 
+// One row per destination change made after booking because the customer moved
+// ("redirect"). Charges are snapshotted so the row still explains itself after
+// the vendor's rates change.
+model parcel_redirects {
+  id                  String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  parcel_id           String        @db.Uuid
+  from_location_id    String?       @db.Uuid
+  to_location_id      String        @db.Uuid
+  from_address        String?
+  to_address          String?
+  reason              String
+  status_at_redirect  parcel_status
+  old_delivery_charge Decimal       @db.Decimal(12, 2)
+  redirect_charge     Decimal       @default(0) @db.Decimal(12, 2)
+  new_delivery_charge Decimal       @db.Decimal(12, 2)
+  created_by          String?       @db.Uuid
+  created_at          DateTime      @default(now()) @db.Timestamptz(6)
+  parcels             parcels       @relation(fields: [parcel_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  from_location       locations?    @relation("parcel_redirects_from_locationTolocations", fields: [from_location_id], references: [id], onUpdate: NoAction)
+  to_location         locations     @relation("parcel_redirects_to_locationTolocations", fields: [to_location_id], references: [id], onUpdate: NoAction)
+  users               users?        @relation(fields: [created_by], references: [id], onUpdate: NoAction)
+
+  @@index([parcel_id, created_at(sort: Desc)], map: "idx_parcel_redirects_parcel_id")
+  @@index([to_location_id], map: "idx_parcel_redirects_to_location")
+  @@index([created_at(sort: Desc)], map: "idx_parcel_redirects_created_at")
+}
+
 model parcel_status_history {
   id          String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   parcel_id   String         @db.Uuid
@@ -303,6 +332,7 @@ model parcels {
   dispatch_parcels                                     dispatch_parcels[]
   parcel_exceptions                                    parcel_exceptions[]
   parcel_remarks                                       parcel_remarks[]
+  parcel_redirects                                     parcel_redirects[]
   parcel_status_history                                parcel_status_history[]
   users                                                users?                  @relation(fields: [created_by], references: [id], onUpdate: NoAction)
   locations_parcels_current_location_idTolocations     locations?              @relation("parcels_current_location_idTolocations", fields: [current_location_id], references: [id], onUpdate: NoAction)
@@ -545,6 +575,7 @@ model users {
   parcel_exceptions_parcel_exceptions_reported_byTousers parcel_exceptions[]     @relation("parcel_exceptions_reported_byTousers")
   parcel_exceptions_parcel_exceptions_resolved_byTousers parcel_exceptions[]     @relation("parcel_exceptions_resolved_byTousers")
   parcel_remarks                                         parcel_remarks[]
+  parcel_redirects                                       parcel_redirects[]
   parcel_status_history                                  parcel_status_history[]
   parcels                                                parcels[]
   riders                                                 riders?

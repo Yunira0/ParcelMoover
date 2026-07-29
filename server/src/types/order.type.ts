@@ -65,6 +65,15 @@ export interface UpdateOrderDetailsInput {
   deliveryInstruction?: string;
 }
 
+/** Customer moved: point the parcel at a different destination branch/address. */
+export interface RedirectOrderInput {
+  destinationLocationId: string;
+  address: string;
+  reason: string;
+  /** Diversion fee added on top of the parcel's existing delivery charge. */
+  redirectCharge: number;
+}
+
 export type ParcelStatus =
   | "pickup_ordered"
   | "rider_assigned"

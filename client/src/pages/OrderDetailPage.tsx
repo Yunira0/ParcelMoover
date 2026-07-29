@@ -6,6 +6,7 @@ import {
   addOrderRemark,
   subscribeToOrderStatusChanged,
   updateOrderStatus,
+  redirectOrder,
   type OrderDetail,
   type OrderRemark,
   type ParcelStatus,
@@ -17,6 +18,8 @@ import OrderTimeline from '../components/order-detail/OrderTimeline';
 import OrderRemarks from '../components/order-detail/OrderRemarks';
 import OrderRemarkInput from '../components/order-detail/OrderRemarkInput';
 import OrderPriceLog from '../components/order-detail/OrderPriceLog';
+import OrderRedirectLog from '../components/order-detail/OrderRedirectLog';
+import RedirectOrderModal from '../components/RedirectOrderModal';
 import { printLabels } from '../utils/printLabels';
 import './OrderDetailPage.css';
 
@@ -27,6 +30,24 @@ const OVERRIDE_EXCLUDED: ParcelStatus[] = [
   'rider_assigned',
   'sent_for_delivery',
   'partially_delivered',
+];
+
+// Mirrors REDIRECT_ALLOWED_STATUSES in order.service.ts — a parcel can only be
+// re-routed while it hasn't reached a final resting state. Keep in sync, or the
+// button offers an action the server refuses.
+const REDIRECTABLE_STATUSES: ParcelStatus[] = [
+  'pickup_ordered',
+  'rider_assigned',
+  'picked_up',
+  'arrived',
+  'ready_to_deliver',
+  'sent_for_delivery',
+  'oov',
+  'dispatched',
+  'arrived_at_branch',
+  'hold',
+  'failed_delivery',
+  'follow_up',
 ];
 
 const OrderDetailPage: React.FC = () => {
@@ -52,6 +73,12 @@ const OrderDetailPage: React.FC = () => {
   const [overrideRemarks, setOverrideRemarks] = useState('');
   const [overrideSaving, setOverrideSaving] = useState(false);
   const [overrideError, setOverrideError] = useState('');
+
+  // Redirect (customer moved) — admin/super_admin only, same as the server route.
+  const isAdmin = getCurrentUserRoles().some((r) => ['admin', 'super_admin'].includes(r));
+  const [redirectOpen, setRedirectOpen] = useState(false);
+  const [redirectSaving, setRedirectSaving] = useState(false);
+  const [redirectError, setRedirectError] = useState('');
 
   const fetchOrder = useCallback(async () => {
     if (!trackingId) return;
@@ -104,7 +131,7 @@ const OrderDetailPage: React.FC = () => {
 
   const handlePrint = () => {
     if (!order) return;
-    const { remarks, statusHistory, canChangeStatus, ...orderFields } = order;
+    const { remarks, statusHistory, canChangeStatus, redirectLog, ...orderFields } = order;
     void printLabels([orderFields]);
   };
 
@@ -121,6 +148,26 @@ const OrderDetailPage: React.FC = () => {
       setOverrideError(err?.response?.data?.message ?? 'Failed to update status');
     } finally {
       setOverrideSaving(false);
+    }
+  };
+
+  const handleRedirect = async (data: {
+    destinationLocationId: string;
+    address: string;
+    reason: string;
+    redirectCharge: number;
+  }) => {
+    if (!order) return;
+    try {
+      setRedirectSaving(true);
+      setRedirectError('');
+      await redirectOrder(order.id, data);
+      setRedirectOpen(false);
+      await fetchOrder();
+    } catch (err: any) {
+      setRedirectError(err?.response?.data?.message ?? 'Failed to redirect order');
+    } finally {
+      setRedirectSaving(false);
     }
   };
 
@@ -270,7 +317,39 @@ const OrderDetailPage: React.FC = () => {
           </div>
           <OrderPriceLog entries={order.priceLog} />
         </div>
+
+        <div className="od-pricelog">
+          <div className="od-section-header">
+            <h2>Redirect Log</h2>
+            <span className="od-section-count">{order.redirectLog.length}</span>
+            {isAdmin && REDIRECTABLE_STATUSES.includes(order.status) && (
+              <button
+                type="button"
+                className="od-section-action"
+                onClick={() => {
+                  setRedirectError('');
+                  setRedirectOpen(true);
+                }}
+              >
+                Redirect order
+              </button>
+            )}
+          </div>
+          <OrderRedirectLog entries={order.redirectLog} />
+        </div>
       </div>
+
+      <RedirectOrderModal
+        isOpen={redirectOpen}
+        trackingId={order.trackingId}
+        currentBranch={order.destination}
+        currentAddress={order.receiverAddress}
+        currentDeliveryCharge={order.deliveryCharge}
+        busy={redirectSaving}
+        error={redirectError}
+        onClose={() => setRedirectOpen(false)}
+        onConfirm={handleRedirect}
+      />
     </div>
   );
 };

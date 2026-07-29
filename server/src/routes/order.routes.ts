@@ -13,6 +13,7 @@ import {
   listOrdersQuerySchema,
   addOrderRemarkSchema,
   runSheetQuerySchema,
+  redirectOrderSchema,
 } from "../validators/order.schema";
 import {
   addOrderRemarkController,
@@ -25,6 +26,7 @@ import {
   getSenderProfileController,
   getStatusCountsController,
   listOrdersController,
+  redirectOrderController,
   riderRunSheetController,
   updateOrderDetailsController,
   updateOrderStatusController,
@@ -250,6 +252,21 @@ orderRouter.patch(
   validate(uuidParamSchema, "params"),
   validate(updateOrderDetailsSchema),
   updateOrderDetailsController,
+);
+
+// POST /orders/:id/redirect — customer moved: point the parcel at a different
+// destination branch/address, with a reason and a diversion charge. Admin-only;
+// vendors go through support so the fee is always an ops decision.
+orderRouter.post(
+  "/:id/redirect",
+  authMiddleware,
+  csrfProtection,
+  authorizeRoles("super_admin", "admin"),
+  requireStaffPermission("ORDER_ACCESS"),
+  statusUpdateLimiter,
+  validate(uuidParamSchema, "params"),
+  validate(redirectOrderSchema),
+  redirectOrderController,
 );
 
 // POST /orders/:id/remarks - leave a remark on a parcel (visible to anyone with access to it)

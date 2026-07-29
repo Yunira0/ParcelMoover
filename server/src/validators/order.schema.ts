@@ -116,6 +116,22 @@ export const updateOrderDetailsSchema = z
 
 export type UpdateOrderDetailsInput = z.infer<typeof updateOrderDetailsSchema>;
 
+// ── Redirect an order to a different destination ──────────────────────────────
+// The customer moved after booking. Unlike a plain edit this always carries a
+// reason and a diversion charge, and it is logged as its own record.
+
+export const redirectOrderSchema = z.object({
+  destinationLocationId: uuidSchema,
+  address: z.string().trim().min(1, "New delivery address is required").max(500),
+  reason: z.string().trim().min(1, "Reason is required").max(500),
+  redirectCharge: z
+    .number({ error: "Redirect charge is required" })
+    .min(0, "Redirect charge cannot be negative")
+    .max(1_000_000, "Redirect charge is unrealistically large"),
+});
+
+export type RedirectOrderInput = z.infer<typeof redirectOrderSchema>;
+
 // ── Update single order status ────────────────────────────────────────────────
 
 export const updateOrderStatusSchema = z.object({

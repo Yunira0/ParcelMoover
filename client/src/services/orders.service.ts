@@ -425,11 +425,29 @@ export interface PriceLogEntry {
   createdAt: string;
 }
 
+/** One destination change made because the customer moved after booking. */
+export interface RedirectLogEntry {
+  id: string;
+  fromBranch: string | null;
+  toBranch: string;
+  fromAddress: string | null;
+  toAddress: string | null;
+  reason: string;
+  statusAtRedirect: ParcelStatus;
+  oldDeliveryCharge: number;
+  redirectCharge: number;
+  newDeliveryCharge: number;
+  redirectedBy: string;
+  createdAt: string;
+}
+
 export interface OrderDetail extends Omit<Order, 'remarks'> {
   remarks: OrderRemark[];
   statusHistory: OrderStatusHistoryEntry[];
   /** COD / delivery-charge changes made after creation, newest first. */
   priceLog: PriceLogEntry[];
+  /** Destination redirects, newest first. */
+  redirectLog: RedirectLogEntry[];
   /** True when the viewer is allowed to change this order's status (super_admin/admin). */
   canChangeStatus: boolean;
 }
@@ -492,6 +510,24 @@ export type UpdateOrderInput = Partial<Omit<CreateOrderInput, 'sender' | 'vendor
 export const updateOrder = async (orderId: string, data: UpdateOrderInput) => {
   const idempotencyKey = uuidv4();
   const response = await api.patch(`/orders/${orderId}`, data, {
+    headers: { 'Idempotency-Key': idempotencyKey },
+  });
+  notifyOrderStatusChanged();
+  return response.data;
+};
+
+export interface RedirectOrderInput {
+  destinationLocationId: string;
+  address: string;
+  reason: string;
+  /** Diversion fee added on top of the existing delivery charge. */
+  redirectCharge: number;
+}
+
+/** Admin-only: send a parcel to a different destination because the customer moved. */
+export const redirectOrder = async (orderId: string, data: RedirectOrderInput) => {
+  const idempotencyKey = uuidv4();
+  const response = await api.post(`/orders/${orderId}/redirect`, data, {
     headers: { 'Idempotency-Key': idempotencyKey },
   });
   notifyOrderStatusChanged();
