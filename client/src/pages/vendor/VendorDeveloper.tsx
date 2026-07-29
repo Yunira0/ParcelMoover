@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Check, Copy, KeyRound, ListTree, Plus, Send, Webhook as WebhookIcon, X } from 'lucide-react';
+import { BookOpen, Check, Copy, KeyRound, ListTree, Plus, Send, Webhook as WebhookIcon, X } from 'lucide-react';
 import PageHeader from '../../components/PageHeader';
 import SegmentedTabs from '../../components/SegmentedTabs';
 import Table from '../../components/Table';
@@ -417,7 +417,17 @@ const VendorDeveloper: React.FC = () => {
         title="Developer"
         subtitle="Manage your Partner API keys and webhook endpoints in one place."
         {...headerProps}
-      />
+      >
+        <a
+          className="btn btn-outline"
+          href="/api/v1/docs"
+          target="_blank"
+          rel="noreferrer"
+        >
+          <BookOpen size={16} />
+          View Docs
+        </a>
+      </PageHeader>
 
       <SegmentedTabs
         ariaLabel="Developer sections"
@@ -452,6 +462,7 @@ const VendorDeveloper: React.FC = () => {
               so a retried request never repeats the action.
             </p>
             <ul>
+              <li><code>GET /api/v1/ping</code> — confirm a key works before anything else</li>
               <li><code>POST /api/v1/orders</code> — place an order</li>
               <li><code>GET /api/v1/orders/&#123;trackingId&#125;</code> — track an order</li>
               <li><code>GET /api/v1/orders?status=delivered&amp;page=1</code> — list your orders</li>
@@ -462,15 +473,25 @@ const VendorDeveloper: React.FC = () => {
               <li><code>POST /api/v1/tickets</code> · <code>GET /api/v1/tickets</code> — open or list support tickets</li>
             </ul>
             <p>
-              Full request/response shapes:{' '}
+              Full step-by-step guide and field reference:{' '}
               <a
                 className="api-keys-docs-link"
-                href="/api/v1/openapi.json"
+                href="/api/v1/docs"
                 target="_blank"
                 rel="noreferrer"
               >
-                OpenAPI spec
+                Partner API docs
               </a>
+              , or try every endpoint live at{' '}
+              <a
+                className="api-keys-docs-link"
+                href="/api/v1/docs/console"
+                target="_blank"
+                rel="noreferrer"
+              >
+                the try-it console
+              </a>
+              . Raw schema: <a className="api-keys-docs-link" href="/api/v1/openapi.json" target="_blank" rel="noreferrer">OpenAPI spec</a>.
             </p>
           </div>
         </>
@@ -498,8 +519,23 @@ const VendorDeveloper: React.FC = () => {
             <ul>
               <li>Currently fires <code>order.status_changed</code> for every tracked order.</li>
               <li>Failed deliveries retry with backoff for up to ~24 hours.</li>
-              <li>An endpoint that keeps failing is automatically disabled — resume it once it's fixed.</li>
+              <li>An endpoint that keeps failing is automatically disabled — you'll get an email, and can resume it once it's fixed.</li>
             </ul>
+            <p>
+              Testing locally? Registration always requires a real <code>https://</code> URL — use a tunnel
+              (e.g. <code>ngrok http &lt;port&gt;</code>) and register the forwarding URL it prints, not{' '}
+              <code>localhost</code>. Full walkthrough (local dev, a minimal handler, and how to confirm an
+              endpoint is actually connected) at{' '}
+              <a
+                className="api-keys-docs-link"
+                href="/api/v1/docs#webhooks"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Partner API docs → Webhooks
+              </a>
+              .
+            </p>
           </div>
         </>
       )}
