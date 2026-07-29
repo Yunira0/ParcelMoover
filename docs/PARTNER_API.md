@@ -2,12 +2,7 @@
 
 Integrate your e-commerce store with ParcelMoover: place delivery orders (including exchanges), track and edit them pre-dispatch, request returns, list shipments, and read your COD/settlement finance data programmatically.
 
-**Base URL**
-
-| Environment | URL |
-|---|---|
-| Production | `https://portal.parcelmoover.com/api/v1` |
-| Local development | `http://localhost:3000/api/v1` |
+**Base URL:** `https://portal.parcelmoover.com/api/v1` — there is no separate sandbox or staging environment; this is the one URL every example in this doc uses, in development and in production alike.
 
 All requests and responses are JSON (`Content-Type: application/json`).
 
