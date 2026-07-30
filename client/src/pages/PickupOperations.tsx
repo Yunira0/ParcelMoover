@@ -34,6 +34,16 @@ import './PickupOperations.css';
 
 type PickupTab = 'pickup_ordered' | 'rider_assigned' | 'picked_up' | 'arrived' | 'failed' | 'cancelled';
 
+// Only meaningful on the "Arrived at Origin" tab, where it decides whether a
+// parcel skips Transit (see destinationSkipsTransit below).
+type ValleyFilter = 'all' | 'inside' | 'outside';
+
+const VALLEY_FILTER_OPTIONS: { value: ValleyFilter; label: string }[] = [
+  { value: 'all', label: 'All' },
+  { value: 'inside', label: 'Inside Valley' },
+  { value: 'outside', label: 'Outside Valley' },
+];
+
 // Groups (pickups) per page in the outer table.
 const PAGE_SIZE = 10;
 // The whole tab is fetched up front (server pages of 100) so vendor groups are
@@ -379,6 +389,7 @@ const PickupOperations: React.FC = () => {
   const [expandedGroupId, setExpandedGroupId] = useState('');
   const [remarkPopupOrder, setRemarkPopupOrder] = useState<Order | null>(null);
   const [tabCounts, setTabCounts] = useState<Record<string, number>>({});
+  const [valleyFilter, setValleyFilter] = useState<ValleyFilter>('all');
 
   useEffect(() => {
     (async () => {
@@ -472,6 +483,11 @@ const PickupOperations: React.FC = () => {
     setRiderId('');
   }, [activeTab, debouncedSearch]);
 
+  // Valley filter only applies to "Arrived at Origin" - drop it on any other tab.
+  useEffect(() => {
+    setValleyFilter('all');
+  }, [activeTab]);
+
   // Keep tab/search bookmarkable - mirror into the URL (replacing history,
   // not pushing, so the back button doesn't step through every keystroke).
   useEffect(() => {
@@ -487,7 +503,10 @@ const PickupOperations: React.FC = () => {
     setSelectedIdsByTab(prev => ({ ...prev, [activeTab]: new Set() }));
   }, [activeTab, debouncedSearch]);
 
-  const visibleOrders = orders;
+  const visibleOrders = useMemo(() => {
+    if (activeTab !== 'arrived' || valleyFilter === 'all') return orders;
+    return orders.filter(order => order.destinationValley === valleyFilter);
+  }, [orders, activeTab, valleyFilter]);
   const selectedIds = selectedIdsByTab[activeTab];
   const groups = useMemo(() => groupOrdersByVendor(visibleOrders), [visibleOrders]);
   const totalPages = Math.max(1, Math.ceil(groups.length / PAGE_SIZE));
@@ -777,7 +796,15 @@ const PickupOperations: React.FC = () => {
       {loadError && <p className="pickup-action-error">{loadError}</p>}
 
       <div className="pickup-toolbar">
-        <div />
+        {activeTab === 'arrived' ? (
+          <SegmentedTabs
+            ariaLabel="Filter by valley"
+            fullWidth={false}
+            value={valleyFilter}
+            onChange={setValleyFilter}
+            options={VALLEY_FILTER_OPTIONS}
+          />
+        ) : <div />}
         <div className="pickup-toolbar-actions">
           <div className="pickup-action-anchor">
             <Button variant="secondary" className="pickup-outline-btn" onClick={openStatusAction}>
@@ -944,7 +971,7 @@ const PickupOperations: React.FC = () => {
         onPageChange={next => { setPage(next); setExpandedGroupId(''); }}
         summary={
           `${groups.length} pickup${groups.length === 1 ? '' : 's'} · ` +
-          `${orders.length}${capped ? '+' : ''} order${orders.length === 1 ? '' : 's'}` +
+          `${visibleOrders.length}${capped ? '+' : ''} order${visibleOrders.length === 1 ? '' : 's'}` +
           (capped ? ` (showing the first ${orders.length})` : '')
         }
       />
