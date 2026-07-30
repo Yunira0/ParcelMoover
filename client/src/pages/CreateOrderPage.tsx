@@ -256,7 +256,7 @@ const CreateOrderPage: React.FC = () => {
     setQuoteError('');
     const timer = setTimeout(async () => {
       try {
-        const res = await getVendorQuote(form.destinationLocationId, weightKgNumber, vendorId);
+        const res = await getVendorQuote(form.destinationLocationId, weightKgNumber, vendorId, form.serviceType);
         if (!cancelled && res?.success) {
           setQuote(res.data);
         }
@@ -274,7 +274,7 @@ const CreateOrderPage: React.FC = () => {
       }
     }, 400);
     return () => { cancelled = true; clearTimeout(timer); };
-  }, [form.destinationLocationId, weightKgNumber, form.vendorId, selectedVendor?.id, isVendorActor]);
+  }, [form.destinationLocationId, weightKgNumber, form.vendorId, form.serviceType, selectedVendor?.id, isVendorActor]);
 
   const setField = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm(prev => ({ ...prev, [key]: value }));

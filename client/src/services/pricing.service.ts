@@ -48,9 +48,15 @@ export const getVendorQuote = async (
   destinationLocationId: string,
   weightKg: number,
   vendorId?: string,
+  serviceType?: 'home_delivery' | 'branch_delivery',
 ): Promise<{ success: boolean; data: VendorQuote }> => {
   const response = await api.get('/pricing/quote', {
-    params: { destinationLocationId, weightKg, ...(vendorId ? { vendorId } : {}) },
+    params: {
+      destinationLocationId,
+      weightKg,
+      ...(vendorId ? { vendorId } : {}),
+      ...(serviceType ? { serviceType } : {}),
+    },
   });
   return response.data;
 };
