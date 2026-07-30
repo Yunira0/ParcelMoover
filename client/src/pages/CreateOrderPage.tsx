@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { Info } from 'lucide-react';
 import FormField from '../components/FormField';
 import PageHeader from '../components/PageHeader';
+import BillingStatusBanner from '../components/BillingStatusBanner';
 import Button from '../components/Button';
 import { getLocations, getVendors } from '../services/users.service';
 import { getVendorQuote } from '../services/pricing.service';
@@ -502,6 +503,8 @@ const CreateOrderPage: React.FC = () => {
           ? `Update parcel details for ${editTrackingId || 'this order'}. Changes are recorded in the parcel history.`
           : 'Set up and submit new package orders through the system. (Enter item value for parcel exceeding Rs 5000)'}
       />
+
+      {!isEditMode && <BillingStatusBanner />}
 
       <form className="create-order-body" onSubmit={handleSubmit}>
         <div className="create-order-main">

@@ -1,0 +1,170 @@
+.billing-banner {
+  align-items: flex-start;
+  border: 1px solid;
+  border-radius: var(--border-radius-default);
+  display: flex;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+
+.billing-banner p {
+  font-size: var(--font-size-sm);
+  margin: var(--space-1) 0 0;
+}
+
+.billing-banner-warned {
+  background-color: var(--color-warning-surface, #fff8e6);
+  border-color: var(--color-warning-border, #f0c36d);
+  color: var(--color-warning-text, #7a5200);
+}
+
+.billing-banner-blocked {
+  background-color: var(--color-danger-surface, #fdeceb);
+  border-color: var(--color-danger-border, #f0a9a4);
+  color: var(--color-danger-text);
+}
+
+.billing-grid {
+  display: grid;
+  gap: var(--space-6);
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+}
+
+.billing-card {
+  background-color: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-default);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-6);
+}
+
+.billing-card h3 {
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+  margin: 0;
+}
+
+.billing-breakdown {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.billing-breakdown > div {
+  display: flex;
+  font-size: var(--font-size-sm);
+  justify-content: space-between;
+}
+
+.billing-breakdown > div > span:first-child {
+  color: var(--color-text-caption);
+}
+
+.billing-breakdown-total {
+  border-top: 1px solid var(--color-border-default);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+  padding-top: var(--space-2);
+}
+
+.billing-debit {
+  color: var(--color-danger-text);
+}
+
+.billing-hint {
+  align-items: center;
+  color: var(--color-text-caption);
+  display: flex;
+  font-size: var(--font-size-xs);
+  gap: var(--space-1);
+  margin: 0;
+}
+
+.billing-success {
+  color: var(--color-success-text, #1a7f37);
+  font-size: var(--font-size-sm);
+  margin: 0;
+}
+
+/* Bounded so a high-resolution QR upload doesn't blow out the card. */
+.billing-qr {
+  align-self: center;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-default);
+  height: auto;
+  max-width: 240px;
+  width: 100%;
+}
+
+.billing-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.billing-form label {
+  color: var(--color-text-caption);
+  display: flex;
+  flex-direction: column;
+  font-size: var(--font-size-xs);
+  gap: var(--space-1);
+}
+
+.billing-form input[type='number'],
+.billing-form input[type='text'],
+.billing-form input:not([type]) {
+  background-color: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-default);
+  color: var(--color-text-default);
+  font-size: var(--font-size-sm);
+  padding: var(--space-2);
+}
+
+/* The native file input is replaced by the styled label wrapping it. */
+.billing-file {
+  align-items: center;
+  border: 1px dashed var(--color-border-default);
+  border-radius: var(--border-radius-default);
+  cursor: pointer;
+  flex-direction: row;
+  gap: var(--space-2);
+  padding: var(--space-3);
+}
+
+.billing-file input[type='file'] {
+  display: none;
+}
+
+.billing-pill {
+  align-items: center;
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: var(--font-size-xs);
+  gap: var(--space-1);
+  padding: 2px var(--space-2);
+  white-space: nowrap;
+}
+
+.billing-pill-pending {
+  background-color: var(--color-warning-surface, #fff8e6);
+  color: var(--color-warning-text, #7a5200);
+}
+
+.billing-pill-verified {
+  background-color: var(--color-success-surface, #e8f5ec);
+  color: var(--color-success-text, #1a7f37);
+}
+
+.billing-pill-rejected {
+  background-color: var(--color-danger-surface, #fdeceb);
+  color: var(--color-danger-text);
+}
+
+@media (max-width: 768px) {
+  .billing-grid {
+    grid-template-columns: 1fr;
+  }
+}

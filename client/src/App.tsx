@@ -46,6 +46,8 @@ const TicketDetail = lazy(() => import('./pages/TicketDetail'))
 const VendorSettlements = lazy(() => import('./pages/vendor/VendorSettlements'))
 const VendorPendingCod = lazy(() => import('./pages/vendor/VendorPendingCod'))
 const VendorOrderPayments = lazy(() => import('./pages/vendor/VendorOrderPayments'))
+const VendorBilling = lazy(() => import('./pages/vendor/VendorBilling'))
+const BillingManagement = lazy(() => import('./pages/BillingManagement'))
 const VendorUserManagement = lazy(() => import('./pages/vendor/VendorUserManagement'))
 const VendorApiKeys = lazy(() => import('./pages/vendor/VendorApiKeys'))
 const VendorWebhooks = lazy(() => import('./pages/vendor/VendorWebhooks'))
@@ -250,6 +252,14 @@ function App() {
           <Route
             path="/finance/order-payments"
             element={<RoleGuard allowedRoles={['vendor', 'vendor_staff']} requiredPermission="FINANCE_ACCESS"><VendorOrderPayments /></RoleGuard>}
+          />
+          <Route
+            path="/finance/billing"
+            element={<RoleGuard allowedRoles={['vendor', 'vendor_staff']} requiredPermission="FINANCE_ACCESS"><VendorBilling /></RoleGuard>}
+          />
+          <Route
+            path="/billing"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']}><BillingManagement /></RoleGuard>}
           />
           <Route
             path="/user-management"

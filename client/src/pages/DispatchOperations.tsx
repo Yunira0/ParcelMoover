@@ -149,33 +149,35 @@ const DispatchOperations: React.FC = () => {
   const [actionError, setActionError] = useState('');
   const [riders, setRiders] = useState<{ id: string; name: string }[]>([]);
   const [riderId, setRiderId] = useState('');
+  // Delivery-rider filter for the list itself (distinct from `riderId`, which
+  // is the rider being assigned by the Action popover).
+  const [riderFilter, setRiderFilter] = useState(() => searchParams.get('rider') || '');
   const [partialRemarks, setPartialRemarks] = useState('');
   const [partialCodCollected, setPartialCodCollected] = useState('');
   const [reasonRemarks, setReasonRemarks] = useState('');
   const [remarkPopupOrder, setRemarkPopupOrder] = useState<Order | null>(null);
   const [tabCounts, setTabCounts] = useState<Record<string, number>>({});
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const counts = await getStatusCounts(TAB_STATUSES);
-        setTabCounts(counts);
-      } catch {
-        // non-fatal; tabs just won't show counts
-      }
-    })();
-  }, []);
+  // Badge counts follow the same rider filter and search as the table, so a
+  // scanned parcel shows "1" on its tab instead of the unfiltered total.
+  // Guarded like loadDispatches so a slow earlier request can't overwrite a
+  // newer filter's counts.
+  const countsRequestIdRef = useRef(0);
+  const loadTabCounts = useCallback(async () => {
+    const requestId = ++countsRequestIdRef.current;
+    try {
+      const counts = await getStatusCounts(TAB_STATUSES, {
+        ...(riderFilter ? { deliveryRiderId: riderFilter } : {}),
+        ...(debouncedSearch ? { search: debouncedSearch } : {}),
+      });
+      if (requestId === countsRequestIdRef.current) setTabCounts(counts);
+    } catch {
+      // non-fatal; tabs just won't show counts
+    }
+  }, [riderFilter, debouncedSearch]);
 
-  useEffect(() => {
-    return subscribeToOrderStatusChanged(async () => {
-      try {
-        const counts = await getStatusCounts(TAB_STATUSES);
-        setTabCounts(counts);
-      } catch {
-        // ignore
-      }
-    });
-  }, []);
+  useEffect(() => { void loadTabCounts(); }, [loadTabCounts]);
+  useEffect(() => subscribeToOrderStatusChanged(loadTabCounts), [loadTabCounts]);
 
   useEffect(() => {
     (async () => {
@@ -198,7 +200,7 @@ const DispatchOperations: React.FC = () => {
 
   useEffect(() => {
     pager.reset();
-  }, [activeTab, debouncedSearch, pager.reset]);
+  }, [activeTab, debouncedSearch, riderFilter, pager.reset]);
 
   // Keep tab/search bookmarkable - mirror into the URL (replacing history,
   // not pushing, so the back button doesn't step through every keystroke).
@@ -206,8 +208,9 @@ const DispatchOperations: React.FC = () => {
     const next = new URLSearchParams();
     if (activeTab !== 'ready_to_deliver') next.set('tab', activeTab);
     if (debouncedSearch) next.set('search', debouncedSearch);
+    if (riderFilter) next.set('rider', riderFilter);
     setSearchParams(next, { replace: true });
-  }, [activeTab, debouncedSearch, setSearchParams]);
+  }, [activeTab, debouncedSearch, riderFilter, setSearchParams]);
 
   // Scanning several parcels in a row fires one debounced search per scan -
   // without this, a slower-to-resolve earlier request can land after a later
@@ -227,6 +230,7 @@ const DispatchOperations: React.FC = () => {
       const res = await getOrders({
         status: TAB_STATUSES[activeTab],
         search: debouncedSearch || undefined,
+        deliveryRiderId: riderFilter || undefined,
         pageSize,
         cursor: pager.request.cursor,
         dir: pager.request.dir,
@@ -243,7 +247,7 @@ const DispatchOperations: React.FC = () => {
     } finally {
       if (requestId === loadRequestIdRef.current) setLoading(false);
     }
-  }, [activeTab, debouncedSearch, pager.request]);
+  }, [activeTab, debouncedSearch, riderFilter, pager.request]);
 
   useEffect(() => { loadDispatches(); }, [loadDispatches]);
   useEffect(() => subscribeToOrderStatusChanged(loadDispatches), [loadDispatches]);
@@ -441,7 +445,11 @@ const DispatchOperations: React.FC = () => {
   const downloadCsv = async () => {
     let rows: Order[] = visibleOrders;
     try {
-      const res = await getOrders({ status: TAB_STATUSES[activeTab], search: debouncedSearch || undefined });
+      const res = await getOrders({
+        status: TAB_STATUSES[activeTab],
+        search: debouncedSearch || undefined,
+        deliveryRiderId: riderFilter || undefined,
+      });
       if (res?.success && Array.isArray(res.data)) {
         rows = res.data;
       }
@@ -563,7 +571,22 @@ const DispatchOperations: React.FC = () => {
       {loadError && <p className="dispatch-action-error">{loadError}</p>}
 
       <div className="dispatch-toolbar">
-        <div />
+        <div className="dispatch-rider-filter">
+          <SearchableSelect
+            options={[{ id: '', label: 'All riders' }, ...riders.map(r => ({ id: r.id, label: r.name }))]}
+            value={riderFilter}
+            onChange={id => {
+              setRiderFilter(id);
+              pager.reset();
+              setIsActionOpen(false);
+              setActionError('');
+              setRiderId('');
+            }}
+            placeholder="All riders"
+            searchPlaceholder="Search rider by name..."
+            emptyMessage="No active riders found."
+          />
+        </div>
         <div className="dispatch-toolbar-actions">
           <div className="dispatch-action-anchor">
             <Button variant="secondary" className="dispatch-outline-btn" onClick={openStatusAction}>

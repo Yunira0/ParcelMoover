@@ -582,6 +582,8 @@ model users {
   run_sheets                                             run_sheets[]
   settlements_settlements_approved_byTousers             settlements[]           @relation("settlements_approved_byTousers")
   settlements_settlements_settled_byTousers              settlements[]           @relation("settlements_settled_byTousers")
+  vendor_payments_submitted_by                           vendor_payments[]       @relation("vendor_payments_submitted_byTousers")
+  vendor_payments_reviewed_by                            vendor_payments[]       @relation("vendor_payments_reviewed_byTousers")
   support_tickets_support_tickets_assigned_toTousers     support_tickets[]       @relation("support_tickets_assigned_toTousers")
   support_tickets_support_tickets_created_byTousers      support_tickets[]       @relation("support_tickets_created_byTousers")
   user_roles                                             user_roles[]
@@ -635,6 +637,15 @@ model vendors {
   bank_account_no       String?
   bank_account_holder   String?
   status                user_status       @default(active)
+  // Credit-control thresholds. Null falls back to the billing_settings
+  // singleton, mirroring how the rate columns above fall back to
+  // pricing_settings. Stored as the (negative) balance they trip at.
+  billing_warn_threshold  Decimal?        @db.Decimal(12, 2)
+  billing_block_threshold Decimal?        @db.Decimal(12, 2)
+  // Which side of those thresholds this vendor was on at the last evaluation,
+  // so a crossing notifies once instead of once per parcel delivered.
+  billing_alert_state   vendor_billing_state @default(ok)
+  billing_alert_at      DateTime?         @db.Timestamptz(6)
   joined_at             DateTime?         @db.Date
   last_ordered_at       DateTime?         @db.Timestamptz(6)
   // Set the moment the assigned sales rep uses their one allowed self-service
@@ -651,9 +662,56 @@ model vendors {
   sales_user            users?            @relation("vendor_sales_user", fields: [sales_user_id], references: [id], onUpdate: NoAction)
   api_keys              api_keys[]
   webhook_endpoints     webhook_endpoints[]
+  vendor_payments       vendor_payments[]
 
   @@index([location_id], map: "idx_vendors_location_id")
   @@index([sales_user_id], map: "idx_vendors_sales_user_id")
+}
+
+// Vendor -> office payments, settling delivery charges the vendor owes. The
+// opposite direction from `settlements`, which only models office -> vendor
+// payouts and cannot carry a negative payable.
+//
+// A row starts as a claim ('pending'). It must never credit the vendor's
+// balance before an admin verifies it, or a blocked vendor could unblock
+// themselves by claiming a payment they never made.
+model vendor_payments {
+  id            String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  vendor_id     String                @db.Uuid
+  amount        Decimal               @db.Decimal(12, 2)
+  method        String                @default("fonepay")
+  // Transaction id from the payment app, for reconciliation against the
+  // merchant statement.
+  reference     String?
+  // Encrypted at rest like every other upload (see documentEncryption.ts).
+  proof_path    String?
+  status        vendor_payment_status @default(pending)
+  note          String?
+  submitted_by  String?               @db.Uuid
+  reviewed_by   String?               @db.Uuid
+  reviewed_at   DateTime?             @db.Timestamptz(6)
+  review_remark String?
+  created_at    DateTime              @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime              @default(now()) @updatedAt @db.Timestamptz(6)
+  vendors       vendors               @relation(fields: [vendor_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users_vendor_payments_submitted_byTousers users? @relation("vendor_payments_submitted_byTousers", fields: [submitted_by], references: [id], onUpdate: NoAction)
+  users_vendor_payments_reviewed_byTousers  users? @relation("vendor_payments_reviewed_byTousers", fields: [reviewed_by], references: [id], onUpdate: NoAction)
+
+  @@index([vendor_id, status], map: "idx_vendor_payments_vendor_status")
+  @@index([status, created_at(sort: Desc)], map: "idx_vendor_payments_status_created")
+}
+
+// Singleton configuration row, mirroring pricing_settings. Thresholds are the
+// (negative) account balance they trip at: warn at -2000, block at -3000.
+model billing_settings {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  warn_threshold  Decimal  @default(-2000) @db.Decimal(12, 2)
+  block_threshold Decimal  @default(-3000) @db.Decimal(12, 2)
+  // Static Fonepay QR shown to vendors in the pay-now flow.
+  payment_qr_path String?
+  payment_note    String?
+  created_at      DateTime @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime @default(now()) @updatedAt @db.Timestamptz(6)
 }
 
 // Partner API keys — vendor-owned credentials for the public /api/v1 surface.
@@ -826,6 +884,20 @@ enum service_type {
 enum settlement_status {
   pending
   settled
+}
+
+// Which side of the credit-control thresholds a vendor was on at the last
+// evaluation. See vendors.billing_alert_state.
+enum vendor_billing_state {
+  ok
+  warned
+  blocked
+}
+
+enum vendor_payment_status {
+  pending
+  verified
+  rejected
 }
 
 enum ticket_status {

@@ -157,6 +157,7 @@ const VendorSidebar: React.FC = () => {
           <SubItem to="/finance/settlements" icon={Banknote} label="Settlements" />
           <SubItem to="/finance/order-payments" icon={ClipboardList} label="Order Payments" />
           <SubItem to="/finance/pending-cod" icon={Receipt} label="Pending COD" />
+          <SubItem to="/finance/billing" icon={Wallet} label="Billing & Payments" />
         </div>
 
         <SidebarSection label="Account" />
@@ -197,6 +198,7 @@ const VendorStaffSidebar: React.FC = () => {
               <SubItem to="/finance/settlements" icon={Banknote} label="Settlements" />
               <SubItem to="/finance/order-payments" icon={ClipboardList} label="Order Payments" />
               <SubItem to="/finance/pending-cod" icon={Receipt} label="Pending COD" />
+              <SubItem to="/finance/billing" icon={Wallet} label="Billing & Payments" />
             </div>
           </>
         )}
@@ -256,6 +258,7 @@ const AdminSidebar: React.FC<{ isSuperAdmin: boolean }> = ({ isSuperAdmin }) => 
         {(isSuperAdmin || hasAdminPermission('KYC_ACCESS')) && <SidebarItem to="/kyc-applications" icon={ClipboardCheck} label="KYC Applications" />}
         <SidebarItem to="/riders" icon={Bike} label="Rider Management" />
         <SidebarItem to="/finance" icon={Wallet} label="COD Management" />
+        <SidebarItem to="/billing" icon={Receipt} label="Billing & Credit" />
         {(isSuperAdmin || hasAdminPermission('SETTINGS_ACCESS')) && <SidebarItem to="/settings" icon={Settings} label="Settings" />}
         {isSuperAdmin && <SidebarItem to="/sla" icon={Timer} label="SLA" />}
         {isSuperAdmin && <SidebarItem to="/pickup-time-slots" icon={Clock} label="Pickup Time Slots" />}

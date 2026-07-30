@@ -20,8 +20,12 @@ function barcodeDataUrl(trackingId: string): string {
     format: 'CODE128',
     displayValue: false,
     margin: 0,
-    height: 40,
-    width: 2,
+    // Rendered far above the printed size (see .barcode-img) so scaling it in
+    // CSS never softens the bar edges - a blurry CODE128 is a scan failure.
+    // `width` is the narrow-bar module width in px: the single biggest lever on
+    // whether a printed barcode reads first time.
+    height: 110,
+    width: 4,
   });
   return canvas.toDataURL('image/png');
 }
@@ -210,12 +214,14 @@ const CSS = `
     color: #666;
   }
 
+  /* Vertical padding kept minimal: this row cannot shrink below the code-block
+     inside it, so every mm here comes straight off the QR/barcode budget. */
   .label-main {
     display: flex;
     flex: 1;
     align-items: center;
     gap: 3mm;
-    padding: 1.5mm 0;
+    padding: 0.5mm 0;
   }
 
   .parties {
@@ -280,20 +286,23 @@ const CSS = `
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 1.5mm;
+    gap: 1mm;
     padding-left: 3mm;
     border-left: 1px solid #000;
   }
 
+  /* Generated with margin 0 (no built-in quiet zone) so the whole box is live
+     modules instead of white border. The required quiet zone still exists - it
+     comes from the code-block's own padding and the gap below. */
   .qr-img {
-    width: 18mm;
-    height: 18mm;
+    width: 19mm;
+    height: 19mm;
     display: block;
   }
 
   .barcode-img {
-    width: 20mm;
-    height: 7mm;
+    width: 30mm;
+    height: 10mm;
     display: block;
   }
 
@@ -304,10 +313,14 @@ const CSS = `
     padding: 1.5mm 0;
     border-top: 1px dashed #999;
     overflow: hidden;
+    /* Without this the row is a shrinkable flex item and the label column
+       squeezes it below its own content height, slicing the second line of
+       the note in half. */
+    flex-shrink: 0;
   }
 
   .instruction-label {
-    font-size: 8px;
+    font-size: 10px;
     font-weight: 700;
     color: #666;
     text-transform: uppercase;
@@ -315,10 +328,13 @@ const CSS = `
     white-space: nowrap;
   }
 
+  /* Single line. A second line costs ~4mm of the label's fixed height, and that
+     space is worth more to the QR and barcode than to overflow text. */
   .instruction-text {
-    font-size: 9px;
-    color: #333;
-    font-style: italic;
+    font-size: 12px;
+    font-weight: 600;
+    color: #000;
+    line-height: 1.25;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -400,7 +416,10 @@ export async function printLabels(orders: Order[]): Promise<void> {
 
   const qrUrls = await Promise.all(
     orders.map((o) =>
-      QRCode.toDataURL(o.trackingId, { width: 240, margin: 1, color: { dark: '#000000', light: '#ffffff' } }),
+      // margin 0 drops the built-in 1-module quiet zone so the printed box is
+      // entirely data - the spec's quiet zone is supplied by the surrounding
+      // white space in .code-block instead. Rendered at 4x the printed size.
+      QRCode.toDataURL(o.trackingId, { width: 320, margin: 0, color: { dark: '#000000', light: '#ffffff' } }),
     ),
   );
   const barcodeUrls = orders.map((o) => barcodeDataUrl(o.trackingId));

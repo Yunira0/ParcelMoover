@@ -18,6 +18,10 @@
   gap: var(--space-4);
 }
 
+.dispatch-rider-filter {
+  min-width: 220px;
+}
+
 .dispatch-search-wrap {
   display: flex;
   flex-direction: column;
@@ -318,6 +322,11 @@
 
   .dispatch-toolbar-actions,
   .dispatch-outline-btn {
+    width: 100%;
+  }
+
+  .dispatch-rider-filter {
+    min-width: 0;
     width: 100%;
   }
 

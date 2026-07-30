@@ -45,6 +45,13 @@ export interface CreateOrderInput {
    * after the user confirms the "create anyway" prompt.
    */
   confirmDuplicate?: boolean;
+
+  /**
+   * Places the order even though the vendor's account balance is past its
+   * block threshold. Honoured for super_admin only — see
+   * assertVendorCanCreateOrder in billing.service.
+   */
+  overrideBillingBlock?: boolean;
 }
 
 export interface UpdateOrderDetailsInput {
@@ -118,6 +125,8 @@ export interface ListOrdersQuery {
   status?: ParcelStatus[];
   orderType?: OrderType;
   search?: string;
+  // Narrows the list to parcels carried by one delivery rider.
+  deliveryRiderId?: string;
   // Display-only page hint echoed back in meta; the actual position comes
   // from the keyset cursor, never from a row offset.
   page?: number;

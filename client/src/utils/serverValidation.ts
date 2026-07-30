@@ -51,6 +51,15 @@ export function isDigits(value: string, min = 1, max = 20): boolean {
 }
 
 /**
+ * The API's plain `{ success: false, message }` error text, with a caller-supplied
+ * fallback for network failures and anything else that carries no message.
+ */
+export function apiErrorMessage(err: unknown, fallback: string): string {
+  const message = (err as { response?: { data?: { message?: unknown } } })?.response?.data?.message;
+  return typeof message === 'string' && message ? message : fallback;
+}
+
+/**
  * Map the API's validation errors onto form field names.
  * `fieldMap` translates API field → form field; unmapped fields pass through
  * unchanged. Returns null when the response carries no field errors (so
