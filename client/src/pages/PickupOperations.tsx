@@ -391,28 +391,26 @@ const PickupOperations: React.FC = () => {
   const [tabCounts, setTabCounts] = useState<Record<string, number>>({});
   const [valleyFilter, setValleyFilter] = useState<ValleyFilter>('all');
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const counts = await getStatusCounts(TAB_STATUSES);
-        setTabCounts(counts);
-      } catch {
-        // non-fatal; tabs just won't show counts
-      }
-    })();
-  }, []);
+  // Badge counts follow the search, so a scanned parcel shows "1" on its tab
+  // instead of the unfiltered total. Guarded like loadPickups so a slow earlier
+  // request can't overwrite a newer search's counts.
+  const countsSeqRef = useRef(0);
+  const loadTabCounts = useCallback(async () => {
+    const seq = ++countsSeqRef.current;
+    try {
+      const counts = await getStatusCounts(
+        TAB_STATUSES,
+        debouncedSearch ? { search: debouncedSearch } : undefined,
+      );
+      if (seq === countsSeqRef.current) setTabCounts(counts);
+    } catch {
+      // non-fatal; tabs just won't show counts
+    }
+  }, [debouncedSearch]);
 
+  useEffect(() => { void loadTabCounts(); }, [loadTabCounts]);
   // Refresh tab counts whenever an order status changes anywhere in the app.
-  useEffect(() => {
-    return subscribeToOrderStatusChanged(async () => {
-      try {
-        const counts = await getStatusCounts(TAB_STATUSES);
-        setTabCounts(counts);
-      } catch {
-        // ignore
-      }
-    });
-  }, []);
+  useEffect(() => subscribeToOrderStatusChanged(loadTabCounts), [loadTabCounts]);
 
   useEffect(() => {
     (async () => {

@@ -224,6 +224,14 @@ export async function listOrdersController(req: Request, res: Response) {
       orderType = req.query.orderType as OrderType;
     }
 
+    let deliveryRiderId: string | undefined;
+    if (req.query.deliveryRiderId !== undefined) {
+      if (typeof req.query.deliveryRiderId !== "string" || !UUID_REGEX.test(req.query.deliveryRiderId)) {
+        return res.status(400).json({ success: false, message: "deliveryRiderId must be a valid uuid" });
+      }
+      deliveryRiderId = req.query.deliveryRiderId;
+    }
+
     let page: number | undefined;
     let pageSize: number | undefined;
     if (req.query.page !== undefined) {
@@ -281,6 +289,7 @@ export async function listOrdersController(req: Request, res: Response) {
         ...(orderType ? { orderType } : {}),
         ...(vendorIdFilter ? { vendorId: vendorIdFilter } : {}),
         ...(search ? { search } : {}),
+        ...(deliveryRiderId ? { deliveryRiderId } : {}),
         ...(page !== undefined ? { page } : {}),
         ...(pageSize !== undefined ? { pageSize } : {}),
         ...(cursor !== undefined ? { cursor } : {}),
@@ -825,7 +834,32 @@ export async function getStatusCountsController(req: Request, res: Response) {
       return res.status(400).json({ success: false, message: "groups must be a JSON object" });
     }
 
-    const counts = await getStatusCounts({ id: req.user.id, roles: req.user.roles }, groups);
+    let deliveryRiderId: string | undefined;
+    if (req.query.deliveryRiderId !== undefined) {
+      if (typeof req.query.deliveryRiderId !== "string" || !UUID_REGEX.test(req.query.deliveryRiderId)) {
+        return res.status(400).json({ success: false, message: "deliveryRiderId must be a valid uuid" });
+      }
+      deliveryRiderId = req.query.deliveryRiderId;
+    }
+
+    // Same 3000-char ceiling the list endpoint's schema applies, since a
+    // scanner batches comma-separated tracking ids into this too.
+    let search: string | undefined;
+    if (req.query.search !== undefined) {
+      if (typeof req.query.search !== "string" || req.query.search.length > 3000) {
+        return res.status(400).json({ success: false, message: "search must be a string of at most 3000 characters" });
+      }
+      search = req.query.search;
+    }
+
+    const counts = await getStatusCounts(
+      { id: req.user.id, roles: req.user.roles },
+      groups,
+      {
+        ...(deliveryRiderId ? { deliveryRiderId } : {}),
+        ...(search ? { search } : {}),
+      },
+    );
     return res.status(200).json({ success: true, data: counts });
   } catch (error: any) {
     return res.status(error.statusCode || 500).json({

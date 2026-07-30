@@ -93,6 +93,9 @@ export const createOrderSchema = z.object({
   // Vendor-declared: this shipment may be accepted in part without failing
   // the whole delivery. Informational only — see allow_partial_delivery on parcels.
   allowPartialDelivery: z.boolean().optional(),
+  // Places the order even though the vendor's account is past its block
+  // threshold. Honoured for super_admin only — see assertVendorCanCreateOrder.
+  overrideBillingBlock: z.boolean().optional(),
 });
 
 export type CreateOrderInput = z.infer<typeof createOrderSchema>;
@@ -227,6 +230,8 @@ export const listOrdersQuerySchema = paginationQuerySchema.extend({
   // scans before every further scan gets rejected outright. Sized for the
   // client's 100-term scan batch cap (order.service.ts MAX_PAGE_SIZE).
   search: z.string().max(3000).optional(),
+  // Narrows the list to parcels carried by one delivery rider.
+  deliveryRiderId: optionalUuidSchema,
   // Keyset pagination: opaque cursor + walk direction. A malformed cursor is
   // treated as "no cursor" by the service, so only the length is bounded here.
   cursor: z.string().max(400).optional(),

@@ -50,6 +50,7 @@ interface DraftRow {
   packageType: string;
   weightKg: string;
   codAmount: string;
+  itemValue: string;
   deliveryInstruction: string;
 }
 
@@ -68,7 +69,12 @@ const DELIVERY_INSTRUCTION_PRESETS = [
 
 // ── CSV helpers ───────────────────────────────────────────────────────────────
 
+// `sn` is a convenience column for whoever fills the sheet in - it is never
+// read into a draft row (the preview numbers rows itself). It stays in this
+// list rather than being download-only so the headerless positional fallback
+// below lines up with the template people actually copy.
 const TEMPLATE_HEADERS = [
+  'sn',
   'receiver_name',
   'receiver_phone',
   'receiver_alternate_phone',
@@ -79,14 +85,15 @@ const TEMPLATE_HEADERS = [
   'package_type',
   'weight_kg',
   'cod_amount',
+  'item_value',
   'delivery_instruction',
 ] as const;
 
 type TemplateColumn = (typeof TEMPLATE_HEADERS)[number];
 
 const SAMPLE_ROW = [
-  'John Doe', '9801234567', '', 'Gwarko, Lalitpur', 'Imadol', 'home_delivery',
-  'delivery', 'Parcel', '1', '0', 'Call before delivery',
+  '1', 'John Doe', '9801234567', '', 'Gwarko, Lalitpur', 'Imadol', 'home_delivery',
+  'delivery', 'Parcel', '1', '0', '0', 'Call before delivery',
 ];
 
 function downloadTemplate() {
@@ -179,6 +186,7 @@ function matrixToRows(allRows: string[][]): DraftRow[] {
       packageType: get('package_type'),
       weightKg: get('weight_kg'),
       codAmount: get('cod_amount'),
+      itemValue: get('item_value'),
       deliveryInstruction: get('delivery_instruction'),
     };
   });
@@ -218,6 +226,10 @@ function validateRow(row: DraftRow, index: number, destinations: LocationOption[
   if (row.codAmount.trim() !== '') {
     const parsed = Number(row.codAmount);
     if (!Number.isFinite(parsed) || parsed < 0) errors.codAmount = 'COD must be a non-negative number';
+  }
+  if (row.itemValue.trim() !== '') {
+    const parsed = Number(row.itemValue);
+    if (!Number.isFinite(parsed) || parsed < 0) errors.itemValue = 'item value must be a non-negative number';
   }
   if (row.weightKg.trim() !== '') {
     const parsed = Number(row.weightKg);
@@ -423,6 +435,7 @@ const BulkOrderPage: React.FC = () => {
       packageType: row.packageType.trim() || undefined,
       weightKg: row.weightKg.trim() !== '' ? Number(row.weightKg) : 1,
       codAmount: row.codAmount.trim() !== '' ? Number(row.codAmount) : 0,
+      itemValue: row.itemValue.trim() !== '' ? Number(row.itemValue) : 0,
       deliveryInstruction: row.deliveryInstruction.trim() || undefined,
     };
   };
@@ -684,6 +697,7 @@ const BulkOrderPage: React.FC = () => {
                     <th>Package</th>
                     <th>Weight (kg)</th>
                     <th>COD</th>
+                    <th>Item Value</th>
                     <th>Instruction</th>
                     <th>Status</th>
                     <th aria-label="Remove" />
@@ -724,6 +738,7 @@ const BulkOrderPage: React.FC = () => {
                         </td>
                         <td>{cell(i, 'weightKg', { type: 'number', min: 0, step: '0.1', placeholder: '1' })}</td>
                         <td>{cell(i, 'codAmount', { type: 'number', min: 0, step: '1', placeholder: '0' })}</td>
+                        <td>{cell(i, 'itemValue', { type: 'number', min: 0, step: '1', placeholder: '0' })}</td>
                         <td>
                           <input
                             className="bop-cell-input bop-cell-input--wide"

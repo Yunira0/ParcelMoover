@@ -24,6 +24,12 @@ import { resolveOwnVendorId, isStaffActor } from "./vendor-scope.service";
 import { invalidateVendorFinanceCache } from "./finance.service";
 import { emitWebhookEvent, emitWebhookEventsBatch } from "./webhookDispatch.service";
 import { getVendorStatusLabel } from "../utils/orderStatusLabel";
+import {
+  assertVendorCanCreateOrder,
+  evaluateVendorBillingAsync,
+  evaluateVendorsBillingAsync,
+  statusAffectsBalance,
+} from "./billing.service";
 
 type Party = { name: string; phone: string; alternate_phone?: string | null };
 function buildSearchText(trackingId: string, sender: Party, receiver: Party): string {
@@ -487,8 +493,12 @@ async function findOrCreateParty(
   });
 }
 
-async function createOrderCore(actor: OrderActor, data: CreateOrderInput) {
-  return _createOrderImpl(actor, data);
+async function createOrderCore(
+  actor: OrderActor,
+  data: CreateOrderInput,
+  options?: CreateOrderOptions,
+) {
+  return _createOrderImpl(actor, data, options);
 }
 
 // Same-day duplicate guard for interactive (single) order creation only - bulk
@@ -533,6 +543,12 @@ async function assertNotDuplicateOrder(actor: OrderActor, data: CreateOrderInput
   }
 }
 
+interface CreateOrderOptions {
+  // Set by bulkCreateOrders once it has cleared the importing vendor up front,
+  // so a 500-row import doesn't re-check the same account 500 times.
+  skipBillingCheck?: boolean;
+}
+
 export async function createOrder(actor: OrderActor, data: CreateOrderInput) {
   await assertNotDuplicateOrder(actor, data);
   const parcel = await _createOrderImpl(actor, data);
@@ -544,7 +560,11 @@ export async function createOrder(actor: OrderActor, data: CreateOrderInput) {
   return parcel;
 }
 
-async function _createOrderImpl(actor: OrderActor, data: CreateOrderInput) {
+async function _createOrderImpl(
+  actor: OrderActor,
+  data: CreateOrderInput,
+  options: CreateOrderOptions = {},
+) {
   if (data.weightKg !== undefined && (!Number.isFinite(data.weightKg) || data.weightKg <= 0)) {
     throw new AppError(400, "weightKg must be a positive number");
   }
@@ -612,6 +632,21 @@ async function _createOrderImpl(actor: OrderActor, data: CreateOrderInput) {
     throw new AppError(400, "Origin location not found or inactive");
   if (data.destinationLocationId && (!destinationLoc || !destinationLoc.is_active))
     throw new AppError(400, "Destination location not found or inactive");
+
+  // Credit control. Sits here rather than in a controller because order
+  // creation has three entry points - the dashboard, the bulk import, and the
+  // partner API at POST /api/v1/orders - and all three funnel through this
+  // function. A controller-level guard would leave the partner API open.
+  //
+  // The block follows the vendor, not the actor: an admin keying an order in on
+  // behalf of a blocked vendor is blocked too. Only a super_admin can override,
+  // and only by asking for it explicitly.
+  if (vendor && !options.skipBillingCheck) {
+    const overriding = data.overrideBillingBlock === true && actor.roles.includes("super_admin");
+    if (!overriding) {
+      await assertVendorCanCreateOrder(vendor.id);
+    }
+  }
 
   const resolvedOriginLocationId = data.originLocationId || data.sender.locationId || null;
   const resolvedDestinationLocationId = data.destinationLocationId || data.receiver.locationId || null;
@@ -1282,6 +1317,16 @@ export async function bulkCreateOrders(actor: OrderActor, input: BulkCreateOrder
     throw new AppError(400, `Maximum ${BULK_CREATE_MAX} orders per bulk request`);
   }
 
+  // Credit control, resolved once for the whole import instead of per row.
+  // When the importer is a vendor account every row belongs to that vendor, so
+  // one check clears the batch and the per-row guard can be skipped. A staff or
+  // sales importer can name a different vendor on each row, so those fall
+  // through to the per-row check (cheap - it reads the cached balance).
+  const importingVendorId = await resolveOwnVendorId(actor);
+  if (importingVendorId) {
+    await assertVendorCanCreateOrder(importingVendorId);
+  }
+
   let created = 0;
   let failed = 0;
   const results: Array<
@@ -1336,7 +1381,7 @@ export async function bulkCreateOrders(actor: OrderActor, input: BulkCreateOrder
 
     const chunk = toCreate.slice(start, start + BULK_CREATE_CONCURRENCY);
     const settled = await Promise.allSettled(
-      chunk.map(({ data }) => createOrderCore(actor, data)),
+      chunk.map(({ data }) => createOrderCore(actor, data, { skipBillingCheck: Boolean(importingVendorId) })),
     );
 
     settled.forEach((outcome, offset) => {
@@ -1398,6 +1443,9 @@ function buildOrdersWhere(
   // their own scope with it, never escape it.
   if (query.vendorId?.length) {
     conditions.push({ vendor_id: { in: query.vendorId } });
+  }
+  if (query.deliveryRiderId) {
+    conditions.push({ delivery_rider_id: query.deliveryRiderId });
   }
 
   const search = query.search?.trim();
@@ -1810,7 +1858,7 @@ export async function listOrders(
   // encoded in the cache key either, so it also has to skip the cache.
   const isDefaultUnfilteredQuery =
     !paginated && !query.status?.length && !query.orderType && !query.search &&
-    !query.vendorId?.length && !query.sortBy && vendorIds === undefined;
+    !query.vendorId?.length && !query.deliveryRiderId && !query.sortBy && vendorIds === undefined;
   // Export requests (withArrival) skip the shared cache so the enriched rows
   // never pollute the lean list cache and vice-versa.
   const cacheKey =
@@ -3405,6 +3453,13 @@ async function _updateParcelStatusImpl(
 
   await invalidateOrderCaches();
 
+  // A delivery (or an un-delivery) is what moves a vendor's account balance, so
+  // it's the moment to re-check whether they've crossed a credit threshold.
+  // Fire-and-forget: a billing notification must never fail the status change.
+  if (statusAffectsBalance(newStatus) || statusAffectsBalance(parcel.status)) {
+    evaluateVendorBillingAsync(parcel.vendor_id);
+  }
+
   // Notify the vendor when pickup or delivery fails — these are actionable
   // events the vendor needs to respond to (re-schedule, contact customer, etc.).
   if (newStatus === "failed_pickup") {
@@ -3869,6 +3924,16 @@ async function _bulkUpdateParcelStatusImpl(
 
   await invalidateOrderCaches();
 
+  // Same balance re-check as the single-update path, deduped by vendor so a
+  // 100-parcel batch costs one evaluation per affected vendor, not per parcel.
+  if (statusAffectsBalance(newStatus)) {
+    evaluateVendorsBillingAsync(parcels.map((p) => p.vendor_id));
+  } else {
+    evaluateVendorsBillingAsync(
+      parcels.filter((p) => statusAffectsBalance(p.status)).map((p) => p.vendor_id),
+    );
+  }
+
   // Bulk status changes no longer notify vendors or admins (see the single
   // update path) - a batch would otherwise fire a ping per parcel. Failed/
   // cancelled is the one exception (mirrors the single-update path): one
@@ -3991,6 +4056,7 @@ export async function applyExternalCarrierStatus(
       invalidateVendorFinanceCache(parcel.vendor_id).catch((err) =>
         console.error("[Redis] cache invalidation failed:", err),
       );
+      evaluateVendorBillingAsync(parcel.vendor_id);
     }
     return { applied: true };
   });
@@ -4074,6 +4140,7 @@ export async function applyExternalCarrierFollowUp(
 export async function getStatusCounts(
   actor: OrderActor,
   statusGroups: Record<string, string[]>,
+  filters: { deliveryRiderId?: string; search?: string } = {},
 ): Promise<Record<string, number>> {
   const scope = await getActorScope(actor);
   const allStatuses = [...new Set(Object.values(statusGroups).flat())];
@@ -4086,12 +4153,36 @@ export async function getStatusCounts(
         ? Prisma.sql`AND (pickup_rider_id = ${scope.riderId}::uuid OR delivery_rider_id = ${scope.riderId}::uuid)`
         : Prisma.empty;
 
+  // Caller-supplied filters, applied on top of the actor's own scope so the tab
+  // badges stay in step with the filtered list (see buildOrdersWhere).
+  const riderSql: Prisma.Sql = filters.deliveryRiderId
+    ? Prisma.sql`AND delivery_rider_id = ${filters.deliveryRiderId}::uuid`
+    : Prisma.empty;
+
+  // Mirrors buildOrdersWhere's search exactly, or a scan would show one row in
+  // the table while the tab above it still claimed the unfiltered total. A
+  // comma-separated list (a barcode scanner batching parcels) matches tracking
+  // ids outright; a single term goes through the same search_text trigram
+  // column the list query uses.
+  const searchSql: Prisma.Sql = (() => {
+    const search = filters.search?.trim();
+    if (!search) return Prisma.empty;
+
+    const terms = search.split(",").map((t) => t.trim()).filter(Boolean);
+    if (terms.length > 1) {
+      return Prisma.sql`AND lower(tracking_id) = ANY(${terms.map((t) => t.toLowerCase())})`;
+    }
+    return Prisma.sql`AND search_text ILIKE ${`%${search.toLowerCase()}%`}`;
+  })();
+
   const rows = await prisma.$queryRaw<{ status: string; cnt: bigint }[]>(Prisma.sql`
     SELECT status::text AS status, COUNT(*) AS cnt
     FROM parcels
     WHERE deleted_at IS NULL
       AND status::text = ANY(${allStatuses})
       ${scopeSql}
+      ${riderSql}
+      ${searchSql}
     GROUP BY status
   `);
 

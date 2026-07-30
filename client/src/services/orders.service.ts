@@ -124,6 +124,8 @@ export interface ListOrdersParams {
   search?: string;
   /** Narrow to these vendors. Server intersects it with the caller's own scope. */
   vendorId?: string[];
+  /** Narrows the list to parcels carried by one delivery rider. */
+  deliveryRiderId?: string;
   /** Display-only page hint echoed back in meta; position comes from the cursor. */
   page?: number;
   pageSize?: number;
@@ -265,6 +267,7 @@ export const getOrders = async (params?: ListOrdersParams, signal?: AbortSignal)
   if (params?.orderType) query.orderType = params.orderType;
   if (params?.vendorId?.length) query.vendorId = params.vendorId.join(',');
   if (params?.search) query.search = params.search;
+  if (params?.deliveryRiderId) query.deliveryRiderId = params.deliveryRiderId;
   if (params?.page !== undefined) query.page = String(params.page);
   if (params?.pageSize !== undefined) query.pageSize = String(params.pageSize);
   if (params?.cursor !== undefined) query.cursor = params.cursor;
@@ -335,9 +338,14 @@ export const getDashboardSummary = async (trendDays: 7 | 30 = 7) => {
 // and returns { pickup_ordered: 12, rider_assigned: 5 }.
 export const getStatusCounts = async (
   groups: Record<string, string[]>,
+  filters?: { deliveryRiderId?: string; search?: string },
 ): Promise<Record<string, number>> => {
   const response = await api.get('/orders/status-counts', {
-    params: { groups: JSON.stringify(groups) },
+    params: {
+      groups: JSON.stringify(groups),
+      ...(filters?.deliveryRiderId ? { deliveryRiderId: filters.deliveryRiderId } : {}),
+      ...(filters?.search ? { search: filters.search } : {}),
+    },
   });
   return response.data.data;
 };
@@ -590,6 +598,8 @@ export interface BulkCreateOrderRow {
   sender?: { name: string; phone: string; address?: string };
   receiver: { name: string; phone: string; alternatePhone?: string; address?: string; locationId?: string };
   codAmount?: number;
+  /** Declared value of the items in the parcel, separate from COD. */
+  itemValue?: number;
   weightKg?: number;
   orderType?: OrderType;
   serviceType?: ServiceType;

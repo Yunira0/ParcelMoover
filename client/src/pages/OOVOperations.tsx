@@ -137,27 +137,25 @@ const OOVOperations: React.FC = () => {
   const [reasonRemarks, setReasonRemarks] = useState('');
   const [tabCounts, setTabCounts] = useState<Record<string, number>>({});
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const counts = await getStatusCounts(TAB_STATUSES);
-        setTabCounts(counts);
-      } catch {
-        // non-fatal; tabs just won't show counts
-      }
-    })();
-  }, []);
+  // Badge counts follow the search, so a scanned parcel shows "1" on its tab
+  // instead of the unfiltered total. Guarded so a slow earlier request can't
+  // overwrite a newer search's counts.
+  const countsSeqRef = useRef(0);
+  const loadTabCounts = useCallback(async () => {
+    const seq = ++countsSeqRef.current;
+    try {
+      const counts = await getStatusCounts(
+        TAB_STATUSES,
+        debouncedSearch ? { search: debouncedSearch } : undefined,
+      );
+      if (seq === countsSeqRef.current) setTabCounts(counts);
+    } catch {
+      // non-fatal; tabs just won't show counts
+    }
+  }, [debouncedSearch]);
 
-  useEffect(() => {
-    return subscribeToOrderStatusChanged(async () => {
-      try {
-        const counts = await getStatusCounts(TAB_STATUSES);
-        setTabCounts(counts);
-      } catch {
-        // ignore
-      }
-    });
-  }, []);
+  useEffect(() => { void loadTabCounts(); }, [loadTabCounts]);
+  useEffect(() => subscribeToOrderStatusChanged(loadTabCounts), [loadTabCounts]);
 
   // Debounce search input so every keystroke doesn't fire a request.
   useEffect(() => {

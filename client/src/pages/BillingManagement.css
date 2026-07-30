@@ -1,0 +1,35 @@
+.billing-doc-link {
+  align-items: center;
+  color: var(--color-text-link, var(--color-border-primary));
+  display: inline-flex;
+  font-size: var(--font-size-xs);
+  gap: var(--space-1);
+  text-decoration: none;
+}
+
+.billing-doc-link:hover {
+  text-decoration: underline;
+}
+
+/* Verify/reject sit in the row itself — a reviewer works through the queue
+   top to bottom and shouldn't have to open a modal per claim. */
+.billing-review-cell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.billing-review-cell input {
+  background-color: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-default);
+  color: var(--color-text-default);
+  font-size: var(--font-size-xs);
+  padding: var(--space-1) var(--space-2);
+  width: 100%;
+}
+
+.billing-review-actions {
+  display: flex;
+  gap: var(--space-2);
+}

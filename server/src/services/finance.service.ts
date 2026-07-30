@@ -7,6 +7,7 @@ import { formatNepalDate } from "../utils/nepalTime";
 import { getDatePart, randomBase32 } from "../utils/trackingId";
 import { resolveOwnVendorId } from "./vendor-scope.service";
 import { createNotification } from "./notification.service";
+import { evaluateVendorBillingAsync } from "./billing.service";
 
 import { getActivePaymentMethodNames } from "./payment-method.service";
 import {
@@ -858,6 +859,9 @@ export async function payForSettlement(
     await invalidateRiderFinanceCache(settlement.rider_id);
   } else if (settlement.vendor_id) {
     await invalidateVendorFinanceCache(settlement.vendor_id);
+    // A payout debits the vendor's running account, so it can push them across
+    // a credit threshold just as a delivery can. Fire-and-forget.
+    evaluateVendorBillingAsync(settlement.vendor_id);
   }
 
   return {

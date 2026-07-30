@@ -24,8 +24,12 @@ function barcodeDataUrl(trackingId: string): string {
     format: 'CODE128',
     displayValue: false,
     margin: 0,
-    height: 55,
-    width: 1.8,
+    // Rendered far above the printed size (see .bc) so scaling it down in CSS
+    // never softens the bar edges - a blurry CODE128 is a scan failure.
+    // `width` is the narrow-bar module width in px: the single biggest lever on
+    // whether a printed barcode reads first time.
+    height: 110,
+    width: 4,
   });
   return canvas.toDataURL('image/png');
 }
@@ -281,7 +285,11 @@ export async function printLabels(orders: Order[]): Promise<void> {
 
   const qrUrls = await Promise.all(
     orders.map((o) =>
-      QRCode.toDataURL(o.trackingId, { width: 260, margin: 1, color: { dark: '#000000', light: '#ffffff' } }),
+      // margin 0 drops the built-in 1-module quiet zone so the printed box is
+      // entirely data - the spec's quiet zone is supplied by the surrounding
+      // white space in .codes instead. Rendered at ~4x the printed size so
+      // scaling it down in CSS never softens the modules.
+      QRCode.toDataURL(o.trackingId, { width: 320, margin: 0, color: { dark: '#000000', light: '#ffffff' } }),
     ),
   );
   const barcodeUrls = orders.map((o) => barcodeDataUrl(o.trackingId));
