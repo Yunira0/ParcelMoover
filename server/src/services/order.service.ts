@@ -122,6 +122,11 @@ const TERMINAL_STATUSES: parcel_status[] = [
   "returned_to_vendor",
 ];
 
+// The two statuses that mean "the rider handed the parcel over and took the
+// customer's cash" - i.e. the ones that stamp the COD ledger (see the
+// cod_collections upserts in updateParcelStatus / bulkUpdateParcelStatus).
+const DELIVERY_STATUSES: parcel_status[] = ["delivered", "partially_delivered"];
+
 // Hold / Loss & Damage are only reachable from the ops dashboard's dedicated
 // pages (HoldOperations / LossAndDamageOperations), both admin-gated in the
 // UI — the API must enforce the same restriction, not just hide the buttons.
@@ -1036,7 +1041,11 @@ export async function updateOrderDetails(
       writes.push(
         tx.cod_collections.updateMany({
           where: { parcel_id: parcel.id, payment_status: "pending" },
-          data: { cod_amount: data.codAmount },
+          // EDIT_BLOCKED_STATUSES keeps this path off delivered parcels, so
+          // nothing has been collected on this one yet - zeroing alongside the
+          // new COD also heals any row that drifted before un-delivery started
+          // reversing the ledger.
+          data: { cod_amount: data.codAmount, collected_amount: 0, collected_at: null },
         }),
       );
     }
@@ -2436,6 +2445,8 @@ async function computeDashboardSummary(
       pending_pickups_amount: string;
       pending_returns_amount: string;
       in_transit_amount: string;
+      pending_deliveries_amount: string;
+      todays_delivered_amount: string;
       total_delivered_amount: string;
       total_returns_amount: string;
       total_returned_to_vendor_amount: string;
@@ -2458,6 +2469,8 @@ async function computeDashboardSummary(
       COALESCE(SUM(cod_amount) FILTER (WHERE status::text = ANY(${PICKUP_PENDING_STATUSES})), 0) AS pending_pickups_amount,
       COALESCE(SUM(cod_amount) FILTER (WHERE status::text = ANY(${RETURN_PENDING_STATUSES})), 0) AS pending_returns_amount,
       COALESCE(SUM(cod_amount) FILTER (WHERE status::text = ANY(${IN_TRANSIT_STATUSES})), 0) AS in_transit_amount,
+      COALESCE(SUM(cod_amount) FILTER (WHERE status::text = ANY(${DELIVERY_PENDING_STATUSES})), 0) AS pending_deliveries_amount,
+      COALESCE(SUM(cod_amount) FILTER (WHERE status::text = ANY(ARRAY['delivered','partially_delivered']) AND delivered_at >= ${todayStart}), 0) AS todays_delivered_amount,
       COALESCE(SUM(cod_amount) FILTER (WHERE status::text = ANY(ARRAY['delivered','partially_delivered'])), 0) AS total_delivered_amount,
       COALESCE(SUM(cod_amount) FILTER (WHERE order_type::text = 'return'), 0) AS total_returns_amount,
       COALESCE(SUM(cod_amount) FILTER (WHERE status::text = 'returned_to_vendor'), 0) AS total_returned_to_vendor_amount
@@ -2481,6 +2494,8 @@ async function computeDashboardSummary(
   const pendingPickupsAmount = Number(overviewRow!.pending_pickups_amount);
   const pendingReturnsAmount = Number(overviewRow!.pending_returns_amount);
   const inTransitAmount = Number(overviewRow!.in_transit_amount);
+  const pendingDeliveriesAmount = Number(overviewRow!.pending_deliveries_amount);
+  const todaysDeliveredAmount = Number(overviewRow!.todays_delivered_amount);
   const totalDeliveredAmount = Number(overviewRow!.total_delivered_amount);
   const totalReturnsAmount = Number(overviewRow!.total_returns_amount);
   const totalReturnedToVendorAmount = Number(overviewRow!.total_returned_to_vendor_amount);
@@ -2679,6 +2694,7 @@ async function computeDashboardSummary(
       inTransit,
       inTransitAmount,
       pendingDeliveries,
+      pendingDeliveriesAmount,
       totalDelivered,
       totalDeliveredAmount,
       totalPickedUp,
@@ -2690,6 +2706,7 @@ async function computeDashboardSummary(
     today: {
       totalOrders: todaysOrders,
       delivered: todaysDelivered,
+      deliveredAmount: todaysDeliveredAmount,
       inTransit,
       returns: todaysReturns,
       returnedToVendor: todaysReturnedToVendor,
@@ -2840,6 +2857,67 @@ export async function notifyVendorOfParcel(
   }
 }
 
+// ── Undoing a delivery ───────────────────────────────────────────────────────
+// Only a super_admin can force a parcel back out of delivered/partially_
+// delivered. That has to reverse everything the delivery wrote, because the COD
+// ledger is what finance settles on: left alone, cod_collections keeps its
+// delivery-time collected_amount forever, and since a later COD edit only
+// re-syncs cod_amount (see updateOrder), the parcel ends up with COD 0 but a
+// non-zero collected amount - still listed as settleable, still counted in the
+// vendor's balance, for cash nobody is holding.
+
+/**
+ * Blocks the un-delivery when the COD has already been bundled into a statement
+ * or paid on either leg. Real money has moved at that point (and
+ * rider_remitted_amount / remitted_amount are frozen copies of the collected
+ * amount), so the statement has to be voided first - silently rewriting the
+ * ledger underneath a paid settlement would leave the books unbalanced.
+ */
+async function assertDeliveryReversible(parcelIds: string[]) {
+  const blocked = await prisma.cod_collections.findMany({
+    where: {
+      parcel_id: { in: parcelIds },
+      OR: [
+        { payment_status: "paid" },
+        { rider_payment_status: "paid" },
+        { settlement_items: { some: {} } },
+      ],
+    },
+    select: { parcels: { select: { tracking_id: true } } },
+  });
+  if (blocked.length > 0) {
+    const tags = blocked.map((c) => c.parcels.tracking_id).join(", ");
+    throw new AppError(
+      409,
+      `Cannot move ${tags} out of a delivered status: its COD is already in a settlement statement. Void or amend that statement first.`,
+    );
+  }
+}
+
+/** Clears the COD ledger side of a delivery. Parcel-side fields (delivered_at,
+ *  partial_*) are cleared through the same update that changes the status. */
+async function reverseDeliveryCollection(
+  tx: Prisma.TransactionClient,
+  parcelIds: string[],
+) {
+  await tx.cod_collections.updateMany({
+    where: { parcel_id: { in: parcelIds } },
+    data: { collected_amount: 0, collected_at: null },
+  });
+}
+
+/** Parcel columns to reset when a delivery is undone. */
+const UNDELIVER_PARCEL_FIELDS = {
+  delivered_at: null,
+  partial_cod_collected: null,
+  partial_delivery_remarks: null,
+} as const;
+
+/** True when this transition takes the parcel out of a delivered state -
+ *  delivered → partially_delivered (and back) re-stamps rather than reverses. */
+const isUndelivering = (from: parcel_status, to: string) =>
+  DELIVERY_STATUSES.includes(from) && !DELIVERY_STATUSES.includes(to as parcel_status);
+
 export async function updateParcelStatus(
   actor: OrderActor,
   parcelId: string,
@@ -2959,6 +3037,13 @@ async function _updateParcelStatusImpl(
     }
   }
 
+  // Undoing a delivery (super_admin only, since the transition map has no exit
+  // from delivered) must not leave settled COD behind it.
+  const undelivering = isUndelivering(parcel.status, newStatus);
+  if (undelivering) {
+    await assertDeliveryReversible([parcelId]);
+  }
+
   // Cancellation is allowed for admins and vendors (vendors may only cancel their own
   // orders, enforced by the vendor_id scope on the parcel lookup above) — kept in sync
   // with the bulk-update rule in _bulkUpdateParcelStatusImpl.
@@ -3072,6 +3157,12 @@ async function _updateParcelStatusImpl(
       (updateData as any).delivered_at = new Date();
       (updateData as any).partial_delivery_remarks = data.remarks || null;
       (updateData as any).partial_cod_collected = data.codCollected ?? 0;
+    }
+    // Side-effect: undoing a delivery clears the delivery's own record of it
+    // (timestamp + partial figures) along with the COD ledger below.
+    if (undelivering) {
+      Object.assign(updateData, UNDELIVER_PARCEL_FIELDS);
+      await reverseDeliveryCollection(tx, [parcelId]);
     }
     // Side-effect: update current_location_id
     if (data.locationId) {
@@ -3449,6 +3540,15 @@ async function _bulkUpdateParcelStatusImpl(
     }
   }
 
+  // Undoing a delivery (super_admin only, since the transition map has no exit
+  // from delivered) must not leave settled COD behind it.
+  const undeliveringIds = parcels
+    .filter((p) => isUndelivering(p.status, newStatus))
+    .map((p) => p.id);
+  if (undeliveringIds.length > 0) {
+    await assertDeliveryReversible(undeliveringIds);
+  }
+
   let toLocationId: string | null = null;
   let originLocationId: string | null = null;
   let riderId: string | null = null;
@@ -3579,6 +3679,17 @@ async function _bulkUpdateParcelStatusImpl(
       where: { id: { in: ids } },
       data: updateData,
     });
+
+    // Undoing a delivery clears the delivery's own record of it (timestamp +
+    // partial figures) along with the COD ledger. Scoped to the parcels that
+    // were actually in a delivered status - a batch can mix them.
+    if (undeliveringIds.length > 0) {
+      await tx.parcels.updateMany({
+        where: { id: { in: undeliveringIds } },
+        data: { ...UNDELIVER_PARCEL_FIELDS },
+      });
+      await reverseDeliveryCollection(tx, undeliveringIds);
+    }
 
     // Tag the COD record with whichever rider is now responsible for
     // collecting it, so rider-scoped COD/finance queries can find it -
@@ -3815,6 +3926,24 @@ export async function applyExternalCarrierStatus(
         (updateData as any).delivered_at = new Date();
       }
       await tx.parcels.update({ where: { id: parcelId }, data: updateData });
+      // A carrier delivery collects the COD just as an in-house rider does -
+      // without this the ledger stays at its order-creation default, and the
+      // parcel never becomes settleable to the vendor (both unsettled queries
+      // require collected_amount > 0). There is no rider leg to settle here,
+      // so only the vendor-facing collected amount is stamped.
+      if (targetStatus === "delivered" && Number(parcel.cod_amount) > 0) {
+        await tx.cod_collections.upsert({
+          where: { parcel_id: parcelId },
+          create: {
+            parcel_id: parcelId,
+            vendor_id: parcel.vendor_id,
+            cod_amount: parcel.cod_amount,
+            collected_amount: parcel.cod_amount,
+            collected_at: new Date(),
+          },
+          update: { collected_amount: parcel.cod_amount, collected_at: new Date() },
+        });
+      }
       await tx.parcel_status_history.create({
         data: {
           parcel_id: parcelId,

@@ -24,6 +24,7 @@ const EMPTY_SUMMARY: DashboardSummary = {
     inTransit: 0,
     inTransitAmount: 0,
     pendingDeliveries: 0,
+    pendingDeliveriesAmount: 0,
     totalDelivered: 0,
     totalDeliveredAmount: 0,
     totalReturns: 0,
@@ -34,6 +35,7 @@ const EMPTY_SUMMARY: DashboardSummary = {
   today: {
     totalOrders: 0,
     delivered: 0,
+    deliveredAmount: 0,
     inTransit: 0,
     returns: 0,
     returnedToVendor: 0,

@@ -188,6 +188,7 @@ export interface DashboardSummary {
     inTransit: number;
     inTransitAmount: number;
     pendingDeliveries: number;
+    pendingDeliveriesAmount: number;
     totalDelivered: number;
     totalDeliveredAmount: number;
     totalReturns: number;
@@ -199,6 +200,8 @@ export interface DashboardSummary {
   today: {
     totalOrders: number;
     delivered: number;
+    /** COD value of the parcels delivered today. */
+    deliveredAmount: number;
     inTransit: number;
     returns: number;
     /** Parcels that became returned_to_vendor today (by status-history date). */

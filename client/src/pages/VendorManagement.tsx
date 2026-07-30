@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Search, ChevronDown } from 'lucide-react';
 import Table, { TableRowActions } from '../components/Table';
+import { toBsDate } from '../utils/nepaliDate';
 import UserActionModal from '../components/UserActionModal';
 import PageHeader from '../components/PageHeader';
 import SegmentedTabs from '../components/SegmentedTabs';
@@ -138,8 +139,9 @@ const VendorManagement: React.FC = () => {
       ),
       width: '150px',
     },
-    { header: 'JOINED', accessor: 'joined' as keyof VendorUser },
-    { header: 'LAST ORDERED DATE', accessor: 'lastOrderedDate' as keyof VendorUser },
+    // The API sends these as AD "YYYY-MM-DD"; every date shown in this app is BS.
+    { header: 'JOINED', accessor: (v: VendorUser) => toBsDate(v.joined) || '—' },
+    { header: 'LAST ORDERED DATE', accessor: (v: VendorUser) => toBsDate(v.lastOrderedDate) || '—' },
     ...(canEdit
       ? [{
           header: 'ACTION',

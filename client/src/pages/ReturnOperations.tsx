@@ -7,6 +7,7 @@ import SegmentedTabs from '../components/SegmentedTabs';
 import PageHeader from '../components/PageHeader';
 import Pagination from '../components/Pagination';
 import StatusChip from '../components/StatusChip';
+import QuickRemarkPopup from '../components/QuickRemarkPopup';
 import {
   getOrders,
   bulkUpdateOrderStatus,
@@ -16,7 +17,7 @@ import {
 } from '../services/orders.service';
 import { downloadExcel } from '../utils/excel';
 import RiderAssignModal from '../components/RiderAssignModal';
-import { toBsDate } from '../utils/nepaliDate';
+import { toBsDate, toBsDateTime } from '../utils/nepaliDate';
 import { printLabels } from '../utils/printLabels';
 import './ReturnOperations.css';
 
@@ -55,7 +56,7 @@ const STATUS_LABELS: Partial<Record<ParcelStatus, string>> = {
 // Type 2 (RTO of a failed delivery) maps by its real status; Type 1 (an
 // order_type='return' reverse shipment) maps by where it is in its lifecycle.
 const returnStage = (o: Order): ReturnTab | null => {
-  if (o.status === 'failed_delivery' || o.status === 'follow_up' || o.status === 'partially_delivered') return 'follow_up';
+  if (o.status === 'failed_delivery' || o.status === 'follow_up') return 'follow_up';
   if (o.status === 'ready_to_return') return 'ready_to_return';
   if (o.status === 'sent_to_vendor') return 'sent_to_vendor';
   if (o.status === 'returned_to_vendor') return 'returned_to_vendor';
@@ -72,7 +73,7 @@ const formatMoney = (value: number) => value.toLocaleString(undefined, { maximum
 // Every status that can put a parcel into one of the four return tabs, on top
 // of the separate orderType==='return' sweep below (see returnStage).
 const RETURN_STATUS_FILTER: ParcelStatus[] = [
-  'failed_delivery', 'follow_up', 'partially_delivered', 'ready_to_return', 'sent_to_vendor', 'returned_to_vendor',
+  'failed_delivery', 'follow_up', 'ready_to_return', 'sent_to_vendor', 'returned_to_vendor',
 ];
 const SERVER_FETCH_PAGE_SIZE = 100;
 const MAX_FETCH_PAGES = 20; // safety cap: 2000 orders per sweep
@@ -113,6 +114,7 @@ const ReturnOperations: React.FC = () => {
   // Rider-assignment popup for ready_to_return → sent_to_vendor.
   const [riderModalOpen, setRiderModalOpen] = useState(false);
   const [pendingIds, setPendingIds] = useState<string[]>([]);
+  const [remarkPopupOrder, setRemarkPopupOrder] = useState<Order | null>(null);
 
   // The follow_up/ready_to_return/sent_to_vendor/returned_to_vendor split
   // depends on orderType *and* status together (see returnStage below), which
@@ -254,16 +256,21 @@ const ReturnOperations: React.FC = () => {
   };
 
   const downloadCsv = () => {
-    const headers = ['#', 'Tracking ID', 'Type', 'Status', 'Sender', 'Receiver', 'Weight', 'COD'];
+    const headers = ['#', 'Date', 'Tracking ID', 'Type', 'Sender', 'Receiver', 'Location', 'Address', 'Weight', 'COD', 'Status', 'Last Updated', 'Remarks'];
     const rows = filteredOrders.map((order) => [
       `#${order.orderNumber}`,
+      toBsDate(order.createdAt) || '',
       order.trackingId,
       order.orderType === 'return' ? 'Return order' : 'RTO',
-      STATUS_LABELS[order.status] || order.status,
       order.senderName,
       order.receiverName,
+      order.destination,
+      order.receiverAddress || '',
       order.weightKg ? `${order.weightKg} Kg` : '',
       order.codAmount,
+      STATUS_LABELS[order.status] || order.status,
+      toBsDate(order.lastUpdatedAt) || '',
+      order.remarks || '',
     ]);
     downloadExcel('return-orders.xlsx', 'Return Orders', headers, rows);
   };
@@ -305,17 +312,29 @@ const ReturnOperations: React.FC = () => {
       accessor: (order: Order) => (
         <div className="return-party-cell"><span>{order.senderName}</span><small>{order.senderPhone}</small></div>
       ),
-      width: '160px',
+      width: '200px',
     },
     {
       header: 'RECEIVER',
       accessor: (order: Order) => (
         <div className="return-party-cell"><span>{order.receiverName}</span><small>{order.receiverPhone}</small></div>
       ),
-      width: '160px',
+      width: '200px',
+    },
+    {
+      header: 'LOCATION',
+      // Destination hub plus the receiver's street address - riders and hub
+      // staff need both to route a parcel, not just the hub name.
+      accessor: (order: Order) => (
+        <div className="return-location-cell">
+          <span>{order.destination || '-'}</span>
+          {order.receiverAddress && <small title={order.receiverAddress}>{order.receiverAddress}</small>}
+        </div>
+      ),
+      width: '180px',
     },
     { header: 'WEIGHT', accessor: (order: Order) => (order.weightKg ? `${order.weightKg} Kg` : '-'), width: '80px' },
-    { header: 'COD', accessor: (order: Order) => formatMoney(order.codAmount), width: '100px' },
+    { header: 'COD', accessor: (order: Order) => formatMoney(order.codAmount), width: '113px' },
     {
       header: 'STATUS',
       accessor: (order: Order) => (
@@ -324,6 +343,31 @@ const ReturnOperations: React.FC = () => {
         </StatusChip>
       ),
       width: '170px',
+    },
+    {
+      header: 'LAST UPDATED',
+      accessor: (order: Order) => (
+        <div className="return-updated-cell">
+          <span>{order.lastUpdatedBy || '-'}</span>
+          <span>{toBsDateTime(order.lastUpdatedAt) || '-'}</span>
+        </div>
+      ),
+      width: '155px',
+    },
+    {
+      header: 'REMARKS',
+      accessor: (order: Order) => (
+        <button
+          type="button"
+          className="return-remarks-cell-btn"
+          onClick={() => setRemarkPopupOrder(order)}
+          title={order.remarks || 'Add remark'}
+        >
+          {order.remarks || '-'}
+        </button>
+      ),
+      width: '160px',
+      className: 'return-remarks-cell',
     },
   ];
 
@@ -399,7 +443,7 @@ const ReturnOperations: React.FC = () => {
         loading={loading}
         loadingMessage="Loading return orders..."
         emptyMessage="No return orders in this stage."
-        minWidth="1180px"
+        minWidth="1740px"
         tableClassName="return-table"
       />
 
@@ -421,6 +465,14 @@ const ReturnOperations: React.FC = () => {
         onClose={() => setRiderModalOpen(false)}
         onConfirm={confirmSendToVendor}
       />
+
+      {remarkPopupOrder && (
+        <QuickRemarkPopup
+          orderId={remarkPopupOrder.id}
+          trackingId={remarkPopupOrder.trackingId}
+          onClose={() => setRemarkPopupOrder(null)}
+        />
+      )}
     </div>
   );
 };

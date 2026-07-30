@@ -16,7 +16,8 @@
     "seed:demo-users": "ts-node --transpile-only prisma/seed-demo-users.ts",
     "seed:sales-orders": "ts-node --transpile-only prisma/seed-sales-orders.ts",
     "migrate:encrypt-uploads": "ts-node --transpile-only scripts/encrypt-existing-uploads.ts",
-    "reconcile:settlement-status": "ts-node --transpile-only scripts/reconcile-settlement-payment-status.ts"
+    "reconcile:settlement-status": "ts-node --transpile-only scripts/reconcile-settlement-payment-status.ts",
+    "reconcile:undelivered-cod": "ts-node --transpile-only scripts/reconcile-undelivered-cod.ts"
   },
   "keywords": [],
   "author": "",

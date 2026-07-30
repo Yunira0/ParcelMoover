@@ -457,7 +457,7 @@ const DispatchOperations: React.FC = () => {
       // fall back to the currently loaded page
     }
 
-    const headers = ['SN', 'Date', 'Tracking ID', 'Order Type', 'Sender', 'Receiver', 'Location', 'Weight', 'COD', 'Attempt', 'Delivery Rider', 'Last Updated', 'Remarks'];
+    const headers = ['SN', 'Date', 'Tracking ID', 'Order Type', 'Sender', 'Receiver', 'Location', 'Address', 'Weight', 'COD', 'Attempt', 'Delivery Rider', 'Last Updated', 'Remarks'];
     const csvRows = rows.map(order => [
       `#${order.orderNumber}`,
       toBsDate(order.createdAt) || '',
@@ -466,6 +466,7 @@ const DispatchOperations: React.FC = () => {
       order.senderName,
       order.receiverName,
       order.destination,
+      order.receiverAddress || '',
       order.weightKg ? `${order.weightKg} Kg` : '',
       formatMoney(order.codAmount),
       order.attemptCount,
@@ -526,7 +527,18 @@ const DispatchOperations: React.FC = () => {
       ),
       width: '170px',
     },
-    { header: 'LOCATION', accessor: (order: Order) => order.destination || '-', width: '140px' },
+    {
+      header: 'LOCATION',
+      // Destination hub plus the receiver's street address - riders and hub
+      // staff need both to route a parcel, not just the hub name.
+      accessor: (order: Order) => (
+        <div className="dispatch-location-cell">
+          <span>{order.destination || '-'}</span>
+          {order.receiverAddress && <small title={order.receiverAddress}>{order.receiverAddress}</small>}
+        </div>
+      ),
+      width: '190px',
+    },
     { header: 'WEIGHT', accessor: (order: Order) => (order.weightKg ? `${order.weightKg} Kg` : '-'), width: '90px' },
     { header: 'COD', accessor: (order: Order) => formatMoney(order.codAmount), width: '100px' },
     { header: 'ATTEMPT', accessor: (order: Order) => order.attemptCount, width: '90px' },
@@ -814,7 +826,7 @@ const DispatchOperations: React.FC = () => {
         loading={loading && orders.length === 0}
         loadingMessage="Loading dispatch orders..."
         emptyMessage="No dispatch orders found."
-        minWidth="1680px"
+        minWidth="1730px"
         tableClassName="dispatch-table"
       />
 

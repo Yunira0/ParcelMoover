@@ -164,6 +164,28 @@
   font-weight: var(--font-weight-regular);
 }
 
+/* Destination hub on top, receiver address beneath it. */
+.dispatch-location-cell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.dispatch-location-cell span {
+  color: var(--color-text-default);
+  font-weight: var(--font-weight-semi-bold);
+}
+
+.dispatch-location-cell small {
+  color: var(--color-text-placeholder);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-regular);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .dispatch-remarks-cell {
   max-width: 160px;
   white-space: normal;

@@ -416,7 +416,7 @@ const OOVOperations: React.FC = () => {
   };
 
   const buildExportRows = (rows: Order[]) => {
-    const headers = ['#', 'Date', 'Tracking ID', 'Order Type', 'Sender', 'Receiver', 'Location', 'Weight', 'COD', 'Last Updated', 'Remarks'];
+    const headers = ['#', 'Date', 'Tracking ID', 'Order Type', 'Sender', 'Receiver', 'Location', 'Address', 'Weight', 'COD', 'Last Updated', 'Remarks'];
     const dataRows = rows.map(order => [
       `#${order.orderNumber}`,
       toBsDate(order.createdAt),
@@ -425,6 +425,7 @@ const OOVOperations: React.FC = () => {
       order.senderName,
       order.receiverName,
       order.destination,
+      order.receiverAddress || '',
       order.weightKg ? `${order.weightKg} Kg` : '',
       order.codAmount,
       toBsDate(order.lastUpdatedAt) || '',
@@ -495,7 +496,18 @@ const OOVOperations: React.FC = () => {
       ),
       width: '238px',
     },
-    { header: 'LOCATION', accessor: (order: Order) => order.destination || '-', width: '130px' },
+    {
+      header: 'LOCATION',
+      // Destination hub plus the receiver's street address - riders and hub
+      // staff need both to route a parcel, not just the hub name.
+      accessor: (order: Order) => (
+        <div className="oov-location-cell">
+          <span>{order.destination || '-'}</span>
+          {order.receiverAddress && <small title={order.receiverAddress}>{order.receiverAddress}</small>}
+        </div>
+      ),
+      width: '180px',
+    },
     { header: 'WEIGHT', accessor: (order: Order) => (order.weightKg ? `${order.weightKg} Kg` : '-'), width: '80px' },
     { header: 'COD', accessor: (order: Order) => formatMoney(order.codAmount), width: '113px' },
     {
@@ -730,7 +742,7 @@ const OOVOperations: React.FC = () => {
         loading={loading && orders.length === 0}
         loadingMessage="Loading orders..."
         emptyMessage="No orders found."
-        minWidth="1480px"
+        minWidth="1530px"
         tableClassName="oov-table"
       />
 
