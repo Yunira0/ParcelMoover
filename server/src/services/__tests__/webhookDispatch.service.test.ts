@@ -34,7 +34,7 @@ describe("emitWebhookEvent", () => {
     const createMany = vi.fn().mockResolvedValue({ count: 1 });
     const tx = {
       webhook_endpoints: {
-        findMany: vi.fn().mockResolvedValue([{ id: "ep-1", event_types: [] }]),
+        findMany: vi.fn().mockResolvedValue([{ id: "ep-1", vendor_id: "vendor-1", event_types: [] }]),
       },
       webhook_deliveries: { createMany },
     } as any;

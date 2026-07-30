@@ -11,6 +11,7 @@ import {
   updateOrderStatusSchema,
   bulkUpdateOrderStatusSchema,
   listOrdersQuerySchema,
+  orderFilterOptionsQuerySchema,
   addOrderRemarkSchema,
   runSheetQuerySchema,
   redirectOrderSchema,
@@ -22,6 +23,7 @@ import {
   createOrderController,
   dashboardSummaryController,
   getOrderByTrackingIdController,
+  getOrderFilterOptionsController,
   getPublicOrderTrackingController,
   getSenderProfileController,
   getStatusCountsController,
@@ -172,6 +174,18 @@ orderRouter.get(
   orderReadLimiter,
   validate(runSheetQuerySchema, "query"),
   riderRunSheetController,
+);
+
+// GET /orders/filter-options — lean, tab-scoped values for the orders list
+// page's origin/rider/destination dropdowns (must come before "/").
+orderRouter.get(
+  "/filter-options",
+  authMiddleware,
+  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider", "sales"),
+  requireStaffPermission("ORDER_ACCESS"),
+  orderReadLimiter,
+  validate(orderFilterOptionsQuerySchema, "query"),
+  getOrderFilterOptionsController,
 );
 
 orderRouter.get(

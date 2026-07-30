@@ -29,11 +29,13 @@ import NepaliDatePicker from '../components/NepaliDatePicker';
 import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react';
 import {
   getOrders,
+  getOrderFilterOptions,
   redirectOrder,
   subscribeToOrderStatusChanged,
   ORDER_SORT_FIELDS,
   type CreateOrderInput,
   type Order,
+  type OrderFilterOptions,
   type OrdersPageMeta,
   type OrderSortField,
   type ParcelStatus,
@@ -250,7 +252,7 @@ const OrderManagement: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const [orders, setOrders] = useState<Order[]>([]);
   const [meta, setMeta] = useState<OrdersPageMeta | null>(null);
-  const [optionsOrders, setOptionsOrders] = useState<Order[]>([]);
+  const [filterOptionsData, setFilterOptionsData] = useState<OrderFilterOptions>({ origins: [], destinations: [], riders: [] });
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [filter, setFilter] = useState<FilterTab>(() => {
@@ -442,9 +444,9 @@ const OrderManagement: React.FC = () => {
     let cancelled = false;
     (async () => {
       try {
-        const res = await getOrders({ status: TAB_GROUPS[filter] });
-        if (!cancelled && res?.success && Array.isArray(res.data)) {
-          setOptionsOrders(res.data);
+        const res = await getOrderFilterOptions(TAB_GROUPS[filter]);
+        if (!cancelled && res?.success && res.data) {
+          setFilterOptionsData(res.data);
         }
       } catch {
         // dropdown options just won't refresh; not fatal
@@ -469,11 +471,11 @@ const OrderManagement: React.FC = () => {
 
   const filterOptions = useMemo(() => {
     return {
-      origins: uniqueValues(optionsOrders.map(order => order.origin)),
-      riders: uniqueValues(optionsOrders.map(order => order.riderName || '')),
-      destinations: uniqueValues(optionsOrders.map(order => order.destination)),
+      origins: uniqueValues(filterOptionsData.origins),
+      riders: uniqueValues(filterOptionsData.riders),
+      destinations: uniqueValues(filterOptionsData.destinations),
     };
-  }, [optionsOrders]);
+  }, [filterOptionsData]);
 
   // Status/search are already applied server-side; only the filters the
   // backend has no query param for are applied here, on top of the current page.

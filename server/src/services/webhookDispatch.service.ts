@@ -39,29 +39,56 @@ export async function emitWebhookEvent(
   eventType: string,
   data: WebhookEventData,
 ): Promise<void> {
+  await emitWebhookEventsBatch(tx, eventType, [{ vendorId, data }]);
+}
+
+/**
+ * Same as emitWebhookEvent, but for many (vendorId, data) pairs sharing one
+ * eventType in a single round trip - one endpoint lookup keyed on all vendor
+ * ids instead of one lookup per event, and one createMany for every delivery
+ * row. Built for bulk status-change requests, where the naive per-parcel
+ * emitWebhookEvent call was N sequential queries inside one open transaction.
+ */
+export async function emitWebhookEventsBatch(
+  tx: Prisma.TransactionClient,
+  eventType: string,
+  events: Array<{ vendorId: string; data: WebhookEventData }>,
+): Promise<void> {
+  if (events.length === 0) return;
+
+  const vendorIds = Array.from(new Set(events.map((e) => e.vendorId)));
   const endpoints = await tx.webhook_endpoints.findMany({
     where: {
-      vendor_id: vendorId,
+      vendor_id: { in: vendorIds },
       enabled: true,
       disabled_at: null,
     },
-    select: { id: true, event_types: true },
+    select: { id: true, vendor_id: true, event_types: true },
   });
+  if (endpoints.length === 0) return;
 
-  const targets = endpoints.filter(
-    (e) => e.event_types.length === 0 || e.event_types.includes(eventType),
-  );
-  if (targets.length === 0) return;
+  const endpointsByVendor = new Map<string, typeof endpoints>();
+  for (const endpoint of endpoints) {
+    const list = endpointsByVendor.get(endpoint.vendor_id);
+    if (list) list.push(endpoint);
+    else endpointsByVendor.set(endpoint.vendor_id, [endpoint]);
+  }
 
   const createdAt = new Date();
-  await tx.webhook_deliveries.createMany({
-    data: targets.map((endpoint) => {
+  const rows: Prisma.webhook_deliveriesCreateManyInput[] = [];
+  for (const event of events) {
+    const vendorEndpoints = endpointsByVendor.get(event.vendorId);
+    if (!vendorEndpoints) continue;
+    const targets = vendorEndpoints.filter(
+      (e) => e.event_types.length === 0 || e.event_types.includes(eventType),
+    );
+    for (const endpoint of targets) {
       // One id shared by the X-ParcelMoover-Delivery header and the payload's
       // own `id` field (previously two independent randomUUID() calls) - a
       // vendor dedup-ing on whichever one they noticed first should always
       // get the same value back on retries.
       const eventId = crypto.randomUUID();
-      return {
+      rows.push({
         webhook_endpoint_id: endpoint.id,
         event_type: eventType,
         event_id: eventId,
@@ -69,13 +96,15 @@ export async function emitWebhookEvent(
           id: eventId,
           type: eventType,
           created_at: createdAt.toISOString(),
-          data,
+          data: event.data,
         } as Prisma.InputJsonValue,
         status: "pending",
         next_attempt_at: createdAt,
-      };
-    }),
-  });
+      });
+    }
+  }
+  if (rows.length === 0) return;
+  await tx.webhook_deliveries.createMany({ data: rows });
 }
 
 type PendingDelivery = {

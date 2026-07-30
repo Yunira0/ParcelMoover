@@ -235,6 +235,13 @@ export const listOrdersQuerySchema = paginationQuerySchema.extend({
 
 export type ListOrdersQuery = z.infer<typeof listOrdersQuerySchema>;
 
+// GET /orders/filter-options — just the status scoping listOrdersQuerySchema
+// already validates, without the pagination/search/sort fields that endpoint
+// doesn't use.
+export const orderFilterOptionsQuerySchema = z.object({
+  status: listOrdersQuerySchema.shape.status,
+});
+
 // ── Rider run sheet (query params) ───────────────────────────────────────────
 
 export const runSheetQuerySchema = z.object({

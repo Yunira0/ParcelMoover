@@ -277,6 +277,26 @@ export const getOrders = async (params?: ListOrdersParams, signal?: AbortSignal)
   return response.data;
 };
 
+export interface OrderFilterOptions {
+  origins: string[];
+  destinations: string[];
+  riders: string[];
+}
+
+// Lean, tab-scoped values for the orders list page's filter dropdowns -
+// deliberately not routed through getOrders/listOrders, whose page is only
+// 10 rows and whose full include is too heavy to reuse just for 3 strings.
+export const getOrderFilterOptions = async (
+  status?: ParcelStatus[],
+  signal?: AbortSignal,
+): Promise<{ success: boolean; data: OrderFilterOptions }> => {
+  const response = await api.get('/orders/filter-options', {
+    params: status?.length ? { status: status.join(',') } : {},
+    signal,
+  });
+  return response.data;
+};
+
 // Fetches every order matching the given filters by walking the keyset-paginated
 // endpoint page by page. Used for exports/reports, where the default flat list is
 // capped (see DEFAULT_LIST_CAP on the server) and would silently drop rows.

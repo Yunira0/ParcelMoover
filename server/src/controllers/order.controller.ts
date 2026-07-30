@@ -6,6 +6,7 @@ import {
   createOrder,
   getDashboardSummary,
   getOrderByTrackingId,
+  getOrderFilterOptions,
   getPublicOrderTracking,
   getRiderRunSheet,
   getSenderProfile,
@@ -299,6 +300,37 @@ export async function listOrdersController(req: Request, res: Response) {
     return res.status(error.statusCode || 500).json({
       success: false,
       message: error.message || "Failed to load orders",
+    });
+  }
+}
+
+// GET /orders/filter-options — lean, tab-scoped values for the orders list
+// page's origin/rider/destination filter dropdowns. Deliberately separate
+// from listOrdersController: that endpoint's page size is small (10 rows) and
+// its full include is heavy, neither of which fit "representative dropdown
+// values for the current tab".
+export async function getOrderFilterOptionsController(req: Request, res: Response) {
+  try {
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized",
+      });
+    }
+
+    let status: ParcelStatus[] | undefined;
+    try {
+      status = parseStatusQuery(req.query.status);
+    } catch (e: any) {
+      return res.status(400).json({ success: false, message: e.message });
+    }
+
+    const data = await getOrderFilterOptions({ id: req.user.id, roles: req.user.roles }, status);
+    return res.status(200).json({ success: true, data });
+  } catch (error: any) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to load filter options",
     });
   }
 }

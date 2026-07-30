@@ -22,7 +22,7 @@ import { generateRunSheetNo } from "../utils/runSheetNo";
 import { NEPAL_UTC_OFFSET_MS, formatNepalDate as formatDate } from "../utils/nepalTime";
 import { resolveOwnVendorId, isStaffActor } from "./vendor-scope.service";
 import { invalidateVendorFinanceCache } from "./finance.service";
-import { emitWebhookEvent } from "./webhookDispatch.service";
+import { emitWebhookEvent, emitWebhookEventsBatch } from "./webhookDispatch.service";
 import { getVendorStatusLabel } from "../utils/orderStatusLabel";
 
 type Party = { name: string; phone: string; alternate_phone?: string | null };
@@ -218,18 +218,33 @@ async function withParcelStatusLocks<T>(parcelIds: string[], fn: () => Promise<T
   const uniqueIds = Array.from(new Set(parcelIds));
   const acquiredKeys: string[] = [];
   try {
-    for (const id of uniqueIds) {
-      const key = `${PARCEL_STATUS_LOCK_PREFIX}${id}`;
-      let acquired: string | null = "SKIPPED";
-      try {
-        acquired = await redis.set(key, "1", "EX", PARCEL_STATUS_LOCK_TTL_SECONDS, "NX");
-      } catch (error) {
-        console.error("[Redis] Parcel status lock acquisition failed, proceeding without lock:", error);
+    // One pipelined round trip for all ids rather than N sequential SET NX
+    // calls — a bulk status change over e.g. 200 parcels was previously
+    // paying 200 back-to-back Redis latencies just to acquire locks.
+    let results: Array<[Error | null, unknown]> | null = null;
+    try {
+      const pipeline = redis.pipeline();
+      for (const id of uniqueIds) {
+        pipeline.set(`${PARCEL_STATUS_LOCK_PREFIX}${id}`, "1", "EX", PARCEL_STATUS_LOCK_TTL_SECONDS, "NX");
       }
-      if (!acquired) {
+      results = await pipeline.exec();
+    } catch (error) {
+      console.error("[Redis] Parcel status lock acquisition failed, proceeding without lock:", error);
+    }
+    if (results) {
+      let contended = false;
+      uniqueIds.forEach((id, i) => {
+        const [err, value] = results![i] ?? [null, null];
+        if (err) return; // this particular SET failed - treat as skipped, not locked
+        if (value) {
+          acquiredKeys.push(`${PARCEL_STATUS_LOCK_PREFIX}${id}`);
+        } else {
+          contended = true; // key already held by another in-flight request
+        }
+      });
+      if (contended) {
         throw new AppError(409, "This order is being updated by another request - please retry.");
       }
-      acquiredKeys.push(key);
     }
     return await fn();
   } finally {
@@ -690,59 +705,59 @@ async function _createOrderImpl(actor: OrderActor, data: CreateOrderInput) {
       },
     });
 
-    // All secondary writes are independent — run them in parallel.
-    await Promise.all([
-      tx.parcel_status_history.create({
+    // Secondary writes are logically independent, but tx is bound to a
+    // single Postgres connection - Promise.all here doesn't run them in
+    // parallel, it pipelines overlapping queries onto that one client, which
+    // pg now deprecates ("client.query() called while already executing a
+    // query", removed in pg@9). Awaited sequentially instead; same cost.
+    await tx.parcel_status_history.create({
+      data: {
+        parcel_id: parcel.id,
+        old_status: null,
+        new_status: "pickup_ordered",
+        location_id: parcel.current_location_id,
+        changed_by: actor.id,
+        remarks: "Order created",
+      },
+    });
+    await tx.pickup_tasks.create({
+      data: {
+        parcel_id: parcel.id,
+        pickup_address: data.pickupAddress || data.sender.address || null,
+        scheduled_at: data.scheduledPickupAt ? new Date(data.scheduledPickupAt) : null,
+        status: "pickup_ordered",
+      },
+    });
+    await tx.cod_collections.create({
+      data: {
+        parcel_id: parcel.id,
+        vendor_id: vendor?.id || null,
+        cod_amount: codAmount,
+        payment_status: "pending",
+      },
+    });
+    await tx.audit_logs.create({
+      data: {
+        actor_id: actor.id,
+        entity_type: "parcel",
+        entity_id: parcel.id,
+        action: "CREATE_ORDER",
+        new_data: {
+          trackingId: parcel.tracking_id,
+          senderId: sender.id,
+          receiverId: receiver.id,
+        },
+      },
+    });
+    if (data.remarks?.trim()) {
+      await tx.parcel_remarks.create({
         data: {
           parcel_id: parcel.id,
-          old_status: null,
-          new_status: "pickup_ordered",
-          location_id: parcel.current_location_id,
-          changed_by: actor.id,
-          remarks: "Order created",
+          user_id: actor.id,
+          remark: data.remarks.trim(),
         },
-      }),
-      tx.pickup_tasks.create({
-        data: {
-          parcel_id: parcel.id,
-          pickup_address: data.pickupAddress || data.sender.address || null,
-          scheduled_at: data.scheduledPickupAt ? new Date(data.scheduledPickupAt) : null,
-          status: "pickup_ordered",
-        },
-      }),
-      tx.cod_collections.create({
-        data: {
-          parcel_id: parcel.id,
-          vendor_id: vendor?.id || null,
-          cod_amount: codAmount,
-          payment_status: "pending",
-        },
-      }),
-      tx.audit_logs.create({
-        data: {
-          actor_id: actor.id,
-          entity_type: "parcel",
-          entity_id: parcel.id,
-          action: "CREATE_ORDER",
-          new_data: {
-            trackingId: parcel.tracking_id,
-            senderId: sender.id,
-            receiverId: receiver.id,
-          },
-        },
-      }),
-      ...(data.remarks?.trim()
-        ? [
-            tx.parcel_remarks.create({
-              data: {
-                parcel_id: parcel.id,
-                user_id: actor.id,
-                remark: data.remarks.trim(),
-              },
-            }),
-          ]
-        : []),
-    ]);
+      });
+    }
 
     return parcel;
   });
@@ -1190,42 +1205,43 @@ export async function redirectOrder(
       },
     });
 
-    await Promise.all([
-      // Same-status history row, matching how parcel edits are recorded: the
-      // parcel didn't move, but the timeline should show the diversion.
-      tx.parcel_status_history.create({
-        data: {
-          parcel_id: parcel.id,
-          old_status: parcel.status,
-          new_status: parcel.status,
-          location_id: parcel.current_location_id,
-          changed_by: actor.id,
-          remarks: `Redirected — ${oldBranchName ?? "—"} → ${destination.name} (${data.reason.trim()})`.slice(0, 500),
+    // Sequential, not Promise.all: tx is one Postgres connection, so
+    // "concurrent" queries against it just pipeline on that client - pg now
+    // deprecates that (removed in pg@9). Same cost, awaited one at a time.
+    // Same-status history row, matching how parcel edits are recorded: the
+    // parcel didn't move, but the timeline should show the diversion.
+    await tx.parcel_status_history.create({
+      data: {
+        parcel_id: parcel.id,
+        old_status: parcel.status,
+        new_status: parcel.status,
+        location_id: parcel.current_location_id,
+        changed_by: actor.id,
+        remarks: `Redirected — ${oldBranchName ?? "—"} → ${destination.name} (${data.reason.trim()})`.slice(0, 500),
+      },
+    });
+    await tx.audit_logs.create({
+      data: {
+        actor_id: actor.id,
+        entity_type: "parcel",
+        entity_id: parcel.id,
+        action: "REDIRECT_ORDER",
+        old_data: {
+          destinationLocationId: parcel.destination_location_id,
+          destination: oldBranchName,
+          address: oldAddress,
+          deliveryCharge: oldCharge,
         },
-      }),
-      tx.audit_logs.create({
-        data: {
-          actor_id: actor.id,
-          entity_type: "parcel",
-          entity_id: parcel.id,
-          action: "REDIRECT_ORDER",
-          old_data: {
-            destinationLocationId: parcel.destination_location_id,
-            destination: oldBranchName,
-            address: oldAddress,
-            deliveryCharge: oldCharge,
-          },
-          new_data: {
-            destinationLocationId: destination.id,
-            destination: destination.name,
-            address: newAddress,
-            deliveryCharge: newCharge,
-            redirectCharge: data.redirectCharge,
-            reason: data.reason.trim(),
-          },
+        new_data: {
+          destinationLocationId: destination.id,
+          destination: destination.name,
+          address: newAddress,
+          deliveryCharge: newCharge,
+          redirectCharge: data.redirectCharge,
+          reason: data.reason.trim(),
         },
-      }),
-    ]);
+      },
+    });
 
     return { parcel: updatedParcel, redirect };
   });
@@ -1401,6 +1417,67 @@ function buildOrdersWhere(
   }
 
   return { AND: conditions };
+}
+
+export interface OrderFilterOptions {
+  origins: string[];
+  destinations: string[];
+  riders: string[];
+}
+
+// Lightweight sibling to listOrders, purely for populating the tab-scoped
+// origin/rider/destination filter dropdowns on the orders list page. Selects
+// only the handful of columns those dropdowns need instead of the full
+// ORDERS_INCLUDE (both parties, both locations, vendor, both riders, remarks,
+// status history+users+roles) that the page previously reused here just to
+// read three strings per row - doubling the backend cost of every non-"All"
+// tab view for no reason.
+export async function getOrderFilterOptions(
+  actor: OrderActor,
+  status?: ListOrdersQuery["status"],
+): Promise<OrderFilterOptions> {
+  const { vendorId, vendorIds, riderId } = await getActorScope(actor);
+  const where = buildOrdersWhere({ vendorId, vendorIds, riderId }, status?.length ? { status } : {});
+
+  const rows = await prisma.parcels.findMany({
+    where,
+    select: {
+      locations_parcels_origin_location_idTolocations: { select: { name: true } },
+      locations_parcels_destination_location_idTolocations: { select: { name: true } },
+      parties_parcels_sender_idToparties: { select: { address: true } },
+      parties_parcels_receiver_idToparties: { select: { address: true } },
+      riders_parcels_delivery_rider_idToriders: { select: { name: true } },
+      riders_parcels_pickup_rider_idToriders: { select: { name: true } },
+    },
+    take: 200,
+  });
+
+  const origins = new Set<string>();
+  const destinations = new Set<string>();
+  const riders = new Set<string>();
+  for (const row of rows) {
+    const origin =
+      row.locations_parcels_origin_location_idTolocations?.name ||
+      row.parties_parcels_sender_idToparties.address ||
+      "";
+    const destination =
+      row.locations_parcels_destination_location_idTolocations?.name ||
+      row.parties_parcels_receiver_idToparties.address ||
+      "";
+    const rider =
+      row.riders_parcels_delivery_rider_idToriders?.name ||
+      row.riders_parcels_pickup_rider_idToriders?.name ||
+      "";
+    if (origin) origins.add(origin);
+    if (destination) destinations.add(destination);
+    if (rider) riders.add(rider);
+  }
+
+  return {
+    origins: Array.from(origins),
+    destinations: Array.from(destinations),
+    riders: Array.from(riders),
+  };
 }
 
 const ORDERS_INCLUDE = {
@@ -3291,33 +3368,34 @@ async function _updateParcelStatusImpl(
           },
         });
         createdReturn = { id: ret.id, trackingId: ret.tracking_id };
-        await Promise.all([
-          tx.cod_collections.create({
-            data: { parcel_id: ret.id, vendor_id: parcel.vendor_id, cod_amount: 0, payment_status: "pending" },
-          }),
-          tx.pickup_tasks.create({
-            data: { parcel_id: ret.id, pickup_address: null, status: "picked_up" },
-          }),
-          tx.parcel_status_history.create({
-            data: {
-              parcel_id: ret.id,
-              old_status: null,
-              new_status: "picked_up",
-              location_id: parcel.destination_location_id,
-              changed_by: actor.id,
-              remarks: `Return auto-created from exchange order ${parcel.tracking_id}`,
-            },
-          }),
-          tx.audit_logs.create({
-            data: {
-              actor_id: actor.id,
-              entity_type: "parcel",
-              entity_id: ret.id,
-              action: "CREATE_RETURN_ORDER",
-              new_data: { trackingId: ret.tracking_id, sourceOrderId: parcel.id, sourceTrackingId: parcel.tracking_id },
-            },
-          }),
-        ]);
+        // Sequential, not Promise.all: tx is one Postgres connection, so
+        // "concurrent" queries against it just pipeline on that client - pg
+        // now deprecates that (removed in pg@9). Same cost, awaited one at a time.
+        await tx.cod_collections.create({
+          data: { parcel_id: ret.id, vendor_id: parcel.vendor_id, cod_amount: 0, payment_status: "pending" },
+        });
+        await tx.pickup_tasks.create({
+          data: { parcel_id: ret.id, pickup_address: null, status: "picked_up" },
+        });
+        await tx.parcel_status_history.create({
+          data: {
+            parcel_id: ret.id,
+            old_status: null,
+            new_status: "picked_up",
+            location_id: parcel.destination_location_id,
+            changed_by: actor.id,
+            remarks: `Return auto-created from exchange order ${parcel.tracking_id}`,
+          },
+        });
+        await tx.audit_logs.create({
+          data: {
+            actor_id: actor.id,
+            entity_type: "parcel",
+            entity_id: ret.id,
+            action: "CREATE_RETURN_ORDER",
+            new_data: { trackingId: ret.tracking_id, sourceOrderId: parcel.id, sourceTrackingId: parcel.tracking_id },
+          },
+        });
       }
     }
     return { updatedParcel, createdReturn };
@@ -3656,30 +3734,33 @@ async function _bulkUpdateParcelStatusImpl(
     // so this can't be a single updateMany.
     if (newStatus === "delivered" || newStatus === "partially_delivered") {
       const collectedAt = new Date();
-      await Promise.all(
-        parcels
-          .filter((p) => p.delivery_rider_id)
-          .map((p) => {
-            const collectedAmount = newStatus === "delivered" ? Number(p.cod_amount) : (data.codCollected ?? 0);
-            if (collectedAmount <= 0) return Promise.resolve();
-            return tx.cod_collections.upsert({
-              where: { parcel_id: p.id },
-              create: {
-                parcel_id: p.id,
-                vendor_id: p.vendor_id,
-                rider_id: p.delivery_rider_id,
-                cod_amount: p.cod_amount,
-                collected_amount: collectedAmount,
-                collected_at: collectedAt,
-              },
-              update: {
-                rider_id: p.delivery_rider_id,
-                collected_amount: collectedAmount,
-                collected_at: collectedAt,
-              },
-            });
-          }),
-      );
+      // Sequential, not Promise.all: tx is bound to a single Postgres
+      // connection, so "concurrent" queries against it just pipeline on that
+      // one client rather than running in parallel - pg itself now warns on
+      // this ("client.query() called while already executing a query",
+      // removed in pg@9). Awaiting one at a time is the same wall-clock cost
+      // and avoids relying on deprecated client-side query queueing.
+      for (const p of parcels) {
+        if (!p.delivery_rider_id) continue;
+        const collectedAmount = newStatus === "delivered" ? Number(p.cod_amount) : (data.codCollected ?? 0);
+        if (collectedAmount <= 0) continue;
+        await tx.cod_collections.upsert({
+          where: { parcel_id: p.id },
+          create: {
+            parcel_id: p.id,
+            vendor_id: p.vendor_id,
+            rider_id: p.delivery_rider_id,
+            cod_amount: p.cod_amount,
+            collected_amount: collectedAmount,
+            collected_at: collectedAt,
+          },
+          update: {
+            rider_id: p.delivery_rider_id,
+            collected_amount: collectedAmount,
+            collected_at: collectedAt,
+          },
+        });
+      }
     }
 
     const pickupSyncIds = parcels
@@ -3727,19 +3808,27 @@ async function _bulkUpdateParcelStatusImpl(
     });
 
     // One webhook event per parcel — each has its own tracking ID even though
-    // newStatus is shared across the whole batch.
+    // newStatus is shared across the whole batch. Batched into a single
+    // endpoint lookup + single createMany instead of one round trip per
+    // parcel (see emitWebhookEventsBatch).
     const changedAt = new Date().toISOString();
-    for (const p of parcels) {
-      if (!p.vendor_id) continue;
-      await emitWebhookEvent(tx, p.vendor_id, "order.status_changed", {
-        trackingId: p.tracking_id,
-        orderId: p.id,
-        vendorId: p.vendor_id,
-        oldStatus: p.status,
-        newStatus,
-        changedAt,
-      });
-    }
+    await emitWebhookEventsBatch(
+      tx,
+      "order.status_changed",
+      parcels
+        .filter((p) => p.vendor_id)
+        .map((p) => ({
+          vendorId: p.vendor_id!,
+          data: {
+            trackingId: p.tracking_id,
+            orderId: p.id,
+            vendorId: p.vendor_id,
+            oldStatus: p.status,
+            newStatus,
+            changedAt,
+          },
+        })),
+    );
 
     // Close out manifests once none of their parcels are still "dispatched" -
     // one groupBy instead of a per-dispatch count()+updateMany() loop, since
