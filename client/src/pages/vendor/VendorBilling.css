@@ -13,9 +13,9 @@
 }
 
 .billing-banner-warned {
-  background-color: var(--color-warning-surface, #fff8e6);
-  border-color: var(--color-warning-border, #f0c36d);
-  color: var(--color-warning-text, #7a5200);
+  background-color: var(--color-warning-surface);
+  border-color: var(--color-background-warning-default);
+  color: var(--color-background-warning-default);
 }
 
 .billing-banner-blocked {
@@ -149,8 +149,8 @@
 }
 
 .billing-pill-pending {
-  background-color: var(--color-warning-surface, #fff8e6);
-  color: var(--color-warning-text, #7a5200);
+  background-color: var(--color-warning-surface);
+  color: var(--color-background-warning-default);
 }
 
 .billing-pill-verified {

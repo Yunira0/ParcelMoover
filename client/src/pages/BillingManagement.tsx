@@ -42,6 +42,10 @@ const BillingManagement: React.FC = () => {
 
   // Verification queue
   const [claims, setClaims] = useState<VendorPayment[]>([]);
+  // Real pending count from the server, not claims.length — the queue only
+  // ever loads one page (pageSize: 50), so the visible rows undercount the
+  // badge once the queue backs up past that.
+  const [claimsTotal, setClaimsTotal] = useState(0);
   const [claimsLoading, setClaimsLoading] = useState(true);
   const [reviewing, setReviewing] = useState<string | null>(null);
   const [remarks, setRemarks] = useState<Record<string, string>>({});
@@ -62,6 +66,7 @@ const BillingManagement: React.FC = () => {
     try {
       const res = await listVendorPayments({ status: 'pending', pageSize: 50 });
       setClaims(res.data);
+      setClaimsTotal(res.meta.total);
       setError('');
     } catch (err) {
       setError(apiErrorMessage(err, 'Failed to load payment claims.'));
@@ -238,7 +243,7 @@ const BillingManagement: React.FC = () => {
         options={(Object.keys(TAB_LABELS) as Tab[]).map((tab) => ({
           value: tab,
           label: TAB_LABELS[tab],
-          ...(tab === 'queue' ? { count: claims.length } : {}),
+          ...(tab === 'queue' ? { count: claimsTotal } : {}),
         }))}
       />
 

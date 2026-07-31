@@ -87,7 +87,7 @@ const VendorBilling: React.FC = () => {
     try {
       await submitVendorPayment({ amount: parsed, reference, note, proof });
       setSubmitted('Payment submitted. It will be credited once our team verifies it.');
-      setAmount('');
+      setAmount(null);
       setReference('');
       setNote('');
       setProof(null);
