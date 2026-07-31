@@ -341,8 +341,8 @@ const OOVOperations: React.FC = () => {
       const ids = selectedOrders.map(order => String(order.id));
 
       if (isDispatchAction && dispatchMethod === 'tpl') {
-        // Hand off to NCM: creates the NCM orders; parcels stay in Transit
-        // until NCM's pickup webhook moves them to In Transit.
+        // Hand off to the courier partner: creates their orders; parcels stay
+        // in Transit until the partner's pickup webhook moves them to In Transit.
         const res = await handoffToNcm(ids);
         const failed = (res.data ?? []).filter(item => !item.success);
         if (failed.length > 0) {
@@ -609,16 +609,16 @@ const OOVOperations: React.FC = () => {
                         onChange={() => setDispatchMethod('tpl')}
                         disabled={statusUpdating}
                       />
-                      <span>Via 3PL (NCM)</span>
+                      <span>Via Courier Partner</span>
                     </label>
                   </div>
                 )}
                 {isDispatchAction && dispatchMethod === 'tpl' && (
                   <div className="oov-manifest-fields">
                     <p className="oov-status-empty">
-                      NCM destination branch is matched automatically from each order's destination hub. Orders whose
-                      destination has no matching NCM branch are skipped, and orders stay in Transit until NCM
-                      confirms pickup, then follow NCM tracking automatically.
+                      The courier partner's destination branch is matched automatically from each order's destination
+                      hub. Orders whose destination has no matching branch are skipped, and orders stay in Transit
+                      until the partner confirms pickup, then follow their tracking automatically.
                     </p>
                   </div>
                 )}
