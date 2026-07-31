@@ -103,6 +103,26 @@ const DELIVERY_PENDING_STATUSES: parcel_status[] = [
   "failed_delivery",
 ];
 
+// The vendor/sales overview cards split the pipeline differently from the
+// admin dashboard: a vendor only calls a parcel "pending pickup" until we
+// physically take it, and everything after that is one "in progress" bucket
+// all the way to the customer's door. The admin cards instead split that span
+// into pending-pickups / in-transit / pending-deliveries by hub stage. Both
+// views are legitimate, so they get their own counters rather than one being
+// bent to fit the other - these two must stay in step with IN_DELIVERY_STATUSES
+// in the client's VendorMetricDetail, which lists the orders behind the card.
+const AWAITING_PICKUP_STATUSES: parcel_status[] = ["pickup_ordered", "rider_assigned"];
+
+const IN_DELIVERY_STATUSES: parcel_status[] = [
+  "picked_up",
+  "arrived",
+  "oov",
+  "dispatched",
+  "arrived_at_branch",
+  "ready_to_deliver",
+  "sent_for_delivery",
+];
+
 // Hub-level transitions: confirming hub arrival and building/closing a
 // dispatch manifest are branch operations for admin/hub staff to perform,
 // not something the picking-up rider should be able to trigger themselves.
@@ -2434,6 +2454,8 @@ async function computeDashboardSummary(
       pending_returns: bigint;
       in_transit: bigint;
       pending_deliveries: bigint;
+      awaiting_pickup: bigint;
+      in_delivery: bigint;
       total_delivered: bigint;
       total_picked_up: bigint;
       total_returns: bigint;
@@ -2446,6 +2468,8 @@ async function computeDashboardSummary(
       pending_returns_amount: string;
       in_transit_amount: string;
       pending_deliveries_amount: string;
+      awaiting_pickup_amount: string;
+      in_delivery_amount: string;
       todays_delivered_amount: string;
       total_delivered_amount: string;
       total_returns_amount: string;
@@ -2458,6 +2482,8 @@ async function computeDashboardSummary(
       COUNT(*) FILTER (WHERE status::text = ANY(${RETURN_PENDING_STATUSES})) AS pending_returns,
       COUNT(*) FILTER (WHERE status::text = ANY(${IN_TRANSIT_STATUSES})) AS in_transit,
       COUNT(*) FILTER (WHERE status::text = ANY(${DELIVERY_PENDING_STATUSES})) AS pending_deliveries,
+      COUNT(*) FILTER (WHERE status::text = ANY(${AWAITING_PICKUP_STATUSES})) AS awaiting_pickup,
+      COUNT(*) FILTER (WHERE status::text = ANY(${IN_DELIVERY_STATUSES})) AS in_delivery,
       COUNT(*) FILTER (WHERE status::text = ANY(ARRAY['delivered','partially_delivered'])) AS total_delivered,
       COUNT(*) FILTER (WHERE status::text NOT IN ('pickup_ordered','rider_assigned','failed_pickup','cancelled')) AS total_picked_up,
       COUNT(*) FILTER (WHERE order_type::text = 'return') AS total_returns,
@@ -2470,6 +2496,8 @@ async function computeDashboardSummary(
       COALESCE(SUM(cod_amount) FILTER (WHERE status::text = ANY(${RETURN_PENDING_STATUSES})), 0) AS pending_returns_amount,
       COALESCE(SUM(cod_amount) FILTER (WHERE status::text = ANY(${IN_TRANSIT_STATUSES})), 0) AS in_transit_amount,
       COALESCE(SUM(cod_amount) FILTER (WHERE status::text = ANY(${DELIVERY_PENDING_STATUSES})), 0) AS pending_deliveries_amount,
+      COALESCE(SUM(cod_amount) FILTER (WHERE status::text = ANY(${AWAITING_PICKUP_STATUSES})), 0) AS awaiting_pickup_amount,
+      COALESCE(SUM(cod_amount) FILTER (WHERE status::text = ANY(${IN_DELIVERY_STATUSES})), 0) AS in_delivery_amount,
       COALESCE(SUM(cod_amount) FILTER (WHERE status::text = ANY(ARRAY['delivered','partially_delivered']) AND delivered_at >= ${todayStart}), 0) AS todays_delivered_amount,
       COALESCE(SUM(cod_amount) FILTER (WHERE status::text = ANY(ARRAY['delivered','partially_delivered'])), 0) AS total_delivered_amount,
       COALESCE(SUM(cod_amount) FILTER (WHERE order_type::text = 'return'), 0) AS total_returns_amount,
@@ -2483,6 +2511,8 @@ async function computeDashboardSummary(
   const pendingReturns = Number(overviewRow!.pending_returns);
   const inTransit = Number(overviewRow!.in_transit);
   const pendingDeliveries = Number(overviewRow!.pending_deliveries);
+  const awaitingPickup = Number(overviewRow!.awaiting_pickup);
+  const inDelivery = Number(overviewRow!.in_delivery);
   const totalDelivered = Number(overviewRow!.total_delivered);
   const totalPickedUp = Number(overviewRow!.total_picked_up);
   const totalReturns = Number(overviewRow!.total_returns);
@@ -2495,6 +2525,8 @@ async function computeDashboardSummary(
   const pendingReturnsAmount = Number(overviewRow!.pending_returns_amount);
   const inTransitAmount = Number(overviewRow!.in_transit_amount);
   const pendingDeliveriesAmount = Number(overviewRow!.pending_deliveries_amount);
+  const awaitingPickupAmount = Number(overviewRow!.awaiting_pickup_amount);
+  const inDeliveryAmount = Number(overviewRow!.in_delivery_amount);
   const todaysDeliveredAmount = Number(overviewRow!.todays_delivered_amount);
   const totalDeliveredAmount = Number(overviewRow!.total_delivered_amount);
   const totalReturnsAmount = Number(overviewRow!.total_returns_amount);
@@ -2695,6 +2727,10 @@ async function computeDashboardSummary(
       inTransitAmount,
       pendingDeliveries,
       pendingDeliveriesAmount,
+      awaitingPickup,
+      awaitingPickupAmount,
+      inDelivery,
+      inDeliveryAmount,
       totalDelivered,
       totalDeliveredAmount,
       totalPickedUp,

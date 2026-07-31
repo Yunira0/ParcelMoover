@@ -189,6 +189,13 @@ export interface DashboardSummary {
     inTransitAmount: number;
     pendingDeliveries: number;
     pendingDeliveriesAmount: number;
+    /** Vendor-shaped split of the pipeline (see the vendor/sales overview
+     *  cards): only what we haven't collected yet counts as awaiting pickup,
+     *  and everything from pickup to the customer's door is one bucket. */
+    awaitingPickup: number;
+    awaitingPickupAmount: number;
+    inDelivery: number;
+    inDeliveryAmount: number;
     totalDelivered: number;
     totalDeliveredAmount: number;
     totalReturns: number;
