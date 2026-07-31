@@ -38,7 +38,7 @@ const STATUS_LABELS: Partial<Record<ParcelStatus, string>> = {
   picked_up: 'Picked Up',
   arrived: 'Arrived at Origin',
   ready_to_deliver: 'Ready to Deliver',
-  sent_for_delivery: 'In Transit',
+  sent_for_delivery: 'Sent for Delivery',
   oov: 'Transit',
   dispatched: 'In Transit',
   arrived_at_branch: 'Arrived at Destination',
