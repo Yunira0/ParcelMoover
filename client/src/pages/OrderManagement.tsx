@@ -659,6 +659,10 @@ const OrderManagement: React.FC = () => {
     </button>
   );
 
+  // Location names are stored as "HUB NAME - DISTRICT" (see locations.name);
+  // the ORIGIN column only needs the hub, not the district suffix.
+  const hubNameOnly = (locationName: string) => locationName.split(' - ')[0];
+
   const orderColumns = [
     {
       header: 'ORDER ID',
@@ -673,7 +677,7 @@ const OrderManagement: React.FC = () => {
       width: '180px',
       className: 'tracking-cell',
     },
-    { header: 'ORIGIN', accessor: (order: Order) => order.origin || '-', width: '150px' },
+    { header: 'ORIGIN', accessor: (order: Order) => (order.origin ? hubNameOnly(order.origin) : '-'), width: '150px' },
     {
       header: 'SENDER',
       accessor: (order: Order) => (

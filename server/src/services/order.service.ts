@@ -648,7 +648,7 @@ async function _createOrderImpl(
     }
   }
 
-  const resolvedOriginLocationId = data.originLocationId || data.sender.locationId || null;
+  const resolvedOriginLocationId = data.originLocationId || data.sender.locationId || vendor?.location_id || null;
   const resolvedDestinationLocationId = data.destinationLocationId || data.receiver.locationId || null;
   const weightKg = data.weightKg || 1;
 
