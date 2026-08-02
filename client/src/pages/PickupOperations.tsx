@@ -376,6 +376,7 @@ const PickupOperations: React.FC = () => {
   );
   const [debouncedSearch, setDebouncedSearch] = useState(() => searchParams.get('search') || '');
   const [page, setPage] = useState(1);
+  const [pageSizeChoice, setPageSizeChoice] = useState(PAGE_SIZE);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [selectedIdsByTab, setSelectedIdsByTab] = useState<Record<PickupTab, Set<string | number>>>(createEmptyTabSelections);
@@ -479,7 +480,7 @@ const PickupOperations: React.FC = () => {
     setIsActionOpen(false);
     setActionError('');
     setRiderId('');
-  }, [activeTab, debouncedSearch]);
+  }, [activeTab, debouncedSearch, pageSizeChoice]);
 
   // Valley filter only applies to "Arrived at Origin" - drop it on any other tab.
   useEffect(() => {
@@ -507,11 +508,11 @@ const PickupOperations: React.FC = () => {
   }, [orders, activeTab, valleyFilter]);
   const selectedIds = selectedIdsByTab[activeTab];
   const groups = useMemo(() => groupOrdersByVendor(visibleOrders), [visibleOrders]);
-  const totalPages = Math.max(1, Math.ceil(groups.length / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(groups.length / pageSizeChoice));
   // Clamp instead of resetting so a reload that shrinks the list doesn't strand
   // the pager past the last page.
   const currentPage = Math.min(page, totalPages);
-  const pagedGroups = groups.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  const pagedGroups = groups.slice((currentPage - 1) * pageSizeChoice, currentPage * pageSizeChoice);
   // A group's row checkbox reads as checked only once every order inside it
   // is selected - the underlying selection stays order-scoped so bulk status
   // changes keep applying per-order exactly as before grouping was added.
@@ -967,6 +968,9 @@ const PickupOperations: React.FC = () => {
         page={currentPage}
         totalPages={totalPages}
         onPageChange={next => { setPage(next); setExpandedGroupId(''); }}
+        pageSize={pageSizeChoice}
+        pageSizeLabel="pickups"
+        onPageSizeChange={setPageSizeChoice}
         summary={
           `${groups.length} pickup${groups.length === 1 ? '' : 's'} · ` +
           `${visibleOrders.length}${capped ? '+' : ''} order${visibleOrders.length === 1 ? '' : 's'}` +

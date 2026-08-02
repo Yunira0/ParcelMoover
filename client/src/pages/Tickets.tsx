@@ -88,6 +88,7 @@ const Tickets: React.FC = () => {
   });
   const [dateRange, setDateRange] = useState<DateRange>('');
   const [page, setPage] = useState(1);
+  const [pageSizeChoice, setPageSizeChoice] = useState(PAGE_SIZE);
   const [loading, setLoading] = useState(true);
   const [selectedIds, setSelectedIds] = useState<Set<string | number>>(new Set());
   // "?new=<category>" (e.g. from the vendor dashboard quick actions) opens the
@@ -121,7 +122,7 @@ const Tickets: React.FC = () => {
 
   useEffect(() => { loadTickets(); }, [loadTickets]);
 
-  useEffect(() => { setPage(1); }, [activeTab, searchQuery, priorityFilter, categoryFilter, dateRange]);
+  useEffect(() => { setPage(1); }, [activeTab, searchQuery, priorityFilter, categoryFilter, dateRange, pageSizeChoice]);
 
   // Counts per tab are derived from the full dataset (independent of filters),
   // matching the design's status pills.
@@ -153,8 +154,8 @@ const Tickets: React.FC = () => {
     });
   }, [tickets, activeTab, searchQuery, priorityFilter, categoryFilter, dateRange]);
 
-  const totalPages = Math.max(1, Math.ceil(filteredTickets.length / PAGE_SIZE));
-  const visibleTickets = filteredTickets.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const totalPages = Math.max(1, Math.ceil(filteredTickets.length / pageSizeChoice));
+  const visibleTickets = filteredTickets.slice((page - 1) * pageSizeChoice, page * pageSizeChoice);
   const visibleIds = visibleTickets.map((ticket) => ticket.id);
   const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedIds.has(id));
   const someVisibleSelected = visibleIds.some((id) => selectedIds.has(id));
@@ -192,7 +193,7 @@ const Tickets: React.FC = () => {
   const columns = useMemo(() => [
     {
       header: 'SN',
-      accessor: (ticket: Ticket) => ((page - 1) * PAGE_SIZE) + visibleTickets.findIndex((row) => row.id === ticket.id) + 1,
+      accessor: (ticket: Ticket) => ((page - 1) * pageSizeChoice) + visibleTickets.findIndex((row) => row.id === ticket.id) + 1,
       width: '50px',
       className: 'tickets-sn-cell',
     },
@@ -237,7 +238,7 @@ const Tickets: React.FC = () => {
       ),
       width: '110px',
     },
-  ], [page, visibleTickets, navigate, vendorSide]);
+  ], [page, pageSizeChoice, visibleTickets, navigate, vendorSide]);
 
   return (
     <div className="tickets-container">
@@ -326,6 +327,9 @@ const Tickets: React.FC = () => {
         page={page}
         totalPages={totalPages}
         onPageChange={setPage}
+        pageSize={pageSizeChoice}
+        pageSizeLabel="tickets"
+        onPageSizeChange={setPageSizeChoice}
         summary={`${filteredTickets.length} ticket${filteredTickets.length === 1 ? '' : 's'}`}
       />
 

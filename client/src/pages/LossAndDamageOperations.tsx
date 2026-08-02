@@ -37,6 +37,7 @@ const LossAndDamageOperations: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const pager = useCursorPagination();
+  const [pageSizeChoice, setPageSizeChoice] = useState(PAGE_SIZE);
   const [loading, setLoading] = useState(true);
   const [selectedIds, setSelectedIds] = useState<Set<string | number>>(new Set());
   const [statusUpdating, setStatusUpdating] = useState(false);
@@ -59,7 +60,7 @@ const LossAndDamageOperations: React.FC = () => {
       const res = await getOrders({
         status: ['loss_and_damage'],
         search: debouncedSearch || undefined,
-        pageSize: PAGE_SIZE,
+        pageSize: pageSizeChoice,
         cursor: pager.request.cursor,
         dir: pager.request.dir,
       });
@@ -70,7 +71,7 @@ const LossAndDamageOperations: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [debouncedSearch, pager.request]);
+  }, [debouncedSearch, pager.request, pageSizeChoice]);
 
   useEffect(() => { loadOrders(); }, [loadOrders]);
   useEffect(() => subscribeToOrderStatusChanged(loadOrders), [loadOrders]);
@@ -279,6 +280,12 @@ const LossAndDamageOperations: React.FC = () => {
         page={pager.page}
         totalPages={totalPages}
         cursor={pager.controls(meta)}
+        pageSize={pageSizeChoice}
+        pageSizeLabel="parcels"
+        onPageSizeChange={(size) => {
+          setPageSizeChoice(size);
+          pager.reset();
+        }}
         summary={`${totalCount} order${totalCount === 1 ? '' : 's'}`}
       />
     </div>

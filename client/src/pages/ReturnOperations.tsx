@@ -104,6 +104,7 @@ const ReturnOperations: React.FC = () => {
   });
   const [searchQuery, setSearchQuery] = useState(() => searchParams.get('search') || '');
   const [page, setPage] = useState(1);
+  const [pageSizeChoice, setPageSizeChoice] = useState(PAGE_SIZE);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [truncated, setTruncated] = useState(false);
@@ -142,7 +143,7 @@ const ReturnOperations: React.FC = () => {
 
   useEffect(() => { loadReturns(); }, []);
   useEffect(() => subscribeToOrderStatusChanged(loadReturns), []);
-  useEffect(() => { setPage(1); setSelectedIds(new Set()); setActionMsg(''); }, [activeTab, searchQuery]);
+  useEffect(() => { setPage(1); setSelectedIds(new Set()); setActionMsg(''); }, [activeTab, searchQuery, pageSizeChoice]);
 
   // Keep tab/search bookmarkable - mirror into the URL (replacing history,
   // not pushing, so the back button doesn't step through every keystroke).
@@ -175,8 +176,8 @@ const ReturnOperations: React.FC = () => {
     return counts;
   }, [orders]);
 
-  const totalPages = Math.max(1, Math.ceil(filteredOrders.length / PAGE_SIZE));
-  const visibleOrders = filteredOrders.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const totalPages = Math.max(1, Math.ceil(filteredOrders.length / pageSizeChoice));
+  const visibleOrders = filteredOrders.slice((page - 1) * pageSizeChoice, page * pageSizeChoice);
   const visibleOrderIds = visibleOrders.map((order) => order.id);
   const allVisibleSelected = visibleOrderIds.length > 0 && visibleOrderIds.every((id) => selectedIds.has(id));
   const someVisibleSelected = visibleOrderIds.some((id) => selectedIds.has(id));
@@ -408,6 +409,9 @@ const ReturnOperations: React.FC = () => {
         page={page}
         totalPages={totalPages}
         onPageChange={setPage}
+        pageSize={pageSizeChoice}
+        pageSizeLabel="parcels"
+        onPageSizeChange={setPageSizeChoice}
         summary={`${filteredOrders.length} order${filteredOrders.length === 1 ? '' : 's'}`}
       />
 

@@ -19,6 +19,7 @@ import {
 import { formatCurrency } from '../utils/format';
 import { toBsDate } from '../utils/nepaliDate';
 import { apiErrorMessage } from '../utils/serverValidation';
+import './vendor/VendorFinance.css';
 import './vendor/VendorBilling.css';
 import './BillingManagement.css';
 

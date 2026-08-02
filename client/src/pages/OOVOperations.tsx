@@ -121,6 +121,7 @@ const OOVOperations: React.FC = () => {
   );
   const [debouncedSearch, setDebouncedSearch] = useState(() => searchParams.get('search') || '');
   const pager = useCursorPagination();
+  const [pageSizeChoice, setPageSizeChoice] = useState(PAGE_SIZE);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [selectionByTab, setSelectionByTab] = useState<Record<OOVTab, Map<string, Order>>>(createEmptySelections);
@@ -207,7 +208,7 @@ const OOVOperations: React.FC = () => {
       // enough rows in one page to fit the whole scanned batch, instead of
       // silently cutting it off at the default page size.
       const scannedTermCount = debouncedSearch ? debouncedSearch.split(',').map(t => t.trim()).filter(Boolean).length : 0;
-      const pageSize = scannedTermCount > 1 ? Math.min(100, Math.max(PAGE_SIZE, scannedTermCount)) : PAGE_SIZE;
+      const pageSize = scannedTermCount > 1 ? Math.min(100, Math.max(pageSizeChoice, scannedTermCount)) : pageSizeChoice;
 
       const res = await getOrders({
         status: TAB_STATUSES[activeTab],
@@ -228,7 +229,7 @@ const OOVOperations: React.FC = () => {
     } finally {
       if (requestId === loadRequestIdRef.current) setLoading(false);
     }
-  }, [activeTab, debouncedSearch, pager.request]);
+  }, [activeTab, debouncedSearch, pager.request, pageSizeChoice]);
 
   useEffect(() => {
     loadOovOrders();
@@ -739,6 +740,12 @@ const OOVOperations: React.FC = () => {
         page={pager.page}
         totalPages={totalPages}
         cursor={pager.controls(meta)}
+        pageSize={pageSizeChoice}
+        pageSizeLabel="parcels"
+        onPageSizeChange={(size) => {
+          setPageSizeChoice(size);
+          pager.reset();
+        }}
         summary={`${totalCount} order${totalCount === 1 ? '' : 's'}`}
       />
 
