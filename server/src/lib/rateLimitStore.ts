@@ -67,7 +67,15 @@ function createLazyRedisStore(prefix: string): Store {
     init(initOptions: Options) {
       options = initOptions;
       if (memoryStore) memoryStore.init(initOptions);
-      if (redisStore) (redisStore as Store).init?.(initOptions);
+      // init() is async on RedisStore (it SCRIPT LOADs two Lua scripts) but
+      // the Store interface's init() must return void, so this can't be
+      // awaited by the caller - it has to catch its own failure instead of
+      // rejecting into the void, or a slow/timed-out SCRIPT LOAD becomes an
+      // unhandled rejection that crashes the whole process on startup.
+      const initResult = (redisStore as Store)?.init?.(initOptions);
+      if (initResult && typeof (initResult as unknown as Promise<void>).catch === "function") {
+        (initResult as unknown as Promise<void>).catch((error) => downgradeToMemory("init", error));
+      }
     },
     async increment(key: string) {
       tryUpgrade();

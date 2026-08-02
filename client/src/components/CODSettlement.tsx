@@ -16,6 +16,16 @@ const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 const CODSettlement: React.FC<CODSettlementProps> = ({ data, loading = false }) => {
   const percent = Math.max(0, Math.min(100, Math.round(data.progressPercent)));
   const offset = CIRCUMFERENCE * (1 - percent / 100);
+  // Rounding a genuine sliver of progress (e.g. 0.35%) down to a whole
+  // percent reads as "nothing settled" even though real money moved - and
+  // the same trap applies in reverse just under 100%. Only the label needs
+  // the escape hatch; the ring's fill already uses the unrounded percent.
+  const percentLabel =
+    percent === 0 && data.settledCod > 0
+      ? "<1%"
+      : percent === 100 && data.pendingCod > 0
+        ? ">99%"
+        : `${percent}%`;
 
   return (
     <div className="cod-settlement">
@@ -25,7 +35,7 @@ const CODSettlement: React.FC<CODSettlementProps> = ({ data, loading = false }) 
       </div>
 
       <div className="cod-ring-wrap">
-        <svg className="cod-ring" viewBox="0 0 120 120" role="img" aria-label={`${percent}% of COD settled`}>
+        <svg className="cod-ring" viewBox="0 0 120 120" role="img" aria-label={`${percentLabel} of COD settled`}>
           <circle className="cod-ring-track" cx="60" cy="60" r={RADIUS} />
           <circle
             className="cod-ring-value"
@@ -36,7 +46,7 @@ const CODSettlement: React.FC<CODSettlementProps> = ({ data, loading = false }) 
             strokeDashoffset={loading ? CIRCUMFERENCE : offset}
             transform="rotate(-90 60 60)"
           />
-          <text className="cod-ring-percent" x="60" y="58" textAnchor="middle">{loading ? '—' : `${percent}%`}</text>
+          <text className="cod-ring-percent" x="60" y="58" textAnchor="middle">{loading ? '—' : percentLabel}</text>
           <text className="cod-ring-caption" x="60" y="76" textAnchor="middle">settled</text>
         </svg>
       </div>

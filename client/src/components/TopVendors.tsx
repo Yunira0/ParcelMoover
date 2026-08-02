@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { getVendors } from '../services/users.service';
+import { getTopVendors } from '../services/users.service';
 import './TopVendors.css';
 
 interface VendorRow {
@@ -10,8 +10,6 @@ interface VendorRow {
   orders?: { total: number; delivered: number; returned: number };
 }
 
-const TOP_LIMIT = 4;
-
 const TopVendors: React.FC = () => {
   const [vendors, setVendors] = useState<VendorRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -19,15 +17,11 @@ const TopVendors: React.FC = () => {
 
   useEffect(() => {
     let active = true;
-    getVendors()
+    getTopVendors()
       .then((res) => {
         if (!active) return;
         const data: VendorRow[] = res?.success && Array.isArray(res.data) ? res.data : [];
-        setVendors(
-          [...data]
-            .sort((a, b) => (b.orders?.total ?? 0) - (a.orders?.total ?? 0))
-            .slice(0, TOP_LIMIT),
-        );
+        setVendors(data);
       })
       .catch(() => {
         if (active) setError('Vendor performance is unavailable.');

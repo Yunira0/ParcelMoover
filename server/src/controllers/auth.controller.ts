@@ -510,6 +510,93 @@ export const getVendorsController = async (req: Request, res: Response) => {
   }
 };
 
+const TOP_VENDORS_LIMIT = 4;
+
+// Ranks vendors by real order volume, scoped the same way getVendorsController
+// is - unlike that endpoint (which pages "newest first" and leaves ranking to
+// the client), this ranks in the DB first so a vendor onboarded long ago but
+// with the most orders isn't stuck off the end of page 1.
+export const getTopVendorsController = async (req: Request, res: Response) => {
+  try {
+    const roles = req.user?.roles ?? [];
+    const isStaff = roles.includes("super_admin") || roles.includes("admin");
+    let scope: Record<string, unknown> = {};
+    if (roles.includes("sales") && !isStaff) {
+      scope = { sales_user_id: req.user!.id };
+    } else if (roles.includes("vendor") && !isStaff) {
+      scope = { user_id: req.user!.id };
+    } else if (roles.includes("vendor_staff") && !isStaff) {
+      const staffRecord = await prisma.vendor_staff.findFirst({
+        where: { user_id: req.user!.id, deleted_at: null, enabled: true },
+        select: { vendor_id: true },
+      });
+      scope = { id: staffRecord?.vendor_id ?? "__none__" };
+    }
+    const where: Record<string, unknown> = { deleted_at: null, ...scope };
+
+    const scopedVendors = await prisma.vendors.findMany({ where, select: { id: true } });
+    const scopedVendorIds = scopedVendors.map((v) => v.id);
+    if (scopedVendorIds.length === 0) {
+      return res.status(200).json({ success: true, data: [] });
+    }
+
+    const ranked = await prisma.parcels.groupBy({
+      by: ["vendor_id"],
+      where: { vendor_id: { in: scopedVendorIds }, deleted_at: null },
+      _count: { _all: true },
+      orderBy: { _count: { vendor_id: "desc" } },
+      take: TOP_VENDORS_LIMIT,
+    });
+
+    const topVendorIds = ranked.map((r) => r.vendor_id).filter((id): id is string => !!id);
+    if (topVendorIds.length === 0) {
+      return res.status(200).json({ success: true, data: [] });
+    }
+
+    const [vendors, statusCounts] = await Promise.all([
+      prisma.vendors.findMany({ where: { id: { in: topVendorIds } } }),
+      prisma.parcels.groupBy({
+        by: ["vendor_id", "status"],
+        where: { vendor_id: { in: topVendorIds }, deleted_at: null },
+        _count: { _all: true },
+      }),
+    ]);
+
+    const ordersByVendor = new Map<string, { total: number; delivered: number; returned: number }>();
+    for (const row of statusCounts) {
+      const vendorId = row.vendor_id as string | null;
+      if (!vendorId) continue;
+      const entry = ordersByVendor.get(vendorId) ?? { total: 0, delivered: 0, returned: 0 };
+      entry.total += row._count._all;
+      if (row.status === "delivered") entry.delivered += row._count._all;
+      if ((RETURNED_STATUSES as readonly string[]).includes(row.status)) entry.returned += row._count._all;
+      ordersByVendor.set(vendorId, entry);
+    }
+
+    const vendorById = new Map(vendors.map((v) => [v.id, v]));
+
+    return res.status(200).json({
+      success: true,
+      // topVendorIds is already in rank order - preserve it rather than
+      // re-deriving order from the vendors.findMany result.
+      data: topVendorIds
+        .map((id) => vendorById.get(id))
+        .filter((v): v is NonNullable<typeof v> => !!v)
+        .map((vendor) => ({
+          id: vendor.id,
+          client: vendor.client_name,
+          company: vendor.business_name || "",
+          orders: ordersByVendor.get(vendor.id) ?? { total: 0, delivered: 0, returned: 0 },
+        })),
+    });
+  } catch (error: any) {
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Failed to load top vendors",
+    });
+  }
+};
+
 const DROPDOWN_DEFAULT_LIMIT = 50;
 const DROPDOWN_MAX_LIMIT = 200;
 
