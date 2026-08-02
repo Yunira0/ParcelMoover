@@ -516,13 +516,16 @@ export async function getUnsettledOrders(
 
   // Rider leg (cash collected but not yet remitted to office) is tracked
   // independently of the vendor leg (payment_status) - see cod_collections
-  // schema comment. Only orders where the rider actually collected cash are
-  // eligible.
+  // schema comment. Only orders that actually reached a delivery attempt are
+  // eligible - collected_at is only ever set by a delivery/partial-delivery
+  // transition, so it's the honest "this needs to be settled" signal even when
+  // the amount collected was corrected down to 0 (collected_amount > 0 would
+  // wrongly hide those from the ledger instead of settling them at 0).
   const where: Prisma.cod_collectionsWhereInput = riderId
     ? {
         rider_id: riderId,
         rider_payment_status: payment_status.pending,
-        collected_amount: { gt: 0 },
+        collected_at: { not: null },
         // Not already bundled into a rider statement. The two legs settle the
         // same collection independently, so this is scoped to rider statements
         // only - a vendor statement on this collection must not hide it here.
@@ -531,10 +534,9 @@ export async function getUnsettledOrders(
     : {
         ...(vendorId ? { vendor_id: vendorId } : {}),
         payment_status: payment_status.pending,
-        // Only orders where cash was actually collected are settleable - this
-        // excludes not-yet-delivered orders (which would otherwise pay out COD
-        // that was never collected) and mirrors the rider leg's guard.
-        collected_amount: { gt: 0 },
+        // Only orders that reached delivery are settleable - this excludes
+        // not-yet-delivered orders and mirrors the rider leg's guard.
+        collected_at: { not: null },
         // Not already bundled into a vendor statement (see rider leg note).
         settlement_items: { none: { settlements: { payee_type: "vendor" } } },
       };
@@ -628,16 +630,17 @@ export async function createSettlement(
           id: { in: codCollectionIds },
           rider_id: target.id,
           rider_payment_status: payment_status.pending,
-          collected_amount: { gt: 0 },
+          // Only settle orders that reached a delivery attempt - collected_at
+          // is the honest signal (see getUnsettledOrders); collected_amount > 0
+          // would wrongly reject settling a corrected-to-0 order at 0.
+          collected_at: { not: null },
           settlement_items: { none: { settlements: { payee_type: "rider" } } },
         }
       : {
           id: { in: codCollectionIds },
           vendor_id: target.id,
           payment_status: payment_status.pending,
-          // Only settle orders where cash was actually collected - never pay a
-          // vendor for COD that hasn't been collected yet.
-          collected_amount: { gt: 0 },
+          collected_at: { not: null },
           settlement_items: { none: { settlements: { payee_type: "vendor" } } },
         };
 
@@ -919,8 +922,8 @@ export async function updateSettlement(
   // settlement - the same eligibility rule createSettlement enforces.
   const eligibleAddWhere: Prisma.cod_collectionsWhereInput =
     payeeType === "rider"
-      ? { id: { in: toAddIds }, rider_id: targetId, rider_payment_status: payment_status.pending, collected_amount: { gt: 0 } }
-      : { id: { in: toAddIds }, vendor_id: targetId, payment_status: payment_status.pending, collected_amount: { gt: 0 } };
+      ? { id: { in: toAddIds }, rider_id: targetId, rider_payment_status: payment_status.pending, collected_at: { not: null } }
+      : { id: { in: toAddIds }, vendor_id: targetId, payment_status: payment_status.pending, collected_at: { not: null } };
 
   const [toAddCollections, keptCollections] = await Promise.all([
     toAddIds.length > 0
