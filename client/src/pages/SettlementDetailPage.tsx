@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Printer, Download, CreditCard, Pencil } from 'lucide-react';
+import { ArrowLeft, Printer, Download, CreditCard, Pencil, Undo2 } from 'lucide-react';
 import Button from '../components/Button';
 import StatusChip from '../components/StatusChip';
 import MakePaymentModal from '../components/MakePaymentModal';
 import EditSettlementModal from '../components/EditSettlementModal';
+import RevertSettlementModal from '../components/RevertSettlementModal';
 import { getSettlementDetail, type SettlementDetail } from '../services/finance.service';
 import { hasAnyRole, hasAdminPermission } from '../utils/auth';
 import { toBsDate, toBsDateTime } from '../utils/nepaliDate';
@@ -117,10 +118,13 @@ const SettlementDetailPage: React.FC = () => {
   const [reloadKey, setReloadKey] = useState(0);
   const [showPayment, setShowPayment] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
+  const [showRevert, setShowRevert] = useState(false);
 
   const canPay = hasAnyRole(['super_admin', 'admin']);
-  // Correcting a mistake before money moves — gated by the delegable
-  // EDIT_SETTLEMENTS permission, same pattern as MANAGE_USERS/SETTINGS_ACCESS.
+  // Correcting a mistake — gated by the delegable EDIT_SETTLEMENTS permission,
+  // same pattern as MANAGE_USERS/SETTINGS_ACCESS. Also covers reverting a
+  // settled statement back to pending, since it's the same "fix a mistake"
+  // privilege applied after payment instead of before it.
   const canEdit = hasAnyRole(['super_admin']) || hasAdminPermission('EDIT_SETTLEMENTS');
   // See buildStatementHtml - only rider statements mix parcels from several
   // vendors, so only there does a per-row vendor column carry information.
@@ -223,6 +227,11 @@ const SettlementDetailPage: React.FC = () => {
           {canPay && detail?.status === 'pending' && (
             <Button variant="primary" onClick={() => setShowPayment(true)}>
               <CreditCard size={16} /> Make Payment
+            </Button>
+          )}
+          {canEdit && detail?.status === 'settled' && (
+            <Button variant="danger" onClick={() => setShowRevert(true)}>
+              <Undo2 size={16} /> Revert
             </Button>
           )}
         </div>
@@ -382,6 +391,15 @@ const SettlementDetailPage: React.FC = () => {
           payeeId={detail.payeeId}
           currentItems={detail.items}
           onClose={() => setShowEdit(false)}
+          onSuccess={() => setReloadKey((k) => k + 1)}
+        />
+      )}
+
+      {showRevert && detail && (
+        <RevertSettlementModal
+          settlementId={detail.id}
+          statementId={detail.statementId}
+          onClose={() => setShowRevert(false)}
           onSuccess={() => setReloadKey((k) => k + 1)}
         />
       )}

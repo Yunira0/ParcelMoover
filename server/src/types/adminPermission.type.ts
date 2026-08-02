@@ -12,8 +12,8 @@ export const ADMIN_PERMISSIONS = [
   // before/after payloads across every entity, so this is a real grant.
   "SYSTEM_LOGS_ACCESS",
   // Edit an unsettled (not yet paid) COD statement - add/remove orders to
-  // correct a mistake before money moves. Statements already marked settled
-  // can never be edited, permission or not.
+  // correct a mistake before money moves. Also covers reverting an already
+  // settled statement back to pending, to undo a mistaken payment record.
   "EDIT_SETTLEMENTS",
 ] as const;
 

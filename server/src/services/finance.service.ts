@@ -1039,6 +1039,101 @@ export async function updateSettlement(
   };
 }
 
+// Admin-only, gated by the delegable EDIT_SETTLEMENTS permission (same gate as
+// updateSettlement): undoes a mistaken "Make Payment" action. Flips a settled
+// statement back to pending and resets every bundled cod_collections leg back
+// to unpaid - the exact inverse of the writes payForSettlement made. The
+// statement and its settlement_items are left intact (not deleted), so it
+// re-enters the normal pending workflow: editable via updateSettlement,
+// payable again via payForSettlement.
+export async function revertSettlement(
+  actor: Actor,
+  settlementId: string,
+  remark: string,
+): Promise<CreateSettlementResult> {
+  const settlement = await prisma.settlements.findUnique({
+    where: { id: settlementId },
+    include: { settlement_items: { select: { cod_collection_id: true } } },
+  });
+  if (!settlement) {
+    throw new AppError(404, "Settlement not found");
+  }
+  if (settlement.status !== "settled") {
+    throw new AppError(400, "Only a settled statement can be reverted");
+  }
+
+  const previousPayments = Array.isArray(settlement.payments)
+    ? (settlement.payments as unknown as SettlementPaymentInput[])
+    : [];
+
+  const updated = await prisma.$transaction(async (tx) => {
+    const result = await tx.settlements.update({
+      where: { id: settlementId },
+      data: {
+        status: "pending",
+        payment_method: null,
+        payments: Prisma.DbNull,
+        settled_by: null,
+        remark: remark.trim(),
+      },
+    });
+
+    const collectionIds = settlement.settlement_items.map((si) => si.cod_collection_id);
+    if (settlement.payee_type === "rider") {
+      await tx.cod_collections.updateMany({
+        where: { id: { in: collectionIds } },
+        data: { rider_payment_status: payment_status.pending, rider_remitted_amount: 0, rider_settled_at: null },
+      });
+    } else {
+      await tx.cod_collections.updateMany({
+        where: { id: { in: collectionIds } },
+        data: { payment_status: payment_status.pending, remitted_amount: 0 },
+      });
+    }
+
+    await tx.audit_logs.create({
+      data: {
+        actor_id: actor.id,
+        entity_type: "settlement",
+        entity_id: settlementId,
+        action: "REVERT_SETTLEMENT",
+        old_data: {
+          status: settlement.status,
+          paymentMethod: settlement.payment_method,
+          payments: previousPayments as unknown as Prisma.InputJsonValue,
+          remark: settlement.remark,
+        },
+        new_data: { status: "pending", remark: remark.trim() },
+      },
+    });
+
+    return result;
+  });
+
+  if (settlement.rider_id) {
+    await invalidateRiderFinanceCache(settlement.rider_id);
+  } else if (settlement.vendor_id) {
+    await invalidateVendorFinanceCache(settlement.vendor_id);
+    // Undoing a payout credits the vendor's running account back, so it can
+    // pull them back under a credit threshold just as a payout can push them
+    // over it. Fire-and-forget.
+    evaluateVendorBillingAsync(settlement.vendor_id);
+  }
+
+  return {
+    id: updated.id,
+    statementId: updated.statement_id,
+    payeeType: updated.payee_type as "rider" | "vendor",
+    amount: Number(updated.amount),
+    payableAmount: Number(updated.payable_amount ?? updated.amount),
+    settlementDate: updated.settlement_date ? formatNepalDate(updated.settlement_date) : null,
+    status: updated.status,
+    paymentMethod: updated.payment_method,
+    payments: [],
+    remark: updated.remark,
+  };
+}
+
 // Line-item breakdown of a single settlement statement - which orders were
 // bundled into it and how much of each was settled. Authorization mirrors
 // listSettlements: staff see any statement, vendor/rider/sales are confined

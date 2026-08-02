@@ -67,6 +67,12 @@ export const updateSettlementSchema = z.object({
   codCollectionIds: z.array(uuidSchema).min(1, "At least one order must be selected"),
 });
 
+// ── Revert settlement (body) — flips a settled statement back to pending ─────
+
+export const revertSettlementSchema = z.object({
+  remark: z.string().trim().min(1, "Remark is required").max(500),
+});
+
 // ── Notification list query ───────────────────────────────────────────────────
 
 export const notificationQuerySchema = paginationQuerySchema;

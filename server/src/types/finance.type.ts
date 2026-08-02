@@ -105,6 +105,10 @@ export interface UpdateSettlementInput {
   codCollectionIds: string[];
 }
 
+export interface RevertSettlementInput {
+  remark: string;
+}
+
 export interface CreateSettlementResult {
   id: string;
   statementId: string;

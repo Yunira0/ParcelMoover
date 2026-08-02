@@ -13,6 +13,7 @@ import {
   createSettlementSchema,
   paySettlementSchema,
   updateSettlementSchema,
+  revertSettlementSchema,
 } from "../validators/finance.schema";
 import { createRedisRateLimitStore } from "../lib/rateLimitStore";
 import {
@@ -23,6 +24,7 @@ import {
   createSettlementController,
   payForSettlementController,
   updateSettlementController,
+  revertSettlementController,
   getSettlementDetailController,
 } from "../controllers/finance.controller";
 
@@ -131,6 +133,20 @@ financeRouter.patch(
   settlementCreateLimiter,
   validate(updateSettlementSchema),
   updateSettlementController,
+);
+
+// POST /api/finance/settlements/:id/revert — undo a mistaken "Make Payment"
+// action: flips a settled statement back to pending (super_admin always
+// allowed; a plain admin needs EDIT_SETTLEMENTS, same gate as editing)
+financeRouter.post(
+  "/settlements/:id/revert",
+  authMiddleware,
+  csrfProtection,
+  authorizeRoles("super_admin", "admin"),
+  requireAdminPermission("EDIT_SETTLEMENTS"),
+  settlementCreateLimiter,
+  validate(revertSettlementSchema),
+  revertSettlementController,
 );
 
 // GET /api/finance/unsettled-orders — unsettled COD orders for rider or vendor

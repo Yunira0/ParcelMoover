@@ -243,3 +243,11 @@ export const updateSettlement = async (
   const response = await api.patch(`/finance/settlements/${id}`, { codCollectionIds });
   return response.data;
 };
+
+export const revertSettlement = async (
+  id: string,
+  remark: string,
+): Promise<{ success: boolean; message: string; data: CreateSettlementResponse }> => {
+  const response = await api.post(`/finance/settlements/${id}/revert`, { remark });
+  return response.data;
+};
