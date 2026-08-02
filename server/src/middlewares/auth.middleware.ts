@@ -137,6 +137,11 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
             error instanceof jwt.JsonWebTokenError ||
             (error instanceof AppError && error.statusCode === 401)
         ) {
+            // The client can't clear these itself (httpOnly) - if we're rejecting
+            // the token, purge it here so the browser stops resending it and
+            // looping between a protected route and /login.
+            res.clearCookie("accessToken", { path: "/" });
+            res.clearCookie("csrfToken", { path: "/" });
             return res.status(401).json({
                 success: false,
                 message: error instanceof AppError ? error.message : "Unauthorized",

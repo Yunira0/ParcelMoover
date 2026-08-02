@@ -37,6 +37,7 @@ function makeRes() {
     res.body = body;
     return res as Response;
   }) as unknown as Response["json"];
+  res.clearCookie = vi.fn(() => res as Response) as unknown as Response["clearCookie"];
   return res as Response & { statusCode?: number; body?: unknown };
 }
 
@@ -95,6 +96,10 @@ describe("authMiddleware", () => {
     expect(next).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(401);
     expect(res.body).toMatchObject({ success: false, message: "Unauthorized" });
+    // A rejected token must be purged so the browser stops resending it -
+    // otherwise the client bounces between a protected route and /login forever.
+    expect(res.clearCookie).toHaveBeenCalledWith("accessToken", { path: "/" });
+    expect(res.clearCookie).toHaveBeenCalledWith("csrfToken", { path: "/" });
   });
 
   it("forwards a missing JWT_SECRET to the error handler instead of masking it as 401", async () => {
