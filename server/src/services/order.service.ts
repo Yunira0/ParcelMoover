@@ -3294,27 +3294,30 @@ async function _updateParcelStatusImpl(
     // instead of staying at its order-creation defaults forever.
     if ((newStatus === "delivered" || newStatus === "partially_delivered") && parcel.delivery_rider_id) {
       const collectedAmount = newStatus === "delivered" ? Number(parcel.cod_amount) : (data.codCollected ?? 0);
-      if (collectedAmount > 0) {
-        // upsert, not update: a cod_collections row should always exist (created
-        // atomically at order creation), but this must never block the delivery
-        // transition itself if some legacy/drifted parcel is missing one.
-        await tx.cod_collections.upsert({
-          where: { parcel_id: parcel.id },
-          create: {
-            parcel_id: parcel.id,
-            vendor_id: parcel.vendor_id,
-            rider_id: parcel.delivery_rider_id,
-            cod_amount: parcel.cod_amount,
-            collected_amount: collectedAmount,
-            collected_at: new Date(),
-          },
-          update: {
-            rider_id: parcel.delivery_rider_id,
-            collected_amount: collectedAmount,
-            collected_at: new Date(),
-          },
-        });
-      }
+      // upsert, not update: a cod_collections row should always exist (created
+      // atomically at order creation), but this must never block the delivery
+      // transition itself if some legacy/drifted parcel is missing one.
+      // No collectedAmount > 0 guard here: a COD corrected down to 0 (or a
+      // genuine zero-cash partial delivery) must still overwrite whatever
+      // stale amount is sitting on the row, or the settlement ledger keeps
+      // showing cash that was never actually owed.
+      await tx.cod_collections.upsert({
+        where: { parcel_id: parcel.id },
+        create: {
+          parcel_id: parcel.id,
+          vendor_id: parcel.vendor_id,
+          rider_id: parcel.delivery_rider_id,
+          cod_amount: parcel.cod_amount,
+          collected_amount: collectedAmount,
+          collected_at: new Date(),
+        },
+        update: {
+          rider_id: parcel.delivery_rider_id,
+          cod_amount: parcel.cod_amount,
+          collected_amount: collectedAmount,
+          collected_at: new Date(),
+        },
+      });
     }
     // Side-effect: update pickup_task status in sync
     if (parcel.pickup_tasks && ["rider_assigned", "picked_up", "cancelled"].includes(newStatus)) {
@@ -3798,7 +3801,9 @@ async function _bulkUpdateParcelStatusImpl(
       for (const p of parcels) {
         if (!p.delivery_rider_id) continue;
         const collectedAmount = newStatus === "delivered" ? Number(p.cod_amount) : (data.codCollected ?? 0);
-        if (collectedAmount <= 0) continue;
+        // No collectedAmount <= 0 skip here: a COD corrected down to 0 (or a
+        // genuine zero-cash partial delivery) must still overwrite whatever
+        // stale amount is sitting on the row - see the single-parcel path above.
         await tx.cod_collections.upsert({
           where: { parcel_id: p.id },
           create: {
@@ -3811,6 +3816,7 @@ async function _bulkUpdateParcelStatusImpl(
           },
           update: {
             rider_id: p.delivery_rider_id,
+            cod_amount: p.cod_amount,
             collected_amount: collectedAmount,
             collected_at: collectedAt,
           },
