@@ -4028,6 +4028,28 @@ export async function applyExternalCarrierStatus(
         (updateData as any).delivered_at = new Date();
       }
       await tx.parcels.update({ where: { id: parcelId }, data: updateData });
+      // Side-effect: same as the internal delivery path (_updateParcelStatusImpl) -
+      // a 3PL-delivered parcel has no internal rider transition to trigger the
+      // cod_collections upsert, so without this the settlement ledger never
+      // sees the cash as collected.
+      if (targetStatus === "delivered") {
+        await tx.cod_collections.upsert({
+          where: { parcel_id: parcel.id },
+          create: {
+            parcel_id: parcel.id,
+            vendor_id: parcel.vendor_id,
+            rider_id: parcel.delivery_rider_id,
+            cod_amount: parcel.cod_amount,
+            collected_amount: parcel.cod_amount,
+            collected_at: new Date(),
+          },
+          update: {
+            cod_amount: parcel.cod_amount,
+            collected_amount: parcel.cod_amount,
+            collected_at: new Date(),
+          },
+        });
+      }
       await tx.parcel_status_history.create({
         data: {
           parcel_id: parcelId,
