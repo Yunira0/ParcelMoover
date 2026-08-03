@@ -267,7 +267,12 @@ const SettlementCreatePage: React.FC = () => {
                           />
                         </td>
                         <td className="scp-mono">{order.trackingId}</td>
-                        <td>{order.receiverName}</td>
+                        <td>
+                          {order.receiverName}
+                          {order.receiverAddress && (
+                            <div className="scp-subtext">{order.receiverAddress}</div>
+                          )}
+                        </td>
                         <td style={{ textAlign: 'right' }}>Rs. {order.codAmount.toLocaleString()}</td>
                         {payeeType === 'vendor' && (
                           <td style={{ textAlign: 'right' }}>Rs. {order.deliveryCharge.toLocaleString()}</td>

@@ -127,6 +127,7 @@ export interface UnsettledOrderItem {
   codCollectionId: string;
   trackingId: string;
   receiverName: string;
+  receiverAddress: string | null;
   destination: string;
   codAmount: number;
   deliveryCharge: number;
@@ -147,7 +148,7 @@ export interface SettlementDetailItem {
   reference: string | null;
   receiverName: string;
   receiverPhone: string;
-  destination: string;
+  receiverAddress: string | null;
   // Whose money this line is. Null for parcels booked without a vendor
   // (walk-in / direct orders). Mainly useful on rider statements, where
   // every line can belong to a different vendor.

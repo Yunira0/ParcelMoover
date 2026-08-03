@@ -38,7 +38,7 @@ function buildStatementHtml(detail: SettlementDetail): string {
                 }</td>`
               : ''
           }
-          <td>${item.receiverName}<div class="sub">${item.destination}</div></td>
+          <td>${item.receiverName}${item.receiverAddress ? `<div class="sub">${item.receiverAddress}</div>` : ''}</td>
           <td>${item.receiverPhone}</td>
           <td class="r">${item.weightKg === null ? '-' : item.weightKg.toFixed(2)}</td>
           <td class="r">${money(item.codAmount)}</td>
@@ -180,7 +180,7 @@ const SettlementDetailPage: React.FC = () => {
       ...(showVendor ? ['Vendor', 'Vendor Phone'] : []),
       'Receiver',
       'Receiver Phone',
-      'Destination',
+      'Receiver Address',
       'Weight',
       'COD',
       'Collected COD',
@@ -193,7 +193,7 @@ const SettlementDetailPage: React.FC = () => {
       ...(showVendor ? [item.vendorName ?? '', item.vendorPhone ?? ''] : []),
       item.receiverName,
       item.receiverPhone,
-      item.destination,
+      item.receiverAddress ?? '',
       item.weightKg === null ? '' : item.weightKg,
       item.codAmount,
       item.collectedAmount,
@@ -337,7 +337,9 @@ const SettlementDetailPage: React.FC = () => {
                       )}
                       <td>
                         {item.receiverName}
-                        <div className="vendor-finance-subtext">{item.destination}</div>
+                        {item.receiverAddress && (
+                          <div className="vendor-finance-subtext">{item.receiverAddress}</div>
+                        )}
                       </td>
                       <td>{item.receiverPhone}</td>
                       <td style={{ textAlign: 'right' }}>
