@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Eye, Plus, Search, X } from 'lucide-react';
 import Table from '../components/Table';
@@ -18,6 +18,7 @@ import {
   type Ticket,
   type TicketCategory,
   type TicketPriority,
+  type TicketsListMeta,
   type TicketStatus,
 } from '../services/tickets.service';
 import { toBsDate } from '../utils/nepaliDate';
@@ -26,6 +27,7 @@ import './Tickets.css';
 type TicketTab = 'all' | TicketStatus;
 
 const PAGE_SIZE = 10;
+const SEARCH_DEBOUNCE_MS = 300;
 
 const TAB_ORDER: TicketTab[] = ['all', 'pending', 'open', 'closed'];
 
@@ -62,14 +64,15 @@ const RANGE_DAYS: Record<Exclude<DateRange, ''>, number> = {
   '30d': 30,
 };
 
-const isWithinRange = (createdAt: string, range: DateRange) => {
-  if (!range) return true;
-  const created = new Date(createdAt);
-  if (Number.isNaN(created.getTime())) return false;
+// Converts the UI's coarse date-range picker into ISO-8601 bounds the API's
+// fromDate/toDate accept, so filtering happens server-side instead of on a
+// (potentially truncated) client-side page of results.
+const dateRangeToBounds = (range: DateRange): { fromDate?: string; toDate?: string } => {
+  if (!range) return {};
   const cutoff = new Date();
   cutoff.setHours(0, 0, 0, 0);
   cutoff.setDate(cutoff.getDate() - (RANGE_DAYS[range] - 1));
-  return created.getTime() >= cutoff.getTime();
+  return { fromDate: cutoff.toISOString(), toDate: new Date().toISOString() };
 };
 
 const Tickets: React.FC = () => {
@@ -78,8 +81,10 @@ const Tickets: React.FC = () => {
   // Vendors raise tickets; admins/sales only triage them.
   const vendorSide = isVendorSide();
   const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [meta, setMeta] = useState<TicketsListMeta | null>(null);
   const [activeTab, setActiveTab] = useState<TicketTab>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [priorityFilter, setPriorityFilter] = useState<TicketPriority | ''>('');
   // Deep-linked from a module's "Ticket" button, e.g. /tickets?category=pickup
   const [categoryFilter, setCategoryFilter] = useState<TicketCategory | ''>(() => {
@@ -90,6 +95,12 @@ const Tickets: React.FC = () => {
   const [page, setPage] = useState(1);
   const [pageSizeChoice, setPageSizeChoice] = useState(PAGE_SIZE);
   const [loading, setLoading] = useState(true);
+  const [statusCounts, setStatusCounts] = useState<Record<TicketTab, number>>({
+    all: 0,
+    pending: 0,
+    open: 0,
+    closed: 0,
+  });
   const [selectedIds, setSelectedIds] = useState<Set<string | number>>(new Set());
   // "?new=<category>" (e.g. from the vendor dashboard quick actions) opens the
   // create modal straight away with that category pre-selected.
@@ -108,54 +119,84 @@ const Tickets: React.FC = () => {
     }
   };
 
+  // Debounce search input so every keystroke doesn't fire a request.
+  useEffect(() => {
+    const handle = setTimeout(() => setDebouncedSearch(searchQuery.trim()), SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(handle);
+  }, [searchQuery]);
+
+  useEffect(() => { setPage(1); }, [activeTab, debouncedSearch, priorityFilter, categoryFilter, dateRange, pageSizeChoice]);
+
+  const { fromDate, toDate } = useMemo(() => dateRangeToBounds(dateRange), [dateRange]);
+
+  // Guards against an earlier, slower request landing after a later one and
+  // stomping its results (e.g. typing quickly in the search box).
+  const loadRequestIdRef = useRef(0);
+
   const loadTickets = useCallback(async () => {
+    const requestId = ++loadRequestIdRef.current;
     setLoading(true);
     try {
-      const res = await getTickets();
+      const res = await getTickets({
+        status: activeTab === 'all' ? undefined : activeTab,
+        search: debouncedSearch || undefined,
+        priority: priorityFilter || undefined,
+        category: categoryFilter || undefined,
+        fromDate,
+        toDate,
+        page,
+        pageSize: pageSizeChoice,
+      });
+      if (requestId !== loadRequestIdRef.current) return;
       if (res?.success && Array.isArray(res.data)) {
         setTickets(res.data);
+        setMeta(res.meta ?? null);
       }
     } finally {
-      setLoading(false);
+      if (requestId === loadRequestIdRef.current) setLoading(false);
     }
-  }, []);
+  }, [activeTab, debouncedSearch, priorityFilter, categoryFilter, fromDate, toDate, page, pageSizeChoice]);
+
+  // Tab counts respect search/priority/category/date filters (like Gmail label
+  // counts) but not the active status tab itself, so switching tabs doesn't
+  // change the numbers shown on the other tabs.
+  const countsRequestIdRef = useRef(0);
+
+  const loadStatusCounts = useCallback(async () => {
+    const requestId = ++countsRequestIdRef.current;
+    const filters = {
+      search: debouncedSearch || undefined,
+      priority: priorityFilter || undefined,
+      category: categoryFilter || undefined,
+      fromDate,
+      toDate,
+      pageSize: 1,
+    };
+    const [all, pending, open, closed] = await Promise.all([
+      getTickets(filters),
+      getTickets({ ...filters, status: 'pending' }),
+      getTickets({ ...filters, status: 'open' }),
+      getTickets({ ...filters, status: 'closed' }),
+    ]);
+    if (requestId !== countsRequestIdRef.current) return;
+    setStatusCounts({
+      all: all.meta?.total ?? 0,
+      pending: pending.meta?.total ?? 0,
+      open: open.meta?.total ?? 0,
+      closed: closed.meta?.total ?? 0,
+    });
+  }, [debouncedSearch, priorityFilter, categoryFilter, fromDate, toDate]);
 
   useEffect(() => { loadTickets(); }, [loadTickets]);
+  useEffect(() => { loadStatusCounts(); }, [loadStatusCounts]);
 
-  useEffect(() => { setPage(1); }, [activeTab, searchQuery, priorityFilter, categoryFilter, dateRange, pageSizeChoice]);
+  const refresh = useCallback(() => {
+    loadTickets();
+    loadStatusCounts();
+  }, [loadTickets, loadStatusCounts]);
 
-  // Counts per tab are derived from the full dataset (independent of filters),
-  // matching the design's status pills.
-  const statusCounts = useMemo(() => {
-    const counts: Record<TicketTab, number> = {
-      all: tickets.length,
-      pending: 0,
-      open: 0,
-      closed: 0,
-    };
-    tickets.forEach((ticket) => { counts[ticket.status] += 1; });
-    return counts;
-  }, [tickets]);
-
-  const filteredTickets = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    return tickets.filter((ticket) => {
-      if (activeTab !== 'all' && ticket.status !== activeTab) return false;
-      if (priorityFilter && ticket.priority !== priorityFilter) return false;
-      if (categoryFilter && ticket.category !== categoryFilter) return false;
-      if (!isWithinRange(ticket.createdAt, dateRange)) return false;
-      if (q && !(
-        ticket.vendorName?.toLowerCase().includes(q) ||
-        ticket.customerPhone.toLowerCase().includes(q) ||
-        ticket.ticketId.toLowerCase().includes(q) ||
-        ticket.subject.toLowerCase().includes(q)
-      )) return false;
-      return true;
-    });
-  }, [tickets, activeTab, searchQuery, priorityFilter, categoryFilter, dateRange]);
-
-  const totalPages = Math.max(1, Math.ceil(filteredTickets.length / pageSizeChoice));
-  const visibleTickets = filteredTickets.slice((page - 1) * pageSizeChoice, page * pageSizeChoice);
+  const totalPages = meta?.totalPages ?? 1;
+  const visibleTickets = tickets;
   const visibleIds = visibleTickets.map((ticket) => ticket.id);
   const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedIds.has(id));
   const someVisibleSelected = visibleIds.some((id) => selectedIds.has(id));
@@ -330,13 +371,13 @@ const Tickets: React.FC = () => {
         pageSize={pageSizeChoice}
         pageSizeLabel="tickets"
         onPageSizeChange={setPageSizeChoice}
-        summary={`${filteredTickets.length} ticket${filteredTickets.length === 1 ? '' : 's'}`}
+        summary={`${meta?.total ?? 0} ticket${(meta?.total ?? 0) === 1 ? '' : 's'}`}
       />
 
       <CreateTicketModal
         isOpen={isCreateOpen}
         onClose={closeCreateModal}
-        onSuccess={loadTickets}
+        onSuccess={refresh}
         initialCategory={initialCreateCategory}
       />
     </div>
