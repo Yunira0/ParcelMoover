@@ -187,7 +187,8 @@
   font-size: 12px;
 }
 
-/* Secondary line inside a cell, e.g. the receiver's phone under their name. */
+/* Secondary lines inside a cell, e.g. the receiver's phone and address under
+   their name. */
 .scp-subtext {
   color: var(--color-text-caption);
   font-size: 12px;

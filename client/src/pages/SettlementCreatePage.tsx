@@ -335,6 +335,9 @@ const SettlementCreatePage: React.FC = () => {
                         <td>
                           {order.receiverName}
                           <div className="scp-subtext">{order.receiverPhone}</div>
+                          {order.receiverAddress && (
+                            <div className="scp-subtext">{order.receiverAddress}</div>
+                          )}
                         </td>
                         <td style={{ textAlign: 'right' }}>Rs. {order.codAmount.toLocaleString()}</td>
                         {payeeType === 'vendor' && (

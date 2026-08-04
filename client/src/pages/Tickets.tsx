@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Eye, Plus, Search, X } from 'lucide-react';
 import Table from '../components/Table';
@@ -18,6 +18,7 @@ import {
   type Ticket,
   type TicketCategory,
   type TicketPriority,
+  type TicketsListMeta,
   type TicketStatus,
 } from '../services/tickets.service';
 import { toBsDate } from '../utils/nepaliDate';
@@ -26,6 +27,7 @@ import './Tickets.css';
 type TicketTab = 'all' | TicketStatus;
 
 const PAGE_SIZE = 10;
+const SEARCH_DEBOUNCE_MS = 300;
 
 const TAB_ORDER: TicketTab[] = ['all', 'pending', 'open', 'closed'];
 
@@ -62,16 +64,16 @@ const RANGE_DAYS: Record<Exclude<DateRange, ''>, number> = {
   '30d': 30,
 };
 
-// Start-of-day cutoff for a range, as an ISO date the server can filter on.
-const rangeFromDate = (range: DateRange): string | undefined => {
-  if (!range) return undefined;
+// Converts the UI's coarse date-range picker into ISO-8601 bounds the API's
+// fromDate/toDate accept, so filtering happens server-side instead of on a
+// (potentially truncated) client-side page of results.
+const dateRangeToBounds = (range: DateRange): { fromDate?: string; toDate?: string } => {
+  if (!range) return {};
   const cutoff = new Date();
   cutoff.setHours(0, 0, 0, 0);
   cutoff.setDate(cutoff.getDate() - (RANGE_DAYS[range] - 1));
-  return cutoff.toISOString();
+  return { fromDate: cutoff.toISOString(), toDate: new Date().toISOString() };
 };
-
-const SEARCH_DEBOUNCE_MS = 300;
 
 const Tickets: React.FC = () => {
   const navigate = useNavigate();
@@ -79,18 +81,10 @@ const Tickets: React.FC = () => {
   // Vendors raise tickets; admins/sales only triage them.
   const vendorSide = isVendorSide();
   const [tickets, setTickets] = useState<Ticket[]>([]);
-  const [total, setTotal] = useState(0);
-  const [totalPages, setTotalPages] = useState(1);
-  const [statusCounts, setStatusCounts] = useState<Record<TicketTab, number>>({
-    all: 0,
-    pending: 0,
-    open: 0,
-    closed: 0,
-  });
+  const [meta, setMeta] = useState<TicketsListMeta | null>(null);
   const [activeTab, setActiveTab] = useState<TicketTab>('all');
   const [searchQuery, setSearchQuery] = useState('');
-  // Search goes to the server now, so debounce rather than fire per keystroke.
-  const [appliedSearch, setAppliedSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [priorityFilter, setPriorityFilter] = useState<TicketPriority | ''>('');
   // Deep-linked from a module's "Ticket" button, e.g. /tickets?category=pickup
   const [categoryFilter, setCategoryFilter] = useState<TicketCategory | ''>(() => {
@@ -101,6 +95,12 @@ const Tickets: React.FC = () => {
   const [page, setPage] = useState(1);
   const [pageSizeChoice, setPageSizeChoice] = useState(PAGE_SIZE);
   const [loading, setLoading] = useState(true);
+  const [statusCounts, setStatusCounts] = useState<Record<TicketTab, number>>({
+    all: 0,
+    pending: 0,
+    open: 0,
+    closed: 0,
+  });
   const [selectedIds, setSelectedIds] = useState<Set<string | number>>(new Set());
   // "?new=<category>" (e.g. from the vendor dashboard quick actions) opens the
   // create modal straight away with that category pre-selected.
@@ -119,41 +119,83 @@ const Tickets: React.FC = () => {
     }
   };
 
-  // Filtering and paging happen on the server. Doing it here meant the page
-  // only ever saw the first API page of tickets, so anything older than that -
-  // typically the closed ones - was missing from "All" and from the tab counts.
+  // Debounce search input so every keystroke doesn't fire a request.
+  useEffect(() => {
+    const handle = setTimeout(() => setDebouncedSearch(searchQuery.trim()), SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(handle);
+  }, [searchQuery]);
+
+  useEffect(() => { setPage(1); }, [activeTab, debouncedSearch, priorityFilter, categoryFilter, dateRange, pageSizeChoice]);
+
+  const { fromDate, toDate } = useMemo(() => dateRangeToBounds(dateRange), [dateRange]);
+
+  // Guards against an earlier, slower request landing after a later one and
+  // stomping its results (e.g. typing quickly in the search box).
+  const loadRequestIdRef = useRef(0);
+
   const loadTickets = useCallback(async () => {
+    const requestId = ++loadRequestIdRef.current;
     setLoading(true);
     try {
       const res = await getTickets({
         status: activeTab === 'all' ? undefined : activeTab,
-        search: appliedSearch || undefined,
+        search: debouncedSearch || undefined,
         priority: priorityFilter || undefined,
         category: categoryFilter || undefined,
-        fromDate: rangeFromDate(dateRange),
+        fromDate,
+        toDate,
         page,
         pageSize: pageSizeChoice,
       });
+      if (requestId !== loadRequestIdRef.current) return;
       if (res?.success && Array.isArray(res.data)) {
         setTickets(res.data);
-        setTotal(res.meta?.total ?? res.data.length);
-        setTotalPages(res.meta?.totalPages ?? 1);
-        if (res.meta?.statusCounts) setStatusCounts(res.meta.statusCounts);
+        setMeta(res.meta ?? null);
       }
     } finally {
-      setLoading(false);
+      if (requestId === loadRequestIdRef.current) setLoading(false);
     }
-  }, [activeTab, appliedSearch, priorityFilter, categoryFilter, dateRange, page, pageSizeChoice]);
+  }, [activeTab, debouncedSearch, priorityFilter, categoryFilter, fromDate, toDate, page, pageSizeChoice]);
+
+  // Tab counts respect search/priority/category/date filters (like Gmail label
+  // counts) but not the active status tab itself, so switching tabs doesn't
+  // change the numbers shown on the other tabs.
+  const countsRequestIdRef = useRef(0);
+
+  const loadStatusCounts = useCallback(async () => {
+    const requestId = ++countsRequestIdRef.current;
+    const filters = {
+      search: debouncedSearch || undefined,
+      priority: priorityFilter || undefined,
+      category: categoryFilter || undefined,
+      fromDate,
+      toDate,
+      pageSize: 1,
+    };
+    const [all, pending, open, closed] = await Promise.all([
+      getTickets(filters),
+      getTickets({ ...filters, status: 'pending' }),
+      getTickets({ ...filters, status: 'open' }),
+      getTickets({ ...filters, status: 'closed' }),
+    ]);
+    if (requestId !== countsRequestIdRef.current) return;
+    setStatusCounts({
+      all: all.meta?.total ?? 0,
+      pending: pending.meta?.total ?? 0,
+      open: open.meta?.total ?? 0,
+      closed: closed.meta?.total ?? 0,
+    });
+  }, [debouncedSearch, priorityFilter, categoryFilter, fromDate, toDate]);
 
   useEffect(() => { loadTickets(); }, [loadTickets]);
+  useEffect(() => { loadStatusCounts(); }, [loadStatusCounts]);
 
-  useEffect(() => {
-    const timer = setTimeout(() => setAppliedSearch(searchQuery.trim()), SEARCH_DEBOUNCE_MS);
-    return () => clearTimeout(timer);
-  }, [searchQuery]);
+  const refresh = useCallback(() => {
+    loadTickets();
+    loadStatusCounts();
+  }, [loadTickets, loadStatusCounts]);
 
-  useEffect(() => { setPage(1); }, [activeTab, appliedSearch, priorityFilter, categoryFilter, dateRange, pageSizeChoice]);
-
+  const totalPages = meta?.totalPages ?? 1;
   const visibleTickets = tickets;
   const visibleIds = visibleTickets.map((ticket) => ticket.id);
   const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedIds.has(id));
@@ -329,13 +371,13 @@ const Tickets: React.FC = () => {
         pageSize={pageSizeChoice}
         pageSizeLabel="tickets"
         onPageSizeChange={setPageSizeChoice}
-        summary={`${total} ticket${total === 1 ? '' : 's'}`}
+        summary={`${meta?.total ?? 0} ticket${(meta?.total ?? 0) === 1 ? '' : 's'}`}
       />
 
       <CreateTicketModal
         isOpen={isCreateOpen}
         onClose={closeCreateModal}
-        onSuccess={loadTickets}
+        onSuccess={refresh}
         initialCategory={initialCreateCategory}
       />
     </div>

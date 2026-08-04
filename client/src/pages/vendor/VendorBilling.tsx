@@ -143,26 +143,16 @@ const VendorBilling: React.FC = () => {
               <h3>Account balance</h3>
               <div className="billing-breakdown">
                 <div>
-                  <span>COD collected for you</span>
+                  <span>COD collected</span>
                   <span>{formatCurrency(status.codCollected)}</span>
                 </div>
                 <div>
                   <span>Delivery charges</span>
                   <span className="billing-debit">-{formatCurrency(status.deliveryCharges)}</span>
                 </div>
-                <div>
-                  <span>Already paid out to you</span>
-                  <span className="billing-debit">-{formatCurrency(status.payouts)}</span>
-                </div>
-                <div>
-                  <span>Payments received from you</span>
-                  <span>{formatCurrency(status.paymentsReceived)}</span>
-                </div>
                 <div className="billing-breakdown-total">
-                  <span>{status.balance < 0 ? 'You owe' : 'Owed to you'}</span>
-                  <span className={status.balance < 0 ? 'billing-debit' : ''}>
-                    {formatCurrency(Math.abs(status.balance))}
-                  </span>
+                  <span>Due delivery charge</span>
+                  <span className={owed > 0 ? 'billing-debit' : ''}>{formatCurrency(owed)}</span>
                 </div>
               </div>
               {status.pendingPaymentAmount > 0 && (

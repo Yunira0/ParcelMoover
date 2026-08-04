@@ -194,6 +194,7 @@ export interface UnsettledOrderItem {
   trackingId: string;
   receiverName: string;
   receiverPhone: string;
+  receiverAddress: string | null;
   destination: string;
   codAmount: number;
   deliveryCharge: number;
@@ -224,7 +225,7 @@ export interface SettlementDetailItem {
   reference: string | null;
   receiverName: string;
   receiverPhone: string;
-  destination: string;
+  receiverAddress: string | null;
   vendorName: string | null;
   vendorPhone: string | null;
   orderType: string | null;

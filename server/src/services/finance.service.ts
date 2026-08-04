@@ -551,7 +551,7 @@ export async function getUnsettledOrders(
           order_number: true,
           tracking_id: true,
           delivery_charge: true,
-          parties_parcels_receiver_idToparties: { select: { name: true, phone: true } },
+          parties_parcels_receiver_idToparties: { select: { name: true, phone: true, address: true } },
           locations_parcels_destination_location_idTolocations: {
             select: { name: true, city: true, district: true },
           },
@@ -577,6 +577,7 @@ export async function getUnsettledOrders(
       trackingId: c.parcels.tracking_id,
       receiverName: c.parcels.parties_parcels_receiver_idToparties.name,
       receiverPhone: c.parcels.parties_parcels_receiver_idToparties.phone,
+      receiverAddress: c.parcels.parties_parcels_receiver_idToparties.address,
       destination: formatLocation(c.parcels.locations_parcels_destination_location_idTolocations),
       codAmount,
       deliveryCharge,
@@ -1233,11 +1234,8 @@ export async function getSettlementDetail(actor: Actor, settlementId: string): P
                   order_type: true,
                   pieces: true,
                   weight_kg: true,
-                  parties_parcels_receiver_idToparties: { select: { name: true, phone: true } },
+                  parties_parcels_receiver_idToparties: { select: { name: true, phone: true, address: true } },
                   vendors: { select: { business_name: true, client_name: true, phone: true } },
-                  locations_parcels_destination_location_idTolocations: {
-                    select: { name: true, city: true, district: true },
-                  },
                 },
               },
             },
@@ -1298,7 +1296,7 @@ export async function getSettlementDetail(actor: Actor, settlementId: string): P
       reference: null,
       receiverName: parcel.parties_parcels_receiver_idToparties.name,
       receiverPhone: parcel.parties_parcels_receiver_idToparties.phone,
-      destination: formatLocation(parcel.locations_parcels_destination_location_idTolocations),
+      receiverAddress: parcel.parties_parcels_receiver_idToparties.address,
       // Same business_name-then-client_name fallback used for payeeName above.
       vendorName: parcel.vendors?.business_name || parcel.vendors?.client_name || null,
       vendorPhone: parcel.vendors?.phone ?? null,

@@ -3289,10 +3289,14 @@ async function _updateParcelStatusImpl(
         data: { rider_id: data.riderId },
       });
     }
-    // Side-effect: record what the rider actually collected on delivery, so
-    // the COD settlement ledger (cod_collections) reflects real cash in hand
-    // instead of staying at its order-creation defaults forever.
-    if ((newStatus === "delivered" || newStatus === "partially_delivered") && parcel.delivery_rider_id) {
+    // Side-effect: record what was actually collected on delivery, so the COD
+    // settlement ledger (cod_collections) reflects real cash in hand instead
+    // of staying at its order-creation defaults forever. Not gated on a
+    // delivery rider being on record - riderId is optional at the transition
+    // level (e.g. a super_admin force-transition), and a parcel that skips
+    // straight to delivered without one must still enter the settlement
+    // ledger or its COD becomes permanently unsettleable.
+    if (newStatus === "delivered" || newStatus === "partially_delivered") {
       const collectedAmount = newStatus === "delivered" ? Number(parcel.cod_amount) : (data.codCollected ?? 0);
       // upsert, not update: a cod_collections row should always exist (created
       // atomically at order creation), but this must never block the delivery
@@ -3785,11 +3789,12 @@ async function _bulkUpdateParcelStatusImpl(
       });
     }
 
-    // Side-effect: record what each rider actually collected on delivery, so
-    // the COD settlement ledger (cod_collections) reflects real cash in hand
-    // instead of staying at its order-creation defaults forever. Amounts can
-    // differ per parcel (full cod_amount vs the shared partial codCollected),
-    // so this can't be a single updateMany.
+    // Side-effect: record what was actually collected on delivery, so the COD
+    // settlement ledger (cod_collections) reflects real cash in hand instead
+    // of staying at its order-creation defaults forever. Not gated on a
+    // delivery rider being on record - see the single-parcel path above.
+    // Amounts can differ per parcel (full cod_amount vs the shared partial
+    // codCollected), so this can't be a single updateMany.
     if (newStatus === "delivered" || newStatus === "partially_delivered") {
       const collectedAt = new Date();
       // Sequential, not Promise.all: tx is bound to a single Postgres
@@ -3799,7 +3804,6 @@ async function _bulkUpdateParcelStatusImpl(
       // removed in pg@9). Awaiting one at a time is the same wall-clock cost
       // and avoids relying on deprecated client-side query queueing.
       for (const p of parcels) {
-        if (!p.delivery_rider_id) continue;
         const collectedAmount = newStatus === "delivered" ? Number(p.cod_amount) : (data.codCollected ?? 0);
         // No collectedAmount <= 0 skip here: a COD corrected down to 0 (or a
         // genuine zero-cash partial delivery) must still overwrite whatever
@@ -4024,6 +4028,28 @@ export async function applyExternalCarrierStatus(
         (updateData as any).delivered_at = new Date();
       }
       await tx.parcels.update({ where: { id: parcelId }, data: updateData });
+      // Side-effect: same as the internal delivery path (_updateParcelStatusImpl) -
+      // a 3PL-delivered parcel has no internal rider transition to trigger the
+      // cod_collections upsert, so without this the settlement ledger never
+      // sees the cash as collected.
+      if (targetStatus === "delivered") {
+        await tx.cod_collections.upsert({
+          where: { parcel_id: parcel.id },
+          create: {
+            parcel_id: parcel.id,
+            vendor_id: parcel.vendor_id,
+            rider_id: parcel.delivery_rider_id,
+            cod_amount: parcel.cod_amount,
+            collected_amount: parcel.cod_amount,
+            collected_at: new Date(),
+          },
+          update: {
+            cod_amount: parcel.cod_amount,
+            collected_amount: parcel.cod_amount,
+            collected_at: new Date(),
+          },
+        });
+      }
       await tx.parcel_status_history.create({
         data: {
           parcel_id: parcelId,
