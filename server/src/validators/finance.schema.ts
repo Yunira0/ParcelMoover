@@ -73,6 +73,12 @@ export const revertSettlementSchema = z.object({
   remark: z.string().trim().min(1, "Remark is required").max(500),
 });
 
+// ── Cancel settlement (body) — cancels a pending (unpaid) statement ──────────
+
+export const cancelSettlementSchema = z.object({
+  remark: z.string().trim().min(1, "Remark is required").max(500),
+});
+
 // ── Notification list query ───────────────────────────────────────────────────
 
 export const notificationQuerySchema = paginationQuerySchema;

@@ -69,6 +69,7 @@ interface VendorFormInput {
   rateType: string;
   flatInsideValley: string;
   flatOutsideValley: string;
+  flatOutsideRingRoad: string;
   zoneMajorCities: string;
   zoneUrbanAreas: string;
   zoneRemoteAreas: string;
@@ -80,6 +81,7 @@ interface VendorFormInput {
   returnOutsideValleyPercent: string;
   branchFlatInsideValley: string;
   branchFlatOutsideValley: string;
+  branchFlatOutsideRingRoad: string;
   branchZoneMajorCities: string;
   branchZoneUrbanAreas: string;
   branchZoneRemoteAreas: string;
@@ -109,9 +111,10 @@ const emptyForm: VendorFormInput = {
   joinedAt: '',
   sales: '',
   salesUserId: '',
-  rateType: 'flat',
+  rateType: 'per_destination',
   flatInsideValley: '',
   flatOutsideValley: '',
+  flatOutsideRingRoad: '',
   zoneMajorCities: '',
   zoneUrbanAreas: '',
   zoneRemoteAreas: '',
@@ -123,6 +126,7 @@ const emptyForm: VendorFormInput = {
   returnOutsideValleyPercent: '',
   branchFlatInsideValley: '',
   branchFlatOutsideValley: '',
+  branchFlatOutsideRingRoad: '',
   branchZoneMajorCities: '',
   branchZoneUrbanAreas: '',
   branchZoneRemoteAreas: '',
@@ -288,8 +292,13 @@ const VendorFormPage: React.FC = () => {
   }, [salesAdmins, form.pickupLocation, isSalesUser, salesName, ownSalesUserId]);
 
   // Prefill the per-vendor rate fields with the global defaults from Settings;
-  // the creator can then edit them so this vendor gets its own rates.
+  // the creator can then edit them so this vendor gets its own rates. Create
+  // mode only - on Edit, a blank rate field means "inherits Settings" and
+  // must stay blank (and load-order isn't guaranteed against the edit-mode
+  // load effect below, so prefilling here could otherwise race a real saved
+  // override and overwrite it with a stale Settings snapshot on save).
   useEffect(() => {
+    if (isEdit) return;
     getPricingSettings()
       .then((res) => {
         if (!res?.success || !res.data) return;
@@ -299,6 +308,7 @@ const VendorFormPage: React.FC = () => {
           ...prev,
           flatInsideValley: prev.flatInsideValley || str(d.flatInsideValley),
           flatOutsideValley: prev.flatOutsideValley || str(d.flatOutsideValley),
+          flatOutsideRingRoad: prev.flatOutsideRingRoad || str(d.flatOutsideRingRoad),
           zoneMajorCities: prev.zoneMajorCities || str(d.zoneMajorCities),
           zoneUrbanAreas: prev.zoneUrbanAreas || str(d.zoneUrbanAreas),
           zoneRemoteAreas: prev.zoneRemoteAreas || str(d.zoneRemoteAreas),
@@ -336,6 +346,7 @@ const VendorFormPage: React.FC = () => {
           rateType: s(d.rateType) || 'flat',
           flatInsideValley: s(d.flatInsideValley),
           flatOutsideValley: s(d.flatOutsideValley),
+          flatOutsideRingRoad: s(d.flatOutsideRingRoad),
           zoneMajorCities: s(d.zoneMajorCities),
           zoneUrbanAreas: s(d.zoneUrbanAreas),
           zoneRemoteAreas: s(d.zoneRemoteAreas),
@@ -347,6 +358,7 @@ const VendorFormPage: React.FC = () => {
           returnOutsideValleyPercent: s(d.returnOutsideValleyPercent),
           branchFlatInsideValley: s(d.branchFlatInsideValley),
           branchFlatOutsideValley: s(d.branchFlatOutsideValley),
+          branchFlatOutsideRingRoad: s(d.branchFlatOutsideRingRoad),
           branchZoneMajorCities: s(d.branchZoneMajorCities),
           branchZoneUrbanAreas: s(d.branchZoneUrbanAreas),
           branchZoneRemoteAreas: s(d.branchZoneRemoteAreas),
@@ -474,6 +486,7 @@ const VendorFormPage: React.FC = () => {
           rateType: form.rateType,
           flatInsideValley: form.flatInsideValley,
           flatOutsideValley: form.flatOutsideValley,
+          flatOutsideRingRoad: form.flatOutsideRingRoad,
           zoneMajorCities: form.zoneMajorCities,
           zoneUrbanAreas: form.zoneUrbanAreas,
           zoneRemoteAreas: form.zoneRemoteAreas,
@@ -483,6 +496,7 @@ const VendorFormPage: React.FC = () => {
           returnOutsideValleyPercent: form.returnOutsideValleyPercent,
           branchFlatInsideValley: form.branchFlatInsideValley,
           branchFlatOutsideValley: form.branchFlatOutsideValley,
+          branchFlatOutsideRingRoad: form.branchFlatOutsideRingRoad,
           branchZoneMajorCities: form.branchZoneMajorCities,
           branchZoneUrbanAreas: form.branchZoneUrbanAreas,
           branchZoneRemoteAreas: form.branchZoneRemoteAreas,
@@ -514,7 +528,12 @@ const VendorFormPage: React.FC = () => {
         rateType: form.rateType,
         // Only send the override fields relevant to the chosen model.
         ...(form.rateType === 'flat'
-          ? { flatInsideValley: form.flatInsideValley, flatOutsideValley: form.flatOutsideValley, extraWeightPercent: form.extraWeightPercent }
+          ? {
+              flatInsideValley: form.flatInsideValley,
+              flatOutsideValley: form.flatOutsideValley,
+              flatOutsideRingRoad: form.flatOutsideRingRoad,
+              extraWeightPercent: form.extraWeightPercent,
+            }
           : {}),
         ...(form.rateType === 'zone'
           ? {
@@ -534,7 +553,11 @@ const VendorFormPage: React.FC = () => {
         returnOutsideValleyPercent: form.returnOutsideValleyPercent,
         // Branch overrides mirror the chosen model.
         ...(form.rateType === 'flat'
-          ? { branchFlatInsideValley: form.branchFlatInsideValley, branchFlatOutsideValley: form.branchFlatOutsideValley }
+          ? {
+              branchFlatInsideValley: form.branchFlatInsideValley,
+              branchFlatOutsideValley: form.branchFlatOutsideValley,
+              branchFlatOutsideRingRoad: form.branchFlatOutsideRingRoad,
+            }
           : {}),
         ...(form.rateType === 'zone'
           ? {
@@ -929,9 +952,15 @@ const VendorFormPage: React.FC = () => {
                       value={form.flatInsideValley} onChange={set('flatInsideValley')} placeholder="e.g. 120" />
                     <FormField label="Outside valley (Rs.)" type="number" min={0}
                       value={form.flatOutsideValley} onChange={set('flatOutsideValley')} placeholder="e.g. 250" />
+                    <FormField label="Outside ring road (Rs.)" type="number" min={0}
+                      value={form.flatOutsideRingRoad} onChange={set('flatOutsideRingRoad')} placeholder="e.g. 170" />
                     <FormField label="Extra weight surcharge (%)" type="number" min={0} max={100}
                       value={form.extraWeightPercent} onChange={set('extraWeightPercent')} placeholder="e.g. 10" />
                   </div>
+                  <p className="vfp-rate-note">
+                    Outside ring road applies to inside-valley destinations flagged “outside ring
+                    road” in Rate Setup. Leave blank to charge them the normal inside-valley rate.
+                  </p>
                 </div>
               )}
               {form.rateType === 'zone' && (
@@ -998,6 +1027,8 @@ const VendorFormPage: React.FC = () => {
                       value={form.branchFlatInsideValley} onChange={set('branchFlatInsideValley')} placeholder="e.g. 80" />
                     <FormField label="Branch — outside valley (Rs.)" type="number" min={0}
                       value={form.branchFlatOutsideValley} onChange={set('branchFlatOutsideValley')} placeholder="e.g. 180" />
+                    <FormField label="Branch — outside ring road (Rs.)" type="number" min={0}
+                      value={form.branchFlatOutsideRingRoad} onChange={set('branchFlatOutsideRingRoad')} placeholder="e.g. 130" />
                   </div>
                 </div>
               )}

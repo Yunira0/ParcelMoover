@@ -13,6 +13,7 @@ export interface ManagedLocation {
   isActive: boolean;
   zone: string | null; // major_cities | urban_areas | remote_areas
   valley: string | null; // inside | outside
+  ringRoad: string | null; // inside | outside - only meaningful when valley = inside
   perDestinationRate: number | null;
   branchPerDestinationRate: number | null;
 }
@@ -33,6 +34,7 @@ export interface UpsertLocationInput {
   isActive?: boolean;
   zone?: string | null;
   valley?: string | null;
+  ringRoad?: string | null;
   perDestinationRate?: number | null;
   branchPerDestinationRate?: number | null;
 }
@@ -66,6 +68,7 @@ export interface BulkImportDestinationInput {
   municipality?: string;
   zone?: string;
   valley?: string;
+  ringRoad?: string;
   perDestinationRate?: number | null;
   /** Rate for branch delivery (parcel dropped at the branch, not the door). */
   branchPerDestinationRate?: number | null;

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Printer, Download, CreditCard, Pencil, Undo2 } from 'lucide-react';
+import { ArrowLeft, Printer, Download, CreditCard, Pencil, Undo2, Ban } from 'lucide-react';
 import Button from '../components/Button';
 import StatusChip from '../components/StatusChip';
 import MakePaymentModal from '../components/MakePaymentModal';
@@ -87,7 +87,7 @@ function buildStatementHtml(detail: SettlementDetail): string {
       <div class="meta">
         <div><span class="muted">Statement</span><span>${detail.statementId}</span></div>
         <div><span class="muted">Statement date</span><span>${detail.transferDate ? toBsDate(detail.transferDate) : '-'}</span></div>
-        <div><span class="muted">Payment status</span><span>${detail.status === 'settled' ? 'Settled' : 'Pending'}</span></div>
+        <div><span class="muted">Payment status</span><span>${detail.status === 'settled' ? 'Settled' : detail.status === 'cancelled' ? 'Cancelled' : 'Pending'}</span></div>
         ${detail.remark ? `<div><span class="muted">Remark</span><span>${detail.remark}</span></div>` : ''}
       </div>
     </div>
@@ -119,6 +119,7 @@ const SettlementDetailPage: React.FC = () => {
   const [showPayment, setShowPayment] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const [showRevert, setShowRevert] = useState(false);
+  const [showCancel, setShowCancel] = useState(false);
 
   const canPay = hasAnyRole(['super_admin', 'admin']);
   // Correcting a mistake — gated by the delegable EDIT_SETTLEMENTS permission,
@@ -229,6 +230,11 @@ const SettlementDetailPage: React.FC = () => {
               <CreditCard size={16} /> Make Payment
             </Button>
           )}
+          {canEdit && detail?.status === 'pending' && (
+            <Button variant="danger" onClick={() => setShowCancel(true)}>
+              <Ban size={16} /> Cancel
+            </Button>
+          )}
           {canEdit && detail?.status === 'settled' && (
             <Button variant="danger" onClick={() => setShowRevert(true)}>
               <Undo2 size={16} /> Revert
@@ -267,8 +273,11 @@ const SettlementDetailPage: React.FC = () => {
               </div>
               <div>
                 <span>Payment status</span>
-                <StatusChip variant="solid" tone={detail.status === 'settled' ? 'success' : 'warning'}>
-                  {detail.status === 'settled' ? 'Settled' : 'Pending'}
+                <StatusChip
+                  variant="solid"
+                  tone={detail.status === 'settled' ? 'success' : detail.status === 'cancelled' ? 'neutral' : 'warning'}
+                >
+                  {detail.status === 'settled' ? 'Settled' : detail.status === 'cancelled' ? 'Cancelled' : 'Pending'}
                 </StatusChip>
               </div>
               {detail.status === 'settled' && detail.payments.length > 0 && (
@@ -401,7 +410,18 @@ const SettlementDetailPage: React.FC = () => {
         <RevertSettlementModal
           settlementId={detail.id}
           statementId={detail.statementId}
+          mode="revert"
           onClose={() => setShowRevert(false)}
+          onSuccess={() => setReloadKey((k) => k + 1)}
+        />
+      )}
+
+      {showCancel && detail && (
+        <RevertSettlementModal
+          settlementId={detail.id}
+          statementId={detail.statementId}
+          mode="cancel"
+          onClose={() => setShowCancel(false)}
           onSuccess={() => setReloadKey((k) => k + 1)}
         />
       )}

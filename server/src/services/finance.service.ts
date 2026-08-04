@@ -1135,6 +1135,73 @@ export async function revertSettlement(
   };
 }
 
+// Admin-only, gated by the delegable EDIT_SETTLEMENTS permission (same gate as
+// updateSettlement/revertSettlement): cancels a statement that hasn't been
+// paid yet. Unlike revertSettlement, no payment ever happened here (a pending
+// statement only earmarks orders - see createSettlement), so there's no
+// payment_status/remitted_amount to unwind. The statement row is kept (status
+// -> "cancelled") for the audit trail, but its settlement_items are deleted so
+// the bundled orders become eligible for a future statement again.
+export async function cancelSettlement(
+  actor: Actor,
+  settlementId: string,
+  remark: string,
+): Promise<CreateSettlementResult> {
+  const settlement = await prisma.settlements.findUnique({
+    where: { id: settlementId },
+    include: { settlement_items: { select: { cod_collection_id: true } } },
+  });
+  if (!settlement) {
+    throw new AppError(404, "Settlement not found");
+  }
+  if (settlement.status !== "pending") {
+    throw new AppError(400, "Only a pending statement can be cancelled");
+  }
+
+  const collectionIds = settlement.settlement_items.map((si) => si.cod_collection_id);
+
+  const updated = await prisma.$transaction(async (tx) => {
+    await tx.settlement_items.deleteMany({ where: { settlement_id: settlementId } });
+
+    const result = await tx.settlements.update({
+      where: { id: settlementId },
+      data: { status: "cancelled", remark: remark.trim() },
+    });
+
+    await tx.audit_logs.create({
+      data: {
+        actor_id: actor.id,
+        entity_type: "settlement",
+        entity_id: settlementId,
+        action: "CANCEL_SETTLEMENT",
+        old_data: { status: settlement.status, codCollectionIds: collectionIds, remark: settlement.remark },
+        new_data: { status: "cancelled", remark: remark.trim() },
+      },
+    });
+
+    return result;
+  });
+
+  if (settlement.rider_id) {
+    await invalidateRiderFinanceCache(settlement.rider_id);
+  } else if (settlement.vendor_id) {
+    await invalidateVendorFinanceCache(settlement.vendor_id);
+  }
+
+  return {
+    id: updated.id,
+    statementId: updated.statement_id,
+    payeeType: updated.payee_type as "rider" | "vendor",
+    amount: Number(updated.amount),
+    payableAmount: Number(updated.payable_amount ?? updated.amount),
+    settlementDate: updated.settlement_date ? formatNepalDate(updated.settlement_date) : null,
+    status: updated.status,
+    paymentMethod: updated.payment_method,
+    payments: [],
+    remark: updated.remark,
+  };
+}
+
 // Line-item breakdown of a single settlement statement - which orders were
 // bundled into it and how much of each was settled. Authorization mirrors
 // listSettlements: staff see any statement, vendor/rider/sales are confined

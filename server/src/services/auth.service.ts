@@ -51,6 +51,7 @@ interface UpdateManagedUserInput {
   rateType?: string;
   flatInsideValley?: string | number;
   flatOutsideValley?: string | number;
+  flatOutsideRingRoad?: string | number;
   zoneMajorCities?: string | number;
   zoneUrbanAreas?: string | number;
   zoneRemoteAreas?: string | number;
@@ -61,6 +62,7 @@ interface UpdateManagedUserInput {
   returnOutsideValleyPercent?: string | number;
   branchFlatInsideValley?: string | number;
   branchFlatOutsideValley?: string | number;
+  branchFlatOutsideRingRoad?: string | number;
   branchZoneMajorCities?: string | number;
   branchZoneUrbanAreas?: string | number;
   branchZoneRemoteAreas?: string | number;
@@ -359,6 +361,7 @@ export async function updateManagedUserProfile(
       if (data.rateType && ["per_destination", "zone", "flat"].includes(data.rateType)) u.rate_type = data.rateType;
       putRate(u, "flat_inside_valley", data.flatInsideValley);
       putRate(u, "flat_outside_valley", data.flatOutsideValley);
+      putRate(u, "flat_outside_ring_road", data.flatOutsideRingRoad);
       putRate(u, "zone_major_cities", data.zoneMajorCities);
       putRate(u, "zone_urban_areas", data.zoneUrbanAreas);
       putRate(u, "zone_remote_areas", data.zoneRemoteAreas);
@@ -369,6 +372,7 @@ export async function updateManagedUserProfile(
       putRate(u, "return_outside_valley_percent", data.returnOutsideValleyPercent);
       putRate(u, "branch_flat_inside_valley", data.branchFlatInsideValley);
       putRate(u, "branch_flat_outside_valley", data.branchFlatOutsideValley);
+      putRate(u, "branch_flat_outside_ring_road", data.branchFlatOutsideRingRoad);
       putRate(u, "branch_zone_major_cities", data.branchZoneMajorCities);
       putRate(u, "branch_zone_urban_areas", data.branchZoneUrbanAreas);
       putRate(u, "branch_zone_remote_areas", data.branchZoneRemoteAreas);
@@ -423,6 +427,7 @@ export async function getManagedUserDetail(actorUserId: string, type: ManagedUse
       salesEditUsed: v.sales_edited_at !== null,
       rateType: v.rate_type,
       flatInsideValley: num(v.flat_inside_valley), flatOutsideValley: num(v.flat_outside_valley),
+      flatOutsideRingRoad: num(v.flat_outside_ring_road),
       zoneMajorCities: num(v.zone_major_cities), zoneUrbanAreas: num(v.zone_urban_areas),
       zoneRemoteAreas: num(v.zone_remote_areas), zoneInsideValley: num(v.zone_inside_valley),
       insideValleyFlatRate: num(v.inside_valley_flat_rate),
@@ -430,6 +435,7 @@ export async function getManagedUserDetail(actorUserId: string, type: ManagedUse
       returnInsideValleyPercent: num(v.return_inside_valley_percent),
       returnOutsideValleyPercent: num(v.return_outside_valley_percent),
       branchFlatInsideValley: num(v.branch_flat_inside_valley), branchFlatOutsideValley: num(v.branch_flat_outside_valley),
+      branchFlatOutsideRingRoad: num(v.branch_flat_outside_ring_road),
       branchZoneMajorCities: num(v.branch_zone_major_cities), branchZoneUrbanAreas: num(v.branch_zone_urban_areas),
       branchZoneRemoteAreas: num(v.branch_zone_remote_areas), branchZoneInsideValley: num(v.branch_zone_inside_valley),
       pickupLandmark: v.pickup_landmark, billingBusinessName: v.billing_business_name,
@@ -825,9 +831,10 @@ export async function registerUserBySuperAdmin(
           sales_user_id: data.salesUserId ?? null,
           rate_type: ["per_destination", "zone", "flat"].includes(data.rateType ?? "")
             ? data.rateType!
-            : "flat",
+            : "per_destination",
           flat_inside_valley: parseRate(data.flatInsideValley),
           flat_outside_valley: parseRate(data.flatOutsideValley),
+          flat_outside_ring_road: parseRate(data.flatOutsideRingRoad),
           zone_major_cities: parseRate(data.zoneMajorCities),
           zone_urban_areas: parseRate(data.zoneUrbanAreas),
           zone_remote_areas: parseRate(data.zoneRemoteAreas),
@@ -838,6 +845,7 @@ export async function registerUserBySuperAdmin(
           return_outside_valley_percent: parseRate(data.returnOutsideValleyPercent),
           branch_flat_inside_valley: parseRate(data.branchFlatInsideValley),
           branch_flat_outside_valley: parseRate(data.branchFlatOutsideValley),
+          branch_flat_outside_ring_road: parseRate(data.branchFlatOutsideRingRoad),
           branch_zone_major_cities: parseRate(data.branchZoneMajorCities),
           branch_zone_urban_areas: parseRate(data.branchZoneUrbanAreas),
           branch_zone_remote_areas: parseRate(data.branchZoneRemoteAreas),

@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
-import { getPendingCodBill, listOrderCod, listSettlements, getUnsettledOrders, createSettlement, payForSettlement, updateSettlement, revertSettlement, getSettlementDetail } from "../services/finance.service";
-import { CodPaymentFilter, CreateSettlementInput, PaySettlementInput, UpdateSettlementInput, RevertSettlementInput } from "../types/finance.type";
+import { getPendingCodBill, listOrderCod, listSettlements, getUnsettledOrders, createSettlement, payForSettlement, updateSettlement, revertSettlement, cancelSettlement, getSettlementDetail } from "../services/finance.service";
+import { CodPaymentFilter, CreateSettlementInput, PaySettlementInput, UpdateSettlementInput, RevertSettlementInput, CancelSettlementInput } from "../types/finance.type";
 
 // General UUID shape — not strict about RFC-4122 version/variant nibbles, so
 // seeded/demo ids (e.g. 55555555-0000-0000-0000-000000000002) are accepted.
@@ -257,6 +257,29 @@ export async function revertSettlementController(req: Request, res: Response) {
     return res.status(error.statusCode || 500).json({
       success: false,
       message: error.message || "Failed to revert settlement",
+    });
+  }
+}
+
+export async function cancelSettlementController(req: Request, res: Response) {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const { id } = req.params;
+    if (typeof id !== "string" || !UUID_REGEX.test(id)) {
+      return res.status(400).json({ success: false, message: "Invalid settlement id" });
+    }
+
+    const input = req.body as CancelSettlementInput;
+    const settlement = await cancelSettlement({ id: req.user.id, roles: req.user.roles }, id, input.remark);
+
+    return res.status(200).json({ success: true, message: "Settlement cancelled", data: settlement });
+  } catch (error: any) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to cancel settlement",
     });
   }
 }
