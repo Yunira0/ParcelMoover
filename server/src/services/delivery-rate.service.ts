@@ -347,6 +347,7 @@ function buildVendorOverrides(vendor: NonNullable<Awaited<ReturnType<typeof reso
   return {
     flatInsideValley: n(vendor.flat_inside_valley),
     flatOutsideValley: n(vendor.flat_outside_valley),
+    flatOutsideRingRoad: n(vendor.flat_outside_ring_road),
     zoneMajorCities: n(vendor.zone_major_cities),
     zoneUrbanAreas: n(vendor.zone_urban_areas),
     zoneRemoteAreas: n(vendor.zone_remote_areas),
@@ -355,6 +356,7 @@ function buildVendorOverrides(vendor: NonNullable<Awaited<ReturnType<typeof reso
     extraWeightPercent: n(vendor.extra_weight_percent),
     branchFlatInsideValley: n(vendor.branch_flat_inside_valley),
     branchFlatOutsideValley: n(vendor.branch_flat_outside_valley),
+    branchFlatOutsideRingRoad: n(vendor.branch_flat_outside_ring_road),
     branchZoneMajorCities: n(vendor.branch_zone_major_cities),
     branchZoneUrbanAreas: n(vendor.branch_zone_urban_areas),
     branchZoneRemoteAreas: n(vendor.branch_zone_remote_areas),
@@ -418,6 +420,7 @@ export async function getVendorSelfRates(actor: Actor) {
         coveredAreas: coveredAreasByDest.get(dest.id) ?? [],
         zone: dest.zone,
         valley: dest.valley,
+        ringRoad: dest.ring_road,
         homeRate,
         branchRate,
         note,

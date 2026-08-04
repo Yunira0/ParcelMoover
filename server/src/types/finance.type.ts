@@ -75,7 +75,7 @@ export interface SettlementListItem {
   createdAt: string;
   orderCount: number;
   amount: number;
-  status: "pending" | "settled";
+  status: "pending" | "settled" | "cancelled";
   remark: string | null;
 }
 
@@ -112,6 +112,10 @@ export interface RevertSettlementInput {
   remark: string;
 }
 
+export interface CancelSettlementInput {
+  remark: string;
+}
+
 export interface CreateSettlementResult {
   id: string;
   statementId: string;
@@ -119,7 +123,7 @@ export interface CreateSettlementResult {
   amount: number;
   payableAmount: number;
   settlementDate: string | null;
-  status: "pending" | "settled";
+  status: "pending" | "settled" | "cancelled";
   paymentMethod: string | null;
   payments: SettlementPaymentInput[];
   remark: string | null;
@@ -188,7 +192,7 @@ export interface SettlementDetailResult {
   createdAt: string;
   amount: number;
   payableAmount: number;
-  status: "pending" | "settled";
+  status: "pending" | "settled" | "cancelled";
   paymentMethod: string | null;
   payments: SettlementPaymentInput[];
   remark: string | null;

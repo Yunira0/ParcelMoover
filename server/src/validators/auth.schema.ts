@@ -22,15 +22,16 @@ export type LoginInput = z.infer<typeof loginSchema>;
 
 const MANAGED_USER_TYPES = ["admin", "vendor", "rider"] as const;
 
-// Optional string: empty/whitespace → undefined; otherwise trim and enforce max length.
+// Optional string: empty/whitespace after trim -> "" (not collapsed to
+// undefined), so the update service can distinguish "field omitted -> leave
+// unchanged" from "field blanked -> clear it" (see putText/putRate in
+// auth.service.ts, which already handle "" as "clear to null" - they just
+// never received it before).
 const optionalAuthString = (maxLen: number, customMsg?: string) =>
   z
     .string()
     .optional()
-    .transform((val): string | undefined => {
-      const t = val?.trim();
-      return t || undefined;
-    })
+    .transform((val): string | undefined => (val === undefined ? undefined : val.trim()))
     .pipe(z.string().max(maxLen, customMsg).optional());
 
 // Optional string with a minimum length (e.g. clientName must be ≥ 2 chars).
@@ -90,6 +91,7 @@ export const registerUserSchema = z
     rateType: optionalAuthString(30),
     flatInsideValley: optionalAuthString(20),
     flatOutsideValley: optionalAuthString(20),
+    flatOutsideRingRoad: optionalAuthString(20),
     zoneMajorCities: optionalAuthString(20),
     zoneUrbanAreas: optionalAuthString(20),
     zoneRemoteAreas: optionalAuthString(20),
@@ -100,6 +102,7 @@ export const registerUserSchema = z
     returnOutsideValleyPercent: optionalAuthString(20),
     branchFlatInsideValley: optionalAuthString(20),
     branchFlatOutsideValley: optionalAuthString(20),
+    branchFlatOutsideRingRoad: optionalAuthString(20),
     branchZoneMajorCities: optionalAuthString(20),
     branchZoneUrbanAreas: optionalAuthString(20),
     branchZoneRemoteAreas: optionalAuthString(20),
@@ -182,6 +185,7 @@ export const updateManagedUserSchema = z.object({
   rateType: optionalAuthString(30),
   flatInsideValley: optionalAuthString(20),
   flatOutsideValley: optionalAuthString(20),
+  flatOutsideRingRoad: optionalAuthString(20),
   zoneMajorCities: optionalAuthString(20),
   zoneUrbanAreas: optionalAuthString(20),
   zoneRemoteAreas: optionalAuthString(20),
@@ -192,6 +196,7 @@ export const updateManagedUserSchema = z.object({
   returnOutsideValleyPercent: optionalAuthString(20),
   branchFlatInsideValley: optionalAuthString(20),
   branchFlatOutsideValley: optionalAuthString(20),
+  branchFlatOutsideRingRoad: optionalAuthString(20),
   branchZoneMajorCities: optionalAuthString(20),
   branchZoneUrbanAreas: optionalAuthString(20),
   branchZoneRemoteAreas: optionalAuthString(20),

@@ -72,7 +72,7 @@ export interface SettlementListItem {
   createdAt: string;
   orderCount: number;
   amount: number;
-  status: 'pending' | 'settled';
+  status: 'pending' | 'settled' | 'cancelled';
   remark: string | null;
 }
 
@@ -142,7 +142,7 @@ export interface CreateSettlementResponse {
   amount: number;
   payableAmount: number;
   settlementDate: string | null;
-  status: 'pending' | 'settled';
+  status: 'pending' | 'settled' | 'cancelled';
   remark: string | null;
 }
 
@@ -255,7 +255,7 @@ export interface SettlementDetail {
   createdAt: string;
   amount: number;
   payableAmount: number;
-  status: 'pending' | 'settled';
+  status: 'pending' | 'settled' | 'cancelled';
   paymentMethod: string | null;
   payments: SettlementPayment[];
   remark: string | null;
@@ -282,5 +282,13 @@ export const revertSettlement = async (
   remark: string,
 ): Promise<{ success: boolean; message: string; data: CreateSettlementResponse }> => {
   const response = await api.post(`/finance/settlements/${id}/revert`, { remark });
+  return response.data;
+};
+
+export const cancelSettlement = async (
+  id: string,
+  remark: string,
+): Promise<{ success: boolean; message: string; data: CreateSettlementResponse }> => {
+  const response = await api.post(`/finance/settlements/${id}/cancel`, { remark });
   return response.data;
 };

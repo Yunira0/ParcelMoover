@@ -114,8 +114,11 @@ const FinanceManagement: React.FC = () => {
     {
       header: 'STATUS',
       accessor: (item: SettlementListItem) => (
-        <StatusChip variant="solid" tone={item.status === 'settled' ? 'success' : 'warning'}>
-          {item.status === 'settled' ? 'Settled' : 'Pending'}
+        <StatusChip
+          variant="solid"
+          tone={item.status === 'settled' ? 'success' : item.status === 'cancelled' ? 'neutral' : 'warning'}
+        >
+          {item.status === 'settled' ? 'Settled' : item.status === 'cancelled' ? 'Cancelled' : 'Pending'}
         </StatusChip>
       ),
     },

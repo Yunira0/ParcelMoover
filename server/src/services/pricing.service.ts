@@ -37,6 +37,12 @@ export type Zone = (typeof ZONES)[number];
 export const VALLEYS = ["inside", "outside"] as const;
 export type Valley = (typeof VALLEYS)[number];
 
+// Orthogonal to valley: only meaningful when valley = "inside". A destination
+// flagged "outside" the ring road is charged the flatOutsideRingRoad rate
+// instead of the normal inside-valley rate (when that rate is configured).
+export const RING_ROADS = ["inside", "outside"] as const;
+export type RingRoad = (typeof RING_ROADS)[number];
+
 export interface DeliveryQuote {
   baseCharge: number;
   weightSurcharge: number;
@@ -68,6 +74,7 @@ export async function getPricingSettings() {
     zoneInsideValley: settings.zone_inside_valley === null ? null : Number(settings.zone_inside_valley),
     flatInsideValley: settings.flat_inside_valley === null ? null : Number(settings.flat_inside_valley),
     flatOutsideValley: settings.flat_outside_valley === null ? null : Number(settings.flat_outside_valley),
+    flatOutsideRingRoad: settings.flat_outside_ring_road === null ? null : Number(settings.flat_outside_ring_road),
     extraWeightPercent: settings.extra_weight_percent === null ? null : Number(settings.extra_weight_percent),
     freeWeightKg: Number(settings.free_weight_kg),
     branchZoneMajorCities: settings.branch_zone_major_cities === null ? null : Number(settings.branch_zone_major_cities),
@@ -76,6 +83,8 @@ export async function getPricingSettings() {
     branchZoneInsideValley: settings.branch_zone_inside_valley === null ? null : Number(settings.branch_zone_inside_valley),
     branchFlatInsideValley: settings.branch_flat_inside_valley === null ? null : Number(settings.branch_flat_inside_valley),
     branchFlatOutsideValley: settings.branch_flat_outside_valley === null ? null : Number(settings.branch_flat_outside_valley),
+    branchFlatOutsideRingRoad:
+      settings.branch_flat_outside_ring_road === null ? null : Number(settings.branch_flat_outside_ring_road),
     returnInsideValleyPercent:
       settings.return_inside_valley_percent === null ? null : Number(settings.return_inside_valley_percent),
     returnOutsideValleyPercent:
@@ -98,6 +107,7 @@ export interface UpdatePricingSettingsInput {
   zoneInsideValley?: number | null;
   flatInsideValley?: number | null;
   flatOutsideValley?: number | null;
+  flatOutsideRingRoad?: number | null;
   extraWeightPercent?: number | null;
   freeWeightKg?: number;
   branchZoneMajorCities?: number | null;
@@ -106,6 +116,7 @@ export interface UpdatePricingSettingsInput {
   branchZoneInsideValley?: number | null;
   branchFlatInsideValley?: number | null;
   branchFlatOutsideValley?: number | null;
+  branchFlatOutsideRingRoad?: number | null;
   returnInsideValleyPercent?: number | null;
   returnOutsideValleyPercent?: number | null;
 }
@@ -121,6 +132,7 @@ export async function updatePricingSettings(input: UpdatePricingSettingsInput) {
       ...(input.zoneInsideValley !== undefined ? { zone_inside_valley: input.zoneInsideValley } : {}),
       ...(input.flatInsideValley !== undefined ? { flat_inside_valley: input.flatInsideValley } : {}),
       ...(input.flatOutsideValley !== undefined ? { flat_outside_valley: input.flatOutsideValley } : {}),
+      ...(input.flatOutsideRingRoad !== undefined ? { flat_outside_ring_road: input.flatOutsideRingRoad } : {}),
       ...(input.extraWeightPercent !== undefined ? { extra_weight_percent: input.extraWeightPercent } : {}),
       ...(input.freeWeightKg !== undefined ? { free_weight_kg: input.freeWeightKg } : {}),
       ...(input.branchZoneMajorCities !== undefined ? { branch_zone_major_cities: input.branchZoneMajorCities } : {}),
@@ -129,6 +141,9 @@ export async function updatePricingSettings(input: UpdatePricingSettingsInput) {
       ...(input.branchZoneInsideValley !== undefined ? { branch_zone_inside_valley: input.branchZoneInsideValley } : {}),
       ...(input.branchFlatInsideValley !== undefined ? { branch_flat_inside_valley: input.branchFlatInsideValley } : {}),
       ...(input.branchFlatOutsideValley !== undefined ? { branch_flat_outside_valley: input.branchFlatOutsideValley } : {}),
+      ...(input.branchFlatOutsideRingRoad !== undefined
+        ? { branch_flat_outside_ring_road: input.branchFlatOutsideRingRoad }
+        : {}),
       ...(input.returnInsideValleyPercent !== undefined ? { return_inside_valley_percent: input.returnInsideValleyPercent } : {}),
       ...(input.returnOutsideValleyPercent !== undefined ? { return_outside_valley_percent: input.returnOutsideValleyPercent } : {}),
       updated_at: new Date(),
@@ -161,6 +176,7 @@ async function resolveDestinationPricing(destinationLocationId: string) {
     name: dest.name,
     zone: (dest.zone ?? parent?.zone ?? null) as Zone | null,
     valley: (dest.valley ?? parent?.valley ?? null) as Valley | null,
+    ringRoad: (dest.ring_road ?? parent?.ring_road ?? null) as RingRoad | null,
     perDestinationRate:
       dest.per_destination_rate !== null
         ? Number(dest.per_destination_rate)
@@ -188,6 +204,7 @@ async function resolveDestinationPricing(destinationLocationId: string) {
 export interface VendorRateOverrides {
   flatInsideValley?: number | null;
   flatOutsideValley?: number | null;
+  flatOutsideRingRoad?: number | null;
   zoneMajorCities?: number | null;
   zoneUrbanAreas?: number | null;
   zoneRemoteAreas?: number | null;
@@ -199,6 +216,7 @@ export interface VendorRateOverrides {
   // Parallel branch-delivery overrides (used when service_type = branch_delivery).
   branchFlatInsideValley?: number | null;
   branchFlatOutsideValley?: number | null;
+  branchFlatOutsideRingRoad?: number | null;
   branchZoneMajorCities?: number | null;
   branchZoneUrbanAreas?: number | null;
   branchZoneRemoteAreas?: number | null;
@@ -214,6 +232,7 @@ interface DestinationPricing {
   name: string;
   zone: Zone | null;
   valley: Valley | null;
+  ringRoad: RingRoad | null;
   perDestinationRate: number | null;
   branchPerDestinationRate: number | null;
 }
@@ -241,12 +260,16 @@ function resolveBaseRate(
     branch !== undefined && branch !== null ? branch : home;
   const sFlatInside = isBranch ? fb(settings.branchFlatInsideValley, settings.flatInsideValley) : settings.flatInsideValley;
   const sFlatOutside = isBranch ? fb(settings.branchFlatOutsideValley, settings.flatOutsideValley) : settings.flatOutsideValley;
+  const sFlatOutsideRingRoad = isBranch
+    ? fb(settings.branchFlatOutsideRingRoad, settings.flatOutsideRingRoad)
+    : settings.flatOutsideRingRoad;
   const sZoneMajor = isBranch ? fb(settings.branchZoneMajorCities, settings.zoneMajorCities) : settings.zoneMajorCities;
   const sZoneUrban = isBranch ? fb(settings.branchZoneUrbanAreas, settings.zoneUrbanAreas) : settings.zoneUrbanAreas;
   const sZoneRemote = isBranch ? fb(settings.branchZoneRemoteAreas, settings.zoneRemoteAreas) : settings.zoneRemoteAreas;
   const sZoneInside = isBranch ? fb(settings.branchZoneInsideValley, settings.zoneInsideValley) : settings.zoneInsideValley;
   const oFlatInside = isBranch ? overrides.branchFlatInsideValley : overrides.flatInsideValley;
   const oFlatOutside = isBranch ? overrides.branchFlatOutsideValley : overrides.flatOutsideValley;
+  const oFlatOutsideRingRoad = isBranch ? overrides.branchFlatOutsideRingRoad : overrides.flatOutsideRingRoad;
   const oZoneMajor = isBranch ? overrides.branchZoneMajorCities : overrides.zoneMajorCities;
   const oZoneUrban = isBranch ? overrides.branchZoneUrbanAreas : overrides.zoneUrbanAreas;
   const oZoneRemote = isBranch ? overrides.branchZoneRemoteAreas : overrides.zoneRemoteAreas;
@@ -280,11 +303,18 @@ function resolveBaseRate(
     if (rate === null) throw new AppError(404, `No ${label} rate set for zone "${dest.zone}"`);
   } else {
     if (!dest.valley) throw new AppError(404, `${dest.name} is not classified inside/outside valley`);
-    rate =
-      dest.valley === "inside"
-        ? pick(oFlatInside, sFlatInside)
-        : pick(oFlatOutside, sFlatOutside);
-    basis = `Flat ${label} rate (${dest.valley} valley)`;
+    const insideRate = pick(oFlatInside, sFlatInside);
+    if (dest.valley === "inside" && dest.ringRoad === "outside") {
+      // No dedicated ring-road rate configured (vendor override or global
+      // settings) falls back to the same rate as an ordinary inside-valley
+      // destination, so tagging a destination "outside ring road" is a no-op
+      // for pricing until someone actually sets this rate.
+      rate = pick(oFlatOutsideRingRoad, sFlatOutsideRingRoad) ?? insideRate;
+      basis = `Flat ${label} rate (outside ring road)`;
+    } else {
+      rate = dest.valley === "inside" ? insideRate : pick(oFlatOutside, sFlatOutside);
+      basis = `Flat ${label} rate (${dest.valley} valley)`;
+    }
     if (rate === null) throw new AppError(404, `No flat ${label} rate set for ${dest.valley} valley`);
   }
 
@@ -345,6 +375,7 @@ export async function getVendorChargeSheet(rateType: RateType, overrides: Vendor
       name: d.name,
       zone: (d.zone ?? null) as Zone | null,
       valley: (d.valley ?? null) as Valley | null,
+      ringRoad: (d.ring_road ?? null) as RingRoad | null,
       perDestinationRate: d.per_destination_rate === null ? null : Number(d.per_destination_rate),
       branchPerDestinationRate:
         d.branch_per_destination_rate === null ? null : Number(d.branch_per_destination_rate),
@@ -361,6 +392,7 @@ export async function getVendorChargeSheet(rateType: RateType, overrides: Vendor
       name: d.name,
       zone: dest.zone,
       valley: dest.valley,
+      ringRoad: dest.ringRoad,
       homeCharge: tryRate("home_delivery"),
       branchCharge: tryRate("branch_delivery"),
     };

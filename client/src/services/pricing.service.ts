@@ -8,6 +8,7 @@ export interface PricingSettings {
   zoneInsideValley: number | null;
   flatInsideValley: number | null;
   flatOutsideValley: number | null;
+  flatOutsideRingRoad: number | null;
   extraWeightPercent: number | null;
   freeWeightKg: number;
   branchZoneMajorCities: number | null;
@@ -16,6 +17,7 @@ export interface PricingSettings {
   branchZoneInsideValley: number | null;
   branchFlatInsideValley: number | null;
   branchFlatOutsideValley: number | null;
+  branchFlatOutsideRingRoad: number | null;
   returnInsideValleyPercent: number | null;
   returnOutsideValleyPercent: number | null;
 }

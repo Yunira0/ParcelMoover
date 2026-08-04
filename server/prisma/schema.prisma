@@ -163,6 +163,7 @@ model locations {
   is_active                                                        Boolean                 @default(true)
   zone                                                             String? // major_cities | urban_areas | remote_areas
   valley                                                           String? // inside | outside
+  ring_road                                                        String? // inside | outside - only meaningful when valley = inside
   per_destination_rate                                             Decimal?                @db.Decimal(12, 2)
   branch_per_destination_rate                                      Decimal?                @db.Decimal(12, 2)
   created_at                                                       DateTime                @default(now()) @db.Timestamptz(6)
@@ -608,6 +609,9 @@ model vendors {
   // Per-vendor rate overrides; null falls back to the global pricing_settings.
   flat_inside_valley    Decimal?          @db.Decimal(12, 2)
   flat_outside_valley   Decimal?          @db.Decimal(12, 2)
+  // Inside-valley destinations flagged outside the ring road (locations.ring_road
+  // = "outside") are charged this rate instead of flat_inside_valley when set.
+  flat_outside_ring_road Decimal?         @db.Decimal(12, 2)
   zone_major_cities     Decimal?          @db.Decimal(12, 2)
   zone_urban_areas      Decimal?          @db.Decimal(12, 2)
   zone_remote_areas     Decimal?          @db.Decimal(12, 2)
@@ -618,6 +622,7 @@ model vendors {
   // Per-vendor branch-delivery rate overrides (null → global pricing_settings).
   branch_flat_inside_valley   Decimal?    @db.Decimal(12, 2)
   branch_flat_outside_valley  Decimal?    @db.Decimal(12, 2)
+  branch_flat_outside_ring_road Decimal?  @db.Decimal(12, 2)
   branch_zone_major_cities    Decimal?    @db.Decimal(12, 2)
   branch_zone_urban_areas     Decimal?    @db.Decimal(12, 2)
   branch_zone_remote_areas    Decimal?    @db.Decimal(12, 2)
@@ -797,6 +802,9 @@ model pricing_settings {
   zone_inside_valley   Decimal? @db.Decimal(12, 2)
   flat_inside_valley   Decimal? @db.Decimal(12, 2)
   flat_outside_valley  Decimal? @db.Decimal(12, 2)
+  // Inside-valley destinations flagged outside the ring road (locations.ring_road
+  // = "outside") are charged this rate instead of flat_inside_valley when set.
+  flat_outside_ring_road Decimal? @db.Decimal(12, 2)
   // Parallel branch-delivery rate set (used when service_type = branch_delivery).
   branch_zone_major_cities    Decimal? @db.Decimal(12, 2)
   branch_zone_urban_areas     Decimal? @db.Decimal(12, 2)
@@ -804,6 +812,7 @@ model pricing_settings {
   branch_zone_inside_valley   Decimal? @db.Decimal(12, 2)
   branch_flat_inside_valley   Decimal? @db.Decimal(12, 2)
   branch_flat_outside_valley  Decimal? @db.Decimal(12, 2)
+  branch_flat_outside_ring_road Decimal? @db.Decimal(12, 2)
   extra_weight_percent Decimal? @db.Decimal(5, 2)
   free_weight_kg       Decimal  @default(2) @db.Decimal(10, 3)
   // Global default return-parcel charge as a percent of the normal delivery
@@ -898,6 +907,7 @@ enum service_type {
 enum settlement_status {
   pending
   settled
+  cancelled
 }
 
 // Which side of the credit-control thresholds a vendor was on at the last

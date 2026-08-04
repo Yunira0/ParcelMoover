@@ -44,6 +44,7 @@ export interface VendorSelfRate {
   coveredAreas: string[];
   zone: string | null;
   valley: string | null;
+  ringRoad: string | null;
   homeRate: number | null;
   branchRate: number | null;
   note: string | null;

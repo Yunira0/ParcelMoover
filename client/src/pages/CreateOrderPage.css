@@ -83,6 +83,15 @@
   font-weight: var(--font-weight-semi-bold);
 }
 
+.order-summary-basis {
+  margin: calc(var(--space-1) * -1) 0 0;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-regular);
+  color: var(--color-text-caption);
+  text-transform: none;
+  text-align: right;
+}
+
 .order-summary-divider {
   height: 1px;
   background: var(--color-border-default);
@@ -110,6 +119,17 @@
   color: var(--color-danger-text);
   font-size: var(--font-size-sm);
   margin: 0;
+}
+
+.order-form-error-retry {
+  color: var(--color-danger-text);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  text-decoration: underline;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
 }
 
 .order-form-success {

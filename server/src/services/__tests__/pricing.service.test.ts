@@ -39,12 +39,14 @@ function baseSettings(overrides: Record<string, unknown> = {}) {
     zone_inside_valley: null,
     flat_inside_valley: null,
     flat_outside_valley: null,
+    flat_outside_ring_road: null,
     branch_zone_major_cities: null,
     branch_zone_urban_areas: null,
     branch_zone_remote_areas: null,
     branch_zone_inside_valley: null,
     branch_flat_inside_valley: null,
     branch_flat_outside_valley: null,
+    branch_flat_outside_ring_road: null,
     extra_weight_percent: null,
     free_weight_kg: 2,
     return_inside_valley_percent: null,
@@ -60,6 +62,7 @@ function baseLocation(id: string, overrides: Record<string, unknown> = {}) {
     name: `Location ${id}`,
     zone: null,
     valley: null,
+    ring_road: null,
     per_destination_rate: null,
     branch_per_destination_rate: null,
     ...overrides,
@@ -159,6 +162,67 @@ describe("getVendorQuote - flat rate", () => {
     await expect(getVendorQuote("flat", DEST_ID, 1, {}, "home_delivery")).rejects.toThrow(
       /not classified inside\/outside valley/,
     );
+  });
+});
+
+describe("getVendorQuote - flat rate, outside ring road", () => {
+  it("an inside-valley destination flagged outside ring road uses flat_outside_ring_road when set", async () => {
+    useSettings({ flat_inside_valley: 100, flat_outside_ring_road: 140 });
+    setLocation(DEST_ID, { valley: "inside", ring_road: "outside" });
+    const quote = await getVendorQuote("flat", DEST_ID, 1, {}, "home_delivery");
+    expect(quote.baseCharge).toBe(140);
+    expect(quote.basis).toBe("Flat home rate (outside ring road)");
+  });
+
+  it("falls back to the normal inside-valley rate when no outside-ring-road rate is configured", async () => {
+    useSettings({ flat_inside_valley: 100 });
+    setLocation(DEST_ID, { valley: "inside", ring_road: "outside" });
+    const quote = await getVendorQuote("flat", DEST_ID, 1, {}, "home_delivery");
+    expect(quote.baseCharge).toBe(100);
+  });
+
+  it("falls back to the vendor's own inside-valley override, not the raw global setting, when unconfigured", async () => {
+    useSettings({ flat_inside_valley: 100 });
+    setLocation(DEST_ID, { valley: "inside", ring_road: "outside" });
+    const overrides: VendorRateOverrides = { flatInsideValley: 250 };
+    const quote = await getVendorQuote("flat", DEST_ID, 1, overrides, "home_delivery");
+    expect(quote.baseCharge).toBe(250);
+  });
+
+  it("a vendor's outside-ring-road override wins over the global setting", async () => {
+    useSettings({ flat_inside_valley: 100, flat_outside_ring_road: 140 });
+    setLocation(DEST_ID, { valley: "inside", ring_road: "outside" });
+    const overrides: VendorRateOverrides = { flatOutsideRingRoad: 160 };
+    const quote = await getVendorQuote("flat", DEST_ID, 1, overrides, "home_delivery");
+    expect(quote.baseCharge).toBe(160);
+  });
+
+  it("an inside-valley destination not flagged outside ring road is unaffected", async () => {
+    useSettings({ flat_inside_valley: 100, flat_outside_ring_road: 140 });
+    setLocation(DEST_ID, { valley: "inside", ring_road: null });
+    const quote = await getVendorQuote("flat", DEST_ID, 1, {}, "home_delivery");
+    expect(quote.baseCharge).toBe(100);
+  });
+
+  it("an outside-valley destination ignores ring_road entirely", async () => {
+    useSettings({ flat_outside_valley: 175, flat_outside_ring_road: 140 });
+    setLocation(DEST_ID, { valley: "outside", ring_road: "outside" });
+    const quote = await getVendorQuote("flat", DEST_ID, 1, {}, "home_delivery");
+    expect(quote.baseCharge).toBe(175);
+  });
+
+  it("branch delivery uses the global branch_flat_outside_ring_road rate when set", async () => {
+    useSettings({ flat_inside_valley: 100, branch_flat_outside_ring_road: 120 });
+    setLocation(DEST_ID, { valley: "inside", ring_road: "outside" });
+    const quote = await getVendorQuote("flat", DEST_ID, 1, {}, "branch_delivery");
+    expect(quote.baseCharge).toBe(120);
+  });
+
+  it("branch delivery falls back to the home outside-ring-road rate when the branch rate is null", async () => {
+    useSettings({ flat_inside_valley: 100, flat_outside_ring_road: 140, branch_flat_outside_ring_road: null });
+    setLocation(DEST_ID, { valley: "inside", ring_road: "outside" });
+    const quote = await getVendorQuote("flat", DEST_ID, 1, {}, "branch_delivery");
+    expect(quote.baseCharge).toBe(140);
   });
 });
 
