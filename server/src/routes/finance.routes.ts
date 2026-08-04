@@ -6,6 +6,8 @@ import { requireStaffPermission } from "../middlewares/staffPermission.middlewar
 import { requireAdminPermission } from "../middlewares/adminPermission.middleware";
 import { csrfProtection } from "../middlewares/csrf.middleware";
 import { validate } from "../middlewares/validate.middleware";
+import { parseMultipartJson } from "../middlewares/multipartJson.middleware";
+import { settlementDocsUpload } from "../lib/settlementUpload";
 import {
   pendingCodQuerySchema,
   orderCodQuerySchema,
@@ -26,6 +28,7 @@ import {
   updateSettlementController,
   revertSettlementController,
   getSettlementDetailController,
+  getSettlementDocumentController,
 } from "../controllers/finance.controller";
 
 const financeRouter: Router = Router();
@@ -98,6 +101,18 @@ financeRouter.get(
   getSettlementDetailController,
 );
 
+// GET /api/finance/settlements/:id/documents/:kind — payment receipt / tax
+// invoice for one statement. Same audience as the detail route above, so the
+// payee reaches their own paperwork; the /uploads mount stays admin-only.
+financeRouter.get(
+  "/settlements/:id/documents/:kind",
+  authMiddleware,
+  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider", "sales"),
+  requireStaffPermission("FINANCE_ACCESS"),
+  financeReadLimiter,
+  getSettlementDocumentController,
+);
+
 // POST /api/finance/settlements — create + immediately settle a statement
 // bundling selected pending cod_collections for a rider or vendor
 financeRouter.post(
@@ -111,13 +126,16 @@ financeRouter.post(
 );
 
 // POST /api/finance/settlements/:id/pay — record payment against a pending
-// statement and flip it to settled
+// statement and flip it to settled. Multipart: optional payment receipt and
+// tax invoice alongside the payment rows.
 financeRouter.post(
   "/settlements/:id/pay",
   authMiddleware,
   csrfProtection,
   authorizeRoles("super_admin", "admin"),
   settlementCreateLimiter,
+  settlementDocsUpload,
+  parseMultipartJson("payments"),
   validate(paySettlementSchema),
   payForSettlementController,
 );

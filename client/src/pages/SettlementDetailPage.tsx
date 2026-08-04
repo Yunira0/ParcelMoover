@@ -1,9 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Printer, Download, CreditCard, Pencil, Undo2 } from 'lucide-react';
+import { ArrowLeft, Printer, Download, CreditCard, FileText, Pencil, Undo2 } from 'lucide-react';
 import Button from '../components/Button';
 import StatusChip from '../components/StatusChip';
-import MakePaymentModal from '../components/MakePaymentModal';
 import EditSettlementModal from '../components/EditSettlementModal';
 import RevertSettlementModal from '../components/RevertSettlementModal';
 import { getSettlementDetail, type SettlementDetail } from '../services/finance.service';
@@ -14,6 +13,38 @@ import './vendor/VendorFinance.css';
 import './SettlementDetailPage.css';
 
 const money = (value: number) => `Rs. ${value.toLocaleString()}`;
+
+// Payment documents go through the settlement's own endpoint rather than the
+// /uploads mount: that mount is admin-only, so a vendor opening the receipt on
+// their own statement would get a 403. This route re-checks access to the
+// statement itself, so the payee and their sales rep can read their paperwork.
+const API_ROOT = import.meta.env.VITE_API_URL || '/api';
+const documentUrl = (settlementId: string, kind: 'receipt' | 'tax-invoice') =>
+  `${API_ROOT}/finance/settlements/${settlementId}/documents/${kind}`;
+
+// One attached document. Screenshots are the common case, so they preview
+// inline - the whole point is seeing the proof without a round trip to another
+// tab. PDFs can't render in an <img>, so they fall back to a labelled link.
+const SettlementDocument: React.FC<{
+  label: string;
+  storedPath: string | null;
+  href: string;
+}> = ({ label, storedPath, href }) => {
+  if (!storedPath) return null;
+  const isPdf = storedPath.toLowerCase().endsWith('.pdf');
+  return (
+    <a className="settlement-document" href={href} target="_blank" rel="noreferrer">
+      <span className="settlement-document-label">
+        <FileText size={14} /> {label}
+      </span>
+      {isPdf ? (
+        <span className="settlement-document-pdf">PDF — open</span>
+      ) : (
+        <img src={href} alt={label} loading="lazy" />
+      )}
+    </a>
+  );
+};
 
 function buildStatementHtml(detail: SettlementDetail): string {
   // On a vendor statement the vendor is already the payee in BILL TO, so the
@@ -116,7 +147,6 @@ const SettlementDetailPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [reloadKey, setReloadKey] = useState(0);
-  const [showPayment, setShowPayment] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const [showRevert, setShowRevert] = useState(false);
 
@@ -225,7 +255,7 @@ const SettlementDetailPage: React.FC = () => {
             </Button>
           )}
           {canPay && detail?.status === 'pending' && (
-            <Button variant="primary" onClick={() => setShowPayment(true)}>
+            <Button variant="primary" onClick={() => navigate(`/finance/settlements/${id}/pay`)}>
               <CreditCard size={16} /> Make Payment
             </Button>
           )}
@@ -372,17 +402,27 @@ const SettlementDetailPage: React.FC = () => {
               <span>{money(detail.payableAmount)}</span>
             </div>
           </div>
+
+          {(detail.paymentReceiptPath || detail.taxInvoicePath) && (
+            <div className="settlement-documents">
+              <div className="vendor-finance-subtext">PAYMENT DOCUMENTS</div>
+              <div className="settlement-documents-grid">
+                <SettlementDocument
+                  label="Payment receipt"
+                  storedPath={detail.paymentReceiptPath}
+                  href={documentUrl(detail.id, 'receipt')}
+                />
+                <SettlementDocument
+                  label="Tax invoice"
+                  storedPath={detail.taxInvoicePath}
+                  href={documentUrl(detail.id, 'tax-invoice')}
+                />
+              </div>
+            </div>
+          )}
         </div>
       ) : null}
 
-      {showPayment && detail && (
-        <MakePaymentModal
-          settlementId={detail.id}
-          payableAmount={detail.payableAmount}
-          onClose={() => setShowPayment(false)}
-          onSuccess={() => setReloadKey((k) => k + 1)}
-        />
-      )}
 
       {showEdit && detail && (
         <EditSettlementModal

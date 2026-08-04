@@ -1,7 +1,7 @@
 import prisma from "../lib/prisma";
 import { AppError } from "../utils/AppError";
 import { getDatePart, randomBase32 } from "../utils/trackingId";
-import { CreateTicketInput, ListTicketsParams, TicketStatus } from "../types/ticket.type";
+import { CreateTicketInput, ListTicketsParams, TicketStatus, TicketWorkflowStatus } from "../types/ticket.type";
 import { createNotification } from "./notification.service";
 import { notifyAdmins } from "./order.service";
 
@@ -35,7 +35,7 @@ function generateTicketNo(date = new Date()) {
 }
 
 // Map any stored status onto the pending/open/closed workflow.
-function normalizeStatus(status: string): TicketStatus {
+function normalizeStatus(status: string): TicketWorkflowStatus {
   if (status === "closed" || status === "resolved") return "closed";
   if (status === "pending") return "pending";
   return "open"; // open, in_progress, or anything else
@@ -349,8 +349,18 @@ export async function listTickets(actor: Actor, params: ListTicketsParams = {}) 
   const page = Math.max(1, params.page ?? 1);
   const skip = (page - 1) * take;
 
-  const [total, tickets] = await Promise.all([
+  // Tab counts cover everything this actor can see, deliberately ignoring the
+  // status tab and the other filters - they're the "how much is out there"
+  // pills, so they must not shrink as the operator narrows the table.
+  const countWhere = await scopeWhere(actor);
+
+  const [total, statusGroups, tickets] = await Promise.all([
     prisma.support_tickets.count({ where }),
+    prisma.support_tickets.groupBy({
+      by: ["status"],
+      where: countWhere,
+      _count: { _all: true },
+    }),
     prisma.support_tickets.findMany({
       where,
       include: TICKET_INCLUDE,
@@ -359,6 +369,15 @@ export async function listTickets(actor: Actor, params: ListTicketsParams = {}) 
       take,
     }),
   ]);
+
+  // Fold the stored statuses (including legacy in_progress/resolved) into the
+  // three workflow buckets the tabs offer.
+  const statusCounts = { all: 0, pending: 0, open: 0, closed: 0 };
+  statusGroups.forEach((group) => {
+    const count = group._count._all;
+    statusCounts.all += count;
+    statusCounts[normalizeStatus(group.status)] += count;
+  });
 
   const vendorByCreator = await resolveVendorsByCreators(
     tickets.map((t) => t.created_by).filter((x): x is string => !!x),
@@ -378,6 +397,7 @@ export async function listTickets(actor: Actor, params: ListTicketsParams = {}) 
       pageSize: take,
       total,
       totalPages: Math.max(1, Math.ceil(total / take)),
+      statusCounts,
     },
   };
 }

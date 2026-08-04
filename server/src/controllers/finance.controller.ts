@@ -1,6 +1,9 @@
 import { Request, Response } from "express";
-import { getPendingCodBill, listOrderCod, listSettlements, getUnsettledOrders, createSettlement, payForSettlement, updateSettlement, revertSettlement, getSettlementDetail } from "../services/finance.service";
+import { getPendingCodBill, listOrderCod, listSettlements, getUnsettledOrders, createSettlement, payForSettlement, updateSettlement, revertSettlement, getSettlementDetail, getSettlementDocumentPath } from "../services/finance.service";
 import { CodPaymentFilter, CreateSettlementInput, PaySettlementInput, UpdateSettlementInput, RevertSettlementInput } from "../types/finance.type";
+import { flattenMulterFiles, secureUploadedFiles } from "../lib/secureUploadedFiles";
+import { sendEncryptedFile } from "../lib/serveEncryptedDocument";
+import prisma from "../lib/prisma";
 
 // General UUID shape — not strict about RFC-4122 version/variant nibbles, so
 // seeded/demo ids (e.g. 55555555-0000-0000-0000-000000000002) are accepted.
@@ -203,7 +206,20 @@ export async function payForSettlementController(req: Request, res: Response) {
       return res.status(400).json({ success: false, message: "Invalid settlement id" });
     }
 
-    const input = req.body as PaySettlementInput;
+    // Encrypt/verify before reading filename: secureUploadedFiles rewrites it
+    // when a large image is recompressed to JPEG, and the stored path must
+    // match the file that actually ends up on disk.
+    const files = req.files as Record<string, Express.Multer.File[]> | undefined;
+    const uploads = flattenMulterFiles(files);
+    if (uploads.length > 0) await secureUploadedFiles(uploads);
+    const receipt = files?.paymentReceipt?.[0];
+    const taxInvoice = files?.taxInvoice?.[0];
+
+    const input: PaySettlementInput = {
+      ...(req.body as PaySettlementInput),
+      paymentReceiptPath: receipt ? `uploads/settlements/${receipt.filename}` : null,
+      taxInvoicePath: taxInvoice ? `uploads/settlements/${taxInvoice.filename}` : null,
+    };
     const settlement = await payForSettlement({ id: req.user.id, roles: req.user.roles }, id, input);
 
     return res.status(200).json({ success: true, message: "Payment recorded", data: settlement });
@@ -211,6 +227,54 @@ export async function payForSettlementController(req: Request, res: Response) {
     return res.status(error.statusCode || 500).json({
       success: false,
       message: error.message || "Failed to record payment",
+    });
+  }
+}
+
+// GET /api/finance/settlements/:id/documents/:kind — streams the payment
+// receipt or tax invoice to anyone entitled to the statement itself. The
+// /uploads mount is admin-only, so this is how a vendor (or their sales rep)
+// reaches their own paperwork without widening access to every uploaded file.
+export async function getSettlementDocumentController(req: Request, res: Response) {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const { id, kind } = req.params;
+    if (typeof id !== "string" || !UUID_REGEX.test(id)) {
+      return res.status(400).json({ success: false, message: "Invalid settlement id" });
+    }
+    if (kind !== "receipt" && kind !== "tax-invoice") {
+      return res.status(400).json({ success: false, message: "Unknown document" });
+    }
+
+    const storedPath = await getSettlementDocumentPath(
+      { id: req.user.id, roles: req.user.roles },
+      id,
+      kind,
+    );
+
+    // Mirrors the audit entry the /uploads mount writes for staff views.
+    prisma.audit_logs
+      .create({
+        data: {
+          actor_id: req.user.id,
+          entity_type: "document",
+          entity_id: id,
+          action: "VIEW_DOCUMENT",
+          new_data: { settlementId: id, kind },
+          ip_address: req.ip || null,
+          user_agent: req.get("user-agent") || null,
+        },
+      })
+      .catch((err) => console.error("[audit] Failed to log document view:", err));
+
+    return await sendEncryptedFile(res, storedPath);
+  } catch (error: any) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to load document",
     });
   }
 }

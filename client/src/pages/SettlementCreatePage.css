@@ -74,6 +74,19 @@
   gap: var(--space-3);
 }
 
+/* Header row that carries an action button (e.g. Download Excel) on the right. */
+.scp-section-bar {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  justify-content: space-between;
+}
+
+.scp-section-bar .scp-section-header {
+  flex: 1 1 260px;
+}
+
 .scp-section-icon {
   align-items: center;
   background: var(--color-background-elevated);
@@ -171,6 +184,12 @@
 
 .scp-mono {
   font-family: monospace;
+  font-size: 12px;
+}
+
+/* Secondary line inside a cell, e.g. the receiver's phone under their name. */
+.scp-subtext {
+  color: var(--color-text-caption);
   font-size: 12px;
 }
 

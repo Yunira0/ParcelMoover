@@ -27,6 +27,7 @@ const FinanceManagement = lazy(() => import('./pages/FinanceManagement'))
 const ReportsPage = lazy(() => import('./pages/ReportsPage'))
 const SettlementDetailPage = lazy(() => import('./pages/SettlementDetailPage'))
 const SettlementCreatePage = lazy(() => import('./pages/SettlementCreatePage'))
+const SettlementPayPage = lazy(() => import('./pages/SettlementPayPage'))
 const DeliveryRateSettings = lazy(() => import('./pages/DeliveryRateSettings'))
 const Settings = lazy(() => import('./pages/settings/Settings'))
 const SlaSettings = lazy(() => import('./pages/SlaSettings'))
@@ -235,6 +236,11 @@ function App() {
           <Route
             path="/finance/settlements/new"
             element={<RoleGuard allowedRoles={['super_admin', 'admin']}><SettlementCreatePage /></RoleGuard>}
+          />
+          {/* Must precede /finance/settlements/:id or ":id" would swallow "pay". */}
+          <Route
+            path="/finance/settlements/:id/pay"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']}><SettlementPayPage /></RoleGuard>}
           />
           <Route
             path="/finance/settlements/:id"

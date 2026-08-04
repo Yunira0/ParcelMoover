@@ -506,6 +506,10 @@ model settlements {
   remark                               String?
   payment_method                       String?
   payments                             Json?
+  // Evidence captured when the payment is recorded: the transfer receipt and
+  // the tax invoice raised for it. Encrypted at rest like every other upload.
+  payment_receipt_path                 String?
+  tax_invoice_path                     String?
   approved_by                          String?            @db.Uuid
   settled_by                           String?            @db.Uuid
   created_at                           DateTime           @default(now()) @db.Timestamptz(6)

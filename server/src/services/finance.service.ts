@@ -510,7 +510,9 @@ export async function getUnsettledOrders(
   // Vendor-scoped keys share the `finance:${vendorId}:*` namespace so order
   // creation and settlement creation can invalidate them; rider-scoped ones
   // share `finance:rider:${riderId}:*`, invalidated by createSettlement.
-  const cacheKey = vendorId ? `finance:${vendorId}:unsettled` : `finance:rider:${riderId}:unsettled`;
+  // The `:v2` suffix retires payloads cached before orderNumber/receiverPhone
+  // were added to the item shape (both invalidation globs still match it).
+  const cacheKey = vendorId ? `finance:${vendorId}:unsettled:v2` : `finance:rider:${riderId}:unsettled:v2`;
   const cached = await readFinanceCache<UnsettledOrdersResult>(cacheKey);
   if (cached) return cached;
 
@@ -546,9 +548,10 @@ export async function getUnsettledOrders(
     include: {
       parcels: {
         select: {
+          order_number: true,
           tracking_id: true,
           delivery_charge: true,
-          parties_parcels_receiver_idToparties: { select: { name: true } },
+          parties_parcels_receiver_idToparties: { select: { name: true, phone: true } },
           locations_parcels_destination_location_idTolocations: {
             select: { name: true, city: true, district: true },
           },
@@ -570,8 +573,10 @@ export async function getUnsettledOrders(
     return {
       id: c.parcel_id,
       codCollectionId: c.id,
+      orderNumber: c.parcels.order_number,
       trackingId: c.parcels.tracking_id,
       receiverName: c.parcels.parties_parcels_receiver_idToparties.name,
+      receiverPhone: c.parcels.parties_parcels_receiver_idToparties.phone,
       destination: formatLocation(c.parcels.locations_parcels_destination_location_idTolocations),
       codAmount,
       deliveryCharge,
@@ -746,13 +751,10 @@ export async function payForSettlement(
   settlementId: string,
   input: PaySettlementInput,
 ): Promise<CreateSettlementResult> {
-  const { payments, remark } = input;
+  const { payments, remark, paymentReceiptPath, taxInvoicePath } = input;
 
   if (!payments || payments.length === 0) {
     throw new AppError(400, "At least one payment is required");
-  }
-  if (!remark || !remark.trim()) {
-    throw new AppError(400, "Remark is required");
   }
   // Payment methods are configurable (Cash, Online, eSewa, Bank, ...) and
   // managed by super admins, so validate each submitted method against the
@@ -808,7 +810,11 @@ export async function payForSettlement(
         status: "settled",
         payment_method: paymentMethodSummary,
         payments: payments as unknown as Prisma.InputJsonValue,
-        remark: remark.trim(),
+        // Optional: store null rather than "" so the UI's `remark && ...` checks
+        // treat "no remark" the same as a statement that never had one.
+        remark: remark?.trim() || null,
+        payment_receipt_path: paymentReceiptPath ?? null,
+        tax_invoice_path: taxInvoicePath ?? null,
         settled_by: actor.id,
       },
     });
@@ -1134,6 +1140,78 @@ export async function revertSettlement(
   };
 }
 
+// Who may read one statement: staff see any, a vendor/rider only their own,
+// and a sales account only its own clients'. Shared by the detail endpoint and
+// the document download so the two can never drift apart - the download is the
+// only path that hands out a decrypted file, so it must not have its own copy
+// of this logic.
+async function assertSettlementAccess(
+  actor: Actor,
+  settlement: {
+    payee_type: string;
+    rider_id: string | null;
+    vendor_id: string | null;
+    vendors?: { sales_user_id: string | null } | null;
+  },
+): Promise<void> {
+  const isStaff = actor.roles.some((r) => ["super_admin", "admin"].includes(r));
+  if (isStaff) return;
+
+  const isSales = actor.roles.includes("sales");
+
+  if (settlement.payee_type === "rider") {
+    if (isSales) throw new AppError(403, "Not authorized to view rider settlements");
+    const rider = await prisma.riders.findFirst({ where: { user_id: actor.id, deleted_at: null } });
+    if (!rider || rider.id !== settlement.rider_id) {
+      throw new AppError(403, "Not authorized to view this settlement");
+    }
+    return;
+  }
+
+  if (isSales) {
+    if (settlement.vendors?.sales_user_id !== actor.id) {
+      throw new AppError(403, "Not authorized to view this client's records");
+    }
+    return;
+  }
+
+  const ownVendorId = await resolveOwnVendorId(actor);
+  if (!ownVendorId || ownVendorId !== settlement.vendor_id) {
+    throw new AppError(403, "Not authorized to view this settlement");
+  }
+}
+
+export type SettlementDocumentKind = "receipt" | "tax-invoice";
+
+// Resolves one of a statement's payment documents for a caller entitled to it.
+// Returns the stored (encrypted-at-rest) path; the controller streams it.
+export async function getSettlementDocumentPath(
+  actor: Actor,
+  settlementId: string,
+  kind: SettlementDocumentKind,
+): Promise<string> {
+  const settlement = await prisma.settlements.findUnique({
+    where: { id: settlementId },
+    select: {
+      payee_type: true,
+      rider_id: true,
+      vendor_id: true,
+      payment_receipt_path: true,
+      tax_invoice_path: true,
+      vendors: { select: { sales_user_id: true } },
+    },
+  });
+  if (!settlement) throw new AppError(404, "Settlement not found");
+
+  await assertSettlementAccess(actor, settlement);
+
+  const path = kind === "receipt" ? settlement.payment_receipt_path : settlement.tax_invoice_path;
+  if (!path) {
+    throw new AppError(404, kind === "receipt" ? "No payment receipt attached" : "No tax invoice attached");
+  }
+  return path;
+}
+
 // Line-item breakdown of a single settlement statement - which orders were
 // bundled into it and how much of each was settled. Authorization mirrors
 // listSettlements: staff see any statement, vendor/rider/sales are confined
@@ -1166,7 +1244,16 @@ export async function getSettlementDetail(actor: Actor, settlementId: string): P
           },
         },
       },
-      riders: { select: { name: true, phone: true, user_id: true } },
+      riders: {
+        select: {
+          name: true,
+          phone: true,
+          user_id: true,
+          bank_name: true,
+          bank_account_no: true,
+          bank_account_holder: true,
+        },
+      },
       vendors: {
         select: {
           client_name: true,
@@ -1177,6 +1264,9 @@ export async function getSettlementDetail(actor: Actor, settlementId: string): P
           pan_vat_no: true,
           user_id: true,
           sales_user_id: true,
+          bank_name: true,
+          bank_account_no: true,
+          bank_account_holder: true,
         },
       },
     },
@@ -1186,35 +1276,18 @@ export async function getSettlementDetail(actor: Actor, settlementId: string): P
     throw new AppError(404, "Settlement not found");
   }
 
-  const isStaff = actor.roles.some((r) => ["super_admin", "admin"].includes(r));
-  const isSales = actor.roles.includes("sales") && !isStaff;
-
-  if (!isStaff) {
-    if (settlement.payee_type === "rider") {
-      if (isSales) throw new AppError(403, "Not authorized to view rider settlements");
-      const rider = await prisma.riders.findFirst({ where: { user_id: actor.id, deleted_at: null } });
-      if (!rider || rider.id !== settlement.rider_id) {
-        throw new AppError(403, "Not authorized to view this settlement");
-      }
-    } else {
-      if (isSales) {
-        if (settlement.vendors?.sales_user_id !== actor.id) {
-          throw new AppError(403, "Not authorized to view this client's records");
-        }
-      } else {
-        const ownVendorId = await resolveOwnVendorId(actor);
-        if (!ownVendorId || ownVendorId !== settlement.vendor_id) {
-          throw new AppError(403, "Not authorized to view this settlement");
-        }
-      }
-    }
-  }
+  await assertSettlementAccess(actor, settlement);
 
   const payeeName = settlement.riders?.name || settlement.vendors?.business_name || settlement.vendors?.client_name || "";
   const payeePhone = settlement.riders?.phone || settlement.vendors?.phone || "";
   const payeeEmail = settlement.vendors?.email ?? null;
   const payeeAddress = settlement.vendors?.address ?? null;
   const payeePan = settlement.vendors?.pan_vat_no ?? null;
+  // Rider-then-vendor fallback, same precedence as payeeName/payeePhone above.
+  const bankName = settlement.riders?.bank_name ?? settlement.vendors?.bank_name ?? null;
+  const bankAccountNo = settlement.riders?.bank_account_no ?? settlement.vendors?.bank_account_no ?? null;
+  const bankAccountHolder =
+    settlement.riders?.bank_account_holder ?? settlement.vendors?.bank_account_holder ?? null;
 
   const items: SettlementDetailItem[] = settlement.settlement_items.map((si) => {
     const parcel = si.cod_collections.parcels;
@@ -1250,6 +1323,9 @@ export async function getSettlementDetail(actor: Actor, settlementId: string): P
     payeeEmail,
     payeeAddress,
     payeePan,
+    bankName,
+    bankAccountNo,
+    bankAccountHolder,
     transferDate: settlement.settlement_date ? formatNepalDate(settlement.settlement_date) : null,
     createdAt: settlement.created_at.toISOString(),
     amount: Number(settlement.amount),
@@ -1260,6 +1336,8 @@ export async function getSettlementDetail(actor: Actor, settlementId: string): P
       ? (settlement.payments as unknown as SettlementPaymentInput[])
       : [],
     remark: settlement.remark,
+    paymentReceiptPath: settlement.payment_receipt_path,
+    taxInvoicePath: settlement.tax_invoice_path,
     items,
   };
 }
