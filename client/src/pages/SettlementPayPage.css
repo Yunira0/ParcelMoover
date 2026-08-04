@@ -1,0 +1,250 @@
+/* Make Payment page. Shares the settlement-create page shell (scp-*) for the
+   back link, section cards and footer actions; everything specific to
+   recording a payout lives here. */
+
+/* Vendor-owes-office banner */
+.spp-warning {
+  background: var(--color-warning-bg, #fef3c7);
+  border: 1px solid var(--color-warning, #f59e0b);
+  border-radius: var(--border-radius-default);
+  color: var(--color-warning-text, #92400e);
+  font-size: 13px;
+  line-height: 18px;
+  padding: 10px 12px;
+}
+
+/* Payee summary */
+.spp-payee {
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-default);
+  font-size: 13px;
+  padding: 10px 12px;
+}
+
+.spp-payee-row {
+  display: flex;
+  gap: var(--space-2);
+  padding: 2px 0;
+}
+
+.spp-payee-label {
+  color: var(--color-text-caption);
+  min-width: 116px;
+}
+
+.spp-payee-value {
+  font-weight: var(--font-weight-medium);
+  word-break: break-word;
+}
+
+.spp-payee-empty {
+  color: var(--color-text-caption);
+}
+
+/* Payment rows.
+   These are bare <select>/<input> elements rather than FormField (each row is
+   a compound control, not a labelled field), so they need the same base
+   styling FormField gives everything else on the page. */
+.spp-payment-row {
+  align-items: center;
+  display: flex;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.spp-payment-row select,
+.spp-payment-row input,
+.spp-manage-add input {
+  background-color: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-default);
+  color: var(--color-text-default);
+  font-family: var(--typography-font-family-default);
+  font-size: var(--font-size-sm);
+  height: 36px;
+  line-height: var(--line-height-sm);
+  outline: none;
+  padding: var(--space-2);
+}
+
+.spp-payment-row select:focus,
+.spp-payment-row input:focus,
+.spp-manage-add input:focus {
+  border-color: var(--color-border-primary);
+  box-shadow: var(--shadow-focus);
+}
+
+.spp-payment-row select::placeholder,
+.spp-payment-row input::placeholder,
+.spp-manage-add input::placeholder {
+  color: var(--color-text-placeholder);
+}
+
+.spp-payment-row select,
+.spp-payment-row input {
+  flex: 1 1 160px;
+  min-width: 0;
+}
+
+.spp-payment-actions {
+  align-items: center;
+  display: flex;
+  gap: var(--space-4);
+  margin-top: var(--space-1);
+}
+
+.spp-manage-toggle {
+  background: none;
+  border: none;
+  color: var(--color-primary);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: var(--font-weight-semi-bold);
+  padding: 0;
+}
+
+.spp-manage {
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-default);
+  margin-top: var(--space-3);
+  padding: var(--space-3);
+}
+
+.spp-manage-add {
+  display: flex;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.spp-manage-add input {
+  flex: 1;
+  min-width: 0;
+}
+
+.spp-manage-row {
+  align-items: center;
+  display: flex;
+  font-size: 13px;
+  justify-content: space-between;
+  padding: 4px 0;
+}
+
+.spp-manage-row--off {
+  opacity: 0.55;
+}
+
+.spp-manage-disabled {
+  color: var(--color-text-caption);
+}
+
+.spp-manage-row button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: var(--font-weight-semi-bold);
+}
+
+.spp-manage-danger {
+  color: var(--color-danger-text, #dc2626);
+}
+
+.spp-manage-success {
+  color: var(--color-success, #16a34a);
+}
+
+/* Totals */
+.spp-totals {
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 13px;
+  gap: var(--space-2);
+  justify-content: space-between;
+  margin-top: var(--space-3);
+}
+
+.spp-total-entered {
+  color: var(--color-primary);
+}
+
+.spp-total-remaining {
+  color: var(--color-warning-text, #b45309);
+  font-weight: var(--font-weight-semi-bold);
+}
+
+.spp-total-remaining--ok {
+  color: var(--color-success, #16a34a);
+}
+
+/* Document uploads */
+.spp-files {
+  display: grid;
+  gap: var(--space-4);
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.spp-file-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.spp-file-label {
+  color: var(--color-text-default);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+}
+
+.spp-file-btn {
+  align-items: center;
+  background: var(--color-background-surface);
+  border: 1px dashed var(--color-border-default);
+  border-radius: var(--border-radius-default);
+  color: var(--color-text-default);
+  cursor: pointer;
+  display: inline-flex;
+  font-size: var(--font-size-sm);
+  gap: var(--space-2);
+  justify-content: center;
+  padding: var(--space-3);
+  transition: border-color 150ms ease;
+  width: 100%;
+}
+
+.spp-file-btn:hover {
+  border-color: var(--color-primary);
+}
+
+.spp-file-chip {
+  align-items: center;
+  background: var(--color-background-primary-invert-default);
+  border-radius: var(--border-radius-default);
+  display: flex;
+  font-size: 0.8rem;
+  gap: var(--space-2);
+  overflow: hidden;
+  padding: var(--space-2) var(--space-3);
+}
+
+.spp-file-chip span {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.spp-file-chip button {
+  align-items: center;
+  background: none;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  flex-shrink: 0;
+  padding: 0;
+}
+
+.spp-file-hint {
+  color: var(--color-text-caption);
+  font-size: 12px;
+}
+

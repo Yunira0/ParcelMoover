@@ -62,15 +62,16 @@ const RANGE_DAYS: Record<Exclude<DateRange, ''>, number> = {
   '30d': 30,
 };
 
-const isWithinRange = (createdAt: string, range: DateRange) => {
-  if (!range) return true;
-  const created = new Date(createdAt);
-  if (Number.isNaN(created.getTime())) return false;
+// Start-of-day cutoff for a range, as an ISO date the server can filter on.
+const rangeFromDate = (range: DateRange): string | undefined => {
+  if (!range) return undefined;
   const cutoff = new Date();
   cutoff.setHours(0, 0, 0, 0);
   cutoff.setDate(cutoff.getDate() - (RANGE_DAYS[range] - 1));
-  return created.getTime() >= cutoff.getTime();
+  return cutoff.toISOString();
 };
+
+const SEARCH_DEBOUNCE_MS = 300;
 
 const Tickets: React.FC = () => {
   const navigate = useNavigate();
@@ -78,8 +79,18 @@ const Tickets: React.FC = () => {
   // Vendors raise tickets; admins/sales only triage them.
   const vendorSide = isVendorSide();
   const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+  const [statusCounts, setStatusCounts] = useState<Record<TicketTab, number>>({
+    all: 0,
+    pending: 0,
+    open: 0,
+    closed: 0,
+  });
   const [activeTab, setActiveTab] = useState<TicketTab>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  // Search goes to the server now, so debounce rather than fire per keystroke.
+  const [appliedSearch, setAppliedSearch] = useState('');
   const [priorityFilter, setPriorityFilter] = useState<TicketPriority | ''>('');
   // Deep-linked from a module's "Ticket" button, e.g. /tickets?category=pickup
   const [categoryFilter, setCategoryFilter] = useState<TicketCategory | ''>(() => {
@@ -108,54 +119,42 @@ const Tickets: React.FC = () => {
     }
   };
 
+  // Filtering and paging happen on the server. Doing it here meant the page
+  // only ever saw the first API page of tickets, so anything older than that -
+  // typically the closed ones - was missing from "All" and from the tab counts.
   const loadTickets = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await getTickets();
+      const res = await getTickets({
+        status: activeTab === 'all' ? undefined : activeTab,
+        search: appliedSearch || undefined,
+        priority: priorityFilter || undefined,
+        category: categoryFilter || undefined,
+        fromDate: rangeFromDate(dateRange),
+        page,
+        pageSize: pageSizeChoice,
+      });
       if (res?.success && Array.isArray(res.data)) {
         setTickets(res.data);
+        setTotal(res.meta?.total ?? res.data.length);
+        setTotalPages(res.meta?.totalPages ?? 1);
+        if (res.meta?.statusCounts) setStatusCounts(res.meta.statusCounts);
       }
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [activeTab, appliedSearch, priorityFilter, categoryFilter, dateRange, page, pageSizeChoice]);
 
   useEffect(() => { loadTickets(); }, [loadTickets]);
 
-  useEffect(() => { setPage(1); }, [activeTab, searchQuery, priorityFilter, categoryFilter, dateRange, pageSizeChoice]);
+  useEffect(() => {
+    const timer = setTimeout(() => setAppliedSearch(searchQuery.trim()), SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
-  // Counts per tab are derived from the full dataset (independent of filters),
-  // matching the design's status pills.
-  const statusCounts = useMemo(() => {
-    const counts: Record<TicketTab, number> = {
-      all: tickets.length,
-      pending: 0,
-      open: 0,
-      closed: 0,
-    };
-    tickets.forEach((ticket) => { counts[ticket.status] += 1; });
-    return counts;
-  }, [tickets]);
+  useEffect(() => { setPage(1); }, [activeTab, appliedSearch, priorityFilter, categoryFilter, dateRange, pageSizeChoice]);
 
-  const filteredTickets = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    return tickets.filter((ticket) => {
-      if (activeTab !== 'all' && ticket.status !== activeTab) return false;
-      if (priorityFilter && ticket.priority !== priorityFilter) return false;
-      if (categoryFilter && ticket.category !== categoryFilter) return false;
-      if (!isWithinRange(ticket.createdAt, dateRange)) return false;
-      if (q && !(
-        ticket.vendorName?.toLowerCase().includes(q) ||
-        ticket.customerPhone.toLowerCase().includes(q) ||
-        ticket.ticketId.toLowerCase().includes(q) ||
-        ticket.subject.toLowerCase().includes(q)
-      )) return false;
-      return true;
-    });
-  }, [tickets, activeTab, searchQuery, priorityFilter, categoryFilter, dateRange]);
-
-  const totalPages = Math.max(1, Math.ceil(filteredTickets.length / pageSizeChoice));
-  const visibleTickets = filteredTickets.slice((page - 1) * pageSizeChoice, page * pageSizeChoice);
+  const visibleTickets = tickets;
   const visibleIds = visibleTickets.map((ticket) => ticket.id);
   const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedIds.has(id));
   const someVisibleSelected = visibleIds.some((id) => selectedIds.has(id));
@@ -330,7 +329,7 @@ const Tickets: React.FC = () => {
         pageSize={pageSizeChoice}
         pageSizeLabel="tickets"
         onPageSizeChange={setPageSizeChoice}
-        summary={`${filteredTickets.length} ticket${filteredTickets.length === 1 ? '' : 's'}`}
+        summary={`${total} ticket${total === 1 ? '' : 's'}`}
       />
 
       <CreateTicketModal

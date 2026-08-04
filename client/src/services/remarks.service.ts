@@ -40,6 +40,8 @@ export interface RemarksPageMeta {
   pageSize: number;
   total: number;
   totalPages: number;
+  /** Breakdown of the whole filtered set (all pages), not just the rows returned. */
+  statusCounts?: Record<RemarkStatus, number>;
 }
 
 export interface RemarksListResponse {

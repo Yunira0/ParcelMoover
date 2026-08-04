@@ -98,7 +98,10 @@ export interface SettlementPaymentInput {
 
 export interface PaySettlementInput {
   payments: SettlementPaymentInput[];
-  remark: string;
+  remark?: string;
+  /** Relative upload paths, set by the controller after the files are secured. */
+  paymentReceiptPath?: string | null;
+  taxInvoicePath?: string | null;
 }
 
 export interface UpdateSettlementInput {
@@ -125,8 +128,10 @@ export interface CreateSettlementResult {
 export interface UnsettledOrderItem {
   id: string;
   codCollectionId: string;
+  orderNumber: number;
   trackingId: string;
   receiverName: string;
+  receiverPhone: string;
   destination: string;
   codAmount: number;
   deliveryCharge: number;
@@ -174,6 +179,10 @@ export interface SettlementDetailResult {
   payeeEmail: string | null;
   payeeAddress: string | null;
   payeePan: string | null;
+  /** Payee's bank account, so the payment screen can show where to transfer. */
+  bankName: string | null;
+  bankAccountNo: string | null;
+  bankAccountHolder: string | null;
   transferDate: string | null;
   createdAt: string;
   amount: number;
@@ -182,5 +191,8 @@ export interface SettlementDetailResult {
   paymentMethod: string | null;
   payments: SettlementPaymentInput[];
   remark: string | null;
+  /** Relative paths under /uploads; null until the statement is paid with evidence attached. */
+  paymentReceiptPath: string | null;
+  taxInvoicePath: string | null;
   items: SettlementDetailItem[];
 }

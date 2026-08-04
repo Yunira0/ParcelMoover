@@ -56,7 +56,9 @@ export const paySettlementSchema = z.object({
       }),
     )
     .min(1, "At least one payment is required"),
-  remark: z.string().trim().min(1, "Remark is required").max(500),
+  // Optional — the payment record already carries method, amount and payer;
+  // a remark is only useful when there's something unusual to note.
+  remark: z.string().trim().max(500).optional(),
 });
 
 export type CreateSettlementBody = z.infer<typeof createSettlementSchema>;

@@ -153,20 +153,39 @@ export const createSettlement = async (
   return response.data;
 };
 
+export interface PaySettlementDocuments {
+  /** Screenshot/PDF of the transfer confirmation. */
+  paymentReceipt?: File | null;
+  /** Tax invoice raised against this payout. */
+  taxInvoice?: File | null;
+}
+
 export const paySettlement = async (
   id: string,
   payments: SettlementPayment[],
-  remark: string,
+  remark?: string,
+  documents?: PaySettlementDocuments,
 ): Promise<{ success: boolean; message: string; data: CreateSettlementResponse }> => {
-  const response = await api.post(`/finance/settlements/${id}/pay`, { payments, remark });
+  // Multipart because of the attachments; `payments` is sent as JSON text and
+  // revived server-side (see parseMultipartJson) since form fields are strings.
+  const form = new FormData();
+  form.append('payments', JSON.stringify(payments));
+  // Omit rather than send "" - the field is optional server-side.
+  if (remark?.trim()) form.append('remark', remark.trim());
+  if (documents?.paymentReceipt) form.append('paymentReceipt', documents.paymentReceipt);
+  if (documents?.taxInvoice) form.append('taxInvoice', documents.taxInvoice);
+
+  const response = await api.post(`/finance/settlements/${id}/pay`, form);
   return response.data;
 };
 
 export interface UnsettledOrderItem {
   id: string;
   codCollectionId: string;
+  orderNumber: number;
   trackingId: string;
   receiverName: string;
+  receiverPhone: string;
   destination: string;
   codAmount: number;
   deliveryCharge: number;
@@ -220,6 +239,9 @@ export interface SettlementDetail {
   payeeEmail: string | null;
   payeeAddress: string | null;
   payeePan: string | null;
+  bankName: string | null;
+  bankAccountNo: string | null;
+  bankAccountHolder: string | null;
   transferDate: string | null;
   createdAt: string;
   amount: number;
@@ -228,6 +250,8 @@ export interface SettlementDetail {
   paymentMethod: string | null;
   payments: SettlementPayment[];
   remark: string | null;
+  paymentReceiptPath: string | null;
+  taxInvoicePath: string | null;
   items: SettlementDetailItem[];
 }
 

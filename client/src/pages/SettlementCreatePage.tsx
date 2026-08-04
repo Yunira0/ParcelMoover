@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Users, ListChecks } from 'lucide-react';
+import { ArrowLeft, Users, ListChecks, Download } from 'lucide-react';
 import Button from '../components/Button';
 import FormField from '../components/FormField';
 import { getUnsettledOrders, createSettlement, type UnsettledOrderItem } from '../services/finance.service';
 import { getRiders, searchVendors } from '../services/users.service';
+import { downloadExcel, type CellValue } from '../utils/excel';
 import './SettlementCreatePage.css';
 
 type PayeeType = 'rider' | 'vendor';
@@ -122,6 +123,56 @@ const SettlementCreatePage: React.FC = () => {
   );
   const totalAmount = selectedOrders.reduce((sum, o) => sum + o.netPayable, 0);
 
+  // Exports what the operator is looking at: the ticked rows once they've
+  // started choosing, otherwise the whole unsettled list. The button label says
+  // which, so the file never surprises them.
+  const downloadOrdersExcel = () => {
+    const rowsToExport = selected.size > 0 ? selectedOrders : orders;
+    if (rowsToExport.length === 0) return;
+
+    const isVendor = payeeType === 'vendor';
+    const headers = [
+      'SN',
+      'Order ID',
+      'Tracking ID',
+      'Receiver',
+      'Receiver Phone',
+      'Destination',
+      'COD',
+      ...(isVendor ? ['Delivery Charge'] : []),
+      isVendor ? 'Net Payable' : 'Collected',
+    ];
+    const rows: CellValue[][] = rowsToExport.map((order, index) => [
+      index + 1,
+      `#${order.orderNumber}`,
+      order.trackingId,
+      order.receiverName,
+      order.receiverPhone,
+      order.destination,
+      order.codAmount,
+      ...(isVendor ? [order.deliveryCharge] : []),
+      order.netPayable,
+    ]);
+
+    // Totals under the numeric columns; pad out the leading text columns.
+    const numericColumns = isVendor ? 3 : 2;
+    const sum = (pick: (o: UnsettledOrderItem) => number) =>
+      rowsToExport.reduce((total, order) => total + pick(order), 0);
+    rows.push([
+      ...new Array(headers.length - numericColumns).fill(''),
+      sum((o) => o.codAmount),
+      ...(isVendor ? [sum((o) => o.deliveryCharge)] : []),
+      sum((o) => o.netPayable),
+    ]);
+
+    downloadExcel(
+      `unsettled-orders-${payeeType}-${settlementDate}.xlsx`,
+      'Unsettled Orders',
+      headers,
+      rows,
+    );
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -218,11 +269,23 @@ const SettlementCreatePage: React.FC = () => {
 
         {selectedEntityId && (
           <section className="scp-section">
-            <SectionHeader
-              icon={<ListChecks size={18} />}
-              title={`Unsettled Orders (${orders.length})`}
-              description="Select the orders to include in this settlement."
-            />
+            <div className="scp-section-bar">
+              <SectionHeader
+                icon={<ListChecks size={18} />}
+                title={`Unsettled Orders (${orders.length})`}
+                description="Select the orders to include in this settlement."
+              />
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={downloadOrdersExcel}
+                disabled={orders.length === 0}
+              >
+                <Download size={15} />
+                {selected.size > 0 ? `Download Excel (${selected.size} selected)` : 'Download Excel'}
+              </Button>
+            </div>
 
             {fetchingOrders ? (
               <div className="scp-empty">Loading orders...</div>
@@ -240,6 +303,7 @@ const SettlementCreatePage: React.FC = () => {
                           onChange={toggleAll}
                         />
                       </th>
+                      <th style={{ textAlign: 'left' }}>Order ID</th>
                       <th style={{ textAlign: 'left' }}>Tracking ID</th>
                       <th style={{ textAlign: 'left' }}>Receiver</th>
                       <th style={{ textAlign: 'right' }}>COD</th>
@@ -266,8 +330,12 @@ const SettlementCreatePage: React.FC = () => {
                             onClick={(e) => e.stopPropagation()}
                           />
                         </td>
+                        <td className="scp-mono">#{order.orderNumber}</td>
                         <td className="scp-mono">{order.trackingId}</td>
-                        <td>{order.receiverName}</td>
+                        <td>
+                          {order.receiverName}
+                          <div className="scp-subtext">{order.receiverPhone}</div>
+                        </td>
                         <td style={{ textAlign: 'right' }}>Rs. {order.codAmount.toLocaleString()}</td>
                         {payeeType === 'vendor' && (
                           <td style={{ textAlign: 'right' }}>Rs. {order.deliveryCharge.toLocaleString()}</td>

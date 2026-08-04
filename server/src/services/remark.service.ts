@@ -179,8 +179,16 @@ export async function listRemarks(actor: Actor, params: ListRemarksParams = {}) 
   const page = Math.max(1, params.page ?? 1);
   const skip = (page - 1) * take;
 
-  const [total, remarks] = await Promise.all([
+  const [total, statusGroups, remarks] = await Promise.all([
     prisma.parcel_remarks.count({ where }),
+    // Status breakdown over the whole filtered set, not just the current page -
+    // the caller's summary chips have to agree with `total` (and with the nav
+    // badge), which counting the returned rows client-side cannot do.
+    prisma.parcel_remarks.groupBy({
+      by: ["workflow_status"],
+      where,
+      _count: { _all: true },
+    }),
     prisma.parcel_remarks.findMany({
       where,
       include: {
@@ -200,6 +208,11 @@ export async function listRemarks(actor: Actor, params: ListRemarksParams = {}) 
 
   const lastActivityByParcel = await resolveLastActivityByParcel(remarks.map((r) => r.parcel_id));
 
+  const statusCounts: Record<RemarkWorkflowStatus, number> = { open: 0, pending: 0, closed: 0 };
+  statusGroups.forEach((group) => {
+    statusCounts[normalizeStatus(group.workflow_status)] += group._count._all;
+  });
+
   return {
     data: remarks.map((remark) => mapRemark(remark, lastActivityByParcel.get(remark.parcel_id))),
     meta: {
@@ -207,6 +220,7 @@ export async function listRemarks(actor: Actor, params: ListRemarksParams = {}) 
       pageSize: take,
       total,
       totalPages: Math.max(1, Math.ceil(total / take)),
+      statusCounts,
     },
   };
 }

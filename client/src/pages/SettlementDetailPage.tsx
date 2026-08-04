@@ -1,9 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Printer, Download, CreditCard, Pencil, Undo2 } from 'lucide-react';
+import { ArrowLeft, Printer, Download, CreditCard, FileText, Pencil, Undo2 } from 'lucide-react';
 import Button from '../components/Button';
 import StatusChip from '../components/StatusChip';
-import MakePaymentModal from '../components/MakePaymentModal';
 import EditSettlementModal from '../components/EditSettlementModal';
 import RevertSettlementModal from '../components/RevertSettlementModal';
 import { getSettlementDetail, type SettlementDetail } from '../services/finance.service';
@@ -14,6 +13,12 @@ import './vendor/VendorFinance.css';
 import './SettlementDetailPage.css';
 
 const money = (value: number) => `Rs. ${value.toLocaleString()}`;
+
+// Uploads are served from the API host, not the SPA's, and the stored path is
+// already relative ("uploads/settlements/..."). Same helper as BillingManagement.
+const API_BASE = (import.meta.env.VITE_API_URL || '/api').replace(/\/api\/?$/, '');
+const uploadUrl = (path: string) =>
+  `${API_BASE}/${path.replace(/\\/g, '/').replace(/^.*?(uploads\/)/, '$1')}`;
 
 function buildStatementHtml(detail: SettlementDetail): string {
   // On a vendor statement the vendor is already the payee in BILL TO, so the
@@ -116,7 +121,6 @@ const SettlementDetailPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [reloadKey, setReloadKey] = useState(0);
-  const [showPayment, setShowPayment] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const [showRevert, setShowRevert] = useState(false);
 
@@ -225,7 +229,7 @@ const SettlementDetailPage: React.FC = () => {
             </Button>
           )}
           {canPay && detail?.status === 'pending' && (
-            <Button variant="primary" onClick={() => setShowPayment(true)}>
+            <Button variant="primary" onClick={() => navigate(`/finance/settlements/${id}/pay`)}>
               <CreditCard size={16} /> Make Payment
             </Button>
           )}
@@ -372,17 +376,25 @@ const SettlementDetailPage: React.FC = () => {
               <span>{money(detail.payableAmount)}</span>
             </div>
           </div>
+
+          {(detail.paymentReceiptPath || detail.taxInvoicePath) && (
+            <div className="settlement-documents">
+              <div className="vendor-finance-subtext">PAYMENT DOCUMENTS</div>
+              {detail.paymentReceiptPath && (
+                <a href={uploadUrl(detail.paymentReceiptPath)} target="_blank" rel="noreferrer">
+                  <FileText size={14} /> Payment receipt
+                </a>
+              )}
+              {detail.taxInvoicePath && (
+                <a href={uploadUrl(detail.taxInvoicePath)} target="_blank" rel="noreferrer">
+                  <FileText size={14} /> Tax invoice
+                </a>
+              )}
+            </div>
+          )}
         </div>
       ) : null}
 
-      {showPayment && detail && (
-        <MakePaymentModal
-          settlementId={detail.id}
-          payableAmount={detail.payableAmount}
-          onClose={() => setShowPayment(false)}
-          onSuccess={() => setReloadKey((k) => k + 1)}
-        />
-      )}
 
       {showEdit && detail && (
         <EditSettlementModal

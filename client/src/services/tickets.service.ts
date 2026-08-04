@@ -89,6 +89,8 @@ export interface TicketsListMeta {
   pageSize: number;
   total: number;
   totalPages: number;
+  /** Whole-dataset tab counts, unaffected by the active status/filters. */
+  statusCounts?: { all: number; pending: number; open: number; closed: number };
 }
 
 export interface TicketsListResponse {

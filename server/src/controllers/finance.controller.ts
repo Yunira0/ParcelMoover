@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import { getPendingCodBill, listOrderCod, listSettlements, getUnsettledOrders, createSettlement, payForSettlement, updateSettlement, revertSettlement, getSettlementDetail } from "../services/finance.service";
 import { CodPaymentFilter, CreateSettlementInput, PaySettlementInput, UpdateSettlementInput, RevertSettlementInput } from "../types/finance.type";
+import { flattenMulterFiles, secureUploadedFiles } from "../lib/secureUploadedFiles";
 
 // General UUID shape — not strict about RFC-4122 version/variant nibbles, so
 // seeded/demo ids (e.g. 55555555-0000-0000-0000-000000000002) are accepted.
@@ -203,7 +204,20 @@ export async function payForSettlementController(req: Request, res: Response) {
       return res.status(400).json({ success: false, message: "Invalid settlement id" });
     }
 
-    const input = req.body as PaySettlementInput;
+    // Encrypt/verify before reading filename: secureUploadedFiles rewrites it
+    // when a large image is recompressed to JPEG, and the stored path must
+    // match the file that actually ends up on disk.
+    const files = req.files as Record<string, Express.Multer.File[]> | undefined;
+    const uploads = flattenMulterFiles(files);
+    if (uploads.length > 0) await secureUploadedFiles(uploads);
+    const receipt = files?.paymentReceipt?.[0];
+    const taxInvoice = files?.taxInvoice?.[0];
+
+    const input: PaySettlementInput = {
+      ...(req.body as PaySettlementInput),
+      paymentReceiptPath: receipt ? `uploads/settlements/${receipt.filename}` : null,
+      taxInvoicePath: taxInvoice ? `uploads/settlements/${taxInvoice.filename}` : null,
+    };
     const settlement = await payForSettlement({ id: req.user.id, roles: req.user.roles }, id, input);
 
     return res.status(200).json({ success: true, message: "Payment recorded", data: settlement });

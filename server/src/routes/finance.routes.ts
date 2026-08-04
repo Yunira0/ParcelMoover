@@ -6,6 +6,8 @@ import { requireStaffPermission } from "../middlewares/staffPermission.middlewar
 import { requireAdminPermission } from "../middlewares/adminPermission.middleware";
 import { csrfProtection } from "../middlewares/csrf.middleware";
 import { validate } from "../middlewares/validate.middleware";
+import { parseMultipartJson } from "../middlewares/multipartJson.middleware";
+import { settlementDocsUpload } from "../lib/settlementUpload";
 import {
   pendingCodQuerySchema,
   orderCodQuerySchema,
@@ -111,13 +113,16 @@ financeRouter.post(
 );
 
 // POST /api/finance/settlements/:id/pay — record payment against a pending
-// statement and flip it to settled
+// statement and flip it to settled. Multipart: optional payment receipt and
+// tax invoice alongside the payment rows.
 financeRouter.post(
   "/settlements/:id/pay",
   authMiddleware,
   csrfProtection,
   authorizeRoles("super_admin", "admin"),
   settlementCreateLimiter,
+  settlementDocsUpload,
+  parseMultipartJson("payments"),
   validate(paySettlementSchema),
   payForSettlementController,
 );
