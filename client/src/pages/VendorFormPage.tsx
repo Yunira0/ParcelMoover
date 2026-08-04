@@ -263,7 +263,11 @@ const VendorFormPage: React.FC = () => {
         }
         // Hub defaults to whichever hub the current staff member (super_admin
         // or admin) is assigned to. Fall back to the sole hub only if the
-        // actor has none (e.g. a sales user).
+        // actor has none (e.g. a sales user). Create mode only - in edit mode
+        // this races the vendor-data load effect below and, since it applies
+        // whenever pickupLocation is still empty, can silently paper over a
+        // vendor whose real saved hub is null with a guessed default.
+        if (isEdit) return;
         const adminHubId: string | null = me?.hubId ?? null;
         const defaultHub = (adminHubId && hubs.some(h => h.value === adminHubId) ? adminHubId : '')
           || (hubs.length === 1 ? hubs[0].value : '');
