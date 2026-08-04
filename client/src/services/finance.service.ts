@@ -175,7 +175,15 @@ export const paySettlement = async (
   if (documents?.paymentReceipt) form.append('paymentReceipt', documents.paymentReceipt);
   if (documents?.taxInvoice) form.append('taxInvoice', documents.taxInvoice);
 
-  const response = await api.post(`/finance/settlements/${id}/pay`, form);
+  // The header override is required, not cosmetic: the api instance defaults to
+  // Content-Type: application/json, and axios serialises FormData to JSON when
+  // that header is set - the File objects would silently become {} and the
+  // request would arrive as JSON, so multer would never see the uploads. Same
+  // reason kyc.service.ts sets it. The browser replaces this with the real
+  // multipart type plus its boundary.
+  const response = await api.post(`/finance/settlements/${id}/pay`, form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
   return response.data;
 };
 

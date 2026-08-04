@@ -28,6 +28,7 @@ import {
   updateSettlementController,
   revertSettlementController,
   getSettlementDetailController,
+  getSettlementDocumentController,
 } from "../controllers/finance.controller";
 
 const financeRouter: Router = Router();
@@ -98,6 +99,18 @@ financeRouter.get(
   requireStaffPermission("FINANCE_ACCESS"),
   financeReadLimiter,
   getSettlementDetailController,
+);
+
+// GET /api/finance/settlements/:id/documents/:kind — payment receipt / tax
+// invoice for one statement. Same audience as the detail route above, so the
+// payee reaches their own paperwork; the /uploads mount stays admin-only.
+financeRouter.get(
+  "/settlements/:id/documents/:kind",
+  authMiddleware,
+  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider", "sales"),
+  requireStaffPermission("FINANCE_ACCESS"),
+  financeReadLimiter,
+  getSettlementDocumentController,
 );
 
 // POST /api/finance/settlements — create + immediately settle a statement

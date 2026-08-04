@@ -14,11 +14,37 @@ import './SettlementDetailPage.css';
 
 const money = (value: number) => `Rs. ${value.toLocaleString()}`;
 
-// Uploads are served from the API host, not the SPA's, and the stored path is
-// already relative ("uploads/settlements/..."). Same helper as BillingManagement.
-const API_BASE = (import.meta.env.VITE_API_URL || '/api').replace(/\/api\/?$/, '');
-const uploadUrl = (path: string) =>
-  `${API_BASE}/${path.replace(/\\/g, '/').replace(/^.*?(uploads\/)/, '$1')}`;
+// Payment documents go through the settlement's own endpoint rather than the
+// /uploads mount: that mount is admin-only, so a vendor opening the receipt on
+// their own statement would get a 403. This route re-checks access to the
+// statement itself, so the payee and their sales rep can read their paperwork.
+const API_ROOT = import.meta.env.VITE_API_URL || '/api';
+const documentUrl = (settlementId: string, kind: 'receipt' | 'tax-invoice') =>
+  `${API_ROOT}/finance/settlements/${settlementId}/documents/${kind}`;
+
+// One attached document. Screenshots are the common case, so they preview
+// inline - the whole point is seeing the proof without a round trip to another
+// tab. PDFs can't render in an <img>, so they fall back to a labelled link.
+const SettlementDocument: React.FC<{
+  label: string;
+  storedPath: string | null;
+  href: string;
+}> = ({ label, storedPath, href }) => {
+  if (!storedPath) return null;
+  const isPdf = storedPath.toLowerCase().endsWith('.pdf');
+  return (
+    <a className="settlement-document" href={href} target="_blank" rel="noreferrer">
+      <span className="settlement-document-label">
+        <FileText size={14} /> {label}
+      </span>
+      {isPdf ? (
+        <span className="settlement-document-pdf">PDF — open</span>
+      ) : (
+        <img src={href} alt={label} loading="lazy" />
+      )}
+    </a>
+  );
+};
 
 function buildStatementHtml(detail: SettlementDetail): string {
   // On a vendor statement the vendor is already the payee in BILL TO, so the
@@ -380,16 +406,18 @@ const SettlementDetailPage: React.FC = () => {
           {(detail.paymentReceiptPath || detail.taxInvoicePath) && (
             <div className="settlement-documents">
               <div className="vendor-finance-subtext">PAYMENT DOCUMENTS</div>
-              {detail.paymentReceiptPath && (
-                <a href={uploadUrl(detail.paymentReceiptPath)} target="_blank" rel="noreferrer">
-                  <FileText size={14} /> Payment receipt
-                </a>
-              )}
-              {detail.taxInvoicePath && (
-                <a href={uploadUrl(detail.taxInvoicePath)} target="_blank" rel="noreferrer">
-                  <FileText size={14} /> Tax invoice
-                </a>
-              )}
+              <div className="settlement-documents-grid">
+                <SettlementDocument
+                  label="Payment receipt"
+                  storedPath={detail.paymentReceiptPath}
+                  href={documentUrl(detail.id, 'receipt')}
+                />
+                <SettlementDocument
+                  label="Tax invoice"
+                  storedPath={detail.taxInvoicePath}
+                  href={documentUrl(detail.id, 'tax-invoice')}
+                />
+              </div>
             </div>
           )}
         </div>

@@ -1140,6 +1140,78 @@ export async function revertSettlement(
   };
 }
 
+// Who may read one statement: staff see any, a vendor/rider only their own,
+// and a sales account only its own clients'. Shared by the detail endpoint and
+// the document download so the two can never drift apart - the download is the
+// only path that hands out a decrypted file, so it must not have its own copy
+// of this logic.
+async function assertSettlementAccess(
+  actor: Actor,
+  settlement: {
+    payee_type: string;
+    rider_id: string | null;
+    vendor_id: string | null;
+    vendors?: { sales_user_id: string | null } | null;
+  },
+): Promise<void> {
+  const isStaff = actor.roles.some((r) => ["super_admin", "admin"].includes(r));
+  if (isStaff) return;
+
+  const isSales = actor.roles.includes("sales");
+
+  if (settlement.payee_type === "rider") {
+    if (isSales) throw new AppError(403, "Not authorized to view rider settlements");
+    const rider = await prisma.riders.findFirst({ where: { user_id: actor.id, deleted_at: null } });
+    if (!rider || rider.id !== settlement.rider_id) {
+      throw new AppError(403, "Not authorized to view this settlement");
+    }
+    return;
+  }
+
+  if (isSales) {
+    if (settlement.vendors?.sales_user_id !== actor.id) {
+      throw new AppError(403, "Not authorized to view this client's records");
+    }
+    return;
+  }
+
+  const ownVendorId = await resolveOwnVendorId(actor);
+  if (!ownVendorId || ownVendorId !== settlement.vendor_id) {
+    throw new AppError(403, "Not authorized to view this settlement");
+  }
+}
+
+export type SettlementDocumentKind = "receipt" | "tax-invoice";
+
+// Resolves one of a statement's payment documents for a caller entitled to it.
+// Returns the stored (encrypted-at-rest) path; the controller streams it.
+export async function getSettlementDocumentPath(
+  actor: Actor,
+  settlementId: string,
+  kind: SettlementDocumentKind,
+): Promise<string> {
+  const settlement = await prisma.settlements.findUnique({
+    where: { id: settlementId },
+    select: {
+      payee_type: true,
+      rider_id: true,
+      vendor_id: true,
+      payment_receipt_path: true,
+      tax_invoice_path: true,
+      vendors: { select: { sales_user_id: true } },
+    },
+  });
+  if (!settlement) throw new AppError(404, "Settlement not found");
+
+  await assertSettlementAccess(actor, settlement);
+
+  const path = kind === "receipt" ? settlement.payment_receipt_path : settlement.tax_invoice_path;
+  if (!path) {
+    throw new AppError(404, kind === "receipt" ? "No payment receipt attached" : "No tax invoice attached");
+  }
+  return path;
+}
+
 // Line-item breakdown of a single settlement statement - which orders were
 // bundled into it and how much of each was settled. Authorization mirrors
 // listSettlements: staff see any statement, vendor/rider/sales are confined
@@ -1204,29 +1276,7 @@ export async function getSettlementDetail(actor: Actor, settlementId: string): P
     throw new AppError(404, "Settlement not found");
   }
 
-  const isStaff = actor.roles.some((r) => ["super_admin", "admin"].includes(r));
-  const isSales = actor.roles.includes("sales") && !isStaff;
-
-  if (!isStaff) {
-    if (settlement.payee_type === "rider") {
-      if (isSales) throw new AppError(403, "Not authorized to view rider settlements");
-      const rider = await prisma.riders.findFirst({ where: { user_id: actor.id, deleted_at: null } });
-      if (!rider || rider.id !== settlement.rider_id) {
-        throw new AppError(403, "Not authorized to view this settlement");
-      }
-    } else {
-      if (isSales) {
-        if (settlement.vendors?.sales_user_id !== actor.id) {
-          throw new AppError(403, "Not authorized to view this client's records");
-        }
-      } else {
-        const ownVendorId = await resolveOwnVendorId(actor);
-        if (!ownVendorId || ownVendorId !== settlement.vendor_id) {
-          throw new AppError(403, "Not authorized to view this settlement");
-        }
-      }
-    }
-  }
+  await assertSettlementAccess(actor, settlement);
 
   const payeeName = settlement.riders?.name || settlement.vendors?.business_name || settlement.vendors?.client_name || "";
   const payeePhone = settlement.riders?.phone || settlement.vendors?.phone || "";

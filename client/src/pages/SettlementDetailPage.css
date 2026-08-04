@@ -17,27 +17,64 @@
   gap: var(--space-2);
 }
 
-/* Receipt / tax invoice captured at payment time. */
+/* Receipt / tax invoice captured at payment time. Visible to the payee as well
+   as staff, so it sits with the statement rather than in an admin-only area. */
 .settlement-documents {
-  align-items: center;
   border-top: 1px solid var(--color-border-default);
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-4);
   margin-top: var(--space-4);
   padding-top: var(--space-4);
 }
 
-.settlement-documents a {
-  align-items: center;
+.settlement-documents-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  margin-top: var(--space-3);
+}
+
+.settlement-document {
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-default);
   color: var(--color-primary);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-width: 240px;
+  padding: var(--space-3);
+  text-decoration: none;
+  transition: border-color 150ms ease;
+}
+
+.settlement-document:hover {
+  border-color: var(--color-primary);
+}
+
+.settlement-document-label {
+  align-items: center;
   display: inline-flex;
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-medium);
   gap: var(--space-2);
-  text-decoration: none;
 }
 
-.settlement-documents a:hover {
-  text-decoration: underline;
+.settlement-document img {
+  background: var(--color-background-elevated);
+  border-radius: var(--border-radius-default);
+  display: block;
+  max-height: 200px;
+  max-width: 100%;
+  object-fit: contain;
+}
+
+.settlement-document-pdf {
+  color: var(--color-text-caption);
+  font-size: var(--font-size-sm);
+}
+
+/* Attachments are proof, not decoration - keep them out of the printed
+   statement, which is generated separately in buildStatementHtml. */
+@media print {
+  .settlement-documents {
+    display: none;
+  }
 }
