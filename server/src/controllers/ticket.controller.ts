@@ -20,8 +20,9 @@ export async function listTicketsController(req: Request, res: Response) {
     if (typeof category === "string") params.category = category;
     if (typeof fromDate === "string") params.fromDate = fromDate;
     if (typeof toDate === "string") params.toDate = toDate;
-    if (typeof page === "string" && Number.isFinite(Number(page))) params.page = Number(page);
-    if (typeof pageSize === "string" && Number.isFinite(Number(pageSize))) params.pageSize = Number(pageSize);
+    // page/pageSize arrive already coerced to numbers by listTicketsQuerySchema.
+    if (typeof page === "number") params.page = page;
+    if (typeof pageSize === "number") params.pageSize = pageSize;
     if (sortDir === "asc" || sortDir === "desc") params.sortDir = sortDir;
 
     const { data, meta } = await listTickets({ id: req.user.id, roles: req.user.roles }, params);

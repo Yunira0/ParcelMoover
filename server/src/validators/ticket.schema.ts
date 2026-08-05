@@ -56,6 +56,7 @@ export const listTicketsQuerySchema = paginationQuerySchema.extend({
   category: z.string().max(50).optional(),
   fromDate: isoDateStringSchema,
   toDate: isoDateStringSchema,
+  sortDir: z.enum(["asc", "desc"]).optional(),
 });
 
 export type ListTicketsQuery = z.infer<typeof listTicketsQuerySchema>;

@@ -13,7 +13,8 @@ export async function listAuditLogsController(req: Request, res: Response) {
     if (typeof fromDate === "string") params.fromDate = fromDate;
     if (typeof toDate === "string") params.toDate = toDate;
     if (typeof cursor === "string") params.cursor = cursor;
-    if (typeof pageSize === "string" && Number.isFinite(Number(pageSize))) params.pageSize = Number(pageSize);
+    // pageSize arrives already coerced to a number by listAuditLogsQuerySchema.
+    if (typeof pageSize === "number") params.pageSize = pageSize;
 
     const { data, meta } = await listAuditLogs(params);
 

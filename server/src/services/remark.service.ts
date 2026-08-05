@@ -1,6 +1,6 @@
 import prisma from "../lib/prisma";
 import { AppError } from "../utils/AppError";
-import { ListRemarksParams } from "../types/remark.type";
+import { ListRemarksParams, RemarkAuthorGroup } from "../types/remark.type";
 
 type Actor = { id: string; roles: string[] };
 
@@ -128,11 +128,22 @@ async function resolveLastActivityByParcel(
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 100;
 
-// Author filter for "unclosed comments": only remarks raised by a vendor
-// (owner/staff) or a rider — not internal admin/staff notes.
-const VENDOR_RIDER_AUTHOR = {
-  user_roles: { some: { roles: { code: { in: ["vendor", "vendor_staff", "rider"] } } } },
+// Author filters for "unclosed comments": only remarks raised by a vendor
+// (owner/staff) or a rider — not internal admin/staff notes. The two groups get
+// their own views ("Unclosed cmt" vs "Rider cmt"), so they're split here and
+// recombined only for the all-authors total.
+const AUTHOR_ROLE_CODES: Record<RemarkAuthorGroup, string[]> = {
+  vendor: ["vendor", "vendor_staff"],
+  rider: ["rider"],
 };
+
+const ALL_AUTHOR_ROLE_CODES = Object.values(AUTHOR_ROLE_CODES).flat();
+
+const authorFilter = (group?: RemarkAuthorGroup) => ({
+  user_roles: {
+    some: { roles: { code: { in: group ? AUTHOR_ROLE_CODES[group] : ALL_AUTHOR_ROLE_CODES } } },
+  },
+});
 
 export async function listRemarks(actor: Actor, params: ListRemarksParams = {}) {
   // Only root remarks are their own table row; replies live inside the thread
@@ -143,8 +154,8 @@ export async function listRemarks(actor: Actor, params: ListRemarksParams = {}) 
   if (params.unclosed) {
     where.workflow_status = { not: "closed" };
     // Unclosed comments track only vendor- and rider-raised remarks, not
-    // internal staff/admin notes.
-    where.users = VENDOR_RIDER_AUTHOR;
+    // internal staff/admin notes. `author` narrows that to one of the two.
+    where.users = authorFilter(params.author);
   } else if (params.status === "closed") {
     where.workflow_status = "closed";
   } else if (params.status === "open") {
@@ -294,11 +305,24 @@ export async function setRemarkStatus(actor: Actor, id: string, status: RemarkWo
   return { id, status };
 }
 
-export async function getUnclosedRemarksCount(actor: Actor): Promise<number> {
-  const where = await scopeWhere(actor, {
-    workflow_status: { not: "closed" },
-    parent_remark_id: null,
-    users: VENDOR_RIDER_AUTHOR,
-  });
-  return prisma.parcel_remarks.count({ where });
+export interface UnclosedRemarkCounts {
+  /** Both groups. Counted with a combined filter rather than vendor + rider, so
+   *  an account holding both a vendor and a rider role isn't tallied twice. */
+  total: number;
+  vendor: number;
+  rider: number;
+}
+
+export async function getUnclosedRemarksCounts(actor: Actor): Promise<UnclosedRemarkCounts> {
+  const countFor = async (group?: RemarkAuthorGroup) =>
+    prisma.parcel_remarks.count({
+      where: await scopeWhere(actor, {
+        workflow_status: { not: "closed" },
+        parent_remark_id: null,
+        users: authorFilter(group),
+      }),
+    });
+
+  const [total, vendor, rider] = await Promise.all([countFor(), countFor("vendor"), countFor("rider")]);
+  return { total, vendor, rider };
 }
