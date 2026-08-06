@@ -61,7 +61,7 @@ const defaultFormState = {
   contactNumber: '',
   alternateNumber: '',
   address: '',
-  weightKg: '1',
+  weightKg: '2',
   codAmount: '',
   itemValue: '0',
   packageType: 'Parcel',
