@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, ArrowRight, Bell, User, Package, Truck, Banknote, Menu, MessageSquare, X, AlertCircle } from 'lucide-react';
+import { Search, ArrowRight, Bell, User, Package, Truck, Banknote, Menu, MessageSquare, Bike, X, AlertCircle } from 'lucide-react';
 import Button from './Button';
 import type { AppNotification } from '../services/notifications.service';
 import {
@@ -10,7 +10,7 @@ import {
   markNotificationRead,
   subscribeToNotificationStream,
 } from '../services/notifications.service';
-import { getUnclosedRemarksCount, subscribeToRemarkStatusChanged } from '../services/remarks.service';
+import { getUnclosedRemarksCounts, subscribeToRemarkStatusChanged } from '../services/remarks.service';
 import { useMobileNav } from '../context/MobileNavContext';
 import { toBsDateLabel, toNptTime } from '../utils/nepaliDate';
 import './TopNav.css';
@@ -33,7 +33,10 @@ const TopNav: React.FC = () => {
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
-  const [unclosedCount, setUnclosedCount] = useState(0);
+  // Vendor- and rider-raised comments are worked as separate queues, so each
+  // button carries its own count rather than sharing one total.
+  const [vendorCmtCount, setVendorCmtCount] = useState(0);
+  const [riderCmtCount, setRiderCmtCount] = useState(0);
   const notificationsRef = useRef<HTMLDivElement>(null);
   const sseConnectedRef = useRef(true);
 
@@ -42,11 +45,11 @@ const TopNav: React.FC = () => {
   }, []);
 
   const refreshUnclosedCount = useCallback(() => {
-    getUnclosedRemarksCount()
+    getUnclosedRemarksCounts()
       .then((res) => {
-        if (res?.success && res.data?.count !== undefined) {
-          setUnclosedCount(res.data.count);
-        }
+        if (!res?.success || !res.data) return;
+        setVendorCmtCount(res.data.vendor ?? 0);
+        setRiderCmtCount(res.data.rider ?? 0);
       })
       .catch(() => {});
   }, []);
@@ -248,13 +251,28 @@ const TopNav: React.FC = () => {
           variant="outline"
           className="cmt-button"
           onClick={() => navigate('/unclosed-remarks')}
-          aria-label={`Unclosed comments${unclosedCount > 0 ? `, ${unclosedCount > 99 ? '99+' : unclosedCount}` : ''}`}
+          aria-label={`Unclosed comments${vendorCmtCount > 0 ? `, ${vendorCmtCount > 99 ? '99+' : vendorCmtCount}` : ''}`}
         >
           <MessageSquare size={16} />
           <span className="cmt-label">Unclosed cmt</span>
-          {unclosedCount > 0 && (
+          {vendorCmtCount > 0 && (
             <span className="cmt-badge" aria-hidden="true">
-              {unclosedCount > 99 ? '99+' : unclosedCount}
+              {vendorCmtCount > 99 ? '99+' : vendorCmtCount}
+            </span>
+          )}
+        </Button>
+
+        <Button
+          variant="outline"
+          className="cmt-button"
+          onClick={() => navigate('/rider-remarks')}
+          aria-label={`Rider comments${riderCmtCount > 0 ? `, ${riderCmtCount > 99 ? '99+' : riderCmtCount}` : ''}`}
+        >
+          <Bike size={16} />
+          <span className="cmt-label">Rider cmt</span>
+          {riderCmtCount > 0 && (
+            <span className="cmt-badge" aria-hidden="true">
+              {riderCmtCount > 99 ? '99+' : riderCmtCount}
             </span>
           )}
         </Button>

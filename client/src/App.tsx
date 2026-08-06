@@ -225,9 +225,15 @@ function App() {
             path="/remarks"
             element={<RoleGuard allowedRoles={['super_admin', 'admin', 'vendor', 'vendor_staff', 'sales']}><Remarks /></RoleGuard>}
           />
+          {/* Same page, one route per author group. The `key` forces a remount so
+              search/page state from one queue doesn't carry into the other. */}
           <Route
             path="/unclosed-remarks"
-            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'vendor', 'vendor_staff', 'sales']}><UnclosedRemarks /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'vendor', 'vendor_staff', 'sales']}><UnclosedRemarks key="vendor" author="vendor" /></RoleGuard>}
+          />
+          <Route
+            path="/rider-remarks"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'vendor', 'vendor_staff', 'sales']}><UnclosedRemarks key="rider" author="rider" /></RoleGuard>}
           />
           <Route
             path="/remarks/:id"

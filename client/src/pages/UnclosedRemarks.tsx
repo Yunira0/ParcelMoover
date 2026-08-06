@@ -11,6 +11,7 @@ import {
   setRemarkStatus,
   REMARK_STATUS_LABELS,
   type Remark,
+  type RemarkAuthorGroup,
   type RemarkStatus,
 } from '../services/remarks.service';
 import { toBsDate } from '../utils/nepaliDate';
@@ -25,7 +26,25 @@ const STATUS_TONE: Record<RemarkStatus, StatusChipTone> = {
   closed: 'success',
 };
 
-const UnclosedRemarks: React.FC = () => {
+// Vendor- and rider-raised comments get their own routes rather than sharing one
+// list, so the two queues can be worked independently. Everything below the
+// heading is identical, so the page takes the group as a prop.
+const AUTHOR_COPY: Record<RemarkAuthorGroup, { title: string; subtitle: string }> = {
+  vendor: {
+    title: 'Unclosed Remarks',
+    subtitle: 'Open and pending remarks raised by vendors that need attention.',
+  },
+  rider: {
+    title: 'Rider Remarks',
+    subtitle: 'Open and pending remarks raised by riders that need attention.',
+  },
+};
+
+interface UnclosedRemarksProps {
+  author: RemarkAuthorGroup;
+}
+
+const UnclosedRemarks: React.FC<UnclosedRemarksProps> = ({ author }) => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [remarks, setRemarks] = useState<Remark[]>([]);
@@ -54,6 +73,7 @@ const UnclosedRemarks: React.FC = () => {
       // "Unclosed cmt" badge count, so closed remarks never leak into this list.
       const res = await getRemarks({
         unclosed: true,
+        author,
         page,
         pageSize,
         search: appliedSearch || undefined,
@@ -69,7 +89,7 @@ const UnclosedRemarks: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, appliedSearch]);
+  }, [author, page, pageSize, appliedSearch]);
 
   useEffect(() => { loadRemarks(); }, [loadRemarks]);
 
@@ -178,10 +198,7 @@ const UnclosedRemarks: React.FC = () => {
 
   return (
     <div className="ucr-container">
-      <PageHeader
-        title="Unclosed Remarks"
-        subtitle="All open and pending remarks that need attention."
-      />
+      <PageHeader title={AUTHOR_COPY[author].title} subtitle={AUTHOR_COPY[author].subtitle} />
 
       <div className="ucr-stats">
         <div className="ucr-stat-chip">
