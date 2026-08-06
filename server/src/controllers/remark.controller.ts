@@ -3,24 +3,26 @@ import {
   getRemarkById,
   listRemarks,
   setRemarkStatus,
-  getUnclosedRemarksCount,
+  getUnclosedRemarksCounts,
   type RemarkWorkflowStatus,
 } from "../services/remark.service";
-import { ListRemarksParams } from "../types/remark.type";
+import { ListRemarksParams, RemarkAuthorGroup } from "../types/remark.type";
 
 export async function listRemarksController(req: Request, res: Response) {
   try {
     if (!req.user) return res.status(401).json({ success: false, message: "Unauthorized" });
-    const { status, unclosed, search, fromDate, toDate, page, pageSize, sortDir } = req.query;
+    const { status, unclosed, author, search, fromDate, toDate, page, pageSize, sortDir } = req.query;
 
     const params: ListRemarksParams = {};
     if (typeof status === "string") params.status = status;
     if (unclosed === "true") params.unclosed = true;
+    if (author === "vendor" || author === "rider") params.author = author as RemarkAuthorGroup;
     if (typeof search === "string") params.search = search;
     if (typeof fromDate === "string") params.fromDate = fromDate;
     if (typeof toDate === "string") params.toDate = toDate;
-    if (typeof page === "string" && Number.isFinite(Number(page))) params.page = Number(page);
-    if (typeof pageSize === "string" && Number.isFinite(Number(pageSize))) params.pageSize = Number(pageSize);
+    // page/pageSize arrive already coerced to numbers by listRemarksQuerySchema.
+    if (typeof page === "number") params.page = page;
+    if (typeof pageSize === "number") params.pageSize = pageSize;
     if (sortDir === "asc" || sortDir === "desc") params.sortDir = sortDir;
 
     const { data, meta } = await listRemarks({ id: req.user.id, roles: req.user.roles }, params);
@@ -81,11 +83,13 @@ export async function setRemarkStatusController(req: Request, res: Response) {
   }
 }
 
-export async function getUnclosedRemarksCountController(req: Request, res: Response) {
+export async function getUnclosedRemarksCountsController(req: Request, res: Response) {
   try {
     if (!req.user) return res.status(401).json({ success: false, message: "Unauthorized" });
-    const count = await getUnclosedRemarksCount({ id: req.user.id, roles: req.user.roles });
-    return res.status(200).json({ success: true, data: { count } });
+    const counts = await getUnclosedRemarksCounts({ id: req.user.id, roles: req.user.roles });
+    // `count` is the pre-split field name, kept so a stale browser tab holding the
+    // old bundle still renders a badge instead of blanking it.
+    return res.status(200).json({ success: true, data: { count: counts.total, ...counts } });
   } catch (error: any) {
     return res.status(error.statusCode || 500).json({
       success: false,

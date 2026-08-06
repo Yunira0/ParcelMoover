@@ -7,7 +7,7 @@ import {
   getRemarkByIdController,
   listRemarksController,
   setRemarkStatusController,
-  getUnclosedRemarksCountController,
+  getUnclosedRemarksCountsController,
 } from "../controllers/remark.controller";
 import { validate } from "../middlewares/validate.middleware";
 import { listRemarksQuerySchema } from "../validators/remark.schema";
@@ -60,7 +60,7 @@ remarkRouter.get(
   authMiddleware,
   authorizeRoles(...CX_ROLES),
   remarksReadLimiter,
-  getUnclosedRemarksCountController,
+  getUnclosedRemarksCountsController,
 );
 
 // GET /api/remarks/:id — single remark + its conversation thread (read-only; the
