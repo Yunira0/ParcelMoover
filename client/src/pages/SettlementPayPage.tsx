@@ -192,6 +192,7 @@ const SettlementPayPage: React.FC = () => {
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (!detail) return;
     setError('');
 
     // A settlement can legitimately be Rs. 0 (e.g. a single order corrected to
