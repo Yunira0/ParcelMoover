@@ -288,14 +288,18 @@ body{background:#fff;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif}
 
 @media print{
   body{margin:0;padding:0;background:#fff}
-  .label-grid{
-    display:flex;flex-wrap:wrap;gap:2mm;padding:0;
-    justify-content:flex-start;align-content:flex-start;
-  }
+  /* One label per page. @page below is set to the label's own size, so each
+     frame fills its page exactly - the screen-only tiling in .label-grid is
+     switched off here so nothing shares a page or gets pushed off the edge.
+     margin:0 auto is a cheap safeguard for drivers that ignore the custom
+     paper size and fall back to A4/Letter: the label lands centered rather
+     than stranded against the left edge. */
+  .label-grid{display:block;gap:0;padding:0}
   .label-frame{
+    margin:0 auto;padding:0;
     page-break-inside:avoid;break-inside:avoid;
-    margin:0;padding:0;
   }
+  .label-frame:not(:last-child){page-break-after:always;break-after:page}
 }
 `;
 
@@ -311,11 +315,11 @@ body{background:#fff;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif}
 // @page is deliberately NOT nested inside @media print: @page is already
 // print-only by spec, and some print engines only pick up a custom size
 // declared at the stylesheet's top level.
-function printMediaCss(): string {
+function printMediaCss(widthMm: number, heightMm: number): string {
   return `
   @page {
-    size: A4;
-    margin: 5mm;
+    size: ${widthMm}mm ${heightMm}mm;
+    margin: 0;
   }
 `;
 }
@@ -348,7 +352,7 @@ export async function printLabels(orders: Order[]): Promise<void> {
 <head>
   <meta charset="UTF-8" />
   <title>Shipping Labels — ParcelMoover</title>
-  <style>${CSS}${printMediaCss()}</style>
+  <style>${CSS}${printMediaCss(orders[0]!.labelWidthMm, orders[0]!.labelHeightMm)}</style>
 </head>
 <body>
 <div class="label-grid">

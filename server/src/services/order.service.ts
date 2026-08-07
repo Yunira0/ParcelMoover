@@ -1584,6 +1584,9 @@ export interface ListOrdersResult {
 function mapOrder(
   parcel: Prisma.parcelsGetPayload<{ include: typeof ORDERS_INCLUDE }>,
   isStaff: boolean,
+  // True only when the caller *is* the vendor that owns these parcels (vendor
+  // or vendor_staff) - i.e. getActorScope resolved an own-vendor id.
+  isOwnVendorViewer: boolean,
   // Only populated for exports, where the caller batch-fetches the first
   // "arrived at origin" timestamp per parcel (see fetchArrivedAtOriginMap).
   arrivedByParcelId?: Map<string, string>,
@@ -1593,7 +1596,12 @@ function mapOrder(
     parcel.riders_parcels_delivery_rider_idToriders ||
     parcel.riders_parcels_pickup_rider_idToriders;
   const vendorName = parcel.vendors?.business_name || parcel.vendors?.client_name || "";
-  const labelSize = resolveLabelSize(parcel.vendors);
+  // A vendor's label-size override describes the sticker stock loaded in
+  // *their own* printer, so it only applies when the vendor is the one
+  // printing. Ops/admin screens print the same parcel on branch stock, which
+  // is always the standard 100x75mm - so they get the app default regardless
+  // of what the vendor configured for themselves.
+  const labelSize = resolveLabelSize(isOwnVendorViewer ? parcel.vendors : null);
 
   // Staff see who (which user) last changed the status; vendors/riders only
   // see which branch/company made the change - never an internal staff name
@@ -1845,6 +1853,9 @@ export async function listOrders(
 ): Promise<ListOrdersResult> {
   const { vendorId, vendorIds, riderId } = await getActorScope(actor);
   const isStaff = actor.roles.includes("super_admin") || actor.roles.includes("admin");
+  // Own-vendor scope is set only for vendor / vendor_staff actors - never for
+  // staff, sales or riders viewing the same parcels.
+  const isOwnVendorViewer = !!vendorId;
   const where = buildOrdersWhere({ vendorId, vendorIds, riderId }, query);
   const sortColumn = resolveSortColumn(query);
   const sortDirection: SortDirection = query.sortDir === "asc" ? "asc" : "desc";
@@ -1897,7 +1908,7 @@ export async function listOrders(
       ? await fetchArrivedAtOriginMap(parcels.map((p) => p.id))
       : undefined;
     const result: ListOrdersResult = {
-      data: parcels.map((p) => mapOrder(p, isStaff, arrivedMap)),
+      data: parcels.map((p) => mapOrder(p, isStaff, isOwnVendorViewer, arrivedMap)),
       meta: {
         page: 1,
         pageSize: DEFAULT_LIST_CAP,
@@ -1981,7 +1992,7 @@ export async function listOrders(
       : Math.min(totalPages, Math.max(1, query.page || 1));
 
   return {
-    data: parcels.map((p) => mapOrder(p, isStaff)),
+    data: parcels.map((p) => mapOrder(p, isStaff, isOwnVendorViewer)),
     meta: {
       page: pageHint,
       pageSize,
@@ -2267,7 +2278,7 @@ export async function getOrderByTrackingId(actor: OrderActor, trackingId: string
   }));
 
   return {
-    ...mapOrder(parcel, isStaff),
+    ...mapOrder(parcel, isStaff, !!vendorId),
     canChangeStatus: isStaff,
     priceLog,
     redirectLog,
