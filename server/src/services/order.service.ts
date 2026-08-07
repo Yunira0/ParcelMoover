@@ -41,6 +41,8 @@ function buildSearchText(trackingId: string, sender: Party, receiver: Party): st
 }
 import { getDeliveryQuote } from "./delivery-rate.service";
 import { getVendorQuote, getReturnDeliveryQuote, RateType, ServiceType } from "./pricing.service";
+import { resolveLabelSize } from "./vendorPrintSettings.service";
+import { HANDOFF_REMARK_PREFIX as NCM_HANDOFF_REMARK_PREFIX } from "./ncm.service";
 
 // Maps a vendor row's branch-rate override columns to VendorRateOverrides keys.
 function branchOverrides(v: {
@@ -1591,6 +1593,7 @@ function mapOrder(
     parcel.riders_parcels_delivery_rider_idToriders ||
     parcel.riders_parcels_pickup_rider_idToriders;
   const vendorName = parcel.vendors?.business_name || parcel.vendors?.client_name || "";
+  const labelSize = resolveLabelSize(parcel.vendors);
 
   // Staff see who (which user) last changed the status; vendors/riders only
   // see which branch/company made the change - never an internal staff name
@@ -1654,6 +1657,10 @@ function mapOrder(
     vendorId: parcel.vendor_id,
     vendorName,
     vendorLocation: parcel.vendors?.pickup_landmark || "",
+    // Resolved sticker print size (vendor's own override, or the app
+    // default) - see printLabels.ts on the client.
+    labelWidthMm: labelSize.widthMm,
+    labelHeightMm: labelSize.heightMm,
     riderName: rider?.name || "",
     remarks: parcel.parcel_remarks[0]?.remark || "",
     // Vendor-declared eligibility at creation, plus the actual outcome once a
@@ -2721,7 +2728,8 @@ async function computeDashboardSummary(
         total_collected: string;
         settled_to_vendor: string;
         settled_to_rider: string;
-        cod_from_rider: string;
+        cod_from_pm_rider: string;
+        cod_from_ncm: string;
         pending_delivery_charge: string;
         total_delivery_charge: string;
       }>
@@ -2730,7 +2738,27 @@ async function computeDashboardSummary(
         COALESCE(SUM(c.collected_amount), 0) AS total_collected,
         COALESCE(SUM(LEAST(c.remitted_amount, c.collected_amount)), 0) AS settled_to_vendor,
         COALESCE(SUM(LEAST(c.rider_remitted_amount, c.collected_amount)), 0) AS settled_to_rider,
-        COALESCE(SUM(c.collected_amount - LEAST(c.rider_remitted_amount, c.collected_amount)), 0) AS cod_from_rider,
+        -- Cash a ParcelMoover rider physically holds, not yet remitted to the
+        -- office: c.rider_id is only ever set from parcels.delivery_rider_id,
+        -- which stays NULL for NCM-delivered parcels (see
+        -- applyExternalCarrierStatus) - so rider_id IS NOT NULL is exactly
+        -- "our own rider delivered this," never an NCM handoff.
+        COALESCE(SUM(c.collected_amount - LEAST(c.rider_remitted_amount, c.collected_amount))
+          FILTER (WHERE c.rider_id IS NOT NULL), 0) AS cod_from_pm_rider,
+        -- Cash NCM collected on our behalf and hasn't remitted to the office
+        -- yet. Identified by the same durable signal ncm.service.ts uses
+        -- (a real parcel_remarks handoff row - see findNcmOrderIdForParcel),
+        -- not just "no pm-rider," so a future non-NCM 3PL never gets
+        -- misattributed to NCM merely for also lacking a pm-rider. No
+        -- pm-rider ever touches this cash, so rider_remitted_amount is never
+        -- populated for these rows - the full collected amount counts as
+        -- outstanding until NCM's remittance clears it (via the vendor leg,
+        -- remitted_amount).
+        COALESCE(SUM(c.collected_amount - LEAST(c.remitted_amount, c.collected_amount))
+          FILTER (WHERE c.rider_id IS NULL AND EXISTS (
+            SELECT 1 FROM parcel_remarks pr
+            WHERE pr.parcel_id = p.id AND pr.remark LIKE ${NCM_HANDOFF_REMARK_PREFIX + '%'}
+          )), 0) AS cod_from_ncm,
         COALESCE(SUM(p.delivery_charge) FILTER (WHERE c.payment_status::text = 'pending'), 0) AS pending_delivery_charge,
         COALESCE(SUM(p.delivery_charge), 0) AS total_delivery_charge
       FROM cod_collections c
@@ -2775,9 +2803,17 @@ async function computeDashboardSummary(
     : Number(codRow?.settled_to_vendor ?? 0);
   const pendingCod = Math.max(totalCod - settledCod, 0);
 
-  // Cash riders have collected but not yet remitted to the office - shown on
-  // the admin card alongside the settled/pending vendor figures.
-  const codFromRider = Number(codRow?.cod_from_rider ?? 0);
+  // Cash currently outstanding, split by who's holding it - shown on the
+  // dashboard card under one "COD to collect from riders" heading, broken
+  // down by carrier beneath it. NCM's figure is a proxy (no NCM
+  // remittance-to-office column exists): it clears the moment the vendor leg
+  // settles, same as the rest of "pending" does. The parent total is the sum
+  // of the identified carriers, not an independent all-rider_id-null figure -
+  // that keeps every level using the same accurate per-carrier formula (a
+  // future 3PL just adds another FILTER clause and another addend here).
+  const codFromPmRider = Number(codRow?.cod_from_pm_rider ?? 0);
+  const codFromNcm = Number(codRow?.cod_from_ncm ?? 0);
+  const codFromRiders = codFromPmRider + codFromNcm;
 
   // Delivery charge on orders whose COD hasn't been settled to the vendor
   // yet - this is deducted from collected_amount at settlement time (see
@@ -2891,7 +2927,9 @@ async function computeDashboardSummary(
       totalCod,
       settledCod,
       pendingCod,
-      codFromRider,
+      codFromRiders,
+      codFromPmRider,
+      codFromNcm,
       deliveryCharge,
       pendingCodCount,
       pendingDeliveryCharge,
@@ -2929,6 +2967,168 @@ async function computeDashboardSummary(
   }
 
   return summary;
+}
+
+// ── COD settlement detail (drill-down from the dashboard card) ──────────────
+
+export const COD_DETAIL_BUCKETS = [
+  "total",
+  "settled",
+  "pending",
+  "pm-rider",
+  "ncm",
+  "delivery-charge",
+] as const;
+export type CodDetailBucket = (typeof COD_DETAIL_BUCKETS)[number];
+
+export interface CodDetailRow {
+  id: string;
+  trackingId: string;
+  orderNumber: number;
+  vendorName: string;
+  receiverName: string;
+  riderName: string | null;
+  collectedAmount: number;
+  riderRemittedAmount: number;
+  remittedAmount: number;
+  deliveryCharge: number;
+  /** The amount this bucket is actually about for this row, so the rows always
+   *  sum to the dashboard figure that linked here: gross collection for
+   *  'total', the settled leg for 'settled', the office's cut for
+   *  'delivery-charge', and outstanding cash for the rest. */
+  bucketAmount: number;
+  deliveredAt: string | null;
+}
+
+// Same cap-and-flag shape as VendorMetricDetail's bulk-fetch pattern on the
+// client - COD buckets are bounded per-vendor/per-office data, not a
+// high-volume list, so one capped query is simpler than cursor pagination
+// and matches how the rest of this app already handles dashboard drill-downs.
+const COD_DETAIL_ROW_CAP = 1000;
+
+export async function getCodSettlementDetail(
+  actor: OrderActor,
+  bucket: CodDetailBucket,
+): Promise<{ rows: CodDetailRow[]; capped: boolean }> {
+  const { vendorId, vendorIds, riderId } = await getActorScope(actor);
+
+  const codScopeSql: Prisma.Sql = vendorId
+    ? Prisma.sql`AND c.vendor_id = ${vendorId}::uuid`
+    : vendorIds
+    ? Prisma.sql`AND c.vendor_id = ANY(${vendorIds}::uuid[])`
+    : riderId
+    ? Prisma.sql`AND c.rider_id = ${riderId}::uuid`
+    : Prisma.empty;
+
+  // Same durable NCM signal as the dashboard summary above - see its comment.
+  const ncmHandoffExistsSql = Prisma.sql`EXISTS (
+    SELECT 1 FROM parcel_remarks pr
+    WHERE pr.parcel_id = p.id AND pr.remark LIKE ${NCM_HANDOFF_REMARK_PREFIX + "%"}
+  )`;
+
+  // The "settled" leg is scope-dependent, exactly as in computeDashboardSummary:
+  // a rider's own dashboard measures settlement as cash remitted to the office
+  // (rider_remitted_amount), everyone else's as cash remitted onward to the
+  // vendor (remitted_amount). Reusing one column for both would make a rider's
+  // drill-down disagree with the card that linked to it.
+  const remittedColSql: Prisma.Sql = riderId
+    ? Prisma.sql`c.rider_remitted_amount`
+    : Prisma.sql`c.remitted_amount`;
+  const settledExprSql = Prisma.sql`LEAST(${remittedColSql}, c.collected_amount)`;
+  const pendingExprSql = Prisma.sql`c.collected_amount - ${settledExprSql}`;
+
+  // Mirrors the per-bucket formulas in computeDashboardSummary exactly, so a
+  // detail page's rows always sum to the dashboard figure that linked here.
+  const bucketFilterSql: Prisma.Sql =
+    bucket === "settled"
+      ? Prisma.sql`AND ${settledExprSql} > 0`
+      : bucket === "pending"
+        ? Prisma.sql`AND ${pendingExprSql} > 0`
+        : bucket === "pm-rider"
+          ? Prisma.sql`AND c.rider_id IS NOT NULL AND (c.collected_amount - LEAST(c.rider_remitted_amount, c.collected_amount)) > 0`
+          : bucket === "ncm"
+            ? Prisma.sql`AND c.rider_id IS NULL AND ${ncmHandoffExistsSql} AND (c.collected_amount - LEAST(c.remitted_amount, c.collected_amount)) > 0`
+            : Prisma.empty; // 'total' and 'delivery-charge': every in-scope row
+
+  // Each bucket's rows must add up to the exact figure on the card, so the
+  // per-row amount is the bucket's own measure - the gross collection for
+  // "total", the settled leg for "settled", the office's cut for
+  // "delivery-charge", and outstanding cash for the rest.
+  const outstandingExprSql: Prisma.Sql =
+    bucket === "total"
+      ? Prisma.sql`c.collected_amount`
+      : bucket === "settled"
+        ? settledExprSql
+        : bucket === "pm-rider"
+          ? Prisma.sql`c.collected_amount - LEAST(c.rider_remitted_amount, c.collected_amount)`
+          : bucket === "ncm"
+            ? Prisma.sql`c.collected_amount - LEAST(c.remitted_amount, c.collected_amount)`
+            : bucket === "delivery-charge"
+              ? Prisma.sql`p.delivery_charge`
+              : pendingExprSql;
+
+  const rows = await prisma.$queryRaw<
+    Array<{
+      id: string;
+      tracking_id: string;
+      order_number: number;
+      vendor_name: string | null;
+      receiver_name: string;
+      rider_name: string | null;
+      collected_amount: string;
+      rider_remitted_amount: string;
+      remitted_amount: string;
+      delivery_charge: string;
+      bucket_amount: string;
+      delivered_at: Date | null;
+    }>
+  >(Prisma.sql`
+    SELECT
+      c.id,
+      p.tracking_id,
+      p.order_number,
+      COALESCE(v.business_name, v.client_name) AS vendor_name,
+      party.name AS receiver_name,
+      r.name AS rider_name,
+      c.collected_amount,
+      c.rider_remitted_amount,
+      c.remitted_amount,
+      p.delivery_charge,
+      (${outstandingExprSql}) AS bucket_amount,
+      p.delivered_at
+    FROM cod_collections c
+    JOIN parcels p ON p.id = c.parcel_id
+    JOIN parties party ON party.id = p.receiver_id
+    LEFT JOIN vendors v ON v.id = c.vendor_id
+    LEFT JOIN riders r ON r.id = c.rider_id
+    WHERE p.deleted_at IS NULL
+      AND p.status::text IN ('delivered', 'partially_delivered')
+      ${codScopeSql}
+      ${bucketFilterSql}
+    ORDER BY p.delivered_at DESC NULLS LAST, c.id DESC
+    LIMIT ${COD_DETAIL_ROW_CAP + 1}
+  `);
+
+  const capped = rows.length > COD_DETAIL_ROW_CAP;
+  const trimmed = capped ? rows.slice(0, COD_DETAIL_ROW_CAP) : rows;
+
+  return {
+    capped,
+    rows: trimmed.map((r) => ({
+      id: r.id,
+      trackingId: r.tracking_id,
+      orderNumber: r.order_number,
+      vendorName: r.vendor_name ?? "—",
+      receiverName: r.receiver_name,
+      riderName: r.rider_name,
+      collectedAmount: Number(r.collected_amount),
+      riderRemittedAmount: Number(r.rider_remitted_amount),
+      remittedAmount: Number(r.remitted_amount),
+      deliveryCharge: Number(r.delivery_charge),
+      bucketAmount: Number(r.bucket_amount),
+      deliveredAt: r.delivered_at ? r.delivered_at.toISOString() : null,
+    })),
+  };
 }
 
 // The vendor IS the default sender for any order they create - this resolves
@@ -3321,6 +3521,20 @@ async function _updateParcelStatusImpl(
           collected_amount: collectedAmount,
           collected_at: new Date(),
         },
+      });
+    }
+    // A genuine return leg (order_type "return", e.g. the auto-created return
+    // side of an exchange) carries its own correctly-priced return charge and
+    // earns it once the parcel actually reaches the vendor - see
+    // billing.service.ts's EARNED_CHARGE_SQL, which already treats this exact
+    // condition as earned. Stamping collected_at here is what lets that charge
+    // enter the settlement ledger (getUnsettledOrders) instead of sitting
+    // permanently unsettleable. Plain RTO (order_type "delivery" bounced back)
+    // is deliberately left untouched - it has no pricing model and must stay free.
+    if (parcel.order_type === "return" && newStatus === "returned_to_vendor") {
+      await tx.cod_collections.update({
+        where: { parcel_id: parcel.id },
+        data: { collected_at: new Date() },
       });
     }
     // Side-effect: update pickup_task status in sync
@@ -3824,6 +4038,21 @@ async function _bulkUpdateParcelStatusImpl(
             collected_amount: collectedAmount,
             collected_at: collectedAt,
           },
+        });
+      }
+    }
+
+    // Same return-leg earning rule as the single-parcel path: a genuine return
+    // (order_type "return") earns its priced return charge once it actually
+    // reaches the vendor, so stamp collected_at to bring it into the
+    // settlement ledger. Plain RTO (order_type "delivery" bounced back) is
+    // deliberately left untouched - see billing.service.ts's EARNED_CHARGE_SQL.
+    if (newStatus === "returned_to_vendor") {
+      const returnParcelIds = parcels.filter((p) => p.order_type === "return").map((p) => p.id);
+      if (returnParcelIds.length > 0) {
+        await tx.cod_collections.updateMany({
+          where: { parcel_id: { in: returnParcelIds } },
+          data: { collected_at: new Date() },
         });
       }
     }

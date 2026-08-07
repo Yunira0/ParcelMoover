@@ -655,6 +655,12 @@ model vendors {
   // pricing_settings. Stored as the (negative) balance they trip at.
   billing_warn_threshold  Decimal?        @db.Decimal(12, 2)
   billing_block_threshold Decimal?        @db.Decimal(12, 2)
+  // Vendor's own thermal sticker printer/label stock size, in millimeters.
+  // Null falls back to the app default (100x75mm) - see
+  // vendorPrintSettings.service.ts's resolveLabelSize. Self-service (the
+  // vendor sets this themselves), unlike every other override above.
+  label_width_mm        Int?
+  label_height_mm       Int?
   // Which side of those thresholds this vendor was on at the last evaluation,
   // so a crossing notifies once instead of once per parcel delivered.
   billing_alert_state   vendor_billing_state @default(ok)

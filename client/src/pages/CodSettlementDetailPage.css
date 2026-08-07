@@ -1,0 +1,78 @@
+/* Layout matches the other drill-down and operations pages: PageHeader, a
+   stat row, the shared Table, then Pagination - all spacing from the same
+   --space-4 rhythm. Only the bits with no shared component live here. */
+.cod-detail-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  width: 100%;
+}
+
+.cod-detail-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+/* Same bordered, flat stat block VendorMetricDetail uses for its drill-down
+   totals - border, not shadow, since it sits on the page's own plane. */
+.cod-detail-stat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 180px;
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-modal);
+}
+
+.cod-detail-stat-value {
+  color: var(--color-text-default);
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-bold);
+  font-variant-numeric: tabular-nums;
+}
+
+.cod-detail-stat-label {
+  color: var(--color-text-caption);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semi-bold);
+  letter-spacing: 0.04em;
+}
+
+.cod-detail-notice {
+  margin: 0;
+  color: var(--color-background-warning-default);
+  font-size: var(--font-size-sm);
+}
+
+.cod-detail-error {
+  margin: 0;
+  color: var(--color-danger-default);
+  font-size: var(--font-size-sm);
+}
+
+/* Every operations page redefines this rule in its own stylesheet rather than
+   sharing one - pages are lazy-loaded, so a page can't rely on a sibling's CSS
+   having been fetched. Matched to the existing definition, not reinvented. */
+.tracking-id-link {
+  color: inherit;
+  cursor: pointer;
+  font-weight: var(--font-weight-semi-bold);
+  text-decoration: none;
+}
+
+.tracking-id-link:hover {
+  text-decoration: underline;
+}
+
+.cod-detail-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The figure this page exists to explain - the only bolded cell in the row. */
+.cod-detail-bucket-amount {
+  font-weight: var(--font-weight-bold);
+}

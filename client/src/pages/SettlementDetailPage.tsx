@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Printer, Download, CreditCard, FileText, Pencil, Undo2, Ban } from 'lucide-react';
+import { ArrowLeft, Printer, Download, CreditCard, FileText, Paperclip, Pencil, Undo2, Ban } from 'lucide-react';
 import Button from '../components/Button';
 import StatusChip from '../components/StatusChip';
+import SegmentedTabs from '../components/SegmentedTabs';
 import EditSettlementModal from '../components/EditSettlementModal';
 import RevertSettlementModal from '../components/RevertSettlementModal';
+import AttachSettlementDocumentsCard from '../components/AttachSettlementDocumentsCard';
 import { getSettlementDetail, type SettlementDetail } from '../services/finance.service';
 import { hasAnyRole, hasAdminPermission } from '../utils/auth';
 import { toBsDate, toBsDateTime } from '../utils/nepaliDate';
@@ -14,6 +16,18 @@ import './SettlementDetailPage.css';
 
 const money = (value: number) => `Rs. ${value.toLocaleString()}`;
 
+function initials(name: string): string {
+  return name
+    .split(' ')
+    .filter(Boolean)
+    .map((w) => w[0])
+    .slice(0, 2)
+    .join('')
+    .toUpperCase();
+}
+
+type DetailTab = 'billing' | 'receipt' | 'invoice';
+
 // Payment documents go through the settlement's own endpoint rather than the
 // /uploads mount: that mount is admin-only, so a vendor opening the receipt on
 // their own statement would get a 403. This route re-checks access to the
@@ -22,27 +36,90 @@ const API_ROOT = import.meta.env.VITE_API_URL || '/api';
 const documentUrl = (settlementId: string, kind: 'receipt' | 'tax-invoice') =>
   `${API_ROOT}/finance/settlements/${settlementId}/documents/${kind}`;
 
-// One attached document. Screenshots are the common case, so they preview
-// inline - the whole point is seeing the proof without a round trip to another
-// tab. PDFs can't render in an <img>, so they fall back to a labelled link.
-const SettlementDocument: React.FC<{
+// One document's whole tab: full-size view when it's attached, an inline
+// attach affordance when it's missing and the viewer is allowed to add one.
+const DocumentTabPanel: React.FC<{
   label: string;
+  kind: 'receipt' | 'tax-invoice';
+  only: 'receipt' | 'taxInvoice';
+  settlementId: string;
   storedPath: string | null;
-  href: string;
-}> = ({ label, storedPath, href }) => {
-  if (!storedPath) return null;
+  canAttach: boolean;
+  onAttached: () => void;
+}> = ({ label, kind, only, settlementId, storedPath, canAttach, onAttached }) => {
+  const [attaching, setAttaching] = useState(false);
+  const href = documentUrl(settlementId, kind);
+
+  if (!storedPath) {
+    if (attaching) {
+      return (
+        <AttachSettlementDocumentsCard
+          settlementId={settlementId}
+          only={only}
+          title={`Attach ${label.toLowerCase()}`}
+          caption={`Add the ${label.toLowerCase()} for this statement · JPG, PNG, WebP or PDF, max 5 MB.`}
+          submitLabel="Save"
+          dismissLabel="Cancel"
+          onDone={() => {
+            setAttaching(false);
+            onAttached();
+          }}
+          onDismiss={() => setAttaching(false)}
+        />
+      );
+    }
+    return (
+      <div className="settlement-doc-empty">
+        <FileText size={22} className="settlement-doc-empty-icon" />
+        <p>No {label.toLowerCase()} attached yet.</p>
+        {canAttach && (
+          <button type="button" className="settlement-attach-proof-btn" onClick={() => setAttaching(true)}>
+            <Paperclip size={14} />
+            Attach {label.toLowerCase()}
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  if (attaching) {
+    return (
+      <AttachSettlementDocumentsCard
+        settlementId={settlementId}
+        only={only}
+        title={`Replace ${label.toLowerCase()}`}
+        caption={`Upload a new file to replace the current ${label.toLowerCase()}.`}
+        submitLabel="Save"
+        dismissLabel="Cancel"
+        onDone={() => {
+          setAttaching(false);
+          onAttached();
+        }}
+        onDismiss={() => setAttaching(false)}
+      />
+    );
+  }
+
   const isPdf = storedPath.toLowerCase().endsWith('.pdf');
   return (
-    <a className="settlement-document" href={href} target="_blank" rel="noreferrer">
-      <span className="settlement-document-label">
-        <FileText size={14} /> {label}
-      </span>
-      {isPdf ? (
-        <span className="settlement-document-pdf">PDF — open</span>
-      ) : (
-        <img src={href} alt={label} loading="lazy" />
+    <div className="settlement-doc-view">
+      <a className="settlement-doc-frame" href={href} target="_blank" rel="noreferrer">
+        {isPdf ? (
+          <div className="settlement-doc-pdf">
+            <FileText size={28} />
+            Open PDF
+          </div>
+        ) : (
+          <img src={href} alt={label} loading="lazy" />
+        )}
+      </a>
+      {canAttach && (
+        <button type="button" className="settlement-attach-proof-btn" onClick={() => setAttaching(true)}>
+          <Paperclip size={14} />
+          Replace {label.toLowerCase()}
+        </button>
       )}
-    </a>
+    </div>
   );
 };
 
@@ -135,7 +212,7 @@ function buildStatementHtml(detail: SettlementDetail): string {
       <div><span>Total COD</span><span>${money(totals.cod)}</span></div>
       <div><span>Collected COD</span><span>${money(totals.collected)}</span></div>
       <div><span>Delivery Charges</span><span>${money(totals.deliveryCharge)}</span></div>
-      <div class="payable"><span>Payable Amount</span><span>${money(detail.payableAmount)}</span></div>
+      <div class="payable"><span>${detail.payeeType === 'rider' ? 'Receivable Amount' : 'Payable Amount'}</span><span>${money(detail.payableAmount)}</span></div>
     </div>
   </body></html>`;
 }
@@ -150,6 +227,7 @@ const SettlementDetailPage: React.FC = () => {
   const [showEdit, setShowEdit] = useState(false);
   const [showRevert, setShowRevert] = useState(false);
   const [showCancel, setShowCancel] = useState(false);
+  const [tab, setTab] = useState<DetailTab>('billing');
 
   const canPay = hasAnyRole(['super_admin', 'admin']);
   // Correcting a mistake — gated by the delegable EDIT_SETTLEMENTS permission,
@@ -160,6 +238,9 @@ const SettlementDetailPage: React.FC = () => {
   // See buildStatementHtml - only rider statements mix parcels from several
   // vendors, so only there does a per-row vendor column carry information.
   const showVendor = detail?.payeeType === 'rider';
+  // Riders are paid cash-in-hand with no paperwork trail - only vendor
+  // payouts get the receipt/invoice tabs.
+  const showDocumentTabs = detail?.status === 'settled' && detail?.payeeType === 'vendor';
 
   useEffect(() => {
     let active = true;
@@ -244,12 +325,16 @@ const SettlementDetailPage: React.FC = () => {
           <ArrowLeft size={16} /> Back
         </Button>
         <div className="settlement-detail-actions">
-          <Button variant="secondary" onClick={handlePrint} disabled={!detail}>
-            <Printer size={16} /> Print
-          </Button>
-          <Button variant="secondary" onClick={handleDownload} disabled={!detail}>
-            <Download size={16} /> Download
-          </Button>
+          {tab === 'billing' && (
+            <>
+              <Button variant="secondary" onClick={handlePrint} disabled={!detail}>
+                <Printer size={16} /> Print
+              </Button>
+              <Button variant="secondary" onClick={handleDownload} disabled={!detail}>
+                <Download size={16} /> Download
+              </Button>
+            </>
+          )}
           {canEdit && detail?.status === 'pending' && (
             <Button variant="secondary" onClick={() => setShowEdit(true)}>
               <Pencil size={16} /> Edit
@@ -257,7 +342,7 @@ const SettlementDetailPage: React.FC = () => {
           )}
           {canPay && detail?.status === 'pending' && (
             <Button variant="primary" onClick={() => navigate(`/finance/settlements/${id}/pay`)}>
-              <CreditCard size={16} /> Make Payment
+              <CreditCard size={16} /> {detail.payeeType === 'rider' ? 'Record Payment' : 'Make Payment'}
             </Button>
           )}
           {canEdit && detail?.status === 'pending' && (
@@ -278,162 +363,191 @@ const SettlementDetailPage: React.FC = () => {
       ) : error ? (
         <p className="vendor-finance-error">{error}</p>
       ) : detail ? (
-        <div className="cod-bill">
-          <div className="cod-bill-header">
-            <div className="cod-bill-billto">
-              <div className="vendor-finance-subtext">BILL TO</div>
-              <div className="cod-bill-vendor-name">{detail.payeeName}</div>
-              <div>{detail.payeePhone}</div>
-              {detail.payeeEmail && <div>{detail.payeeEmail}</div>}
-              {detail.payeeAddress && <div>{detail.payeeAddress}</div>}
-              {detail.payeePan && <div>PAN: {detail.payeePan}</div>}
-            </div>
-            <div className="cod-bill-meta">
-              <div>
-                <span>Statement</span>
-                <span style={{ fontFamily: 'monospace' }}>{detail.statementId}</span>
-              </div>
-              <div>
-                <span>Statement date</span>
-                <span>{detail.transferDate ? toBsDate(detail.transferDate) : '-'}</span>
-              </div>
-              <div>
-                <span>Recorded</span>
-                <span>{toBsDateTime(detail.createdAt) || '-'}</span>
-              </div>
-              <div>
-                <span>Payment status</span>
-                <StatusChip
-                  variant="solid"
-                  tone={detail.status === 'settled' ? 'success' : detail.status === 'cancelled' ? 'neutral' : 'warning'}
-                >
-                  {detail.status === 'settled' ? 'Settled' : detail.status === 'cancelled' ? 'Cancelled' : 'Pending'}
-                </StatusChip>
-              </div>
-              {detail.status === 'settled' && detail.payments.length > 0 && (
-                <div>
-                  <span>Payment method</span>
-                  <span>
-                    {detail.payments
-                      .map((p) => {
-                        // Method names are configurable now; show them as
-                        // stored, capitalising legacy lowercase values.
-                        const label = p.method.charAt(0).toUpperCase() + p.method.slice(1);
-                        return `${label}: Rs. ${p.amount.toLocaleString()}`;
-                      })
-                      .join(', ')}
-                  </span>
-                </div>
-              )}
-              {detail.remark && (
-                <div>
-                  <span>Remark</span>
-                  <span>{detail.remark}</span>
-                </div>
-              )}
-            </div>
-          </div>
+        <>
+          {/* Riders are paid cash-in-hand with no paperwork trail - the
+              receipt/invoice tabs only make sense for vendor payouts. */}
+          {showDocumentTabs && (
+            <SegmentedTabs
+              ariaLabel="Statement view"
+              fullWidth={false}
+              minTabWidth="140px"
+              value={tab}
+              onChange={setTab}
+              options={[
+                { value: 'billing', label: 'Billing details' },
+                { value: 'receipt', label: 'Payment receipt' },
+                { value: 'invoice', label: 'Tax invoice' },
+              ]}
+            />
+          )}
 
-          {detail.items.length === 0 ? (
-            <div className="loading-state">No orders linked to this settlement.</div>
+          {tab === 'receipt' && showDocumentTabs ? (
+            <DocumentTabPanel
+              label="Payment receipt"
+              kind="receipt"
+              only="receipt"
+              settlementId={detail.id}
+              storedPath={detail.paymentReceiptPath}
+              canAttach={canPay}
+              onAttached={() => setReloadKey((k) => k + 1)}
+            />
+          ) : tab === 'invoice' && showDocumentTabs ? (
+            <DocumentTabPanel
+              label="Tax invoice"
+              kind="tax-invoice"
+              only="taxInvoice"
+              settlementId={detail.id}
+              storedPath={detail.taxInvoicePath}
+              canAttach={canPay}
+              onAttached={() => setReloadKey((k) => k + 1)}
+            />
           ) : (
-            <div style={{ overflowX: 'auto' }}>
-              <table className="cod-bill-table">
-                <thead>
-                  <tr>
-                    <th>SN</th>
-                    <th>Order ID</th>
-                    <th>Transaction ID</th>
-                    {showVendor && <th>Vendor</th>}
-                    <th>Receiver</th>
-                    <th>Number</th>
-                    <th style={{ textAlign: 'right' }}>Weight</th>
-                    <th style={{ textAlign: 'right' }}>COD</th>
-                    <th style={{ textAlign: 'right' }}>Collected COD</th>
-                    <th style={{ textAlign: 'right' }}>Delivery Charges</th>
-                    <th style={{ textAlign: 'right' }}>Net Payable</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {detail.items.map((item, index) => (
-                    <tr key={item.trackingId}>
-                      <td>{index + 1}</td>
-                      <td>#{item.orderNumber}</td>
-                      <td>
-                        <div style={{ fontFamily: 'monospace' }}>{item.trackingId}</div>
-                        {item.deliveredAt && (
-                          <div className="vendor-finance-subtext">{toBsDateTime(item.deliveredAt)}</div>
-                        )}
-                        {item.orderType && <div className="vendor-finance-subtext">{item.orderType}</div>}
-                      </td>
-                      {showVendor && (
-                        <td>
-                          {item.vendorName ?? '-'}
-                          {item.vendorPhone && (
-                            <div className="vendor-finance-subtext">{item.vendorPhone}</div>
+            <div className="sdp-bill">
+              <div className="sdp-bill-head">
+                <span className="sdp-avatar">{initials(detail.payeeName || '?')}</span>
+                <div className="sdp-payee-text">
+                  <div className="sdp-payee-name-row">
+                    <span className="sdp-payee-name">{detail.payeeName}</span>
+                    <StatusChip
+                      variant="solid"
+                      tone={detail.status === 'settled' ? 'success' : detail.status === 'cancelled' ? 'neutral' : 'warning'}
+                    >
+                      {detail.status === 'settled' ? 'Settled' : detail.status === 'cancelled' ? 'Cancelled' : 'Pending'}
+                    </StatusChip>
+                  </div>
+                  <span className="sdp-payee-phone">{detail.payeePhone}</span>
+                  {detail.payeeEmail && <span className="sdp-payee-sub">{detail.payeeEmail}</span>}
+                  {detail.payeeAddress && <span className="sdp-payee-sub">{detail.payeeAddress}</span>}
+                  {detail.payeePan && <span className="sdp-payee-sub">PAN: {detail.payeePan}</span>}
+                </div>
+              </div>
+
+              <div className="sdp-meta">
+                <div>
+                  <span>Statement</span>
+                  <span className="sdp-mono">{detail.statementId}</span>
+                </div>
+                <div>
+                  <span>Statement date</span>
+                  <span>{detail.transferDate ? toBsDate(detail.transferDate) : '-'}</span>
+                </div>
+                <div>
+                  <span>Recorded</span>
+                  <span>{toBsDateTime(detail.createdAt) || '-'}</span>
+                </div>
+                {detail.status === 'settled' && detail.payments.length > 0 && (
+                  <div>
+                    <span>Payment method</span>
+                    <span>
+                      {detail.payments
+                        .map((p) => {
+                          // Method names are configurable now; show them as
+                          // stored, capitalising legacy lowercase values.
+                          const label = p.method.charAt(0).toUpperCase() + p.method.slice(1);
+                          return `${label}: Rs. ${p.amount.toLocaleString()}`;
+                        })
+                        .join(', ')}
+                    </span>
+                  </div>
+                )}
+                {detail.remark && (
+                  <div>
+                    <span>Remark</span>
+                    <span>{detail.remark}</span>
+                  </div>
+                )}
+              </div>
+
+              {detail.items.length === 0 ? (
+                <div className="loading-state">No orders linked to this settlement.</div>
+              ) : (
+                <div className="sdp-table-wrap">
+                  <table className="sdp-table">
+                    <thead>
+                      <tr>
+                        <th>SN</th>
+                        <th>Order ID</th>
+                        <th>Transaction ID</th>
+                        <th>Order Type</th>
+                        {showVendor && <th>Vendor</th>}
+                        <th>Receiver</th>
+                        <th>Number</th>
+                        <th style={{ textAlign: 'right' }}>Weight</th>
+                        <th style={{ textAlign: 'right' }}>COD</th>
+                        <th style={{ textAlign: 'right' }}>Collected COD</th>
+                        <th style={{ textAlign: 'right' }}>Delivery Charges</th>
+                        <th style={{ textAlign: 'right' }}>Net Payable</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {detail.items.map((item, index) => (
+                        <tr key={item.trackingId}>
+                          <td>{index + 1}</td>
+                          <td>#{item.orderNumber}</td>
+                          <td>
+                            <div className="sdp-mono">{item.trackingId}</div>
+                            {item.deliveredAt && (
+                              <div className="sdp-subtext">{toBsDateTime(item.deliveredAt)}</div>
+                            )}
+                          </td>
+                          <td>
+                            {item.orderType === 'return' ? (
+                              <StatusChip tone="info">RTV</StatusChip>
+                            ) : (
+                              <span style={{ textTransform: 'capitalize' }}>{item.orderType || '-'}</span>
+                            )}
+                          </td>
+                          {showVendor && (
+                            <td>
+                              {item.vendorName ?? '-'}
+                              {item.vendorPhone && (
+                                <div className="sdp-subtext">{item.vendorPhone}</div>
+                              )}
+                            </td>
                           )}
-                        </td>
-                      )}
-                      <td>
-                        {item.receiverName}
-                        {item.receiverAddress && (
-                          <div className="vendor-finance-subtext">{item.receiverAddress}</div>
-                        )}
-                      </td>
-                      <td>{item.receiverPhone}</td>
-                      <td style={{ textAlign: 'right' }}>
-                        {item.weightKg === null ? '-' : item.weightKg.toFixed(2)}
-                      </td>
-                      <td style={{ textAlign: 'right' }}>{money(item.codAmount)}</td>
-                      <td style={{ textAlign: 'right' }}>{money(item.collectedAmount)}</td>
-                      <td style={{ textAlign: 'right' }}>{money(item.deliveryCharge)}</td>
-                      <td style={{ textAlign: 'right' }}>{money(item.settledAmount)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+                          <td>
+                            {item.receiverName}
+                            {item.receiverAddress && (
+                              <div className="sdp-subtext">{item.receiverAddress}</div>
+                            )}
+                          </td>
+                          <td>{item.receiverPhone}</td>
+                          <td style={{ textAlign: 'right' }}>
+                            {item.weightKg === null ? '-' : item.weightKg.toFixed(2)}
+                          </td>
+                          <td style={{ textAlign: 'right' }}>{money(item.codAmount)}</td>
+                          <td style={{ textAlign: 'right' }}>{money(item.collectedAmount)}</td>
+                          <td style={{ textAlign: 'right' }}>{money(item.deliveryCharge)}</td>
+                          <td className="sdp-cell-strong" style={{ textAlign: 'right' }}>{money(item.settledAmount)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
 
-          <div className="cod-bill-totals">
-            <div>
-              <span>Total COD</span>
-              <span>{money(totals.cod)}</span>
-            </div>
-            <div>
-              <span>Collected COD</span>
-              <span>{money(totals.collected)}</span>
-            </div>
-            <div>
-              <span>Delivery Charges</span>
-              <span>{money(totals.deliveryCharge)}</span>
-            </div>
-            <div className="cod-bill-totals-payable">
-              <span>Payable Amount</span>
-              <span>{money(detail.payableAmount)}</span>
-            </div>
-          </div>
-
-          {(detail.paymentReceiptPath || detail.taxInvoicePath) && (
-            <div className="settlement-documents">
-              <div className="vendor-finance-subtext">PAYMENT DOCUMENTS</div>
-              <div className="settlement-documents-grid">
-                <SettlementDocument
-                  label="Payment receipt"
-                  storedPath={detail.paymentReceiptPath}
-                  href={documentUrl(detail.id, 'receipt')}
-                />
-                <SettlementDocument
-                  label="Tax invoice"
-                  storedPath={detail.taxInvoicePath}
-                  href={documentUrl(detail.id, 'tax-invoice')}
-                />
+              <div className="sdp-totals">
+                <div>
+                  <span>Total COD</span>
+                  <span>{money(totals.cod)}</span>
+                </div>
+                <div>
+                  <span>Collected COD</span>
+                  <span>{money(totals.collected)}</span>
+                </div>
+                <div>
+                  <span>Delivery Charges</span>
+                  <span>{money(totals.deliveryCharge)}</span>
+                </div>
+                <div className="sdp-totals-payable">
+                  <span>{detail.payeeType === 'rider' ? 'Receivable Amount' : 'Payable Amount'}</span>
+                  <span>{money(detail.payableAmount)}</span>
+                </div>
               </div>
             </div>
           )}
-        </div>
+        </>
       ) : null}
-
 
       {showEdit && detail && (
         <EditSettlementModal

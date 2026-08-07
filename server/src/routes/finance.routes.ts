@@ -26,6 +26,7 @@ import {
   getUnsettledOrdersController,
   createSettlementController,
   payForSettlementController,
+  attachSettlementDocumentsController,
   updateSettlementController,
   revertSettlementController,
   cancelSettlementController,
@@ -140,6 +141,18 @@ financeRouter.post(
   parseMultipartJson("payments"),
   validate(paySettlementSchema),
   payForSettlementController,
+);
+
+// PATCH /api/finance/settlements/:id/documents — attach payment proof to a
+// statement that's already been paid (super_admin/admin, same audience as pay)
+financeRouter.patch(
+  "/settlements/:id/documents",
+  authMiddleware,
+  csrfProtection,
+  authorizeRoles("super_admin", "admin"),
+  settlementCreateLimiter,
+  settlementDocsUpload,
+  attachSettlementDocumentsController,
 );
 
 // PATCH /api/finance/settlements/:id — correct an unsettled statement's order

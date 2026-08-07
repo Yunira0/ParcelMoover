@@ -1,0 +1,123 @@
+.file-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.file-field-label {
+  color: var(--color-text-default);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+}
+
+.file-field-drop {
+  align-items: center;
+  background: var(--color-background-canvas);
+  border: 1px dashed var(--color-border-default);
+  border-radius: var(--border-radius-default);
+  color: var(--color-text-caption);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  font-family: var(--typography-font-family-default);
+  gap: var(--space-2);
+  justify-content: center;
+  padding: var(--space-5) var(--space-3);
+  text-align: center;
+  transition: border-color 150ms ease, background-color 150ms ease;
+  width: 100%;
+}
+
+.file-field-drop:hover,
+.file-field-drop-active {
+  background: var(--color-background-surface);
+  border-color: var(--color-primary);
+}
+
+.file-field-drop-icon {
+  color: var(--color-icon-caption);
+}
+
+.file-field-drop-text {
+  align-items: center;
+  color: var(--color-text-default);
+  display: inline-flex;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  gap: var(--space-1-5);
+}
+
+.file-field-drop-or {
+  color: var(--color-text-caption);
+  font-weight: var(--font-weight-regular);
+}
+
+.file-field-picked {
+  align-items: center;
+  background: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-default);
+  display: flex;
+  gap: var(--space-3);
+  padding: var(--space-2);
+}
+
+.file-field-thumb {
+  border-radius: var(--border-radius-sm);
+  flex-shrink: 0;
+  height: 40px;
+  object-fit: cover;
+  width: 40px;
+}
+
+.file-field-thumb-icon {
+  align-items: center;
+  background: var(--color-background-elevated);
+  color: var(--color-icon-caption);
+  display: flex;
+  justify-content: center;
+}
+
+.file-field-picked-info {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.file-field-picked-name {
+  color: var(--color-text-default);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-field-picked-size {
+  color: var(--color-text-caption);
+  font-size: 12px;
+}
+
+.file-field-remove {
+  align-items: center;
+  background: none;
+  border: none;
+  border-radius: var(--border-radius-sm);
+  color: var(--color-icon-caption);
+  cursor: pointer;
+  display: flex;
+  flex-shrink: 0;
+  padding: var(--space-1);
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+.file-field-remove:hover {
+  background: var(--color-danger-surface);
+  color: var(--color-danger-text);
+}
+
+.file-field-hint {
+  color: var(--color-text-caption);
+  font-size: 12px;
+}

@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { getPendingCodBill, listOrderCod, listSettlements, getUnsettledOrders, createSettlement, payForSettlement, updateSettlement, revertSettlement, cancelSettlement, getSettlementDetail, getSettlementDocumentPath } from "../services/finance.service";
+import { getPendingCodBill, listOrderCod, listSettlements, getUnsettledOrders, createSettlement, payForSettlement, attachSettlementDocuments, updateSettlement, revertSettlement, cancelSettlement, getSettlementDetail, getSettlementDocumentPath } from "../services/finance.service";
 import { CodPaymentFilter, CreateSettlementInput, PaySettlementInput, UpdateSettlementInput, RevertSettlementInput, CancelSettlementInput } from "../types/finance.type";
 import { flattenMulterFiles, secureUploadedFiles } from "../lib/secureUploadedFiles";
 import { sendEncryptedFile } from "../lib/serveEncryptedDocument";
@@ -122,6 +122,7 @@ function parseDateParam(raw: unknown, label: string): { error?: string; date?: D
 }
 
 const VALID_PAYEE_TYPES = ["rider", "vendor"];
+const VALID_SETTLEMENT_STATUSES = ["pending", "settled", "cancelled"];
 
 export async function listSettlementsController(req: Request, res: Response) {
   try {
@@ -159,6 +160,20 @@ export async function listSettlementsController(req: Request, res: Response) {
       return res.status(400).json({ success: false, message: "fromDate must be before toDate" });
     }
 
+    const status = req.query.status;
+    if (status !== undefined && (typeof status !== "string" || !VALID_SETTLEMENT_STATUSES.includes(status))) {
+      return res.status(400).json({
+        success: false,
+        message: `status must be one of: ${VALID_SETTLEMENT_STATUSES.join(", ")}`,
+      });
+    }
+
+    const search = req.query.search;
+    if (search !== undefined && typeof search !== "string") {
+      return res.status(400).json({ success: false, message: "search must be a string" });
+    }
+    const trimmedSearch = search?.trim();
+
     const result = await listSettlements(
       { id: req.user.id, roles: req.user.roles },
       payeeType as "rider" | "vendor",
@@ -167,6 +182,8 @@ export async function listSettlementsController(req: Request, res: Response) {
       pageSize,
       fromDate,
       toDate,
+      status as "pending" | "settled" | "cancelled" | undefined,
+      trimmedSearch || undefined,
     );
     return res.status(200).json({ success: true, ...result });
   } catch (error: any) {
@@ -227,6 +244,42 @@ export async function payForSettlementController(req: Request, res: Response) {
     return res.status(error.statusCode || 500).json({
       success: false,
       message: error.message || "Failed to record payment",
+    });
+  }
+}
+
+// PATCH /api/finance/settlements/:id/documents — attach payment proof to an
+// already-paid statement, as a follow-up step after payForSettlementController.
+export async function attachSettlementDocumentsController(req: Request, res: Response) {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const { id } = req.params;
+    if (typeof id !== "string" || !UUID_REGEX.test(id)) {
+      return res.status(400).json({ success: false, message: "Invalid settlement id" });
+    }
+
+    const files = req.files as Record<string, Express.Multer.File[]> | undefined;
+    const uploads = flattenMulterFiles(files);
+    if (uploads.length === 0) {
+      return res.status(400).json({ success: false, message: "At least one document is required" });
+    }
+    await secureUploadedFiles(uploads);
+    const receipt = files?.paymentReceipt?.[0];
+    const taxInvoice = files?.taxInvoice?.[0];
+
+    const settlement = await attachSettlementDocuments({ id: req.user.id, roles: req.user.roles }, id, {
+      ...(receipt ? { paymentReceiptPath: `uploads/settlements/${receipt.filename}` } : {}),
+      ...(taxInvoice ? { taxInvoicePath: `uploads/settlements/${taxInvoice.filename}` } : {}),
+    });
+
+    return res.status(200).json({ success: true, message: "Documents attached", data: settlement });
+  } catch (error: any) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to attach documents",
     });
   }
 }

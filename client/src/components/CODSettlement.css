@@ -93,6 +93,59 @@
   align-items: center;
   padding: var(--space-3) var(--space-2);
   border-bottom: 1px solid var(--color-border-default);
+  color: inherit;
+  text-decoration: none;
+}
+
+/* Every row but the "COD to collect from riders" umbrella is a link into the
+   orders behind it. The affordance is deliberately quiet - a hover wash and a
+   chevron that only firms up on hover - so the card still reads as a figure
+   board at rest, not a menu. */
+.settlement-row-value {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.settlement-row-chevron {
+  color: var(--color-text-caption);
+  opacity: 0.45;
+  flex-shrink: 0;
+  transition: opacity 0.15s ease-out, transform 0.15s ease-out;
+}
+
+a.settlement-row:hover,
+a.settlement-subrow:hover {
+  background-color: var(--color-background-canvas);
+}
+
+a.settlement-row:hover .settlement-row-chevron,
+a.settlement-subrow:hover .settlement-row-chevron {
+  opacity: 1;
+  transform: translateX(2px);
+}
+
+a.settlement-row:focus-visible,
+a.settlement-subrow:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+  border-radius: var(--border-radius-default);
+}
+
+/* Not a link: its amount is just the sum of the carriers below it. */
+.settlement-row--heading {
+  cursor: default;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .settlement-row-chevron {
+    transition: none;
+  }
+
+  a.settlement-row:hover .settlement-row-chevron,
+  a.settlement-subrow:hover .settlement-row-chevron {
+    transform: none;
+  }
 }
 
 .status-label {
@@ -118,8 +171,45 @@
   background-color: var(--color-background-warning-default);
 }
 
-.status-dot.rider {
+.status-dot.rider,
+.status-dot.pm-rider {
   background-color: var(--color-info-text);
+}
+
+/* Same "cash still out" family as .rider (info-blue), shifted a step darker
+   so PM-Rider and NCM read as related-but-distinct, not two unrelated hues -
+   no second token exists for this, so it's a literal shade of info-text. */
+.status-dot.ncm {
+  background-color: #4338ca;
+}
+
+/* Carrier breakdown nested under "COD to collect from riders" - indented and
+   quieter than a top-level row so it reads as this-belongs-to-the-row-above,
+   not another peer metric. */
+.settlement-subrow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-6);
+  border-bottom: 1px solid var(--color-border-default);
+  color: inherit;
+  text-decoration: none;
+}
+
+.settlement-subrow .status-label {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-caption);
+}
+
+.settlement-subrow .status-amount {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-caption);
+}
+
+.settlement-subrow .status-dot {
+  width: 6px;
+  height: 6px;
 }
 
 .status-dot.delivery {
@@ -129,4 +219,7 @@
 .status-amount {
   font-weight: var(--font-weight-bold);
   font-size: var(--font-size-md);
+  /* The card sits in a narrow dashboard column, so an amount left to wrap
+     breaks between "Rs." and the digits. The label may wrap; the figure can't. */
+  white-space: nowrap;
 }

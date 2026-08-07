@@ -11,6 +11,74 @@
   text-decoration: underline;
 }
 
+.billing-doc-preview-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+.billing-form-label {
+  color: var(--color-text-caption);
+  font-size: var(--font-size-xs);
+}
+
+.billing-note-input {
+  background-color: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-default);
+  color: var(--color-text-default);
+  font-family: inherit;
+  font-size: var(--font-size-sm);
+  padding: var(--space-2);
+  resize: vertical;
+}
+
+/* Reviewer's focused look at a payment screenshot before verifying/rejecting
+   a claim - a genuine "protected focus" case, not a lazy modal. */
+.billing-proof-modal {
+  background-color: var(--color-background-surface);
+  border-radius: var(--border-radius-modal);
+  box-shadow: var(--app-shadow);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-height: 85vh;
+  max-width: min(90vw, 480px);
+  padding: var(--space-4);
+}
+
+.billing-proof-modal-header {
+  align-items: center;
+  color: var(--color-text-default);
+  display: flex;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  justify-content: space-between;
+}
+
+.billing-proof-modal-close {
+  align-items: center;
+  background: none;
+  border: none;
+  color: var(--color-text-caption);
+  cursor: pointer;
+  display: flex;
+  padding: var(--space-1);
+}
+
+.billing-proof-modal-close:hover {
+  color: var(--color-text-default);
+}
+
+.billing-proof-modal img {
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-default);
+  max-height: 65vh;
+  object-fit: contain;
+  width: 100%;
+}
+
 /* Verify/reject sit in the row itself — a reviewer works through the queue
    top to bottom and shouldn't have to open a modal per claim. */
 .billing-review-cell {

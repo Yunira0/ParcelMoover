@@ -3,7 +3,10 @@ import {
   addOrderRemark,
   bulkCreateOrders,
   bulkUpdateParcelStatus,
+  COD_DETAIL_BUCKETS,
+  CodDetailBucket,
   createOrder,
+  getCodSettlementDetail,
   getDashboardSummary,
   getOrderByTrackingId,
   getOrderFilterOptions,
@@ -604,6 +607,36 @@ export async function dashboardSummaryController(req: Request, res: Response) {
     return res.status(error.statusCode || 500).json({
       success: false,
       message: error.message || "Failed to load dashboard summary",
+    });
+  }
+}
+
+// GET /orders/cod-settlement-detail?bucket=... — the underlying rows behind
+// one line of the COD Settlement dashboard card (drill-down).
+export async function codSettlementDetailController(req: Request, res: Response) {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const bucket = req.query.bucket;
+    if (typeof bucket !== "string" || !COD_DETAIL_BUCKETS.includes(bucket as CodDetailBucket)) {
+      return res.status(400).json({
+        success: false,
+        message: `bucket must be one of: ${COD_DETAIL_BUCKETS.join(", ")}`,
+      });
+    }
+
+    const result = await getCodSettlementDetail(
+      { id: req.user.id, roles: req.user.roles },
+      bucket as CodDetailBucket,
+    );
+
+    return res.status(200).json({ success: true, data: result.rows, capped: result.capped });
+  } catch (error: any) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to load COD settlement detail",
     });
   }
 }

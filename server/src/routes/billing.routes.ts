@@ -9,6 +9,7 @@ import { paymentProofUpload, paymentQrUpload } from "../lib/billingUpload";
 import {
   getBillingSettingsController,
   getBillingStatusController,
+  getPaymentQrFileController,
   listVendorBalancesController,
   listVendorPaymentsController,
   reviewVendorPaymentController,
@@ -99,6 +100,18 @@ billingRouter.patch(
   authorizeRoles("super_admin", "admin"),
   billingWriteLimiter,
   reviewVendorPaymentController,
+);
+
+// GET /api/billing/qr — the QR image itself. Every billing-eligible role can
+// fetch it (unlike /uploads, which is staff-only) since vendors are the ones
+// who need to scan it.
+billingRouter.get(
+  "/qr",
+  authMiddleware,
+  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "sales"),
+  requireStaffPermission("FINANCE_ACCESS"),
+  billingReadLimiter,
+  getPaymentQrFileController,
 );
 
 // GET /api/billing/settings — global thresholds and the Fonepay QR

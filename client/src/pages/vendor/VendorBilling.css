@@ -98,10 +98,55 @@
   width: 100%;
 }
 
+/* "Scan and pay" / "Tell us you paid" - two ordered sub-sections inside the
+   same card, separated by a rule since they're sequential, not independent. */
+.billing-step {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.billing-step + .billing-step {
+  border-top: 1px solid var(--color-border-default);
+  padding-top: var(--space-4);
+}
+
+.billing-step-title {
+  color: var(--color-text-default);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  margin: 0;
+}
+
 .billing-form {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+}
+
+.billing-amount-field {
+  align-items: center;
+  display: flex;
+  position: relative;
+}
+
+.billing-amount-prefix {
+  color: var(--color-text-caption);
+  font-size: var(--font-size-sm);
+  left: var(--space-2);
+  pointer-events: none;
+  position: absolute;
+}
+
+.billing-amount-field input {
+  padding-left: calc(var(--space-2) + 22px) !important;
+  width: 100%;
+}
+
+.billing-field-hint {
+  color: var(--color-text-caption);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-regular);
 }
 
 .billing-form label {
@@ -161,6 +206,71 @@
 .billing-pill-rejected {
   background-color: var(--color-danger-surface, #fdeceb);
   color: var(--color-danger-text);
+}
+
+.billing-table-scroll {
+  overflow-x: auto;
+}
+
+.billing-empty {
+  align-items: center;
+  color: var(--color-text-caption);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-8) var(--space-4);
+  text-align: center;
+}
+
+.billing-empty p {
+  font-size: var(--font-size-sm);
+  margin: 0;
+  max-width: 40ch;
+}
+
+.billing-skeleton-set {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.billing-skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--color-background-canvas) 25%,
+    var(--color-background-elevated) 50%,
+    var(--color-background-canvas) 75%
+  );
+  background-size: 200% 100%;
+  animation: billing-shimmer 1.5s infinite ease-in-out;
+  border-radius: var(--border-radius-default);
+}
+
+.billing-skeleton-banner {
+  height: 64px;
+}
+
+.billing-skeleton-card {
+  height: 340px;
+}
+
+.billing-skeleton-table {
+  height: 180px;
+}
+
+@keyframes billing-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .billing-skeleton {
+    animation: none;
+  }
 }
 
 @media (max-width: 768px) {

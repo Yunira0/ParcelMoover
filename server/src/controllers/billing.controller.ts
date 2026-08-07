@@ -14,6 +14,7 @@ import {
 } from "../services/vendor-payment.service";
 import { resolveOwnVendorId } from "../services/vendor-scope.service";
 import { flattenMulterFiles, secureUploadedFiles } from "../lib/secureUploadedFiles";
+import { sendEncryptedFile } from "../lib/serveEncryptedDocument";
 import prisma from "../lib/prisma";
 import { AppError } from "../utils/AppError";
 
@@ -108,6 +109,24 @@ export async function updateBillingSettingsController(req: Request, res: Respons
     return res.status(200).json({ success: true, data: settings });
   } catch (error: any) {
     return fail(res, error, "Failed to update billing settings");
+  }
+}
+
+// GET /api/billing/qr — the Fonepay QR image itself. Deliberately routes
+// around the admin-only /uploads mount (see serveEncryptedDocument's doc
+// comment): the QR isn't sensitive, and vendors are the ones who actually
+// need to see it to pay. Every billing-eligible role may fetch it.
+export async function getPaymentQrFileController(req: Request, res: Response) {
+  try {
+    if (!req.user) return res.status(401).json({ success: false, message: "Unauthorized" });
+
+    const settings = await getBillingSettings();
+    if (!settings.paymentQrPath) {
+      return res.status(404).json({ success: false, message: "No payment QR configured" });
+    }
+    await sendEncryptedFile(res, settings.paymentQrPath);
+  } catch (error: any) {
+    return fail(res, error, "Failed to load payment QR");
   }
 }
 

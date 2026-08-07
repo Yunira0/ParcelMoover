@@ -104,6 +104,12 @@ export interface PaySettlementInput {
   taxInvoicePath?: string | null;
 }
 
+export interface AttachSettlementDocumentsInput {
+  /** Relative upload paths, set by the controller after the files are secured. Omitted fields leave the existing document untouched. */
+  paymentReceiptPath?: string | null;
+  taxInvoicePath?: string | null;
+}
+
 export interface UpdateSettlementInput {
   codCollectionIds: string[];
 }
@@ -138,6 +144,10 @@ export interface UnsettledOrderItem {
   receiverPhone: string;
   receiverAddress: string | null;
   destination: string;
+  // Pickup or delivery location for this rider's leg of the parcel - null
+  // for vendor statements, where `destination` above is the relevant fact.
+  location: string | null;
+  orderType: string;
   codAmount: number;
   deliveryCharge: number;
   netPayable: number;
@@ -166,6 +176,9 @@ export interface SettlementDetailItem {
   orderType: string;
   pieces: number;
   weightKg: number | null;
+  // Pickup or delivery location for this rider's leg of the parcel - null
+  // for vendor statements, where the location isn't the relevant fact.
+  location: string | null;
   codAmount: number;
   collectedAmount: number;
   deliveryCharge: number;

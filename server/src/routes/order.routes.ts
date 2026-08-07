@@ -20,6 +20,7 @@ import {
   addOrderRemarkController,
   bulkCreateOrdersController,
   bulkUpdateOrderStatusController,
+  codSettlementDetailController,
   createOrderController,
   dashboardSummaryController,
   getOrderByTrackingIdController,
@@ -142,6 +143,17 @@ orderRouter.get(
   requireStaffPermission("DASHBOARD_ACCESS"),
   orderReadLimiter,
   dashboardSummaryController,
+);
+
+// GET /orders/cod-settlement-detail — drill-down rows behind one line of the
+// COD Settlement card. Same audience/scope as dashboard-summary.
+orderRouter.get(
+  "/cod-settlement-detail",
+  authMiddleware,
+  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider", "sales"),
+  requireStaffPermission("DASHBOARD_ACCESS"),
+  orderReadLimiter,
+  codSettlementDetailController,
 );
 
 // GET /orders/status-counts — lightweight per-status-group counts for operation
