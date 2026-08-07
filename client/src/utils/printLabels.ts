@@ -122,6 +122,9 @@ function esc(str: string) {
 const CSS = `
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:#fff;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif}
+.label-grid{
+  display:flex;flex-wrap:wrap;gap:2mm;padding:0;
+}
 
 /* Sized per-order (inline style) to the vendor's own sticker size. Its only
    job is to clip to that size and carry the page-break; all visual design
@@ -284,19 +287,15 @@ body{background:#fff;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif}
 }
 
 @media print{
-  /* Centers each .label-frame within whatever page size the print driver
-     actually rendered. When the @page size below is honored this is a
-     no-op (the frame already fills the page exactly) - but printers/print
-     dialogs that can't or won't use a custom paper size fall back to a
-     stock size like A4/Letter, and without this the label prints stranded
-     in the top-left corner of a mostly-blank sheet. break-after still
-     forces a fresh page per label since it's a valid flex-item break point. */
-  body{margin:0;display:flex;flex-direction:column}
-  .label-frame{
-    display:flex;align-items:center;justify-content:center;
-    width:100%!important;min-height:100vh;
+  body{margin:0;padding:0;background:#fff}
+  .label-grid{
+    display:flex;flex-wrap:wrap;gap:2mm;padding:0;
+    justify-content:flex-start;align-content:flex-start;
   }
-  .label-frame:not(:last-child){page-break-after:always;break-after:page}
+  .label-frame{
+    page-break-inside:avoid;break-inside:avoid;
+    margin:0;padding:0;
+  }
 }
 `;
 
@@ -312,11 +311,11 @@ body{background:#fff;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif}
 // @page is deliberately NOT nested inside @media print: @page is already
 // print-only by spec, and some print engines only pick up a custom size
 // declared at the stylesheet's top level.
-function printMediaCss(widthMm: number, heightMm: number): string {
+function printMediaCss(): string {
   return `
   @page {
-    size: ${widthMm}mm ${heightMm}mm;
-    margin: 0;
+    size: A4;
+    margin: 5mm;
   }
 `;
 }
@@ -349,10 +348,12 @@ export async function printLabels(orders: Order[]): Promise<void> {
 <head>
   <meta charset="UTF-8" />
   <title>Shipping Labels — ParcelMoover</title>
-  <style>${CSS}${printMediaCss(orders[0]!.labelWidthMm, orders[0]!.labelHeightMm)}</style>
+  <style>${CSS}${printMediaCss()}</style>
 </head>
 <body>
+<div class="label-grid">
 ${labelsMarkup}
+</div>
 <script>
   window.addEventListener('load', function() {
     window.focus();
