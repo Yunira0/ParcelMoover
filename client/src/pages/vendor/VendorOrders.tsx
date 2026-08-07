@@ -159,6 +159,7 @@ const VendorOrders: React.FC = () => {
   const [draft, setDraft] = useState<VendorOrderFilters>(() => filtersFromSearchParams(searchParams));
   const [applied, setApplied] = useState<VendorOrderFilters>(() => filtersFromSearchParams(searchParams));
   const pager = useCursorPagination();
+  const [pageSizeChoice, setPageSizeChoice] = useState(PAGE_SIZE);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [remarkPopupOrder, setRemarkPopupOrder] = useState<Order | null>(null);
   const [trackingSearch, setTrackingSearch] = useState(() => searchParams.get('search') || '');
@@ -195,7 +196,7 @@ const VendorOrders: React.FC = () => {
         status: statusesFromFilter(applied.status),
         orderType: (applied.orderType as OrderType) || undefined,
         search: debouncedSearch || undefined,
-        pageSize: PAGE_SIZE,
+        pageSize: pageSizeChoice,
         cursor: pager.request.cursor,
         dir: pager.request.dir,
       });
@@ -209,7 +210,7 @@ const VendorOrders: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [applied.status, applied.orderType, debouncedSearch, pager.request]);
+  }, [applied.status, applied.orderType, debouncedSearch, pager.request, pageSizeChoice]);
 
   useEffect(() => { loadOrders(); }, [loadOrders]);
   useEffect(() => subscribeToOrderStatusChanged(loadOrders), [loadOrders]);
@@ -229,7 +230,7 @@ const VendorOrders: React.FC = () => {
   }, [applied, debouncedSearch, setSearchParams]);
 
   // Separate, wider (unpaginated) fetch scoped only by status/type so the hub
-  // dropdown has more than the current 10-row page to derive options from.
+  // dropdown has more than the current page to derive options from.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -614,6 +615,12 @@ const VendorOrders: React.FC = () => {
           page={pager.page}
           totalPages={totalPages}
           cursor={pager.controls(meta)}
+          pageSize={pageSizeChoice}
+          pageSizeLabel="parcels"
+          onPageSizeChange={(size) => {
+            setPageSizeChoice(size);
+            pager.reset();
+          }}
           summary={meta
             ? hasDateOrHubFilter
               ? `${visibleOrders.length} of ${orders.length} on this page match your filters — ${meta.total} total`
