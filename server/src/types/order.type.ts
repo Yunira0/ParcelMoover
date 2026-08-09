@@ -146,6 +146,10 @@ export interface ListOrdersQuery {
   // Export-only: enrich each row with its first "arrived at origin" date via a
   // batched history query. Off by default to keep the list/table path lean.
   withArrival?: boolean;
+  // Narrows to parcels delivered since local midnight. The "Delivered today"
+  // dashboard card counts by delivered_at, so its drill-down needs the same
+  // filter server-side to page and total consistently with the card.
+  deliveredToday?: boolean;
 }
 
 export interface BulkUpdateParcelStatusInput {

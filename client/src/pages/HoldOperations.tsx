@@ -314,7 +314,7 @@ const HoldOperations: React.FC = () => {
         <input
           value={searchQuery}
           onChange={(event) => setSearchQuery(event.target.value)}
-          placeholder="Search tracking id"
+          placeholder="Search tracking id or #2980"
         />
       </label>
 
@@ -339,7 +339,7 @@ const HoldOperations: React.FC = () => {
         totalPages={totalPages}
         cursor={pager.controls(meta)}
         pageSize={pageSizeChoice}
-        pageSizeLabel="parcels"
+        pageSizeLabel="hold"
         onPageSizeChange={(size) => {
           setPageSizeChoice(size);
           pager.reset();

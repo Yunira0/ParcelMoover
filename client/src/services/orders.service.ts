@@ -140,6 +140,9 @@ export interface ListOrdersParams {
   sortDir?: 'asc' | 'desc';
   /** Export-only: include each order's first "arrived at origin" date. */
   withArrival?: boolean;
+  /** Narrow to parcels delivered since local midnight, as the dashboard's
+   *  "Delivered today" card counts them. */
+  deliveredToday?: boolean;
 }
 
 export interface OrdersPageMeta {
@@ -286,6 +289,7 @@ export const getOrders = async (params?: ListOrdersParams, signal?: AbortSignal)
   if (params?.sortBy) query.sortBy = params.sortBy;
   if (params?.sortDir) query.sortDir = params.sortDir;
   if (params?.withArrival) query.withArrival = 'true';
+  if (params?.deliveredToday) query.deliveredToday = 'true';
 
   const response = await api.get('/orders', { params: query, signal });
   return response.data;
