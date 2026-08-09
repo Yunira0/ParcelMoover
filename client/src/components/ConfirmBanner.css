@@ -1,0 +1,78 @@
+/* Matches SettlementPayPage.css's .mpp-confirm treatment - same green
+   "this just happened" surface, reused wherever a money-moving action needs
+   a brief on-page acknowledgment. */
+.confirm-banner {
+  align-items: center;
+  background: var(--color-success-surface);
+  border: 1px solid var(--color-success-default);
+  border-radius: var(--border-radius-modal);
+  display: flex;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  animation: confirm-banner-in 200ms ease;
+}
+
+.confirm-banner-badge {
+  align-items: center;
+  background: var(--color-success-default);
+  border-radius: var(--border-radius-full);
+  color: var(--color-text-base);
+  display: flex;
+  flex-shrink: 0;
+  height: 36px;
+  justify-content: center;
+  width: 36px;
+}
+
+.confirm-banner-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.confirm-banner-title {
+  color: var(--color-success-default);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-bold);
+}
+
+.confirm-banner-meta {
+  color: var(--color-text-caption);
+  font-size: var(--font-size-xs);
+  margin-top: 2px;
+}
+
+.confirm-banner-dismiss {
+  align-items: center;
+  background: none;
+  border: none;
+  border-radius: var(--border-radius-default);
+  color: var(--color-success-default);
+  cursor: pointer;
+  display: flex;
+  flex-shrink: 0;
+  height: 28px;
+  justify-content: center;
+  transition: background-color 150ms ease;
+  width: 28px;
+}
+
+.confirm-banner-dismiss:hover {
+  background: var(--color-background-surface);
+}
+
+@keyframes confirm-banner-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .confirm-banner {
+    animation: none;
+  }
+}

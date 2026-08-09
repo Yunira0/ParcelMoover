@@ -24,6 +24,7 @@ import PublicApiRoutes from "./routes/publicApi.routes"
 import MeRoutes from "./routes/me.routes"
 import AuditLogRoutes from "./routes/auditLog.routes"
 import BillingRoutes from "./routes/billing.routes"
+import VendorPrintSettingsRoutes from "./routes/vendorPrintSettings.routes"
 import prisma, { pool } from "./lib/prisma";
 import cookiesParser from "cookie-parser";
 import {authMiddleware} from "./middlewares/auth.middleware";
@@ -144,6 +145,8 @@ app.use("/api/finance", FinanceRoutes)
 
 app.use("/api/billing", BillingRoutes)
 
+app.use("/api/vendor-settings", VendorPrintSettingsRoutes)
+
 app.use("/api/staff", StaffRoutes)
 
 app.use("/api/kyc", KycRoutes)
@@ -207,7 +210,7 @@ app.use((req, res, next) => {
     return next();
   }
 
-  if (req.path.startsWith("/rider")) {
+  if (req.path === "/rider" || req.path.startsWith("/rider/")) {
     const stripped = req.path.replace(/^\/rider/, '') || '/';
     if (path.extname(stripped) !== "") {
       return res.sendFile(stripped, { root: "public/.rider" }, (err) => {

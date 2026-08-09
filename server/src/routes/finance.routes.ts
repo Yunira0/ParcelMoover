@@ -16,6 +16,7 @@ import {
   paySettlementSchema,
   updateSettlementSchema,
   revertSettlementSchema,
+  cancelSettlementSchema,
 } from "../validators/finance.schema";
 import { createRedisRateLimitStore } from "../lib/rateLimitStore";
 import {
@@ -25,8 +26,10 @@ import {
   getUnsettledOrdersController,
   createSettlementController,
   payForSettlementController,
+  attachSettlementDocumentsController,
   updateSettlementController,
   revertSettlementController,
+  cancelSettlementController,
   getSettlementDetailController,
   getSettlementDocumentController,
 } from "../controllers/finance.controller";
@@ -140,6 +143,18 @@ financeRouter.post(
   payForSettlementController,
 );
 
+// PATCH /api/finance/settlements/:id/documents — attach payment proof to a
+// statement that's already been paid (super_admin/admin, same audience as pay)
+financeRouter.patch(
+  "/settlements/:id/documents",
+  authMiddleware,
+  csrfProtection,
+  authorizeRoles("super_admin", "admin"),
+  settlementCreateLimiter,
+  settlementDocsUpload,
+  attachSettlementDocumentsController,
+);
+
 // PATCH /api/finance/settlements/:id — correct an unsettled statement's order
 // list (super_admin always allowed; a plain admin needs EDIT_SETTLEMENTS)
 financeRouter.patch(
@@ -165,6 +180,20 @@ financeRouter.post(
   settlementCreateLimiter,
   validate(revertSettlementSchema),
   revertSettlementController,
+);
+
+// POST /api/finance/settlements/:id/cancel — cancel a pending (unpaid)
+// statement, releasing its bundled orders back for a future statement (super_admin
+// always allowed; a plain admin needs EDIT_SETTLEMENTS, same gate as editing/revert)
+financeRouter.post(
+  "/settlements/:id/cancel",
+  authMiddleware,
+  csrfProtection,
+  authorizeRoles("super_admin", "admin"),
+  requireAdminPermission("EDIT_SETTLEMENTS"),
+  settlementCreateLimiter,
+  validate(cancelSettlementSchema),
+  cancelSettlementController,
 );
 
 // GET /api/finance/unsettled-orders — unsettled COD orders for rider or vendor

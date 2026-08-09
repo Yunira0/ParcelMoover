@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Search, X, Trash2 } from 'lucide-react';
 import Button from '../../components/Button';
 import Pagination from '../../components/Pagination';
 import {
@@ -21,13 +22,24 @@ const ZONE_OPTIONS = [
   { value: 'inside_valley', label: 'Inside valley' },
 ];
 
-const VALLEY_OPTIONS = [
+// A single control for the combined valley + ring-road classification, so the
+// table doesn't need a second, sometimes-disabled column for a flag that only
+// ever means something alongside "inside valley". "inside_outside_ring" is a
+// UI-only value: it writes valley="inside" + ringRoad="outside" together.
+const VALLEY_RING_ROAD_OPTIONS = [
   { value: '', label: '—' },
   { value: 'inside', label: 'Inside valley' },
+  { value: 'inside_outside_ring', label: 'Inside valley — outside ring road' },
   { value: 'outside', label: 'Outside valley' },
 ];
 
-type RowEdit = { rate: string; branchRate: string; zone: string; valley: string };
+type RowEdit = { rate: string; branchRate: string; zone: string; valley: string; ringRoad: string };
+
+// Maps a row's stored valley/ringRoad pair to the single merged select value above.
+function toValleyRingRoadValue(row: RowEdit): string {
+  if (row.valley === 'inside' && row.ringRoad === 'outside') return 'inside_outside_ring';
+  return row.valley;
+}
 
 const PAGE_SIZE = 10;
 
@@ -40,6 +52,7 @@ const RateSetup: React.FC = () => {
   const [savingSettings, setSavingSettings] = useState(false);
   const [msg, setMsg] = useState('');
   const [page, setPage] = useState(1);
+  const [searchQuery, setSearchQuery] = useState('');
 
   const load = async () => {
     setLoading(true);
@@ -56,6 +69,7 @@ const RateSetup: React.FC = () => {
             branchRate: d.branchPerDestinationRate != null ? String(d.branchPerDestinationRate) : '',
             zone: d.zone || '',
             valley: d.valley || '',
+            ringRoad: d.ringRoad || '',
           };
         });
         setRows(initial);
@@ -67,6 +81,16 @@ const RateSetup: React.FC = () => {
   };
 
   useEffect(() => { load(); }, []);
+
+  const filteredDestinations = useMemo(() => {
+    if (!searchQuery.trim()) return destinations;
+    const q = searchQuery.toLowerCase();
+    return destinations.filter(
+      (d) => d.name.toLowerCase().includes(q) || (d.code && d.code.toLowerCase().includes(q)),
+    );
+  }, [destinations, searchQuery]);
+
+  useEffect(() => { setPage(1); }, [searchQuery]);
 
   const setRow = (id: string, patch: Partial<RowEdit>) =>
     setRows((prev) => ({ ...prev, [id]: { ...prev[id], ...patch } }));
@@ -81,11 +105,31 @@ const RateSetup: React.FC = () => {
         branchPerDestinationRate: row.branchRate.trim() === '' ? null : Number(row.branchRate),
         zone: row.zone || null,
         valley: row.valley || null,
+        ringRoad: row.ringRoad || null,
       });
       setMsg('Saved.');
       setTimeout(() => setMsg(''), 2000);
     } catch (err: any) {
       setMsg(err.response?.data?.message || 'Failed to save row.');
+    } finally {
+      setSavingRow(null);
+    }
+  };
+
+  // Wipes the per-destination and branch rates for one row in a single click,
+  // instead of manually blanking both inputs and hitting Save. Sends the nulls
+  // directly rather than going through local row state, so it can't race a
+  // pending edit the way reading rows[id] right after a setRow call would.
+  const clearRow = async (id: string) => {
+    setSavingRow(id);
+    setMsg('');
+    try {
+      await updateLocation(id, { perDestinationRate: null, branchPerDestinationRate: null });
+      setRow(id, { rate: '', branchRate: '' });
+      setMsg('Cleared.');
+      setTimeout(() => setMsg(''), 2000);
+    } catch (err: any) {
+      setMsg(err.response?.data?.message || 'Failed to clear rates.');
     } finally {
       setSavingRow(null);
     }
@@ -106,6 +150,7 @@ const RateSetup: React.FC = () => {
         zoneInsideValley: settings.zoneInsideValley,
         flatInsideValley: settings.flatInsideValley,
         flatOutsideValley: settings.flatOutsideValley,
+        flatOutsideRingRoad: settings.flatOutsideRingRoad,
         extraWeightPercent: settings.extraWeightPercent,
         freeWeightKg: settings.freeWeightKg,
         returnInsideValleyPercent: settings.returnInsideValleyPercent,
@@ -116,6 +161,7 @@ const RateSetup: React.FC = () => {
         branchZoneInsideValley: settings.branchZoneInsideValley,
         branchFlatInsideValley: settings.branchFlatInsideValley,
         branchFlatOutsideValley: settings.branchFlatOutsideValley,
+        branchFlatOutsideRingRoad: settings.branchFlatOutsideRingRoad,
       });
       setMsg('Rates saved.');
       setTimeout(() => setMsg(''), 2000);
@@ -128,9 +174,9 @@ const RateSetup: React.FC = () => {
 
   if (loading || !settings) return <p className="rate-muted">Loading rate setup…</p>;
 
-  const totalPages = Math.max(1, Math.ceil(destinations.length / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(filteredDestinations.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
-  const pagedDestinations = destinations.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  const pagedDestinations = filteredDestinations.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
   return (
     <div className="rate-setup">
@@ -158,7 +204,11 @@ const RateSetup: React.FC = () => {
         </div>
 
         <h3>Flat rates</h3>
-        <p className="rate-muted">A vendor on the “Flat” model is charged inside- or outside-valley.</p>
+        <p className="rate-muted">
+          A vendor on the “Flat” model is charged inside- or outside-valley. Inside-valley
+          destinations flagged “outside ring road” below are charged the ring-road rate instead,
+          when set.
+        </p>
         <div className="rate-grid">
           <label>Inside valley (Rs.)
             <input type="number" min={0} value={settings.flatInsideValley ?? ''}
@@ -167,6 +217,10 @@ const RateSetup: React.FC = () => {
           <label>Outside valley (Rs.)
             <input type="number" min={0} value={settings.flatOutsideValley ?? ''}
               onChange={(e) => setSetting('flatOutsideValley', e.target.value)} />
+          </label>
+          <label>Outside ring road (Rs.)
+            <input type="number" min={0} value={settings.flatOutsideRingRoad ?? ''}
+              onChange={(e) => setSetting('flatOutsideRingRoad', e.target.value)} />
           </label>
           <label>Free weight (kg)
             <input type="number" min={0} step="0.1" value={settings.freeWeightKg ?? ''}
@@ -224,6 +278,10 @@ const RateSetup: React.FC = () => {
             <input type="number" min={0} value={settings.branchFlatOutsideValley ?? ''}
               onChange={(e) => setSetting('branchFlatOutsideValley', e.target.value)} />
           </label>
+          <label>Branch — outside ring road (Rs.)
+            <input type="number" min={0} value={settings.branchFlatOutsideRingRoad ?? ''}
+              onChange={(e) => setSetting('branchFlatOutsideRingRoad', e.target.value)} />
+          </label>
         </div>
 
         <div className="rate-actions">
@@ -238,11 +296,31 @@ const RateSetup: React.FC = () => {
         <h3>Per-destination rates &amp; classification</h3>
         <p className="rate-muted">
           Set each destination’s own rate (for the “Per-destination” model), and assign its zone and
-          valley side (used by the zone and flat models).
+          valley side (used by the zone and flat models), plus whether an inside-valley destination
+          sits outside the ring road.
         </p>
         {destinations.length === 0 ? (
           <p className="rate-muted">No destinations yet. Add them in the “Destinations &amp; Areas” tab first.</p>
         ) : (
+          <>
+            <div className="rate-search">
+              <Search size={15} className="rate-search-icon" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search destinations or codes…"
+                className="rate-search-input"
+              />
+              {searchQuery && (
+                <button type="button" className="rate-search-clear" onClick={() => setSearchQuery('')}>
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+            {filteredDestinations.length === 0 ? (
+              <p className="rate-muted">No destinations match “{searchQuery}”.</p>
+            ) : (
           <div className="rate-table-wrap">
             <table className="rate-table">
               <thead>
@@ -276,13 +354,33 @@ const RateSetup: React.FC = () => {
                         </select>
                       </td>
                       <td>
-                        <select value={row.valley} onChange={(e) => setRow(d.id, { valley: e.target.value })}>
-                          {VALLEY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                        <select
+                          value={toValleyRingRoadValue(row)}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setRow(
+                              d.id,
+                              v === 'inside_outside_ring'
+                                ? { valley: 'inside', ringRoad: 'outside' }
+                                : { valley: v, ringRoad: '' },
+                            );
+                          }}
+                        >
+                          {VALLEY_RING_ROAD_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                         </select>
                       </td>
-                      <td>
+                      <td className="rate-table-actions">
                         <Button variant="outline" size="sm" disabled={savingRow === d.id} onClick={() => saveRow(d.id)}>
                           {savingRow === d.id ? 'Saving…' : 'Save'}
+                        </Button>
+                        <Button
+                          variant="danger"
+                          size="sm"
+                          disabled={savingRow === d.id || (!row.rate && !row.branchRate)}
+                          onClick={() => clearRow(d.id)}
+                          title="Clear this destination's per-destination and branch rates"
+                        >
+                          <Trash2 size={14} />
                         </Button>
                       </td>
                     </tr>
@@ -291,14 +389,16 @@ const RateSetup: React.FC = () => {
               </tbody>
             </table>
           </div>
+            )}
+          </>
         )}
-        {destinations.length > PAGE_SIZE && (
+        {filteredDestinations.length > PAGE_SIZE && (
           <Pagination
             page={currentPage}
             totalPages={totalPages}
             onPageChange={setPage}
             ariaLabel="Destination rates pages"
-            summary={`Showing ${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, destinations.length)} of ${destinations.length} destinations`}
+            summary={`Showing ${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, filteredDestinations.length)} of ${filteredDestinations.length} destinations`}
           />
         )}
       </section>

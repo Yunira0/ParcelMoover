@@ -96,6 +96,17 @@ export const isoDateStringSchema = z
   .datetime({ message: "Must be a valid ISO-8601 datetime string", offset: true })
   .optional();
 
+// Accepts either a bare "YYYY-MM-DD" (what date-only pickers like
+// NepaliDatePicker emit) or a full ISO-8601 datetime. Use this instead of
+// isoDateStringSchema for any fromDate/toDate pair fed by a date-only picker -
+// the stricter schema silently 400s those requests since it requires a time
+// component, exactly like the server's own `new Date(raw)` parsing already
+// tolerates either form.
+export const flexibleDateStringSchema = z
+  .string()
+  .refine((val) => !Number.isNaN(Date.parse(val)), { message: "Must be a valid date" })
+  .optional();
+
 export const uuidParamSchema = z.object({
   id: uuidSchema,
 });

@@ -62,16 +62,8 @@ const VendorSettlements: React.FC = () => {
       accessor: (item: SettlementListItem) => (
         <button
           type="button"
+          className="statement-id-link"
           onClick={() => navigate(`/finance/settlements/${item.id}`)}
-          style={{
-            background: 'none',
-            border: 'none',
-            padding: 0,
-            color: 'var(--color-primary)',
-            textDecoration: 'underline',
-            cursor: 'pointer',
-            font: 'inherit',
-          }}
         >
           {item.statementId}
         </button>
@@ -83,8 +75,11 @@ const VendorSettlements: React.FC = () => {
     {
       header: 'STATUS',
       accessor: (item: SettlementListItem) => (
-        <StatusChip variant="solid" tone={item.status === 'settled' ? 'success' : 'warning'}>
-          {item.status === 'settled' ? 'Settled' : 'Pending'}
+        <StatusChip
+          variant="solid"
+          tone={item.status === 'settled' ? 'success' : item.status === 'cancelled' ? 'neutral' : 'warning'}
+        >
+          {item.status === 'settled' ? 'Settled' : item.status === 'cancelled' ? 'Cancelled' : 'Pending'}
         </StatusChip>
       ),
     },

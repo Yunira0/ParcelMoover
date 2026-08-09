@@ -72,7 +72,7 @@ export interface SettlementListItem {
   createdAt: string;
   orderCount: number;
   amount: number;
-  status: 'pending' | 'settled';
+  status: 'pending' | 'settled' | 'cancelled';
   remark: string | null;
 }
 
@@ -98,6 +98,8 @@ export const getOrderCod = async (
   return response.data;
 };
 
+export type SettlementStatusFilter = 'pending' | 'settled' | 'cancelled';
+
 export const getSettlements = async (
   payeeType: PayeeType,
   targetId?: string,
@@ -105,6 +107,8 @@ export const getSettlements = async (
   pageSize = 20,
   fromDate?: string,
   toDate?: string,
+  status?: SettlementStatusFilter,
+  search?: string,
 ): Promise<SettlementsListResponse> => {
   const response = await api.get('/finance/settlements', {
     params: {
@@ -114,6 +118,8 @@ export const getSettlements = async (
       ...(targetId ? { targetId } : {}),
       ...(fromDate ? { fromDate } : {}),
       ...(toDate ? { toDate } : {}),
+      ...(status ? { status } : {}),
+      ...(search ? { search } : {}),
     },
   });
   return response.data;
@@ -142,7 +148,7 @@ export interface CreateSettlementResponse {
   amount: number;
   payableAmount: number;
   settlementDate: string | null;
-  status: 'pending' | 'settled';
+  status: 'pending' | 'settled' | 'cancelled';
   remark: string | null;
 }
 
@@ -187,6 +193,22 @@ export const paySettlement = async (
   return response.data;
 };
 
+// Follow-up step after paySettlement — attaches the receipt/invoice as proof
+// once the payout is already on record. Either file may be sent alone.
+export const attachSettlementDocuments = async (
+  id: string,
+  documents: PaySettlementDocuments,
+): Promise<{ success: boolean; message: string; data: { id: string; paymentReceiptPath: string | null; taxInvoicePath: string | null } }> => {
+  const form = new FormData();
+  if (documents.paymentReceipt) form.append('paymentReceipt', documents.paymentReceipt);
+  if (documents.taxInvoice) form.append('taxInvoice', documents.taxInvoice);
+
+  const response = await api.patch(`/finance/settlements/${id}/documents`, form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return response.data;
+};
+
 export interface UnsettledOrderItem {
   id: string;
   codCollectionId: string;
@@ -194,7 +216,11 @@ export interface UnsettledOrderItem {
   trackingId: string;
   receiverName: string;
   receiverPhone: string;
+  receiverAddress: string | null;
   destination: string;
+  /** Pickup or delivery location for this rider's leg. Null for vendor rows. */
+  location: string | null;
+  orderType: string;
   codAmount: number;
   deliveryCharge: number;
   netPayable: number;
@@ -224,12 +250,14 @@ export interface SettlementDetailItem {
   reference: string | null;
   receiverName: string;
   receiverPhone: string;
-  destination: string;
+  receiverAddress: string | null;
   vendorName: string | null;
   vendorPhone: string | null;
   orderType: string | null;
   pieces: number | null;
   weightKg: number | null;
+  /** Pickup or delivery location for this rider's leg. Null for vendor statements. */
+  location: string | null;
   codAmount: number;
   collectedAmount: number;
   deliveryCharge: number;
@@ -254,7 +282,7 @@ export interface SettlementDetail {
   createdAt: string;
   amount: number;
   payableAmount: number;
-  status: 'pending' | 'settled';
+  status: 'pending' | 'settled' | 'cancelled';
   paymentMethod: string | null;
   payments: SettlementPayment[];
   remark: string | null;
@@ -281,5 +309,13 @@ export const revertSettlement = async (
   remark: string,
 ): Promise<{ success: boolean; message: string; data: CreateSettlementResponse }> => {
   const response = await api.post(`/finance/settlements/${id}/revert`, { remark });
+  return response.data;
+};
+
+export const cancelSettlement = async (
+  id: string,
+  remark: string,
+): Promise<{ success: boolean; message: string; data: CreateSettlementResponse }> => {
+  const response = await api.post(`/finance/settlements/${id}/cancel`, { remark });
   return response.data;
 };

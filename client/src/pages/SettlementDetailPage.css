@@ -17,64 +17,314 @@
   gap: var(--space-2);
 }
 
-/* Receipt / tax invoice captured at payment time. Visible to the payee as well
-   as staff, so it sits with the statement rather than in an admin-only area. */
-.settlement-documents {
-  border-top: 1px solid var(--color-border-default);
-  margin-top: var(--space-4);
-  padding-top: var(--space-4);
-}
-
-.settlement-documents-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-4);
-  margin-top: var(--space-3);
-}
-
-.settlement-document {
-  border: 1px solid var(--color-border-default);
-  border-radius: var(--border-radius-default);
-  color: var(--color-primary);
+/* Payment receipt / Tax invoice tabs. Each document now gets a whole tab to
+   itself, so it's shown at a real viewing size rather than a small thumbnail
+   competing for space with the billing table. */
+.settlement-doc-view {
+  align-items: flex-start;
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
-  max-width: 240px;
-  padding: var(--space-3);
-  text-decoration: none;
-  transition: border-color 150ms ease;
+  gap: var(--space-4);
 }
 
-.settlement-document:hover {
+.settlement-doc-frame {
+  align-items: center;
+  background: var(--color-background-canvas);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-modal);
+  display: flex;
+  justify-content: center;
+  max-width: 100%;
+  min-height: 200px;
+  min-width: 240px;
+  overflow: hidden;
+  width: fit-content;
+}
+
+.settlement-doc-frame:hover {
   border-color: var(--color-primary);
 }
 
-.settlement-document-label {
-  align-items: center;
-  display: inline-flex;
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-medium);
-  gap: var(--space-2);
-}
-
-.settlement-document img {
-  background: var(--color-background-elevated);
-  border-radius: var(--border-radius-default);
+.settlement-doc-frame img {
   display: block;
-  max-height: 200px;
+  max-height: 70vh;
   max-width: 100%;
+  min-height: 32px;
+  min-width: 32px;
   object-fit: contain;
 }
 
-.settlement-document-pdf {
+.settlement-doc-pdf {
+  align-items: center;
+  color: var(--color-text-primary);
+  display: flex;
+  flex-direction: column;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  gap: var(--space-2);
+  padding: var(--space-8) var(--space-10);
+}
+
+.settlement-doc-empty {
+  align-items: center;
+  background: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-modal);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-10);
+  text-align: center;
+}
+
+.settlement-doc-empty-icon {
+  color: var(--color-icon-caption);
+}
+
+.settlement-doc-empty p {
+  color: var(--color-text-caption);
+  font-size: var(--font-size-sm);
+  margin: 0;
+}
+
+.settlement-attach-proof-btn {
+  align-items: center;
+  background: none;
+  border: 1px dashed var(--color-border-default);
+  border-radius: var(--border-radius-default);
+  color: var(--color-text-caption);
+  cursor: pointer;
+  display: inline-flex;
+  font-family: var(--typography-font-family-default);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  transition: border-color 150ms ease, color 150ms ease;
+}
+
+.settlement-attach-proof-btn:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+/* Billing details tab. */
+.sdp-bill {
+  background: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-modal);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  padding: var(--space-6);
+}
+
+.sdp-bill-head {
+  align-items: flex-start;
+  display: flex;
+  gap: var(--space-3);
+}
+
+.sdp-avatar {
+  align-items: center;
+  background: var(--color-background-primary-invert-default);
+  border-radius: var(--border-radius-full);
+  color: var(--color-text-primary);
+  display: flex;
+  flex-shrink: 0;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-bold);
+  height: 44px;
+  justify-content: center;
+  letter-spacing: 0.02em;
+  width: 44px;
+}
+
+.sdp-payee-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.sdp-payee-name-row {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.sdp-payee-name {
+  color: var(--color-text-default);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semi-bold);
+}
+
+.sdp-payee-phone {
   color: var(--color-text-caption);
   font-size: var(--font-size-sm);
 }
 
-/* Attachments are proof, not decoration - keep them out of the printed
-   statement, which is generated separately in buildStatementHtml. */
-@media print {
-  .settlement-documents {
-    display: none;
+.sdp-payee-sub {
+  color: var(--color-text-caption);
+  font-size: var(--font-size-xs);
+}
+
+/* Secondary reference details - statement id, dates, method - sit in their
+   own tight grid below the payee/status headline instead of stretched into
+   a second column that leaves a dead gap down the middle of the card. */
+.sdp-meta {
+  border-top: 1px solid var(--color-border-default);
+  display: grid;
+  gap: var(--space-2) var(--space-8);
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  padding-top: var(--space-4);
+}
+
+.sdp-meta > div {
+  display: flex;
+  font-size: var(--font-size-sm);
+  gap: var(--space-4);
+  justify-content: space-between;
+}
+
+.sdp-meta > div > span:first-child {
+  color: var(--color-text-caption);
+}
+
+.sdp-meta > div > span:last-child {
+  color: var(--color-text-default);
+  font-weight: var(--font-weight-medium);
+  text-align: right;
+}
+
+.sdp-mono {
+  font-family: ui-monospace, Consolas, monospace;
+}
+
+.sdp-subtext {
+  color: var(--color-text-caption);
+  font-size: var(--font-size-xs);
+}
+
+.sdp-table-wrap {
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-default);
+  overflow-x: auto;
+}
+
+.sdp-table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.sdp-table th {
+  background: var(--color-background-elevated);
+  border-bottom: 1px solid var(--color-border-default);
+  color: var(--color-text-caption);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semi-bold);
+  letter-spacing: 0.04em;
+  padding: var(--space-3);
+  text-align: left;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.sdp-table td {
+  border-bottom: 1px solid var(--color-border-default);
+  color: var(--color-text-default);
+  font-size: var(--font-size-sm);
+  padding: var(--space-3);
+}
+
+.sdp-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.sdp-cell-strong {
+  font-weight: var(--font-weight-semi-bold);
+}
+
+.sdp-totals {
+  align-self: flex-end;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 280px;
+}
+
+.sdp-totals > div {
+  color: var(--color-text-caption);
+  display: flex;
+  font-size: var(--font-size-sm);
+  justify-content: space-between;
+}
+
+.sdp-totals-payable {
+  align-items: center;
+  background: var(--color-background-primary-invert-default);
+  border-radius: var(--border-radius-default);
+  color: var(--color-text-default) !important;
+  font-weight: var(--font-weight-bold);
+  margin-top: var(--space-1);
+  padding: var(--space-3) var(--space-4);
+}
+
+.sdp-totals-payable span:last-child {
+  font-feature-settings: 'tnum';
+  font-size: var(--font-size-lg);
+}
+
+@media (max-width: 640px) {
+  .sdp-bill {
+    padding: var(--space-4);
+  }
+
+  .sdp-totals {
+    min-width: 0;
+    width: 100%;
+  }
+}
+
+/* Loading skeleton - mirrors the bill card's shape (avatar, name, meta rows,
+   a table-sized block) instead of a bare "Loading statement..." line, so the
+   layout doesn't jump-cut once the real data arrives. */
+.sdp-skeleton {
+  gap: var(--space-4);
+}
+
+.sdp-skeleton-bar {
+  display: block;
+  border-radius: var(--border-radius-default);
+  background: linear-gradient(
+    90deg,
+    var(--color-background-elevated) 25%,
+    var(--color-background-canvas) 37%,
+    var(--color-background-elevated) 63%
+  );
+  background-size: 400% 100%;
+  animation: sdp-skeleton-shimmer 1.4s ease infinite;
+}
+
+.sdp-skeleton-avatar {
+  border-radius: var(--border-radius-full);
+  height: 44px;
+  width: 44px;
+  flex-shrink: 0;
+}
+
+@keyframes sdp-skeleton-shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: 0 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sdp-skeleton-bar {
+    animation: none;
+    background: var(--color-background-elevated);
   }
 }

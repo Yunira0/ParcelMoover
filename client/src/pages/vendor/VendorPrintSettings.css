@@ -1,0 +1,191 @@
+.print-settings-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  width: 100%;
+}
+
+.print-settings-error {
+  color: var(--color-danger-text);
+  font-size: var(--font-size-sm);
+  margin: 0;
+}
+
+.print-settings-grid {
+  display: grid;
+  gap: var(--space-6);
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  align-items: start;
+}
+
+.print-settings-card {
+  background-color: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-default);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-6);
+}
+
+.print-settings-card h3 {
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+  margin: 0;
+}
+
+.print-settings-hint {
+  color: var(--color-text-caption);
+  font-size: var(--font-size-sm);
+  margin: 0;
+}
+
+.print-settings-hint strong {
+  color: var(--color-text-default);
+}
+
+/* ── Preset tiles ── */
+.print-settings-tiles {
+  display: grid;
+  gap: var(--space-2);
+  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+}
+
+.print-settings-tile {
+  align-items: center;
+  background: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-default);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-2);
+  transition: border-color 150ms ease, background-color 150ms ease;
+}
+
+.print-settings-tile:hover {
+  border-color: var(--color-border-primary);
+}
+
+.print-settings-tile-active {
+  background: var(--color-background-primary-invert-default);
+  border-color: var(--color-border-primary);
+}
+
+.print-settings-tile-visual {
+  align-items: center;
+  display: flex;
+  height: 36px;
+  justify-content: center;
+}
+
+.print-settings-tile-swatch {
+  background: var(--color-background-canvas);
+  border: 1.5px solid var(--color-text-caption);
+  border-radius: 2px;
+}
+
+.print-settings-tile-active .print-settings-tile-swatch {
+  background: var(--color-background-surface);
+  border-color: var(--color-border-primary);
+}
+
+.print-settings-tile-icon {
+  color: var(--color-icon-caption);
+}
+
+.print-settings-tile-active .print-settings-tile-icon {
+  color: var(--color-icon-primary);
+}
+
+.print-settings-tile-label {
+  color: var(--color-text-default);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+}
+
+.print-settings-tile-sub {
+  color: var(--color-text-caption);
+  font-size: 11px;
+}
+
+/* ── Custom width/height ── */
+.print-settings-custom {
+  display: flex;
+  gap: var(--space-3);
+}
+
+.print-settings-custom .print-settings-field {
+  flex: 1;
+}
+
+.print-settings-field {
+  color: var(--color-text-caption);
+  display: flex;
+  flex-direction: column;
+  font-size: var(--font-size-xs);
+  gap: var(--space-1);
+}
+
+.print-settings-field input {
+  background-color: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-default);
+  color: var(--color-text-default);
+  font-size: var(--font-size-sm);
+  height: 36px;
+  padding: 0 var(--space-2);
+}
+
+.print-settings-success {
+  align-items: center;
+  color: var(--color-success-text, #1a7f37);
+  display: flex;
+  font-size: var(--font-size-sm);
+  gap: var(--space-1);
+  margin: 0;
+}
+
+/* ── Preview card ── */
+.print-settings-preview-stage {
+  align-items: center;
+  display: flex;
+  justify-content: center;
+  min-height: 200px;
+  padding: var(--space-4);
+}
+
+.print-settings-preview-box {
+  align-items: center;
+  background: var(--color-background-canvas);
+  border: 2px solid var(--color-text-default);
+  border-radius: var(--border-radius-sm);
+  display: flex;
+  justify-content: center;
+}
+
+.print-settings-preview-icon {
+  color: var(--color-icon-caption);
+}
+
+.print-settings-preview-dims {
+  color: var(--color-text-default);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  margin: 0;
+  text-align: center;
+}
+
+.print-settings-preview-in {
+  color: var(--color-text-caption);
+  font-weight: var(--font-weight-regular);
+  margin-left: var(--space-1);
+}
+
+@media (max-width: 768px) {
+  .print-settings-grid {
+    grid-template-columns: 1fr;
+  }
+}
+

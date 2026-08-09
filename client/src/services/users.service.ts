@@ -44,6 +44,7 @@ export interface RegisterUserInput {
   // Per-vendor rate overrides (sent as strings; blank → use Settings default)
   flatInsideValley?: string;
   flatOutsideValley?: string;
+  flatOutsideRingRoad?: string;
   zoneMajorCities?: string;
   zoneUrbanAreas?: string;
   zoneRemoteAreas?: string;
@@ -53,6 +54,7 @@ export interface RegisterUserInput {
   returnOutsideValleyPercent?: string;
   branchFlatInsideValley?: string;
   branchFlatOutsideValley?: string;
+  branchFlatOutsideRingRoad?: string;
   branchZoneMajorCities?: string;
   branchZoneUrbanAreas?: string;
   branchZoneRemoteAreas?: string;
@@ -105,6 +107,7 @@ export interface UpdateUserProfileInput {
   rateType?: string;
   flatInsideValley?: string;
   flatOutsideValley?: string;
+  flatOutsideRingRoad?: string;
   zoneMajorCities?: string;
   zoneUrbanAreas?: string;
   zoneRemoteAreas?: string;
@@ -114,6 +117,7 @@ export interface UpdateUserProfileInput {
   returnOutsideValleyPercent?: string;
   branchFlatInsideValley?: string;
   branchFlatOutsideValley?: string;
+  branchFlatOutsideRingRoad?: string;
   branchZoneMajorCities?: string;
   branchZoneUrbanAreas?: string;
   branchZoneRemoteAreas?: string;

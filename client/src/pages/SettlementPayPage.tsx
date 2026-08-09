@@ -1,9 +1,9 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Banknote, FileText, Paperclip, Upload, Users, X } from 'lucide-react';
+import { ArrowLeft, Check, CheckCircle2, X } from 'lucide-react';
 import Button from '../components/Button';
 import FormField from '../components/FormField';
-import PageHeader from '../components/PageHeader';
+import AttachSettlementDocumentsCard from '../components/AttachSettlementDocumentsCard';
 import {
   getSettlementDetail,
   paySettlement,
@@ -16,66 +16,44 @@ import {
   type PaymentMethodOption,
 } from '../services/paymentMethods.service';
 import { hasAnyRole } from '../utils/auth';
-import './SettlementCreatePage.css';
 import './SettlementPayPage.css';
 
 type PaymentRow = { method: string; amount: string };
+type Step = 'pay' | 'proof';
 
-const SectionHeader: React.FC<{
-  icon: React.ReactNode;
-  title: string;
-  description: string;
-}> = ({ icon, title, description }) => (
-  <div className="scp-section-header">
-    <div className="scp-section-icon">{icon}</div>
-    <div>
-      <h3>{title}</h3>
-      <p>{description}</p>
-    </div>
+function initials(name: string): string {
+  return name
+    .split(' ')
+    .filter(Boolean)
+    .map((w) => w[0])
+    .slice(0, 2)
+    .join('')
+    .toUpperCase();
+}
+
+const BankRow: React.FC<{ label: string; value: string | null }> = ({ label, value }) => (
+  <div className="mpp-bank-row">
+    <span>{label}</span>
+    <span>{value || '—'}</span>
   </div>
 );
 
-const PayeeRow: React.FC<{ label: string; value: string | null }> = ({ label, value }) => (
-  <div className="spp-payee-row">
-    <span className="spp-payee-label">{label}</span>
-    <span className="spp-payee-value">{value || '—'}</span>
+// The whole point of this rail is that "record payment" and "attach proof" are
+// one continuous act, just split because proof can only exist after the money
+// has actually moved — without it the two screens would read as unrelated.
+const StepRail: React.FC<{ current: 1 | 2 }> = ({ current }) => (
+  <div className="mpp-rail">
+    <div className={`mpp-step${current === 1 ? ' mpp-step--active' : ' mpp-step--done'}`}>
+      <span className="mpp-step-dot">{current > 1 ? <Check size={11} /> : '1'}</span>
+      Payment
+    </div>
+    <div className={`mpp-step-line${current > 1 ? ' mpp-step-line--done' : ''}`} />
+    <div className={`mpp-step${current === 2 ? ' mpp-step--active' : ''}`}>
+      <span className="mpp-step-dot">2</span>
+      Proof
+    </div>
   </div>
 );
-
-const FileField: React.FC<{
-  label: string;
-  hint: string;
-  file: File | null;
-  onChange: (file: File | null) => void;
-}> = ({ label, hint, file, onChange }) => {
-  const ref = useRef<HTMLInputElement>(null);
-  return (
-    <div className="spp-file-field">
-      <span className="spp-file-label">{label}</span>
-      {file ? (
-        <div className="spp-file-chip">
-          <FileText size={14} />
-          <span>{file.name}</span>
-          <button type="button" onClick={() => onChange(null)} aria-label={`Remove ${label}`}>
-            <X size={14} />
-          </button>
-        </div>
-      ) : (
-        <button type="button" className="spp-file-btn" onClick={() => ref.current?.click()}>
-          <Upload size={15} /> Choose file
-        </button>
-      )}
-      <input
-        ref={ref}
-        type="file"
-        accept="image/jpeg,image/png,image/webp,application/pdf"
-        style={{ display: 'none' }}
-        onChange={(event) => onChange(event.target.files?.[0] ?? null)}
-      />
-      <span className="spp-file-hint">{hint}</span>
-    </div>
-  );
-};
 
 const SettlementPayPage: React.FC = () => {
   const { id = '' } = useParams();
@@ -86,11 +64,14 @@ const SettlementPayPage: React.FC = () => {
   const [loadingDetail, setLoadingDetail] = useState(true);
   const [methods, setMethods] = useState<PaymentMethodOption[]>([]);
   const [payments, setPayments] = useState<PaymentRow[]>([{ method: '', amount: '' }]);
-  const [paymentReceipt, setPaymentReceipt] = useState<File | null>(null);
-  const [taxInvoice, setTaxInvoice] = useState<File | null>(null);
   const [remark, setRemark] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  // Step 2 only exists once payment is actually on record - proof is
+  // evidence something already happened, so it can't be requested earlier.
+  const [step, setStep] = useState<Step>('pay');
+  const [paidSummary, setPaidSummary] = useState<{ amount: number; methodSummary: string } | null>(null);
 
   // Super-admin inline management of the method list.
   const [showManage, setShowManage] = useState(false);
@@ -105,9 +86,14 @@ const SettlementPayPage: React.FC = () => {
   // cash received FROM the vendor, and must total the absolute amount owed.
   const payableAmount = detail?.payableAmount ?? 0;
   const vendorOwesOffice = payableAmount < 0;
+  // Riders remit COD cash they already collected - the office is always
+  // receiving from them, never paying out, so the terminology flips.
+  const isRider = detail?.payeeType === 'rider';
   const expectedTotal = Math.abs(payableAmount);
   const enteredAmount = payments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
   const remainingAmount = expectedTotal - enteredAmount;
+  const isBalanced = Math.round(remainingAmount * 100) === 0;
+  const isOver = remainingAmount < 0 && !isBalanced;
   const hasBankDetails = Boolean(detail?.bankName || detail?.bankAccountNo || detail?.bankAccountHolder);
 
   useEffect(() => {
@@ -206,11 +192,16 @@ const SettlementPayPage: React.FC = () => {
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (!detail) return;
     setError('');
 
+    // A settlement can legitimately be Rs. 0 (e.g. a single order corrected to
+    // 0 collected COD) - keep the row(s) in that case so there's still an
+    // honest record of how it was closed, rather than filtering everything
+    // out and erroring "at least one payment amount".
     const validPayments = payments
       .map((p) => ({ method: p.method, amount: parseFloat(p.amount) || 0 }))
-      .filter((p) => p.amount > 0);
+      .filter((p) => expectedTotal === 0 || p.amount > 0);
 
     if (validPayments.length === 0) {
       setError('Please enter at least one payment amount.');
@@ -220,15 +211,33 @@ const SettlementPayPage: React.FC = () => {
       setError('Please choose a payment method for each amount.');
       return;
     }
-    if (Math.round(remainingAmount * 100) !== 0) {
+    if (!isBalanced) {
       setError(`Payment total must equal Rs. ${expectedTotal.toLocaleString()} (remaining Rs. ${remainingAmount.toLocaleString()}).`);
       return;
     }
 
     setLoading(true);
     try {
-      await paySettlement(id, validPayments, remark.trim(), { paymentReceipt, taxInvoice });
-      navigate(`/finance/settlements/${id}`);
+      await paySettlement(id, validPayments, remark.trim());
+      // Riders are paid cash-in-hand with no paperwork to attach - only
+      // vendor payouts go through the receipt/invoice proof step.
+      if (detail.payeeType === 'vendor') {
+        setPaidSummary({
+          amount: expectedTotal,
+          methodSummary: Array.from(new Set(validPayments.map((p) => p.method))).join(', '),
+        });
+        setStep('proof');
+      } else {
+        const methodSummary = Array.from(new Set(validPayments.map((p) => p.method))).join(', ');
+        navigate(`/finance/settlements/${id}`, {
+          state: {
+            confirmBanner: {
+              title: `Rs. ${expectedTotal.toLocaleString()} recorded`,
+              meta: `via ${methodSummary}`,
+            },
+          },
+        });
+      }
     } catch (err: any) {
       setError(err?.response?.data?.message || 'Failed to record payment');
     } finally {
@@ -236,81 +245,135 @@ const SettlementPayPage: React.FC = () => {
     }
   };
 
+  const goToStatement = () => navigate(`/finance/settlements/${id}`);
+
   if (loadingDetail) {
-    return <div className="scp-page"><div className="scp-empty">Loading settlement...</div></div>;
+    return (
+      <div className="mpp-page">
+        <div className="mpp-ledger mpp-skeleton" role="status" aria-label="Loading settlement">
+          <div className="mpp-bill">
+            <div className="mpp-payee">
+              <span className="mpp-skeleton-bar mpp-skeleton-avatar" />
+              <div className="mpp-payee-text">
+                <span className="mpp-skeleton-bar" style={{ width: '140px', height: '16px' }} />
+                <span className="mpp-skeleton-bar" style={{ width: '100px', height: '13px', marginTop: 'var(--space-2)' }} />
+              </div>
+            </div>
+            <span className="mpp-skeleton-bar" style={{ width: '110px', height: '28px' }} />
+          </div>
+          <div className="mpp-zone">
+            <span className="mpp-skeleton-bar" style={{ width: '100%', height: '36px' }} />
+          </div>
+        </div>
+      </div>
+    );
   }
 
   if (!detail) {
     return (
-      <div className="scp-page">
-        <div className="scp-empty">{error || 'Settlement not found.'}</div>
+      <div className="mpp-page">
+        <div className="mpp-empty">{error || 'Settlement not found.'}</div>
       </div>
     );
   }
 
   if (detail.status === 'settled') {
     return (
-      <div className="scp-page">
-        <button type="button" className="scp-back" onClick={() => navigate(`/finance/settlements/${id}`)}>
+      <div className="mpp-page">
+        <button type="button" className="mpp-back" onClick={() => navigate(`/finance/settlements/${id}`)}>
           <ArrowLeft size={15} />
           Settlement
         </button>
-        <div className="scp-empty">This statement has already been paid.</div>
+        <div className="mpp-empty">This statement has already been paid.</div>
+      </div>
+    );
+  }
+
+  if (step === 'proof') {
+    return (
+      <div className="mpp-page">
+        <div className="mpp-top">
+          <h1>{detail.statementId}</h1>
+          <StepRail current={2} />
+        </div>
+
+        <div className="mpp-step-content">
+          <div className="mpp-confirm">
+            <span className="mpp-confirm-badge">
+              <CheckCircle2 size={20} />
+            </span>
+            <div>
+              <div className="mpp-confirm-amount">Rs. {paidSummary?.amount.toLocaleString()} recorded</div>
+              <div className="mpp-confirm-meta">via {paidSummary?.methodSummary} · attach proof now, or add it later from the statement</div>
+            </div>
+          </div>
+
+          <AttachSettlementDocumentsCard
+            settlementId={id}
+            submitLabel="Attach & finish"
+            dismissLabel="Skip for now"
+            onDone={goToStatement}
+            onDismiss={goToStatement}
+          />
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="scp-page">
-      <button type="button" className="scp-back" onClick={() => navigate(`/finance/settlements/${id}`)}>
+    <div className="mpp-page">
+      <button type="button" className="mpp-back" onClick={() => navigate(`/finance/settlements/${id}`)}>
         <ArrowLeft size={15} />
         {detail.statementId}
       </button>
 
-      <PageHeader
-        title="Make Payment"
-        subtitle={`Record the payout for ${detail.statementId} and attach the paperwork.`}
-      />
+      <div className="mpp-top">
+        <h1>{isRider ? 'Record Payment' : 'Make Payment'}</h1>
+        {/* Riders have no proof step to lead into - a single-step flow
+            doesn't need a rail implying a step 2 that will never show. */}
+        {!isRider && <StepRail current={1} />}
+      </div>
 
-      <form className="scp-form" onSubmit={handleSubmit} noValidate>
+      <div className="mpp-step-content">
         {vendorOwesOffice && (
-          <div className="spp-warning">
+          <div className="mpp-warning">
             This vendor owes the office Rs. {expectedTotal.toLocaleString()} — the delivery charges
             exceeded the COD collected. Record the amount received <strong>from the vendor</strong> below.
           </div>
         )}
 
-        <section className="scp-section">
-          <SectionHeader
-            icon={<Users size={18} />}
-            title={vendorOwesOffice ? 'Payment from' : 'Pay to'}
-            description="Where this payout goes. Taken from the payee's profile."
-          />
-          <div className="spp-payee">
-            <PayeeRow label="Name" value={detail.payeeName} />
-            <PayeeRow label="Phone" value={detail.payeePhone} />
-            {hasBankDetails ? (
-              <>
-                <PayeeRow label="Bank" value={detail.bankName} />
-                <PayeeRow label="Account no." value={detail.bankAccountNo} />
-                <PayeeRow label="Account holder" value={detail.bankAccountHolder} />
-              </>
-            ) : (
-              <div className="spp-payee-empty">No bank account on file.</div>
-            )}
+        <form className="mpp-ledger" onSubmit={handleSubmit} noValidate>
+        <div className="mpp-bill">
+          <div className="mpp-payee">
+            <span className="mpp-avatar">{initials(detail.payeeName || '?')}</span>
+            <div className="mpp-payee-text">
+              <span className="mpp-payee-name">{detail.payeeName || '—'}</span>
+              <span className="mpp-payee-phone">{detail.payeePhone || '—'}</span>
+            </div>
           </div>
-        </section>
+          <div className="mpp-due">
+            <span className="mpp-due-label">
+              {vendorOwesOffice ? 'Owed by vendor' : isRider ? 'Receivable amount' : 'Payable amount'}
+            </span>
+            <span className="mpp-due-value">Rs. {expectedTotal.toLocaleString()}</span>
+          </div>
+        </div>
 
-        <section className="scp-section">
-          <SectionHeader
-            icon={<Banknote size={18} />}
-            title="Payment method"
-            description={`Split across as many methods as you like — the total must equal Rs. ${expectedTotal.toLocaleString()}.`}
-          />
+        {hasBankDetails && (
+          <div className="mpp-bank">
+            <BankRow label="Bank" value={detail.bankName} />
+            <BankRow label="Account no." value={detail.bankAccountNo} />
+            <BankRow label="Account holder" value={detail.bankAccountHolder} />
+          </div>
+        )}
+
+        <div className="mpp-zone">
+          <h3>Payment method</h3>
 
           {payments.map((p, index) => (
-            <div key={index} className="spp-payment-row">
+            <div key={index} className="mpp-payment-row">
               <select
+                className="mpp-method-select"
                 value={p.method}
                 onChange={(event) => updatePayment(index, { method: event.target.value })}
               >
@@ -325,36 +388,39 @@ const SettlementPayPage: React.FC = () => {
                   </option>
                 ))}
               </select>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={p.amount}
-                onChange={(event) => updatePayment(index, { amount: event.target.value })}
-                placeholder="Amount"
-              />
+              <div className="mpp-amount-field">
+                <span className="mpp-amount-prefix">Rs.</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={p.amount}
+                  onChange={(event) => updatePayment(index, { amount: event.target.value })}
+                  placeholder="0"
+                />
+              </div>
               {payments.length > 1 && (
-                <Button type="button" variant="ghost" size="icon" onClick={() => removePayment(index)}>
-                  <X size={16} />
-                </Button>
+                <button type="button" className="mpp-row-remove" onClick={() => removePayment(index)} aria-label="Remove method">
+                  <X size={15} />
+                </button>
               )}
             </div>
           ))}
 
-          <div className="spp-payment-actions">
+          <div className="mpp-payment-actions">
             <Button type="button" variant="secondary" size="sm" onClick={addPayment}>
               + Add method
             </Button>
             {isSuperAdmin && (
-              <button type="button" className="spp-manage-toggle" onClick={() => setShowManage((s) => !s)}>
+              <button type="button" className="mpp-manage-toggle" onClick={() => setShowManage((s) => !s)}>
                 {showManage ? 'Hide' : 'Manage payment methods'}
               </button>
             )}
           </div>
 
           {isSuperAdmin && showManage && (
-            <div className="spp-manage">
-              <div className="spp-manage-add">
+            <div className="mpp-manage">
+              <div className="mpp-manage-add">
                 <input
                   type="text"
                   value={newMethodName}
@@ -379,14 +445,14 @@ const SettlementPayPage: React.FC = () => {
               </div>
 
               {methods.map((m) => (
-                <div key={m.id} className={`spp-manage-row${m.isActive ? '' : ' spp-manage-row--off'}`}>
+                <div key={m.id} className={`mpp-manage-row${m.isActive ? '' : ' mpp-manage-row--off'}`}>
                   <span>
                     {m.name}
-                    {!m.isActive && <span className="spp-manage-disabled"> (disabled)</span>}
+                    {!m.isActive && <span className="mpp-manage-disabled"> (disabled)</span>}
                   </span>
                   <button
                     type="button"
-                    className={m.isActive ? 'spp-manage-danger' : 'spp-manage-success'}
+                    className={m.isActive ? 'mpp-manage-danger' : 'mpp-manage-success'}
                     onClick={() => handleToggleMethod(m)}
                   >
                     {m.isActive ? 'Disable' : 'Enable'}
@@ -398,37 +464,23 @@ const SettlementPayPage: React.FC = () => {
             </div>
           )}
 
-          <div className="spp-totals">
-            <span className="spp-total-entered">Total entered: Rs. {enteredAmount.toLocaleString()}</span>
-            <span className={`spp-total-remaining${remainingAmount === 0 ? ' spp-total-remaining--ok' : ''}`}>
-              Remaining payable: Rs. {remainingAmount.toLocaleString()}
+          <div className={`mpp-balance${isBalanced ? ' mpp-balance--ok' : ''}${isOver ? ' mpp-balance--over' : ''}`}>
+            <span>Rs. {enteredAmount.toLocaleString()} entered</span>
+            <span className="mpp-balance-status">
+              {isBalanced ? (
+                <>
+                  <CheckCircle2 size={13} /> Ready to submit
+                </>
+              ) : isOver ? (
+                `Rs. ${Math.abs(remainingAmount).toLocaleString()} over`
+              ) : (
+                `Rs. ${remainingAmount.toLocaleString()} left of Rs. ${expectedTotal.toLocaleString()}`
+              )}
             </span>
           </div>
-        </section>
+        </div>
 
-        <section className="scp-section">
-          <SectionHeader
-            icon={<Paperclip size={18} />}
-            title="Documents"
-            description="Optional evidence for this payout — attach whichever you have."
-          />
-          <div className="spp-files">
-            <FileField
-              label="Payment receipt"
-              hint="Bank slip or wallet screenshot · JPG, PNG, WebP or PDF · max 5 MB"
-              file={paymentReceipt}
-              onChange={setPaymentReceipt}
-            />
-            <FileField
-              label="Tax invoice"
-              hint="Invoice raised against this payout · JPG, PNG, WebP or PDF · max 5 MB"
-              file={taxInvoice}
-              onChange={setTaxInvoice}
-            />
-          </div>
-        </section>
-
-        <section className="scp-section">
+        <div className="mpp-zone">
           <FormField
             label="Remark"
             type="textarea"
@@ -438,15 +490,15 @@ const SettlementPayPage: React.FC = () => {
             placeholder="e.g. Paid by bank transfer, Nabil ref 884213 — cheque collected by Sita"
             hint="Optional. Note anything that won't be obvious from the receipt later — a reference number, who collected it, or why the amount was split."
           />
-        </section>
+        </div>
 
         {error && (
-          <div className="scp-error" role="alert">
+          <div className="mpp-error" role="alert">
             {error}
           </div>
         )}
 
-        <div className="scp-actions">
+        <div className="mpp-actions">
           <Button
             type="button"
             variant="secondary"
@@ -456,10 +508,11 @@ const SettlementPayPage: React.FC = () => {
             Cancel
           </Button>
           <Button type="submit" variant="primary" disabled={loading}>
-            {loading ? 'Submitting...' : 'Submit payment'}
+            {loading ? 'Recording...' : 'Record payment'}
           </Button>
         </div>
       </form>
+      </div>
     </div>
   );
 };

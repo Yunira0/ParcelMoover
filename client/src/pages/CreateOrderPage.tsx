@@ -115,6 +115,16 @@ const CreateOrderPage: React.FC = () => {
   // matching the vendors list by userId, which only ever matched the vendor
   // owner's account, never a staff member's).
   const [myVendorProfile, setMyVendorProfile] = useState<VendorOption | null>(null);
+  // Distinguish "a fetch failed" (network/timeout/server error) from a vendor
+  // that genuinely has no hub set - the two used to collapse into the same
+  // "No hub assigned - contact an admin" message, which is wrong (and
+  // unactionable) when the real cause is a flaky connection. The origin hub
+  // name depends on BOTH the sender-profile fetch (for fixedOriginId) and the
+  // locations fetch (to look up its display name), so either failing alone
+  // must surface here - tracked separately since they resolve independently
+  // and a later success on one shouldn't mask an earlier failure on the other.
+  const [profileLoadError, setProfileLoadError] = useState(false);
+  const [locationsLoadError, setLocationsLoadError] = useState(false);
   // Stores the full details of the vendor selected from the async dropdown.
   const [selectedVendorDetails, setSelectedVendorDetails] = useState<VendorOption | null>(null);
   const [locationOptions, setLocationOptions] = useState<LocationOption[]>([]);
@@ -128,9 +138,11 @@ const CreateOrderPage: React.FC = () => {
   // to create the order anyway.
   const [duplicateWarning, setDuplicateWarning] = useState('');
 
-  const [quote, setQuote] = useState<{ weightSurcharge: number; baseCharge: number; totalPayable: number } | null>(null);
+  const [quote, setQuote] = useState<{ weightSurcharge: number; baseCharge: number; totalPayable: number; basis?: string } | null>(null);
   const [quoteError, setQuoteError] = useState('');
   const [quoteLoading, setQuoteLoading] = useState(false);
+  // Bumped by the "Retry" link on a failed profile load to re-run the effect below.
+  const [profileRetryToken, setProfileRetryToken] = useState(0);
 
   useEffect(() => {
     if (isVendorActor) {
@@ -142,6 +154,7 @@ const CreateOrderPage: React.FC = () => {
         try {
           const res = await getSenderProfile();
           if (res?.success) {
+            setProfileLoadError(false);
             setMyVendorProfile({
               id: res.data.id,
               userId: null,
@@ -150,9 +163,12 @@ const CreateOrderPage: React.FC = () => {
               address: res.data.address,
               locationId: res.data.locationId,
             });
+          } else {
+            setProfileLoadError(true);
           }
         } catch (err) {
           console.error('Failed to load vendor profile:', err);
+          setProfileLoadError(true);
         }
       })();
     }
@@ -160,13 +176,17 @@ const CreateOrderPage: React.FC = () => {
       try {
         const res = await getLocations();
         if (res?.success && Array.isArray(res.data)) {
+          setLocationsLoadError(false);
           setLocationOptions(res.data.map((l: any) => ({ id: l.id, name: l.name, code: l.code, parentId: l.parent_id })));
+        } else {
+          setLocationsLoadError(true);
         }
       } catch (err) {
         console.error('Failed to load locations:', err);
+        setLocationsLoadError(true);
       }
     })();
-  }, [isVendorActor]);
+  }, [isVendorActor, profileRetryToken]);
 
   // Prefill from a "copy"/"edit" navigation (replaces the old modal's initialData prop)
   useEffect(() => {
@@ -611,11 +631,27 @@ const CreateOrderPage: React.FC = () => {
             <div className="order-field-row">
               <FormField
                 label="From"
-                value={originHubName || 'No hub assigned - contact an admin'}
+                value={
+                  isVendorActor && (profileLoadError || locationsLoadError)
+                    ? 'Could not load your hub - check your connection'
+                    : originHubName || 'No hub assigned - contact an admin'
+                }
                 onChange={() => {}}
                 disabled
                 error={fieldErrors.originLocationId}
               />
+              {isVendorActor && (profileLoadError || locationsLoadError) && (
+                <p className="order-form-error">
+                  Couldn't load your hub info.{' '}
+                  <button
+                    type="button"
+                    className="order-form-error-retry"
+                    onClick={() => setProfileRetryToken(t => t + 1)}
+                  >
+                    Retry
+                  </button>
+                </p>
+              )}
               <FormField
                 label="To"
                 required
@@ -778,6 +814,7 @@ const CreateOrderPage: React.FC = () => {
               <span>Base Charge</span>
               <span>{quote ? quote.baseCharge.toLocaleString(undefined, { maximumFractionDigits: 2 }) : '-'}</span>
             </div>
+            {quote?.basis && <p className="order-summary-basis">{quote.basis}</p>}
             {quote !== null && quote.weightSurcharge > 0 && (
               <div className="order-summary-row">
                 <span>Weight Surcharge</span>

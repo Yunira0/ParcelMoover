@@ -171,6 +171,7 @@
 
 .scp-table tbody tr {
   cursor: pointer;
+  transition: background-color 150ms ease;
 }
 
 .scp-table tbody tr:hover {
@@ -182,12 +183,19 @@
   background: var(--color-background-primary-invert-default);
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .scp-table tbody tr {
+    transition: none;
+  }
+}
+
 .scp-mono {
   font-family: monospace;
   font-size: 12px;
 }
 
-/* Secondary line inside a cell, e.g. the receiver's phone under their name. */
+/* Secondary lines inside a cell, e.g. the receiver's phone and address under
+   their name. */
 .scp-subtext {
   color: var(--color-text-caption);
   font-size: 12px;

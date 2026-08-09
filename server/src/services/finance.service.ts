@@ -1,5 +1,5 @@
 import { Prisma } from "../generated/prisma/client";
-import { payment_status } from "../generated/prisma/enums";
+import { payment_status, settlement_status } from "../generated/prisma/enums";
 import prisma from "../lib/prisma";
 import redis, { scanAndDelete } from "../lib/redis";
 import { AppError } from "../utils/AppError";
@@ -11,6 +11,7 @@ import { evaluateVendorBillingAsync } from "./billing.service";
 
 import { getActivePaymentMethodNames } from "./payment-method.service";
 import {
+  AttachSettlementDocumentsInput,
   CodPaymentFilter,
   CreateSettlementInput,
   CreateSettlementResult,
@@ -335,6 +336,8 @@ export async function listSettlements(
   pageSize = DEFAULT_PAGE_SIZE,
   fromDate?: Date,
   toDate?: Date,
+  status?: settlement_status,
+  search?: string,
 ): Promise<SettlementsListResult> {
   const isStaff = actor.roles.some((r) => ["super_admin", "admin"].includes(r));
   const isSales = actor.roles.includes("sales") && !isStaff;
@@ -380,7 +383,7 @@ export async function listSettlements(
   const skip = (safePage - 1) * take;
 
   const scopeKey = vendorId ? vendorId : riderId ? `rider:${riderId}` : `all:${payeeType}`;
-  const cacheKey = `finance:${scopeKey}:settlements:${safePage}:${take}:${fromDate?.toISOString() ?? ""}:${toDate?.toISOString() ?? ""}`;
+  const cacheKey = `finance:${scopeKey}:settlements:${safePage}:${take}:${fromDate?.toISOString() ?? ""}:${toDate?.toISOString() ?? ""}:${status ?? ""}:${search ?? ""}`;
   const cached = await readFinanceCache<SettlementsListResult>(cacheKey);
   if (cached) return cached;
 
@@ -395,6 +398,19 @@ export async function listSettlements(
             ...(toDate ? { lte: toDate } : {}),
           },
         }
+      : {}),
+    ...(status ? { status } : {}),
+    // Payee name filter - riders have a single name field, vendors show
+    // business_name with client_name as fallback, so either can match.
+    ...(search
+      ? payeeType === "rider"
+        ? { riders: { name: { contains: search, mode: "insensitive" } } }
+        : {
+            OR: [
+              { vendors: { business_name: { contains: search, mode: "insensitive" } } },
+              { vendors: { client_name: { contains: search, mode: "insensitive" } } },
+            ],
+          }
       : {}),
   };
 
@@ -551,10 +567,15 @@ export async function getUnsettledOrders(
           order_number: true,
           tracking_id: true,
           delivery_charge: true,
-          parties_parcels_receiver_idToparties: { select: { name: true, phone: true } },
+          order_type: true,
+          pickup_rider_id: true,
+          delivery_rider_id: true,
+          parties_parcels_receiver_idToparties: { select: { name: true, phone: true, address: true } },
           locations_parcels_destination_location_idTolocations: {
             select: { name: true, city: true, district: true },
           },
+          // Only needed for the rider leg - see location resolution below.
+          locations_parcels_origin_location_idTolocations: { select: { name: true } },
         },
       },
     },
@@ -570,6 +591,15 @@ export async function getUnsettledOrders(
     // the collected amount so the row reconciles (COD - charge = net payable).
     const codAmount = collected;
     const netPayable = riderId ? collected : collected - deliveryCharge;
+    // A rider's row can be either leg of the parcel - show wherever that leg
+    // actually happened rather than always defaulting to one direction.
+    const location = riderId
+      ? c.parcels.pickup_rider_id === riderId
+        ? (c.parcels.locations_parcels_origin_location_idTolocations?.name ?? null)
+        : c.parcels.delivery_rider_id === riderId
+          ? (c.parcels.locations_parcels_destination_location_idTolocations?.name ?? null)
+          : null
+      : null;
     return {
       id: c.parcel_id,
       codCollectionId: c.id,
@@ -577,7 +607,10 @@ export async function getUnsettledOrders(
       trackingId: c.parcels.tracking_id,
       receiverName: c.parcels.parties_parcels_receiver_idToparties.name,
       receiverPhone: c.parcels.parties_parcels_receiver_idToparties.phone,
+      receiverAddress: c.parcels.parties_parcels_receiver_idToparties.address,
       destination: formatLocation(c.parcels.locations_parcels_destination_location_idTolocations),
+      location,
+      orderType: c.parcels.order_type,
       codAmount,
       deliveryCharge,
       netPayable,
@@ -765,8 +798,8 @@ export async function payForSettlement(
     if (!activeMethodSet.has(p.method.trim().toLowerCase())) {
       throw new AppError(400, `Unknown payment method "${p.method}"`);
     }
-    if (!(p.amount > 0)) {
-      throw new AppError(400, "Payment amount must be greater than 0");
+    if (p.amount < 0) {
+      throw new AppError(400, "Payment amount cannot be negative");
     }
   }
 
@@ -884,6 +917,57 @@ export async function payForSettlement(
     paymentMethod: updated.payment_method,
     payments,
     remark: updated.remark,
+  };
+}
+
+// Admin-only: attaches payment proof (receipt/tax invoice) to a statement
+// that's already been paid via payForSettlement. Deliberately a separate step
+// from paying - the proof is evidence the transfer happened, so it only makes
+// sense once the payment itself is on record, and staff shouldn't have to
+// have the file in hand at the moment they submit the payment amounts.
+// Either document may be sent alone; an omitted field leaves the other's
+// existing value untouched (so the receipt and invoice can be uploaded in
+// separate visits).
+export async function attachSettlementDocuments(
+  actor: Actor,
+  settlementId: string,
+  input: AttachSettlementDocumentsInput,
+): Promise<{ id: string; paymentReceiptPath: string | null; taxInvoicePath: string | null }> {
+  const { paymentReceiptPath, taxInvoicePath } = input;
+  if (paymentReceiptPath === undefined && taxInvoicePath === undefined) {
+    throw new AppError(400, "At least one document is required");
+  }
+
+  const settlement = await prisma.settlements.findUnique({ where: { id: settlementId } });
+  if (!settlement) {
+    throw new AppError(404, "Settlement not found");
+  }
+  if (settlement.status !== "settled") {
+    throw new AppError(400, "Documents can only be attached to a paid statement");
+  }
+
+  const updated = await prisma.settlements.update({
+    where: { id: settlementId },
+    data: {
+      ...(paymentReceiptPath !== undefined ? { payment_receipt_path: paymentReceiptPath } : {}),
+      ...(taxInvoicePath !== undefined ? { tax_invoice_path: taxInvoicePath } : {}),
+    },
+  });
+
+  await prisma.audit_logs.create({
+    data: {
+      actor_id: actor.id,
+      entity_type: "settlement",
+      entity_id: settlementId,
+      action: "ATTACH_SETTLEMENT_DOCUMENTS",
+      new_data: { paymentReceiptAttached: paymentReceiptPath !== undefined, taxInvoiceAttached: taxInvoicePath !== undefined },
+    },
+  });
+
+  return {
+    id: updated.id,
+    paymentReceiptPath: updated.payment_receipt_path,
+    taxInvoicePath: updated.tax_invoice_path,
   };
 }
 
@@ -1212,6 +1296,73 @@ export async function getSettlementDocumentPath(
   return path;
 }
 
+// Admin-only, gated by the delegable EDIT_SETTLEMENTS permission (same gate as
+// updateSettlement/revertSettlement): cancels a statement that hasn't been
+// paid yet. Unlike revertSettlement, no payment ever happened here (a pending
+// statement only earmarks orders - see createSettlement), so there's no
+// payment_status/remitted_amount to unwind. The statement row is kept (status
+// -> "cancelled") for the audit trail, but its settlement_items are deleted so
+// the bundled orders become eligible for a future statement again.
+export async function cancelSettlement(
+  actor: Actor,
+  settlementId: string,
+  remark: string,
+): Promise<CreateSettlementResult> {
+  const settlement = await prisma.settlements.findUnique({
+    where: { id: settlementId },
+    include: { settlement_items: { select: { cod_collection_id: true } } },
+  });
+  if (!settlement) {
+    throw new AppError(404, "Settlement not found");
+  }
+  if (settlement.status !== "pending") {
+    throw new AppError(400, "Only a pending statement can be cancelled");
+  }
+
+  const collectionIds = settlement.settlement_items.map((si) => si.cod_collection_id);
+
+  const updated = await prisma.$transaction(async (tx) => {
+    await tx.settlement_items.deleteMany({ where: { settlement_id: settlementId } });
+
+    const result = await tx.settlements.update({
+      where: { id: settlementId },
+      data: { status: "cancelled", remark: remark.trim() },
+    });
+
+    await tx.audit_logs.create({
+      data: {
+        actor_id: actor.id,
+        entity_type: "settlement",
+        entity_id: settlementId,
+        action: "CANCEL_SETTLEMENT",
+        old_data: { status: settlement.status, codCollectionIds: collectionIds, remark: settlement.remark },
+        new_data: { status: "cancelled", remark: remark.trim() },
+      },
+    });
+
+    return result;
+  });
+
+  if (settlement.rider_id) {
+    await invalidateRiderFinanceCache(settlement.rider_id);
+  } else if (settlement.vendor_id) {
+    await invalidateVendorFinanceCache(settlement.vendor_id);
+  }
+
+  return {
+    id: updated.id,
+    statementId: updated.statement_id,
+    payeeType: updated.payee_type as "rider" | "vendor",
+    amount: Number(updated.amount),
+    payableAmount: Number(updated.payable_amount ?? updated.amount),
+    settlementDate: updated.settlement_date ? formatNepalDate(updated.settlement_date) : null,
+    status: updated.status,
+    paymentMethod: updated.payment_method,
+    payments: [],
+    remark: updated.remark,
+  };
+}
+
 // Line-item breakdown of a single settlement statement - which orders were
 // bundled into it and how much of each was settled. Authorization mirrors
 // listSettlements: staff see any statement, vendor/rider/sales are confined
@@ -1233,11 +1384,15 @@ export async function getSettlementDetail(actor: Actor, settlementId: string): P
                   order_type: true,
                   pieces: true,
                   weight_kg: true,
-                  parties_parcels_receiver_idToparties: { select: { name: true, phone: true } },
+                  pickup_rider_id: true,
+                  delivery_rider_id: true,
+                  parties_parcels_receiver_idToparties: { select: { name: true, phone: true, address: true } },
                   vendors: { select: { business_name: true, client_name: true, phone: true } },
-                  locations_parcels_destination_location_idTolocations: {
-                    select: { name: true, city: true, district: true },
-                  },
+                  // Only meaningful for rider statements - which one applies
+                  // depends on whether this rider handled the pickup or the
+                  // delivery leg (see the location resolution below).
+                  locations_parcels_origin_location_idTolocations: { select: { name: true } },
+                  locations_parcels_destination_location_idTolocations: { select: { name: true } },
                 },
               },
             },
@@ -1291,6 +1446,17 @@ export async function getSettlementDetail(actor: Actor, settlementId: string): P
 
   const items: SettlementDetailItem[] = settlement.settlement_items.map((si) => {
     const parcel = si.cod_collections.parcels;
+    // A rider settlement's rows can mix pickup and delivery legs for the
+    // same rider - show whichever location that leg actually happened at,
+    // rather than always defaulting to one or the other.
+    const location =
+      settlement.payee_type === "rider"
+        ? parcel.pickup_rider_id === settlement.rider_id
+          ? parcel.locations_parcels_origin_location_idTolocations?.name ?? null
+          : parcel.delivery_rider_id === settlement.rider_id
+            ? parcel.locations_parcels_destination_location_idTolocations?.name ?? null
+            : null
+        : null;
     return {
       codCollectionId: si.cod_collection_id,
       orderNumber: parcel.order_number,
@@ -1298,13 +1464,14 @@ export async function getSettlementDetail(actor: Actor, settlementId: string): P
       reference: null,
       receiverName: parcel.parties_parcels_receiver_idToparties.name,
       receiverPhone: parcel.parties_parcels_receiver_idToparties.phone,
-      destination: formatLocation(parcel.locations_parcels_destination_location_idTolocations),
+      receiverAddress: parcel.parties_parcels_receiver_idToparties.address,
       // Same business_name-then-client_name fallback used for payeeName above.
       vendorName: parcel.vendors?.business_name || parcel.vendors?.client_name || null,
       vendorPhone: parcel.vendors?.phone ?? null,
       orderType: parcel.order_type,
       pieces: parcel.pieces,
       weightKg: parcel.weight_kg === null ? null : Number(parcel.weight_kg),
+      location,
       codAmount: Number(si.cod_collections.cod_amount),
       collectedAmount: Number(si.cod_collections.collected_amount),
       deliveryCharge: Number(parcel.delivery_charge),

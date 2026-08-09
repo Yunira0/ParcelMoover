@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Users, ListChecks, Download } from 'lucide-react';
 import Button from '../components/Button';
 import FormField from '../components/FormField';
+import StatusChip from '../components/StatusChip';
 import { getUnsettledOrders, createSettlement, type UnsettledOrderItem } from '../services/finance.service';
 import { getRiders, searchVendors } from '../services/users.service';
 import { downloadExcel, type CellValue } from '../utils/excel';
@@ -137,10 +138,10 @@ const SettlementCreatePage: React.FC = () => {
       'Tracking ID',
       'Receiver',
       'Receiver Phone',
-      'Destination',
+      'Order Type',
+      isVendor ? 'Destination' : 'Location',
       'COD',
-      ...(isVendor ? ['Delivery Charge'] : []),
-      isVendor ? 'Net Payable' : 'Collected',
+      ...(isVendor ? ['Delivery Charge', 'Net Payable'] : []),
     ];
     const rows: CellValue[][] = rowsToExport.map((order, index) => [
       index + 1,
@@ -148,21 +149,20 @@ const SettlementCreatePage: React.FC = () => {
       order.trackingId,
       order.receiverName,
       order.receiverPhone,
-      order.destination,
+      order.orderType,
+      isVendor ? order.destination : order.location || '-',
       order.codAmount,
-      ...(isVendor ? [order.deliveryCharge] : []),
-      order.netPayable,
+      ...(isVendor ? [order.deliveryCharge, order.netPayable] : []),
     ]);
 
     // Totals under the numeric columns; pad out the leading text columns.
-    const numericColumns = isVendor ? 3 : 2;
+    const numericColumns = isVendor ? 3 : 1;
     const sum = (pick: (o: UnsettledOrderItem) => number) =>
       rowsToExport.reduce((total, order) => total + pick(order), 0);
     rows.push([
       ...new Array(headers.length - numericColumns).fill(''),
       sum((o) => o.codAmount),
-      ...(isVendor ? [sum((o) => o.deliveryCharge)] : []),
-      sum((o) => o.netPayable),
+      ...(isVendor ? [sum((o) => o.deliveryCharge), sum((o) => o.netPayable)] : []),
     ]);
 
     downloadExcel(
@@ -189,13 +189,15 @@ const SettlementCreatePage: React.FC = () => {
 
     setLoading(true);
     try {
-      await createSettlement({
+      const res = await createSettlement({
         payeeType,
         targetId: selectedEntityId,
         codCollectionIds: Array.from(selected),
         settlementDate,
       });
-      navigate('/finance');
+      // Go straight to the new statement's own bill page instead of back to
+      // the list table - that's the page the user actually wants to see.
+      navigate(`/finance/settlements/${res.data.id}`);
     } catch (err: any) {
       const data = err.response?.data;
       setError(data?.message || 'Failed to create settlement');
@@ -306,13 +308,17 @@ const SettlementCreatePage: React.FC = () => {
                       <th style={{ textAlign: 'left' }}>Order ID</th>
                       <th style={{ textAlign: 'left' }}>Tracking ID</th>
                       <th style={{ textAlign: 'left' }}>Receiver</th>
+                      <th style={{ textAlign: 'left' }}>Order Type</th>
+                      <th style={{ textAlign: 'left' }}>{payeeType === 'vendor' ? 'Destination' : 'Location'}</th>
+                      {/* Rider rows have no delivery-charge deduction, so COD and
+                          collected are always the same figure - one column, not two. */}
                       <th style={{ textAlign: 'right' }}>COD</th>
                       {payeeType === 'vendor' && (
-                        <th style={{ textAlign: 'right' }}>Delivery Charge</th>
+                        <>
+                          <th style={{ textAlign: 'right' }}>Delivery Charge</th>
+                          <th style={{ textAlign: 'right' }}>Net Payable</th>
+                        </>
                       )}
-                      <th style={{ textAlign: 'right' }}>
-                        {payeeType === 'vendor' ? 'Net Payable' : 'Collected'}
-                      </th>
                     </tr>
                   </thead>
                   <tbody>
@@ -335,14 +341,30 @@ const SettlementCreatePage: React.FC = () => {
                         <td>
                           {order.receiverName}
                           <div className="scp-subtext">{order.receiverPhone}</div>
+                          {order.receiverAddress && (
+                            <div className="scp-subtext">{order.receiverAddress}</div>
+                          )}
                         </td>
-                        <td style={{ textAlign: 'right' }}>Rs. {order.codAmount.toLocaleString()}</td>
+                        <td>
+                          {order.orderType === 'return' ? (
+                            <StatusChip tone="info">RTV</StatusChip>
+                          ) : (
+                            <span style={{ textTransform: 'capitalize' }}>{order.orderType}</span>
+                          )}
+                        </td>
+                        <td>{payeeType === 'vendor' ? order.destination || '-' : order.location || '-'}</td>
+                        <td style={{ textAlign: 'right', fontWeight: payeeType === 'rider' ? 600 : undefined }}>
+                          <div>COD: Rs. {order.codAmount.toLocaleString()}</div>
+                          <div className="scp-subtext">Collected: Rs. {order.codAmount.toLocaleString()}</div>
+                        </td>
                         {payeeType === 'vendor' && (
-                          <td style={{ textAlign: 'right' }}>Rs. {order.deliveryCharge.toLocaleString()}</td>
+                          <>
+                            <td style={{ textAlign: 'right' }}>Rs. {order.deliveryCharge.toLocaleString()}</td>
+                            <td style={{ textAlign: 'right', fontWeight: 600 }}>
+                              Rs. {order.netPayable.toLocaleString()}
+                            </td>
+                          </>
                         )}
-                        <td style={{ textAlign: 'right', fontWeight: 600 }}>
-                          Rs. {order.netPayable.toLocaleString()}
-                        </td>
                       </tr>
                     ))}
                   </tbody>

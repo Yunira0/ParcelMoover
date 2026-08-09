@@ -75,7 +75,7 @@ export interface SettlementListItem {
   createdAt: string;
   orderCount: number;
   amount: number;
-  status: "pending" | "settled";
+  status: "pending" | "settled" | "cancelled";
   remark: string | null;
 }
 
@@ -104,11 +104,21 @@ export interface PaySettlementInput {
   taxInvoicePath?: string | null;
 }
 
+export interface AttachSettlementDocumentsInput {
+  /** Relative upload paths, set by the controller after the files are secured. Omitted fields leave the existing document untouched. */
+  paymentReceiptPath?: string | null;
+  taxInvoicePath?: string | null;
+}
+
 export interface UpdateSettlementInput {
   codCollectionIds: string[];
 }
 
 export interface RevertSettlementInput {
+  remark: string;
+}
+
+export interface CancelSettlementInput {
   remark: string;
 }
 
@@ -119,7 +129,7 @@ export interface CreateSettlementResult {
   amount: number;
   payableAmount: number;
   settlementDate: string | null;
-  status: "pending" | "settled";
+  status: "pending" | "settled" | "cancelled";
   paymentMethod: string | null;
   payments: SettlementPaymentInput[];
   remark: string | null;
@@ -132,7 +142,12 @@ export interface UnsettledOrderItem {
   trackingId: string;
   receiverName: string;
   receiverPhone: string;
+  receiverAddress: string | null;
   destination: string;
+  // Pickup or delivery location for this rider's leg of the parcel - null
+  // for vendor statements, where `destination` above is the relevant fact.
+  location: string | null;
+  orderType: string;
   codAmount: number;
   deliveryCharge: number;
   netPayable: number;
@@ -152,7 +167,7 @@ export interface SettlementDetailItem {
   reference: string | null;
   receiverName: string;
   receiverPhone: string;
-  destination: string;
+  receiverAddress: string | null;
   // Whose money this line is. Null for parcels booked without a vendor
   // (walk-in / direct orders). Mainly useful on rider statements, where
   // every line can belong to a different vendor.
@@ -161,6 +176,9 @@ export interface SettlementDetailItem {
   orderType: string;
   pieces: number;
   weightKg: number | null;
+  // Pickup or delivery location for this rider's leg of the parcel - null
+  // for vendor statements, where the location isn't the relevant fact.
+  location: string | null;
   codAmount: number;
   collectedAmount: number;
   deliveryCharge: number;
@@ -187,7 +205,7 @@ export interface SettlementDetailResult {
   createdAt: string;
   amount: number;
   payableAmount: number;
-  status: "pending" | "settled";
+  status: "pending" | "settled" | "cancelled";
   paymentMethod: string | null;
   payments: SettlementPaymentInput[];
   remark: string | null;

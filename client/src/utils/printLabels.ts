@@ -34,6 +34,15 @@ function barcodeDataUrl(trackingId: string): string {
   return canvas.toDataURL('image/png');
 }
 
+// The label's own hand-tuned design size - every font/QR/barcode/padding
+// value below the .label-design rule is calibrated for exactly this box.
+// Rather than re-deriving that tuning for every possible sticker size (the
+// existing tuning already needed a follow-up fix once), a vendor's actual
+// size is applied by uniformly scaling this whole design up or down - see
+// the .label-frame/.label-design split and printLabels()'s transform below.
+const DESIGN_WIDTH_MM = 100;
+const DESIGN_HEIGHT_MM = 75;
+
 function labelHtml(order: Order, qrDataUrl: string, barcodeUrl: string): string {
   const typeLabel = ORDER_TYPE_LABELS[order.orderType] ?? order.orderType.toUpperCase();
   const typeColor = TYPE_COLORS[order.orderType] ?? { bg: '#fff', text: '#000' };
@@ -47,8 +56,12 @@ function labelHtml(order: Order, qrDataUrl: string, barcodeUrl: string): string 
   const valleyLabel = order.destinationValley === 'inside' ? 'Inside Valley' : '';
   const fullAddress = order.receiverAddress ? esc(order.receiverAddress) : '—';
 
+  const scaleX = order.labelWidthMm / DESIGN_WIDTH_MM;
+  const scaleY = order.labelHeightMm / DESIGN_HEIGHT_MM;
+
   return `
-<div class="label">
+<div class="label-frame" style="width:${order.labelWidthMm}mm;height:${order.labelHeightMm}mm">
+  <div class="label-design" style="transform:scale(${scaleX},${scaleY})">
   <div class="hdr">
     <div class="brand">
       <div class="brand-name">ParcelMoover</div>
@@ -94,6 +107,7 @@ function labelHtml(order: Order, qrDataUrl: string, barcodeUrl: string): string 
     <div class="fc"><span class="fk">PACKAGE</span><span class="fv">${esc(packageLine)}</span></div>
     <div class="fc"><span class="fk">DATE</span><span class="fv">${fmtDate(order.createdAt)}</span></div>
   </div>
+  </div>
 </div>`;
 }
 
@@ -108,14 +122,30 @@ function esc(str: string) {
 const CSS = `
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:#fff;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif}
+.label-grid{
+  display:flex;flex-wrap:wrap;gap:2mm;padding:0;
+}
 
-.label{
+/* Sized per-order (inline style) to the vendor's own sticker size. Its only
+   job is to clip to that size and carry the page-break; all visual design
+   lives in .label-design at its native, hand-tuned size and is scaled to
+   fit here - see labelHtml()'s scale transform. The page-break itself is set
+   only in @media print below (and only for non-last frames), so screen
+   rendering and the final label don't get a spurious trailing blank page. */
+.label-frame{
+  overflow:hidden;
+  background:#fff;
+}
+
+/* Native, hand-tuned design size - never resized directly. Uniformly scaled
+   by its parent .label-frame to whatever size the vendor actually needs. */
+.label-design{
   width:100mm;height:75mm;
   border:2px solid #000;
   display:flex;flex-direction:column;
-  padding:0;overflow:hidden;
-  page-break-after:always;break-after:page;
+  padding:0;
   background:#fff;
+  transform-origin:top left;
 }
 
 /* ── Header ── */
@@ -257,19 +287,39 @@ body{background:#fff;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif}
 }
 
 @media print{
-  body{margin:0}
-  .label{border:2px solid #000}
-  .label:not(:last-child){page-break-after:always;break-after:page}
+  body{margin:0;padding:0;background:#fff}
+  /* One label per page. @page below is set to the label's own size, so each
+     frame fills its page exactly - the screen-only tiling in .label-grid is
+     switched off here so nothing shares a page or gets pushed off the edge.
+     margin:0 auto is a cheap safeguard for drivers that ignore the custom
+     paper size and fall back to A4/Letter: the label lands centered rather
+     than stranded against the left edge. */
+  .label-grid{display:block;gap:0;padding:0}
+  .label-frame{
+    margin:0 auto;padding:0;
+    page-break-inside:avoid;break-inside:avoid;
+  }
+  .label-frame:not(:last-child){page-break-after:always;break-after:page}
 }
 `;
 
-function printMediaCss(): string {
+// The requested physical paper size for the print job. A vendor's own print
+// batch is always their own orders, so always one size - and a printer can't
+// feed two different physical label sizes in the same job anyway, so a mixed
+// batch (possible only on internal ops screens, which can select orders
+// across vendors) just follows the first order's size. Every individual
+// label still renders at its own correct size regardless (see labelHtml's
+// scale transform) - this only affects the paper-size hint sent to the
+// printer driver, never what's visually drawn.
+//
+// @page is deliberately NOT nested inside @media print: @page is already
+// print-only by spec, and some print engines only pick up a custom size
+// declared at the stylesheet's top level.
+function printMediaCss(widthMm: number, heightMm: number): string {
   return `
-  @media print {
-    @page {
-      size: 100mm 75mm;
-      margin: 0;
-    }
+  @page {
+    size: ${widthMm}mm ${heightMm}mm;
+    margin: 0;
   }
 `;
 }
@@ -296,22 +346,25 @@ export async function printLabels(orders: Order[]): Promise<void> {
 
   const labelsMarkup = orders.map((o, i) => labelHtml(o, qrUrls[i]!, barcodeUrls[i]!)).join('\n');
 
-  win.onload = () => {
-    win.focus();
-    win.print();
-    win.addEventListener('afterprint', () => win.close());
-  };
-
   win.document.open();
   win.document.write(`<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <title>Shipping Labels — ParcelMoover</title>
-  <style>${CSS}${printMediaCss()}</style>
+  <style>${CSS}${printMediaCss(orders[0]!.labelWidthMm, orders[0]!.labelHeightMm)}</style>
 </head>
 <body>
+<div class="label-grid">
 ${labelsMarkup}
+</div>
+<script>
+  window.addEventListener('load', function() {
+    window.focus();
+    window.print();
+    window.addEventListener('afterprint', function() { window.close(); });
+  });
+<\/script>
 </body>
 </html>`);
   win.document.close();

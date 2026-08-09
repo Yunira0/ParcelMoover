@@ -96,6 +96,10 @@ export interface Order {
   vendorId: string | null;
   vendorName?: string;
   vendorLocation?: string;
+  // Resolved sticker print size (mm) - the vendor's own override, or the app
+  // default when unset. See printLabels.ts.
+  labelWidthMm: number;
+  labelHeightMm: number;
   riderName?: string;
   remarks?: string;
   lastUpdatedBy?: string;
@@ -236,8 +240,15 @@ export interface DashboardSummary {
     totalCod: number;
     settledCod: number;
     pendingCod: number;
-    /** Cash riders have collected but not yet remitted to the office. */
-    codFromRider: number;
+    /** codFromPmRider + codFromNcm (+ future 3PLs) - the umbrella "COD to
+     *  collect from riders" figure; carriers below break it down. */
+    codFromRiders: number;
+    /** Cash a ParcelMoover rider has collected but not yet remitted to the office. */
+    codFromPmRider: number;
+    /** Cash NCM collected on our behalf, not yet remitted to the office. */
+    codFromNcm: number;
+    /** Cash Upaya's placeholder rider is holding, not yet remitted to the office. */
+    codFromUpaya: number;
     /** Delivery charge owed on orders whose COD hasn't been settled yet. */
     pendingDeliveryCharge: number;
     /** Total delivery charges (office cut) on the delivered orders in the COD window. */
@@ -335,6 +346,47 @@ export const getAllOrders = async (
 export const getDashboardSummary = async (trendDays: 7 | 30 = 7) => {
   const response = await api.get('/orders/dashboard-summary', { params: { trendDays } });
   return response.data;
+};
+
+// ── COD settlement drill-down ───────────────────────────────────────────────
+// One bucket per line of the COD Settlement dashboard card. Carrier buckets
+// ('pm-rider', 'ncm', 'upaya') sit under the "COD to collect from riders"
+// heading; a future 3PL adds its slug here and a matching FILTER clause
+// server-side.
+export const COD_DETAIL_BUCKETS = [
+  'total',
+  'settled',
+  'pending',
+  'pm-rider',
+  'ncm',
+  'upaya',
+  'delivery-charge',
+] as const;
+export type CodDetailBucket = (typeof COD_DETAIL_BUCKETS)[number];
+
+export interface CodDetailRow {
+  id: string;
+  trackingId: string;
+  orderNumber: number;
+  vendorName: string;
+  receiverName: string;
+  riderName: string | null;
+  collectedAmount: number;
+  riderRemittedAmount: number;
+  remittedAmount: number;
+  deliveryCharge: number;
+  /** The figure this bucket is measuring for this row — these sum to the
+   *  amount shown on the dashboard card line that linked here. */
+  bucketAmount: number;
+  deliveredAt: string | null;
+}
+
+export const getCodSettlementDetail = async (
+  bucket: CodDetailBucket,
+  signal?: AbortSignal,
+): Promise<{ rows: CodDetailRow[]; capped: boolean }> => {
+  const response = await api.get('/orders/cod-settlement-detail', { params: { bucket }, signal });
+  return { rows: response.data?.data ?? [], capped: Boolean(response.data?.capped) };
 };
 
 // Returns per-status-group counts for operation page tab badges.

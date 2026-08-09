@@ -21,7 +21,7 @@ import {
   getOrders,
   getStatusCounts,
   subscribeToOrderStatusChanged,
-  updateOrderStatus,
+  bulkUpdateOrderStatus,
   type Order,
   type ParcelStatus,
 } from '../services/orders.service';
@@ -638,14 +638,13 @@ const PickupOperations: React.FC = () => {
 
     setStatusUpdating(true);
     try {
-      await Promise.all(
-        selectedOrders.map(order => updateOrderStatus(
-          order.id,
-          selectedNextStatus,
-          isReasonRequiredAction ? reasonRemarks.trim() : undefined,
-          undefined,
-          isRiderAssignAction ? riderId : undefined,
-        )),
+      await bulkUpdateOrderStatus(
+        selectedOrders.map(order => order.id),
+        selectedNextStatus,
+        {
+          remarks: isReasonRequiredAction ? reasonRemarks.trim() : undefined,
+          riderId: isRiderAssignAction ? riderId : undefined,
+        },
       );
       await loadPickups();
 

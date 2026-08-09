@@ -24,6 +24,7 @@ export interface RegisterUserInput {
     // Per-vendor rate overrides (strings over multipart). Empty/undefined → use defaults.
     flatInsideValley?: string | number;
     flatOutsideValley?: string | number;
+    flatOutsideRingRoad?: string | number;
     zoneMajorCities?: string | number;
     zoneUrbanAreas?: string | number;
     zoneRemoteAreas?: string | number;
@@ -34,6 +35,7 @@ export interface RegisterUserInput {
     returnOutsideValleyPercent?: string | number;
     branchFlatInsideValley?: string | number;
     branchFlatOutsideValley?: string | number;
+    branchFlatOutsideRingRoad?: string | number;
     branchZoneMajorCities?: string | number;
     branchZoneUrbanAreas?: string | number;
     branchZoneRemoteAreas?: string | number;

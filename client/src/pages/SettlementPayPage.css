@@ -1,250 +1,585 @@
-/* Make Payment page. Shares the settlement-create page shell (scp-*) for the
-   back link, section cards and footer actions; everything specific to
-   recording a payout lives here. */
+/* Make Payment — rebuilt as a single ledger rather than stacked identical
+   cards, with a slim step rail connecting "record payment" and "attach
+   proof" into one visible flow instead of two unrelated screens. */
 
-/* Vendor-owes-office banner */
-.spp-warning {
-  background: var(--color-warning-bg, #fef3c7);
-  border: 1px solid var(--color-warning, #f59e0b);
-  border-radius: var(--border-radius-default);
-  color: var(--color-warning-text, #92400e);
-  font-size: 13px;
-  line-height: 18px;
-  padding: 10px 12px;
+.mpp-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  margin: 0 auto;
+  max-width: 640px;
+  width: 100%;
 }
 
-/* Payee summary */
-.spp-payee {
-  border: 1px solid var(--color-border-default);
-  border-radius: var(--border-radius-default);
-  font-size: 13px;
-  padding: 10px 12px;
+.mpp-empty {
+  color: var(--color-text-caption);
+  font-size: var(--font-size-sm);
+  padding: var(--space-8);
+  text-align: center;
 }
 
-.spp-payee-row {
+/* Back link */
+.mpp-back {
+  align-items: center;
+  background: transparent;
+  border: none;
+  color: var(--color-text-caption);
+  cursor: pointer;
+  display: inline-flex;
+  font-family: var(--typography-font-family-default);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  gap: var(--space-2);
+  padding: 0;
+  transition: color 150ms ease;
+  width: fit-content;
+}
+
+.mpp-back:hover {
+  color: var(--color-text-default);
+}
+
+.mpp-back:focus-visible {
+  border-radius: var(--border-radius-default);
+  outline: 2px solid var(--color-border-primary);
+  outline-offset: 2px;
+}
+
+/* Wraps whatever sits below the header/rail so that swapping between the
+   Payment and Proof steps reads as one continuous flow, not a hard cut. */
+.mpp-step-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  animation: mpp-step-fade 220ms ease;
+}
+
+@keyframes mpp-step-fade {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mpp-step-content {
+    animation: none;
+  }
+}
+
+/* Title row + step rail */
+.mpp-top {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  justify-content: space-between;
+}
+
+.mpp-top h1 {
+  color: var(--color-text-default);
+  font-size: var(--font-size-2xl);
+  font-weight: var(--font-weight-bold);
+  line-height: var(--line-height-2xl);
+  margin: 0;
+}
+
+.mpp-rail {
+  align-items: center;
   display: flex;
   gap: var(--space-2);
+}
+
+.mpp-step {
+  align-items: center;
+  color: var(--color-text-caption);
+  display: inline-flex;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semi-bold);
+  gap: var(--space-1-5);
+}
+
+.mpp-step-dot {
+  align-items: center;
+  border: 1.5px solid var(--color-border-default);
+  border-radius: var(--border-radius-full);
+  color: var(--color-text-caption);
+  display: inline-flex;
+  font-size: var(--font-size-xs);
+  height: 20px;
+  justify-content: center;
+  width: 20px;
+}
+
+.mpp-step--active {
+  color: var(--color-text-default);
+}
+
+.mpp-step--active .mpp-step-dot {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--color-text-base);
+}
+
+.mpp-step--done .mpp-step-dot {
+  background: var(--color-success-surface);
+  border-color: var(--color-success-default);
+  color: var(--color-success-default);
+}
+
+.mpp-step-line {
+  background: var(--color-border-default);
+  height: 1.5px;
+  width: 28px;
+}
+
+.mpp-step-line--done {
+  background: var(--color-success-default);
+}
+
+/* Vendor-owes-office banner */
+.mpp-warning {
+  background: var(--color-warning-surface);
+  border: 1px solid var(--color-background-warning-default);
+  border-radius: var(--border-radius-default);
+  color: var(--color-background-warning-default);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-sm);
+  padding: var(--space-3) var(--space-4);
+}
+
+/* Payment-recorded confirmation, step 2 */
+.mpp-confirm {
+  align-items: center;
+  background: var(--color-success-surface);
+  border: 1px solid var(--color-success-default);
+  border-radius: var(--border-radius-modal);
+  display: flex;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+
+.mpp-confirm-badge {
+  align-items: center;
+  background: var(--color-success-default);
+  border-radius: var(--border-radius-full);
+  color: var(--color-text-base);
+  display: flex;
+  flex-shrink: 0;
+  height: 36px;
+  justify-content: center;
+  width: 36px;
+}
+
+.mpp-confirm-amount {
+  color: var(--color-success-default);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-bold);
+}
+
+.mpp-confirm-meta {
+  color: var(--color-text-caption);
+  font-size: var(--font-size-xs);
+  margin-top: 2px;
+}
+
+/* The ledger — one bordered card, internally divided by hairlines instead of
+   three separate boxes competing for the same visual weight. */
+.mpp-ledger {
+  background: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-modal);
+  display: flex;
+  flex-direction: column;
+}
+
+.mpp-bill {
+  align-items: center;
+  display: flex;
+  gap: var(--space-4);
+  justify-content: space-between;
+  padding: var(--space-6);
+}
+
+.mpp-payee {
+  align-items: center;
+  display: flex;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.mpp-avatar {
+  align-items: center;
+  background: var(--color-background-primary-invert-default);
+  border-radius: var(--border-radius-full);
+  color: var(--color-text-primary);
+  display: flex;
+  flex-shrink: 0;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-bold);
+  height: 44px;
+  justify-content: center;
+  letter-spacing: 0.02em;
+  width: 44px;
+}
+
+.mpp-payee-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.mpp-payee-name {
+  color: var(--color-text-default);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semi-bold);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mpp-payee-phone {
+  color: var(--color-text-caption);
+  font-size: var(--font-size-sm);
+}
+
+.mpp-due {
+  display: flex;
+  flex-direction: column;
+  text-align: right;
+}
+
+.mpp-due-label {
+  color: var(--color-text-caption);
+  font-size: var(--font-size-xs);
+}
+
+.mpp-due-value {
+  color: var(--color-text-default);
+  font-feature-settings: 'tnum';
+  font-size: var(--font-size-2xl);
+  font-weight: var(--font-weight-bold);
+  line-height: var(--line-height-2xl);
+}
+
+.mpp-bank {
+  background: var(--color-background-canvas);
+  border-top: 1px solid var(--color-border-default);
+  padding: var(--space-3) var(--space-6);
+}
+
+.mpp-bank-row {
+  display: flex;
+  font-size: var(--font-size-sm);
+  gap: var(--space-2);
+  justify-content: space-between;
   padding: 2px 0;
 }
 
-.spp-payee-label {
+.mpp-bank-row span:first-child {
   color: var(--color-text-caption);
-  min-width: 116px;
 }
 
-.spp-payee-value {
+.mpp-bank-row span:last-child {
+  color: var(--color-text-default);
   font-weight: var(--font-weight-medium);
-  word-break: break-word;
 }
 
-.spp-payee-empty {
-  color: var(--color-text-caption);
+.mpp-zone {
+  border-top: 1px solid var(--color-border-default);
+  padding: var(--space-6);
 }
 
-/* Payment rows.
-   These are bare <select>/<input> elements rather than FormField (each row is
-   a compound control, not a labelled field), so they need the same base
-   styling FormField gives everything else on the page. */
-.spp-payment-row {
+.mpp-zone h3 {
+  color: var(--color-text-default);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semi-bold);
+  margin: 0 0 var(--space-4) 0;
+}
+
+/* Payment rows */
+.mpp-payment-row {
   align-items: center;
   display: flex;
   gap: var(--space-2);
   margin-bottom: var(--space-2);
 }
 
-.spp-payment-row select,
-.spp-payment-row input,
-.spp-manage-add input {
+.mpp-method-select {
   background-color: var(--color-background-surface);
   border: 1px solid var(--color-border-default);
   border-radius: var(--border-radius-default);
   color: var(--color-text-default);
+  flex: 1 1 160px;
   font-family: var(--typography-font-family-default);
   font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
   height: 36px;
-  line-height: var(--line-height-sm);
+  min-width: 0;
   outline: none;
   padding: var(--space-2);
 }
 
-.spp-payment-row select:focus,
-.spp-payment-row input:focus,
-.spp-manage-add input:focus {
+.mpp-method-select:focus {
   border-color: var(--color-border-primary);
   box-shadow: var(--shadow-focus);
 }
 
-.spp-payment-row select::placeholder,
-.spp-payment-row input::placeholder,
-.spp-manage-add input::placeholder {
+.mpp-amount-field {
+  align-items: center;
+  background: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-default);
+  display: flex;
+  flex: 1 1 160px;
+  height: 36px;
+  min-width: 0;
+  padding: 0 var(--space-2);
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.mpp-amount-field:focus-within {
+  border-color: var(--color-border-primary);
+  box-shadow: var(--shadow-focus);
+}
+
+.mpp-amount-prefix {
+  color: var(--color-text-caption);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  padding-right: var(--space-1);
+}
+
+.mpp-amount-field input {
+  background: transparent;
+  border: none;
+  color: var(--color-text-default);
+  flex: 1;
+  font-family: var(--typography-font-family-default);
+  font-feature-settings: 'tnum';
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  height: 100%;
+  min-width: 0;
+  outline: none;
+  text-align: right;
+}
+
+.mpp-amount-field input::placeholder {
   color: var(--color-text-placeholder);
 }
 
-.spp-payment-row select,
-.spp-payment-row input {
-  flex: 1 1 160px;
-  min-width: 0;
+.mpp-row-remove {
+  align-items: center;
+  background: none;
+  border: none;
+  border-radius: var(--border-radius-default);
+  color: var(--color-icon-caption);
+  cursor: pointer;
+  display: flex;
+  flex-shrink: 0;
+  height: 32px;
+  justify-content: center;
+  transition: background-color 150ms ease, color 150ms ease;
+  width: 32px;
 }
 
-.spp-payment-actions {
+.mpp-row-remove:hover {
+  background: var(--color-danger-surface);
+  color: var(--color-danger-text);
+}
+
+.mpp-payment-actions {
   align-items: center;
   display: flex;
   gap: var(--space-4);
   margin-top: var(--space-1);
 }
 
-.spp-manage-toggle {
+.mpp-manage-toggle {
   background: none;
   border: none;
   color: var(--color-primary);
   cursor: pointer;
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   font-weight: var(--font-weight-semi-bold);
   padding: 0;
 }
 
-.spp-manage {
+.mpp-manage {
   border: 1px solid var(--color-border-default);
   border-radius: var(--border-radius-default);
   margin-top: var(--space-3);
   padding: var(--space-3);
 }
 
-.spp-manage-add {
+.mpp-manage-add {
   display: flex;
   gap: var(--space-2);
   margin-bottom: var(--space-3);
 }
 
-.spp-manage-add input {
+.mpp-manage-add input {
+  background-color: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-default);
+  color: var(--color-text-default);
   flex: 1;
+  font-family: var(--typography-font-family-default);
+  font-size: var(--font-size-sm);
+  height: 36px;
   min-width: 0;
+  outline: none;
+  padding: var(--space-2);
 }
 
-.spp-manage-row {
+.mpp-manage-add input:focus {
+  border-color: var(--color-border-primary);
+  box-shadow: var(--shadow-focus);
+}
+
+.mpp-manage-row {
   align-items: center;
   display: flex;
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   justify-content: space-between;
   padding: 4px 0;
 }
 
-.spp-manage-row--off {
-  opacity: 0.55;
+.mpp-manage-row--off {
+  opacity: var(--opacity-60);
 }
 
-.spp-manage-disabled {
+.mpp-manage-disabled {
   color: var(--color-text-caption);
 }
 
-.spp-manage-row button {
+.mpp-manage-row button {
   background: none;
   border: none;
   cursor: pointer;
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   font-weight: var(--font-weight-semi-bold);
 }
 
-.spp-manage-danger {
-  color: var(--color-danger-text, #dc2626);
+.mpp-manage-danger {
+  color: var(--color-danger-text);
 }
 
-.spp-manage-success {
-  color: var(--color-success, #16a34a);
+.mpp-manage-success {
+  color: var(--color-success-default);
 }
 
-/* Totals */
-.spp-totals {
+/* Balance line — whether the split adds up, as a plain readout. */
+.mpp-balance {
+  align-items: center;
+  color: var(--color-text-caption);
   display: flex;
-  flex-wrap: wrap;
-  font-size: 13px;
-  gap: var(--space-2);
+  font-size: var(--font-size-xs);
   justify-content: space-between;
-  margin-top: var(--space-3);
+  margin-top: var(--space-4);
 }
 
-.spp-total-entered {
-  color: var(--color-primary);
-}
-
-.spp-total-remaining {
-  color: var(--color-warning-text, #b45309);
-  font-weight: var(--font-weight-semi-bold);
-}
-
-.spp-total-remaining--ok {
-  color: var(--color-success, #16a34a);
-}
-
-/* Document uploads */
-.spp-files {
-  display: grid;
-  gap: var(--space-4);
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-}
-
-.spp-file-field {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.spp-file-label {
-  color: var(--color-text-default);
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-medium);
-}
-
-.spp-file-btn {
+.mpp-balance-status {
   align-items: center;
-  background: var(--color-background-surface);
-  border: 1px dashed var(--color-border-default);
-  border-radius: var(--border-radius-default);
-  color: var(--color-text-default);
-  cursor: pointer;
+  color: var(--color-background-warning-default);
   display: inline-flex;
-  font-size: var(--font-size-sm);
-  gap: var(--space-2);
-  justify-content: center;
-  padding: var(--space-3);
-  transition: border-color 150ms ease;
-  width: 100%;
+  font-weight: var(--font-weight-semi-bold);
+  gap: 4px;
+  transition: color 150ms ease;
 }
 
-.spp-file-btn:hover {
-  border-color: var(--color-primary);
+@media (prefers-reduced-motion: reduce) {
+  .mpp-balance-status {
+    transition: none;
+  }
 }
 
-.spp-file-chip {
-  align-items: center;
-  background: var(--color-background-primary-invert-default);
+.mpp-balance--ok .mpp-balance-status {
+  color: var(--color-success-default);
+}
+
+.mpp-balance--over .mpp-balance-status {
+  color: var(--color-danger-text);
+}
+
+.mpp-error {
+  background: var(--color-danger-surface);
+  border: 1px solid var(--color-danger-border);
   border-radius: var(--border-radius-default);
-  display: flex;
-  font-size: 0.8rem;
-  gap: var(--space-2);
-  overflow: hidden;
-  padding: var(--space-2) var(--space-3);
+  color: var(--color-danger-text);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-sm);
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
 }
 
-.spp-file-chip span {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.mpp-actions {
+  border-top: 1px solid var(--color-border-default);
+  display: flex;
+  gap: var(--space-3);
+  justify-content: flex-end;
+  padding: var(--space-5) var(--space-6);
 }
 
-.spp-file-chip button {
-  align-items: center;
-  background: none;
-  border: none;
-  cursor: pointer;
-  display: flex;
+/* Loading skeleton - mirrors the ledger's shape (avatar, name, due amount, a
+   zone block) instead of a bare "Loading settlement..." line. */
+.mpp-skeleton-bar {
+  display: block;
+  border-radius: var(--border-radius-default);
+  background: linear-gradient(
+    90deg,
+    var(--color-background-elevated) 25%,
+    var(--color-background-canvas) 37%,
+    var(--color-background-elevated) 63%
+  );
+  background-size: 400% 100%;
+  animation: mpp-skeleton-shimmer 1.4s ease infinite;
+}
+
+.mpp-skeleton-avatar {
+  border-radius: var(--border-radius-full);
+  height: 44px;
+  width: 44px;
   flex-shrink: 0;
-  padding: 0;
 }
 
-.spp-file-hint {
-  color: var(--color-text-caption);
-  font-size: 12px;
+@keyframes mpp-skeleton-shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: 0 0;
+  }
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .mpp-skeleton-bar {
+    animation: none;
+    background: var(--color-background-elevated);
+  }
+}
+
+@media (max-width: 560px) {
+  .mpp-bill {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+
+  .mpp-due {
+    text-align: left;
+  }
+
+  .mpp-bill,
+  .mpp-bank,
+  .mpp-zone,
+  .mpp-actions {
+    padding-left: var(--space-4);
+    padding-right: var(--space-4);
+  }
+}

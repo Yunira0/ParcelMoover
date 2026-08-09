@@ -1,14 +1,18 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Search } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import Table from '../components/Table';
 import PageHeader from '../components/PageHeader';
 import Pagination from '../components/Pagination';
 import TicketCategoryButton from '../components/TicketCategoryButton';
 import SegmentedTabs from '../components/SegmentedTabs';
 import StatusChip from '../components/StatusChip';
-import type { SettlementListItem } from '../services/finance.service';
+import NepaliDatePicker from '../components/NepaliDatePicker';
+import FormField from '../components/FormField';
+import type { SearchableSelectAsyncResult } from '../components/SearchableSelectAsync';
+import type { SettlementListItem, SettlementStatusFilter } from '../services/finance.service';
 import { getSettlements } from '../services/finance.service';
+import { getRiders, searchVendors } from '../services/users.service';
 import { toBsDate } from '../utils/nepaliDate';
 import './FinanceManagement.css';
 
@@ -21,7 +25,11 @@ const PAGE_SIZE = 20;
 const FinanceManagement: React.FC = () => {
   const navigate = useNavigate();
   const [activeType, setActiveType] = useState<FinanceType>('rider');
-  const [searchQuery, setSearchQuery] = useState('');
+  const [riderOptions, setRiderOptions] = useState<Array<{ value: string; label: string }>>([]);
+  const [entityId, setEntityId] = useState('');
+  const [status, setStatus] = useState<SettlementStatusFilter | ''>('');
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
   const [items, setItems] = useState<SettlementListItem[]>([]);
   const [page, setPage] = useState(1);
   const [pageSizeChoice, setPageSizeChoice] = useState(PAGE_SIZE);
@@ -30,12 +38,57 @@ const FinanceManagement: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
+  const dateRangeInvalid = Boolean(fromDate && toDate && fromDate > toDate);
+
+  // Rider list is small enough to fetch whole; vendors are searched
+  // server-side instead (see handleVendorSearch below), same split
+  // SettlementCreatePage already uses for its own rider/vendor picker.
   useEffect(() => {
+    if (activeType !== 'rider') return;
+    let active = true;
+    getRiders()
+      .then((res) => {
+        if (!active || !res?.success || !Array.isArray(res.data)) return;
+        setRiderOptions(res.data.map((r: any) => ({ value: r.id, label: r.name || '' })));
+      })
+      .catch(() => {
+        if (active) setRiderOptions([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [activeType]);
+
+  const handleVendorSearch = async (search: string, offset: number): Promise<SearchableSelectAsyncResult> => {
+    const res = await searchVendors(search, 50, offset);
+    if (res?.success && Array.isArray(res.data)) {
+      return {
+        results: res.data.map((v: any) => ({ id: v.id, label: v.label })),
+        hasMore: res.hasMore ?? false,
+      };
+    }
+    return { results: [], hasMore: false };
+  };
+
+  useEffect(() => {
+    if (dateRangeInvalid) {
+      setLoading(false);
+      return;
+    }
+
     let active = true;
     setLoading(true);
     setError('');
 
-    getSettlements(activeType, undefined, page, pageSizeChoice)
+    getSettlements(
+      activeType,
+      entityId || undefined,
+      page,
+      pageSizeChoice,
+      fromDate || undefined,
+      toDate || undefined,
+      status || undefined,
+    )
       .then((res) => {
         if (!active) return;
         setItems(res.data);
@@ -52,25 +105,16 @@ const FinanceManagement: React.FC = () => {
     return () => {
       active = false;
     };
-  }, [activeType, page, pageSizeChoice]);
+  }, [activeType, page, pageSizeChoice, entityId, fromDate, toDate, status, dateRangeInvalid]);
 
-  const rows = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    return items
-      .filter((item) => {
-        if (!q) return true;
-        return (
-          item.statementId.toLowerCase().includes(q) ||
-          item.payeeName.toLowerCase().includes(q) ||
-          item.payeePhone.includes(q) ||
-          (item.remark || '').toLowerCase().includes(q)
-        );
-      })
-      .map((item, index) => ({ ...item, sn: (page - 1) * pageSizeChoice + index + 1 }));
-  }, [items, searchQuery, page, pageSizeChoice]);
+  const rows = useMemo(
+    () => items.map((item, index) => ({ ...item, sn: (page - 1) * pageSizeChoice + index + 1 })),
+    [items, page, pageSizeChoice],
+  );
 
   const handleTypeChange = (type: FinanceType) => {
     setActiveType(type);
+    setEntityId('');
     setPage(1);
   };
 
@@ -81,16 +125,8 @@ const FinanceManagement: React.FC = () => {
       accessor: (item: SettlementListItem) => (
         <button
           type="button"
+          className="statement-id-link"
           onClick={() => navigate(`/finance/settlements/${item.id}`)}
-          style={{
-            background: 'none',
-            border: 'none',
-            padding: 0,
-            color: 'var(--color-primary)',
-            textDecoration: 'underline',
-            cursor: 'pointer',
-            font: 'inherit',
-          }}
         >
           {item.statementId}
         </button>
@@ -119,8 +155,11 @@ const FinanceManagement: React.FC = () => {
     {
       header: 'STATUS',
       accessor: (item: SettlementListItem) => (
-        <StatusChip variant="solid" tone={item.status === 'settled' ? 'success' : 'warning'}>
-          {item.status === 'settled' ? 'Settled' : 'Pending'}
+        <StatusChip
+          variant="solid"
+          tone={item.status === 'settled' ? 'success' : item.status === 'cancelled' ? 'neutral' : 'warning'}
+        >
+          {item.status === 'settled' ? 'Settled' : item.status === 'cancelled' ? 'Cancelled' : 'Pending'}
         </StatusChip>
       ),
     },
@@ -150,17 +189,78 @@ const FinanceManagement: React.FC = () => {
           ]}
         />
 
-        <div className="search-box">
-          <Search size={16} style={{ color: 'var(--color-text-caption)' }} />
-          <input
-            type="text"
-            placeholder="Search statement, name, phone"
-            value={searchQuery}
-            onChange={event => setSearchQuery(event.target.value)}
-          />
+        <div className="finance-filter-row">
+          <div className="finance-entity-filter">
+            {activeType === 'rider' ? (
+              <FormField
+                label=""
+                type="select"
+                value={entityId}
+                onChange={(value) => {
+                  setPage(1);
+                  setEntityId(value);
+                }}
+                placeholder="All riders"
+                options={riderOptions}
+              />
+            ) : (
+              <FormField
+                label=""
+                type="searchable-select-async"
+                value={entityId}
+                onChange={(value) => {
+                  setPage(1);
+                  setEntityId(value);
+                }}
+                placeholder="All vendors"
+                searchPlaceholder="Search vendor by name..."
+                asyncSearch={handleVendorSearch}
+              />
+            )}
+          </div>
+
+          <div className="finance-date-range">
+            <NepaliDatePicker
+              value={fromDate}
+              max={toDate || undefined}
+              placeholder="From date"
+              aria-label="From date"
+              onChange={(next) => {
+                setPage(1);
+                setFromDate(next);
+              }}
+            />
+            <span className="finance-date-range-sep">–</span>
+            <NepaliDatePicker
+              value={toDate}
+              min={fromDate || undefined}
+              placeholder="To date"
+              aria-label="To date"
+              onChange={(next) => {
+                setPage(1);
+                setToDate(next);
+              }}
+            />
+          </div>
+
+          <select
+            className="finance-status-select"
+            aria-label="Status"
+            value={status}
+            onChange={(event) => {
+              setPage(1);
+              setStatus(event.target.value as SettlementStatusFilter | '');
+            }}
+          >
+            <option value="">All statuses</option>
+            <option value="pending">Pending</option>
+            <option value="settled">Settled</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
         </div>
       </div>
 
+      {dateRangeInvalid && <p className="finance-error">"From" date must be before "To" date.</p>}
       {error && <p className="finance-error">{error}</p>}
 
       <Table

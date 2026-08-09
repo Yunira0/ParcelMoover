@@ -14,6 +14,7 @@ import './App.css'
 
 const DashboardRouter = lazy(() => import('./pages/DashboardRouter'))
 const OverviewOrdersPage = lazy(() => import('./pages/OverviewOrdersPage'))
+const CodSettlementDetailPage = lazy(() => import('./pages/CodSettlementDetailPage'))
 const OrdersRouter = lazy(() => import('./pages/OrdersRouter'))
 const CreateOrderPage = lazy(() => import('./pages/CreateOrderPage'))
 const OrderDetailPage = lazy(() => import('./pages/OrderDetailPage'))
@@ -51,6 +52,7 @@ const VendorBilling = lazy(() => import('./pages/vendor/VendorBilling'))
 const BillingManagement = lazy(() => import('./pages/BillingManagement'))
 const VendorUserManagement = lazy(() => import('./pages/vendor/VendorUserManagement'))
 const VendorDeveloper = lazy(() => import('./pages/vendor/VendorDeveloper'))
+const VendorPrintSettings = lazy(() => import('./pages/vendor/VendorPrintSettings'))
 const StaffFormPage = lazy(() => import('./pages/vendor/StaffFormPage'))
 const BulkOrderPage = lazy(() => import('./pages/vendor/BulkOrderPage'))
 const VendorDeliveryCharges = lazy(() => import('./pages/vendor/VendorDeliveryCharges'))
@@ -92,6 +94,13 @@ function App() {
           <Route
             path="/overview/:metric"
             element={<RoleGuard allowedRoles={['super_admin', 'admin']}><OverviewOrdersPage /></RoleGuard>}
+          />
+          {/* Drill-down behind a line of the COD Settlement card. Same audience
+              as the card itself (Dashboard.tsx), which DashboardRouter shows to
+              everyone who isn't vendor-side or sales. */}
+          <Route
+            path="/cod/:bucket"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'rider']}><CodSettlementDetailPage /></RoleGuard>}
           />
           <Route path="/orders" element={<OrdersRouter />} />
           <Route
@@ -287,6 +296,10 @@ function App() {
           <Route
             path="/delivery-charges"
             element={<RoleGuard allowedRoles={['vendor', 'vendor_staff']} requiredPermission="DELIVERY_CHARGES_ACCESS"><VendorDeliveryCharges /></RoleGuard>}
+          />
+          <Route
+            path="/print-settings"
+            element={<RoleGuard allowedRoles={['vendor', 'vendor_staff']} requiredPermission="ORDER_ACCESS"><VendorPrintSettings /></RoleGuard>}
           />
           <Route
             path="/developer/api-keys"

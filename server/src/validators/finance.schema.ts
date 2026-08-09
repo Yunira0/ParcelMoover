@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { paginationQuerySchema, optionalUuidSchema, isoDateStringSchema, uuidSchema } from "./common";
+import { paginationQuerySchema, optionalUuidSchema, flexibleDateStringSchema, uuidSchema } from "./common";
 
 const PAYEE_TYPES = ["rider", "vendor"] as const;
 
@@ -27,11 +27,17 @@ export type OrderCodQuery = z.infer<typeof orderCodQuerySchema>;
 
 // ── Settlements list query ────────────────────────────────────────────────────
 
+const SETTLEMENT_STATUSES = ["pending", "settled", "cancelled"] as const;
+
 export const settlementsQuerySchema = paginationQuerySchema.extend({
   payeeType: z.enum(PAYEE_TYPES),
   targetId: optionalUuidSchema,
-  fromDate: isoDateStringSchema,
-  toDate: isoDateStringSchema,
+  fromDate: flexibleDateStringSchema,
+  toDate: flexibleDateStringSchema,
+  status: z.enum(SETTLEMENT_STATUSES).optional(),
+  // Payee name filter - matches riders.name for payeeType=rider, or
+  // vendors.business_name/client_name for payeeType=vendor.
+  search: z.string().trim().min(1).max(100).optional(),
 });
 
 export type SettlementsQuery = z.infer<typeof settlementsQuerySchema>;
@@ -52,7 +58,7 @@ export const paySettlementSchema = z.object({
         // Method names are configurable (Cash, Online, eSewa, Bank, ...); the
         // service validates the value against the currently-active methods.
         method: z.string().trim().min(1, "Payment method is required").max(40),
-        amount: z.number().positive("Payment amount must be greater than 0"),
+        amount: z.number().min(0, "Payment amount cannot be negative"),
       }),
     )
     .min(1, "At least one payment is required"),
@@ -72,6 +78,12 @@ export const updateSettlementSchema = z.object({
 // ── Revert settlement (body) — flips a settled statement back to pending ─────
 
 export const revertSettlementSchema = z.object({
+  remark: z.string().trim().min(1, "Remark is required").max(500),
+});
+
+// ── Cancel settlement (body) — cancels a pending (unpaid) statement ──────────
+
+export const cancelSettlementSchema = z.object({
   remark: z.string().trim().min(1, "Remark is required").max(500),
 });
 

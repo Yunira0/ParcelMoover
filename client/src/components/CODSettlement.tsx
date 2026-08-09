@@ -1,6 +1,8 @@
 import React from 'react';
-import { Banknote } from 'lucide-react';
-import type { DashboardSummary } from '../services/orders.service';
+import { Link } from 'react-router-dom';
+import { Banknote, ChevronRight } from 'lucide-react';
+import type { CodDetailBucket, DashboardSummary } from '../services/orders.service';
+import { COD_BUCKET_META, codBucketPath } from '../utils/codBuckets';
 import './CODSettlement.css';
 
 interface CODSettlementProps {
@@ -12,6 +14,35 @@ const formatCurrency = (value: number) => `Rs. ${Math.round(value).toLocaleStrin
 
 const RADIUS = 52;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
+
+// Every figure on this card is the sum of a set of orders, so every figure
+// drills down to those orders. `dot` is the swatch class; `bucket` picks both
+// the label (from the shared meta) and the detail page it opens.
+const RowLink: React.FC<{
+  bucket: CodDetailBucket;
+  dot: string;
+  amount: number;
+  loading: boolean;
+  amountClassName?: string;
+  nested?: boolean;
+}> = ({ bucket, dot, amount, loading, amountClassName, nested = false }) => (
+  <Link
+    to={codBucketPath(bucket)}
+    className={nested ? 'settlement-subrow' : 'settlement-row'}
+    aria-label={`${COD_BUCKET_META[bucket].label}: view orders`}
+  >
+    <div className="status-label">
+      <span className={`status-dot ${dot}`}></span>
+      <span>{COD_BUCKET_META[bucket].label}</span>
+    </div>
+    <span className="settlement-row-value">
+      <span className={`status-amount ${amountClassName ?? ''}`.trim()}>
+        {loading ? '...' : formatCurrency(amount)}
+      </span>
+      <ChevronRight className="settlement-row-chevron" size={14} aria-hidden="true" />
+    </span>
+  </Link>
+);
 
 const CODSettlement: React.FC<CODSettlementProps> = ({ data, loading = false }) => {
   const percent = Math.max(0, Math.min(100, Math.round(data.progressPercent)));
@@ -52,41 +83,37 @@ const CODSettlement: React.FC<CODSettlementProps> = ({ data, loading = false }) 
       </div>
 
       <div className="settlement-details">
-        <div className="settlement-row">
-          <div className="status-label">
-            <span className="status-dot total"></span>
-            <span>Total COD</span>
-          </div>
-          <span className="status-amount">{loading ? '...' : formatCurrency(data.totalCod)}</span>
-        </div>
-        <div className="settlement-row">
-          <div className="status-label">
-            <span className="status-dot settled"></span>
-            <span>Settled COD</span>
-          </div>
-          <span className="status-amount">{loading ? '...' : formatCurrency(data.settledCod)}</span>
-        </div>
-        <div className="settlement-row">
-          <div className="status-label">
-            <span className="status-dot pending"></span>
-            <span>Pending</span>
-          </div>
-          <span className="status-amount cod-pending">{loading ? '...' : formatCurrency(data.pendingCod)}</span>
-        </div>
-        <div className="settlement-row">
+        <RowLink bucket="total" dot="total" amount={data.totalCod} loading={loading} />
+        <RowLink bucket="settled" dot="settled" amount={data.settledCod} loading={loading} />
+        <RowLink
+          bucket="pending"
+          dot="pending"
+          amount={data.pendingCod}
+          loading={loading}
+          amountClassName="cod-pending"
+        />
+
+        {/* Umbrella heading, not a metric of its own: its figure is exactly the
+            sum of the carriers nested beneath it, so there's no separate set of
+            orders to drill into - each carrier owns its own. Future 3PLs slot
+            in here alongside NCM. */}
+        <div className="settlement-row settlement-row--heading">
           <div className="status-label">
             <span className="status-dot rider"></span>
             <span>COD to collect from riders</span>
           </div>
-          <span className="status-amount">{loading ? '...' : formatCurrency(data.codFromRider)}</span>
+          <span className="status-amount">{loading ? '...' : formatCurrency(data.codFromRiders)}</span>
         </div>
-        <div className="settlement-row">
-          <div className="status-label">
-            <span className="status-dot delivery"></span>
-            <span>Delivery charge</span>
-          </div>
-          <span className="status-amount">{loading ? '...' : formatCurrency(data.deliveryCharge)}</span>
-        </div>
+        <RowLink bucket="pm-rider" dot="pm-rider" amount={data.codFromPmRider} loading={loading} nested />
+        <RowLink bucket="ncm" dot="ncm" amount={data.codFromNcm} loading={loading} nested />
+        <RowLink bucket="upaya" dot="upaya" amount={data.codFromUpaya} loading={loading} nested />
+
+        <RowLink
+          bucket="delivery-charge"
+          dot="delivery"
+          amount={data.deliveryCharge}
+          loading={loading}
+        />
       </div>
     </div>
   );

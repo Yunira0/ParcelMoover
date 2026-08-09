@@ -1,5 +1,12 @@
 import type { ClipboardEvent, KeyboardEvent } from 'react';
 
+// Scanned terms are joined into one comma-separated `search` string sent to
+// the server, which caps that param at 3000 chars (~27 chars per tracking id
+// incl. separator) - see order.schema.ts. Capping the batch here keeps every
+// scan under that ceiling instead of silently failing the whole search once
+// it's exceeded.
+export const MAX_SCANNED_TERMS = 100;
+
 // A handheld barcode scanner types each tracking id then sends Enter, with
 // virtually no gap before the next scan's characters start arriving.
 // Rewriting a single controlled-input string on every Enter (e.g. appending
@@ -23,7 +30,7 @@ export function commitScannedTerm(
   event.preventDefault();
   const value = event.currentTarget.value.trim();
   if (!value) return;
-  setTerms(prev => (prev.includes(value) ? prev : [...prev, value]));
+  setTerms(prev => (prev.length >= MAX_SCANNED_TERMS || prev.includes(value) ? prev : [...prev, value]));
   setBuffer('');
 }
 
@@ -46,6 +53,7 @@ export function handleScannerPaste(
   setTerms(prev => {
     const next = [...prev];
     for (const token of tokens) {
+      if (next.length >= MAX_SCANNED_TERMS) break;
       if (!next.includes(token)) next.push(token);
     }
     return next;
