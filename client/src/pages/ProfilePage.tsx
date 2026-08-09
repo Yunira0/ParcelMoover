@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { User, Lock, Check, LogOut, MapPin, Mail, Phone, Shield } from 'lucide-react';
+import { User, Lock, Check, LogOut, MapPin, Mail, Phone, Shield, Briefcase } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import SegmentedTabs from '../components/SegmentedTabs';
 import StatusChip from '../components/StatusChip';
@@ -15,7 +15,7 @@ type Tab = 'info' | 'password';
 
 const ROLE_LABELS: Record<string, string> = {
   super_admin: 'Super Admin',
-  admin: 'Admin',
+  admin: 'Staff',
   vendor: 'Vendor',
   vendor_staff: 'Vendor Staff',
   rider: 'Rider',
@@ -56,6 +56,7 @@ const ProfilePage: React.FC = () => {
   const [email, setEmail] = useState(cached?.email ?? '');
   const [hubName, setHubName] = useState('');
   const [hubId, setHubId] = useState('');
+  const [department, setDepartment] = useState('');
   const [hubOptions, setHubOptions] = useState<{ id: string; label: string }[]>([]);
   const [accountStatus, setAccountStatus] = useState('');
   const [infoLoading, setInfoLoading] = useState(false);
@@ -83,6 +84,7 @@ const ProfilePage: React.FC = () => {
         setEmail(data.email ?? '');
         setHubName(data.hubName ?? '');
         setHubId(data.hubId ?? '');
+        setDepartment(data.department ?? '');
         setAccountStatus(data.status ?? 'active');
       })
       .catch(() => {})
@@ -186,6 +188,11 @@ const ProfilePage: React.FC = () => {
                 <MapPin size={12} /> {hubName}
               </span>
             )}
+            {department && (
+              <span className="profile-hub-badge">
+                <Briefcase size={12} /> {department}
+              </span>
+            )}
             <StatusChip tone={statusTone} variant="solid">
               {accountStatus === 'active' ? 'Active' : 'Inactive'}
             </StatusChip>
@@ -224,6 +231,12 @@ const ProfilePage: React.FC = () => {
                 <span className="profile-detail-label"><MapPin size={13} /> Hub</span>
                 <span className="profile-detail-value">{hubName || '—'}</span>
               </div>
+              {isStaff && (
+                <div className="profile-detail-item">
+                  <span className="profile-detail-label"><Briefcase size={13} /> Department</span>
+                  <span className="profile-detail-value">{department || '—'}</span>
+                </div>
+              )}
               <div className="profile-detail-item">
                 <span className="profile-detail-label">Status</span>
                 <span className="profile-detail-value">
