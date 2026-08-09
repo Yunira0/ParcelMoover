@@ -183,6 +183,15 @@ a.settlement-subrow:focus-visible {
   background-color: #4338ca;
 }
 
+/* Third carrier in the same family, shifted to teal so three carrier rows
+   stay distinguishable at a glance - reuses the secondary info tone already
+   used elsewhere (SalesTicketsPanel, VendorTodayPanel) rather than inventing
+   a one-off hue. Kept out of .status-dot.total/.delivery's neutral gray,
+   which would read as "not a carrier." */
+.status-dot.upaya {
+  background-color: #0e7490;
+}
+
 /* Carrier breakdown nested under "COD to collect from riders" - indented and
    quieter than a top-level row so it reads as this-belongs-to-the-row-above,
    not another peer metric. */

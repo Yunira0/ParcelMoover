@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { ArrowLeft, Printer, Download, CreditCard, FileText, Paperclip, Pencil, Undo2, Ban } from 'lucide-react';
 import Button from '../components/Button';
 import StatusChip from '../components/StatusChip';
@@ -7,6 +7,7 @@ import SegmentedTabs from '../components/SegmentedTabs';
 import EditSettlementModal from '../components/EditSettlementModal';
 import RevertSettlementModal from '../components/RevertSettlementModal';
 import AttachSettlementDocumentsCard from '../components/AttachSettlementDocumentsCard';
+import ConfirmBanner from '../components/ConfirmBanner';
 import { getSettlementDetail, type SettlementDetail } from '../services/finance.service';
 import { hasAnyRole, hasAdminPermission } from '../utils/auth';
 import { toBsDate, toBsDateTime } from '../utils/nepaliDate';
@@ -217,9 +218,12 @@ function buildStatementHtml(detail: SettlementDetail): string {
   </body></html>`;
 }
 
+type BannerMessage = { title: string; meta?: string };
+
 const SettlementDetailPage: React.FC = () => {
   const { id = '' } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const [detail, setDetail] = useState<SettlementDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -228,6 +232,27 @@ const SettlementDetailPage: React.FC = () => {
   const [showRevert, setShowRevert] = useState(false);
   const [showCancel, setShowCancel] = useState(false);
   const [tab, setTab] = useState<DetailTab>('billing');
+  // Acknowledges a money-moving action that just completed - either handed in
+  // via router state (a redirect from the pay flow) or set locally once a
+  // revert/cancel on this same page succeeds. Cleared from history state
+  // immediately so a refresh or back-navigation doesn't replay it.
+  const [banner, setBanner] = useState<BannerMessage | null>(
+    (location.state as { confirmBanner?: BannerMessage } | null)?.confirmBanner ?? null,
+  );
+
+  useEffect(() => {
+    if ((location.state as { confirmBanner?: BannerMessage } | null)?.confirmBanner) {
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+    // Only needs to run once, on the redirect that actually carried the state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!banner) return;
+    const timer = setTimeout(() => setBanner(null), 6000);
+    return () => clearTimeout(timer);
+  }, [banner]);
 
   const canPay = hasAnyRole(['super_admin', 'admin']);
   // Correcting a mistake — gated by the delegable EDIT_SETTLEMENTS permission,
@@ -358,8 +383,23 @@ const SettlementDetailPage: React.FC = () => {
         </div>
       </div>
 
+      {banner && <ConfirmBanner title={banner.title} meta={banner.meta} onDismiss={() => setBanner(null)} />}
+
       {loading ? (
-        <div className="loading-state">Loading statement...</div>
+        <div className="sdp-bill sdp-skeleton" role="status" aria-label="Loading statement">
+          <div className="sdp-bill-head">
+            <span className="sdp-skeleton-bar sdp-skeleton-avatar" />
+            <div className="sdp-payee-text">
+              <span className="sdp-skeleton-bar" style={{ width: '160px', height: '18px' }} />
+              <span className="sdp-skeleton-bar" style={{ width: '110px', height: '13px', marginTop: 'var(--space-2)' }} />
+            </div>
+          </div>
+          <div className="sdp-meta">
+            <span className="sdp-skeleton-bar" style={{ width: '100%', height: '14px' }} />
+            <span className="sdp-skeleton-bar" style={{ width: '100%', height: '14px' }} />
+          </div>
+          <span className="sdp-skeleton-bar" style={{ width: '100%', height: '160px' }} />
+        </div>
       ) : error ? (
         <p className="vendor-finance-error">{error}</p>
       ) : detail ? (
@@ -566,7 +606,10 @@ const SettlementDetailPage: React.FC = () => {
           statementId={detail.statementId}
           mode="revert"
           onClose={() => setShowRevert(false)}
-          onSuccess={() => setReloadKey((k) => k + 1)}
+          onSuccess={() => {
+            setReloadKey((k) => k + 1);
+            setBanner({ title: `${detail.statementId} reverted to pending`, meta: 'Marked for payment again' });
+          }}
         />
       )}
 
@@ -576,7 +619,10 @@ const SettlementDetailPage: React.FC = () => {
           statementId={detail.statementId}
           mode="cancel"
           onClose={() => setShowCancel(false)}
-          onSuccess={() => setReloadKey((k) => k + 1)}
+          onSuccess={() => {
+            setReloadKey((k) => k + 1);
+            setBanner({ title: `${detail.statementId} cancelled`, meta: 'Its orders are free for a future statement' });
+          }}
         />
       )}
     </div>

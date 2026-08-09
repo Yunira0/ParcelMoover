@@ -285,3 +285,46 @@
     width: 100%;
   }
 }
+
+/* Loading skeleton - mirrors the bill card's shape (avatar, name, meta rows,
+   a table-sized block) instead of a bare "Loading statement..." line, so the
+   layout doesn't jump-cut once the real data arrives. */
+.sdp-skeleton {
+  gap: var(--space-4);
+}
+
+.sdp-skeleton-bar {
+  display: block;
+  border-radius: var(--border-radius-default);
+  background: linear-gradient(
+    90deg,
+    var(--color-background-elevated) 25%,
+    var(--color-background-canvas) 37%,
+    var(--color-background-elevated) 63%
+  );
+  background-size: 400% 100%;
+  animation: sdp-skeleton-shimmer 1.4s ease infinite;
+}
+
+.sdp-skeleton-avatar {
+  border-radius: var(--border-radius-full);
+  height: 44px;
+  width: 44px;
+  flex-shrink: 0;
+}
+
+@keyframes sdp-skeleton-shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: 0 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sdp-skeleton-bar {
+    animation: none;
+    background: var(--color-background-elevated);
+  }
+}

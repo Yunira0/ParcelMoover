@@ -228,7 +228,15 @@ const SettlementPayPage: React.FC = () => {
         });
         setStep('proof');
       } else {
-        navigate(`/finance/settlements/${id}`);
+        const methodSummary = Array.from(new Set(validPayments.map((p) => p.method))).join(', ');
+        navigate(`/finance/settlements/${id}`, {
+          state: {
+            confirmBanner: {
+              title: `Rs. ${expectedTotal.toLocaleString()} recorded`,
+              meta: `via ${methodSummary}`,
+            },
+          },
+        });
       }
     } catch (err: any) {
       setError(err?.response?.data?.message || 'Failed to record payment');
@@ -240,7 +248,25 @@ const SettlementPayPage: React.FC = () => {
   const goToStatement = () => navigate(`/finance/settlements/${id}`);
 
   if (loadingDetail) {
-    return <div className="mpp-page"><div className="mpp-empty">Loading settlement...</div></div>;
+    return (
+      <div className="mpp-page">
+        <div className="mpp-ledger mpp-skeleton" role="status" aria-label="Loading settlement">
+          <div className="mpp-bill">
+            <div className="mpp-payee">
+              <span className="mpp-skeleton-bar mpp-skeleton-avatar" />
+              <div className="mpp-payee-text">
+                <span className="mpp-skeleton-bar" style={{ width: '140px', height: '16px' }} />
+                <span className="mpp-skeleton-bar" style={{ width: '100px', height: '13px', marginTop: 'var(--space-2)' }} />
+              </div>
+            </div>
+            <span className="mpp-skeleton-bar" style={{ width: '110px', height: '28px' }} />
+          </div>
+          <div className="mpp-zone">
+            <span className="mpp-skeleton-bar" style={{ width: '100%', height: '36px' }} />
+          </div>
+        </div>
+      </div>
+    );
   }
 
   if (!detail) {
@@ -271,23 +297,25 @@ const SettlementPayPage: React.FC = () => {
           <StepRail current={2} />
         </div>
 
-        <div className="mpp-confirm">
-          <span className="mpp-confirm-badge">
-            <CheckCircle2 size={20} />
-          </span>
-          <div>
-            <div className="mpp-confirm-amount">Rs. {paidSummary?.amount.toLocaleString()} recorded</div>
-            <div className="mpp-confirm-meta">via {paidSummary?.methodSummary} · attach proof now, or add it later from the statement</div>
+        <div className="mpp-step-content">
+          <div className="mpp-confirm">
+            <span className="mpp-confirm-badge">
+              <CheckCircle2 size={20} />
+            </span>
+            <div>
+              <div className="mpp-confirm-amount">Rs. {paidSummary?.amount.toLocaleString()} recorded</div>
+              <div className="mpp-confirm-meta">via {paidSummary?.methodSummary} · attach proof now, or add it later from the statement</div>
+            </div>
           </div>
-        </div>
 
-        <AttachSettlementDocumentsCard
-          settlementId={id}
-          submitLabel="Attach & finish"
-          dismissLabel="Skip for now"
-          onDone={goToStatement}
-          onDismiss={goToStatement}
-        />
+          <AttachSettlementDocumentsCard
+            settlementId={id}
+            submitLabel="Attach & finish"
+            dismissLabel="Skip for now"
+            onDone={goToStatement}
+            onDismiss={goToStatement}
+          />
+        </div>
       </div>
     );
   }
@@ -306,14 +334,15 @@ const SettlementPayPage: React.FC = () => {
         {!isRider && <StepRail current={1} />}
       </div>
 
-      {vendorOwesOffice && (
-        <div className="mpp-warning">
-          This vendor owes the office Rs. {expectedTotal.toLocaleString()} — the delivery charges
-          exceeded the COD collected. Record the amount received <strong>from the vendor</strong> below.
-        </div>
-      )}
+      <div className="mpp-step-content">
+        {vendorOwesOffice && (
+          <div className="mpp-warning">
+            This vendor owes the office Rs. {expectedTotal.toLocaleString()} — the delivery charges
+            exceeded the COD collected. Record the amount received <strong>from the vendor</strong> below.
+          </div>
+        )}
 
-      <form className="mpp-ledger" onSubmit={handleSubmit} noValidate>
+        <form className="mpp-ledger" onSubmit={handleSubmit} noValidate>
         <div className="mpp-bill">
           <div className="mpp-payee">
             <span className="mpp-avatar">{initials(detail.payeeName || '?')}</span>
@@ -483,6 +512,7 @@ const SettlementPayPage: React.FC = () => {
           </Button>
         </div>
       </form>
+      </div>
     </div>
   );
 };

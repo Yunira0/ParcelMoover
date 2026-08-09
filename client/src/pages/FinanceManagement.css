@@ -58,6 +58,39 @@
   font-size: var(--font-size-sm);
 }
 
+/* Deliberately its own class, not .tracking-id-link: a statement id is the
+   row's primary action (open the statement), so it earns the one accent
+   color the system allows for that role - unlike a tracking id, which is a
+   reference, not an action. */
+.statement-id-link {
+  background: none;
+  border: none;
+  color: var(--color-primary);
+  cursor: pointer;
+  font: inherit;
+  font-weight: var(--font-weight-semi-bold);
+  padding: 0;
+  text-decoration: none;
+  transition: color 150ms ease;
+}
+
+.statement-id-link:hover {
+  color: var(--color-primary-hover);
+  text-decoration: underline;
+}
+
+.statement-id-link:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+  border-radius: var(--border-radius-default);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .statement-id-link {
+    transition: none;
+  }
+}
+
 .loading-state {
   padding: var(--space-6);
   text-align: center;

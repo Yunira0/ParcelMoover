@@ -37,6 +37,14 @@ async function startServer() {
   // stores) here, after Redis is confirmed ready (or given up on above).
   const { default: app } = await import("./server");
 
+  // A deploy swaps the running code but not the Redis cache, so cached
+  // dashboard/order-list entries computed by the previous process's query
+  // logic can outlive the deploy by up to their TTL. Flushing them on boot
+  // means a code change is visible the instant the new process is live,
+  // not "eventually, once the old entry expires."
+  const { invalidateOrderCaches } = await import("./services/order.service");
+  invalidateOrderCaches().catch((err) => console.error("[Startup] Cache invalidation failed:", err));
+
   app.listen(port, () => {
     console.log(`[Startup] Server is running on port ${port}`);
     console.log(generateTrackingId());

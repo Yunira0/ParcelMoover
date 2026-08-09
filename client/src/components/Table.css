@@ -103,6 +103,55 @@
   text-align: center;
 }
 
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.skeleton-bar {
+  display: block;
+  height: 14px;
+  width: 70%;
+  border-radius: var(--border-radius-default);
+  background: linear-gradient(
+    90deg,
+    var(--color-background-elevated) 25%,
+    var(--color-background-canvas) 37%,
+    var(--color-background-elevated) 63%
+  );
+  background-size: 400% 100%;
+  animation: table-skeleton-shimmer 1.4s ease infinite;
+}
+
+.skeleton-bar-checkbox {
+  width: 16px;
+  height: 16px;
+  margin: 0 auto;
+}
+
+@keyframes table-skeleton-shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: 0 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-bar {
+    animation: none;
+    background: var(--color-background-elevated);
+  }
+}
+
 .action-buttons {
   display: flex;
   align-items: center;

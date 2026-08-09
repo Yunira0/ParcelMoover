@@ -88,17 +88,7 @@ const RevertSettlementModal: React.FC<RevertSettlementModalProps> = ({
           </Button>
         </div>
         <form onSubmit={handleSubmit}>
-          <div
-            style={{
-              background: 'var(--color-warning-bg, #fef3c7)',
-              color: 'var(--color-warning-text, #92400e)',
-              border: '1px solid var(--color-warning, #f59e0b)',
-              borderRadius: '8px',
-              padding: '10px 12px',
-              fontSize: '13px',
-              marginBottom: '16px',
-            }}
-          >
+          <div className="modal-warning-banner">
             {copy.warning(statementId)}
           </div>
 

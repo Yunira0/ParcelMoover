@@ -1,0 +1,19 @@
+.esm-intro {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-caption);
+  margin: 0 0 var(--space-4);
+}
+
+.esm-section {
+  margin-bottom: var(--space-4);
+}
+
+.esm-hint {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-caption);
+  margin: var(--space-2) 0 0;
+}
+
+.esm-error {
+  margin-top: var(--space-3);
+}

@@ -52,7 +52,15 @@ export const COD_BUCKET_META: Record<CodDetailBucket, CodBucketMeta> = {
     title: 'COD to collect from NCM',
     amountHeader: 'OUTSTANDING',
     description:
-      'Cash NCM collected on our behalf and has not remitted to the office. Parcels are matched by their NCM handoff record, so only orders actually shipped through the NCM API are counted.',
+      'Cash NCM collected on our behalf and has not remitted to the office. Includes orders shipped through the NCM API and any handed off to NCM manually.',
+    carrier: true,
+  },
+  upaya: {
+    label: '3PL — Upaya',
+    title: 'COD to collect from Upaya',
+    amountHeader: 'OUTSTANDING',
+    description:
+      "Cash Upaya collected on our behalf and has not remitted to the office. Upaya isn't API-connected yet, so parcels are tracked through a placeholder rider until that integration lands.",
     carrier: true,
   },
   'delivery-charge': {

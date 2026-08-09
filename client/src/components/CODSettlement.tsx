@@ -106,6 +106,7 @@ const CODSettlement: React.FC<CODSettlementProps> = ({ data, loading = false }) 
         </div>
         <RowLink bucket="pm-rider" dot="pm-rider" amount={data.codFromPmRider} loading={loading} nested />
         <RowLink bucket="ncm" dot="ncm" amount={data.codFromNcm} loading={loading} nested />
+        <RowLink bucket="upaya" dot="upaya" amount={data.codFromUpaya} loading={loading} nested />
 
         <RowLink
           bucket="delivery-charge"

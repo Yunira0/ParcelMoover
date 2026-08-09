@@ -426,6 +426,10 @@ model riders {
   bank_account_no                           String?
   bank_account_holder                       String?
   status                                    user_status       @default(active)
+  // Non-null only for placeholder rows standing in for an out-of-valley
+  // carrier that isn't a real ParcelMoover employee (e.g. 'ncm', 'upaya').
+  // NULL = genuine internal rider, the normal case.
+  carrier_code                              String?
   joined_at                                 DateTime?         @db.Date
   created_at                                DateTime          @default(now()) @db.Timestamptz(6)
   updated_at                                DateTime          @default(now()) @updatedAt @db.Timestamptz(6)

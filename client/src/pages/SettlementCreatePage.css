@@ -171,6 +171,7 @@
 
 .scp-table tbody tr {
   cursor: pointer;
+  transition: background-color 150ms ease;
 }
 
 .scp-table tbody tr:hover {
@@ -180,6 +181,12 @@
 .scp-row-selected,
 .scp-row-selected:hover {
   background: var(--color-background-primary-invert-default);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scp-table tbody tr {
+    transition: none;
+  }
 }
 
 .scp-mono {

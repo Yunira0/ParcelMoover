@@ -59,6 +59,7 @@ const EMPTY_SUMMARY: DashboardSummary = {
     codFromRiders: 0,
     codFromPmRider: 0,
     codFromNcm: 0,
+    codFromUpaya: 0,
     pendingDeliveryCharge: 0,
     deliveryCharge: 0,
     progressPercent: 0,

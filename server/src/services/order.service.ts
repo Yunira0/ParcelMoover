@@ -2747,6 +2747,7 @@ async function computeDashboardSummary(
         settled_to_rider: string;
         cod_from_pm_rider: string;
         cod_from_ncm: string;
+        cod_from_upaya: string;
         pending_delivery_charge: string;
         total_delivery_charge: string;
       }>
@@ -2759,27 +2760,37 @@ async function computeDashboardSummary(
         -- office: c.rider_id is only ever set from parcels.delivery_rider_id,
         -- which stays NULL for NCM-delivered parcels (see
         -- applyExternalCarrierStatus) - so rider_id IS NOT NULL is exactly
-        -- "our own rider delivered this," never an NCM handoff.
+        -- "our own rider delivered this," never an NCM handoff. r.carrier_code
+        -- IS NULL excludes placeholder rider rows that stand in for a carrier
+        -- (e.g. "PM Rider U"/"PM Rider N") rather than a real employee.
         COALESCE(SUM(c.collected_amount - LEAST(c.rider_remitted_amount, c.collected_amount))
-          FILTER (WHERE c.rider_id IS NOT NULL), 0) AS cod_from_pm_rider,
+          FILTER (WHERE c.rider_id IS NOT NULL AND r.carrier_code IS NULL), 0) AS cod_from_pm_rider,
         -- Cash NCM collected on our behalf and hasn't remitted to the office
-        -- yet. Identified by the same durable signal ncm.service.ts uses
-        -- (a real parcel_remarks handoff row - see findNcmOrderIdForParcel),
-        -- not just "no pm-rider," so a future non-NCM 3PL never gets
-        -- misattributed to NCM merely for also lacking a pm-rider. No
+        -- yet. Two signals feed this: the durable API handoff remark
+        -- ncm.service.ts writes (see findNcmOrderIdForParcel), and parcels
+        -- routed to NCM manually via the "PM Rider N" placeholder rider
+        -- (r.carrier_code = 'ncm') for cases the API flow doesn't cover. No
         -- pm-rider ever touches this cash, so rider_remitted_amount is never
         -- populated for these rows - the full collected amount counts as
         -- outstanding until NCM's remittance clears it (via the vendor leg,
         -- remitted_amount).
         COALESCE(SUM(c.collected_amount - LEAST(c.remitted_amount, c.collected_amount))
-          FILTER (WHERE c.rider_id IS NULL AND EXISTS (
+          FILTER (WHERE (c.rider_id IS NULL AND EXISTS (
             SELECT 1 FROM parcel_remarks pr
             WHERE pr.parcel_id = p.id AND pr.remark LIKE ${NCM_HANDOFF_REMARK_PREFIX + '%'}
-          )), 0) AS cod_from_ncm,
+          )) OR r.carrier_code = 'ncm'), 0) AS cod_from_ncm,
+        -- Cash Upaya collected on our behalf. Upaya has no API integration
+        -- yet, so every Upaya parcel goes through the "PM Rider U" placeholder
+        -- rider (r.carrier_code = 'upaya') - there's no handoff-remark
+        -- equivalent to fall back on. Same "clears via the vendor leg"
+        -- reasoning as NCM above.
+        COALESCE(SUM(c.collected_amount - LEAST(c.remitted_amount, c.collected_amount))
+          FILTER (WHERE r.carrier_code = 'upaya'), 0) AS cod_from_upaya,
         COALESCE(SUM(p.delivery_charge) FILTER (WHERE c.payment_status::text = 'pending'), 0) AS pending_delivery_charge,
         COALESCE(SUM(p.delivery_charge), 0) AS total_delivery_charge
       FROM cod_collections c
       JOIN parcels p ON p.id = c.parcel_id
+      LEFT JOIN riders r ON r.id = c.rider_id
       WHERE p.deleted_at IS NULL
         AND p.status::text IN ('delivered', 'partially_delivered')
         ${codScopeSql}
@@ -2830,7 +2841,8 @@ async function computeDashboardSummary(
   // future 3PL just adds another FILTER clause and another addend here).
   const codFromPmRider = Number(codRow?.cod_from_pm_rider ?? 0);
   const codFromNcm = Number(codRow?.cod_from_ncm ?? 0);
-  const codFromRiders = codFromPmRider + codFromNcm;
+  const codFromUpaya = Number(codRow?.cod_from_upaya ?? 0);
+  const codFromRiders = codFromPmRider + codFromNcm + codFromUpaya;
 
   // Delivery charge on orders whose COD hasn't been settled to the vendor
   // yet - this is deducted from collected_amount at settlement time (see
@@ -2947,6 +2959,7 @@ async function computeDashboardSummary(
       codFromRiders,
       codFromPmRider,
       codFromNcm,
+      codFromUpaya,
       deliveryCharge,
       pendingCodCount,
       pendingDeliveryCharge,
@@ -2994,6 +3007,7 @@ export const COD_DETAIL_BUCKETS = [
   "pending",
   "pm-rider",
   "ncm",
+  "upaya",
   "delivery-charge",
 ] as const;
 export type CodDetailBucket = (typeof COD_DETAIL_BUCKETS)[number];
@@ -3062,10 +3076,12 @@ export async function getCodSettlementDetail(
       : bucket === "pending"
         ? Prisma.sql`AND ${pendingExprSql} > 0`
         : bucket === "pm-rider"
-          ? Prisma.sql`AND c.rider_id IS NOT NULL AND (c.collected_amount - LEAST(c.rider_remitted_amount, c.collected_amount)) > 0`
+          ? Prisma.sql`AND c.rider_id IS NOT NULL AND r.carrier_code IS NULL AND (c.collected_amount - LEAST(c.rider_remitted_amount, c.collected_amount)) > 0`
           : bucket === "ncm"
-            ? Prisma.sql`AND c.rider_id IS NULL AND ${ncmHandoffExistsSql} AND (c.collected_amount - LEAST(c.remitted_amount, c.collected_amount)) > 0`
-            : Prisma.empty; // 'total' and 'delivery-charge': every in-scope row
+            ? Prisma.sql`AND ((c.rider_id IS NULL AND ${ncmHandoffExistsSql}) OR r.carrier_code = 'ncm') AND (c.collected_amount - LEAST(c.remitted_amount, c.collected_amount)) > 0`
+            : bucket === "upaya"
+              ? Prisma.sql`AND r.carrier_code = 'upaya' AND (c.collected_amount - LEAST(c.remitted_amount, c.collected_amount)) > 0`
+              : Prisma.empty; // 'total' and 'delivery-charge': every in-scope row
 
   // Each bucket's rows must add up to the exact figure on the card, so the
   // per-row amount is the bucket's own measure - the gross collection for
@@ -3078,7 +3094,7 @@ export async function getCodSettlementDetail(
         ? settledExprSql
         : bucket === "pm-rider"
           ? Prisma.sql`c.collected_amount - LEAST(c.rider_remitted_amount, c.collected_amount)`
-          : bucket === "ncm"
+          : bucket === "ncm" || bucket === "upaya"
             ? Prisma.sql`c.collected_amount - LEAST(c.remitted_amount, c.collected_amount)`
             : bucket === "delivery-charge"
               ? Prisma.sql`p.delivery_charge`

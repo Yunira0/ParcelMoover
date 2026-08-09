@@ -120,16 +120,8 @@ const FinanceManagement: React.FC = () => {
       accessor: (item: SettlementListItem) => (
         <button
           type="button"
+          className="statement-id-link"
           onClick={() => navigate(`/finance/settlements/${item.id}`)}
-          style={{
-            background: 'none',
-            border: 'none',
-            padding: 0,
-            color: 'var(--color-primary)',
-            textDecoration: 'underline',
-            cursor: 'pointer',
-            font: 'inherit',
-          }}
         >
           {item.statementId}
         </button>
