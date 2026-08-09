@@ -210,7 +210,7 @@ app.use((req, res, next) => {
     return next();
   }
 
-  if (req.path.startsWith("/rider")) {
+  if (req.path === "/rider" || req.path.startsWith("/rider/")) {
     const stripped = req.path.replace(/^\/rider/, '') || '/';
     if (path.extname(stripped) !== "") {
       return res.sendFile(stripped, { root: "public/.rider" }, (err) => {
