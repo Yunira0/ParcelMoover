@@ -32,6 +32,8 @@ interface VendorUser {
   salesEditUsed: boolean;
 }
 
+// Starting rows-per-page. The selector below the table can change it; the
+// server caps any value at 100 (auth.controller LIST_MAX_PAGE_SIZE).
 const PAGE_SIZE = 20;
 
 const VendorManagement: React.FC = () => {
@@ -50,13 +52,14 @@ const VendorManagement: React.FC = () => {
   const [actionMode, setActionMode] = useState<'edit' | 'password'>('edit');
   const [activeVendor, setActiveVendor] = useState<VendorUser | null>(null);
   const [page, setPage] = useState(1);
+  const [pageSizeChoice, setPageSizeChoice] = useState(PAGE_SIZE);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
 
   const loadVendors = useCallback(async () => {
     try {
       setLoading(true);
-      const params: Record<string, string | number> = { page, pageSize: PAGE_SIZE };
+      const params: Record<string, string | number> = { page, pageSize: pageSizeChoice };
       if (searchQuery) params.search = searchQuery;
       if (activeStatus !== 'all') params.status = activeStatus;
 
@@ -76,7 +79,7 @@ const VendorManagement: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [page, searchQuery, activeStatus]);
+  }, [page, pageSizeChoice, searchQuery, activeStatus]);
 
   useEffect(() => {
     loadVendors();
@@ -204,7 +207,12 @@ const VendorManagement: React.FC = () => {
             onPageChange={setPage}
             ariaLabel="Vendor management pagination"
             summary={`${total} vendor${total !== 1 ? 's' : ''} total`}
-            pageSize={PAGE_SIZE}
+            pageSize={pageSizeChoice}
+            pageSizeLabel="vendors"
+            onPageSizeChange={(size) => {
+              setPageSizeChoice(size);
+              setPage(1);
+            }}
           />
         </>
       )}

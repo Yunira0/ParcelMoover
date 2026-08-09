@@ -15,6 +15,7 @@ import {
 import PageHeader from '../components/PageHeader';
 import StatCard from '../components/StatCard';
 import Table from '../components/Table';
+import Pagination from '../components/Pagination';
 import Button from '../components/Button';
 import SearchableSelect from '../components/SearchableSelect';
 import StatusChip, { type StatusChipTone } from '../components/StatusChip';
@@ -34,6 +35,10 @@ import '../components/Modal.css';
 import './RiderRunSheet.css';
 
 const ALL_RIDERS = '';
+
+// The run sheet endpoint returns a whole day at once (no server paging), so the
+// overview table is sliced client-side.
+const PAGE_SIZE = 10;
 
 const STATUS_LABELS: Record<ParcelStatus, string> = {
   pickup_ordered: 'Pickup Ordered',
@@ -217,8 +222,24 @@ const RiderRunSheet: React.FC = () => {
   const [date, setDate] = useState(nepalToday);
   const [expandedSheetId, setExpandedSheetId] = useState('');
   const [detailSheetId, setDetailSheetId] = useState('');
+  const [page, setPage] = useState(1);
+  const [pageSizeChoice, setPageSizeChoice] = useState(PAGE_SIZE);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
+
+  // Changing a filter reloads the whole day, so the old page number is
+  // meaningless - reset it (and any open row) with the filter itself rather
+  // than in an effect watching it.
+  const changeRider = (id: string) => {
+    setRiderId(id);
+    setPage(1);
+    setExpandedSheetId('');
+  };
+  const changeDate = (value: string) => {
+    setDate(value);
+    setPage(1);
+    setExpandedSheetId('');
+  };
 
   useEffect(() => {
     (async () => {
@@ -258,6 +279,14 @@ const RiderRunSheet: React.FC = () => {
   const rows = useMemo<RunSheetRow[]>(
     () => sheets.map((sheet, index) => ({ ...sheet, sn: index + 1 })),
     [sheets],
+  );
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSizeChoice));
+  // Clamped rather than reset, so a live reload that shrinks the list can't
+  // strand the table on a page that no longer exists.
+  const safePage = Math.min(page, totalPages);
+  const pagedRows = useMemo(
+    () => rows.slice((safePage - 1) * pageSizeChoice, safePage * pageSizeChoice),
+    [rows, safePage, pageSizeChoice],
   );
   const expandedSheet = sheets.find(sheet => sheet.id === expandedSheetId);
   // Derived from `sheets` so the popup stays fresh when live status updates reload the list.
@@ -379,7 +408,7 @@ const RiderRunSheet: React.FC = () => {
                 ...riders.map(r => ({ id: r.id, label: r.name })),
               ]}
               value={riderId}
-              onChange={setRiderId}
+              onChange={changeRider}
               placeholder="All Riders"
               searchPlaceholder="Search rider by name..."
               emptyMessage="No active riders found."
@@ -389,7 +418,7 @@ const RiderRunSheet: React.FC = () => {
             <label className="runsheet-filter-label">Date</label>
             <NepaliDatePicker
               value={date}
-              onChange={setDate}
+              onChange={changeDate}
               aria-label="Run sheet date"
             />
           </div>
@@ -400,7 +429,7 @@ const RiderRunSheet: React.FC = () => {
 
       <Table
         columns={overviewColumns}
-        data={rows}
+        data={pagedRows}
         selectable={false}
         getRowClassName={row => (row.id === expandedSheetId ? 'runsheet-row-active' : '')}
         loading={loading && rows.length === 0}
@@ -408,6 +437,26 @@ const RiderRunSheet: React.FC = () => {
         emptyMessage={`No run sheets on ${date}.`}
         minWidth="1420px"
         tableClassName="runsheet-table"
+      />
+
+      <Pagination
+        ariaLabel="Run sheet pagination"
+        page={safePage}
+        totalPages={totalPages}
+        onPageChange={nextPage => {
+          setPage(nextPage);
+          // The expanded parcel list renders under the table - keeping it open
+          // for a row that just scrolled off would read as a mismatch.
+          setExpandedSheetId('');
+        }}
+        summary={`${rows.length} run sheet${rows.length === 1 ? '' : 's'}`}
+        pageSize={pageSizeChoice}
+        pageSizeLabel="run sheets"
+        onPageSizeChange={size => {
+          setPageSizeChoice(size);
+          setPage(1);
+          setExpandedSheetId('');
+        }}
       />
 
       {expandedSheet && <RunSheetDetailCard sheet={expandedSheet} />}

@@ -296,7 +296,9 @@ export async function listOrdersController(req: Request, res: Response) {
         ...(dir !== undefined ? { dir } : {}),
         ...(sortBy ? { sortBy } : {}),
         ...(sortDir ? { sortDir } : {}),
-        ...(req.query.withArrival === "true" ? { withArrival: true } : {}),
+        // Both already coerced to real booleans by listOrdersQuerySchema.
+        ...(req.query.withArrival ? { withArrival: true } : {}),
+        ...(req.query.deliveredToday ? { deliveredToday: true } : {}),
       },
     );
 

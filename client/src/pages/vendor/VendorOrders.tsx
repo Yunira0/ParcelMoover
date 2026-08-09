@@ -570,8 +570,8 @@ const VendorOrders: React.FC = () => {
               ref={searchInputRef}
               value={trackingSearch}
               onChange={e => setTrackingSearch(e.target.value)}
-              placeholder="TRK001 or TRK001, TRK002, TRK003"
-              aria-label="Search by tracking ID"
+              placeholder="TRK001, #2980, or TRK001, TRK002, TRK003"
+              aria-label="Search by tracking ID or order ID"
             />
             {trackingSearch && (
               <button type="button" onClick={() => setTrackingSearch('')} aria-label="Clear search">
@@ -616,7 +616,7 @@ const VendorOrders: React.FC = () => {
           totalPages={totalPages}
           cursor={pager.controls(meta)}
           pageSize={pageSizeChoice}
-          pageSizeLabel="parcels"
+          pageSizeLabel="orders"
           onPageSizeChange={(size) => {
             setPageSizeChoice(size);
             pager.reset();

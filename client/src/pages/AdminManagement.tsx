@@ -32,6 +32,8 @@ const PERMISSION_LABELS: Record<string, string> = Object.fromEntries(
   ADMIN_PERMISSIONS.map((p) => [p.code, p.label]),
 );
 
+// Starting rows-per-page. The selector below the table can change it; the
+// server caps any value at 100 (auth.controller LIST_MAX_PAGE_SIZE).
 const PAGE_SIZE = 20;
 
 const AdminManagement: React.FC = () => {
@@ -45,6 +47,7 @@ const AdminManagement: React.FC = () => {
   const [actionMode, setActionMode] = useState<'edit' | 'password'>('edit');
   const [activeAdmin, setActiveAdmin] = useState<AdminUser | null>(null);
   const [page, setPage] = useState(1);
+  const [pageSizeChoice, setPageSizeChoice] = useState(PAGE_SIZE);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
 
@@ -60,7 +63,7 @@ const AdminManagement: React.FC = () => {
   const loadAdmins = useCallback(async () => {
     try {
       setLoading(true);
-      const params: Record<string, string | number> = { page, pageSize: PAGE_SIZE };
+      const params: Record<string, string | number> = { page, pageSize: pageSizeChoice };
       if (searchQuery) params.search = searchQuery;
       if (filter !== 'all') params.status = filter;
 
@@ -77,7 +80,7 @@ const AdminManagement: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [page, searchQuery, filter]);
+  }, [page, pageSizeChoice, searchQuery, filter]);
 
   useEffect(() => {
     loadAdmins();
@@ -261,7 +264,12 @@ const AdminManagement: React.FC = () => {
             onPageChange={setPage}
             ariaLabel="Admin management pagination"
             summary={`${total} admin${total !== 1 ? 's' : ''} total`}
-            pageSize={PAGE_SIZE}
+            pageSize={pageSizeChoice}
+            pageSizeLabel="admins"
+            onPageSizeChange={(size) => {
+              setPageSizeChoice(size);
+              setPage(1);
+            }}
           />
         </>
       )}

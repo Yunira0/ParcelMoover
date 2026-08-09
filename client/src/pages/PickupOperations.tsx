@@ -911,7 +911,7 @@ const PickupOperations: React.FC = () => {
             onChange={event => setSearchQuery(event.target.value)}
             onKeyDown={event => commitScannedTerm(event, setScannedIds, setSearchQuery)}
             onPaste={event => handleScannerPaste(event, setScannedIds, setSearchQuery)}
-            placeholder="Search tracking id"
+            placeholder="Search tracking id or #2980"
           />
           {(searchQuery || scannedIds.length > 0) && (
             <button type="button" onClick={() => { setSearchQuery(''); setScannedIds([]); }} aria-label="Clear search">

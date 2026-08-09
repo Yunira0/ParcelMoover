@@ -7,6 +7,7 @@ import {
   optionalUuidSchema,
   paginationQuerySchema,
 } from "./common";
+import { ORDER_SORT_FIELDS } from "../types/order.type";
 
 // ── Enums (must stay in sync with order.type.ts) ──────────────────────────────
 
@@ -206,6 +207,12 @@ export type BulkUpdateOrderStatusInput = z.infer<typeof bulkUpdateOrderStatusSch
 
 // ── List orders (query params) ────────────────────────────────────────────────
 
+// Query-string booleans arrive as the strings "true"/"false". z.coerce.boolean
+// would read "false" as true, so match the literal the client actually sends.
+const booleanFlagSchema = z
+  .preprocess((val) => (val === undefined ? undefined : val === true || val === "true"), z.boolean().optional())
+  .optional();
+
 export const listOrdersQuerySchema = paginationQuerySchema.extend({
   status: z
     .preprocess((val) => {
@@ -236,6 +243,16 @@ export const listOrdersQuerySchema = paginationQuerySchema.extend({
   // treated as "no cursor" by the service, so only the length is bounded here.
   cursor: z.string().max(400).optional(),
   dir: z.enum(["next", "prev"]).optional(),
+  // Every field below must stay declared here even though the controller
+  // re-validates it: `validate(..., "query")` replaces req.query with the
+  // parsed object, and a plain z.object strips whatever it doesn't declare -
+  // so an undeclared param never reaches the controller at all.
+  sortBy: z.enum(ORDER_SORT_FIELDS).optional(),
+  sortDir: z.enum(["asc", "desc"]).optional(),
+  withArrival: booleanFlagSchema,
+  // Narrows to parcels delivered since local midnight, matching the
+  // "Delivered today" dashboard card's own count (getDashboardSummary).
+  deliveredToday: booleanFlagSchema,
 });
 
 export type ListOrdersQuery = z.infer<typeof listOrdersQuerySchema>;

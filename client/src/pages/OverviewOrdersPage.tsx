@@ -1,24 +1,25 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Download } from 'lucide-react';
 import Button from '../components/Button';
 import Table from '../components/Table';
+import Pagination from '../components/Pagination';
 import StatusChip from '../components/StatusChip';
-import { getOrders, type Order } from '../services/orders.service';
+import { getOrders, type ListOrdersParams, type Order, type OrdersPageMeta } from '../services/orders.service';
 import { METRIC_STATUS_GROUPS, type MetricKey } from '../components/OverviewMetrics';
 import { ORDER_STATUS_LABELS, getOrderStatusTone } from '../utils/orderStatus';
 import { downloadExcel } from '../utils/excel';
+import { useCursorPagination } from '../hooks/useCursorPagination';
 import { toBsDate } from '../utils/nepaliDate';
 import { formatCurrency } from '../utils/format';
 import './OverviewOrdersPage.css';
 
-// Local AD date (YYYY-MM-DD) - the browser runs in Nepal time, matching how the
-// server anchors "today". Used to narrow the Delivered-today drill-down.
-const todayAd = (): string => {
-  const d = new Date();
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-};
+const PAGE_SIZE = 10;
+// The server caps a page at 100 rows, so the export walks the list in
+// 100-row hops rather than relying on the unpaginated endpoint's 200-row cap -
+// that cap is exactly why a 240-order card used to open onto 200 rows.
+const EXPORT_PAGE_SIZE = 100;
+const MAX_EXPORT_PAGES = 100; // safety cap: 10,000 rows per download
 
 const isMetricKey = (value: string | undefined): value is MetricKey =>
   !!value && value in METRIC_STATUS_GROUPS;
@@ -27,31 +28,55 @@ const OverviewOrdersPage: React.FC = () => {
   const { metric } = useParams<{ metric: string }>();
   const navigate = useNavigate();
   const [orders, setOrders] = useState<Order[]>([]);
+  const [meta, setMeta] = useState<OrdersPageMeta | null>(null);
+  const pager = useCursorPagination();
+  const [pageSizeChoice, setPageSizeChoice] = useState(PAGE_SIZE);
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
   const [error, setError] = useState('');
 
   const validMetric = isMetricKey(metric) ? metric : null;
   const group = validMetric ? METRIC_STATUS_GROUPS[validMetric] : null;
 
+  // The query behind both the table and the export. deliveredToday is applied
+  // server-side (not by filtering a page client-side) so meta.total matches the
+  // dashboard card that linked here.
+  const baseQuery: ListOrdersParams | null = useMemo(
+    () =>
+      group
+        ? {
+            status: group.statuses,
+            ...(group.todayOnly ? { deliveredToday: true } : {}),
+          }
+        : null,
+    [group],
+  );
+
   useEffect(() => {
     if (!group) {
       // Unknown metric in the URL - bounce back to the dashboard.
       navigate('/dashboard', { replace: true });
-      return;
     }
+  }, [group, navigate]);
+
+  // A different card means a different list - start back at page one.
+  useEffect(() => { pager.reset(); }, [metric, pager.reset]);
+
+  useEffect(() => {
+    if (!baseQuery) return;
     let active = true;
     setLoading(true);
     setError('');
-    // withArrival so the export carries each order's "arrived at origin" date.
-    getOrders({ status: group.statuses, withArrival: true })
+    getOrders({
+      ...baseQuery,
+      pageSize: pageSizeChoice,
+      cursor: pager.request.cursor,
+      dir: pager.request.dir,
+    })
       .then((res) => {
         if (!active) return;
-        let data = Array.isArray(res.data) ? res.data : [];
-        if (group.todayOnly) {
-          const today = todayAd();
-          data = data.filter((o) => o.deliveredAt === today);
-        }
-        setOrders(data);
+        setOrders(Array.isArray(res.data) ? res.data : []);
+        setMeta(res.meta ?? null);
       })
       .catch(() => {
         if (active) setError('Failed to load orders.');
@@ -62,8 +87,10 @@ const OverviewOrdersPage: React.FC = () => {
     return () => {
       active = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [metric]);
+  }, [baseQuery, pageSizeChoice, pager.request]);
+
+  const totalCount = meta?.total ?? orders.length;
+  const totalPages = meta?.totalPages ?? 1;
 
   const columns = useMemo(
     () => [
@@ -100,7 +127,40 @@ const OverviewOrdersPage: React.FC = () => {
     [],
   );
 
-  const handleExport = () => {
+  // Walks every page of the same query the table shows. The download is the
+  // whole card, not just the page on screen - withArrival adds each order's
+  // "arrived at origin" date, which only the export column needs.
+  const fetchAllForExport = useCallback(async (): Promise<Order[]> => {
+    if (!baseQuery) return [];
+    const all: Order[] = [];
+    let cursor: string | undefined;
+    for (let i = 0; i < MAX_EXPORT_PAGES; i++) {
+      const res = await getOrders({
+        ...baseQuery,
+        withArrival: true,
+        pageSize: EXPORT_PAGE_SIZE,
+        cursor,
+        dir: 'next',
+      });
+      if (!res?.success || !Array.isArray(res.data)) break;
+      all.push(...res.data);
+      if (!res.meta?.hasNextPage || !res.meta.nextCursor) break;
+      cursor = res.meta.nextCursor;
+    }
+    return all;
+  }, [baseQuery]);
+
+  const handleExport = async () => {
+    setExporting(true);
+    let rows: Order[];
+    try {
+      rows = await fetchAllForExport();
+    } catch {
+      rows = orders; // fall back to the page on screen
+    } finally {
+      setExporting(false);
+    }
+
     const headers = [
       '#', 'Tracking ID', 'Status', 'Order Type', 'Service Type', 'Origin', 'Destination',
       'Sender', 'Sender Phone', 'Sender Address',
@@ -109,7 +169,7 @@ const OverviewOrdersPage: React.FC = () => {
       'Vendor', 'Rider', 'Attempts', 'Remarks',
       'Order Created Date', 'Arrived at Origin Date', 'Delivered At', 'Last Updated By', 'Last Updated At',
     ];
-    const rows = orders.map((o) => [
+    const sheetRows = rows.map((o) => [
       `#${o.orderNumber}`,
       o.trackingId,
       ORDER_STATUS_LABELS[o.status],
@@ -142,7 +202,7 @@ const OverviewOrdersPage: React.FC = () => {
     ]);
     const label = group?.label ?? 'orders';
     const slug = label.toLowerCase().replace(/\s+/g, '-');
-    downloadExcel(`${slug}.xlsx`, label.slice(0, 31), headers, rows);
+    downloadExcel(`${slug}.xlsx`, label.slice(0, 31), headers, sheetRows);
   };
 
   if (!group) return null;
@@ -156,11 +216,11 @@ const OverviewOrdersPage: React.FC = () => {
           </button>
           <div>
             <h1>{group.label}</h1>
-            <span className="overview-orders-count">{loading ? 'Loading…' : `${orders.length} order${orders.length === 1 ? '' : 's'}`}</span>
+            <span className="overview-orders-count">{loading ? 'Loading…' : `${totalCount} order${totalCount === 1 ? '' : 's'}`}</span>
           </div>
         </div>
-        <Button variant="secondary" onClick={handleExport} disabled={loading || orders.length === 0}>
-          <Download size={16} /> Download Excel
+        <Button variant="secondary" onClick={handleExport} disabled={loading || exporting || totalCount === 0}>
+          <Download size={16} /> {exporting ? 'Preparing…' : 'Download Excel'}
         </Button>
       </div>
 
@@ -173,6 +233,20 @@ const OverviewOrdersPage: React.FC = () => {
         loading={loading}
         loadingMessage="Loading orders..."
         emptyMessage="No orders found."
+      />
+
+      <Pagination
+        ariaLabel={`${group.label} pagination`}
+        page={pager.page}
+        totalPages={totalPages}
+        cursor={pager.controls(meta)}
+        pageSize={pageSizeChoice}
+        pageSizeLabel="orders"
+        onPageSizeChange={(size) => {
+          setPageSizeChoice(size);
+          pager.reset();
+        }}
+        summary={`${totalCount} order${totalCount === 1 ? '' : 's'}`}
       />
     </div>
   );

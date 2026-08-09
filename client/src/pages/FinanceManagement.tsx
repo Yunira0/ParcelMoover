@@ -14,6 +14,8 @@ import './FinanceManagement.css';
 
 type FinanceType = 'rider' | 'vendor';
 
+// Starting rows-per-page. The selector below the table can change it; the
+// server caps any value at 100 (finance.service MAX_PAGE_SIZE).
 const PAGE_SIZE = 20;
 
 const FinanceManagement: React.FC = () => {
@@ -22,7 +24,9 @@ const FinanceManagement: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [items, setItems] = useState<SettlementListItem[]>([]);
   const [page, setPage] = useState(1);
+  const [pageSizeChoice, setPageSizeChoice] = useState(PAGE_SIZE);
   const [totalPages, setTotalPages] = useState(1);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -31,11 +35,12 @@ const FinanceManagement: React.FC = () => {
     setLoading(true);
     setError('');
 
-    getSettlements(activeType, undefined, page, PAGE_SIZE)
+    getSettlements(activeType, undefined, page, pageSizeChoice)
       .then((res) => {
         if (!active) return;
         setItems(res.data);
         setTotalPages(res.meta.totalPages);
+        setTotal(res.meta.total);
       })
       .catch((err) => {
         if (active) setError(err?.response?.data?.message || 'Failed to load settlements.');
@@ -47,7 +52,7 @@ const FinanceManagement: React.FC = () => {
     return () => {
       active = false;
     };
-  }, [activeType, page]);
+  }, [activeType, page, pageSizeChoice]);
 
   const rows = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -61,8 +66,8 @@ const FinanceManagement: React.FC = () => {
           (item.remark || '').toLowerCase().includes(q)
         );
       })
-      .map((item, index) => ({ ...item, sn: (page - 1) * PAGE_SIZE + index + 1 }));
-  }, [items, searchQuery, page]);
+      .map((item, index) => ({ ...item, sn: (page - 1) * pageSizeChoice + index + 1 }));
+  }, [items, searchQuery, page, pageSizeChoice]);
 
   const handleTypeChange = (type: FinanceType) => {
     setActiveType(type);
@@ -167,7 +172,19 @@ const FinanceManagement: React.FC = () => {
         emptyMessage="No finance records found."
       />
 
-      <Pagination ariaLabel="Settlements pagination" page={page} totalPages={totalPages} onPageChange={setPage} />
+      <Pagination
+        ariaLabel="Settlements pagination"
+        page={page}
+        totalPages={totalPages}
+        onPageChange={setPage}
+        summary={`${total} statement${total !== 1 ? 's' : ''} total`}
+        pageSize={pageSizeChoice}
+        pageSizeLabel="statements"
+        onPageSizeChange={(size) => {
+          setPageSizeChoice(size);
+          setPage(1);
+        }}
+      />
     </div>
   );
 };
