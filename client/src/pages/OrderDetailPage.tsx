@@ -7,12 +7,14 @@ import {
   subscribeToOrderStatusChanged,
   updateOrderStatus,
   redirectOrder,
+  updateOrder,
   type OrderDetail,
   type OrderRemark,
   type ParcelStatus,
+  type UpdateOrderInput,
 } from '../services/orders.service';
 import OrderDetailHeader, { STATUS_LABEL } from '../components/order-detail/OrderDetailHeader';
-import { getCurrentUserRoles } from '../utils/auth';
+import { getCurrentUserRoles, isVendorSide } from '../utils/auth';
 import OrderInfoCards from '../components/order-detail/OrderInfoCards';
 import OrderTimeline from '../components/order-detail/OrderTimeline';
 import OrderRemarks from '../components/order-detail/OrderRemarks';
@@ -50,6 +52,26 @@ const REDIRECTABLE_STATUSES: ParcelStatus[] = [
   'follow_up',
 ];
 
+// Mirrors EDIT_BLOCKED_STATUSES in order.service.ts — a parcel that has
+// reached a terminal state is settled paperwork and must never be offered
+// for edit, by anyone.
+const EDIT_BLOCKED_STATUSES: ParcelStatus[] = [
+  'delivered',
+  'partially_delivered',
+  'cancelled',
+  'returned_to_vendor',
+  'loss_and_damage',
+];
+
+// Mirrors VENDOR_EDITABLE_STATUSES in order.service.ts — a vendor may only
+// edit while the parcel is still theirs to hand over; once it's in the
+// network, changes go through ops staff instead.
+const VENDOR_EDITABLE_STATUSES: ParcelStatus[] = [
+  'pickup_ordered',
+  'rider_assigned',
+  'failed_pickup',
+];
+
 const OrderDetailPage: React.FC = () => {
   const { trackingId } = useParams<{ trackingId: string }>();
   const navigate = useNavigate();
@@ -79,6 +101,18 @@ const OrderDetailPage: React.FC = () => {
   const [redirectOpen, setRedirectOpen] = useState(false);
   const [redirectSaving, setRedirectSaving] = useState(false);
   const [redirectError, setRedirectError] = useState('');
+
+  // Edit parcel details — inline, field by field, directly on the details
+  // card (OrderInfoCards). Ops staff can edit any non-terminal parcel; a
+  // vendor/vendor_staff actor only while it's still theirs to hand over.
+  // Matches EDIT_BLOCKED_STATUSES / VENDOR_EDITABLE_STATUSES on the server so
+  // the card never offers an edit the API would then refuse.
+  const isVendorActor = isVendorSide();
+  const handleSaveOrderField = async (patch: UpdateOrderInput) => {
+    if (!order) return;
+    await updateOrder(order.id, patch);
+    await fetchOrder();
+  };
 
   const fetchOrder = useCallback(async () => {
     if (!trackingId) return;
@@ -205,6 +239,14 @@ const OrderDetailPage: React.FC = () => {
     );
   }
 
+  const isEditBlocked = EDIT_BLOCKED_STATUSES.includes(order.status);
+  const canEditNow = isAdmin ? !isEditBlocked : isVendorActor && VENDOR_EDITABLE_STATUSES.includes(order.status);
+  // Hidden outright for a terminal parcel or a viewer with no edit permission
+  // at all (rider/sales); disabled-with-reason only for the vendor window
+  // that closes once ops has the parcel, since that's a temporary, explainable
+  // state worth surfacing rather than a settled one worth hiding.
+  const showEditDisabled = !canEditNow && !isEditBlocked && isVendorActor;
+
   return (
     <div className="od-page">
       <div className="od-container">
@@ -271,14 +313,23 @@ const OrderDetailPage: React.FC = () => {
           senderAddress={order.senderAddress}
           receiverName={order.receiverName}
           receiverPhone={order.receiverPhone}
+          receiverAlternatePhone={order.receiverAlternatePhone}
           receiverAddress={order.receiverAddress}
           origin={order.origin}
           destination={order.destination}
+          destinationLocationId={order.destinationLocationId}
           codAmount={order.codAmount}
           itemValue={order.itemValue}
           deliveryCharge={order.deliveryCharge}
           pieces={order.pieces}
           weightKg={order.weightKg}
+          editable={canEditNow}
+          lockedReason={
+            showEditDisabled
+              ? 'Editing locks once the parcel is picked up — contact support for changes.'
+              : undefined
+          }
+          onSave={handleSaveOrderField}
         />
 
         <div className="od-activity">
