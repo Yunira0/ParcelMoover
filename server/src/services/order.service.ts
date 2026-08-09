@@ -62,6 +62,58 @@ function branchOverrides(v: {
 }
 import { createNotification } from "./notification.service";
 
+// Prices a parcel's return-to-vendor charge as the vendor's return percent of
+// the normal rate for that destination/weight - the same discounted quote a
+// genuine order_type "return" parcel is priced at from creation (see
+// getReturnDeliveryQuote). Used to re-price a plain RTO (a normal delivery
+// that failed and bounced back) once it actually reaches the vendor, so both
+// paths bill consistently instead of a plain RTO charging the full outbound
+// rate. Returns null (leave the existing charge alone) if the quote can't be
+// computed, e.g. an unclassified destination.
+export async function computeReturnCharge(
+  vendor: {
+    rate_type: string | null;
+    flat_inside_valley: unknown; flat_outside_valley: unknown;
+    zone_major_cities: unknown; zone_urban_areas: unknown; zone_remote_areas: unknown; zone_inside_valley: unknown;
+    inside_valley_flat_rate: unknown; extra_weight_percent: unknown;
+    return_inside_valley_percent: unknown; return_outside_valley_percent: unknown;
+    branch_flat_inside_valley: unknown; branch_flat_outside_valley: unknown;
+    branch_zone_major_cities: unknown; branch_zone_urban_areas: unknown;
+    branch_zone_remote_areas: unknown; branch_zone_inside_valley: unknown;
+  } | null | undefined,
+  destinationLocationId: string,
+  weightKg: number | null,
+  serviceType: string,
+): Promise<number | null> {
+  const n = (x: unknown) => (x === null || x === undefined ? null : Number(x));
+  try {
+    const quote = await getReturnDeliveryQuote(
+      (vendor?.rate_type as RateType) ?? "flat",
+      destinationLocationId,
+      weightKg === null ? 1 : weightKg,
+      vendor
+        ? {
+            flatInsideValley: n(vendor.flat_inside_valley),
+            flatOutsideValley: n(vendor.flat_outside_valley),
+            zoneMajorCities: n(vendor.zone_major_cities),
+            zoneUrbanAreas: n(vendor.zone_urban_areas),
+            zoneRemoteAreas: n(vendor.zone_remote_areas),
+            zoneInsideValley: n(vendor.zone_inside_valley),
+            insideValleyFlatRate: n(vendor.inside_valley_flat_rate),
+            extraWeightPercent: n(vendor.extra_weight_percent),
+            ...branchOverrides(vendor),
+            returnInsideValleyPercent: n(vendor.return_inside_valley_percent),
+            returnOutsideValleyPercent: n(vendor.return_outside_valley_percent),
+          }
+        : {},
+      serviceType as ServiceType,
+    );
+    return quote.totalPayable;
+  } catch {
+    return null;
+  }
+}
+
 type OrderActor = {
   id: string;
   roles: string[];
@@ -3482,11 +3534,31 @@ async function _updateParcelStatusImpl(
     }
   }
 
+  // A plain RTO (order_type "delivery" bounced back to returned_to_vendor)
+  // bills the same discounted return-percent charge a genuine return order
+  // gets, instead of the full outbound delivery_charge - see
+  // computeReturnCharge. A genuine return order's delivery_charge is already
+  // that discounted amount from creation, so this only applies to plain RTO.
+  let rtoReturnCharge: number | null = null;
+  if (parcel.order_type !== "return" && newStatus === "returned_to_vendor" && parcel.destination_location_id) {
+    rtoReturnCharge = await computeReturnCharge(
+      parcel.vendors,
+      parcel.destination_location_id,
+      parcel.weight_kg === null ? null : Number(parcel.weight_kg),
+      parcel.service_type,
+    );
+  }
+
   const txOutcome = await prisma.$transaction(async (tx) => {
     let createdReturn: { id: string; trackingId: string } | null = null;
     const updateData: Prisma.parcelsUpdateInput = {
       status: newStatus as parcel_status,
     };
+    // Side-effect: re-price a plain RTO's delivery_charge to the discounted
+    // return-percent quote computed above, instead of the full outbound rate.
+    if (rtoReturnCharge !== null) {
+      (updateData as any).delivery_charge = rtoReturnCharge;
+    }
     // Side-effect: set delivered_at timestamp
     if (newStatus === "delivered") {
       (updateData as any).delivered_at = new Date();
@@ -3556,15 +3628,13 @@ async function _updateParcelStatusImpl(
         },
       });
     }
-    // A genuine return leg (order_type "return", e.g. the auto-created return
-    // side of an exchange) carries its own correctly-priced return charge and
-    // earns it once the parcel actually reaches the vendor - see
-    // billing.service.ts's EARNED_CHARGE_SQL, which already treats this exact
-    // condition as earned. Stamping collected_at here is what lets that charge
-    // enter the settlement ledger (getUnsettledOrders) instead of sitting
-    // permanently unsettleable. Plain RTO (order_type "delivery" bounced back)
-    // is deliberately left untouched - it has no pricing model and must stay free.
-    if (parcel.order_type === "return" && newStatus === "returned_to_vendor") {
+    // Any parcel that finally reaches the vendor needs collected_at stamped so
+    // it enters the settlement ledger (getUnsettledOrders) instead of sitting
+    // permanently unsettleable - whether it's a genuine return leg (order_type
+    // "return", e.g. the auto-created return side of an exchange) or a plain
+    // RTO (order_type "delivery" bounced back). Both earn their delivery_charge
+    // here - see billing.service.ts's EARNED_CHARGE_SQL.
+    if (newStatus === "returned_to_vendor") {
       await tx.cod_collections.update({
         where: { parcel_id: parcel.id },
         data: { collected_at: new Date() },
@@ -3850,7 +3920,7 @@ async function _bulkUpdateParcelStatusImpl(
       ...(vendorId ? { vendor_id: vendorId } : {}),
       ...(vendorIds ? { vendor_id: { in: vendorIds } } : {}),
     },
-    include: { pickup_tasks: true, locations_parcels_destination_location_idTolocations: true },
+    include: { pickup_tasks: true, locations_parcels_destination_location_idTolocations: true, vendors: true },
   });
 
   if (parcels.length !== ids.length) {
@@ -3975,6 +4045,28 @@ async function _bulkUpdateParcelStatusImpl(
     }
   }
 
+  // Same re-pricing as the single-parcel path: a plain RTO bills the
+  // discounted return-percent charge, not the full outbound delivery_charge.
+  // Per-parcel (destination/weight/vendor can all differ within one batch),
+  // so this can't be a single query - run in parallel since these are
+  // independent reads done before the transaction starts.
+  const rtoReturnCharges = new Map<string, number>();
+  if (newStatus === "returned_to_vendor") {
+    await Promise.all(
+      parcels
+        .filter((p) => p.order_type !== "return" && p.destination_location_id)
+        .map(async (p) => {
+          const charge = await computeReturnCharge(
+            p.vendors,
+            p.destination_location_id!,
+            p.weight_kg === null ? null : Number(p.weight_kg),
+            p.service_type,
+          );
+          if (charge !== null) rtoReturnCharges.set(p.id, charge);
+        }),
+    );
+  }
+
   const result = await prisma.$transaction(async (tx) => {
     let dispatch: { id: string; dispatch_no: string } | null = null;
 
@@ -4075,18 +4167,21 @@ async function _bulkUpdateParcelStatusImpl(
       }
     }
 
-    // Same return-leg earning rule as the single-parcel path: a genuine return
-    // (order_type "return") earns its priced return charge once it actually
-    // reaches the vendor, so stamp collected_at to bring it into the
-    // settlement ledger. Plain RTO (order_type "delivery" bounced back) is
-    // deliberately left untouched - see billing.service.ts's EARNED_CHARGE_SQL.
+    // Same rule as the single-parcel path: any parcel reaching the vendor -
+    // genuine return leg or plain RTO alike - gets collected_at stamped so it
+    // enters the settlement ledger and earns its delivery_charge (see
+    // billing.service.ts's EARNED_CHARGE_SQL).
     if (newStatus === "returned_to_vendor") {
-      const returnParcelIds = parcels.filter((p) => p.order_type === "return").map((p) => p.id);
-      if (returnParcelIds.length > 0) {
-        await tx.cod_collections.updateMany({
-          where: { parcel_id: { in: returnParcelIds } },
-          data: { collected_at: new Date() },
-        });
+      await tx.cod_collections.updateMany({
+        where: { parcel_id: { in: parcels.map((p) => p.id) } },
+        data: { collected_at: new Date() },
+      });
+      // Re-price each plain RTO to its discounted return-percent charge
+      // (computed above, before the transaction). Per-parcel amounts, so
+      // this can't be a single updateMany - same reasoning as the
+      // collected_amount loop above.
+      for (const [parcelId, charge] of rtoReturnCharges) {
+        await tx.parcels.update({ where: { id: parcelId }, data: { delivery_charge: charge } });
       }
     }
 

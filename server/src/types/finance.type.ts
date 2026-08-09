@@ -148,7 +148,15 @@ export interface UnsettledOrderItem {
   // for vendor statements, where `destination` above is the relevant fact.
   location: string | null;
   orderType: string;
+  // True for a genuine return order (orderType "return") AND for a plain
+  // delivery that failed and was bounced back to the vendor (status
+  // "returned_to_vendor") - both read as RTV to a payee, regardless of which
+  // path got the parcel there.
+  isReturnToVendor: boolean;
+  /** Declared COD due on the parcel - informational, not what's owed. */
   codAmount: number;
+  /** Cash actually collected - what netPayable is computed from. */
+  collectedAmount: number;
   deliveryCharge: number;
   netPayable: number;
 }
@@ -174,6 +182,7 @@ export interface SettlementDetailItem {
   vendorName: string | null;
   vendorPhone: string | null;
   orderType: string;
+  isReturnToVendor: boolean;
   pieces: number;
   weightKg: number | null;
   // Pickup or delivery location for this rider's leg of the parcel - null

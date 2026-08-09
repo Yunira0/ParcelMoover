@@ -259,7 +259,7 @@ const ReturnOperations: React.FC = () => {
     const rows = filteredOrders.map((order) => [
       `#${order.orderNumber}`,
       order.trackingId,
-      order.orderType === 'return' ? 'Return order' : 'RTO',
+      order.orderType === 'return' ? 'Return order' : 'RTV',
       STATUS_LABELS[order.status] || order.status,
       order.senderName,
       order.receiverName,
@@ -296,7 +296,7 @@ const ReturnOperations: React.FC = () => {
       header: 'TYPE',
       accessor: (order: Order) => (
         <StatusChip tone={order.orderType === 'return' ? 'info' : 'warning'}>
-          {order.orderType === 'return' ? 'Return order' : 'RTO'}
+          {order.orderType === 'return' ? 'Return order' : 'RTV'}
         </StatusChip>
       ),
       width: '140px',

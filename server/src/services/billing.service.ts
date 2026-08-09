@@ -35,20 +35,14 @@ const balanceCacheKey = (vendorId: string) => `finance:${vendorId}:balance`;
 // `delivered` / `partially_delivered` are the plain case: the service was
 // performed, the charge is earned.
 //
-// Returns are deliberately narrower. A parcel that fails delivery and goes RTO
-// (follow_up -> ready_to_return -> sent_to_vendor -> returned_to_vendor) keeps
-// its ORIGINAL outbound delivery_charge on the row, so counting every
-// returned_to_vendor parcel would bill the vendor the full delivery rate for a
-// parcel that was never delivered. Only parcels whose order_type is already
-// `return` carry a correctly-priced return charge (see getReturnDeliveryQuote,
-// which prices at the vendor's return percent) — those are the ones that earn.
-//
-// The consequence is that plain RTO handling is currently free. That matches
-// the rest of the codebase, which has no RTO pricing model at all; adding one
-// is a pricing decision, not something this ledger should invent.
+// `returned_to_vendor` also earns it — both for a genuine return leg
+// (order_type "return", priced at the vendor's return percent, see
+// getReturnDeliveryQuote) and for a plain RTO (a delivery that failed and
+// went follow_up -> ready_to_return -> sent_to_vendor -> returned_to_vendor):
+// the outbound leg was still run, so the vendor is billed its
+// delivery_charge same as a normal delivery.
 const EARNED_CHARGE_SQL = Prisma.sql`
-  p.status::text IN ('delivered', 'partially_delivered')
-  OR (p.order_type::text = 'return' AND p.status::text = 'returned_to_vendor')
+  p.status::text IN ('delivered', 'partially_delivered', 'returned_to_vendor')
 `;
 
 // Statuses whose entry or exit changes what a vendor owes — the TypeScript

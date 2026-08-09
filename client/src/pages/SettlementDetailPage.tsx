@@ -104,16 +104,21 @@ const DocumentTabPanel: React.FC<{
   const isPdf = storedPath.toLowerCase().endsWith('.pdf');
   return (
     <div className="settlement-doc-view">
-      <a className="settlement-doc-frame" href={href} target="_blank" rel="noreferrer">
-        {isPdf ? (
-          <div className="settlement-doc-pdf">
-            <FileText size={28} />
-            Open PDF
-          </div>
-        ) : (
+      {isPdf ? (
+        <div className="settlement-doc-frame settlement-doc-pdf-wrap">
+          <iframe className="settlement-doc-pdf-frame" src={href} title={label} />
+        </div>
+      ) : (
+        <a className="settlement-doc-frame" href={href} target="_blank" rel="noreferrer">
           <img src={href} alt={label} loading="lazy" />
-        )}
-      </a>
+        </a>
+      )}
+      {isPdf && (
+        <a className="settlement-doc-open-link" href={href} target="_blank" rel="noreferrer">
+          <FileText size={14} />
+          Open in new tab
+        </a>
+      )}
       {canAttach && (
         <button type="button" className="settlement-attach-proof-btn" onClick={() => setAttaching(true)}>
           <Paperclip size={14} />
@@ -531,7 +536,7 @@ const SettlementDetailPage: React.FC = () => {
                             )}
                           </td>
                           <td>
-                            {item.orderType === 'return' ? (
+                            {item.isReturnToVendor ? (
                               <StatusChip tone="info">RTV</StatusChip>
                             ) : (
                               <span style={{ textTransform: 'capitalize' }}>{item.orderType || '-'}</span>

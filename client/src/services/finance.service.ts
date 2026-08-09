@@ -221,7 +221,11 @@ export interface UnsettledOrderItem {
   /** Pickup or delivery location for this rider's leg. Null for vendor rows. */
   location: string | null;
   orderType: string;
+  isReturnToVendor: boolean;
+  /** Declared COD due on the parcel - informational, not what's owed. */
   codAmount: number;
+  /** Cash actually collected - what netPayable is computed from. */
+  collectedAmount: number;
   deliveryCharge: number;
   netPayable: number;
 }
@@ -254,6 +258,7 @@ export interface SettlementDetailItem {
   vendorName: string | null;
   vendorPhone: string | null;
   orderType: string | null;
+  isReturnToVendor: boolean;
   pieces: number | null;
   weightKg: number | null;
   /** Pickup or delivery location for this rider's leg. Null for vendor statements. */
