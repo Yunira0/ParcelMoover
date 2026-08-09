@@ -39,6 +39,18 @@ function buildSearchText(trackingId: string, sender: Party, receiver: Party): st
     receiver.name, receiver.phone, receiver.alternate_phone ?? "",
   ].join(" ").toLowerCase();
 }
+
+// The list UI labels every row with its order_number as "#2980", so that's what
+// a user types to look one up. order_number is an int column, not part of the
+// search_text trigram blob, so it needs its own equality match.
+// Capped at 9 digits to stay inside int4 - a longer run of digits is a phone
+// number, and passing it to Prisma as an Int would throw.
+const ORDER_NUMBER_TERM = /^#?(\d{1,9})$/;
+function parseOrderNumber(term: string): number | null {
+  const match = ORDER_NUMBER_TERM.exec(term);
+  return match ? Number(match[1]) : null;
+}
+
 import { getDeliveryQuote } from "./delivery-rate.service";
 import { getVendorQuote, getReturnDeliveryQuote, RateType, ServiceType } from "./pricing.service";
 import { resolveLabelSize } from "./vendorPrintSettings.service";
@@ -1501,20 +1513,49 @@ function buildOrdersWhere(
   if (query.deliveryRiderId) {
     conditions.push({ delivery_rider_id: query.deliveryRiderId });
   }
+  // Same local-midnight anchor getDashboardSummary uses for todays_delivered,
+  // so the "Delivered today" card and its drill-down can't disagree.
+  if (query.deliveredToday) {
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    conditions.push({ delivered_at: { gte: todayStart } });
+  }
 
   const search = query.search?.trim();
   if (search) {
     const terms = search.split(",").map((t) => t.trim()).filter(Boolean);
     if (terms.length > 1) {
+      // A scan batch is tracking ids, but the same box accepts a pasted list of
+      // order ids, so "#2980" in the list resolves too. Bare numbers stay
+      // tracking-id-only here - in a scan batch they're far likelier to be a
+      // mis-scan than an order id.
+      const orderNumbers = terms
+        .filter((t) => t.startsWith("#"))
+        .map(parseOrderNumber)
+        .filter((n): n is number => n !== null);
       conditions.push({
-        OR: terms.map((t) => ({ tracking_id: { equals: t, mode: "insensitive" as const } })),
+        OR: [
+          ...terms.map((t) => ({ tracking_id: { equals: t, mode: "insensitive" as const } })),
+          ...(orderNumbers.length ? [{ order_number: { in: orderNumbers } }] : []),
+        ],
       });
     } else {
-      // Single-column GIN trigram search — no JOINs, stays fast at any table size.
-      // Covers: tracking_id, sender/receiver name, sender/receiver phone.
-      conditions.push({
-        search_text: { contains: search.toLowerCase(), mode: "insensitive" },
-      });
+      const orderNumber = parseOrderNumber(search);
+      if (orderNumber !== null && search.startsWith("#")) {
+        // "#2980" is unambiguous - the user wants that one order, so don't
+        // dilute it with the phone numbers that contain 2980.
+        conditions.push({ order_number: orderNumber });
+      } else {
+        // Single-column GIN trigram search — no JOINs, stays fast at any table size.
+        // Covers: tracking_id, sender/receiver name, sender/receiver phone.
+        // A bare number could be either, so try it as an order id as well.
+        conditions.push({
+          OR: [
+            { search_text: { contains: search.toLowerCase(), mode: "insensitive" as const } },
+            ...(orderNumber !== null ? [{ order_number: orderNumber }] : []),
+          ],
+        });
+      }
     }
   }
 
@@ -1928,7 +1969,8 @@ export async function listOrders(
   // encoded in the cache key either, so it also has to skip the cache.
   const isDefaultUnfilteredQuery =
     !paginated && !query.status?.length && !query.orderType && !query.search &&
-    !query.vendorId?.length && !query.deliveryRiderId && !query.sortBy && vendorIds === undefined;
+    !query.vendorId?.length && !query.deliveryRiderId && !query.sortBy &&
+    !query.deliveredToday && vendorIds === undefined;
   // Export requests (withArrival) skip the shared cache so the enriched rows
   // never pollute the lean list cache and vice-versa.
   const cacheKey =
@@ -4552,16 +4594,32 @@ export async function getStatusCounts(
   // the table while the tab above it still claimed the unfiltered total. A
   // comma-separated list (a barcode scanner batching parcels) matches tracking
   // ids outright; a single term goes through the same search_text trigram
-  // column the list query uses.
+  // column the list query uses, plus the order_number equality match that
+  // makes "#2980" resolve to one order.
   const searchSql: Prisma.Sql = (() => {
     const search = filters.search?.trim();
     if (!search) return Prisma.empty;
 
     const terms = search.split(",").map((t) => t.trim()).filter(Boolean);
     if (terms.length > 1) {
-      return Prisma.sql`AND lower(tracking_id) = ANY(${terms.map((t) => t.toLowerCase())})`;
+      const trackingSql = Prisma.sql`lower(tracking_id) = ANY(${terms.map((t) => t.toLowerCase())})`;
+      const orderNumbers = terms
+        .filter((t) => t.startsWith("#"))
+        .map(parseOrderNumber)
+        .filter((n): n is number => n !== null);
+      return orderNumbers.length
+        ? Prisma.sql`AND (${trackingSql} OR order_number = ANY(${orderNumbers}::int[]))`
+        : Prisma.sql`AND ${trackingSql}`;
     }
-    return Prisma.sql`AND search_text ILIKE ${`%${search.toLowerCase()}%`}`;
+
+    const orderNumber = parseOrderNumber(search);
+    if (orderNumber !== null && search.startsWith("#")) {
+      return Prisma.sql`AND order_number = ${orderNumber}::int`;
+    }
+    const textSql = Prisma.sql`search_text ILIKE ${`%${search.toLowerCase()}%`}`;
+    return orderNumber !== null
+      ? Prisma.sql`AND (${textSql} OR order_number = ${orderNumber}::int)`
+      : Prisma.sql`AND ${textSql}`;
   })();
 
   const rows = await prisma.$queryRaw<{ status: string; cnt: bigint }[]>(Prisma.sql`

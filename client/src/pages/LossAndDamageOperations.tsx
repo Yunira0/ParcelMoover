@@ -256,7 +256,7 @@ const LossAndDamageOperations: React.FC = () => {
         <input
           value={searchQuery}
           onChange={(event) => setSearchQuery(event.target.value)}
-          placeholder="Search tracking id"
+          placeholder="Search tracking id or #2980"
         />
       </label>
 
@@ -281,7 +281,7 @@ const LossAndDamageOperations: React.FC = () => {
         totalPages={totalPages}
         cursor={pager.controls(meta)}
         pageSize={pageSizeChoice}
-        pageSizeLabel="parcels"
+        pageSizeLabel="loss & damage"
         onPageSizeChange={(size) => {
           setPageSizeChoice(size);
           pager.reset();

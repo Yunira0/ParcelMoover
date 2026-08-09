@@ -764,7 +764,7 @@ const DispatchOperations: React.FC = () => {
                 setRiderId('');
               },
             )}
-            placeholder="Search tracking id"
+            placeholder="Search tracking id or #2980"
           />
           {(searchQuery || scannedIds.length > 0) && (
             <button
@@ -825,7 +825,7 @@ const DispatchOperations: React.FC = () => {
         totalPages={totalPages}
         cursor={pager.controls(meta)}
         pageSize={pageSizeChoice}
-        pageSizeLabel="parcels"
+        pageSizeLabel="dispatch"
         onPageSizeChange={(size) => {
           setPageSizeChoice(size);
           pager.reset();

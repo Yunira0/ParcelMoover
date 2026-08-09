@@ -949,7 +949,7 @@ const OrderManagement: React.FC = () => {
             onChange={event => setTrackingSearch(event.target.value)}
             onKeyDown={event => commitScannedTerm(event, setScannedIds, setTrackingSearch)}
             onPaste={event => handleScannerPaste(event, setScannedIds, setTrackingSearch)}
-            placeholder="TRK001 or TRK001, TRK002, TRK003"
+            placeholder="TRK001, #2980, or TRK001, TRK002, TRK003"
           />
           {(trackingSearch || scannedIds.length > 0) && (
             <button type="button" onClick={() => { setTrackingSearch(''); setScannedIds([]); }} aria-label="Clear search">
@@ -1000,7 +1000,7 @@ const OrderManagement: React.FC = () => {
         totalPages={totalPages}
         cursor={pager.controls(meta)}
         pageSize={pageSizeChoice}
-        pageSizeLabel="parcels"
+        pageSizeLabel="orders"
         onPageSizeChange={(size) => {
           setPageSizeChoice(size);
           pager.reset();

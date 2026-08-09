@@ -162,7 +162,9 @@ const ReturnOperations: React.FC = () => {
       return (
         order.trackingId.toLowerCase().includes(q) ||
         order.senderName.toLowerCase().includes(q) ||
-        order.receiverName.toLowerCase().includes(q)
+        order.receiverName.toLowerCase().includes(q) ||
+        // The order id as the table shows it, with or without the leading "#".
+        `#${order.orderNumber}`.includes(q.startsWith('#') ? q : `#${q}`)
       );
     });
   }, [orders, activeTab, searchQuery]);
@@ -385,7 +387,7 @@ const ReturnOperations: React.FC = () => {
         <input
           value={searchQuery}
           onChange={(event) => setSearchQuery(event.target.value)}
-          placeholder="Search tracking id"
+          placeholder="Search tracking id or #2980"
         />
       </label>
 
@@ -410,7 +412,7 @@ const ReturnOperations: React.FC = () => {
         totalPages={totalPages}
         onPageChange={setPage}
         pageSize={pageSizeChoice}
-        pageSizeLabel="parcels"
+        pageSizeLabel="return"
         onPageSizeChange={setPageSizeChoice}
         summary={`${filteredOrders.length} order${filteredOrders.length === 1 ? '' : 's'}`}
       />
