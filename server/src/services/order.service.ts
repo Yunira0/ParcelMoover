@@ -2728,10 +2728,16 @@ async function computeDashboardSummary(
     prisma.parcel_remarks.count({
       where: { created_at: { gte: todayStart }, parcels: parcelWhere },
     }),
-    prisma.support_tickets.count({
+    prisma.parcel_remarks.count({
       where: {
-        status: { notIn: ["resolved", "closed"] },
-        ...(vendorId || riderId ? { parcels: parcelWhere } : {}),
+        workflow_status: { not: "closed" },
+        parent_remark_id: null,
+        users: {
+          user_roles: {
+            some: { roles: { code: { in: ["vendor", "vendor_staff", "rider"] } } },
+          },
+        },
+        parcels: parcelWhere,
       },
     }),
     prisma.$queryRaw<
