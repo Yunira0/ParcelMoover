@@ -317,16 +317,29 @@ body{background:#fff;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif}
 }
 `;
 
-// The physical sheet the labels print onto - a standard A4 page, with
-// several labels tiled per sheet by .label-grid above (see @media print).
-// Each individual label still renders at its own vendor-configured size
-// regardless (labelHtml's scale transform) - this only sets the sheet the
-// browser prints onto, never what's visually drawn.
+// The physical sheet the labels print onto. Bulk jobs (multiple orders) tile
+// several labels per sheet on a standard A4 page via .label-grid above (see
+// @media print). A single order, though, is the common "print label" button
+// on one order - most vendors/branches feed that straight into a thermal
+// sticker printer loaded with stock sized to exactly one label, so that case
+// sizes @page to the label itself (0 margin) instead of A4: sizing a single
+// label to A4 stranded it as a tiny printout in the corner of a mostly blank
+// sheet. Each individual label still renders at its own vendor-configured
+// size regardless (labelHtml's scale transform) - this only sets the sheet
+// the browser prints onto, never what's visually drawn.
 //
 // @page is deliberately NOT nested inside @media print: @page is already
 // print-only by spec, and some print engines only pick up a custom size
 // declared at the stylesheet's top level.
-function printMediaCss(): string {
+function printMediaCss(orders: Order[]): string {
+  if (orders.length === 1) {
+    return `
+  @page {
+    size: ${orders[0]!.labelWidthMm}mm ${orders[0]!.labelHeightMm}mm;
+    margin: 0;
+  }
+`;
+  }
   return `
   @page {
     size: A4;
@@ -363,7 +376,7 @@ export async function printLabels(orders: Order[]): Promise<void> {
 <head>
   <meta charset="UTF-8" />
   <title>Shipping Labels — ParcelMoover</title>
-  <style>${CSS}${printMediaCss()}</style>
+  <style>${CSS}${printMediaCss(orders)}</style>
 </head>
 <body>
 <div class="label-grid">
