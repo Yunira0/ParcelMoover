@@ -1,5 +1,5 @@
 import React from 'react';
-import { Package, CheckCircle, XCircle, AlertTriangle, Clock, Truck, MapPin, ArrowRight } from 'lucide-react';
+import { Package, CheckCircle, XCircle, AlertTriangle, Clock, Truck, MapPin, ArrowRight, Pencil } from 'lucide-react';
 import type { OrderStatusHistoryEntry, ParcelStatus } from '../../services/orders.service';
 import { toBsDateLabel, toNptTime } from '../../utils/nepaliDate';
 
@@ -66,7 +66,16 @@ const STATUS_LABEL: Record<ParcelStatus, string> = {
   returned_to_vendor: 'Returned to Vendor',
 };
 
+// A same-status entry (oldStatus === newStatus) isn't a real transition - it's
+// the parcel's details being edited (COD, receiver, etc.) without the parcel
+// moving. Give it its own neutral, low-emphasis treatment so a run of edits
+// doesn't read as the status repeatedly "changing" to the same thing.
+function isInfoEditEntry(entry: OrderStatusHistoryEntry): boolean {
+  return entry.oldStatus === entry.newStatus;
+}
+
 function getTimelineClass(entry: OrderStatusHistoryEntry): string {
+  if (isInfoEditEntry(entry)) return 'timeline-edit';
   if (TERMINAL_STATUSES.has(entry.newStatus)) return 'timeline-success';
   if (DANGER_STATUSES.has(entry.newStatus)) return 'timeline-danger';
   if (WARNING_STATUSES.has(entry.newStatus)) return 'timeline-warning';
@@ -98,9 +107,10 @@ const OrderTimeline: React.FC<OrderTimelineProps> = ({ statusHistory }) => {
   return (
     <div className="od-timeline">
       {statusHistory.map((entry, idx) => {
-        const isTerminal = TERMINAL_STATUSES.has(entry.newStatus);
+        const isInfoEdit = isInfoEditEntry(entry);
+        const isTerminal = !isInfoEdit && TERMINAL_STATUSES.has(entry.newStatus);
         const isCurrent = idx === 0;
-        const IconComponent = STATUS_ICON[entry.newStatus] || Package;
+        const IconComponent = isInfoEdit ? Pencil : (STATUS_ICON[entry.newStatus] || Package);
 
         return (
           <div
@@ -108,16 +118,16 @@ const OrderTimeline: React.FC<OrderTimelineProps> = ({ statusHistory }) => {
             className={`od-timeline-item ${getTimelineClass(entry)}${isCurrent ? ' od-timeline-current' : ''}`}
           >
             <div className="od-timeline-connector">
-              <div className={`od-timeline-dot${isTerminal || isCurrent ? ' od-timeline-dot-terminal' : ''}`}>
+              <div className={`od-timeline-dot${!isInfoEdit && (isTerminal || isCurrent) ? ' od-timeline-dot-terminal' : ''}`}>
                 <IconComponent size={14} />
               </div>
               {idx < statusHistory.length - 1 && <div className="od-timeline-line" />}
             </div>
             <div className="od-timeline-content">
               <div className="od-timeline-header">
-                <span className="od-timeline-status">{STATUS_LABEL[entry.newStatus]}</span>
+                <span className="od-timeline-status">{isInfoEdit ? 'Order Updated' : STATUS_LABEL[entry.newStatus]}</span>
               </div>
-              {entry.oldStatus && (
+              {entry.oldStatus && !isInfoEdit && (
                 <p className="od-timeline-from">from {STATUS_LABEL[entry.oldStatus]}</p>
               )}
               {entry.remarks && (

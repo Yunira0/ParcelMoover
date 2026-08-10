@@ -15,6 +15,10 @@ export const ADMIN_PERMISSIONS = [
   // correct a mistake before money moves. Also covers reverting an already
   // settled statement back to pending, to undo a mistaken payment record.
   "EDIT_SETTLEMENTS",
+  // Correct the COD amount on a delivered/RTV/RTO parcel - otherwise locked
+  // once a parcel reaches a terminal-ish status. Still blocked once the
+  // parcel's COD has actually been paid out to the vendor.
+  "EDIT_COD_LOCKED",
 ] as const;
 
 export type AdminPermission = (typeof ADMIN_PERMISSIONS)[number];

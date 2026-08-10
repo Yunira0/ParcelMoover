@@ -14,7 +14,7 @@ import {
   type UpdateOrderInput,
 } from '../services/orders.service';
 import OrderDetailHeader, { STATUS_LABEL } from '../components/order-detail/OrderDetailHeader';
-import { getCurrentUserRoles, isVendorSide } from '../utils/auth';
+import { getCurrentUserRoles, isVendorSide, hasAdminPermission } from '../utils/auth';
 import OrderInfoCards from '../components/order-detail/OrderInfoCards';
 import OrderTimeline from '../components/order-detail/OrderTimeline';
 import OrderRemarks from '../components/order-detail/OrderRemarks';
@@ -246,6 +246,12 @@ const OrderDetailPage: React.FC = () => {
   // that closes once ops has the parcel, since that's a temporary, explainable
   // state worth surfacing rather than a settled one worth hiding.
   const showEditDisabled = !canEditNow && !isEditBlocked && isVendorActor;
+  // Narrow escape hatch: super_admin or an admin holding EDIT_COD_LOCKED may
+  // still fix the COD amount on an otherwise-locked (delivered/RTV/RTO)
+  // parcel — every other field stays locked. Server re-enforces this exactly;
+  // this only decides whether to offer the affordance.
+  const canOverrideCod = isSuperAdmin || hasAdminPermission('EDIT_COD_LOCKED');
+  const codEditable = canEditNow || canOverrideCod;
 
   return (
     <div className="od-page">
@@ -324,6 +330,7 @@ const OrderDetailPage: React.FC = () => {
           pieces={order.pieces}
           weightKg={order.weightKg}
           editable={canEditNow}
+          codEditable={codEditable}
           lockedReason={
             showEditDisabled
               ? 'Editing locks once the parcel is picked up — contact support for changes.'
@@ -367,10 +374,8 @@ const OrderDetailPage: React.FC = () => {
             <span className="od-section-count">{order.priceLog.length}</span>
           </div>
           <OrderPriceLog entries={order.priceLog} />
-        </div>
 
-        <div className="od-pricelog">
-          <div className="od-section-header">
+          <div className="od-section-header od-section-header-divided">
             <h2>Redirect Log</h2>
             <span className="od-section-count">{order.redirectLog.length}</span>
             {isAdmin && REDIRECTABLE_STATUSES.includes(order.status) && (

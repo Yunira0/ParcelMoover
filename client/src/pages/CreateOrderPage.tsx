@@ -251,11 +251,17 @@ const CreateOrderPage: React.FC = () => {
 
   // Origin ("From") is always fixed to the Imadol admin hub — for vendors it's their
   // assigned hub (Imadol), for admins we lock it to Imadol too rather than a free picker.
+  // Edit mode only: leave the parcel's real originLocationId (from prefillInitialData)
+  // alone. There can be more than one location row that resolves as "Imadol" (matched
+  // loosely by name/code), so forcing it here can silently reassign an existing order
+  // to a different-but-identical-looking Imadol row - which then also reads as a real
+  // "origin changed" edit server-side, defeating the COD-only edit allowance on a
+  // delivered/RTV/RTO parcel purely because of this reset, not an actual user change.
   const fixedOriginId = isVendorActor ? selectedVendor?.locationId : imadolHub?.id;
   useEffect(() => {
-    if (!fixedOriginId) return;
+    if (!fixedOriginId || isEditMode) return;
     setForm(prev => (prev.originLocationId === fixedOriginId ? prev : { ...prev, originLocationId: fixedOriginId }));
-  }, [fixedOriginId]);
+  }, [fixedOriginId, isEditMode]);
 
   const weightKgNumber = Number(form.weightKg) || 0;
 

@@ -293,6 +293,12 @@
   flex-basis: 100%; font-size: var(--font-size-xs); color: var(--color-danger-text);
 }
 
+.od-cod-override-warning {
+  font-size: var(--font-size-xs); color: var(--color-warning-text);
+  background: var(--color-warning-surface); border-radius: var(--border-radius-default);
+  padding: var(--space-2) var(--space-3);
+}
+
 .od-editable-destination { align-items: flex-start; }
 .od-editable-destination .searchable-select-container { width: 220px; }
 
@@ -344,6 +350,12 @@
 }
 
 .od-section-action:hover { background: var(--color-background-canvas); }
+
+/* Second header inside a card that groups two log tables under one border
+   (Price Log + Redirect Log) - separates them from the table above. */
+.od-section-header-divided {
+  border-top: 1px solid var(--color-border-default);
+}
 
 /* ============================================================================
    Timeline
@@ -441,6 +453,13 @@
 }
 .od-timeline-item.timeline-warning .od-timeline-dot {
   border-color: var(--color-background-warning-default); color: var(--color-background-warning-default);
+}
+.od-timeline-item.timeline-warning .od-timeline-dot-terminal {
+  background: var(--color-background-warning-default);
+  border-color: var(--color-background-warning-default); color: white;
+}
+.od-timeline-item.timeline-edit .od-timeline-dot {
+  border-color: var(--color-border-default); color: var(--color-text-caption);
 }
 .od-timeline-item.od-timeline-current .od-timeline-dot {
   transform: scale(1.1);

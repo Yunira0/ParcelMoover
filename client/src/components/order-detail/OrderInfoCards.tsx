@@ -26,6 +26,10 @@ interface OrderInfoCardsProps {
    * origin, and delivery charge are never editable here regardless — sender
    * identity and charge come from elsewhere (vendor profile / redirect flow). */
   editable?: boolean;
+  /** Overrides `editable` for the COD field only — super_admin / an admin
+   * holding EDIT_COD_LOCKED may still fix COD on an otherwise-locked
+   * (delivered/RTV/RTO) parcel. Falls back to `editable` when unset. */
+  codEditable?: boolean;
   /** Set (with editable false) when editing is only temporarily locked, e.g.
    * a vendor's parcel has already been picked up — shown as a small inline
    * notice instead of silently offering nothing. */
@@ -186,10 +190,12 @@ const OrderInfoCards: React.FC<OrderInfoCardsProps> = ({
   pieces,
   weightKg,
   editable = false,
+  codEditable,
   lockedReason,
   onSave,
 }) => {
   const { pending, saving, error, request, confirm, cancel } = useConfirmedEdit(onSave);
+  const codOverrideActive = (codEditable ?? editable) && !editable;
 
   const [destinationEditing, setDestinationEditing] = useState(false);
   const [destinationOptions, setDestinationOptions] = useState<SearchableSelectOption[]>([]);
@@ -382,7 +388,7 @@ const OrderInfoCards: React.FC<OrderInfoCardsProps> = ({
           <Banknote size={14} />
           <span className="od-finance-label">COD</span>
           <EditableValue
-            editable={editable}
+            editable={codEditable ?? editable}
             value={String(codAmount)}
             type="number"
             min={0}
@@ -498,6 +504,12 @@ const OrderInfoCards: React.FC<OrderInfoCardsProps> = ({
             <p className="modal-desc">
               {pending.label}: <strong>{pending.oldDisplay}</strong> → <strong>{pending.newDisplay}</strong>
             </p>
+            {codOverrideActive && pending.label === 'COD amount' && (
+              <p className="modal-desc od-cod-override-warning">
+                This parcel is otherwise locked — this bypasses the normal edit lock and only
+                works while the COD hasn't been settled to the vendor yet.
+              </p>
+            )}
             {error && <p className="error-text">{error}</p>}
             <div className="modal-footer">
               <Button type="button" variant="secondary" onClick={cancel} disabled={saving}>

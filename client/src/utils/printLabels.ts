@@ -56,12 +56,18 @@ function labelHtml(order: Order, qrDataUrl: string, barcodeUrl: string): string 
   const valleyLabel = order.destinationValley === 'inside' ? 'Inside Valley' : '';
   const fullAddress = order.receiverAddress ? esc(order.receiverAddress) : '—';
 
-  const scaleX = order.labelWidthMm / DESIGN_WIDTH_MM;
-  const scaleY = order.labelHeightMm / DESIGN_HEIGHT_MM;
+  // A single uniform factor - scaling X and Y independently to force-fill a
+  // frame with a different aspect ratio than the design (e.g. a vendor's
+  // portrait 100x150mm stock vs. this design's 100x75mm) stretches every
+  // font, the QR code, and the barcode out of proportion. Fitting the whole
+  // design inside the frame at one scale and centering it (see .label-frame)
+  // leaves margin on the frame's longer axis instead, which reads far better
+  // than a warped, potentially unscannable label.
+  const scale = Math.min(order.labelWidthMm / DESIGN_WIDTH_MM, order.labelHeightMm / DESIGN_HEIGHT_MM);
 
   return `
 <div class="label-frame" style="width:${order.labelWidthMm}mm;height:${order.labelHeightMm}mm">
-  <div class="label-design" style="transform:scale(${scaleX},${scaleY})">
+  <div class="label-design" style="transform:scale(${scale})">
   <div class="hdr">
     <div class="brand">
       <div class="brand-name">ParcelMoover</div>
@@ -138,7 +144,14 @@ body{background:#fff;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif}
 }
 
 /* Native, hand-tuned design size - never resized directly. Uniformly scaled
-   by its parent .label-frame to whatever size the vendor actually needs. */
+   by its parent .label-frame to whatever size the vendor actually needs
+   (see labelHtml()'s uniform-scale comment). transform-origin:top left
+   anchors the design to the frame's top-left corner, so on a mismatched
+   aspect ratio (e.g. a portrait 4x6in sticker vs. this landscape design)
+   any leftover blank space collects on the right/bottom edge only - the
+   label prints immediately visible as it feeds out, instead of centering
+   the content with blank margin split above/below it, which reads as a
+   misprint rather than normal oversized stock. */
 .label-design{
   width:100mm;height:75mm;
   border:2px solid #000;
@@ -288,38 +301,36 @@ body{background:#fff;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif}
 
 @media print{
   body{margin:0;padding:0;background:#fff}
-  /* One label per page. @page below is set to the label's own size, so each
-     frame fills its page exactly - the screen-only tiling in .label-grid is
-     switched off here so nothing shares a page or gets pushed off the edge.
-     margin:0 auto is a cheap safeguard for drivers that ignore the custom
-     paper size and fall back to A4/Letter: the label lands centered rather
-     than stranded against the left edge. */
-  .label-grid{display:block;gap:0;padding:0}
-  .label-frame{
-    margin:0 auto;padding:0;
-    page-break-inside:avoid;break-inside:avoid;
+  /* Tile as many labels as fit on each physical sheet (A4 by default - see
+     printMediaCss) instead of forcing one label per page, so a bulk print
+     job doesn't burn a full page per sticker. break-inside:avoid keeps a
+     single label from splitting across a page boundary; the browser inserts
+     page breaks on its own once a row of labels would overflow. */
+  .label-grid{
+    display:flex;flex-wrap:wrap;gap:2mm;padding:0;
+    justify-content:flex-start;align-content:flex-start;
   }
-  .label-frame:not(:last-child){page-break-after:always;break-after:page}
+  .label-frame{
+    page-break-inside:avoid;break-inside:avoid;
+    margin:0;padding:0;
+  }
 }
 `;
 
-// The requested physical paper size for the print job. A vendor's own print
-// batch is always their own orders, so always one size - and a printer can't
-// feed two different physical label sizes in the same job anyway, so a mixed
-// batch (possible only on internal ops screens, which can select orders
-// across vendors) just follows the first order's size. Every individual
-// label still renders at its own correct size regardless (see labelHtml's
-// scale transform) - this only affects the paper-size hint sent to the
-// printer driver, never what's visually drawn.
+// The physical sheet the labels print onto - a standard A4 page, with
+// several labels tiled per sheet by .label-grid above (see @media print).
+// Each individual label still renders at its own vendor-configured size
+// regardless (labelHtml's scale transform) - this only sets the sheet the
+// browser prints onto, never what's visually drawn.
 //
 // @page is deliberately NOT nested inside @media print: @page is already
 // print-only by spec, and some print engines only pick up a custom size
 // declared at the stylesheet's top level.
-function printMediaCss(widthMm: number, heightMm: number): string {
+function printMediaCss(): string {
   return `
   @page {
-    size: ${widthMm}mm ${heightMm}mm;
-    margin: 0;
+    size: A4;
+    margin: 5mm;
   }
 `;
 }
@@ -352,7 +363,7 @@ export async function printLabels(orders: Order[]): Promise<void> {
 <head>
   <meta charset="UTF-8" />
   <title>Shipping Labels — ParcelMoover</title>
-  <style>${CSS}${printMediaCss(orders[0]!.labelWidthMm, orders[0]!.labelHeightMm)}</style>
+  <style>${CSS}${printMediaCss()}</style>
 </head>
 <body>
 <div class="label-grid">

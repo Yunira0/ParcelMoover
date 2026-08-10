@@ -21,6 +21,7 @@ import { generateDispatchNo } from "../utils/dispatchId";
 import { generateRunSheetNo } from "../utils/runSheetNo";
 import { NEPAL_UTC_OFFSET_MS, formatNepalDate as formatDate } from "../utils/nepalTime";
 import { resolveOwnVendorId, isStaffActor } from "./vendor-scope.service";
+import { hasAdminPermission } from "../middlewares/adminPermission.middleware";
 import { invalidateVendorFinanceCache } from "./finance.service";
 import { emitWebhookEvent, emitWebhookEventsBatch } from "./webhookDispatch.service";
 import { getVendorStatusLabel } from "../utils/orderStatusLabel";
@@ -889,6 +890,30 @@ const VENDOR_EDITABLE_STATUSES: parcel_status[] = [
   "failed_pickup",
 ];
 
+// A parcel in EDIT_BLOCKED_STATUSES is otherwise settled paperwork, but a
+// wrong COD amount (customer dispute, data-entry mistake) still needs
+// correcting after delivery/RTV/RTO. Narrow escape hatch: super_admin or an
+// admin holding EDIT_COD_LOCKED may still change codAmount alone, as long as
+// the money hasn't actually moved yet - once cod_collections.payment_status
+// is "paid" the parcel's COD must never drift from what was already settled.
+// Callers decide "codAmount alone" from the actual before/after diff (see
+// changedKeys below), not from which fields the request happened to include -
+// the full-page edit form always resubmits every field, changed or not.
+async function canOverrideCodOnBlockedParcel(actor: OrderActor, parcelId: string): Promise<boolean> {
+  const isPrivileged =
+    actor.roles.includes("super_admin") || (await hasAdminPermission(actor, "EDIT_COD_LOCKED"));
+  if (!isPrivileged) return false;
+
+  const collection = await prisma.cod_collections.findFirst({
+    where: { parcel_id: parcelId },
+    select: { payment_status: true },
+  });
+  if (collection && collection.payment_status !== "pending") {
+    throw new AppError(409, "COD has already been settled to the vendor and can no longer be edited here.");
+  }
+  return true;
+}
+
 async function upsertPartyByPhone(
   tx: Prisma.TransactionClient,
   partyData: OrderPartyInput,
@@ -944,9 +969,6 @@ export async function updateOrderDetails(
   });
   if (!parcel) throw new AppError(404, "Order not found");
 
-  if (EDIT_BLOCKED_STATUSES.includes(parcel.status)) {
-    throw new AppError(409, `Order can no longer be edited in status "${parcel.status}"`);
-  }
   if (ownVendorId && !VENDOR_EDITABLE_STATUSES.includes(parcel.status)) {
     throw new AppError(409, "This parcel is already in the delivery network — contact support to change it");
   }
@@ -1032,6 +1054,13 @@ export async function updateOrderDetails(
     note("delivery instruction", parcel.delivery_instruction, data.deliveryInstruction);
 
   if (changedFields.length === 0) return parcel;
+
+  if (EDIT_BLOCKED_STATUSES.includes(parcel.status)) {
+    const isCodOnlyChange = changedKeys.size === 1 && changedKeys.has("COD amount");
+    if (!isCodOnlyChange || !(await canOverrideCodOnBlockedParcel(actor, parcel.id))) {
+      throw new AppError(409, `Order can no longer be edited in status "${parcel.status}"`);
+    }
+  }
 
   // Weight or destination changes re-price the parcel with the same waterfall
   // as order creation (vendor rate model, then route rate, else keep as-is).
