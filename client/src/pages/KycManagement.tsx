@@ -54,6 +54,7 @@ const KycManagement: React.FC = () => {
   const [submitting, setSubmitting] = useState(false);
   const [actionError, setActionError] = useState('');
   const [page, setPage] = useState(1);
+  const [pageSizeChoice, setPageSizeChoice] = useState(PAGE_SIZE);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
 
@@ -63,7 +64,7 @@ const KycManagement: React.FC = () => {
       const res = await getKycApplications(
         statusFilter === 'all' ? undefined : statusFilter,
         page,
-        PAGE_SIZE,
+        pageSizeChoice,
       );
       setApplications(res.data ?? []);
       if (res.meta) {
@@ -75,7 +76,7 @@ const KycManagement: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [statusFilter, page]);
+  }, [statusFilter, page, pageSizeChoice]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -195,7 +196,12 @@ const KycManagement: React.FC = () => {
         onPageChange={setPage}
         ariaLabel="KYC applications pagination"
         summary={`${total} application${total !== 1 ? 's' : ''} total`}
-        pageSize={PAGE_SIZE}
+        pageSize={pageSizeChoice}
+        pageSizeLabel="applications"
+        onPageSizeChange={(size) => {
+          setPageSizeChoice(size);
+          setPage(1);
+        }}
       />
 
       {detailOpen && selected && (

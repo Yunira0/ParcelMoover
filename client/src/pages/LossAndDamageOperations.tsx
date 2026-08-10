@@ -281,7 +281,7 @@ const LossAndDamageOperations: React.FC = () => {
         totalPages={totalPages}
         cursor={pager.controls(meta)}
         pageSize={pageSizeChoice}
-        pageSizeLabel="loss & damage"
+        pageSizeLabel="loss & damage orders"
         onPageSizeChange={(size) => {
           setPageSizeChoice(size);
           pager.reset();
