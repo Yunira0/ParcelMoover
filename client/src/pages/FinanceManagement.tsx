@@ -279,7 +279,7 @@ const FinanceManagement: React.FC = () => {
         onPageChange={setPage}
         summary={`${total} statement${total !== 1 ? 's' : ''} total`}
         pageSize={pageSizeChoice}
-        pageSizeLabel="statements"
+        pageSizeLabel="settlements"
         onPageSizeChange={(size) => {
           setPageSizeChoice(size);
           setPage(1);

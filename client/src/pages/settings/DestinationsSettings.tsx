@@ -36,6 +36,7 @@ const DestinationsSettings: React.FC = () => {
 
   const [showTrash, setShowTrash] = useState(false);
   const [page, setPage] = useState(1);
+  const [pageSizeChoice, setPageSizeChoice] = useState(PAGE_SIZE);
   const [searchQuery, setSearchQuery] = useState('');
 
   // Inline area edit: id being edited + working name
@@ -193,10 +194,13 @@ const DestinationsSettings: React.FC = () => {
   // Reset to page 1 when search query changes.
   useEffect(() => { setPage(1); }, [searchQuery]);
 
-  const totalPages = Math.max(1, Math.ceil(filteredActive.length / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(filteredActive.length / pageSizeChoice));
   // Clamp instead of resetting state so deletes on the last page don't strand it.
   const currentPage = Math.min(page, totalPages);
-  const pagedDests = filteredActive.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  const pagedDests = filteredActive.slice(
+    (currentPage - 1) * pageSizeChoice,
+    currentPage * pageSizeChoice,
+  );
 
   return (
     <div className="dest-settings">
@@ -441,13 +445,19 @@ const DestinationsSettings: React.FC = () => {
         </div>
         )}
 
-        {filteredActive.length > PAGE_SIZE && (
+        {filteredActive.length > 0 && (
           <Pagination
             page={currentPage}
             totalPages={totalPages}
             onPageChange={setPage}
             ariaLabel="Destinations pages"
-            summary={`Showing ${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, filteredActive.length)} of ${filteredActive.length} destinations`}
+            pageSize={pageSizeChoice}
+            pageSizeLabel="destinations"
+            onPageSizeChange={(size) => {
+              setPageSizeChoice(size);
+              setPage(1);
+            }}
+            summary={`Showing ${(currentPage - 1) * pageSizeChoice + 1}–${Math.min(currentPage * pageSizeChoice, filteredActive.length)} of ${filteredActive.length} destinations`}
           />
         )}
 
