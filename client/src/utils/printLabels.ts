@@ -301,49 +301,45 @@ body{background:#fff;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif}
 
 @media print{
   body{margin:0;padding:0;background:#fff}
-  /* Tile as many labels as fit on each physical sheet (A4 by default - see
-     printMediaCss) instead of forcing one label per page, so a bulk print
-     job doesn't burn a full page per sticker. break-inside:avoid keeps a
-     single label from splitting across a page boundary; the browser inserts
-     page breaks on its own once a row of labels would overflow. */
+  /* Every order prints on a thermal sticker printer, never onto a sheet -
+     see printMediaCss below. One label per physical page-break (i.e. one
+     sticker per feed/cut) regardless of how many orders are in the batch;
+     :last-child skips the trailing break so the roll doesn't feed out an
+     extra blank sticker after the final one. */
   .label-grid{
-    display:flex;flex-wrap:wrap;gap:2mm;padding:0;
-    justify-content:flex-start;align-content:flex-start;
+    display:flex;flex-wrap:wrap;gap:0;padding:0;
   }
   .label-frame{
     page-break-inside:avoid;break-inside:avoid;
+    page-break-after:always;break-after:page;
     margin:0;padding:0;
+  }
+  .label-frame:last-child{
+    page-break-after:auto;break-after:auto;
   }
 }
 `;
 
-// The physical sheet the labels print onto. Bulk jobs (multiple orders) tile
-// several labels per sheet on a standard A4 page via .label-grid above (see
-// @media print). A single order, though, is the common "print label" button
-// on one order - most vendors/branches feed that straight into a thermal
-// sticker printer loaded with stock sized to exactly one label, so that case
-// sizes @page to the label itself (0 margin) instead of A4: sizing a single
-// label to A4 stranded it as a tiny printout in the corner of a mostly blank
-// sheet. Each individual label still renders at its own vendor-configured
-// size regardless (labelHtml's scale transform) - this only sets the sheet
-// the browser prints onto, never what's visually drawn.
+// The physical sheet the labels print onto - always sized to the label
+// itself (0 margin), never A4. This app only ever prints to thermal sticker
+// printers (see the size presets in VendorPrintSettings.tsx - all direct
+// label dimensions, no sheet/A4 option), so a batch of N orders is N
+// physical stickers fed one after another, not N labels tiled onto a page.
+// A batch is assumed to share one label size (one vendor/printer per print
+// job), so the first order's dimensions apply to the whole job. Each
+// individual label still renders at its own vendor-configured size
+// regardless (labelHtml's scale transform) - this only sets the sheet the
+// browser prints onto, never what's visually drawn.
 //
 // @page is deliberately NOT nested inside @media print: @page is already
 // print-only by spec, and some print engines only pick up a custom size
 // declared at the stylesheet's top level.
 function printMediaCss(orders: Order[]): string {
-  if (orders.length === 1) {
-    return `
-  @page {
-    size: ${orders[0]!.labelWidthMm}mm ${orders[0]!.labelHeightMm}mm;
-    margin: 0;
-  }
-`;
-  }
+  const first = orders[0]!;
   return `
   @page {
-    size: A4;
-    margin: 5mm;
+    size: ${first.labelWidthMm}mm ${first.labelHeightMm}mm;
+    margin: 0;
   }
 `;
 }
