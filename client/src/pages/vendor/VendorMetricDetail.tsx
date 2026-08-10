@@ -111,7 +111,7 @@ export const METRICS: Record<string, MetricConfig> = {
   },
 };
 
-const PAGE_SIZE = 10;
+const DEFAULT_PAGE_SIZE = 10;
 const SERVER_FETCH_PAGE_SIZE = 100;
 const MAX_FETCH_PAGES = 10; // safety cap: 1000 orders per metric page
 
@@ -150,6 +150,7 @@ const VendorMetricDetail: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [page, setPage] = useState(1);
+  const [pageSizeChoice, setPageSizeChoice] = useState(DEFAULT_PAGE_SIZE);
   const fetchSeqRef = useRef(0);
 
   useEffect(() => {
@@ -197,14 +198,14 @@ const VendorMetricDetail: React.FC = () => {
 
   const totalCod = useMemo(() => orders.reduce((sum, o) => sum + o.codAmount, 0), [orders]);
 
-  const totalPages = Math.max(1, Math.ceil(orders.length / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(orders.length / pageSizeChoice));
   const currentPage = Math.min(page, totalPages);
-  const pagedOrders = orders.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  const pagedOrders = orders.slice((currentPage - 1) * pageSizeChoice, currentPage * pageSizeChoice);
 
   const columns = useMemo(() => [
     {
       header: 'SN',
-      accessor: (order: Order) => (currentPage - 1) * PAGE_SIZE + pagedOrders.indexOf(order) + 1,
+      accessor: (order: Order) => (currentPage - 1) * pageSizeChoice + pagedOrders.indexOf(order) + 1,
       width: '50px',
     },
     { header: 'ORDER ID', accessor: (order: Order) => `#${order.orderNumber}`, width: '80px' },
@@ -235,7 +236,7 @@ const VendorMetricDetail: React.FC = () => {
     },
     { header: 'COD AMOUNT', accessor: (order: Order) => formatCurrency(order.codAmount, 0), width: '110px' },
     { header: 'CREATED', accessor: (order: Order) => toBsDate(order.createdAtRaw), width: '110px' },
-  ], [currentPage, pagedOrders]);
+  ], [currentPage, pageSizeChoice, pagedOrders]);
 
   if (!config) return <Navigate to="/dashboard" replace />;
 
@@ -277,13 +278,21 @@ const VendorMetricDetail: React.FC = () => {
         tableClassName="vmd-table"
       />
 
-      {orders.length > PAGE_SIZE && (
+      {orders.length > 0 && (
         <Pagination
           ariaLabel={`${config.label} pages`}
           page={currentPage}
           totalPages={totalPages}
           onPageChange={setPage}
-          summary={`Showing ${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, orders.length)} of ${orders.length}${capped ? '+' : ''} orders`}
+          pageSize={pageSizeChoice}
+          // Named after the metric you opened, so the RTV Delivered page reads
+          // "RTV Delivered per page" rather than a generic "orders per page".
+          pageSizeLabel={config.label}
+          onPageSizeChange={(size) => {
+            setPageSizeChoice(size);
+            setPage(1);
+          }}
+          summary={`Showing ${(currentPage - 1) * pageSizeChoice + 1}–${Math.min(currentPage * pageSizeChoice, orders.length)} of ${orders.length}${capped ? '+' : ''} orders`}
         />
       )}
     </div>

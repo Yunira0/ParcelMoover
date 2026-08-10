@@ -4,6 +4,7 @@ import { BookOpen, Check, Copy, KeyRound, ListTree, Plus, Send, Webhook as Webho
 import PageHeader from '../../components/PageHeader';
 import SegmentedTabs from '../../components/SegmentedTabs';
 import Table from '../../components/Table';
+import Pagination from '../../components/Pagination';
 import Button from '../../components/Button';
 import {
   createApiKey,
@@ -32,6 +33,10 @@ const formatDate = (value: string | null) => (value ? toBsDateTime(value) : '—
 
 type DeveloperTab = 'api-keys' | 'webhooks';
 
+// Both endpoints return the full list in one response, so rows are paged
+// client-side.
+const PAGE_SIZE = 10;
+
 const webhookStatusLabel = (endpoint: WebhookEndpoint) => {
   if (endpoint.disabled_at) return 'Disabled (failing)';
   return endpoint.enabled ? 'Active' : 'Paused';
@@ -57,6 +62,8 @@ const VendorDeveloper: React.FC = () => {
   const [keys, setKeys] = useState<ApiKey[]>([]);
   const [keysLoading, setKeysLoading] = useState(true);
   const [keysError, setKeysError] = useState('');
+  const [keysPage, setKeysPage] = useState(1);
+  const [keysPageSize, setKeysPageSize] = useState(PAGE_SIZE);
 
   const [createKeyOpen, setCreateKeyOpen] = useState(false);
   const [newKeyName, setNewKeyName] = useState('');
@@ -191,6 +198,8 @@ const VendorDeveloper: React.FC = () => {
   const [endpoints, setEndpoints] = useState<WebhookEndpoint[]>([]);
   const [endpointsLoading, setEndpointsLoading] = useState(true);
   const [endpointsError, setEndpointsError] = useState('');
+  const [endpointsPage, setEndpointsPage] = useState(1);
+  const [endpointsPageSize, setEndpointsPageSize] = useState(PAGE_SIZE);
 
   const [createHookOpen, setCreateHookOpen] = useState(false);
   const [newHookName, setNewHookName] = useState('');
@@ -406,6 +415,18 @@ const VendorDeveloper: React.FC = () => {
     [hookBusyId],
   );
 
+  // ── Client-side paging per tab ──────────────────────────────────────────
+  const keysTotalPages = Math.max(1, Math.ceil(keys.length / keysPageSize));
+  const keysCurrentPage = Math.min(keysPage, keysTotalPages);
+  const pagedKeys = keys.slice((keysCurrentPage - 1) * keysPageSize, keysCurrentPage * keysPageSize);
+
+  const endpointsTotalPages = Math.max(1, Math.ceil(endpoints.length / endpointsPageSize));
+  const endpointsCurrentPage = Math.min(endpointsPage, endpointsTotalPages);
+  const pagedEndpoints = endpoints.slice(
+    (endpointsCurrentPage - 1) * endpointsPageSize,
+    endpointsCurrentPage * endpointsPageSize,
+  );
+
   // ── Header content per tab ──────────────────────────────────────────────
   const headerProps = tab === 'api-keys'
     ? { actionLabel: 'Generate Key', actionIcon: <Plus size={16} />, onAction: openCreateKey }
@@ -446,13 +467,29 @@ const VendorDeveloper: React.FC = () => {
 
           <Table
             columns={keyColumns}
-            data={keys}
+            data={pagedKeys}
             selectable={false}
             loading={keysLoading}
             loadingMessage="Loading API keys..."
             emptyMessage="No API keys yet. Generate one to start integrating."
             minWidth="880px"
           />
+
+          {keys.length > 0 && (
+            <Pagination
+              ariaLabel="API keys pagination"
+              page={keysCurrentPage}
+              totalPages={keysTotalPages}
+              onPageChange={setKeysPage}
+              pageSize={keysPageSize}
+              pageSizeLabel="keys"
+              onPageSizeChange={(size) => {
+                setKeysPageSize(size);
+                setKeysPage(1);
+              }}
+              summary={`${keys.length} key${keys.length === 1 ? '' : 's'}`}
+            />
+          )}
 
           <div className="api-keys-docs">
             <h3>Quick start</h3>
@@ -501,13 +538,29 @@ const VendorDeveloper: React.FC = () => {
 
           <Table
             columns={hookColumns}
-            data={endpoints}
+            data={pagedEndpoints}
             selectable={false}
             loading={endpointsLoading}
             loadingMessage="Loading webhook endpoints..."
             emptyMessage="No webhook endpoints yet. Add one to start receiving order.status_changed events."
             minWidth="1150px"
           />
+
+          {endpoints.length > 0 && (
+            <Pagination
+              ariaLabel="Webhook endpoints pagination"
+              page={endpointsCurrentPage}
+              totalPages={endpointsTotalPages}
+              onPageChange={setEndpointsPage}
+              pageSize={endpointsPageSize}
+              pageSizeLabel="endpoints"
+              onPageSizeChange={(size) => {
+                setEndpointsPageSize(size);
+                setEndpointsPage(1);
+              }}
+              summary={`${endpoints.length} endpoint${endpoints.length === 1 ? '' : 's'}`}
+            />
+          )}
 
           <div className="webhooks-docs">
             <h3>Quick start</h3>

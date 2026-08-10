@@ -17,6 +17,7 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import PageHeader from '../../components/PageHeader';
 import Table from '../../components/Table';
+import Pagination from '../../components/Pagination';
 import Button from '../../components/Button';
 import FormField from '../../components/FormField';
 import {
@@ -49,11 +50,17 @@ const initials = (name: string) =>
     .join('')
     .toUpperCase() || 'S';
 
+// getStaff returns the vendor's whole team in one response, so rows are paged
+// client-side.
+const PAGE_SIZE = 20;
+
 const VendorUserManagement: React.FC = () => {
   const navigate = useNavigate();
   const [staff, setStaff] = useState<Staff[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [page, setPage] = useState(1);
+  const [pageSizeChoice, setPageSizeChoice] = useState(PAGE_SIZE);
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [error, setError] = useState('');
   // Password reset is its own action (separate from Edit): this holds the staff
@@ -86,6 +93,13 @@ const VendorUserManagement: React.FC = () => {
       (s) => s.name.toLowerCase().includes(q) || s.email.toLowerCase().includes(q),
     );
   }, [staff, searchQuery]);
+
+  const totalPages = Math.max(1, Math.ceil(visibleStaff.length / pageSizeChoice));
+  const currentPage = Math.min(page, totalPages);
+  const pagedStaff = visibleStaff.slice(
+    (currentPage - 1) * pageSizeChoice,
+    currentPage * pageSizeChoice,
+  );
 
   const openCreate = () => navigate('/user-management/staff/new');
   const openEdit = (member: Staff) =>
@@ -257,7 +271,10 @@ const VendorUserManagement: React.FC = () => {
         <Search size={16} />
         <input
           value={searchQuery}
-          onChange={(event) => setSearchQuery(event.target.value)}
+          onChange={(event) => {
+            setSearchQuery(event.target.value);
+            setPage(1);
+          }}
           placeholder="Search by name or email"
         />
       </label>
@@ -266,13 +283,29 @@ const VendorUserManagement: React.FC = () => {
 
       <Table
         columns={columns}
-        data={visibleStaff}
+        data={pagedStaff}
         selectable={false}
         loading={loading}
         loadingMessage="Loading staff..."
         emptyMessage="No staff found."
         minWidth="1080px"
       />
+
+      {visibleStaff.length > 0 && (
+        <Pagination
+          ariaLabel="Staff list pagination"
+          page={currentPage}
+          totalPages={totalPages}
+          onPageChange={setPage}
+          pageSize={pageSizeChoice}
+          pageSizeLabel="staff"
+          onPageSizeChange={(size) => {
+            setPageSizeChoice(size);
+            setPage(1);
+          }}
+          summary={`${visibleStaff.length} staff member${visibleStaff.length === 1 ? '' : 's'}`}
+        />
+      )}
 
       {pwdMember && (
         <div className="modal-overlay">

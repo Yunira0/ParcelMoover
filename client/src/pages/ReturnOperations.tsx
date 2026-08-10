@@ -412,7 +412,7 @@ const ReturnOperations: React.FC = () => {
         totalPages={totalPages}
         onPageChange={setPage}
         pageSize={pageSizeChoice}
-        pageSizeLabel="return"
+        pageSizeLabel="return orders"
         onPageSizeChange={setPageSizeChoice}
         summary={`${filteredOrders.length} order${filteredOrders.length === 1 ? '' : 's'}`}
       />

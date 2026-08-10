@@ -339,7 +339,7 @@ const HoldOperations: React.FC = () => {
         totalPages={totalPages}
         cursor={pager.controls(meta)}
         pageSize={pageSizeChoice}
-        pageSizeLabel="hold"
+        pageSizeLabel="held orders"
         onPageSizeChange={(size) => {
           setPageSizeChoice(size);
           pager.reset();

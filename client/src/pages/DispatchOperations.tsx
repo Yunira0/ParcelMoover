@@ -825,7 +825,7 @@ const DispatchOperations: React.FC = () => {
         totalPages={totalPages}
         cursor={pager.controls(meta)}
         pageSize={pageSizeChoice}
-        pageSizeLabel="dispatch"
+        pageSizeLabel="dispatch orders"
         onPageSizeChange={(size) => {
           setPageSizeChoice(size);
           pager.reset();

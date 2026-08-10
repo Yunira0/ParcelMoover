@@ -3,6 +3,7 @@ import { AlertTriangle, CheckCircle2, Clock, QrCode } from 'lucide-react';
 import PageHeader from '../../components/PageHeader';
 import Button from '../../components/Button';
 import FileField from '../../components/FileField';
+import Pagination from '../../components/Pagination';
 import {
   getBillingStatus,
   listVendorPayments,
@@ -23,9 +24,16 @@ const STATUS_LABEL: Record<VendorPayment['status'], string> = {
   rejected: 'Rejected',
 };
 
+// The server caps any value at 100 (vendor-payment.service MAX_PAGE_SIZE).
+const PAGE_SIZE = 20;
+
 const VendorBilling: React.FC = () => {
   const [status, setStatus] = useState<BillingStatus | null>(null);
   const [payments, setPayments] = useState<VendorPayment[]>([]);
+  const [page, setPage] = useState(1);
+  const [pageSizeChoice, setPageSizeChoice] = useState(PAGE_SIZE);
+  const [paymentsTotal, setPaymentsTotal] = useState(0);
+  const [paymentsTotalPages, setPaymentsTotalPages] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -48,17 +56,19 @@ const VendorBilling: React.FC = () => {
     try {
       const [statusData, paymentsData] = await Promise.all([
         getBillingStatus(),
-        listVendorPayments({ pageSize: 20 }),
+        listVendorPayments({ page, pageSize: pageSizeChoice }),
       ]);
       setStatus(statusData);
       setPayments(paymentsData.data);
+      setPaymentsTotal(paymentsData.meta.total);
+      setPaymentsTotalPages(paymentsData.meta.totalPages);
       setError('');
     } catch (err) {
       setError(apiErrorMessage(err, 'Failed to load billing details.'));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [page, pageSizeChoice]);
 
   useEffect(() => {
     void load();
@@ -91,6 +101,8 @@ const VendorBilling: React.FC = () => {
       setReference('');
       setNote('');
       setProof(null);
+      // The new payment is the newest row, so jump back to the first page.
+      setPage(1);
       await load();
     } catch (err) {
       setFormError(apiErrorMessage(err, 'Failed to submit payment.'));
@@ -270,36 +282,52 @@ const VendorBilling: React.FC = () => {
                 </p>
               </div>
             ) : (
-              <div className="billing-table-scroll">
-                <table className="cod-bill-table">
-                  <thead>
-                    <tr>
-                      <th>Date</th>
-                      <th>Amount</th>
-                      <th>Reference</th>
-                      <th>Status</th>
-                      <th>Remark</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {payments.map((payment) => (
-                      <tr key={payment.id}>
-                        <td>{toBsDate(payment.createdAt)}</td>
-                        <td>{formatCurrency(payment.amount)}</td>
-                        <td>{payment.reference || '—'}</td>
-                        <td>
-                          <span className={`billing-pill billing-pill-${payment.status}`}>
-                            {payment.status === 'verified' && <CheckCircle2 size={12} />}
-                            {payment.status === 'pending' && <Clock size={12} />}
-                            {STATUS_LABEL[payment.status]}
-                          </span>
-                        </td>
-                        <td>{payment.reviewRemark || '—'}</td>
+              <>
+                <div className="billing-table-scroll">
+                  <table className="cod-bill-table">
+                    <thead>
+                      <tr>
+                        <th>Date</th>
+                        <th>Amount</th>
+                        <th>Reference</th>
+                        <th>Status</th>
+                        <th>Remark</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {payments.map((payment) => (
+                        <tr key={payment.id}>
+                          <td>{toBsDate(payment.createdAt)}</td>
+                          <td>{formatCurrency(payment.amount)}</td>
+                          <td>{payment.reference || '—'}</td>
+                          <td>
+                            <span className={`billing-pill billing-pill-${payment.status}`}>
+                              {payment.status === 'verified' && <CheckCircle2 size={12} />}
+                              {payment.status === 'pending' && <Clock size={12} />}
+                              {STATUS_LABEL[payment.status]}
+                            </span>
+                          </td>
+                          <td>{payment.reviewRemark || '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <Pagination
+                  ariaLabel="Payment history pagination"
+                  page={page}
+                  totalPages={paymentsTotalPages}
+                  onPageChange={setPage}
+                  pageSize={pageSizeChoice}
+                  pageSizeLabel="payments"
+                  onPageSizeChange={(size) => {
+                    setPageSizeChoice(size);
+                    setPage(1);
+                  }}
+                  summary={`${paymentsTotal} payment${paymentsTotal === 1 ? '' : 's'}`}
+                />
+              </>
             )}
           </section>
         </>

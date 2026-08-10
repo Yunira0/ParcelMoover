@@ -11,6 +11,7 @@ import { toBsDate } from '../../utils/nepaliDate';
 import NepaliDatePicker from '../../components/NepaliDatePicker';
 import './VendorFinance.css';
 
+// The server caps any value at 100 (finance.service MAX_PAGE_SIZE).
 const PAGE_SIZE = 20;
 
 const formatCurrency = (value: number) => formatCurrencyBase(value, 0);
@@ -20,7 +21,9 @@ const VendorSettlements: React.FC = () => {
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
   const [page, setPage] = useState(1);
+  const [pageSizeChoice, setPageSizeChoice] = useState(PAGE_SIZE);
   const [items, setItems] = useState<SettlementListItem[]>([]);
+  const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -34,10 +37,11 @@ const VendorSettlements: React.FC = () => {
     setLoading(true);
     setError('');
 
-    getSettlements('vendor', undefined, page, PAGE_SIZE, fromDate || undefined, toDate || undefined)
+    getSettlements('vendor', undefined, page, pageSizeChoice, fromDate || undefined, toDate || undefined)
       .then((res) => {
         if (!active) return;
         setItems(res.data);
+        setTotal(res.meta.total);
         setTotalPages(res.meta.totalPages);
       })
       .catch((err) => {
@@ -51,9 +55,9 @@ const VendorSettlements: React.FC = () => {
       active = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, fromDate, toDate, dateRangeInvalid]);
+  }, [page, pageSizeChoice, fromDate, toDate, dateRangeInvalid]);
 
-  const rows = items.map((item, index) => ({ ...item, sn: (page - 1) * PAGE_SIZE + index + 1 }));
+  const rows = items.map((item, index) => ({ ...item, sn: (page - 1) * pageSizeChoice + index + 1 }));
 
   const columns = [
     { header: 'SN', accessor: 'sn' as const, width: '60px' },
@@ -131,7 +135,19 @@ const VendorSettlements: React.FC = () => {
         emptyMessage="No settlements found."
       />
 
-      <Pagination ariaLabel="Settlements pagination" page={page} totalPages={totalPages} onPageChange={setPage} />
+      <Pagination
+        ariaLabel="Settlements pagination"
+        page={page}
+        totalPages={totalPages}
+        onPageChange={setPage}
+        pageSize={pageSizeChoice}
+        pageSizeLabel="settlements"
+        onPageSizeChange={(size) => {
+          setPageSizeChoice(size);
+          setPage(1);
+        }}
+        summary={`${total} settlement${total === 1 ? '' : 's'}`}
+      />
     </div>
   );
 };

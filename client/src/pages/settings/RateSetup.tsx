@@ -52,6 +52,7 @@ const RateSetup: React.FC = () => {
   const [savingSettings, setSavingSettings] = useState(false);
   const [msg, setMsg] = useState('');
   const [page, setPage] = useState(1);
+  const [pageSizeChoice, setPageSizeChoice] = useState(PAGE_SIZE);
   const [searchQuery, setSearchQuery] = useState('');
 
   const load = async () => {
@@ -174,9 +175,12 @@ const RateSetup: React.FC = () => {
 
   if (loading || !settings) return <p className="rate-muted">Loading rate setup…</p>;
 
-  const totalPages = Math.max(1, Math.ceil(filteredDestinations.length / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(filteredDestinations.length / pageSizeChoice));
   const currentPage = Math.min(page, totalPages);
-  const pagedDestinations = filteredDestinations.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  const pagedDestinations = filteredDestinations.slice(
+    (currentPage - 1) * pageSizeChoice,
+    currentPage * pageSizeChoice,
+  );
 
   return (
     <div className="rate-setup">
@@ -392,13 +396,19 @@ const RateSetup: React.FC = () => {
             )}
           </>
         )}
-        {filteredDestinations.length > PAGE_SIZE && (
+        {filteredDestinations.length > 0 && (
           <Pagination
             page={currentPage}
             totalPages={totalPages}
             onPageChange={setPage}
             ariaLabel="Destination rates pages"
-            summary={`Showing ${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, filteredDestinations.length)} of ${filteredDestinations.length} destinations`}
+            pageSize={pageSizeChoice}
+            pageSizeLabel="destinations"
+            onPageSizeChange={(size) => {
+              setPageSizeChoice(size);
+              setPage(1);
+            }}
+            summary={`Showing ${(currentPage - 1) * pageSizeChoice + 1}–${Math.min(currentPage * pageSizeChoice, filteredDestinations.length)} of ${filteredDestinations.length} destinations`}
           />
         )}
       </section>

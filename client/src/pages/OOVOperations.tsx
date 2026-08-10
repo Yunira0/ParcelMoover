@@ -741,7 +741,7 @@ const OOVOperations: React.FC = () => {
         totalPages={totalPages}
         cursor={pager.controls(meta)}
         pageSize={pageSizeChoice}
-        pageSizeLabel="transit"
+        pageSizeLabel="transit orders"
         onPageSizeChange={(size) => {
           setPageSizeChoice(size);
           pager.reset();

@@ -241,7 +241,9 @@ const OverviewOrdersPage: React.FC = () => {
         totalPages={totalPages}
         cursor={pager.controls(meta)}
         pageSize={pageSizeChoice}
-        pageSizeLabel="orders"
+        // Named after the card you opened ("Pending pickups per page"), not a
+        // generic "orders per page".
+        pageSizeLabel={group.label}
         onPageSizeChange={(size) => {
           setPageSizeChoice(size);
           pager.reset();
