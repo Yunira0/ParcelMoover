@@ -220,6 +220,17 @@ function buildStatementHtml(detail: SettlementDetail): string {
       <div><span>Delivery Charges</span><span>${money(totals.deliveryCharge)}</span></div>
       <div class="payable"><span>${detail.payeeType === 'rider' ? 'Receivable Amount' : 'Payable Amount'}</span><span>${money(detail.payableAmount)}</span></div>
     </div>
+    <script>
+      // Printing from document.close() in the opener races the new window's
+      // layout - it can fire before the statement has actually rendered, so
+      // the print dialog shows a blank/default page instead. Wait for this
+      // window's own load event first, same as printLabels.ts/printRunSheet.ts.
+      window.addEventListener('load', function() {
+        window.focus();
+        window.print();
+        window.addEventListener('afterprint', function() { window.close(); });
+      });
+    <\/script>
   </body></html>`;
 }
 
@@ -309,8 +320,6 @@ const SettlementDetailPage: React.FC = () => {
     if (!win) return;
     win.document.write(buildStatementHtml(detail));
     win.document.close();
-    win.focus();
-    win.print();
   };
 
   const handleDownload = () => {

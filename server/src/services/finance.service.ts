@@ -34,6 +34,11 @@ type Actor = { id: string; roles: string[] };
 
 const MAX_PAGE_SIZE = 100;
 const DEFAULT_PAGE_SIZE = 20;
+// A vendor/rider's unsettled backlog is unbounded and grows over time - cap
+// it the same way getCodSettlementDetail caps COD_DETAIL_ROW_CAP, so a large
+// backlog degrades to "capped" rather than a slow query and an unbounded
+// render on every consumer of getUnsettledOrders.
+const UNSETTLED_ORDERS_CAP = 1000;
 
 // Same read-heavy, cache-worthy profile as the (already cached) dashboard
 // summary - a short TTL is enough since the only write path that can change
@@ -535,9 +540,9 @@ export async function getUnsettledOrders(
   // Vendor-scoped keys share the `finance:${vendorId}:*` namespace so order
   // creation and settlement creation can invalidate them; rider-scoped ones
   // share `finance:rider:${riderId}:*`, invalidated by createSettlement.
-  // The `:v2` suffix retires payloads cached before orderNumber/receiverPhone
-  // were added to the item shape (both invalidation globs still match it).
-  const cacheKey = vendorId ? `finance:${vendorId}:unsettled:v2` : `finance:rider:${riderId}:unsettled:v2`;
+  // The `:v3` suffix retires payloads cached before `capped` was added to the
+  // result shape (both invalidation globs still match it).
+  const cacheKey = vendorId ? `finance:${vendorId}:unsettled:v3` : `finance:rider:${riderId}:unsettled:v3`;
   const cached = await readFinanceCache<UnsettledOrdersResult>(cacheKey);
   if (cached) return cached;
 
@@ -550,8 +555,16 @@ export async function getUnsettledOrders(
   // wrongly hide those from the ledger instead of settling them at 0).
   // A cancelled order is void - it must never surface as needing settlement,
   // even if cash was recorded as collected before the cancellation happened
-  // (e.g. a super_admin force-cancelling an already-delivered parcel).
-  const notCancelled: Prisma.cod_collectionsWhereInput = { parcels: { status: { not: parcel_status.cancelled } } };
+  // (e.g. a super_admin force-cancelling an already-delivered parcel). More
+  // than that: the parcel must currently still be IN a collected state at
+  // all - a parcel reverted away from delivered/partially_delivered can leave
+  // a stale collected_at/payment_status behind on its cod_collections row
+  // (order.service.ts's reconcileCodCollectionOnStatusChange is meant to
+  // prevent that at the source, but this is independent defense-in-depth
+  // against the same bug class).
+  const parcelStillCollected: Prisma.cod_collectionsWhereInput = {
+    parcels: { status: { in: [parcel_status.delivered, parcel_status.partially_delivered, parcel_status.returned_to_vendor] } },
+  };
 
   const where: Prisma.cod_collectionsWhereInput = riderId
     ? {
@@ -562,7 +575,7 @@ export async function getUnsettledOrders(
         // same collection independently, so this is scoped to rider statements
         // only - a vendor statement on this collection must not hide it here.
         settlement_items: { none: { settlements: { payee_type: "rider" } } },
-        ...notCancelled,
+        ...parcelStillCollected,
       }
     : {
         ...(vendorId ? { vendor_id: vendorId } : {}),
@@ -572,10 +585,10 @@ export async function getUnsettledOrders(
         collected_at: { not: null },
         // Not already bundled into a vendor statement (see rider leg note).
         settlement_items: { none: { settlements: { payee_type: "vendor" } } },
-        ...notCancelled,
+        ...parcelStillCollected,
       };
 
-  const collections = await prisma.cod_collections.findMany({
+  const fetched = await prisma.cod_collections.findMany({
     where,
     include: {
       parcels: {
@@ -597,7 +610,12 @@ export async function getUnsettledOrders(
       },
     },
     orderBy: { created_at: "desc" },
+    take: UNSETTLED_ORDERS_CAP + 1,
   });
+  // Fetching cap+1 and checking the length avoids a separate COUNT query -
+  // same trick as getCodSettlementDetail's COD_DETAIL_ROW_CAP.
+  const capped = fetched.length > UNSETTLED_ORDERS_CAP;
+  const collections = capped ? fetched.slice(0, UNSETTLED_ORDERS_CAP) : fetched;
 
   const items: UnsettledOrderItem[] = collections.map((c) => {
     const collected = Number(c.collected_amount);
@@ -652,6 +670,7 @@ export async function getUnsettledOrders(
     totalCod,
     totalDeliveryCharge,
     totalNetPayable,
+    capped,
   };
   await writeFinanceCache(cacheKey, result);
   return result;
@@ -688,6 +707,14 @@ export async function createSettlement(
   // guard now, because a collection stays `pending` until its statement is
   // actually paid (see payForSettlement), so it would otherwise be selectable
   // twice while a statement sits unpaid.
+  // Independent defense-in-depth against a reverted-from-delivered parcel
+  // leaving a stale collected_at/payment_status behind (see getUnsettledOrders'
+  // parcelStillCollected comment) - the parcel must still actually be in a
+  // collected state, not just look eligible on the cod_collections row alone.
+  const parcelStillCollected: Prisma.cod_collectionsWhereInput = {
+    parcels: { status: { in: [parcel_status.delivered, parcel_status.partially_delivered, parcel_status.returned_to_vendor] } },
+  };
+
   const eligibleWhere: Prisma.cod_collectionsWhereInput =
     payeeType === "rider"
       ? {
@@ -699,6 +726,7 @@ export async function createSettlement(
           // would wrongly reject settling a corrected-to-0 order at 0.
           collected_at: { not: null },
           settlement_items: { none: { settlements: { payee_type: "rider" } } },
+          ...parcelStillCollected,
         }
       : {
           id: { in: codCollectionIds },
@@ -706,32 +734,43 @@ export async function createSettlement(
           payment_status: payment_status.pending,
           collected_at: { not: null },
           settlement_items: { none: { settlements: { payee_type: "vendor" } } },
+          ...parcelStillCollected,
         };
 
-  const collections = await prisma.cod_collections.findMany({
-    where: eligibleWhere,
-    include: { parcels: { select: { delivery_charge: true } } },
-  });
-
-  if (collections.length !== codCollectionIds.length) {
-    throw new AppError(
-      400,
-      "One or more selected orders are not eligible for settlement (already settled or do not belong to this account)",
-    );
-  }
-
-  // Gross is the cash actually collected (not the declared COD, which overstates
-  // partial deliveries). Vendor payout is gross minus the delivery charge -
-  // a parcel returned to the vendor (return leg or plain RTO bounce-back) is
-  // billed its delivery_charge same as any other settled order.
-  const grossAmount = collections.reduce((sum, c) => sum + Number(c.collected_amount), 0);
-  const payableAmount =
-    payeeType === "rider"
-      ? collections.reduce((sum, c) => sum + Number(c.collected_amount), 0)
-      : collections.reduce((sum, c) => sum + Number(c.collected_amount) - Number(c.parcels.delivery_charge), 0);
   const statementId = generateStatementId(payeeType);
 
   const settlement = await prisma.$transaction(async (tx) => {
+    // Lock the target rows before re-checking eligibility, so two concurrent
+    // requests bundling an overlapping order set can't both pass the check -
+    // the second waits here until the first's transaction commits (or rolls
+    // back), then re-reads committed state and correctly finds the order
+    // already claimed. Without this, the plain findMany above (or a copy of
+    // it run concurrently) is a classic TOCTOU race: both requests read
+    // "eligible" before either has inserted its settlement_items.
+    await tx.$queryRaw`SELECT id FROM cod_collections WHERE id = ANY(${codCollectionIds}::uuid[]) FOR UPDATE`;
+
+    const collections = await tx.cod_collections.findMany({
+      where: eligibleWhere,
+      include: { parcels: { select: { delivery_charge: true } } },
+    });
+
+    if (collections.length !== codCollectionIds.length) {
+      throw new AppError(
+        400,
+        "One or more selected orders are not eligible for settlement (already settled or do not belong to this account)",
+      );
+    }
+
+    // Gross is the cash actually collected (not the declared COD, which overstates
+    // partial deliveries). Vendor payout is gross minus the delivery charge -
+    // a parcel returned to the vendor (return leg or plain RTO bounce-back) is
+    // billed its delivery_charge same as any other settled order.
+    const grossAmount = collections.reduce((sum, c) => sum + Number(c.collected_amount), 0);
+    const payableAmount =
+      payeeType === "rider"
+        ? collections.reduce((sum, c) => sum + Number(c.collected_amount), 0)
+        : collections.reduce((sum, c) => sum + Number(c.collected_amount) - Number(c.parcels.delivery_charge), 0);
+
     const created = await tx.settlements.create({
       data: {
         statement_id: statementId,
@@ -769,7 +808,7 @@ export async function createSettlement(
       },
     });
 
-    return created;
+    return { created, itemCount: collections.length };
   });
 
   if (payeeType === "rider") {
@@ -783,7 +822,7 @@ export async function createSettlement(
     await createNotification(
       targetUserId,
       `COD Statement ${statementId} created`,
-      `A statement of Rs. ${payableAmount} across ${collections.length} order(s) is pending payment.`,
+      `A statement of Rs. ${settlement.created.payable_amount} across ${settlement.itemCount} order(s) is pending payment.`,
       null,
       "cod_settlement",
       payeeType === "rider" ? "/finance" : "/finance/settlements",
@@ -791,16 +830,16 @@ export async function createSettlement(
   }
 
   return {
-    id: settlement.id,
-    statementId: settlement.statement_id,
+    id: settlement.created.id,
+    statementId: settlement.created.statement_id,
     payeeType,
-    amount: grossAmount,
-    payableAmount,
-    settlementDate: settlement.settlement_date ? formatNepalDate(settlement.settlement_date) : null,
-    status: settlement.status,
-    paymentMethod: settlement.payment_method,
+    amount: Number(settlement.created.amount),
+    payableAmount: Number(settlement.created.payable_amount),
+    settlementDate: settlement.created.settlement_date ? formatNepalDate(settlement.created.settlement_date) : null,
+    status: settlement.created.status,
+    paymentMethod: settlement.created.payment_method,
     payments: [],
-    remark: settlement.remark,
+    remark: settlement.created.remark,
   };
 }
 
@@ -1036,43 +1075,74 @@ export async function updateSettlement(
   const toAddIds = codCollectionIds.filter((id) => !existingIds.has(id));
   const keptIds = codCollectionIds.filter((id) => existingIds.has(id));
 
-  // Orders newly added must belong to the same payee and still be pending
-  // settlement - the same eligibility rule createSettlement enforces.
+  // Orders newly added must belong to the same payee, still be pending
+  // settlement, AND not already bundled into another pending statement of the
+  // same leg - the same eligibility rule createSettlement enforces (this used
+  // to be missing here, which let an order already sitting in one unpaid
+  // statement get added to a second one, since payment_status alone doesn't
+  // catch that - see the membership-vs-payment_status note on createSettlement).
+  // Same parcel-status defense-in-depth as createSettlement's eligibleWhere.
+  const parcelStillCollected: Prisma.cod_collectionsWhereInput = {
+    parcels: { status: { in: [parcel_status.delivered, parcel_status.partially_delivered, parcel_status.returned_to_vendor] } },
+  };
+
   const eligibleAddWhere: Prisma.cod_collectionsWhereInput =
     payeeType === "rider"
-      ? { id: { in: toAddIds }, rider_id: targetId, rider_payment_status: payment_status.pending, collected_at: { not: null } }
-      : { id: { in: toAddIds }, vendor_id: targetId, payment_status: payment_status.pending, collected_at: { not: null } };
-
-  const [toAddCollections, keptCollections] = await Promise.all([
-    toAddIds.length > 0
-      ? prisma.cod_collections.findMany({
-          where: eligibleAddWhere,
-          include: { parcels: { select: { delivery_charge: true } } },
-        })
-      : Promise.resolve([]),
-    keptIds.length > 0
-      ? prisma.cod_collections.findMany({
-          where: { id: { in: keptIds } },
-          include: { parcels: { select: { delivery_charge: true } } },
-        })
-      : Promise.resolve([]),
-  ]);
-
-  if (toAddCollections.length !== toAddIds.length) {
-    throw new AppError(
-      400,
-      "One or more orders being added are not eligible (already settled or belong to a different account)",
-    );
-  }
-
-  const allCollections = [...keptCollections, ...toAddCollections];
-  const grossAmount = allCollections.reduce((sum, c) => sum + Number(c.collected_amount), 0);
-  const payableAmount =
-    payeeType === "rider"
-      ? grossAmount
-      : allCollections.reduce((sum, c) => sum + Number(c.collected_amount) - Number(c.parcels.delivery_charge), 0);
+      ? {
+          id: { in: toAddIds },
+          rider_id: targetId,
+          rider_payment_status: payment_status.pending,
+          collected_at: { not: null },
+          settlement_items: { none: { settlements: { payee_type: "rider" } } },
+          ...parcelStillCollected,
+        }
+      : {
+          id: { in: toAddIds },
+          vendor_id: targetId,
+          payment_status: payment_status.pending,
+          collected_at: { not: null },
+          settlement_items: { none: { settlements: { payee_type: "vendor" } } },
+          ...parcelStillCollected,
+        };
 
   const updated = await prisma.$transaction(async (tx) => {
+    // Lock the rows being newly added before re-checking eligibility, so a
+    // concurrent request (another edit, or a createSettlement) targeting an
+    // overlapping order can't slip in between the check and the write - same
+    // TOCTOU guard as createSettlement's row lock.
+    if (toAddIds.length > 0) {
+      await tx.$queryRaw`SELECT id FROM cod_collections WHERE id = ANY(${toAddIds}::uuid[]) FOR UPDATE`;
+    }
+
+    const [toAddCollections, keptCollections] = await Promise.all([
+      toAddIds.length > 0
+        ? tx.cod_collections.findMany({
+            where: eligibleAddWhere,
+            include: { parcels: { select: { delivery_charge: true } } },
+          })
+        : Promise.resolve([]),
+      keptIds.length > 0
+        ? tx.cod_collections.findMany({
+            where: { id: { in: keptIds } },
+            include: { parcels: { select: { delivery_charge: true } } },
+          })
+        : Promise.resolve([]),
+    ]);
+
+    if (toAddCollections.length !== toAddIds.length) {
+      throw new AppError(
+        400,
+        "One or more orders being added are not eligible (already settled or belong to a different account)",
+      );
+    }
+
+    const allCollections = [...keptCollections, ...toAddCollections];
+    const grossAmount = allCollections.reduce((sum, c) => sum + Number(c.collected_amount), 0);
+    const payableAmount =
+      payeeType === "rider"
+        ? grossAmount
+        : allCollections.reduce((sum, c) => sum + Number(c.collected_amount) - Number(c.parcels.delivery_charge), 0);
+
     if (toRemove.length > 0) {
       const removedIds = toRemove.map((i) => i.cod_collection_id);
       await tx.settlement_items.deleteMany({
@@ -1154,7 +1224,7 @@ export async function updateSettlement(
     statementId: updated.statement_id,
     payeeType,
     amount: Number(updated.amount),
-    payableAmount,
+    payableAmount: Number(updated.payable_amount ?? updated.amount),
     settlementDate: updated.settlement_date ? formatNepalDate(updated.settlement_date) : null,
     status: updated.status,
     paymentMethod: updated.payment_method,

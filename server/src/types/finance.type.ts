@@ -166,6 +166,8 @@ export interface UnsettledOrdersResult {
   totalCod: number;
   totalDeliveryCharge: number;
   totalNetPayable: number;
+  /** True when the eligible set exceeded UNSETTLED_ORDERS_CAP and was trimmed. */
+  capped: boolean;
 }
 
 export interface SettlementDetailItem {

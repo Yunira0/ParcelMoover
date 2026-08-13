@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import { parcel_status, Prisma } from "../generated/prisma/client";
 import prisma from "../lib/prisma";
 import redis, { scanAndDelete } from "../lib/redis";
@@ -187,6 +188,15 @@ const RETURN_WORKFLOW_STATUSES: parcel_status[] = [
 const TERMINAL_STATUSES: parcel_status[] = [
   "delivered",
   "cancelled",
+  "returned_to_vendor",
+];
+
+// Statuses at which cod_collections.collected_at/collected_amount get stamped
+// (see reconcileCodCollectionOnStatusChange below) - a parcel sitting in any
+// of these is expected to have real cash-in-hand data on its collection row.
+const COD_COLLECTED_STATUSES: parcel_status[] = [
+  "delivered",
+  "partially_delivered",
   "returned_to_vendor",
 ];
 
@@ -1396,6 +1406,77 @@ export async function redirectOrder(
 
 const BULK_CREATE_MAX = 100;
 
+// How long a completed batch's fingerprint is remembered for the re-upload
+// check below. Long enough to catch "did that import actually go through?"
+// re-submissions, short enough that a legitimately recurring identical batch
+// (e.g. a templated weekly order) isn't nagged forever.
+const BULK_DUPLICATE_WINDOW_SECONDS = 60 * 60;
+
+// Content fingerprint for one row - deliberately narrower than the full
+// CreateOrderInput (ignores pieces/weight/instructions/etc.) so a re-export
+// of "the same shipment" with incidental formatting differences still
+// matches. Order-independent: computeBulkBatchFingerprint sorts these before
+// hashing, so re-uploading the same file with rows shuffled still matches.
+function bulkRowFingerprint(data: CreateOrderInput): string {
+  const receiverPhone = data.receiver.phone.trim().replace(/\s/g, "");
+  const receiverName = data.receiver.name.trim().toLowerCase();
+  return `${receiverPhone}|${receiverName}|${data.codAmount ?? 0}|${data.itemValue ?? 0}|${data.destinationLocationId ?? ""}`;
+}
+
+function computeBulkBatchFingerprint(rows: CreateOrderInput[]): string {
+  const lines = rows.map(bulkRowFingerprint).sort();
+  return crypto.createHash("sha256").update(lines.join("\n")).digest("hex");
+}
+
+function bulkBatchRedisKey(scopeKey: string, fingerprint: string): string {
+  return `bulk-import:batch:${scopeKey}:${fingerprint}`;
+}
+
+// Same-content re-upload guard for bulk import, mirroring assertNotDuplicateOrder's
+// soft-warn-then-confirm UX but scoped to the whole batch instead of one row -
+// bulk rows legitimately can share a receiver/day (multiple items to the same
+// customer), so a per-row check would be noisy; a byte-for-byte-same batch
+// re-submitted minutes later is almost always "did that import actually go
+// through?", not a new order. Skipped when confirmDuplicateBatch is set (the
+// client resends that after the user confirms an inline "import anyway?" prompt).
+async function assertNotDuplicateBatch(scopeKey: string, rows: CreateOrderInput[], confirmDuplicateBatch?: boolean) {
+  if (confirmDuplicateBatch || rows.length === 0) return;
+
+  const fingerprint = computeBulkBatchFingerprint(rows);
+  const key = bulkBatchRedisKey(scopeKey, fingerprint);
+
+  let cached: string | null = null;
+  try {
+    cached = await redis.get(key);
+  } catch (error) {
+    // Redis is optional everywhere else in this file - degrade to "no guard"
+    // rather than blocking imports during an outage.
+    console.error("[Redis] bulk duplicate-batch check failed, proceeding without it:", error);
+    return;
+  }
+
+  if (!cached) return;
+
+  const { count, createdAt } = JSON.parse(cached) as { count: number; createdAt: string };
+  const minutesAgo = Math.max(1, Math.round((Date.now() - Date.parse(createdAt)) / 60000));
+  throw new AppError(
+    409,
+    `${count} order(s) matching this exact batch were already imported ${minutesAgo} minute(s) ago. Import anyway?`,
+    "DUPLICATE_BATCH",
+  );
+}
+
+async function rememberBulkBatch(scopeKey: string, rows: CreateOrderInput[], count: number) {
+  if (rows.length === 0 || count === 0) return;
+  const fingerprint = computeBulkBatchFingerprint(rows);
+  const key = bulkBatchRedisKey(scopeKey, fingerprint);
+  try {
+    await redis.setex(key, BULK_DUPLICATE_WINDOW_SECONDS, JSON.stringify({ count, createdAt: new Date().toISOString() }));
+  } catch (error) {
+    console.error("[Redis] failed to record bulk batch fingerprint:", error);
+  }
+}
+
 // Each order runs its own multi-query transaction (tracking id, party lookup,
 // rate quote, parcel + 4 secondary writes). Running all of them fully
 // sequentially serializes ~12+ round trips per order across the whole batch,
@@ -1458,6 +1539,13 @@ export async function bulkCreateOrders(actor: OrderActor, input: BulkCreateOrder
     });
   }
 
+  // Scoped per vendor when the whole batch belongs to one (the only current
+  // caller - the vendor self-service bulk upload page); falls back to the
+  // actor when it doesn't (a staff/sales import naming a different vendor per
+  // row), so the check still guards against that actor re-running the batch.
+  const batchScopeKey = importingVendorId ?? `actor:${actor.id}`;
+  await assertNotDuplicateBatch(batchScopeKey, toCreate.map((t) => t.data), input.confirmDuplicateBatch);
+
   for (let start = 0; start < toCreate.length; start += BULK_CREATE_CONCURRENCY) {
     if (signal?.aborted) {
       // Client disconnected - stop opening new transactions for orders it'll
@@ -1499,6 +1587,11 @@ export async function bulkCreateOrders(actor: OrderActor, input: BulkCreateOrder
     await invalidateOrderCaches();
     await Promise.all(Array.from(vendorIdsToInvalidate, (id) => invalidateVendorFinanceCache(id)));
   }
+
+  // Record this batch's fingerprint regardless of whether it was itself a
+  // confirmed re-upload, so the "already imported" clock always measures from
+  // the most recent successful run.
+  await rememberBulkBatch(batchScopeKey, toCreate.map((t) => t.data), created);
 
   // New orders no longer notify admins (see createOrder) - a bulk import would
   // otherwise fire a ping per parcel and bury the feed.
@@ -3387,6 +3480,71 @@ export async function notifyVendorOfParcel(
   }
 }
 
+// Keeps cod_collections honest across a status change into or out of a
+// "collected" status (COD_COLLECTED_STATUSES). Without this, a parcel that
+// gets marked delivered, corrected back, and later actually delivered leaves
+// a stale collected_at/payment_status behind that can get swept into a real
+// settlement before the real delivery ever happens (see the incident this
+// was written for: PM-260806-AD7W734DPANEM-X - reverted same-day, but the
+// leftover cod_collections row was still settlement-eligible days later).
+//
+// Once a row is claimed by a settlement (pending or paid - membership, not
+// payment_status, is what "claimed" means, see createSettlement's eligibility
+// comment), this refuses the transition outright rather than silently
+// rewriting finance state a settlement already committed to. Undoing that is
+// a deliberate, explicit, audited action (revertSettlement / updateSettlement
+// / cancelSettlement), never a side effect of an unrelated status change.
+async function reconcileCodCollectionOnStatusChange(
+  tx: Prisma.TransactionClient,
+  parcelId: string,
+  currentStatus: parcel_status,
+  newStatus: parcel_status,
+) {
+  if (currentStatus === newStatus) return;
+  const leavingCollected = COD_COLLECTED_STATUSES.includes(currentStatus);
+  const enteringCollected = COD_COLLECTED_STATUSES.includes(newStatus);
+  if (!leavingCollected && !enteringCollected) return;
+
+  // Lock the row so a concurrent createSettlement/updateSettlement (which
+  // take the same FOR UPDATE lock before re-checking eligibility) can't race
+  // this check - whichever transaction gets there first wins.
+  await tx.$queryRaw`SELECT id FROM cod_collections WHERE parcel_id = ${parcelId}::uuid FOR UPDATE`;
+
+  const collection = await tx.cod_collections.findUnique({
+    where: { parcel_id: parcelId },
+    include: { settlement_items: { include: { settlements: true } } },
+  });
+  if (!collection) return; // Nothing to reconcile - the entry-side upsert will create it fresh.
+
+  if (collection.settlement_items.length > 0) {
+    const statements = collection.settlement_items
+      .map((si) => `${si.settlements.statement_id} (${si.settlements.payee_type}, ${si.settlements.status})`)
+      .join(", ");
+    throw new AppError(
+      409,
+      `This order's COD collection is already part of settlement(s) ${statements}. Resolve or revert the settlement before changing this parcel's status.`,
+    );
+  }
+
+  if (leavingCollected && !enteringCollected) {
+    await tx.cod_collections.update({
+      where: { parcel_id: parcelId },
+      data: {
+        collected_at: null,
+        collected_amount: 0,
+        payment_status: "pending",
+        rider_payment_status: "pending",
+        remitted_amount: 0,
+        rider_remitted_amount: 0,
+        rider_settled_at: null,
+      },
+    });
+  }
+  // Entering/re-entering collected on an unclaimed row: the caller's own
+  // upsert/update overwrites collected_at/collected_amount and (with this
+  // change) payment_status/rider_payment_status - nothing more to do here.
+}
+
 export async function updateParcelStatus(
   actor: OrderActor,
   parcelId: string,
@@ -3621,6 +3779,12 @@ async function _updateParcelStatusImpl(
   }
 
   const txOutcome = await prisma.$transaction(async (tx) => {
+    await reconcileCodCollectionOnStatusChange(
+      tx,
+      parcelId,
+      currentStatus as parcel_status,
+      newStatus as parcel_status,
+    );
     let createdReturn: { id: string; trackingId: string } | null = null;
     const updateData: Prisma.parcelsUpdateInput = {
       status: newStatus as parcel_status,
@@ -3696,6 +3860,12 @@ async function _updateParcelStatusImpl(
           cod_amount: parcel.cod_amount,
           collected_amount: collectedAmount,
           collected_at: new Date(),
+          // reconcileCodCollectionOnStatusChange above guarantees this row is
+          // unclaimed by any settlement before we get here, so it's always
+          // safe (and defensive against future write sites) to (re)stamp
+          // pending rather than trust whatever payment_status was left over.
+          payment_status: "pending",
+          rider_payment_status: "pending",
         },
       });
     }
@@ -3708,7 +3878,7 @@ async function _updateParcelStatusImpl(
     if (newStatus === "returned_to_vendor") {
       await tx.cod_collections.update({
         where: { parcel_id: parcel.id },
-        data: { collected_at: new Date() },
+        data: { collected_at: new Date(), payment_status: "pending", rider_payment_status: "pending" },
       });
     }
     // Side-effect: update pickup_task status in sync
@@ -4139,6 +4309,19 @@ async function _bulkUpdateParcelStatusImpl(
   }
 
   const result = await prisma.$transaction(async (tx) => {
+    // Same reconciliation as the single-parcel path (see
+    // reconcileCodCollectionOnStatusChange) - a bulk force-transition out of
+    // delivered/partially_delivered/returned_to_vendor must not leave a
+    // settlement-eligible cod_collections row behind either.
+    for (const parcel of parcels) {
+      await reconcileCodCollectionOnStatusChange(
+        tx,
+        parcel.id,
+        parcel.status as parcel_status,
+        newStatus as parcel_status,
+      );
+    }
+
     let dispatch: { id: string; dispatch_no: string } | null = null;
 
     if (newStatus === "dispatched" && toLocationId && originLocationId) {
@@ -4233,6 +4416,10 @@ async function _bulkUpdateParcelStatusImpl(
             cod_amount: p.cod_amount,
             collected_amount: collectedAmount,
             collected_at: collectedAt,
+            // See the single-parcel path's identical comment: the reconcile
+            // loop above guarantees this row is unclaimed before we get here.
+            payment_status: "pending",
+            rider_payment_status: "pending",
           },
         });
       }
@@ -4245,7 +4432,7 @@ async function _bulkUpdateParcelStatusImpl(
     if (newStatus === "returned_to_vendor") {
       await tx.cod_collections.updateMany({
         where: { parcel_id: { in: parcels.map((p) => p.id) } },
-        data: { collected_at: new Date() },
+        data: { collected_at: new Date(), payment_status: "pending", rider_payment_status: "pending" },
       });
       // Re-price each plain RTO to its discounted return-percent charge
       // (computed above, before the transaction). Per-parcel amounts, so
@@ -4450,66 +4637,87 @@ export async function applyExternalCarrierStatus(
       return { applied: false, reason: `Parcel is already '${parcel.status}'` };
     }
 
-    await prisma.$transaction(async (tx) => {
-      const updateData: Prisma.parcelsUpdateInput = { status: targetStatus };
-      if (targetStatus === "delivered") {
-        (updateData as any).delivered_at = new Date();
-      }
-      await tx.parcels.update({ where: { id: parcelId }, data: updateData });
-      // Side-effect: same as the internal delivery path (_updateParcelStatusImpl) -
-      // a 3PL-delivered parcel has no internal rider transition to trigger the
-      // cod_collections upsert, so without this the settlement ledger never
-      // sees the cash as collected.
-      if (targetStatus === "delivered") {
-        await tx.cod_collections.upsert({
-          where: { parcel_id: parcel.id },
-          create: {
-            parcel_id: parcel.id,
-            vendor_id: parcel.vendor_id,
-            rider_id: parcel.delivery_rider_id,
-            cod_amount: parcel.cod_amount,
-            collected_amount: parcel.cod_amount,
-            collected_at: new Date(),
-          },
-          update: {
-            cod_amount: parcel.cod_amount,
-            collected_amount: parcel.cod_amount,
-            collected_at: new Date(),
-          },
-        });
-      }
-      await tx.parcel_status_history.create({
-        data: {
-          parcel_id: parcelId,
-          old_status: parcel.status,
-          new_status: targetStatus,
-          location_id: parcel.current_location_id,
-          changed_by: null,
-          remarks,
-        },
-      });
-      await tx.audit_logs.create({
-        data: {
-          actor_id: null,
-          entity_type: "parcel",
-          entity_id: parcelId,
-          action: "CARRIER_UPDATE_STATUS",
-          old_data: { status: parcel.status },
-          new_data: { status: targetStatus, remarks },
-        },
-      });
+    try {
+      await prisma.$transaction(async (tx) => {
+        // This leg is monotonic (targetIdx > currentIdx, enforced above) so it
+        // can never itself be the "leaving collected" direction, but it can
+        // re-stamp delivered after an internal revert parked the parcel on an
+        // earlier carrier-leg status (e.g. a super_admin forced delivered ->
+        // arrived_at_branch) - if that earlier delivery was already claimed by
+        // a settlement, this must not silently overwrite it.
+        await reconcileCodCollectionOnStatusChange(tx, parcelId, parcel.status, targetStatus);
 
-      if (parcel.vendor_id) {
-        await emitWebhookEvent(tx, parcel.vendor_id, "order.status_changed", {
-          trackingId: parcel.tracking_id,
-          orderId: parcel.id,
-          vendorId: parcel.vendor_id,
-          oldStatus: parcel.status,
-          newStatus: targetStatus,
-          changedAt: new Date().toISOString(),
+        const updateData: Prisma.parcelsUpdateInput = { status: targetStatus };
+        if (targetStatus === "delivered") {
+          (updateData as any).delivered_at = new Date();
+        }
+        await tx.parcels.update({ where: { id: parcelId }, data: updateData });
+        // Side-effect: same as the internal delivery path (_updateParcelStatusImpl) -
+        // a 3PL-delivered parcel has no internal rider transition to trigger the
+        // cod_collections upsert, so without this the settlement ledger never
+        // sees the cash as collected.
+        if (targetStatus === "delivered") {
+          await tx.cod_collections.upsert({
+            where: { parcel_id: parcel.id },
+            create: {
+              parcel_id: parcel.id,
+              vendor_id: parcel.vendor_id,
+              rider_id: parcel.delivery_rider_id,
+              cod_amount: parcel.cod_amount,
+              collected_amount: parcel.cod_amount,
+              collected_at: new Date(),
+            },
+            update: {
+              cod_amount: parcel.cod_amount,
+              collected_amount: parcel.cod_amount,
+              collected_at: new Date(),
+              payment_status: "pending",
+              rider_payment_status: "pending",
+            },
+          });
+        }
+        await tx.parcel_status_history.create({
+          data: {
+            parcel_id: parcelId,
+            old_status: parcel.status,
+            new_status: targetStatus,
+            location_id: parcel.current_location_id,
+            changed_by: null,
+            remarks,
+          },
         });
+        await tx.audit_logs.create({
+          data: {
+            actor_id: null,
+            entity_type: "parcel",
+            entity_id: parcelId,
+            action: "CARRIER_UPDATE_STATUS",
+            old_data: { status: parcel.status },
+            new_data: { status: targetStatus, remarks },
+          },
+        });
+
+        if (parcel.vendor_id) {
+          await emitWebhookEvent(tx, parcel.vendor_id, "order.status_changed", {
+            trackingId: parcel.tracking_id,
+            orderId: parcel.id,
+            vendorId: parcel.vendor_id,
+            oldStatus: parcel.status,
+            newStatus: targetStatus,
+            changedAt: new Date().toISOString(),
+          });
+        }
+      });
+    } catch (error) {
+      // reconcileCodCollectionOnStatusChange blocks (AppError) rather than
+      // throwing an unhandled failure into a webhook handler - this function's
+      // contract is a non-throwing result, so translate it the same way the
+      // targetIdx/currentIdx guards above already do.
+      if (error instanceof AppError) {
+        return { applied: false, reason: error.message };
       }
-    });
+      throw error;
+    }
 
     await invalidateOrderCaches();
     if (targetStatus === "delivered" && parcel.vendor_id) {

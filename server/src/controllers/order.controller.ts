@@ -187,6 +187,7 @@ export async function bulkCreateOrdersController(req: Request, res: Response) {
     return res.status(error.statusCode || 500).json({
       success: false,
       message: error.message || "Bulk order creation failed",
+      ...(error.code ? { code: error.code } : {}),
     });
   }
 }

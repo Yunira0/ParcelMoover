@@ -235,6 +235,8 @@ export interface UnsettledOrdersResult {
   totalCod: number;
   totalDeliveryCharge: number;
   totalNetPayable: number;
+  /** True when the eligible set exceeded the server-side cap and was trimmed. */
+  capped: boolean;
 }
 
 export const getUnsettledOrders = async (

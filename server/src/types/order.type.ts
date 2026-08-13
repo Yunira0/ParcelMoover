@@ -168,6 +168,12 @@ export interface BulkCreateOrderInput {
   /** Sender applied to every order that omits its own sender field. */
   defaultSender?: OrderPartyInput;
   orders: CreateOrderInput[];
+  /**
+   * Set true to bypass the "this exact batch was already imported recently"
+   * warning. The client resends with this after the user confirms an inline
+   * "import anyway?" prompt - same pattern as CreateOrderInput.confirmDuplicate.
+   */
+  confirmDuplicateBatch?: boolean;
 }
 
 export interface BulkCreateResult {
