@@ -22,7 +22,7 @@ import { generateRunSheetNo } from "../utils/runSheetNo";
 import { NEPAL_UTC_OFFSET_MS, formatNepalDate as formatDate } from "../utils/nepalTime";
 import { resolveOwnVendorId, isStaffActor } from "./vendor-scope.service";
 import { hasAdminPermission } from "../middlewares/adminPermission.middleware";
-import { invalidateVendorFinanceCache } from "./finance.service";
+import { invalidateVendorFinanceCache, invalidateRiderFinanceCache } from "./finance.service";
 import { emitWebhookEvent, emitWebhookEventsBatch } from "./webhookDispatch.service";
 import { getVendorStatusLabel } from "../utils/orderStatusLabel";
 import {
@@ -1122,11 +1122,17 @@ export async function updateOrderDetails(
   }
 
   // Correcting COD on an already-delivered parcel (see canOverrideCodOnBlockedParcel
-  // above) must move the cash already recorded as collected by the same amount -
-  // otherwise the settlement ledger keeps showing the pre-correction figure as
-  // what was actually collected. Scoped to delivered/partially_delivered only:
-  // cancelled/returned_to_vendor/loss_and_damage parcels never had a real
-  // collection event, so their collected_amount (already 0) must stay untouched.
+  // above) has to keep cod_collections.collected_amount honest, or the
+  // settlement ledger keeps showing the pre-correction figure as cash in hand.
+  // How depends on which kind of delivery it was:
+  //   - "delivered": the rider collected the full declared COD, so collected
+  //     tracks the corrected amount exactly.
+  //   - "partially_delivered": collected is an independently counted figure -
+  //     the cash the customer actually handed over. Correcting a wrong DECLARED
+  //     amount must not move COUNTED cash, so it's left alone and only clamped
+  //     if the correction drops the total below what was already collected.
+  // Other blocked statuses (cancelled/returned_to_vendor/loss_and_damage) never
+  // had a real collection event, so their collected_amount stays untouched.
   // Same "still pending" guard as the cod_amount write below - once the vendor
   // leg is paid, the parcel's COD can no longer drift from what was settled.
   let codSyncCollectedAmount: number | null = null;
@@ -1140,8 +1146,10 @@ export async function updateOrderDetails(
       select: { collected_amount: true, payment_status: true },
     });
     if (existingCod && existingCod.payment_status === "pending") {
-      const delta = data.codAmount - Number(parcel.cod_amount);
-      codSyncCollectedAmount = Math.max(0, Math.min(data.codAmount, Number(existingCod.collected_amount) + delta));
+      codSyncCollectedAmount =
+        parcel.status === "delivered"
+          ? data.codAmount
+          : Math.min(Number(existingCod.collected_amount), data.codAmount);
     }
   }
 
@@ -1185,6 +1193,11 @@ export async function updateOrderDetails(
         pieces: data.pieces ?? parcel.pieces,
         weight_kg: weightKg,
         cod_amount: data.codAmount ?? parcel.cod_amount,
+        // Mirrors the clamp above so the parcel's own record of the partial
+        // never exceeds (or disagrees with) the collection it's derived from.
+        ...(codSyncCollectedAmount !== null && parcel.status === "partially_delivered"
+          ? { partial_cod_collected: codSyncCollectedAmount }
+          : {}),
         item_value: data.itemValue ?? parcel.item_value,
         delivery_charge: deliveryCharge,
         package_type: data.packageType !== undefined ? data.packageType || null : parcel.package_type,
@@ -3466,14 +3479,19 @@ async function _updateParcelStatusImpl(
 
   const currentStatus = parcel.status as ParcelStatus;
   const newStatus = data.status;
-  // An "un-delivery": the parcel is leaving delivered/partially_delivered for
-  // anything else (e.g. a super_admin force-status override back to
-  // ready_to_deliver, or the already-legal partially_delivered → follow_up).
-  // It no longer has cash-in-hand or a rider holding it, so those side
-  // effects from the original delivery need to roll back too.
-  const isUndelivery =
+  // The parcel is leaving a delivery state for something else - a super_admin
+  // force-status override back to ready_to_deliver, or the already-legal
+  // partially_delivered → follow_up / ready_to_return. Either way it's no
+  // longer out with the delivery rider, so the rider's claim on it is released.
+  const leavingDelivery =
     ["delivered", "partially_delivered"].includes(currentStatus) &&
     !["delivered", "partially_delivered"].includes(newStatus);
+  // ...but only retracting a COMPLETED delivery reverses the money. On a
+  // partial the customer really did take goods and really did hand over cash:
+  // moving the remainder to follow_up/ready_to_return continues that workflow,
+  // it does not undo the payment. Zeroing the collection there would erase
+  // cash the rider is still holding and still owes the office.
+  const isDeliveryReversal = leavingDelivery && currentStatus === "delivered";
 
   // Delivering an exchange order requires confirming the customer's exchange
   // (return) parcel was received to carry back. Riders cannot complete the
@@ -3677,13 +3695,16 @@ async function _updateParcelStatusImpl(
     );
   }
 
-  // An un-delivery must not silently blow away a COD that's already been
+  // Reversing a delivery must not silently blow away a COD that's already been
   // swept into a settlement - paid (rider or vendor leg) or still pending.
   // A pending settlement already froze this collection's amount into its
   // settlement_items row at creation time; reversing the collection out from
   // under it would leave that statement showing stale, wrong figures with no
   // record of why. Staff must remove it via the settlement edit flow first.
-  if (isUndelivery) {
+  // Only the money-reversing case is gated: a partial delivery moving on to
+  // follow_up/ready_to_return leaves its collection untouched, so a settlement
+  // it already belongs to stays correct and must not be blocked.
+  if (isDeliveryReversal) {
     const cod = await prisma.cod_collections.findFirst({
       where: {
         parcel_id: parcelId,
@@ -3720,17 +3741,25 @@ async function _updateParcelStatusImpl(
       (updateData as any).partial_delivery_remarks = data.remarks || null;
       (updateData as any).partial_cod_collected = data.codCollected ?? 0;
     }
-    // Side-effect: reverse a delivery. The parcel isn't actually with the
-    // customer or cash-in-hand anymore, so the delivery timestamp, partial-
-    // delivery data, the delivery rider's claim on this parcel, and the COD
-    // ledger's "collected" state all roll back with it. Guarded above against
-    // a COD that's already been swept into a paid settlement.
-    if (isUndelivery) {
+    // Side-effect: the parcel is back off the delivery leg, so it's no longer
+    // in that rider's hands. Applies to a partial moving on to follow_up too -
+    // that only releases the parcel, never the cash (see below).
+    if (leavingDelivery) {
+      (updateData as any).delivery_rider_id = null;
+    }
+    // Side-effect: retract a completed delivery. It didn't happen, so the
+    // delivery timestamp and the COD ledger's "collected" state roll back with
+    // it - including cod_collections.rider_id, which is what drops the order
+    // off the rider's COD settlement. Guarded above against a collection
+    // already swept into a settlement. updateMany, not update: a row should
+    // always exist (created at order creation), but a legacy/drifted parcel
+    // missing one must not block the status change itself - same reasoning as
+    // the delivery upsert below.
+    if (isDeliveryReversal) {
       (updateData as any).delivered_at = null;
       (updateData as any).partial_delivery_remarks = null;
       (updateData as any).partial_cod_collected = null;
-      (updateData as any).delivery_rider_id = null;
-      await tx.cod_collections.update({
+      await tx.cod_collections.updateMany({
         where: { parcel_id: parcel.id },
         data: { collected_amount: 0, collected_at: null, rider_id: null },
       });
@@ -3943,6 +3972,25 @@ async function _updateParcelStatusImpl(
 
   await invalidateOrderCaches();
 
+  // Reversing a delivery rewrites cod_collections, which the finance caches
+  // (pending COD, unsettled orders, per-rider statements) are built from -
+  // invalidateOrderCaches only covers the dashboard/orders-list namespaces, so
+  // without this the rider's settlement list keeps serving the undelivered
+  // order until the TTL lapses. Best-effort: a Redis hiccup must not fail an
+  // already-committed status change.
+  if (isDeliveryReversal) {
+    if (parcel.vendor_id) {
+      invalidateVendorFinanceCache(parcel.vendor_id).catch((err) =>
+        console.error("[Redis] cache invalidation failed:", err),
+      );
+    }
+    if (parcel.delivery_rider_id) {
+      invalidateRiderFinanceCache(parcel.delivery_rider_id).catch((err) =>
+        console.error("[Redis] cache invalidation failed:", err),
+      );
+    }
+  }
+
   // A delivery (or an un-delivery) is what moves a vendor's account balance, so
   // it's the moment to re-check whether they've crossed a credit threshold.
   // Fire-and-forget: a billing notification must never fail the status change.
@@ -4131,16 +4179,23 @@ async function _bulkUpdateParcelStatusImpl(
     }
   }
 
-  // Un-delivery: parcels in this batch that are leaving delivered/
-  // partially_delivered for anything else. newStatus is shared across the
-  // whole batch, so this is just a filter over each parcel's current status.
-  const undeliverIds = parcels
+  // Parcels in this batch leaving a delivery state for something else.
+  // newStatus is shared across the whole batch, so this is just a filter over
+  // each parcel's current status. Split exactly as in the single-parcel path:
+  // leaving the delivery leg releases the rider, but only retracting a
+  // COMPLETED delivery reverses the money - a partial's collected cash is real
+  // and survives the move to follow_up/ready_to_return.
+  const leavingDeliveryIds = parcels
     .filter(
       (p) =>
         ["delivered", "partially_delivered"].includes(p.status) &&
         !["delivered", "partially_delivered"].includes(newStatus),
     )
     .map((p) => p.id);
+  const reversalParcels = parcels.filter(
+    (p) => p.status === "delivered" && !["delivered", "partially_delivered"].includes(newStatus),
+  );
+  const undeliverIds = reversalParcels.map((p) => p.id);
 
   // Same guard as the single-parcel path: don't blow away a COD that's
   // already been swept into a settlement - paid, or still pending (whose
@@ -4316,10 +4371,24 @@ async function _bulkUpdateParcelStatusImpl(
       data: updateData,
     });
 
-    // Side-effect: reverse a delivery for every un-delivered parcel in this
-    // batch - mirrors the single-parcel path. Scoped to undeliverIds, not
-    // ids, since not every parcel in a mixed batch is necessarily coming off
-    // delivered/partially_delivered.
+    // Side-effect: release the delivery rider on every parcel coming off the
+    // delivery leg - mirrors the single-parcel path. Scoped, not applied to
+    // `ids`, since not every parcel in a mixed batch is necessarily leaving
+    // delivered/partially_delivered. Skipped when this same transition is
+    // assigning a delivery rider (a super_admin forcing delivered →
+    // sent_for_delivery/sent_to_vendor): unlike the single-parcel path, this
+    // runs AFTER updateData is applied, so releasing here would clobber the
+    // assignment instead of losing to it.
+    if (leavingDeliveryIds.length > 0 && !(riderAssignmentField === "delivery_rider_id" && parcelRiderId)) {
+      await tx.parcels.updateMany({
+        where: { id: { in: leavingDeliveryIds } },
+        data: { delivery_rider_id: null },
+      });
+    }
+
+    // Side-effect: retract the delivery itself, for the subset whose delivery
+    // was completed (not partial) - the money reversal, mirroring the
+    // single-parcel path.
     if (undeliverIds.length > 0) {
       await tx.parcels.updateMany({
         where: { id: { in: undeliverIds } },
@@ -4327,7 +4396,6 @@ async function _bulkUpdateParcelStatusImpl(
           delivered_at: null,
           partial_delivery_remarks: null,
           partial_cod_collected: null,
-          delivery_rider_id: null,
         },
       });
       await tx.cod_collections.updateMany({
@@ -4508,6 +4576,26 @@ async function _bulkUpdateParcelStatusImpl(
   });
 
   await invalidateOrderCaches();
+
+  // Same finance-cache invalidation as the single-update path (see its note):
+  // a reversal rewrites cod_collections, which invalidateOrderCaches does not
+  // cover. Deduped so a large batch costs one clear per affected vendor/rider.
+  if (reversalParcels.length > 0) {
+    const vendorIds = new Set(reversalParcels.map((p) => p.vendor_id).filter((id): id is string => !!id));
+    const riderIds = new Set(
+      reversalParcels.map((p) => p.delivery_rider_id).filter((id): id is string => !!id),
+    );
+    for (const id of vendorIds) {
+      invalidateVendorFinanceCache(id).catch((err) =>
+        console.error("[Redis] cache invalidation failed:", err),
+      );
+    }
+    for (const id of riderIds) {
+      invalidateRiderFinanceCache(id).catch((err) =>
+        console.error("[Redis] cache invalidation failed:", err),
+      );
+    }
+  }
 
   // Same balance re-check as the single-update path, deduped by vendor so a
   // 100-parcel batch costs one evaluation per affected vendor, not per parcel.
