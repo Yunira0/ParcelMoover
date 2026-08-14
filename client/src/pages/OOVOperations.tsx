@@ -25,6 +25,7 @@ import {
 import { downloadExcel } from '../utils/excel';
 import { getLocations, getRiders } from '../services/users.service';
 import { handoffToNcm } from '../services/ncm.service';
+import { handoffParcelsToUpaya } from '../services/upaya.service';
 import { toBsDate, toBsDateTime } from '../utils/nepaliDate';
 import { printLabels } from '../utils/printLabels';
 import { commitScannedTerm, handleScannerPaste } from '../utils/scannerInput';
@@ -130,7 +131,7 @@ const OOVOperations: React.FC = () => {
   const [statusUpdating, setStatusUpdating] = useState(false);
   const [actionError, setActionError] = useState('');
   const [remarkPopupOrder, setRemarkPopupOrder] = useState<Order | null>(null);
-  const [dispatchMethod, setDispatchMethod] = useState<'manifest' | 'tpl'>('manifest');
+  const [dispatchMethod, setDispatchMethod] = useState<'manifest' | 'tpl' | 'upaya'>('manifest');
   const [locations, setLocations] = useState<{ id: string; name: string }[]>([]);
   const [riders, setRiders] = useState<{ id: string; name: string }[]>([]);
   const [toLocationId, setToLocationId] = useState('');
@@ -182,7 +183,7 @@ const OOVOperations: React.FC = () => {
   useEffect(() => {
     (async () => {
       try {
-        const [locRes, riderRes] = await Promise.all([getLocations(), getRiders()]);
+        const [locRes, riderRes] = await Promise.all([getLocations(), getRiders({ pageSize: 100 })]);
         if (locRes?.success && Array.isArray(locRes.data)) {
           setLocations(locRes.data.filter((loc: any) => loc.is_hub));
         }
@@ -345,6 +346,20 @@ const OOVOperations: React.FC = () => {
         // Hand off to NCM: creates the NCM orders; parcels stay in Transit
         // until NCM's pickup webhook moves them to In Transit.
         const res = await handoffToNcm(ids);
+        const failed = (res.data ?? []).filter(item => !item.success);
+        if (failed.length > 0) {
+          setActionError(
+            failed.map(item => `${item.trackingId}: ${item.error || 'failed'}`).join(' · '),
+          );
+          await loadOovOrders();
+          return;
+        }
+      } else if (isDispatchAction && dispatchMethod === 'upaya') {
+        // Hand off to Upaya: creates the Upaya orders (area + service type
+        // both auto-derived server-side per parcel) and moves the parcel
+        // straight to dispatched (same as NCM/manifest), then Upaya's
+        // webhooks/reconciliation carry it the rest of the way.
+        const res = await handoffParcelsToUpaya(ids);
         const failed = (res.data ?? []).filter(item => !item.success);
         if (failed.length > 0) {
           setActionError(
@@ -600,6 +615,17 @@ const OOVOperations: React.FC = () => {
                       />
                       <span>Via 3PL (NCM)</span>
                     </label>
+                    <label className="oov-dispatch-radio">
+                      <input
+                        type="radio"
+                        name="dispatchMethod"
+                        value="upaya"
+                        checked={dispatchMethod === 'upaya'}
+                        onChange={() => setDispatchMethod('upaya')}
+                        disabled={statusUpdating}
+                      />
+                      <span>Via 3PL (Upaya)</span>
+                    </label>
                   </div>
                 )}
                 {isDispatchAction && dispatchMethod === 'tpl' && (
@@ -608,6 +634,15 @@ const OOVOperations: React.FC = () => {
                       NCM destination branch is matched automatically from each order's destination hub. Orders whose
                       destination has no matching NCM branch are skipped, and orders stay in Transit until NCM
                       confirms pickup, then follow NCM tracking automatically.
+                    </p>
+                  </div>
+                )}
+                {isDispatchAction && dispatchMethod === 'upaya' && (
+                  <div className="oov-manifest-fields">
+                    <p className="oov-status-empty">
+                      Upaya delivery area and service type are both matched automatically from each order's
+                      destination hub. Orders whose destination has no confident match are skipped, and orders move
+                      straight to dispatched, then follow Upaya's tracking automatically.
                     </p>
                   </div>
                 )}

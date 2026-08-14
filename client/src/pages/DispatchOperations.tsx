@@ -183,7 +183,7 @@ const DispatchOperations: React.FC = () => {
   useEffect(() => {
     (async () => {
       try {
-        const res = await getRiders();
+        const res = await getRiders({ pageSize: 100 });
         if (res?.success && Array.isArray(res.data)) {
           setRiders(res.data.filter((r: { status: string }) => r.status === 'active'));
         }

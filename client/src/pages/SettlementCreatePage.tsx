@@ -45,7 +45,7 @@ const SettlementCreatePage: React.FC = () => {
     const fetchRiders = async () => {
       setFetching(true);
       try {
-        const res = await getRiders();
+        const res = await getRiders({ pageSize: 100 });
         if (res?.success && Array.isArray(res.data)) {
           setEntityOptions(res.data.map((r: any) => ({
             value: r.id,
@@ -62,7 +62,7 @@ const SettlementCreatePage: React.FC = () => {
   }, [payeeType]);
 
   // Vendor picker is server-side searched instead (see handleVendorSearch) -
-  // getRiders() above has no pagination cap that matters at rider scale, but
+  // riders are fetched at pageSize: 100 (the backend's hard cap), but
   // vendors easily run into the hundreds and a single unpaginated fetch would
   // silently cut the list off.
   const handleVendorSearch = async (search: string, offset: number) => {
