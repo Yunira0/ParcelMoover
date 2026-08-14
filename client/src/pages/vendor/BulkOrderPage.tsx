@@ -15,6 +15,7 @@ import {
 } from '../../services/orders.service';
 import { getLocations, getVendors } from '../../services/users.service';
 import { isVendorSide } from '../../utils/auth';
+import { downloadExcel } from '../../utils/excel';
 import './BulkOrderPage.css';
 
 interface VendorOption {
@@ -95,19 +96,12 @@ const SAMPLE_ROW = [
   'delivery', 'Parcel', '1', '0', '0', 'Call before delivery',
 ];
 
+// An .xlsx rather than a comma-joined .csv. The template is opened in Excel
+// before it is filled in, and a CSV lands entirely in column A for anyone whose
+// Excel uses ';' as its list separator - which makes the headers unreadable and
+// the file useless as a starting point. The importer below reads both.
 function downloadTemplate() {
-  const csv = [TEMPLATE_HEADERS as unknown as string[], SAMPLE_ROW]
-    .map(row => row.map(v => `"${v}"`).join(','))
-    .join('\n');
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'bulk_order_template.csv';
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  downloadExcel('bulk_order_template', 'Orders', [...TEMPLATE_HEADERS], [SAMPLE_ROW]);
 }
 
 // Single-pass parse (not line-split first) so a quoted field containing a

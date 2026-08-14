@@ -145,7 +145,9 @@ const LossAndDamageOperations: React.FC = () => {
       // fall back to the currently loaded page
     }
 
-    const headers = ['#', 'Date', 'Tracking ID', 'Sender', 'Receiver', 'Weight', 'COD', 'Package', 'Last Updated By', 'Last Updated'];
+    // Same columns, in the same order, as the table on screen. COD stays a
+    // number so the column totals in the sheet.
+    const headers = ['Order ID', 'Date', 'Tracking ID', 'Sender', 'Receiver', 'Weight', 'COD', 'Package', 'Previous Status', 'Last Updated By', 'Last Updated'];
     const csvRows = rows.map((order) => [
       `#${order.orderNumber}`,
       toBsDate(order.createdAt),
@@ -155,8 +157,9 @@ const LossAndDamageOperations: React.FC = () => {
       order.weightKg ? `${order.weightKg} Kg` : '',
       order.codAmount,
       `${order.pieces} pcs`,
+      REVERT_STATUS_LABEL,
       order.lastUpdatedBy || '',
-      toBsDate(order.lastUpdatedAt) || '',
+      toBsDateTime(order.lastUpdatedAt) || '',
     ]);
     downloadExcel('loss-and-damage-orders.xlsx', 'Loss and Damage', headers, csvRows);
   };

@@ -256,7 +256,9 @@ const ReturnOperations: React.FC = () => {
   };
 
   const downloadCsv = () => {
-    const headers = ['#', 'Date', 'Tracking ID', 'Type', 'Sender', 'Receiver', 'Location', 'Address', 'Weight', 'COD', 'Status', 'Last Updated', 'Remarks'];
+    // Mirrors the table on screen, where the Last Updated cell shows who and
+    // when - two things, so two columns here rather than one.
+    const headers = ['Order ID', 'Date', 'Tracking ID', 'Type', 'Sender', 'Receiver', 'Location', 'Address', 'Weight', 'COD', 'Status', 'Last Updated By', 'Last Updated', 'Remarks'];
     const rows = filteredOrders.map((order) => [
       `#${order.orderNumber}`,
       toBsDate(order.createdAt) || '',
@@ -269,7 +271,8 @@ const ReturnOperations: React.FC = () => {
       order.weightKg ? `${order.weightKg} Kg` : '',
       order.codAmount,
       STATUS_LABELS[order.status] || order.status,
-      toBsDate(order.lastUpdatedAt) || '',
+      order.lastUpdatedBy || '',
+      toBsDateTime(order.lastUpdatedAt) || '',
       order.remarks || '',
     ]);
     downloadExcel('return-orders.xlsx', 'Return Orders', headers, rows);

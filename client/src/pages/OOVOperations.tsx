@@ -416,7 +416,9 @@ const OOVOperations: React.FC = () => {
   };
 
   const buildExportRows = (rows: Order[]) => {
-    const headers = ['#', 'Date', 'Tracking ID', 'Order Type', 'Sender', 'Receiver', 'Location', 'Address', 'Weight', 'COD', 'Last Updated', 'Remarks'];
+    // Mirrors the table on screen, where the Last Updated cell shows who and
+    // when - two things, so two columns here rather than one.
+    const headers = ['Order ID', 'Date', 'Tracking ID', 'Order Type', 'Sender', 'Receiver', 'Location', 'Address', 'Weight', 'COD', 'Last Updated By', 'Last Updated', 'Remarks'];
     const dataRows = rows.map(order => [
       `#${order.orderNumber}`,
       toBsDate(order.createdAt),
@@ -428,7 +430,8 @@ const OOVOperations: React.FC = () => {
       order.receiverAddress || '',
       order.weightKg ? `${order.weightKg} Kg` : '',
       order.codAmount,
-      toBsDate(order.lastUpdatedAt) || '',
+      order.lastUpdatedBy || '',
+      toBsDateTime(order.lastUpdatedAt) || '',
       order.remarks || '',
     ]);
     return { headers, rows: dataRows };

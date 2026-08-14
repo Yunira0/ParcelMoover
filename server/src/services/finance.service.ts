@@ -8,6 +8,7 @@ import { getDatePart, randomBase32 } from "../utils/trackingId";
 import { resolveOwnVendorId } from "./vendor-scope.service";
 import { createNotification } from "./notification.service";
 import { evaluateVendorBillingAsync } from "./billing.service";
+import { syncSettlementPostings } from "./accounting/sync";
 
 import { getActivePaymentMethodNames } from "./payment-method.service";
 import {
@@ -852,6 +853,15 @@ export async function payForSettlement(
       },
     });
 
+    // Money has moved, so the books say so - in the same transaction that
+    // moved it. A rider statement debits cash and clears that rider's holding;
+    // a vendor statement settles their account in whichever direction the
+    // payable points.
+    await syncSettlementPostings(tx, [settlementId], {
+      actorId: actor.id,
+      reason: "settlement paid",
+    });
+
     return result;
   });
 
@@ -1011,6 +1021,15 @@ export async function updateSettlement(
         },
         new_data: { codCollectionIds, amount: grossAmount, payableAmount },
       },
+    });
+
+    // Only an unsettled statement is editable, so in practice there is nothing
+    // posted to restate. Syncing anyway costs one indexed lookup and means this
+    // path stays correct if that rule is ever relaxed - the ledger should not
+    // depend on a guard living in another function.
+    await syncSettlementPostings(tx, [settlement.id], {
+      actorId: actor.id,
+      reason: "settlement order list edited",
     });
 
     return result;

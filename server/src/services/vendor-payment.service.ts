@@ -4,6 +4,7 @@ import { createNotification } from "./notification.service";
 import { resolveOwnVendorId } from "./vendor-scope.service";
 import { evaluateVendorBilling, invalidateVendorBalanceCache } from "./billing.service";
 import { invalidateVendorFinanceCache } from "./finance.service";
+import { syncVendorPaymentPostings } from "./accounting/sync";
 
 // ── Vendor -> office payments ────────────────────────────────────────────────
 //
@@ -215,6 +216,14 @@ export async function reviewVendorPayment(
         old_data: { status: existing.status },
         new_data: { status: decision, amount: Number(existing.amount), remark: remark?.trim() || null },
       },
+    });
+
+    // Verification is the moment the money becomes real to the books - a
+    // pending or rejected claim posts nothing, which is the same rule that
+    // keeps it out of the credit-control balance.
+    await syncVendorPaymentPostings(tx, [paymentId], {
+      actorId: actor.id,
+      reason: `payment ${decision}`,
     });
 
     return tx.vendor_payments.findFirstOrThrow({

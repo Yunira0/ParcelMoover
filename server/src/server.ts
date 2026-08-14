@@ -24,6 +24,7 @@ import PublicApiRoutes from "./routes/publicApi.routes"
 import MeRoutes from "./routes/me.routes"
 import AuditLogRoutes from "./routes/auditLog.routes"
 import BillingRoutes from "./routes/billing.routes"
+import AccountingRoutes from "./routes/accounting.routes"
 import prisma, { pool } from "./lib/prisma";
 import cookiesParser from "cookie-parser";
 import {authMiddleware} from "./middlewares/auth.middleware";
@@ -136,6 +137,8 @@ app.use("/api/notifications", NotificationRoutes)
 app.use("/api/finance", FinanceRoutes)
 
 app.use("/api/billing", BillingRoutes)
+
+app.use("/api/accounting", AccountingRoutes)
 
 app.use("/api/staff", StaffRoutes)
 

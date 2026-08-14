@@ -206,6 +206,7 @@ export const ADMIN_PERMISSIONS = [
   { code: 'KYC_ACCESS', label: 'KYC Applications', description: 'Review, approve and reject vendor KYC applications.' },
   { code: 'SYSTEM_LOGS_ACCESS', label: 'System Logs', description: 'Read the system audit logs, including who changed what across the app.' },
   { code: 'EDIT_SETTLEMENTS', label: 'Edit COD Statements', description: 'Correct an unsettled COD statement (add/remove orders) before it is paid out.' },
+  { code: 'ACCOUNTING_ACCESS', label: 'Finance', description: 'The whole Finance section: the books, party balances and reports, plus recording expenses, posting journal entries and closing a month. This is the full financial picture of the business.' },
 ] as const;
 
 export type AdminPermissionCode = (typeof ADMIN_PERMISSIONS)[number]['code'];

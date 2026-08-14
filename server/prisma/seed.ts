@@ -790,6 +790,14 @@ async function main() {
       remitted_amount: 2800,
       payment_status: "pending" as const,
       collected_at: new Date(today.getTime() - 86400000),
+      // The rider leg has to match STL-2024-002 below, which is a *settled*
+      // rider statement for this collection. payForSettlement always remits the
+      // full collected_amount, so leaving these at their 0/pending defaults
+      // produced demo data no real flow could create: a settled statement whose
+      // cash was never recorded as handed over.
+      rider_remitted_amount: 3500,
+      rider_payment_status: "paid" as const,
+      rider_settled_at: new Date("2024-06-10"),
     },
     {
       id: demoUuid("cod", 3),
@@ -938,8 +946,12 @@ async function main() {
       payee_type: "rider",
       rider_id: ridersData[0]!.id,
       vendor_id: null,
-      amount: 2800,
-      payable_amount: 2800,
+      // A rider statement remits the full cash collected - the delivery charge
+      // is deducted on the vendor leg, not this one. 2800 here (the vendor-leg
+      // figure) made the rider look like they had handed over less than they
+      // collected, and left the ledger permanently 700 out.
+      amount: 3500,
+      payable_amount: 3500,
       settlement_date: new Date("2024-06-10"),
       status: "settled" as const,
       remark: "Rider COD remittance",
@@ -969,7 +981,8 @@ async function main() {
     create: {
       settlement_id: settlementsData[1]!.id,
       cod_collection_id: codCollectionsData[1]!.id,
-      amount: 2800,
+      // Matches the statement above and the collection's collected_amount.
+      amount: 3500,
     },
   });
   console.log("📄 Settlement item linked");

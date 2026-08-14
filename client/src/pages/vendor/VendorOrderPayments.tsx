@@ -9,14 +9,13 @@ import Button from '../../components/Button';
 import type { OrderCodItem, CodPaymentFilter } from '../../services/finance.service';
 import { getOrderCod } from '../../services/finance.service';
 import { formatCurrency as formatCurrencyBase, formatDate } from '../../utils/format';
+import { downloadExcel } from '../../utils/excel';
 import './VendorFinance.css';
 
 type TabValue = 'all' | CodPaymentFilter;
 const PAGE_SIZE = 20;
 
 const formatCurrency = (value: number) => formatCurrencyBase(value, 0);
-
-const escapeCsvCell = (value: string) => `"${value.replace(/"/g, '""')}"`;
 
 const VendorOrderPayments: React.FC = () => {
   const [tab, setTab] = useState<TabValue>('all');
@@ -60,24 +59,24 @@ const VendorOrderPayments: React.FC = () => {
   const handleExport = () => {
     if (items.length === 0) return;
 
-    const header = ['Tracking ID', 'Receiver', 'Phone', 'Created At', 'Delivered Date', 'Status', 'Net Payable'];
-    const rows = items.map((item) => [
-      item.trackingId,
-      item.receiverName,
-      item.receiverPhone,
-      formatDate(item.createdAt),
-      formatDate(item.deliveredAt),
-      item.status === 'settled' ? 'Settled' : 'Not Settled',
-      item.netPayable.toFixed(2),
-    ]);
-    const csv = [header, ...rows].map((row) => row.map(escapeCsvCell).join(',')).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `order-cod-${tab}-page-${page}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
+    // A real workbook rather than a comma-joined .csv: a CSV lands entirely in
+    // column A for anyone whose Excel uses ';' as its list separator, and the
+    // amounts arrive as text you cannot sum.
+    downloadExcel(
+      `order-cod-${tab}-page-${page}`,
+      'Order COD',
+      ['Tracking ID', 'Receiver', 'Phone', 'Created At', 'Delivered Date', 'Status', 'Net Payable'],
+      items.map((item) => [
+        item.trackingId,
+        item.receiverName,
+        item.receiverPhone,
+        formatDate(item.createdAt),
+        formatDate(item.deliveredAt),
+        item.status === 'settled' ? 'Settled' : 'Not Settled',
+        // Left numeric so the column totals in the sheet.
+        item.netPayable,
+      ]),
+    );
   };
 
   const rows = items.map((item, index) => ({ ...item, sn: (page - 1) * PAGE_SIZE + index + 1 }));

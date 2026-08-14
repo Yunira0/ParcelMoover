@@ -5,6 +5,12 @@
   width: 100%;
 }
 
+/* Vendors / KYC. Sits above the per-view filters, so it needs its own row
+   rather than sharing the filter bar's column. */
+.vendor-views {
+  display: flex;
+}
+
 .vendor-filters {
   display: flex;
   flex-direction: column;

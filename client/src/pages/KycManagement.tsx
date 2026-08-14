@@ -46,7 +46,12 @@ const DocLink: React.FC<{ path: string | null; label: string }> = ({ path, label
   );
 };
 
-const KycManagement: React.FC = () => {
+interface KycManagementProps {
+  /** Rendered as a tab of Vendor Management, which supplies the page header. */
+  embedded?: boolean;
+}
+
+const KycManagement: React.FC<KycManagementProps> = ({ embedded = false }) => {
   const [applications, setApplications] = useState<KycApplication[]>([]);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('pending');
   const [loading, setLoading] = useState(true);
@@ -155,10 +160,12 @@ const KycManagement: React.FC = () => {
 
   return (
     <div className="kyc-management">
-      <PageHeader
-        title="KYC Applications"
-        subtitle="Review and approve vendor onboarding applications"
-      />
+      {!embedded && (
+        <PageHeader
+          title="KYC Applications"
+          subtitle="Review and approve vendor onboarding applications"
+        />
+      )}
 
       <SegmentedTabs
         options={STATUS_TABS}

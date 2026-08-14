@@ -155,6 +155,67 @@
   display: none;
 }
 
+/* ── Collapsible group ─────────────────────────────────────────────────────── */
+.sidebar-group-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-text-caption);
+  font-family: var(--typography-font-family-default);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  box-sizing: border-box;
+}
+
+.sidebar-group-toggle:hover {
+  background-color: var(--color-background-elevated, #f3f4f6);
+  color: var(--color-text-default);
+}
+
+/* Weighted, not filled: the group is where you are, but the active *leaf*
+   inside it is the thing that should carry the highlight. */
+.sidebar-group-toggle.has-active {
+  color: var(--color-text-default);
+  font-weight: var(--font-weight-semi-bold);
+}
+
+.sidebar-group-chevron {
+  margin-left: auto;
+  flex-shrink: 0;
+  transition: transform 0.15s ease-out;
+}
+
+.sidebar-group-toggle[aria-expanded='false'] .sidebar-group-chevron {
+  transform: rotate(-90deg);
+}
+
+.sidebar--collapsed .sidebar-group-toggle {
+  padding: 9px;
+  justify-content: center;
+  width: 40px;
+  gap: 0;
+}
+
+/* No room for it beside an icon, and nothing to disclose either — the children
+   are always rendered at this width. */
+.sidebar--collapsed .sidebar-group-chevron {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-group-chevron {
+    transition: none;
+  }
+}
+
 /* ── Sub-items ─────────────────────────────────────────────────────────────── */
 .sidebar-subnav {
   display: flex;
@@ -163,6 +224,13 @@
   margin-left: 14px;
   padding-left: 14px;
   border-left: 1.5px solid var(--color-border-default);
+}
+
+/* Third level (Transactions › Cash › Payment). Indented less than the second so
+   eleven Finance leaves still leave room for their labels. */
+.sidebar-subnav .sidebar-subnav {
+  margin-left: 8px;
+  padding-left: 10px;
 }
 
 .sidebar--collapsed .sidebar-subnav {

@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react'
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import MainLayout from './layouts/MainLayout'
 import DashboardLayout from './layouts/DashboardLayout'
 import Home from './pages/Home'
@@ -10,6 +10,19 @@ import ProtectedRoute from './components/ProtectedRoute'
 import PublicOnlyRoute from './components/PublicOnlyRoute'
 import RoleGuard from './components/RoleGuard'
 import PageLoader from './components/PageLoader'
+import {
+  BooksRedirect,
+  CodManagementRedirect,
+  JournalRedirect,
+  LedgerRedirect,
+  PartiesRedirect,
+  PartyLedgerRedirect,
+  PeopleRedirect,
+  PeriodsRedirect,
+  PersonDetailRedirect,
+  ReportsRedirect,
+  SearchRedirect,
+} from './pages/accounting/legacyRedirects'
 import './App.css'
 
 const DashboardRouter = lazy(() => import('./pages/DashboardRouter'))
@@ -23,10 +36,18 @@ const VendorManagement = lazy(() => import('./pages/VendorManagement'))
 const VendorFormPage = lazy(() => import('./pages/VendorFormPage'))
 const RiderManagement = lazy(() => import('./pages/RiderManagement'))
 const RiderFormPage = lazy(() => import('./pages/RiderFormPage'))
-const FinanceManagement = lazy(() => import('./pages/FinanceManagement'))
 const ReportsPage = lazy(() => import('./pages/ReportsPage'))
 const SettlementDetailPage = lazy(() => import('./pages/SettlementDetailPage'))
 const SettlementCreatePage = lazy(() => import('./pages/SettlementCreatePage'))
+// Accounting (the Finance section) — lazy like every other page group, so the
+// ledger screens cost nothing to users who never open them.
+const AccountingOverview = lazy(() => import('./pages/accounting/AccountingOverview'))
+const TransactionsPage = lazy(() => import('./pages/accounting/TransactionsPage'))
+const CodPage = lazy(() => import('./pages/accounting/CodPage'))
+const JournalPage = lazy(() => import('./pages/accounting/JournalPage'))
+const LedgerReportPage = lazy(() => import('./pages/accounting/LedgerReportPage'))
+const PartySearchPage = lazy(() => import('./pages/accounting/PartySearchPage'))
+const AccountingPersonPage = lazy(() => import('./pages/accounting/AccountingPersonPage'))
 const DeliveryRateSettings = lazy(() => import('./pages/DeliveryRateSettings'))
 const Settings = lazy(() => import('./pages/settings/Settings'))
 const SlaSettings = lazy(() => import('./pages/SlaSettings'))
@@ -57,7 +78,6 @@ const VendorDeliveryCharges = lazy(() => import('./pages/vendor/VendorDeliveryCh
 const VendorMetricDetail = lazy(() => import('./pages/vendor/VendorMetricDetail'))
 const ForceChangePasswordPage = lazy(() => import('./pages/ForceChangePasswordPage'))
 const KycApplicationPage = lazy(() => import('./pages/KycApplicationPage'))
-const KycManagement = lazy(() => import('./pages/KycManagement'))
 const SystemLogs = lazy(() => import('./pages/SystemLogs'))
 const ProfilePage = lazy(() => import('./pages/ProfilePage'))
 
@@ -141,10 +161,9 @@ function App() {
             path="/vendors/:id/edit"
             element={<RoleGuard allowedRoles={['super_admin', 'admin', 'sales']}><VendorFormPage /></RoleGuard>}
           />
-          <Route
-            path="/kyc-applications"
-            element={<RoleGuard allowedRoles={['super_admin', 'admin']} adminPermission="KYC_ACCESS"><KycManagement /></RoleGuard>}
-          />
+          {/* KYC review is the second tab of Vendor Management now. The old
+              path still resolves so existing links and bookmarks land on it. */}
+          <Route path="/kyc-applications" element={<Navigate to="/vendors?tab=kyc" replace />} />
           <Route
             path="/system-logs"
             element={<RoleGuard allowedRoles={['super_admin', 'admin']} adminPermission="SYSTEM_LOGS_ACCESS"><SystemLogs /></RoleGuard>}
@@ -161,10 +180,9 @@ function App() {
             path="/riders/:id/edit"
             element={<RoleGuard allowedRoles={['super_admin', 'admin']}><RiderFormPage /></RoleGuard>}
           />
-          <Route
-            path="/finance"
-            element={<RoleGuard allowedRoles={['super_admin', 'admin']}><FinanceManagement /></RoleGuard>}
-          />
+          {/* COD Management was this page's rider/vendor toggle; both halves now
+              live on their own Finance entry. */}
+          <Route path="/finance" element={<CodManagementRedirect />} />
           <Route
             path="/reports"
             element={<RoleGuard allowedRoles={['super_admin', 'admin']}><ReportsPage /></RoleGuard>}
@@ -261,6 +279,91 @@ function App() {
             path="/billing"
             element={<RoleGuard allowedRoles={['super_admin', 'admin']}><BillingManagement /></RoleGuard>}
           />
+
+          {/* Accounting. Every route carries adminPermission so typing the URL
+              is no easier than clicking the nav item — the API enforces the
+              same grant, this just avoids a pointless round trip. */}
+          <Route
+            path="/accounting"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']} adminPermission="ACCOUNTING_ACCESS"><AccountingOverview /></RoleGuard>}
+          />
+
+          {/* Transactions — the four scopes the note asks for. Cash and bank
+              each split by direction, which is what "payment" and "receipt"
+              mean on a cash book. */}
+          {/* Rider and Vendor COD absorbed the old COD Management screen, so
+              they keep its access: every admin, no extra grant. */}
+          <Route
+            path="/accounting/transactions/rider-cod"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']}><CodPage payeeType="rider" /></RoleGuard>}
+          />
+          <Route
+            path="/accounting/transactions/vendor-cod"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']}><CodPage payeeType="vendor" /></RoleGuard>}
+          />
+          <Route
+            path="/accounting/transactions/journal"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']} adminPermission="ACCOUNTING_ACCESS"><JournalPage /></RoleGuard>}
+          />
+          <Route
+            path="/accounting/transactions/cash/payments"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']} adminPermission="ACCOUNTING_ACCESS"><TransactionsPage scope="cash" direction="out" /></RoleGuard>}
+          />
+          <Route
+            path="/accounting/transactions/cash/receipts"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']} adminPermission="ACCOUNTING_ACCESS"><TransactionsPage scope="cash" direction="in" /></RoleGuard>}
+          />
+          <Route
+            path="/accounting/transactions/bank/payments"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']} adminPermission="ACCOUNTING_ACCESS"><TransactionsPage scope="bank" direction="out" /></RoleGuard>}
+          />
+          <Route
+            path="/accounting/transactions/bank/receipts"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']} adminPermission="ACCOUNTING_ACCESS"><TransactionsPage scope="bank" direction="in" /></RoleGuard>}
+          />
+
+          {/* Ledger Report — the two control-account subledgers and any single
+              account from the chart. */}
+          <Route
+            path="/accounting/ledgers/vendor"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']} adminPermission="ACCOUNTING_ACCESS"><LedgerReportPage view="vendor" /></RoleGuard>}
+          />
+          <Route
+            path="/accounting/ledgers/rider"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']} adminPermission="ACCOUNTING_ACCESS"><LedgerReportPage view="rider" /></RoleGuard>}
+          />
+          <Route
+            path="/accounting/ledgers/account"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']} adminPermission="ACCOUNTING_ACCESS"><LedgerReportPage view="account" /></RoleGuard>}
+          />
+
+          {/* Reached by drilling from a ledger, never from the nav. */}
+          <Route
+            path="/accounting/people/search"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']} adminPermission="ACCOUNTING_ACCESS"><PartySearchPage /></RoleGuard>}
+          />
+          <Route
+            path="/accounting/people/:partyType/:partyId"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']} adminPermission="ACCOUNTING_ACCESS"><AccountingPersonPage /></RoleGuard>}
+          />
+          {/* The expense screen is gone: an expense was only ever cash leaving
+              against a 5xxx account, which the Cash Payments voucher records.
+              Entries posted by the old screen are still in the journal. */}
+          <Route path="/accounting/expenses" element={<Navigate to="/accounting/transactions/cash/payments" replace />} />
+
+          {/* Superseded Finance paths. Left in so old links and bookmarks still
+              land — each carries its query string across and replaces itself in
+              history, and the destination route does the permission check. */}
+          <Route path="/accounting/books" element={<BooksRedirect />} />
+          <Route path="/accounting/people" element={<PeopleRedirect />} />
+          <Route path="/accounting/journal" element={<JournalRedirect />} />
+          <Route path="/accounting/ledger" element={<LedgerRedirect />} />
+          <Route path="/accounting/reports" element={<ReportsRedirect />} />
+          <Route path="/accounting/periods" element={<PeriodsRedirect />} />
+          <Route path="/accounting/parties" element={<PartiesRedirect />} />
+          <Route path="/accounting/parties/:partyType/:id" element={<PartyLedgerRedirect />} />
+          <Route path="/accounting/search" element={<SearchRedirect />} />
+          <Route path="/accounting/search/:partyType/:partyId" element={<PersonDetailRedirect />} />
           <Route
             path="/user-management"
             element={<RoleGuard allowedRoles={['vendor']}><VendorUserManagement /></RoleGuard>}

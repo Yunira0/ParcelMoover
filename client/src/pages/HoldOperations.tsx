@@ -182,7 +182,9 @@ const HoldOperations: React.FC = () => {
       // fall back to the currently loaded page
     }
 
-    const headers = ['#', 'Date', 'Tracking ID', 'Sender', 'Receiver', 'Weight', 'COD', 'Age', 'Last Updated By', 'Last Updated', 'Last Remarks'];
+    // Same columns, in the same order, as the table on screen. COD stays a
+    // number so the column totals in the sheet.
+    const headers = ['Order ID', 'Date', 'Tracking ID', 'Sender', 'Receiver', 'Weight', 'COD', 'Age', 'Previous Status', 'Last Updated By', 'Last Updated', 'Last Remarks'];
     const csvRows = rows.map((order) => [
       `#${order.orderNumber}`,
       toBsDate(order.createdAt),
@@ -192,8 +194,9 @@ const HoldOperations: React.FC = () => {
       order.weightKg ? `${order.weightKg} Kg` : '',
       order.codAmount,
       ageInDays(order.createdAt),
+      REVERT_STATUS_LABEL,
       order.lastUpdatedBy || '',
-      toBsDate(order.lastUpdatedAt) || '',
+      toBsDateTime(order.lastUpdatedAt) || '',
       order.remarks || '',
     ]);
     downloadExcel('hold-orders.xlsx', 'Hold Orders', headers, csvRows);

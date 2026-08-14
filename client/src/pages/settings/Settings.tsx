@@ -24,7 +24,7 @@ const Settings: React.FC = () => {
   if (!canConfigure) {
     return (
       <div className="settings-page">
-        <PageHeader title="Settings" subtitle="Configuration is only available to super admins or admins granted settings access." />
+        <PageHeader title="Destination Management" subtitle="Configuration is only available to super admins or admins granted settings access." />
       </div>
     );
   }
@@ -32,7 +32,7 @@ const Settings: React.FC = () => {
   return (
     <div className="settings-page">
       <PageHeader
-        title="Settings"
+        title="Destination Management"
         subtitle="Define destinations, the areas they cover, and the delivery rates between them."
       />
 

@@ -457,7 +457,8 @@ const DispatchOperations: React.FC = () => {
       // fall back to the currently loaded page
     }
 
-    const headers = ['SN', 'Date', 'Tracking ID', 'Order Type', 'Sender', 'Receiver', 'Location', 'Address', 'Weight', 'COD', 'Attempt', 'Delivery Rider', 'Last Updated', 'Remarks'];
+    // Same columns, in the same order, as the table on screen.
+    const headers = ['Order ID', 'Date', 'Tracking ID', 'Order Type', 'Sender', 'Receiver', 'Location', 'Address', 'Weight', 'COD', 'Attempt', 'Delivery Rider', 'Last Updated', 'Remarks'];
     const csvRows = rows.map(order => [
       `#${order.orderNumber}`,
       toBsDate(order.createdAt) || '',
@@ -468,10 +469,12 @@ const DispatchOperations: React.FC = () => {
       order.destination,
       order.receiverAddress || '',
       order.weightKg ? `${order.weightKg} Kg` : '',
-      formatMoney(order.codAmount),
+      // A number, not formatMoney's "Rs. 1,200" - a formatted string is text to
+      // Excel and the column will not total.
+      order.codAmount,
       order.attemptCount,
       order.riderName || '',
-      toBsDate(order.lastUpdatedAt) || '',
+      toBsDateTime(order.lastUpdatedAt) || '',
       order.remarks || '',
     ]);
     downloadExcel('dispatch-orders.xlsx', 'Dispatch Orders', headers, csvRows);

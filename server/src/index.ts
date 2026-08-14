@@ -44,6 +44,7 @@ async function startServer() {
     startNcmReconciliation();
     startKycDocumentPurge();
     startWebhookDelivery();
+    startLedgerPostingSweep();
   });
 }
 
@@ -168,6 +169,54 @@ function startWebhookDelivery() {
       }
     }
   }, WEBHOOK_DELIVERY_INTERVAL_MS).unref();
+}
+
+// Most journal entries are posted inside the transaction that moved the money,
+// so they cannot be lost. The one exception is the bulk parcel status path,
+// which posts fire-and-forget rather than adding several hundred statements to
+// an already-large transaction (see syncParcelPostingsAsync). That trade is only
+// honest if something notices what it drops - this is that something.
+//
+// The window is deliberately wider than the interval so a sweep that dies
+// mid-run is covered by the next one, and the Redis NX lock keeps one process
+// doing it. Re-syncing is idempotent: parcels whose books already agree cost two
+// reads and write nothing.
+const LEDGER_SWEEP_INTERVAL_MS = 15 * 60 * 1000;
+const LEDGER_SWEEP_WINDOW_MS = 60 * 60 * 1000;
+const LEDGER_SWEEP_LIMIT = 500;
+const LEDGER_SWEEP_LOCK_KEY = "accounting:posting-sweep-lock";
+
+function startLedgerPostingSweep() {
+  setInterval(async () => {
+    try {
+      const acquired = await redis.set(
+        LEDGER_SWEEP_LOCK_KEY,
+        "1",
+        "EX",
+        Math.floor(LEDGER_SWEEP_INTERVAL_MS / 1000) - 60,
+        "NX",
+      );
+      if (!acquired) return;
+    } catch {
+      // Redis down — run anyway; the sweep converges rather than accumulating.
+    }
+    try {
+      const { sweepParcelPostings } = await import("./services/accounting/sync");
+      const result = await sweepParcelPostings({
+        since: new Date(Date.now() - LEDGER_SWEEP_WINDOW_MS),
+        limit: LEDGER_SWEEP_LIMIT,
+      });
+      // Silent on the healthy case, which is nearly every run. A non-zero
+      // `repaired` means the live path missed something and is worth seeing.
+      if (result.repaired > 0 || result.failed > 0) {
+        console.log(
+          `[Ledger] posting sweep: considered ${result.considered}, repaired ${result.repaired}, failed ${result.failed}`,
+        );
+      }
+    } catch (error) {
+      console.error("[Ledger] posting sweep failed:", error);
+    }
+  }, LEDGER_SWEEP_INTERVAL_MS).unref();
 }
 
 startServer().catch((error) => {

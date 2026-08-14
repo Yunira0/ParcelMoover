@@ -31,6 +31,10 @@ interface TableProps<T> {
   tableClassName?: string;
   /** Renders an inline full-width row directly below the matching row's `id` - an accordion/drill-down panel within the same table instead of a separate one. */
   expandedRowId?: string | number;
+  /** Totals row(s) rendered in a `<tfoot>`. The caller supplies the `<tr>`, since only it knows how its columns line up (a ledger's closing balance, a statement's debit/credit totals). */
+  footer?: React.ReactNode;
+  /** Makes each row clickable - for lists that drill down into a detail page. */
+  onRowClick?: (item: T) => void;
 }
 
 // Columns that don't all specify a width need content-based sizing, or
@@ -85,6 +89,8 @@ const Table = <T extends { id: string | number }>({
   minWidth,
   tableClassName = '',
   expandedRowId,
+  footer,
+  onRowClick,
 }: TableProps<T>) => {
   const [internalSelectedIds, setInternalSelectedIds] = useState<Set<string | number>>(new Set());
   const isSelectionControlled = selectedIds !== undefined;
@@ -175,8 +181,10 @@ const Table = <T extends { id: string | number }>({
                 <tr
                   className={[
                     activeSelectedIds.has(item.id) ? 'selected-row' : '',
+                    onRowClick ? 'clickable-row' : '',
                     getRowClassName?.(item) ?? '',
                   ].filter(Boolean).join(' ')}
+                  onClick={onRowClick ? () => onRowClick(item) : undefined}
                 >
                   {selectable && (
                     <td className="checkbox-column">
@@ -207,6 +215,7 @@ const Table = <T extends { id: string | number }>({
             ))
           )}
         </tbody>
+        {footer && !loading && data.length > 0 && <tfoot>{footer}</tfoot>}
       </table>
     </div>
   );

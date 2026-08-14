@@ -28,6 +28,7 @@ import {
   evaluateVendorsBillingAsync,
   statusAffectsBalance,
 } from "./billing.service";
+import { syncParcelPostings, syncParcelPostingsAsync } from "./accounting/sync";
 import { emitWebhookEvent } from "./webhookDispatch.service";
 
 type Party = { name: string; phone: string; alternate_phone?: string | null };
@@ -1071,6 +1072,11 @@ export async function updateOrderDetails(
     }
     await Promise.all(writes);
 
+    // A COD or delivery-charge edit changes what was posted. Restating it here
+    // keeps the ledger matching the parcel without the caller having to know
+    // which fields moved.
+    await syncParcelPostings(tx, [parcel.id], { actorId: actor.id, reason: "order details edited" });
+
     return updatedParcel;
   });
 
@@ -1227,6 +1233,10 @@ export async function redirectOrder(
         },
       }),
     ]);
+
+    // The diversion fee raised delivery_charge. If this parcel had already
+    // earned its charge the posted revenue is now understated, so restate it.
+    await syncParcelPostings(tx, [parcel.id], { actorId: actor.id, reason: "order redirected" });
 
     return { parcel: updatedParcel, redirect };
   });
@@ -3381,6 +3391,15 @@ async function _updateParcelStatusImpl(
         ]);
       }
     }
+    // Bring the books into line inside the same transaction that moved the
+    // money. Declarative, not event-driven: this one call covers a delivery
+    // posting its COD and charge, an un-delivery reversing both, and a partial
+    // amount being restated - see syncParcelPostings.
+    await syncParcelPostings(tx, [parcelId], {
+      actorId: actor.id,
+      reason: `parcel status ${parcel.status} -> ${newStatus}`,
+    });
+
     return { updatedParcel, createdReturn };
   });
 
@@ -3878,6 +3897,24 @@ async function _bulkUpdateParcelStatusImpl(
     );
   }
 
+  // Ledger postings for the batch. Two deliberate differences from the
+  // single-update path:
+  //
+  // Only money-affecting parcels are considered at all. The overwhelming
+  // majority of bulk operations are dispatch and transit scans, where nothing
+  // has earned or collected anything - for those this resolves to an empty
+  // list and costs one comparison per parcel.
+  //
+  // And it runs after the transaction rather than inside it. A two-hundred
+  // parcel batch would otherwise add several hundred statements to a
+  // transaction that is already large, risking a timeout on the operational
+  // write itself. The trade is a brief window where the parcels are committed
+  // and the entries are not; reconcile-ledger.ts is what closes it.
+  const ledgerParcelIds = parcels
+    .filter((p) => statusAffectsBalance(newStatus) || statusAffectsBalance(p.status))
+    .map((p) => p.id);
+  syncParcelPostingsAsync(ledgerParcelIds, { actorId: actor.id, reason: `bulk status -> ${newStatus}` });
+
   // Bulk status changes no longer notify vendors or admins (see the single
   // update path) - a batch would otherwise fire a ping per parcel. Failed/
   // cancelled is the one exception (mirrors the single-update path): one
@@ -4011,6 +4048,10 @@ export async function applyExternalCarrierStatus(
           changedAt: new Date().toISOString(),
         });
       }
+
+      // A carrier delivery collects COD and earns the charge exactly like an
+      // in-house one, so it posts exactly like one.
+      await syncParcelPostings(tx, [parcelId], { reason: `carrier status -> ${targetStatus}` });
     });
 
     await invalidateOrderCaches();
