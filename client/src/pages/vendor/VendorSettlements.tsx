@@ -8,10 +8,12 @@ import type { SettlementListItem } from '../../services/finance.service';
 import { getSettlements } from '../../services/finance.service';
 import { formatCurrency as formatCurrencyBase } from '../../utils/format';
 import { toBsDate } from '../../utils/nepaliDate';
+import { settlementStatusLabel, settlementStatusTone } from '../../utils/settlementStatus';
 import NepaliDatePicker from '../../components/NepaliDatePicker';
 import './VendorFinance.css';
 
-// The server caps any value at 100 (finance.service MAX_PAGE_SIZE).
+// The selector below the table goes up to 500, this endpoint's ceiling
+// (finance.service MAX_PAGE_SIZE).
 const PAGE_SIZE = 20;
 
 const formatCurrency = (value: number) => formatCurrencyBase(value, 0);
@@ -79,12 +81,17 @@ const VendorSettlements: React.FC = () => {
     {
       header: 'STATUS',
       accessor: (item: SettlementListItem) => (
-        <StatusChip
-          variant="solid"
-          tone={item.status === 'settled' ? 'success' : item.status === 'cancelled' ? 'neutral' : 'warning'}
-        >
-          {item.status === 'settled' ? 'Settled' : item.status === 'cancelled' ? 'Cancelled' : 'Pending'}
-        </StatusChip>
+        <>
+          <StatusChip variant="solid" tone={settlementStatusTone(item.status)}>
+            {settlementStatusLabel(item.status)}
+          </StatusChip>
+          {/* The chip alone doesn't say how much of the payout has landed. */}
+          {item.status === 'partially_paid' && (
+            <div className="vendor-settlement-status-sub">
+              {formatCurrency(item.paidAmount)} of {formatCurrency(item.amount)} received
+            </div>
+          )}
+        </>
       ),
     },
     { header: 'REMARK', accessor: (item: SettlementListItem) => item.remark || '-' },

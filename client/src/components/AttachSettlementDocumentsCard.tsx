@@ -14,6 +14,10 @@ interface AttachSettlementDocumentsCardProps {
   dismissLabel?: string;
   /** Restrict to a single document field, e.g. when each document has its own tab. Omit to show both. */
   only?: 'receipt' | 'taxInvoice';
+  /** Tie the upload to one instalment, so the proof sits with the payment it evidences. */
+  paymentId?: string;
+  /** Swap the file behind an existing document instead of adding another one. */
+  replaceDocumentId?: string;
   onDone: () => void;
   onDismiss?: () => void;
 }
@@ -22,6 +26,11 @@ interface AttachSettlementDocumentsCardProps {
 // happened — so this is deliberately its own step, not bundled into the
 // payment form. Used both as the Make Payment flow's second step and as the
 // statement detail page's "attach it later" affordance.
+//
+// Uploads add to whatever proof the statement already carries rather than
+// replacing it: a payout paid in instalments needs a receipt per instalment,
+// and one transfer can be worth photographing twice. `replaceDocumentId` is
+// the exception, for swapping out a wrong or unreadable file.
 const AttachSettlementDocumentsCard: React.FC<AttachSettlementDocumentsCardProps> = ({
   settlementId,
   title = 'Attach proof',
@@ -29,27 +38,39 @@ const AttachSettlementDocumentsCard: React.FC<AttachSettlementDocumentsCardProps
   submitLabel = 'Save documents',
   dismissLabel,
   only,
+  paymentId,
+  replaceDocumentId,
   onDone,
   onDismiss,
 }) => {
-  const [paymentReceipt, setPaymentReceipt] = useState<File | null>(null);
-  const [taxInvoice, setTaxInvoice] = useState<File | null>(null);
+  const [paymentReceipts, setPaymentReceipts] = useState<File[]>([]);
+  const [taxInvoices, setTaxInvoices] = useState<File[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
   const showReceipt = only !== 'taxInvoice';
   const showInvoice = only !== 'receipt';
-  const hasFile = Boolean((showReceipt && paymentReceipt) || (showInvoice && taxInvoice));
+  // A replacement swaps exactly one file, so the picker stays single-slot.
+  const allowMultiple = !replaceDocumentId;
+
+  const receipts = showReceipt ? paymentReceipts : [];
+  const invoices = showInvoice ? taxInvoices : [];
+  const totalFiles = receipts.length + invoices.length;
+  const tooManyForReplace = Boolean(replaceDocumentId) && totalFiles > 1;
 
   const handleSubmit = async () => {
-    if (!hasFile) return;
+    if (totalFiles === 0 || tooManyForReplace) return;
     setSaving(true);
     setError('');
     try {
-      await attachSettlementDocuments(settlementId, {
-        paymentReceipt: showReceipt ? paymentReceipt : undefined,
-        taxInvoice: showInvoice ? taxInvoice : undefined,
-      });
+      await attachSettlementDocuments(
+        settlementId,
+        { paymentReceipt: receipts, taxInvoice: invoices },
+        {
+          ...(paymentId ? { paymentId } : {}),
+          ...(replaceDocumentId ? { replaceDocumentId } : {}),
+        },
+      );
       onDone();
     } catch (err: any) {
       setError(err?.response?.data?.message || 'Failed to attach documents');
@@ -57,6 +78,11 @@ const AttachSettlementDocumentsCard: React.FC<AttachSettlementDocumentsCardProps
       setSaving(false);
     }
   };
+
+  const fileHint = (base: string) =>
+    allowMultiple
+      ? `${base} · JPG, PNG, WebP or PDF · max 5 MB each · add up to 5`
+      : `${base} · JPG, PNG, WebP or PDF · max 5 MB`;
 
   return (
     <section className="asd-card">
@@ -69,23 +95,47 @@ const AttachSettlementDocumentsCard: React.FC<AttachSettlementDocumentsCardProps
       </div>
 
       <div className={`asd-files${only ? ' asd-files-single' : ''}`}>
-        {showReceipt && (
-          <FileField
-            label="Payment receipt"
-            hint="Bank slip or wallet screenshot · JPG, PNG, WebP or PDF · max 5 MB"
-            file={paymentReceipt}
-            onChange={setPaymentReceipt}
-          />
-        )}
-        {showInvoice && (
-          <FileField
-            label="Tax invoice"
-            hint="Invoice raised against this payout · JPG, PNG, WebP or PDF · max 5 MB"
-            file={taxInvoice}
-            onChange={setTaxInvoice}
-          />
-        )}
+        {showReceipt &&
+          (allowMultiple ? (
+            <FileField
+              multiple
+              label="Payment receipt"
+              hint={fileHint('Bank slip or wallet screenshot')}
+              files={paymentReceipts}
+              onChange={setPaymentReceipts}
+            />
+          ) : (
+            <FileField
+              label="Payment receipt"
+              hint={fileHint('Bank slip or wallet screenshot')}
+              file={paymentReceipts[0] ?? null}
+              onChange={(file) => setPaymentReceipts(file ? [file] : [])}
+            />
+          ))}
+        {showInvoice &&
+          (allowMultiple ? (
+            <FileField
+              multiple
+              label="Tax invoice"
+              hint={fileHint('Invoice raised against this payout')}
+              files={taxInvoices}
+              onChange={setTaxInvoices}
+            />
+          ) : (
+            <FileField
+              label="Tax invoice"
+              hint={fileHint('Invoice raised against this payout')}
+              file={taxInvoices[0] ?? null}
+              onChange={(file) => setTaxInvoices(file ? [file] : [])}
+            />
+          ))}
       </div>
+
+      {tooManyForReplace && (
+        <div className="asd-error" role="alert">
+          A replacement takes a single file — remove the extras, or cancel and add them separately.
+        </div>
+      )}
 
       {error && (
         <div className="asd-error" role="alert">
@@ -99,7 +149,12 @@ const AttachSettlementDocumentsCard: React.FC<AttachSettlementDocumentsCardProps
             {dismissLabel}
           </Button>
         )}
-        <Button type="button" variant="primary" onClick={handleSubmit} disabled={!hasFile || saving}>
+        <Button
+          type="button"
+          variant="primary"
+          onClick={handleSubmit}
+          disabled={totalFiles === 0 || tooManyForReplace || saving}
+        >
           {saving ? 'Saving...' : submitLabel}
         </Button>
       </div>

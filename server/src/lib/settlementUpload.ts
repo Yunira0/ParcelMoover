@@ -22,10 +22,17 @@ const storage = multer.diskStorage({
   },
 });
 
+// A statement can hold several receipts — one per instalment when a payout is
+// paid in parts, plus extra shots of the same transfer (the slip and the ledger
+// page). Capped per request so a runaway client can't fill the disk in one go;
+// more can always be added in a follow-up request.
+const MAX_FILES_PER_FIELD = 5;
+
 /**
- * Payment evidence on POST /finance/settlements/:id/pay. Both fields are
- * optional — a cash handover has neither. Non-multipart (JSON) requests pass
- * straight through, so existing callers that post no files still work.
+ * Payment evidence on POST /finance/settlements/:id/pay and
+ * PATCH /finance/settlements/:id/documents. Both fields are optional — a cash
+ * handover has neither. Non-multipart (JSON) requests pass straight through, so
+ * existing callers that post no files still work.
  */
 export const settlementDocsUpload = multer({
   storage,
@@ -38,6 +45,6 @@ export const settlementDocsUpload = multer({
     }
   },
 }).fields([
-  { name: "paymentReceipt", maxCount: 1 },
-  { name: "taxInvoice", maxCount: 1 },
+  { name: "paymentReceipt", maxCount: MAX_FILES_PER_FIELD },
+  { name: "taxInvoice", maxCount: MAX_FILES_PER_FIELD },
 ]);

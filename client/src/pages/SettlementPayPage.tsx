@@ -20,6 +20,17 @@ import './SettlementPayPage.css';
 
 type PaymentRow = { method: string; amount: string };
 type Step = 'pay' | 'proof';
+// Whether this visit clears the statement or only chips away at it. A vendor
+// may hand over Rs. 1,000 today and the remaining Rs. 2,000 next week, so the
+// form has to stop insisting the amounts add up to the whole payable.
+type AmountMode = 'full' | 'partial';
+
+// Amounts are Decimal(12,2) server-side but floats here, so every running total
+// is snapped back to paisa before it's compared - otherwise a statement paid to
+// the last rupee can still read as "Rs. 0.0000001 left".
+const round2 = (value: number): number => Math.round(value * 100) / 100;
+
+const money = (value: number): string => `Rs. ${value.toLocaleString()}`;
 
 function initials(name: string): string {
   return name
@@ -71,7 +82,14 @@ const SettlementPayPage: React.FC = () => {
   // Step 2 only exists once payment is actually on record - proof is
   // evidence something already happened, so it can't be requested earlier.
   const [step, setStep] = useState<Step>('pay');
-  const [paidSummary, setPaidSummary] = useState<{ amount: number; methodSummary: string } | null>(null);
+  const [paidSummary, setPaidSummary] = useState<{
+    amount: number;
+    methodSummary: string;
+    /** The instalment just created, so its proof is filed against it and not the statement at large. */
+    paymentId?: string;
+    remaining: number;
+  } | null>(null);
+  const [amountMode, setAmountMode] = useState<AmountMode>('full');
 
   // Super-admin inline management of the method list.
   const [showManage, setShowManage] = useState(false);
@@ -90,10 +108,20 @@ const SettlementPayPage: React.FC = () => {
   // receiving from them, never paying out, so the terminology flips.
   const isRider = detail?.payeeType === 'rider';
   const expectedTotal = Math.abs(payableAmount);
-  const enteredAmount = payments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
-  const remainingAmount = expectedTotal - enteredAmount;
-  const isBalanced = Math.round(remainingAmount * 100) === 0;
-  const isOver = remainingAmount < 0 && !isBalanced;
+  // What this visit can cover: the whole payable on a fresh statement, or
+  // whatever is left of it if earlier instalments already went in.
+  const alreadyPaid = detail?.paidAmount ?? 0;
+  const outstanding = round2(expectedTotal - alreadyPaid);
+  const isFollowUpPayment = alreadyPaid > 0;
+  const enteredAmount = round2(payments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0));
+  const shortfall = round2(outstanding - enteredAmount);
+  // "Balanced" means this payment closes the statement. In partial mode any
+  // amount up to the outstanding balance is fine, so the bar only complains
+  // about overpaying or entering nothing.
+  const clearsStatement = shortfall === 0;
+  const isOver = shortfall < 0;
+  const isSubmittable =
+    !isOver && (amountMode === 'full' ? clearsStatement : enteredAmount > 0 || outstanding === 0);
   const hasBankDetails = Boolean(detail?.bankName || detail?.bankAccountNo || detail?.bankAccountHolder);
 
   useEffect(() => {
@@ -102,11 +130,12 @@ const SettlementPayPage: React.FC = () => {
       .then((data) => {
         if (!active) return;
         setDetail(data);
-        // Prefill the single row with the full amount, as the modal did.
+        // Prefill the single row with what's still owed, as the modal did with
+        // the full amount - on a statement already part paid, the balance is
+        // the figure staff are about to hand over.
+        const stillOwed = round2(Math.abs(data.payableAmount) - data.paidAmount);
         setPayments((prev) =>
-          prev.length === 1 && !prev[0].amount
-            ? [{ ...prev[0], amount: String(Math.abs(data.payableAmount)) }]
-            : prev,
+          prev.length === 1 && !prev[0].amount ? [{ ...prev[0], amount: String(stillOwed) }] : prev,
         );
       })
       .catch(() => {
@@ -211,29 +240,42 @@ const SettlementPayPage: React.FC = () => {
       setError('Please choose a payment method for each amount.');
       return;
     }
-    if (!isBalanced) {
-      setError(`Payment total must equal Rs. ${expectedTotal.toLocaleString()} (remaining Rs. ${remainingAmount.toLocaleString()}).`);
+    if (isOver) {
+      setError(
+        `Payment total is more than the ${money(outstanding)} outstanding on this statement.`,
+      );
+      return;
+    }
+    if (amountMode === 'full' && !clearsStatement) {
+      setError(
+        `Payment total must equal ${money(outstanding)} (${money(shortfall)} left). Switch to "Part payment" to record less.`,
+      );
       return;
     }
 
     setLoading(true);
     try {
-      await paySettlement(id, validPayments, remark.trim());
+      const { data } = await paySettlement(id, validPayments, remark.trim());
+      const methodSummary = Array.from(new Set(validPayments.map((p) => p.method))).join(', ');
       // Riders are paid cash-in-hand with no paperwork to attach - only
       // vendor payouts go through the receipt/invoice proof step.
       if (detail.payeeType === 'vendor') {
         setPaidSummary({
-          amount: expectedTotal,
-          methodSummary: Array.from(new Set(validPayments.map((p) => p.method))).join(', '),
+          amount: enteredAmount,
+          methodSummary,
+          ...(data.paymentId ? { paymentId: data.paymentId } : {}),
+          remaining: data.remainingAmount,
         });
         setStep('proof');
       } else {
-        const methodSummary = Array.from(new Set(validPayments.map((p) => p.method))).join(', ');
         navigate(`/finance/settlements/${id}`, {
           state: {
             confirmBanner: {
-              title: `Rs. ${expectedTotal.toLocaleString()} recorded`,
-              meta: `via ${methodSummary}`,
+              title: `${money(enteredAmount)} recorded`,
+              meta:
+                data.remainingAmount > 0
+                  ? `via ${methodSummary} · ${money(data.remainingAmount)} still outstanding`
+                  : `via ${methodSummary}`,
             },
           },
         });
@@ -277,14 +319,18 @@ const SettlementPayPage: React.FC = () => {
     );
   }
 
-  if (detail.status === 'settled') {
+  if (detail.status === 'settled' || detail.status === 'cancelled') {
     return (
       <div className="mpp-page">
         <button type="button" className="mpp-back" onClick={() => navigate(`/finance/settlements/${id}`)}>
           <ArrowLeft size={15} />
           Settlement
         </button>
-        <div className="mpp-empty">This statement has already been paid.</div>
+        <div className="mpp-empty">
+          {detail.status === 'settled'
+            ? 'This statement has already been paid.'
+            : 'This statement has been cancelled.'}
+        </div>
       </div>
     );
   }
@@ -303,13 +349,27 @@ const SettlementPayPage: React.FC = () => {
               <CheckCircle2 size={20} />
             </span>
             <div>
-              <div className="mpp-confirm-amount">Rs. {paidSummary?.amount.toLocaleString()} recorded</div>
-              <div className="mpp-confirm-meta">via {paidSummary?.methodSummary} · attach proof now, or add it later from the statement</div>
+              <div className="mpp-confirm-amount">{money(paidSummary?.amount ?? 0)} recorded</div>
+              <div className="mpp-confirm-meta">
+                via {paidSummary?.methodSummary} · attach proof now, or add it later from the statement
+              </div>
+              {/* The statement isn't closed yet, so say so here rather than
+                  letting the green tick imply the payout is done. */}
+              {(paidSummary?.remaining ?? 0) > 0 && (
+                <div className="mpp-confirm-outstanding">
+                  {money(paidSummary?.remaining ?? 0)} still outstanding — record it from the statement
+                  when it's paid.
+                </div>
+              )}
             </div>
           </div>
 
           <AttachSettlementDocumentsCard
             settlementId={id}
+            // Filed against the instalment just recorded, so a statement paid in
+            // parts keeps each receipt with the payment it actually proves.
+            {...(paidSummary?.paymentId ? { paymentId: paidSummary.paymentId } : {})}
+            caption="Add the receipt or tax invoice as evidence this transfer went through. You can attach more than one file, and add others later from the statement."
             submitLabel="Attach & finish"
             dismissLabel="Skip for now"
             onDone={goToStatement}
@@ -353,9 +413,22 @@ const SettlementPayPage: React.FC = () => {
           </div>
           <div className="mpp-due">
             <span className="mpp-due-label">
-              {vendorOwesOffice ? 'Owed by vendor' : isRider ? 'Receivable amount' : 'Payable amount'}
+              {isFollowUpPayment
+                ? 'Still outstanding'
+                : vendorOwesOffice
+                  ? 'Owed by vendor'
+                  : isRider
+                    ? 'Receivable amount'
+                    : 'Payable amount'}
             </span>
-            <span className="mpp-due-value">Rs. {expectedTotal.toLocaleString()}</span>
+            <span className="mpp-due-value">{money(outstanding)}</span>
+            {/* Where the balance came from — without this, a statement of
+                Rs. 3,000 showing Rs. 2,000 due reads as a mistake. */}
+            {isFollowUpPayment && (
+              <span className="mpp-due-note">
+                {money(alreadyPaid)} of {money(expectedTotal)} already paid
+              </span>
+            )}
           </div>
         </div>
 
@@ -368,6 +441,45 @@ const SettlementPayPage: React.FC = () => {
         )}
 
         <div className="mpp-zone">
+          <h3>How much is being paid</h3>
+
+          {/* A payout doesn't have to clear in one go — Rs. 1,000 now and the
+              rest later is a normal way to settle. Full stays the default so
+              the common case is still one click. */}
+          <div className="mpp-mode" role="group" aria-label="Payment amount">
+            <button
+              type="button"
+              className={`mpp-mode-option${amountMode === 'full' ? ' mpp-mode-option--active' : ''}`}
+              aria-pressed={amountMode === 'full'}
+              onClick={() => {
+                setAmountMode('full');
+                setError('');
+                // Snap back to the full balance so switching modes can't leave
+                // a stale part amount that then fails validation.
+                setPayments((prev) =>
+                  prev.length === 1
+                    ? [{ ...prev[0], amount: String(outstanding) }]
+                    : prev,
+                );
+              }}
+            >
+              <span className="mpp-mode-title">Pay in full</span>
+              <span className="mpp-mode-sub">{money(outstanding)}</span>
+            </button>
+            <button
+              type="button"
+              className={`mpp-mode-option${amountMode === 'partial' ? ' mpp-mode-option--active' : ''}`}
+              aria-pressed={amountMode === 'partial'}
+              onClick={() => {
+                setAmountMode('partial');
+                setError('');
+              }}
+            >
+              <span className="mpp-mode-title">Part payment</span>
+              <span className="mpp-mode-sub">Record less, pay the rest later</span>
+            </button>
+          </div>
+
           <h3>Payment method</h3>
 
           {payments.map((p, index) => (
@@ -464,17 +576,23 @@ const SettlementPayPage: React.FC = () => {
             </div>
           )}
 
-          <div className={`mpp-balance${isBalanced ? ' mpp-balance--ok' : ''}${isOver ? ' mpp-balance--over' : ''}`}>
-            <span>Rs. {enteredAmount.toLocaleString()} entered</span>
+          <div
+            className={`mpp-balance${isSubmittable ? ' mpp-balance--ok' : ''}${isOver ? ' mpp-balance--over' : ''}`}
+          >
+            <span>{money(enteredAmount)} entered</span>
             <span className="mpp-balance-status">
-              {isBalanced ? (
+              {isOver ? (
+                `${money(Math.abs(shortfall))} over`
+              ) : clearsStatement ? (
                 <>
-                  <CheckCircle2 size={13} /> Ready to submit
+                  <CheckCircle2 size={13} /> Settles this statement
                 </>
-              ) : isOver ? (
-                `Rs. ${Math.abs(remainingAmount).toLocaleString()} over`
+              ) : amountMode === 'partial' && enteredAmount > 0 ? (
+                <>
+                  <CheckCircle2 size={13} /> {money(shortfall)} will remain outstanding
+                </>
               ) : (
-                `Rs. ${remainingAmount.toLocaleString()} left of Rs. ${expectedTotal.toLocaleString()}`
+                `${money(shortfall)} left of ${money(outstanding)}`
               )}
             </span>
           </div>
@@ -508,7 +626,11 @@ const SettlementPayPage: React.FC = () => {
             Cancel
           </Button>
           <Button type="submit" variant="primary" disabled={loading}>
-            {loading ? 'Recording...' : 'Record payment'}
+            {loading
+              ? 'Recording...'
+              : amountMode === 'partial' && !clearsStatement
+                ? 'Record part payment'
+                : 'Record payment'}
           </Button>
         </div>
       </form>

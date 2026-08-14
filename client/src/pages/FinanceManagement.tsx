@@ -14,12 +14,13 @@ import type { SettlementListItem, SettlementStatusFilter } from '../services/fin
 import { getSettlements } from '../services/finance.service';
 import { getRiders, searchVendors } from '../services/users.service';
 import { toBsDate } from '../utils/nepaliDate';
+import { settlementStatusLabel, settlementStatusTone } from '../utils/settlementStatus';
 import './FinanceManagement.css';
 
 type FinanceType = 'rider' | 'vendor';
 
-// Starting rows-per-page. The selector below the table can change it; the
-// server caps any value at 100 (finance.service MAX_PAGE_SIZE).
+// Starting rows-per-page. The selector below the table can change it up to
+// 500, the ceiling this endpoint accepts (finance.service MAX_PAGE_SIZE).
 const PAGE_SIZE = 20;
 
 const FinanceManagement: React.FC = () => {
@@ -155,12 +156,18 @@ const FinanceManagement: React.FC = () => {
     {
       header: 'STATUS',
       accessor: (item: SettlementListItem) => (
-        <StatusChip
-          variant="solid"
-          tone={item.status === 'settled' ? 'success' : item.status === 'cancelled' ? 'neutral' : 'warning'}
-        >
-          {item.status === 'settled' ? 'Settled' : item.status === 'cancelled' ? 'Cancelled' : 'Pending'}
-        </StatusChip>
+        <div className="finance-status-cell">
+          <StatusChip variant="solid" tone={settlementStatusTone(item.status)}>
+            {settlementStatusLabel(item.status)}
+          </StatusChip>
+          {/* How far along a part payment is — the chip alone doesn't say
+              whether Rs. 100 or Rs. 2,900 of Rs. 3,000 has been handed over. */}
+          {item.status === 'partially_paid' && (
+            <span className="finance-status-sub">
+              Rs. {item.paidAmount.toLocaleString()} of Rs. {item.amount.toLocaleString()}
+            </span>
+          )}
+        </div>
       ),
     },
   ];
@@ -254,6 +261,7 @@ const FinanceManagement: React.FC = () => {
           >
             <option value="">All statuses</option>
             <option value="pending">Pending</option>
+            <option value="partially_paid">Partially paid</option>
             <option value="settled">Settled</option>
             <option value="cancelled">Cancelled</option>
           </select>

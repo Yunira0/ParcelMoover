@@ -264,6 +264,12 @@ export interface DashboardSummary {
   updatedAt: string;
 }
 
+/**
+ * The largest page this endpoint will serve (order.service MAX_PAGE_SIZE).
+ * Asking for more is clamped server-side, so don't offer a bigger number.
+ */
+export const MAX_ORDER_PAGE_SIZE = 500;
+
 const ORDER_STATUS_CHANGED_EVENT = 'parcelmoover:order-status-changed';
 
 export const notifyOrderStatusChanged = () => {
@@ -322,7 +328,10 @@ export const getAllOrders = async (
   params?: Omit<ListOrdersParams, 'page' | 'pageSize' | 'cursor' | 'dir'>,
   signal?: AbortSignal,
 ): Promise<Order[]> => {
-  const PAGE_SIZE = 100; // server MAX_PAGE_SIZE
+  // Deliberately below MAX_ORDER_PAGE_SIZE: an export walks every page anyway,
+  // so a smaller batch just trades a few more round-trips for lighter
+  // responses and a shorter time to the first one.
+  const PAGE_SIZE = 100;
   const all: Order[] = [];
   let cursor: string | undefined;
 

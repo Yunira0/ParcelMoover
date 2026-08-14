@@ -156,7 +156,8 @@ export async function submitKycApplication(data: KycApplicationInput) {
 }
 
 const DEFAULT_PAGE_SIZE = 20;
-const MAX_PAGE_SIZE = 100;
+// 500 so the list can offer the same largest page as every other screen.
+const MAX_PAGE_SIZE = 500;
 
 export async function listKycApplications(status?: string, page = 1, pageSize = DEFAULT_PAGE_SIZE) {
   const where = status && ["pending", "approved", "rejected"].includes(status)

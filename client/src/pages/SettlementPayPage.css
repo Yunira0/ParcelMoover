@@ -187,6 +187,15 @@
   margin-top: 2px;
 }
 
+/* A part payment still shows the success tick, so the balance left has to say
+   plainly that the statement isn't closed yet. */
+.mpp-confirm-outstanding {
+  color: var(--color-text-default);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  margin-top: var(--space-2);
+}
+
 /* The ledger — one bordered card, internally divided by hairlines instead of
    three separate boxes competing for the same visual weight. */
 .mpp-ledger {
@@ -266,6 +275,14 @@
   line-height: var(--line-height-2xl);
 }
 
+/* On a statement already part paid, explains why the figure above is smaller
+   than the statement total. */
+.mpp-due-note {
+  color: var(--color-text-caption);
+  font-size: var(--font-size-xs);
+  margin-top: 2px;
+}
+
 .mpp-bank {
   background: var(--color-background-canvas);
   border-top: 1px solid var(--color-border-default);
@@ -299,6 +316,60 @@
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-semi-bold);
   margin: 0 0 var(--space-4) 0;
+}
+
+/* A second heading inside the same zone (the method rows follow the amount
+   choice) needs breathing room above it that the first one doesn't. */
+.mpp-zone h3 + .mpp-mode + h3 {
+  margin-top: var(--space-6);
+}
+
+/* Full vs part payment. Two cards rather than a checkbox: the choice changes
+   what the amounts below are allowed to add up to, so it deserves the weight. */
+.mpp-mode {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+
+.mpp-mode-option {
+  align-items: flex-start;
+  background: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-default);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  font-family: var(--typography-font-family-default);
+  gap: 2px;
+  padding: var(--space-3) var(--space-4);
+  text-align: left;
+  transition: border-color 150ms ease, background-color 150ms ease;
+}
+
+.mpp-mode-option:hover {
+  border-color: var(--color-primary);
+}
+
+.mpp-mode-option--active {
+  background: var(--color-background-primary-invert-default);
+  border-color: var(--color-primary);
+}
+
+.mpp-mode-title {
+  color: var(--color-text-default);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semi-bold);
+}
+
+.mpp-mode-option--active .mpp-mode-title {
+  color: var(--color-text-primary);
+}
+
+.mpp-mode-sub {
+  color: var(--color-text-caption);
+  font-feature-settings: 'tnum';
+  font-size: var(--font-size-xs);
 }
 
 /* Payment rows */

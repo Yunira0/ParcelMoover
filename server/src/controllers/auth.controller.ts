@@ -31,7 +31,9 @@ const locationLabel = (location?: { name: string; city: string | null; district:
 };
 
 const LIST_DEFAULT_PAGE_SIZE = 20;
-const LIST_MAX_PAGE_SIZE = 100;
+// 500 so the admin/vendor/rider lists can offer the same largest page as every
+// other screen.
+const LIST_MAX_PAGE_SIZE = 500;
 
 function paginationFromQuery(req: Request) {
   const page = Number.isFinite(Number(req.query.page)) ? Math.max(1, Number(req.query.page)) : 1;

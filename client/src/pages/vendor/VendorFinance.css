@@ -170,3 +170,12 @@
   border-top: 1px solid var(--color-border-default);
   padding-top: var(--space-2);
 }
+
+/* How much of a part-paid settlement has actually landed — the status chip
+   alone can't say whether the payout is nearly done or barely started. */
+.vendor-settlement-status-sub {
+  color: var(--color-text-caption);
+  font-feature-settings: 'tnum';
+  font-size: var(--font-size-xs);
+  margin-top: var(--space-1);
+}

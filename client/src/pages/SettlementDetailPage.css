@@ -123,6 +123,54 @@
   color: var(--color-primary);
 }
 
+.settlement-attach-proof-btn:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.settlement-attach-proof-btn--danger:hover {
+  border-color: var(--color-danger-border);
+  color: var(--color-danger-text);
+}
+
+/* A statement can hold several receipts — one per instalment, plus any extra
+   pictures of the same transfer — so the tab stacks them with the actions for
+   each, and ends with the affordance to add one more. */
+.settlement-doc-gallery {
+  align-items: flex-start;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+/* The 70vh preview above is sized for one document filling the tab. Stacked in
+   the gallery that would be 70vh *each* — three instalment receipts and the
+   actions for any of them are a screen and a half apart. Each preview gets a
+   readable slice instead, with "Open in new tab" for the full-size read. */
+.settlement-doc-gallery .settlement-doc-pdf-wrap {
+  min-height: 0;
+}
+
+.settlement-doc-gallery .settlement-doc-pdf-frame {
+  height: 420px;
+}
+
+.settlement-doc-caption {
+  color: var(--color-text-caption);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+}
+
+.settlement-doc-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.settlement-doc-add {
+  align-self: flex-start;
+}
+
 /* Billing details tab. */
 .sdp-bill {
   background: var(--color-background-surface);
@@ -210,6 +258,88 @@
   color: var(--color-text-default);
   font-weight: var(--font-weight-medium);
   text-align: right;
+}
+
+.sdp-outstanding {
+  color: var(--color-danger-text) !important;
+}
+
+/* Payment history — one block per instalment, in the order the money arrived.
+   A list rather than a table: three or four short facts per payment read
+   better stacked than spread across columns that are mostly empty. */
+.sdp-payments {
+  border-top: 1px solid var(--color-border-default);
+  padding-top: var(--space-4);
+}
+
+.sdp-payments h3 {
+  color: var(--color-text-default);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semi-bold);
+  margin: 0 0 var(--space-3) 0;
+}
+
+.sdp-payments-list {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.sdp-payment {
+  background: var(--color-background-canvas);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-default);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-4);
+}
+
+.sdp-payment-head {
+  align-items: baseline;
+  display: flex;
+  gap: var(--space-3);
+  justify-content: space-between;
+}
+
+.sdp-payment-amount {
+  color: var(--color-text-default);
+  font-feature-settings: 'tnum';
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-bold);
+}
+
+.sdp-payment-date {
+  color: var(--color-text-caption);
+  font-size: var(--font-size-xs);
+}
+
+.sdp-payment-meta {
+  color: var(--color-text-caption);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: var(--font-size-xs);
+  gap: var(--space-2) var(--space-3);
+  justify-content: space-between;
+}
+
+.sdp-payment-proof {
+  align-items: center;
+  display: inline-flex;
+  gap: var(--space-1);
+}
+
+.sdp-payment-remark {
+  color: var(--color-text-caption);
+  font-size: var(--font-size-xs);
+  margin: var(--space-1) 0 0 0;
+}
+
+.sdp-payments-outstanding {
+  color: var(--color-danger-text);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  margin: var(--space-3) 0 0 0;
 }
 
 .sdp-mono {

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { ArrowLeft, Printer, Download, CreditCard, FileText, Paperclip, Pencil, Undo2, Ban } from 'lucide-react';
+import { ArrowLeft, Printer, Download, CreditCard, FileText, Paperclip, Pencil, Plus, Trash2, Undo2, Ban } from 'lucide-react';
 import Button from '../components/Button';
 import StatusChip from '../components/StatusChip';
 import SegmentedTabs from '../components/SegmentedTabs';
@@ -8,8 +8,19 @@ import EditSettlementModal from '../components/EditSettlementModal';
 import RevertSettlementModal from '../components/RevertSettlementModal';
 import AttachSettlementDocumentsCard from '../components/AttachSettlementDocumentsCard';
 import ConfirmBanner from '../components/ConfirmBanner';
-import { getSettlementDetail, type SettlementDetail } from '../services/finance.service';
+import {
+  getSettlementDetail,
+  deleteSettlementDocument,
+  type SettlementDetail,
+  type SettlementDocument,
+} from '../services/finance.service';
 import { hasAnyRole, hasAdminPermission } from '../utils/auth';
+import {
+  hasSettlementPayments,
+  isSettlementPayable,
+  settlementStatusLabel,
+  settlementStatusTone,
+} from '../utils/settlementStatus';
 import { toBsDate, toBsDateTime } from '../utils/nepaliDate';
 import { downloadExcel } from '../utils/excel';
 import './vendor/VendorFinance.css';
@@ -34,41 +45,136 @@ type DetailTab = 'billing' | 'receipt' | 'invoice';
 // their own statement would get a 403. This route re-checks access to the
 // statement itself, so the payee and their sales rep can read their paperwork.
 const API_ROOT = import.meta.env.VITE_API_URL || '/api';
-const documentUrl = (settlementId: string, kind: 'receipt' | 'tax-invoice') =>
-  `${API_ROOT}/finance/settlements/${settlementId}/documents/${kind}`;
+const documentUrl = (settlementId: string, documentId: string) =>
+  `${API_ROOT}/finance/settlements/${settlementId}/documents/${documentId}`;
 
-// One document's whole tab: full-size view when it's attached, an inline
-// attach affordance when it's missing and the viewer is allowed to add one.
-const DocumentTabPanel: React.FC<{
+// What a single uploaded file looks like, plus the actions that only make sense
+// on a statement holding several: swap this one out, or drop it entirely.
+const DocumentCard: React.FC<{
   label: string;
-  kind: 'receipt' | 'tax-invoice';
   only: 'receipt' | 'taxInvoice';
   settlementId: string;
-  storedPath: string | null;
-  canAttach: boolean;
-  onAttached: () => void;
-}> = ({ label, kind, only, settlementId, storedPath, canAttach, onAttached }) => {
-  const [attaching, setAttaching] = useState(false);
-  const href = documentUrl(settlementId, kind);
+  document: SettlementDocument;
+  /** Which instalment this file proves, for the caption. Undefined when it covers the statement as a whole. */
+  paymentCaption?: string;
+  canManage: boolean;
+  onChanged: () => void;
+}> = ({ label, only, settlementId, document, paymentCaption, canManage, onChanged }) => {
+  const [replacing, setReplacing] = useState(false);
+  const [removing, setRemoving] = useState(false);
+  const [error, setError] = useState('');
+  const href = documentUrl(settlementId, document.id);
 
-  if (!storedPath) {
-    if (attaching) {
-      return (
-        <AttachSettlementDocumentsCard
-          settlementId={settlementId}
-          only={only}
-          title={`Attach ${label.toLowerCase()}`}
-          caption={`Add the ${label.toLowerCase()} for this statement · JPG, PNG, WebP or PDF, max 5 MB.`}
-          submitLabel="Save"
-          dismissLabel="Cancel"
-          onDone={() => {
-            setAttaching(false);
-            onAttached();
-          }}
-          onDismiss={() => setAttaching(false)}
-        />
-      );
+  if (replacing) {
+    return (
+      <AttachSettlementDocumentsCard
+        settlementId={settlementId}
+        only={only}
+        replaceDocumentId={document.id}
+        title={`Replace ${label.toLowerCase()}`}
+        caption={`Upload a new file to replace this ${label.toLowerCase()}. To keep this one and add another picture, cancel and use "Add another" instead.`}
+        submitLabel="Save"
+        dismissLabel="Cancel"
+        onDone={() => {
+          setReplacing(false);
+          onChanged();
+        }}
+        onDismiss={() => setReplacing(false)}
+      />
+    );
+  }
+
+  const handleRemove = async () => {
+    setRemoving(true);
+    setError('');
+    try {
+      await deleteSettlementDocument(settlementId, document.id);
+      onChanged();
+    } catch (err: any) {
+      setError(err?.response?.data?.message || 'Failed to remove this file');
+      setRemoving(false);
     }
+  };
+
+  return (
+    <div className="settlement-doc-view">
+      {paymentCaption && <span className="settlement-doc-caption">{paymentCaption}</span>}
+      {/* A PDF previews inline rather than sitting behind a placeholder tile —
+          a tax invoice is usually the thing being checked, so making it
+          readable without leaving the page is the point. Images stay a link to
+          the full-size file. */}
+      {document.isPdf ? (
+        <div className="settlement-doc-frame settlement-doc-pdf-wrap">
+          <iframe className="settlement-doc-pdf-frame" src={href} title={label} />
+        </div>
+      ) : (
+        <a className="settlement-doc-frame" href={href} target="_blank" rel="noreferrer">
+          <img src={href} alt={label} loading="lazy" />
+        </a>
+      )}
+      {document.isPdf && (
+        <a className="settlement-doc-open-link" href={href} target="_blank" rel="noreferrer">
+          <FileText size={14} />
+          Open in new tab
+        </a>
+      )}
+      {canManage && (
+        <div className="settlement-doc-actions">
+          <button type="button" className="settlement-attach-proof-btn" onClick={() => setReplacing(true)}>
+            <Paperclip size={14} />
+            Replace {label.toLowerCase()}
+          </button>
+          <button
+            type="button"
+            className="settlement-attach-proof-btn settlement-attach-proof-btn--danger"
+            onClick={handleRemove}
+            disabled={removing}
+          >
+            <Trash2 size={14} />
+            {removing ? 'Removing...' : 'Remove'}
+          </button>
+        </div>
+      )}
+      {error && <p className="vendor-finance-error">{error}</p>}
+    </div>
+  );
+};
+
+// One kind of document's whole tab. A statement can carry several of them now —
+// a receipt per instalment when a payout is paid in parts, plus extra pictures
+// of the same transfer — so this is a gallery with an "Add another" affordance
+// rather than a single slot that can only be overwritten.
+const DocumentTabPanel: React.FC<{
+  label: string;
+  only: 'receipt' | 'taxInvoice';
+  settlementId: string;
+  documents: SettlementDocument[];
+  /** Payment id -> a short "1st payment · Rs. 1,000" style caption. */
+  paymentCaptions: Map<string, string>;
+  canAttach: boolean;
+  onChanged: () => void;
+}> = ({ label, only, settlementId, documents, paymentCaptions, canAttach, onChanged }) => {
+  const [attaching, setAttaching] = useState(false);
+
+  if (attaching) {
+    return (
+      <AttachSettlementDocumentsCard
+        settlementId={settlementId}
+        only={only}
+        title={documents.length > 0 ? `Add another ${label.toLowerCase()}` : `Attach ${label.toLowerCase()}`}
+        caption={`Add the ${label.toLowerCase()} for this statement. You can pick more than one file · JPG, PNG, WebP or PDF, max 5 MB each.`}
+        submitLabel="Save"
+        dismissLabel="Cancel"
+        onDone={() => {
+          setAttaching(false);
+          onChanged();
+        }}
+        onDismiss={() => setAttaching(false)}
+      />
+    );
+  }
+
+  if (documents.length === 0) {
     return (
       <div className="settlement-doc-empty">
         <FileText size={22} className="settlement-doc-empty-icon" />
@@ -83,46 +189,31 @@ const DocumentTabPanel: React.FC<{
     );
   }
 
-  if (attaching) {
-    return (
-      <AttachSettlementDocumentsCard
-        settlementId={settlementId}
-        only={only}
-        title={`Replace ${label.toLowerCase()}`}
-        caption={`Upload a new file to replace the current ${label.toLowerCase()}.`}
-        submitLabel="Save"
-        dismissLabel="Cancel"
-        onDone={() => {
-          setAttaching(false);
-          onAttached();
-        }}
-        onDismiss={() => setAttaching(false)}
-      />
-    );
-  }
-
-  const isPdf = storedPath.toLowerCase().endsWith('.pdf');
   return (
-    <div className="settlement-doc-view">
-      {isPdf ? (
-        <div className="settlement-doc-frame settlement-doc-pdf-wrap">
-          <iframe className="settlement-doc-pdf-frame" src={href} title={label} />
-        </div>
-      ) : (
-        <a className="settlement-doc-frame" href={href} target="_blank" rel="noreferrer">
-          <img src={href} alt={label} loading="lazy" />
-        </a>
-      )}
-      {isPdf && (
-        <a className="settlement-doc-open-link" href={href} target="_blank" rel="noreferrer">
-          <FileText size={14} />
-          Open in new tab
-        </a>
-      )}
+    <div className="settlement-doc-gallery">
+      {documents.map((doc) => {
+        const caption = doc.paymentId ? paymentCaptions.get(doc.paymentId) : undefined;
+        return (
+          <DocumentCard
+            key={doc.id}
+            label={label}
+            only={only}
+            settlementId={settlementId}
+            document={doc}
+            {...(caption ? { paymentCaption: caption } : {})}
+            canManage={canAttach}
+            onChanged={onChanged}
+          />
+        );
+      })}
       {canAttach && (
-        <button type="button" className="settlement-attach-proof-btn" onClick={() => setAttaching(true)}>
-          <Paperclip size={14} />
-          Replace {label.toLowerCase()}
+        <button
+          type="button"
+          className="settlement-attach-proof-btn settlement-doc-add"
+          onClick={() => setAttaching(true)}
+        >
+          <Plus size={14} />
+          Add another {label.toLowerCase()}
         </button>
       )}
     </div>
@@ -201,7 +292,13 @@ function buildStatementHtml(detail: SettlementDetail): string {
       <div class="meta">
         <div><span class="muted">Statement</span><span>${detail.statementId}</span></div>
         <div><span class="muted">Statement date</span><span>${detail.transferDate ? toBsDate(detail.transferDate) : '-'}</span></div>
-        <div><span class="muted">Payment status</span><span>${detail.status === 'settled' ? 'Settled' : detail.status === 'cancelled' ? 'Cancelled' : 'Pending'}</span></div>
+        <div><span class="muted">Payment status</span><span>${settlementStatusLabel(detail.status)}</span></div>
+        ${
+          detail.status === 'partially_paid'
+            ? `<div><span class="muted">Paid so far</span><span>${money(detail.paidAmount)}</span></div>
+        <div><span class="muted">Still outstanding</span><span>${money(detail.remainingAmount)}</span></div>`
+            : ''
+        }
         ${detail.remark ? `<div><span class="muted">Remark</span><span>${detail.remark}</span></div>` : ''}
       </div>
     </div>
@@ -269,8 +366,23 @@ const SettlementDetailPage: React.FC = () => {
   // vendors, so only there does a per-row vendor column carry information.
   const showVendor = detail?.payeeType === 'rider';
   // Riders are paid cash-in-hand with no paperwork trail - only vendor
-  // payouts get the receipt/invoice tabs.
-  const showDocumentTabs = detail?.status === 'settled' && detail?.payeeType === 'vendor';
+  // payouts get the receipt/invoice tabs. A part-paid statement gets them too:
+  // the money that has moved deserves its proof filed straight away.
+  const showDocumentTabs = Boolean(
+    detail && hasSettlementPayments(detail.status) && detail.payeeType === 'vendor',
+  );
+
+  const receipts = detail?.documents.filter((doc) => doc.kind === 'receipt') ?? [];
+  const taxInvoices = detail?.documents.filter((doc) => doc.kind === 'tax_invoice') ?? [];
+
+  // Which instalment a file belongs to, phrased for a caption above it. Only
+  // worth showing once there's more than one payment to tell apart.
+  const paymentCaptions = new Map<string, string>();
+  if (detail && detail.paymentRecords.length > 1) {
+    detail.paymentRecords.forEach((payment, index) => {
+      paymentCaptions.set(payment.id, `Payment ${index + 1} · ${money(payment.amount)} · ${payment.method}`);
+    });
+  }
 
   useEffect(() => {
     let active = true;
@@ -370,17 +482,24 @@ const SettlementDetailPage: React.FC = () => {
               <Pencil size={16} /> Edit
             </Button>
           )}
-          {canPay && detail?.status === 'pending' && (
+          {canPay && detail && isSettlementPayable(detail.status) && (
             <Button variant="primary" onClick={() => navigate(`/finance/settlements/${id}/pay`)}>
-              <CreditCard size={16} /> {detail.payeeType === 'rider' ? 'Record Payment' : 'Make Payment'}
+              <CreditCard size={16} />{' '}
+              {detail.status === 'partially_paid'
+                ? 'Pay Balance'
+                : detail.payeeType === 'rider'
+                  ? 'Record Payment'
+                  : 'Make Payment'}
             </Button>
           )}
+          {/* Cancelling releases the bundled orders, which would strand any
+              money already recorded - so only an untouched statement. */}
           {canEdit && detail?.status === 'pending' && (
             <Button variant="danger" onClick={() => setShowCancel(true)}>
               <Ban size={16} /> Cancel
             </Button>
           )}
-          {canEdit && detail?.status === 'settled' && (
+          {canEdit && detail && hasSettlementPayments(detail.status) && (
             <Button variant="danger" onClick={() => setShowRevert(true)}>
               <Undo2 size={16} /> Revert
             </Button>
@@ -429,22 +548,22 @@ const SettlementDetailPage: React.FC = () => {
           {tab === 'receipt' && showDocumentTabs ? (
             <DocumentTabPanel
               label="Payment receipt"
-              kind="receipt"
               only="receipt"
               settlementId={detail.id}
-              storedPath={detail.paymentReceiptPath}
+              documents={receipts}
+              paymentCaptions={paymentCaptions}
               canAttach={canPay}
-              onAttached={() => setReloadKey((k) => k + 1)}
+              onChanged={() => setReloadKey((k) => k + 1)}
             />
           ) : tab === 'invoice' && showDocumentTabs ? (
             <DocumentTabPanel
               label="Tax invoice"
-              kind="tax-invoice"
               only="taxInvoice"
               settlementId={detail.id}
-              storedPath={detail.taxInvoicePath}
+              documents={taxInvoices}
+              paymentCaptions={paymentCaptions}
               canAttach={canPay}
-              onAttached={() => setReloadKey((k) => k + 1)}
+              onChanged={() => setReloadKey((k) => k + 1)}
             />
           ) : (
             <div className="sdp-bill">
@@ -453,11 +572,8 @@ const SettlementDetailPage: React.FC = () => {
                 <div className="sdp-payee-text">
                   <div className="sdp-payee-name-row">
                     <span className="sdp-payee-name">{detail.payeeName}</span>
-                    <StatusChip
-                      variant="solid"
-                      tone={detail.status === 'settled' ? 'success' : detail.status === 'cancelled' ? 'neutral' : 'warning'}
-                    >
-                      {detail.status === 'settled' ? 'Settled' : detail.status === 'cancelled' ? 'Cancelled' : 'Pending'}
+                    <StatusChip variant="solid" tone={settlementStatusTone(detail.status)}>
+                      {settlementStatusLabel(detail.status)}
                     </StatusChip>
                   </div>
                   <span className="sdp-payee-phone">{detail.payeePhone}</span>
@@ -480,7 +596,7 @@ const SettlementDetailPage: React.FC = () => {
                   <span>Recorded</span>
                   <span>{toBsDateTime(detail.createdAt) || '-'}</span>
                 </div>
-                {detail.status === 'settled' && detail.payments.length > 0 && (
+                {hasSettlementPayments(detail.status) && detail.payments.length > 0 && (
                   <div>
                     <span>Payment method</span>
                     <span>
@@ -489,11 +605,25 @@ const SettlementDetailPage: React.FC = () => {
                           // Method names are configurable now; show them as
                           // stored, capitalising legacy lowercase values.
                           const label = p.method.charAt(0).toUpperCase() + p.method.slice(1);
-                          return `${label}: Rs. ${p.amount.toLocaleString()}`;
+                          return `${label}: ${money(p.amount)}`;
                         })
                         .join(', ')}
                     </span>
                   </div>
+                )}
+                {/* Only worth stating while the two figures differ — on a
+                    settled statement "paid" is just the payable again. */}
+                {detail.status === 'partially_paid' && (
+                  <>
+                    <div>
+                      <span>Paid so far</span>
+                      <span>{money(detail.paidAmount)}</span>
+                    </div>
+                    <div>
+                      <span>Still outstanding</span>
+                      <span className="sdp-outstanding">{money(detail.remainingAmount)}</span>
+                    </div>
+                  </>
                 )}
                 {detail.remark && (
                   <div>
@@ -502,6 +632,43 @@ const SettlementDetailPage: React.FC = () => {
                   </div>
                 )}
               </div>
+
+              {/* Each act of paying, in the order it happened. A statement paid
+                  in instalments would otherwise show only the roll-up, hiding
+                  when each part arrived and which receipt proves which. */}
+              {detail.paymentRecords.length > 0 && (
+                <div className="sdp-payments">
+                  <h3>Payment history</h3>
+                  <div className="sdp-payments-list">
+                    {detail.paymentRecords.map((payment, index) => (
+                      <div className="sdp-payment" key={payment.id}>
+                        <div className="sdp-payment-head">
+                          <span className="sdp-payment-amount">{money(payment.amount)}</span>
+                          <span className="sdp-payment-date">{toBsDateTime(payment.paidAt) || '-'}</span>
+                        </div>
+                        <div className="sdp-payment-meta">
+                          <span>
+                            {detail.paymentRecords.length > 1 ? `Payment ${index + 1} · ` : ''}
+                            {payment.method}
+                          </span>
+                          {payment.documents.length > 0 && (
+                            <span className="sdp-payment-proof">
+                              <Paperclip size={12} />
+                              {payment.documents.length} file{payment.documents.length > 1 ? 's' : ''} attached
+                            </span>
+                          )}
+                        </div>
+                        {payment.remark && <p className="sdp-payment-remark">{payment.remark}</p>}
+                      </div>
+                    ))}
+                  </div>
+                  {detail.remainingAmount > 0 && (
+                    <p className="sdp-payments-outstanding">
+                      {money(detail.remainingAmount)} still outstanding on this statement.
+                    </p>
+                  )}
+                </div>
+              )}
 
               {detail.items.length === 0 ? (
                 <div className="loading-state">No orders linked to this settlement.</div>

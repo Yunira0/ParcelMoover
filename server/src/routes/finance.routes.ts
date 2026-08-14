@@ -27,6 +27,7 @@ import {
   createSettlementController,
   payForSettlementController,
   attachSettlementDocumentsController,
+  deleteSettlementDocumentController,
   updateSettlementController,
   revertSettlementController,
   cancelSettlementController,
@@ -104,11 +105,12 @@ financeRouter.get(
   getSettlementDetailController,
 );
 
-// GET /api/finance/settlements/:id/documents/:kind — payment receipt / tax
-// invoice for one statement. Same audience as the detail route above, so the
-// payee reaches their own paperwork; the /uploads mount stays admin-only.
+// GET /api/finance/settlements/:id/documents/:doc — one payment proof for a
+// statement, by document id (or the legacy "receipt" / "tax-invoice" aliases,
+// which resolve to the newest of that kind). Same audience as the detail route
+// above, so the payee reaches their own paperwork; /uploads stays admin-only.
 financeRouter.get(
-  "/settlements/:id/documents/:kind",
+  "/settlements/:id/documents/:doc",
   authMiddleware,
   authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider", "sales"),
   requireStaffPermission("FINANCE_ACCESS"),
@@ -128,9 +130,10 @@ financeRouter.post(
   createSettlementController,
 );
 
-// POST /api/finance/settlements/:id/pay — record payment against a pending
-// statement and flip it to settled. Multipart: optional payment receipt and
-// tax invoice alongside the payment rows.
+// POST /api/finance/settlements/:id/pay — record a payment against a statement
+// that still has money outstanding. Pays it off in full, or in part (leaving it
+// partially_paid for a later call). Multipart: optional payment receipts and
+// tax invoices alongside the payment rows.
 financeRouter.post(
   "/settlements/:id/pay",
   authMiddleware,
@@ -144,7 +147,9 @@ financeRouter.post(
 );
 
 // PATCH /api/finance/settlements/:id/documents — attach payment proof to a
-// statement that's already been paid (super_admin/admin, same audience as pay)
+// statement with a payment recorded against it. Adds to whatever is already
+// there, so a statement paid in instalments keeps a receipt per instalment
+// (super_admin/admin, same audience as pay)
 financeRouter.patch(
   "/settlements/:id/documents",
   authMiddleware,
@@ -153,6 +158,17 @@ financeRouter.patch(
   settlementCreateLimiter,
   settlementDocsUpload,
   attachSettlementDocumentsController,
+);
+
+// DELETE /api/finance/settlements/:id/documents/:documentId — remove one proof
+// from a statement holding several (same audience as attaching one)
+financeRouter.delete(
+  "/settlements/:id/documents/:documentId",
+  authMiddleware,
+  csrfProtection,
+  authorizeRoles("super_admin", "admin"),
+  settlementCreateLimiter,
+  deleteSettlementDocumentController,
 );
 
 // PATCH /api/finance/settlements/:id — correct an unsettled statement's order
