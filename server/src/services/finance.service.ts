@@ -798,6 +798,39 @@ function toPaymentLines(value: Prisma.JsonValue | null): SettlementPaymentInput[
   return Array.isArray(value) ? (value as unknown as SettlementPaymentInput[]) : [];
 }
 
+// Serialises the state transitions on one statement. Every writer below reads
+// the statement, decides what to do from its status and paid_amount, then
+// writes - and that read has to happen under this lock, inside the same
+// transaction as the write, or two callers interleave.
+//
+// Recording two instalments at the same moment is the case that costs money:
+// both read paid_amount = 0, both find the full amount outstanding so both pass
+// the overpayment check, and then the second write overwrites the first one's
+// total while its settlement_payments row survives - leaving the ledger saying
+// Rs. 4,000 was handed over and the statement header saying Rs. 2,000. The
+// same interleaving lets a revert skip unwinding collections it should have
+// unwound, and lets an edit or a cancel land on a statement that acquired a
+// payment a moment earlier.
+//
+// Locked by id in raw SQL because Prisma's fluent API has no FOR UPDATE; the
+// caller then re-reads through Prisma inside the transaction. Read Committed
+// makes both steps see whatever the previous holder of the lock committed.
+async function lockSettlement(tx: Prisma.TransactionClient, settlementId: string): Promise<void> {
+  const locked = await tx.$queryRaw<Array<{ id: string }>>(
+    Prisma.sql`SELECT id FROM settlements WHERE id = ${settlementId}::uuid FOR UPDATE`,
+  );
+  if (locked.length === 0) {
+    throw new AppError(404, "Settlement not found");
+  }
+}
+
+// Interactive transactions now wait on a row lock before they do any work, so
+// the default 2s/5s budget is too tight: a statement being paid while another
+// instalment is mid-flight would abort rather than queue. Generous enough to
+// absorb the wait, still short enough that a genuinely stuck lock surfaces as
+// an error instead of pinning a connection.
+const SETTLEMENT_TX_OPTIONS = { maxWait: 10_000, timeout: 20_000 } as const;
+
 const isPdfPath = (filePath: string): boolean => filePath.toLowerCase().endsWith(".pdf");
 
 function toDocumentResult(doc: {
@@ -847,66 +880,83 @@ export async function payForSettlement(
     }
   }
 
-  const settlement = await prisma.settlements.findUnique({
-    where: { id: settlementId },
-    include: {
-      settlement_items: {
-        include: { cod_collections: { select: { id: true, collected_amount: true } } },
-      },
-      settlement_payments: { orderBy: { paid_at: "asc" } },
-    },
-  });
-  if (!settlement) {
-    throw new AppError(404, "Settlement not found");
-  }
-  if (settlement.status === "settled") {
-    throw new AppError(400, "This settlement has already been paid");
-  }
-  if (settlement.status === "cancelled") {
-    throw new AppError(400, "This settlement has been cancelled");
-  }
-
-  const payableAmount = Number(settlement.payable_amount ?? settlement.amount);
-  // A negative payable means the COD collected was less than the delivery
-  // charges, so the vendor owes the office rather than the other way round. The
-  // recorded payments then represent cash received FROM the vendor, and must
-  // total the absolute amount owed. (Rider legs are always >= 0.)
-  const vendorOwesOffice = payableAmount < 0;
-  const expectedTotal = Math.abs(payableAmount);
-  const alreadyPaid = Number(settlement.paid_amount);
-  const outstanding = round2(expectedTotal - alreadyPaid);
   const paidTotal = round2(payments.reduce((sum, p) => sum + p.amount, 0));
 
-  // A statement can legitimately total Rs. 0 (every bundled order corrected to
-  // zero COD), and closing it still deserves a record of how - so a zero-amount
-  // instalment is only rejected when there is actually money outstanding.
-  if (paidTotal <= 0 && expectedTotal > 0) {
-    throw new AppError(400, "Payment amount must be greater than zero");
-  }
-  if (paidTotal > outstanding) {
-    throw new AppError(
-      400,
-      alreadyPaid > 0
-        ? `Payment total (Rs. ${paidTotal}) is more than the Rs. ${outstanding} still outstanding on this statement`
-        : vendorOwesOffice
-          ? `Payment total (Rs. ${paidTotal}) is more than the Rs. ${expectedTotal} owed by the vendor`
-          : `Payment total (Rs. ${paidTotal}) is more than the payable amount (Rs. ${expectedTotal})`,
-    );
-  }
+  // Everything from here on reads state another instalment could be changing
+  // right now - the statement's status and how much has already been handed
+  // over - so it happens under the row lock, in the same transaction as the
+  // write it decides. See lockSettlement.
+  const {
+    settlement: updated,
+    payment: instalment,
+    payableAmount,
+    expectedTotal,
+    newPaidTotal,
+    allPayments,
+    fullySettled,
+    riderId,
+    vendorId,
+  } = await prisma.$transaction(async (tx) => {
+    await lockSettlement(tx, settlementId);
 
-  const newPaidTotal = round2(alreadyPaid + paidTotal);
-  const fullySettled = round2(expectedTotal - newPaidTotal) === 0;
-  const instalmentMethodSummary = Array.from(new Set(payments.map((p) => p.method))).join(", ");
-  // The statement header keeps showing every line ever recorded against it,
-  // across instalments - so a statement paid Rs. 1,000 cash then Rs. 2,000 by
-  // bank still reads "Cash, Bank" rather than only the most recent method.
-  const allPayments = [
-    ...settlement.settlement_payments.flatMap((sp) => toPaymentLines(sp.breakdown)),
-    ...payments,
-  ];
-  const paymentMethodSummary = Array.from(new Set(allPayments.map((p) => p.method))).join(", ");
+    const settlement = await tx.settlements.findUnique({
+      where: { id: settlementId },
+      include: {
+        settlement_items: {
+          include: { cod_collections: { select: { id: true, collected_amount: true } } },
+        },
+        settlement_payments: { orderBy: { paid_at: "asc" } },
+      },
+    });
+    if (!settlement) {
+      throw new AppError(404, "Settlement not found");
+    }
+    if (settlement.status === "settled") {
+      throw new AppError(400, "This settlement has already been paid");
+    }
+    if (settlement.status === "cancelled") {
+      throw new AppError(400, "This settlement has been cancelled");
+    }
 
-  const { settlement: updated, payment: instalment } = await prisma.$transaction(async (tx) => {
+    const payableAmount = Number(settlement.payable_amount ?? settlement.amount);
+    // A negative payable means the COD collected was less than the delivery
+    // charges, so the vendor owes the office rather than the other way round. The
+    // recorded payments then represent cash received FROM the vendor, and must
+    // total the absolute amount owed. (Rider legs are always >= 0.)
+    const vendorOwesOffice = payableAmount < 0;
+    const expectedTotal = Math.abs(payableAmount);
+    const alreadyPaid = Number(settlement.paid_amount);
+    const outstanding = round2(expectedTotal - alreadyPaid);
+
+    // A statement can legitimately total Rs. 0 (every bundled order corrected to
+    // zero COD), and closing it still deserves a record of how - so a zero-amount
+    // instalment is only rejected when there is actually money outstanding.
+    if (paidTotal <= 0 && expectedTotal > 0) {
+      throw new AppError(400, "Payment amount must be greater than zero");
+    }
+    if (paidTotal > outstanding) {
+      throw new AppError(
+        400,
+        alreadyPaid > 0
+          ? `Payment total (Rs. ${paidTotal}) is more than the Rs. ${outstanding} still outstanding on this statement`
+          : vendorOwesOffice
+            ? `Payment total (Rs. ${paidTotal}) is more than the Rs. ${expectedTotal} owed by the vendor`
+            : `Payment total (Rs. ${paidTotal}) is more than the payable amount (Rs. ${expectedTotal})`,
+      );
+    }
+
+    const newPaidTotal = round2(alreadyPaid + paidTotal);
+    const fullySettled = round2(expectedTotal - newPaidTotal) === 0;
+    const instalmentMethodSummary = Array.from(new Set(payments.map((p) => p.method))).join(", ");
+    // The statement header keeps showing every line ever recorded against it,
+    // across instalments - so a statement paid Rs. 1,000 cash then Rs. 2,000 by
+    // bank still reads "Cash, Bank" rather than only the most recent method.
+    const allPayments = [
+      ...settlement.settlement_payments.flatMap((sp) => toPaymentLines(sp.breakdown)),
+      ...payments,
+    ];
+    const paymentMethodSummary = Array.from(new Set(allPayments.map((p) => p.method))).join(", ");
+
     const payment = await tx.settlement_payments.create({
       data: {
         settlement_id: settlementId,
@@ -1005,18 +1055,28 @@ export async function payForSettlement(
       },
     });
 
-    return { settlement: result, payment };
-  });
+    return {
+      settlement: result,
+      payment,
+      payableAmount,
+      expectedTotal,
+      newPaidTotal,
+      allPayments,
+      fullySettled,
+      riderId: settlement.rider_id,
+      vendorId: settlement.vendor_id,
+    };
+  }, SETTLEMENT_TX_OPTIONS);
 
-  if (settlement.rider_id) {
-    await invalidateRiderFinanceCache(settlement.rider_id);
-  } else if (settlement.vendor_id) {
-    await invalidateVendorFinanceCache(settlement.vendor_id);
+  if (riderId) {
+    await invalidateRiderFinanceCache(riderId);
+  } else if (vendorId) {
+    await invalidateVendorFinanceCache(vendorId);
     // A completed payout debits the vendor's running account, so it can push
     // them across a credit threshold just as a delivery can. A part payment
     // doesn't - the balance is derived from the collections above, which only
     // move once the payout clears. Fire-and-forget.
-    if (fullySettled) evaluateVendorBillingAsync(settlement.vendor_id);
+    if (fullySettled) evaluateVendorBillingAsync(vendorId);
   }
 
   return {
@@ -1064,32 +1124,37 @@ export async function attachSettlementDocuments(
     throw new AppError(400, "Only one file can be uploaded when replacing a document");
   }
 
-  const settlement = await prisma.settlements.findUnique({ where: { id: settlementId } });
-  if (!settlement) {
-    throw new AppError(404, "Settlement not found");
-  }
-  if (settlement.status !== "settled" && settlement.status !== "partially_paid") {
-    throw new AppError(400, "Documents can only be attached to a statement with a payment recorded");
-  }
-
-  // Both ids are caller-supplied, so confirm they belong to *this* statement -
-  // otherwise proof could be moved onto, or lifted off, someone else's payout.
-  if (paymentId) {
-    const payment = await prisma.settlement_payments.findFirst({
-      where: { id: paymentId, settlement_id: settlementId },
-      select: { id: true },
-    });
-    if (!payment) throw new AppError(404, "Payment not found on this statement");
-  }
-  if (replaceDocumentId) {
-    const existing = await prisma.settlement_documents.findFirst({
-      where: { id: replaceDocumentId, settlement_id: settlementId },
-      select: { id: true },
-    });
-    if (!existing) throw new AppError(404, "Document not found on this statement");
-  }
-
+  // Under the row lock like the other writers: a revert landing between these
+  // checks and the insert deletes the statement's instalments and documents,
+  // and this would then attach proof to a statement that is pending again.
   await prisma.$transaction(async (tx) => {
+    await lockSettlement(tx, settlementId);
+
+    const settlement = await tx.settlements.findUnique({ where: { id: settlementId } });
+    if (!settlement) {
+      throw new AppError(404, "Settlement not found");
+    }
+    if (settlement.status !== "settled" && settlement.status !== "partially_paid") {
+      throw new AppError(400, "Documents can only be attached to a statement with a payment recorded");
+    }
+
+    // Both ids are caller-supplied, so confirm they belong to *this* statement -
+    // otherwise proof could be moved onto, or lifted off, someone else's payout.
+    if (paymentId) {
+      const payment = await tx.settlement_payments.findFirst({
+        where: { id: paymentId, settlement_id: settlementId },
+        select: { id: true },
+      });
+      if (!payment) throw new AppError(404, "Payment not found on this statement");
+    }
+    if (replaceDocumentId) {
+      const existing = await tx.settlement_documents.findFirst({
+        where: { id: replaceDocumentId, settlement_id: settlementId },
+        select: { id: true },
+      });
+      if (!existing) throw new AppError(404, "Document not found on this statement");
+    }
+
     if (replaceDocumentId) {
       // Guaranteed present: `incoming` is non-empty and, under a replace,
       // holds exactly one file - both checked above.
@@ -1129,7 +1194,7 @@ export async function attachSettlementDocuments(
         },
       },
     });
-  });
+  }, SETTLEMENT_TX_OPTIONS);
 
   const documents = await prisma.settlement_documents.findMany({
     where: { settlement_id: settlementId },
@@ -1195,67 +1260,74 @@ export async function updateSettlement(
     throw new AppError(400, "A settlement must include at least one order");
   }
 
-  const settlement = await prisma.settlements.findUnique({
-    where: { id: settlementId },
-    include: { settlement_items: { select: { cod_collection_id: true } } },
-  });
-  if (!settlement) {
-    throw new AppError(404, "Settlement not found");
-  }
-  if (settlement.status !== "pending") {
-    throw new AppError(
-      400,
-      settlement.status === "partially_paid"
-        ? "This statement has a payment recorded against it and can no longer be edited"
-        : settlement.status === "cancelled"
-          ? "This statement has been cancelled and can no longer be edited"
-          : "This statement has already been paid and can no longer be edited",
-    );
-  }
+  // All of this runs under the row lock: the "still pending" check guards the
+  // edit, and the set of orders being added or removed is derived from the
+  // statement's current items - both go stale the moment an instalment is
+  // recorded against it. Reading them outside the lock would let an edit
+  // rewrite the orders behind a statement that had just been paid.
+  const { settlement: updated, payeeType, targetId, payableAmount } = await prisma.$transaction(async (tx) => {
+    await lockSettlement(tx, settlementId);
 
-  const payeeType = settlement.payee_type as "rider" | "vendor";
-  const targetId = payeeType === "rider" ? settlement.rider_id : settlement.vendor_id;
-  if (!targetId) {
-    throw new AppError(500, "Settlement is missing its payee");
-  }
+    const settlement = await tx.settlements.findUnique({
+      where: { id: settlementId },
+      include: { settlement_items: { select: { cod_collection_id: true } } },
+    });
+    if (!settlement) {
+      throw new AppError(404, "Settlement not found");
+    }
+    if (settlement.status !== "pending") {
+      throw new AppError(
+        400,
+        settlement.status === "partially_paid"
+          ? "This statement has a payment recorded against it and can no longer be edited"
+          : settlement.status === "cancelled"
+            ? "This statement has been cancelled and can no longer be edited"
+            : "This statement has already been paid and can no longer be edited",
+      );
+    }
 
-  const existingIds = new Set(settlement.settlement_items.map((i) => i.cod_collection_id));
-  const nextIds = new Set(codCollectionIds);
-  const toRemove = settlement.settlement_items.filter((i) => !nextIds.has(i.cod_collection_id));
-  const toAddIds = codCollectionIds.filter((id) => !existingIds.has(id));
-  const keptIds = codCollectionIds.filter((id) => existingIds.has(id));
+    const payeeType = settlement.payee_type as "rider" | "vendor";
+    const targetId = payeeType === "rider" ? settlement.rider_id : settlement.vendor_id;
+    if (!targetId) {
+      throw new AppError(500, "Settlement is missing its payee");
+    }
 
-  // Orders newly added must belong to the same payee and still be pending
-  // settlement - the same eligibility rule createSettlement enforces.
-  const eligibleAddWhere: Prisma.cod_collectionsWhereInput =
-    payeeType === "rider"
-      ? { id: { in: toAddIds }, rider_id: targetId, rider_payment_status: payment_status.pending, collected_at: { not: null } }
-      : { id: { in: toAddIds }, vendor_id: targetId, payment_status: payment_status.pending, collected_at: { not: null } };
+    const existingIds = new Set(settlement.settlement_items.map((i) => i.cod_collection_id));
+    const nextIds = new Set(codCollectionIds);
+    const toRemove = settlement.settlement_items.filter((i) => !nextIds.has(i.cod_collection_id));
+    const toAddIds = codCollectionIds.filter((id) => !existingIds.has(id));
+    const keptIds = codCollectionIds.filter((id) => existingIds.has(id));
 
-  const [toAddCollections, keptCollections] = await Promise.all([
-    toAddIds.length > 0
-      ? prisma.cod_collections.findMany({ where: eligibleAddWhere, include: { parcels: { select: { delivery_charge: true } } } })
-      : Promise.resolve([]),
-    keptIds.length > 0
-      ? prisma.cod_collections.findMany({ where: { id: { in: keptIds } }, include: { parcels: { select: { delivery_charge: true } } } })
-      : Promise.resolve([]),
-  ]);
+    // Orders newly added must belong to the same payee and still be pending
+    // settlement - the same eligibility rule createSettlement enforces.
+    const eligibleAddWhere: Prisma.cod_collectionsWhereInput =
+      payeeType === "rider"
+        ? { id: { in: toAddIds }, rider_id: targetId, rider_payment_status: payment_status.pending, collected_at: { not: null } }
+        : { id: { in: toAddIds }, vendor_id: targetId, payment_status: payment_status.pending, collected_at: { not: null } };
 
-  if (toAddCollections.length !== toAddIds.length) {
-    throw new AppError(
-      400,
-      "One or more orders being added are not eligible (already settled or belong to a different account)",
-    );
-  }
+    const [toAddCollections, keptCollections] = await Promise.all([
+      toAddIds.length > 0
+        ? tx.cod_collections.findMany({ where: eligibleAddWhere, include: { parcels: { select: { delivery_charge: true } } } })
+        : Promise.resolve([]),
+      keptIds.length > 0
+        ? tx.cod_collections.findMany({ where: { id: { in: keptIds } }, include: { parcels: { select: { delivery_charge: true } } } })
+        : Promise.resolve([]),
+    ]);
 
-  const allCollections = [...keptCollections, ...toAddCollections];
-  const grossAmount = allCollections.reduce((sum, c) => sum + Number(c.collected_amount), 0);
-  const payableAmount =
-    payeeType === "rider"
-      ? grossAmount
-      : allCollections.reduce((sum, c) => sum + Number(c.collected_amount) - Number(c.parcels.delivery_charge), 0);
+    if (toAddCollections.length !== toAddIds.length) {
+      throw new AppError(
+        400,
+        "One or more orders being added are not eligible (already settled or belong to a different account)",
+      );
+    }
 
-  const updated = await prisma.$transaction(async (tx) => {
+    const allCollections = [...keptCollections, ...toAddCollections];
+    const grossAmount = allCollections.reduce((sum, c) => sum + Number(c.collected_amount), 0);
+    const payableAmount =
+      payeeType === "rider"
+        ? grossAmount
+        : allCollections.reduce((sum, c) => sum + Number(c.collected_amount) - Number(c.parcels.delivery_charge), 0);
+
     if (toRemove.length > 0) {
       const removedIds = toRemove.map((i) => i.cod_collection_id);
       await tx.settlement_items.deleteMany({
@@ -1323,8 +1395,8 @@ export async function updateSettlement(
       },
     });
 
-    return result;
-  });
+    return { settlement: result, payeeType, targetId, payableAmount };
+  }, SETTLEMENT_TX_OPTIONS);
 
   if (payeeType === "rider") {
     await invalidateRiderFinanceCache(targetId);
@@ -1361,34 +1433,39 @@ export async function revertSettlement(
   settlementId: string,
   remark: string,
 ): Promise<CreateSettlementResult> {
-  const settlement = await prisma.settlements.findUnique({
-    where: { id: settlementId },
-    include: { settlement_items: { select: { cod_collection_id: true } } },
-  });
-  if (!settlement) {
-    throw new AppError(404, "Settlement not found");
-  }
-  if (settlement.status !== "settled" && settlement.status !== "partially_paid") {
-    throw new AppError(400, "Only a statement with a payment recorded can be reverted");
-  }
+  // Read under the row lock: `wasSettled` decides whether the bundled
+  // collections get unwound, so reading it before an instalment commits would
+  // leave them marked paid against a statement that is pending again.
+  const { settlement: updated, wasSettled, riderId, vendorId } = await prisma.$transaction(async (tx) => {
+    await lockSettlement(tx, settlementId);
 
-  const previousPayments = toPaymentLines(settlement.payments);
-  const wasSettled = settlement.status === "settled";
-  // Kept for the audit entry: the instalments and proof rows are deleted below,
-  // so this is the only remaining record that they existed. The files stay on
-  // disk, so a revert done by mistake is recoverable from here.
-  const [previousInstalments, previousDocuments] = await Promise.all([
-    prisma.settlement_payments.findMany({
-      where: { settlement_id: settlementId },
-      orderBy: { paid_at: "asc" },
-    }),
-    prisma.settlement_documents.findMany({
-      where: { settlement_id: settlementId },
-      orderBy: { created_at: "asc" },
-    }),
-  ]);
+    const settlement = await tx.settlements.findUnique({
+      where: { id: settlementId },
+      include: { settlement_items: { select: { cod_collection_id: true } } },
+    });
+    if (!settlement) {
+      throw new AppError(404, "Settlement not found");
+    }
+    if (settlement.status !== "settled" && settlement.status !== "partially_paid") {
+      throw new AppError(400, "Only a statement with a payment recorded can be reverted");
+    }
 
-  const updated = await prisma.$transaction(async (tx) => {
+    const previousPayments = toPaymentLines(settlement.payments);
+    const wasSettled = settlement.status === "settled";
+    // Kept for the audit entry: the instalments and proof rows are deleted below,
+    // so this is the only remaining record that they existed. The files stay on
+    // disk, so a revert done by mistake is recoverable from here.
+    const [previousInstalments, previousDocuments] = await Promise.all([
+      tx.settlement_payments.findMany({
+        where: { settlement_id: settlementId },
+        orderBy: { paid_at: "asc" },
+      }),
+      tx.settlement_documents.findMany({
+        where: { settlement_id: settlementId },
+        orderBy: { created_at: "asc" },
+      }),
+    ]);
+
     const result = await tx.settlements.update({
       where: { id: settlementId },
       data: {
@@ -1458,18 +1535,18 @@ export async function revertSettlement(
       },
     });
 
-    return result;
-  });
+    return { settlement: result, wasSettled, riderId: settlement.rider_id, vendorId: settlement.vendor_id };
+  }, SETTLEMENT_TX_OPTIONS);
 
-  if (settlement.rider_id) {
-    await invalidateRiderFinanceCache(settlement.rider_id);
-  } else if (settlement.vendor_id) {
-    await invalidateVendorFinanceCache(settlement.vendor_id);
+  if (riderId) {
+    await invalidateRiderFinanceCache(riderId);
+  } else if (vendorId) {
+    await invalidateVendorFinanceCache(vendorId);
     // Undoing a completed payout credits the vendor's running account back, so
     // it can pull them back under a credit threshold just as a payout can push
     // them over it. Undoing a part payment doesn't move the balance, since it
     // never moved the collections. Fire-and-forget.
-    if (wasSettled) evaluateVendorBillingAsync(settlement.vendor_id);
+    if (wasSettled) evaluateVendorBillingAsync(vendorId);
   }
 
   return {
@@ -1598,20 +1675,25 @@ export async function cancelSettlement(
   settlementId: string,
   remark: string,
 ): Promise<CreateSettlementResult> {
-  const settlement = await prisma.settlements.findUnique({
-    where: { id: settlementId },
-    include: { settlement_items: { select: { cod_collection_id: true } } },
-  });
-  if (!settlement) {
-    throw new AppError(404, "Settlement not found");
-  }
-  if (settlement.status !== "pending") {
-    throw new AppError(400, "Only a pending statement can be cancelled");
-  }
+  // Under the row lock: "still pending" has to be true at the moment the items
+  // are deleted, not a moment earlier, or a statement that just took its first
+  // instalment loses the orders backing it.
+  const { settlement: updated, riderId, vendorId } = await prisma.$transaction(async (tx) => {
+    await lockSettlement(tx, settlementId);
 
-  const collectionIds = settlement.settlement_items.map((si) => si.cod_collection_id);
+    const settlement = await tx.settlements.findUnique({
+      where: { id: settlementId },
+      include: { settlement_items: { select: { cod_collection_id: true } } },
+    });
+    if (!settlement) {
+      throw new AppError(404, "Settlement not found");
+    }
+    if (settlement.status !== "pending") {
+      throw new AppError(400, "Only a pending statement can be cancelled");
+    }
 
-  const updated = await prisma.$transaction(async (tx) => {
+    const collectionIds = settlement.settlement_items.map((si) => si.cod_collection_id);
+
     await tx.settlement_items.deleteMany({ where: { settlement_id: settlementId } });
 
     const result = await tx.settlements.update({
@@ -1630,13 +1712,13 @@ export async function cancelSettlement(
       },
     });
 
-    return result;
-  });
+    return { settlement: result, riderId: settlement.rider_id, vendorId: settlement.vendor_id };
+  }, SETTLEMENT_TX_OPTIONS);
 
-  if (settlement.rider_id) {
-    await invalidateRiderFinanceCache(settlement.rider_id);
-  } else if (settlement.vendor_id) {
-    await invalidateVendorFinanceCache(settlement.vendor_id);
+  if (riderId) {
+    await invalidateRiderFinanceCache(riderId);
+  } else if (vendorId) {
+    await invalidateVendorFinanceCache(vendorId);
   }
 
   return {
