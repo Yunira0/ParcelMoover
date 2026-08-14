@@ -238,6 +238,70 @@
   color: var(--color-text-default); font-variant-numeric: tabular-nums;
 }
 
+/* Click-to-edit fields on the details card */
+.od-locked-hint {
+  display: flex; align-items: center; gap: var(--space-1-5);
+  font-size: var(--font-size-xs); color: var(--color-text-caption);
+  background: var(--color-background-canvas); border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-default); padding: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-4);
+}
+.od-locked-hint svg { flex-shrink: 0; color: var(--color-text-placeholder); }
+
+.od-editable {
+  display: inline-flex; align-items: center; gap: var(--space-1-5);
+  background: none; border: 0; padding: 0; margin: 0; cursor: pointer;
+  font: inherit; color: inherit; text-align: inherit;
+}
+.od-editable p { margin: 0; }
+.od-editable-icon {
+  color: var(--color-text-placeholder); flex-shrink: 0;
+  opacity: 0; transition: opacity 120ms ease;
+}
+.od-editable:hover .od-editable-icon,
+.od-editable:focus-visible .od-editable-icon { opacity: 1; }
+.od-editable:hover { color: var(--color-background-primary-default); }
+.od-editable:hover p,
+.od-editable:hover .od-route-city,
+.od-editable:hover .od-finance-value { color: var(--color-background-primary-default); }
+
+.od-editable-active {
+  display: inline-flex; align-items: center; gap: var(--space-1); flex-wrap: wrap;
+}
+
+.od-inline-input {
+  height: 26px; padding: 0 var(--space-2); min-width: 0;
+  border: 1px solid var(--color-border-default); border-radius: var(--border-radius-default);
+  background: var(--color-background-surface); color: var(--color-text-default);
+  font-family: var(--typography-font-family-default); font-size: var(--font-size-sm);
+  outline: none; width: 140px;
+}
+.od-inline-input:focus { border-color: var(--color-background-primary-default); box-shadow: var(--shadow-focus); }
+
+.od-inline-btn {
+  display: flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; padding: 0; flex-shrink: 0;
+  border: 1px solid var(--color-border-default); border-radius: var(--border-radius-default);
+  background: var(--color-background-surface); cursor: pointer; transition: all 120ms ease;
+}
+.od-inline-btn-confirm { color: var(--color-success-text); }
+.od-inline-btn-confirm:hover { background: var(--color-success-surface); border-color: var(--color-success-text); }
+.od-inline-btn-cancel { color: var(--color-text-caption); }
+.od-inline-btn-cancel:hover { background: var(--color-background-elevated); color: var(--color-text-default); }
+
+.od-inline-error {
+  flex-basis: 100%; font-size: var(--font-size-xs); color: var(--color-danger-text);
+}
+
+.od-cod-override-warning {
+  font-size: var(--font-size-xs); color: var(--color-warning-text);
+  background: var(--color-warning-surface); border-radius: var(--border-radius-default);
+  padding: var(--space-2) var(--space-3);
+}
+
+.od-editable-destination { align-items: flex-start; }
+.od-editable-destination .searchable-select-container { width: 220px; }
+
 /* ============================================================================
    Activity Section - Single Border Around Timeline + Remarks + Input
    ============================================================================ */
@@ -286,6 +350,12 @@
 }
 
 .od-section-action:hover { background: var(--color-background-canvas); }
+
+/* Second header inside a card that groups two log tables under one border
+   (Price Log + Redirect Log) - separates them from the table above. */
+.od-section-header-divided {
+  border-top: 1px solid var(--color-border-default);
+}
 
 /* ============================================================================
    Timeline
@@ -383,6 +453,13 @@
 }
 .od-timeline-item.timeline-warning .od-timeline-dot {
   border-color: var(--color-background-warning-default); color: var(--color-background-warning-default);
+}
+.od-timeline-item.timeline-warning .od-timeline-dot-terminal {
+  background: var(--color-background-warning-default);
+  border-color: var(--color-background-warning-default); color: white;
+}
+.od-timeline-item.timeline-edit .od-timeline-dot {
+  border-color: var(--color-border-default); color: var(--color-text-caption);
 }
 .od-timeline-item.od-timeline-current .od-timeline-dot {
   transform: scale(1.1);

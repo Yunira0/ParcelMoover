@@ -242,6 +242,7 @@ export const ADMIN_PERMISSIONS = [
   { code: 'KYC_ACCESS', label: 'KYC Applications', description: 'Review, approve and reject vendor KYC applications.' },
   { code: 'SYSTEM_LOGS_ACCESS', label: 'System Logs', description: 'Read the system audit logs, including who changed what across the app.' },
   { code: 'EDIT_SETTLEMENTS', label: 'Edit COD Statements', description: 'Correct an unsettled COD statement (add/remove orders) before it is paid out.' },
+  { code: 'EDIT_COD_LOCKED', label: 'Edit COD (any status)', description: 'Correct the COD amount on a delivered, returned-to-vendor, or RTO parcel, as long as it hasn’t been settled to the vendor yet.' },
 ] as const;
 
 export type AdminPermissionCode = (typeof ADMIN_PERMISSIONS)[number]['code'];

@@ -1,5 +1,5 @@
 import { Prisma } from "../generated/prisma/client";
-import { payment_status, settlement_status } from "../generated/prisma/enums";
+import { parcel_status, payment_status, settlement_status } from "../generated/prisma/enums";
 import prisma from "../lib/prisma";
 import redis, { scanAndDelete } from "../lib/redis";
 import { AppError } from "../utils/AppError";
@@ -209,6 +209,9 @@ export async function getPendingCodBill(actor: Actor, vendorIdParam?: string): P
       payment_status: payment_status.pending,
       collected_amount: { gt: 0 },
       settlement_items: { none: { settlements: { payee_type: "vendor" } } },
+      // A cancelled order is void - it must never be billed, even if cash was
+      // recorded as collected before the cancellation happened.
+      parcels: { status: { not: parcel_status.cancelled } },
     },
     include: {
       parcels: {
@@ -276,18 +279,24 @@ export async function listOrderCod(
   // An order's COD only exists once cash was actually collected, so this list
   // (and its settled/not-settled counts) is anchored on collected_amount - the
   // same honest basis the pending bill, unsettled pool and settlement payout use.
+  // A cancelled order is void - it must never be billed or counted as
+  // settled/unsettled, even if cash was recorded as collected before the
+  // cancellation happened.
+  const notCancelled: Prisma.cod_collectionsWhereInput = { parcels: { status: { not: parcel_status.cancelled } } };
+
   const where: Prisma.cod_collectionsWhereInput = {
     vendor_id: vendor.id,
     collected_amount: { gt: 0 },
     ...(statusFilter ? { payment_status: statusFilter } : {}),
+    ...notCancelled,
   };
 
   const [settledCount, notSettledCount, total, collections] = await Promise.all([
     prisma.cod_collections.count({
-      where: { vendor_id: vendor.id, collected_amount: { gt: 0 }, payment_status: payment_status.paid },
+      where: { vendor_id: vendor.id, collected_amount: { gt: 0 }, payment_status: payment_status.paid, ...notCancelled },
     }),
     prisma.cod_collections.count({
-      where: { vendor_id: vendor.id, collected_amount: { gt: 0 }, payment_status: payment_status.pending },
+      where: { vendor_id: vendor.id, collected_amount: { gt: 0 }, payment_status: payment_status.pending, ...notCancelled },
     }),
     prisma.cod_collections.count({ where }),
     prisma.cod_collections.findMany({
@@ -547,6 +556,11 @@ export async function getUnsettledOrders(
   // transition, so it's the honest "this needs to be settled" signal even when
   // the amount collected was corrected down to 0 (collected_amount > 0 would
   // wrongly hide those from the ledger instead of settling them at 0).
+  // A cancelled order is void - it must never surface as needing settlement,
+  // even if cash was recorded as collected before the cancellation happened
+  // (e.g. a super_admin force-cancelling an already-delivered parcel).
+  const notCancelled: Prisma.cod_collectionsWhereInput = { parcels: { status: { not: parcel_status.cancelled } } };
+
   const where: Prisma.cod_collectionsWhereInput = riderId
     ? {
         rider_id: riderId,
@@ -556,6 +570,7 @@ export async function getUnsettledOrders(
         // same collection independently, so this is scoped to rider statements
         // only - a vendor statement on this collection must not hide it here.
         settlement_items: { none: { settlements: { payee_type: "rider" } } },
+        ...notCancelled,
       }
     : {
         ...(vendorId ? { vendor_id: vendorId } : {}),
@@ -565,6 +580,7 @@ export async function getUnsettledOrders(
         collected_at: { not: null },
         // Not already bundled into a vendor statement (see rider leg note).
         settlement_items: { none: { settlements: { payee_type: "vendor" } } },
+        ...notCancelled,
       };
 
   const collections = await prisma.cod_collections.findMany({
@@ -576,6 +592,7 @@ export async function getUnsettledOrders(
           tracking_id: true,
           delivery_charge: true,
           order_type: true,
+          status: true,
           pickup_rider_id: true,
           delivery_rider_id: true,
           parties_parcels_receiver_idToparties: { select: { name: true, phone: true, address: true } },
@@ -592,12 +609,19 @@ export async function getUnsettledOrders(
 
   const items: UnsettledOrderItem[] = collections.map((c) => {
     const collected = Number(c.collected_amount);
+    // A parcel returned to the vendor - genuine return leg or a plain RTO
+    // bounce-back alike - is billed its delivery_charge same as any other
+    // settled order (see billing.service.ts's EARNED_CHARGE_SQL).
+    const isReturnToVendor =
+      c.parcels.order_type === "return" || c.parcels.status === parcel_status.returned_to_vendor;
     const deliveryCharge = Number(c.parcels.delivery_charge);
     // Both legs settle on the cash actually collected, which is less than the
     // declared COD on a partial delivery. Vendor leg owes (collected - delivery
-    // charge); rider leg owes exactly what they collected. The COD column shows
-    // the collected amount so the row reconciles (COD - charge = net payable).
-    const codAmount = collected;
+    // charge); rider leg owes exactly what they collected. codAmount is the
+    // declared COD due (informational); collectedAmount is what actually came
+    // in and is what netPayable is computed from.
+    const codAmount = Number(c.cod_amount);
+    const collectedAmount = collected;
     const netPayable = riderId ? collected : collected - deliveryCharge;
     // A rider's row can be either leg of the parcel - show wherever that leg
     // actually happened rather than always defaulting to one direction.
@@ -619,7 +643,9 @@ export async function getUnsettledOrders(
       destination: formatLocation(c.parcels.locations_parcels_destination_location_idTolocations),
       location,
       orderType: c.parcels.order_type,
+      isReturnToVendor,
       codAmount,
+      collectedAmount,
       deliveryCharge,
       netPayable,
     };
@@ -703,7 +729,9 @@ export async function createSettlement(
   }
 
   // Gross is the cash actually collected (not the declared COD, which overstates
-  // partial deliveries). Vendor payout is gross minus the delivery charge.
+  // partial deliveries). Vendor payout is gross minus the delivery charge -
+  // a parcel returned to the vendor (return leg or plain RTO bounce-back) is
+  // billed its delivery_charge same as any other settled order.
   const grossAmount = collections.reduce((sum, c) => sum + Number(c.collected_amount), 0);
   const payableAmount =
     payeeType === "rider"
@@ -1305,12 +1333,20 @@ export async function updateSettlement(
         ? { id: { in: toAddIds }, rider_id: targetId, rider_payment_status: payment_status.pending, collected_at: { not: null } }
         : { id: { in: toAddIds }, vendor_id: targetId, payment_status: payment_status.pending, collected_at: { not: null } };
 
+    // Read through `tx`, not `prisma`: these run under the statement's row lock
+    // (see lockSettlement), so they must be part of the same transaction.
     const [toAddCollections, keptCollections] = await Promise.all([
       toAddIds.length > 0
-        ? tx.cod_collections.findMany({ where: eligibleAddWhere, include: { parcels: { select: { delivery_charge: true } } } })
+        ? tx.cod_collections.findMany({
+            where: eligibleAddWhere,
+            include: { parcels: { select: { delivery_charge: true } } },
+          })
         : Promise.resolve([]),
       keptIds.length > 0
-        ? tx.cod_collections.findMany({ where: { id: { in: keptIds } }, include: { parcels: { select: { delivery_charge: true } } } })
+        ? tx.cod_collections.findMany({
+            where: { id: { in: keptIds } },
+            include: { parcels: { select: { delivery_charge: true } } },
+          })
         : Promise.resolve([]),
     ]);
 
@@ -1765,6 +1801,7 @@ export async function getSettlementDetail(actor: Actor, settlementId: string): P
                   delivery_charge: true,
                   delivered_at: true,
                   order_type: true,
+                  status: true,
                   pieces: true,
                   weight_kg: true,
                   pickup_rider_id: true,
@@ -1840,6 +1877,8 @@ export async function getSettlementDetail(actor: Actor, settlementId: string): P
             ? parcel.locations_parcels_destination_location_idTolocations?.name ?? null
             : null
         : null;
+    const isReturnToVendor =
+      parcel.order_type === "return" || parcel.status === parcel_status.returned_to_vendor;
     return {
       codCollectionId: si.cod_collection_id,
       orderNumber: parcel.order_number,
@@ -1852,6 +1891,7 @@ export async function getSettlementDetail(actor: Actor, settlementId: string): P
       vendorName: parcel.vendors?.business_name || parcel.vendors?.client_name || null,
       vendorPhone: parcel.vendors?.phone ?? null,
       orderType: parcel.order_type,
+      isReturnToVendor,
       pieces: parcel.pieces,
       weightKg: parcel.weight_kg === null ? null : Number(parcel.weight_kg),
       location,

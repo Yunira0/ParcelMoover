@@ -99,16 +99,25 @@ const DocumentCard: React.FC<{
   return (
     <div className="settlement-doc-view">
       {paymentCaption && <span className="settlement-doc-caption">{paymentCaption}</span>}
-      <a className="settlement-doc-frame" href={href} target="_blank" rel="noreferrer">
-        {document.isPdf ? (
-          <div className="settlement-doc-pdf">
-            <FileText size={28} />
-            Open PDF
-          </div>
-        ) : (
+      {/* A PDF previews inline rather than sitting behind a placeholder tile —
+          a tax invoice is usually the thing being checked, so making it
+          readable without leaving the page is the point. Images stay a link to
+          the full-size file. */}
+      {document.isPdf ? (
+        <div className="settlement-doc-frame settlement-doc-pdf-wrap">
+          <iframe className="settlement-doc-pdf-frame" src={href} title={label} />
+        </div>
+      ) : (
+        <a className="settlement-doc-frame" href={href} target="_blank" rel="noreferrer">
           <img src={href} alt={label} loading="lazy" />
-        )}
-      </a>
+        </a>
+      )}
+      {document.isPdf && (
+        <a className="settlement-doc-open-link" href={href} target="_blank" rel="noreferrer">
+          <FileText size={14} />
+          Open in new tab
+        </a>
+      )}
       {canManage && (
         <div className="settlement-doc-actions">
           <button type="button" className="settlement-attach-proof-btn" onClick={() => setReplacing(true)}>
@@ -694,7 +703,7 @@ const SettlementDetailPage: React.FC = () => {
                             )}
                           </td>
                           <td>
-                            {item.orderType === 'return' ? (
+                            {item.isReturnToVendor ? (
                               <StatusChip tone="info">RTV</StatusChip>
                             ) : (
                               <span style={{ textTransform: 'capitalize' }}>{item.orderType || '-'}</span>

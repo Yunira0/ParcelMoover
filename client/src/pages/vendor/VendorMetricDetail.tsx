@@ -49,10 +49,11 @@ const getStatusTone = (status: ParcelStatus): StatusChipTone => {
 
 // Mirrors the server's dashboard-summary counters (order.service.ts) so each
 // metric page lists exactly the orders its dashboard number counted.
-const IN_DELIVERY_STATUSES: ParcelStatus[] = [
-  'picked_up', 'arrived', 'dispatched', 'arrived_at_branch',
-  'ready_to_deliver', 'sent_for_delivery', 'oov',
-];
+// Matches IN_TRANSIT_STATUSES on the server exactly - do not add
+// picked_up/arrived here, those belong to PENDING_PICKUP_STATUSES below.
+const IN_DELIVERY_STATUSES: ParcelStatus[] = ['dispatched', 'oov'];
+// Matches PICKUP_PENDING_STATUSES on the server exactly.
+const PENDING_PICKUP_STATUSES: ParcelStatus[] = ['pickup_ordered', 'rider_assigned', 'picked_up', 'arrived'];
 // Return-workflow stages still in progress, i.e. not yet back with the
 // vendor (compare 'rtv-delivered', which is the terminal returned_to_vendor
 // status). Mirrors RETURN_IN_PROGRESS_STATUSES in order.service.ts.
@@ -90,7 +91,7 @@ export const METRICS: Record<string, MetricConfig> = {
   'pending-pickup': {
     label: 'Pending Pickup',
     description: 'Orders waiting to be picked up from you.',
-    status: ['pickup_ordered', 'rider_assigned'],
+    status: PENDING_PICKUP_STATUSES,
   },
   'return-process': {
     label: 'Return Process',

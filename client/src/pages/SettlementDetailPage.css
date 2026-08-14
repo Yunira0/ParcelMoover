@@ -54,15 +54,30 @@
   object-fit: contain;
 }
 
-.settlement-doc-pdf {
+.settlement-doc-pdf-wrap {
+  min-height: 70vh;
+  padding: 0;
+  width: 100%;
+}
+
+.settlement-doc-pdf-frame {
+  border: 0;
+  display: block;
+  height: 70vh;
+  width: 100%;
+}
+
+.settlement-doc-open-link {
   align-items: center;
-  color: var(--color-text-primary);
+  color: var(--color-text-caption);
   display: flex;
-  flex-direction: column;
   font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-medium);
-  gap: var(--space-2);
-  padding: var(--space-8) var(--space-10);
+  gap: var(--space-1-5);
+  text-decoration: none;
+}
+
+.settlement-doc-open-link:hover {
+  color: var(--color-primary);
 }
 
 .settlement-doc-empty {
@@ -126,6 +141,18 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-6);
+}
+
+/* The 70vh preview above is sized for one document filling the tab. Stacked in
+   the gallery that would be 70vh *each* — three instalment receipts and the
+   actions for any of them are a screen and a half apart. Each preview gets a
+   readable slice instead, with "Open in new tab" for the full-size read. */
+.settlement-doc-gallery .settlement-doc-pdf-wrap {
+  min-height: 0;
+}
+
+.settlement-doc-gallery .settlement-doc-pdf-frame {
+  height: 420px;
 }
 
 .settlement-doc-caption {

@@ -308,6 +308,7 @@ const SettlementCreatePage: React.FC = () => {
                       <th style={{ textAlign: 'left' }}>Order ID</th>
                       <th style={{ textAlign: 'left' }}>Tracking ID</th>
                       <th style={{ textAlign: 'left' }}>Receiver</th>
+                      <th style={{ textAlign: 'left' }}>Number</th>
                       <th style={{ textAlign: 'left' }}>Order Type</th>
                       <th style={{ textAlign: 'left' }}>{payeeType === 'vendor' ? 'Destination' : 'Location'}</th>
                       {/* Rider rows have no delivery-charge deduction, so COD and
@@ -340,13 +341,13 @@ const SettlementCreatePage: React.FC = () => {
                         <td className="scp-mono">{order.trackingId}</td>
                         <td>
                           {order.receiverName}
-                          <div className="scp-subtext">{order.receiverPhone}</div>
                           {order.receiverAddress && (
                             <div className="scp-subtext">{order.receiverAddress}</div>
                           )}
                         </td>
+                        <td className="scp-mono">{order.receiverPhone}</td>
                         <td>
-                          {order.orderType === 'return' ? (
+                          {order.isReturnToVendor ? (
                             <StatusChip tone="info">RTV</StatusChip>
                           ) : (
                             <span style={{ textTransform: 'capitalize' }}>{order.orderType}</span>
@@ -355,7 +356,7 @@ const SettlementCreatePage: React.FC = () => {
                         <td>{payeeType === 'vendor' ? order.destination || '-' : order.location || '-'}</td>
                         <td style={{ textAlign: 'right', fontWeight: payeeType === 'rider' ? 600 : undefined }}>
                           <div>COD: Rs. {order.codAmount.toLocaleString()}</div>
-                          <div className="scp-subtext">Collected: Rs. {order.codAmount.toLocaleString()}</div>
+                          <div className="scp-subtext">Collected: Rs. {order.collectedAmount.toLocaleString()}</div>
                         </td>
                         {payeeType === 'vendor' && (
                           <>
