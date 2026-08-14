@@ -56,6 +56,7 @@ import { getDeliveryQuote } from "./delivery-rate.service";
 import { getVendorQuote, getReturnDeliveryQuote, RateType, ServiceType } from "./pricing.service";
 import { resolveLabelSize } from "./vendorPrintSettings.service";
 import { HANDOFF_REMARK_PREFIX as NCM_HANDOFF_REMARK_PREFIX } from "./ncm.service";
+import { HANDOFF_REMARK_PREFIX as UPAYA_HANDOFF_REMARK_PREFIX } from "./upaya.service";
 
 // Maps a vendor row's branch-rate override columns to VendorRateOverrides keys.
 function branchOverrides(v: {
@@ -2902,13 +2903,17 @@ async function computeDashboardSummary(
             SELECT 1 FROM parcel_remarks pr
             WHERE pr.parcel_id = p.id AND pr.remark LIKE ${NCM_HANDOFF_REMARK_PREFIX + '%'}
           )) OR r.carrier_code = 'ncm'), 0) AS cod_from_ncm,
-        -- Cash Upaya collected on our behalf. Upaya has no API integration
-        -- yet, so every Upaya parcel goes through the "PM Rider U" placeholder
-        -- rider (r.carrier_code = 'upaya') - there's no handoff-remark
-        -- equivalent to fall back on. Same "clears via the vendor leg"
-        -- reasoning as NCM above.
+        -- Cash Upaya collected on our behalf. Two signals, same shape as NCM
+        -- above: the durable API handoff remark upaya.service.ts writes for
+        -- real API-driven handoffs, and the "PM Rider U" placeholder rider
+        -- (r.carrier_code = 'upaya') for parcels routed to Upaya manually,
+        -- from before the API integration existed. Same "clears via the
+        -- vendor leg" reasoning as NCM above.
         COALESCE(SUM(c.collected_amount - LEAST(c.remitted_amount, c.collected_amount))
-          FILTER (WHERE r.carrier_code = 'upaya'), 0) AS cod_from_upaya,
+          FILTER (WHERE (c.rider_id IS NULL AND EXISTS (
+            SELECT 1 FROM parcel_remarks pr
+            WHERE pr.parcel_id = p.id AND pr.remark LIKE ${UPAYA_HANDOFF_REMARK_PREFIX + '%'}
+          )) OR r.carrier_code = 'upaya'), 0) AS cod_from_upaya,
         COALESCE(SUM(p.delivery_charge) FILTER (WHERE c.payment_status::text = 'pending'), 0) AS pending_delivery_charge,
         COALESCE(SUM(p.delivery_charge), 0) AS total_delivery_charge
       FROM cod_collections c
@@ -3174,10 +3179,14 @@ export async function getCodSettlementDetail(
     ? Prisma.sql`AND c.rider_id = ${riderId}::uuid`
     : Prisma.empty;
 
-  // Same durable NCM signal as the dashboard summary above - see its comment.
+  // Same durable NCM/Upaya signals as the dashboard summary above - see its comment.
   const ncmHandoffExistsSql = Prisma.sql`EXISTS (
     SELECT 1 FROM parcel_remarks pr
     WHERE pr.parcel_id = p.id AND pr.remark LIKE ${NCM_HANDOFF_REMARK_PREFIX + "%"}
+  )`;
+  const upayaHandoffExistsSql = Prisma.sql`EXISTS (
+    SELECT 1 FROM parcel_remarks pr
+    WHERE pr.parcel_id = p.id AND pr.remark LIKE ${UPAYA_HANDOFF_REMARK_PREFIX + "%"}
   )`;
 
   // The "settled" leg is scope-dependent, exactly as in computeDashboardSummary:
@@ -3203,7 +3212,7 @@ export async function getCodSettlementDetail(
           : bucket === "ncm"
             ? Prisma.sql`AND ((c.rider_id IS NULL AND ${ncmHandoffExistsSql}) OR r.carrier_code = 'ncm') AND (c.collected_amount - LEAST(c.remitted_amount, c.collected_amount)) > 0`
             : bucket === "upaya"
-              ? Prisma.sql`AND r.carrier_code = 'upaya' AND (c.collected_amount - LEAST(c.remitted_amount, c.collected_amount)) > 0`
+              ? Prisma.sql`AND ((c.rider_id IS NULL AND ${upayaHandoffExistsSql}) OR r.carrier_code = 'upaya') AND (c.collected_amount - LEAST(c.remitted_amount, c.collected_amount)) > 0`
               : Prisma.empty; // 'total' and 'delivery-charge': every in-scope row
 
   // Each bucket's rows must add up to the exact figure on the card, so the

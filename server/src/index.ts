@@ -50,6 +50,7 @@ async function startServer() {
     console.log(generateTrackingId());
     verifyMailer();
     startNcmReconciliation();
+    startUpayaReconciliation();
     startKycDocumentPurge();
     startWebhookDelivery();
   });
@@ -102,6 +103,41 @@ function startNcmReconciliation() {
       console.error("[NCM] reconciliation sweep failed:", error);
     }
   }, NCM_RECONCILE_INTERVAL_MS).unref();
+}
+
+// Same reasoning as NCM above: Upaya webhooks may be missed, and there's no
+// documented bulk status endpoint to poll, so this sweeps in-flight parcels
+// one Track Order call at a time (bounded per sweep — see RECONCILE_BATCH in
+// upaya.service.ts).
+const UPAYA_RECONCILE_INTERVAL_MS = 30 * 60 * 1000;
+const UPAYA_RECONCILE_LOCK_KEY = "upaya:reconcile-lock";
+
+function startUpayaReconciliation() {
+  if (!process.env.UPAYA_BASE_URL || !process.env.UPAYA_API_KEY) return;
+
+  setInterval(async () => {
+    try {
+      const acquired = await redis.set(
+        UPAYA_RECONCILE_LOCK_KEY,
+        "1",
+        "EX",
+        Math.floor(UPAYA_RECONCILE_INTERVAL_MS / 1000) - 60,
+        "NX",
+      );
+      if (!acquired) return;
+    } catch {
+      // Redis down — run anyway; reconciliation is idempotent.
+    }
+    try {
+      const { reconcileUpayaStatuses } = await import("./services/upaya.service");
+      const result = await reconcileUpayaStatuses();
+      if (result.checked > 0) {
+        console.log(`[Upaya] reconciliation: checked ${result.checked}, applied ${result.applied}`);
+      }
+    } catch (error) {
+      console.error("[Upaya] reconciliation sweep failed:", error);
+    }
+  }, UPAYA_RECONCILE_INTERVAL_MS).unref();
 }
 
 // Rejected KYC applicants' documents (citizenship/PAN/business-cert scans)

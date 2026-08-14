@@ -18,6 +18,7 @@ import SlaRoutes from "./routes/sla.routes"
 import PickupTimeSlotsRoutes from "./routes/pickupTimeSlots.routes"
 import PaymentMethodRoutes from "./routes/payment-method.routes"
 import NcmRoutes from "./routes/ncm.routes"
+import UpayaRoutes from "./routes/upaya.routes"
 import ApiKeyRoutes from "./routes/apiKey.routes"
 import WebhookRoutes from "./routes/webhook.routes"
 import PublicApiRoutes from "./routes/publicApi.routes"
@@ -162,6 +163,10 @@ app.use("/api/payment-methods", PaymentMethodRoutes)
 
 // NCM (Nepal Can Move) 3PL integration — includes the public webhook receiver.
 app.use("/api/ncm", NcmRoutes)
+
+// Upaya 3PL integration (second outside-valley carrier, alongside NCM) —
+// includes the public webhook receiver.
+app.use("/api/upaya", UpayaRoutes)
 
 // Vendor self-service management of partner API keys (dashboard, JWT-authed).
 app.use("/api/api-keys", ApiKeyRoutes)

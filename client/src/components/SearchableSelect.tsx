@@ -18,6 +18,12 @@ interface SearchableSelectProps {
   disabled?: boolean;
 }
 
+// Caps DOM nodes rendered per open — without this, a large option set (e.g.
+// Upaya's ~5,700 delivery areas) renders every match as a button on open,
+// which is slow and mostly invisible below the fold anyway. Narrowing the
+// search shrinks the match set below the cap.
+const MAX_VISIBLE_OPTIONS = 50;
+
 const SearchableSelect: React.FC<SearchableSelectProps> = ({
   options,
   value,
@@ -54,6 +60,8 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
     option.label.toLowerCase().includes(normalizedQuery) ||
     (option.description?.toLowerCase().includes(normalizedQuery) ?? false),
   );
+  const visibleOptions = filteredOptions.slice(0, MAX_VISIBLE_OPTIONS);
+  const hiddenCount = filteredOptions.length - visibleOptions.length;
 
   // Wraps every case-insensitive occurrence of the query in <mark> so the user
   // sees why an option matched (e.g. the covered area they typed).
@@ -95,14 +103,14 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
   const handleSearchKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
     if (event.key === 'ArrowDown') {
       event.preventDefault();
-      setActiveIndex(i => Math.min(i + 1, filteredOptions.length - 1));
+      setActiveIndex(i => Math.min(i + 1, visibleOptions.length - 1));
     } else if (event.key === 'ArrowUp') {
       event.preventDefault();
       setActiveIndex(i => Math.max(i - 1, 0));
     } else if (event.key === 'Enter') {
       // Selects the highlighted option instead of submitting the parent form.
       event.preventDefault();
-      const option = filteredOptions[activeIndex];
+      const option = visibleOptions[activeIndex];
       if (option) handleSelect(option.id);
     } else if (event.key === 'Escape') {
       setIsOpen(false);
@@ -139,18 +147,25 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
           <div className="searchable-select-options" ref={optionsRef}>
             {filteredOptions.length === 0 ? (
               <p className="searchable-select-empty">{emptyMessage}</p>
-            ) : filteredOptions.map((option, index) => (
-              <button
-                key={option.id}
-                type="button"
-                className={`searchable-select-option ${option.id === value ? 'selected' : ''} ${index === activeIndex ? 'active' : ''}`}
-                onClick={() => handleSelect(option.id)}
-                onMouseEnter={() => setActiveIndex(index)}
-              >
-                <span>{highlight(option.label)}</span>
-                {option.description && <small>{highlight(option.description)}</small>}
-              </button>
-            ))}
+            ) : (
+              <>
+                {visibleOptions.map((option, index) => (
+                  <button
+                    key={option.id}
+                    type="button"
+                    className={`searchable-select-option ${option.id === value ? 'selected' : ''} ${index === activeIndex ? 'active' : ''}`}
+                    onClick={() => handleSelect(option.id)}
+                    onMouseEnter={() => setActiveIndex(index)}
+                  >
+                    <span>{highlight(option.label)}</span>
+                    {option.description && <small>{highlight(option.description)}</small>}
+                  </button>
+                ))}
+                {hiddenCount > 0 && (
+                  <p className="searchable-select-more">{hiddenCount} more — keep typing to narrow results</p>
+                )}
+              </>
+            )}
           </div>
         </div>
       )}
