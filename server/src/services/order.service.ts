@@ -3426,6 +3426,14 @@ async function _updateParcelStatusImpl(
 
   const currentStatus = parcel.status as ParcelStatus;
   const newStatus = data.status;
+  // An "un-delivery": the parcel is leaving delivered/partially_delivered for
+  // anything else (e.g. a super_admin force-status override back to
+  // ready_to_deliver, or the already-legal partially_delivered → follow_up).
+  // It no longer has cash-in-hand or a rider holding it, so those side
+  // effects from the original delivery need to roll back too.
+  const isUndelivery =
+    ["delivered", "partially_delivered"].includes(currentStatus) &&
+    !["delivered", "partially_delivered"].includes(newStatus);
 
   // Delivering an exchange order requires confirming the customer's exchange
   // (return) parcel was received to carry back. Riders cannot complete the
@@ -3629,6 +3637,22 @@ async function _updateParcelStatusImpl(
     );
   }
 
+  // An un-delivery must not silently blow away a COD that's already been
+  // swept into a paid settlement (rider or vendor leg) - that would desync
+  // the settlement ledger from what cod_collections says was collected.
+  if (isUndelivery) {
+    const cod = await prisma.cod_collections.findUnique({
+      where: { parcel_id: parcelId },
+      select: { rider_payment_status: true, payment_status: true },
+    });
+    if (cod?.rider_payment_status === "paid" || cod?.payment_status === "paid") {
+      throw new AppError(
+        409,
+        "This order's COD has already been settled — remove it from the settlement before undelivering.",
+      );
+    }
+  }
+
   const txOutcome = await prisma.$transaction(async (tx) => {
     let createdReturn: { id: string; trackingId: string } | null = null;
     const updateData: Prisma.parcelsUpdateInput = {
@@ -3648,6 +3672,21 @@ async function _updateParcelStatusImpl(
       (updateData as any).delivered_at = new Date();
       (updateData as any).partial_delivery_remarks = data.remarks || null;
       (updateData as any).partial_cod_collected = data.codCollected ?? 0;
+    }
+    // Side-effect: reverse a delivery. The parcel isn't actually with the
+    // customer or cash-in-hand anymore, so the delivery timestamp, partial-
+    // delivery data, the delivery rider's claim on this parcel, and the COD
+    // ledger's "collected" state all roll back with it. Guarded above against
+    // a COD that's already been swept into a paid settlement.
+    if (isUndelivery) {
+      (updateData as any).delivered_at = null;
+      (updateData as any).partial_delivery_remarks = null;
+      (updateData as any).partial_cod_collected = null;
+      (updateData as any).delivery_rider_id = null;
+      await tx.cod_collections.update({
+        where: { parcel_id: parcel.id },
+        data: { collected_amount: 0, collected_at: null, rider_id: null },
+      });
     }
     // Side-effect: update current_location_id
     if (data.locationId) {
@@ -4045,6 +4084,35 @@ async function _bulkUpdateParcelStatusImpl(
     }
   }
 
+  // Un-delivery: parcels in this batch that are leaving delivered/
+  // partially_delivered for anything else. newStatus is shared across the
+  // whole batch, so this is just a filter over each parcel's current status.
+  const undeliverIds = parcels
+    .filter(
+      (p) =>
+        ["delivered", "partially_delivered"].includes(p.status) &&
+        !["delivered", "partially_delivered"].includes(newStatus),
+    )
+    .map((p) => p.id);
+
+  // Same guard as the single-parcel path: don't blow away a COD that's
+  // already been swept into a paid settlement.
+  if (undeliverIds.length > 0) {
+    const settledCod = await prisma.cod_collections.findFirst({
+      where: {
+        parcel_id: { in: undeliverIds },
+        OR: [{ rider_payment_status: "paid" }, { payment_status: "paid" }],
+      },
+      include: { parcels: { select: { tracking_id: true } } },
+    });
+    if (settledCod) {
+      throw new AppError(
+        409,
+        `Order ${settledCod.parcels.tracking_id}'s COD has already been settled — remove it from the settlement before undelivering.`,
+      );
+    }
+  }
+
   let toLocationId: string | null = null;
   let originLocationId: string | null = null;
   let riderId: string | null = null;
@@ -4197,6 +4265,26 @@ async function _bulkUpdateParcelStatusImpl(
       where: { id: { in: ids } },
       data: updateData,
     });
+
+    // Side-effect: reverse a delivery for every un-delivered parcel in this
+    // batch - mirrors the single-parcel path. Scoped to undeliverIds, not
+    // ids, since not every parcel in a mixed batch is necessarily coming off
+    // delivered/partially_delivered.
+    if (undeliverIds.length > 0) {
+      await tx.parcels.updateMany({
+        where: { id: { in: undeliverIds } },
+        data: {
+          delivered_at: null,
+          partial_delivery_remarks: null,
+          partial_cod_collected: null,
+          delivery_rider_id: null,
+        },
+      });
+      await tx.cod_collections.updateMany({
+        where: { parcel_id: { in: undeliverIds } },
+        data: { collected_amount: 0, collected_at: null, rider_id: null },
+      });
+    }
 
     // Tag the COD record with whichever rider is now responsible for
     // collecting it, so rider-scoped COD/finance queries can find it -
