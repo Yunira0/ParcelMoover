@@ -1106,6 +1106,30 @@ export async function updateOrderDetails(
     }
   }
 
+  // Correcting COD on an already-delivered parcel (see canOverrideCodOnBlockedParcel
+  // above) must move the cash already recorded as collected by the same amount -
+  // otherwise the settlement ledger keeps showing the pre-correction figure as
+  // what was actually collected. Scoped to delivered/partially_delivered only:
+  // cancelled/returned_to_vendor/loss_and_damage parcels never had a real
+  // collection event, so their collected_amount (already 0) must stay untouched.
+  // Same "still pending" guard as the cod_amount write below - once the vendor
+  // leg is paid, the parcel's COD can no longer drift from what was settled.
+  let codSyncCollectedAmount: number | null = null;
+  if (
+    data.codAmount !== undefined &&
+    changedKeys.has("COD amount") &&
+    ["delivered", "partially_delivered"].includes(parcel.status)
+  ) {
+    const existingCod = await prisma.cod_collections.findUnique({
+      where: { parcel_id: parcel.id },
+      select: { collected_amount: true, payment_status: true },
+    });
+    if (existingCod && existingCod.payment_status === "pending") {
+      const delta = data.codAmount - Number(parcel.cod_amount);
+      codSyncCollectedAmount = Math.max(0, Math.min(data.codAmount, Number(existingCod.collected_amount) + delta));
+    }
+  }
+
   const updated = await prisma.$transaction(async (tx) => {
     let receiverId = parcel.receiver_id;
     let receiver = currentReceiver;
@@ -1204,6 +1228,7 @@ export async function updateOrderDetails(
           where: { parcel_id: parcel.id, payment_status: "pending" },
           data: {
             ...(data.codAmount !== undefined && changedKeys.has("COD amount") ? { cod_amount: data.codAmount } : {}),
+            ...(codSyncCollectedAmount !== null ? { collected_amount: codSyncCollectedAmount } : {}),
             ...(vendorChanged ? { vendor_id: newVendor!.id } : {}),
           },
         }),
