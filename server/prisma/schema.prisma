@@ -506,13 +506,21 @@ model settlements {
   vendor_id                            String?            @db.Uuid
   amount                               Decimal            @db.Decimal(12, 2)
   payable_amount                       Decimal?           @db.Decimal(12, 2)
+  // Sum of every instalment recorded so far (see settlement_payments). Equals
+  // ABS(payable_amount) once the statement is settled; anything between 0 and
+  // that means the statement is partially_paid.
+  paid_amount                          Decimal            @default(0) @db.Decimal(12, 2)
   settlement_date                      DateTime?          @db.Date
   status                               settlement_status  @default(pending)
   remark                               String?
+  // Roll-up of every instalment: a "Cash, eSewa" style summary and the flat
+  // list of {method, amount} lines across all of them. Kept for the statement
+  // header; settlement_payments is where the per-instalment truth lives.
   payment_method                       String?
   payments                             Json?
-  // Evidence captured when the payment is recorded: the transfer receipt and
-  // the tax invoice raised for it. Encrypted at rest like every other upload.
+  // Superseded by settlement_documents (a statement can now carry a receipt per
+  // instalment, plus extra pictures of the same one). Left in place so rows
+  // written before that change still resolve; nothing writes them any more.
   payment_receipt_path                 String?
   tax_invoice_path                     String?
   approved_by                          String?            @db.Uuid
@@ -520,6 +528,8 @@ model settlements {
   created_at                           DateTime           @default(now()) @db.Timestamptz(6)
   updated_at                           DateTime           @default(now()) @updatedAt @db.Timestamptz(6)
   settlement_items                     settlement_items[]
+  settlement_payments                  settlement_payments[]
+  settlement_documents                 settlement_documents[]
   users_settlements_approved_byTousers users?             @relation("settlements_approved_byTousers", fields: [approved_by], references: [id], onUpdate: NoAction)
   riders                               riders?            @relation(fields: [rider_id], references: [id], onUpdate: NoAction)
   users_settlements_settled_byTousers  users?             @relation("settlements_settled_byTousers", fields: [settled_by], references: [id], onUpdate: NoAction)
@@ -528,6 +538,56 @@ model settlements {
   @@index([approved_by], map: "idx_settlements_approved_by")
   @@index([settled_by], map: "idx_settlements_settled_by")
   @@index([settlement_date], map: "idx_settlements_settlement_date")
+}
+
+/// One instalment against a statement. A payout doesn't have to clear in a
+/// single act — Rs. 1,000 can go out today and Rs. 2,000 next week — so each
+/// act of paying gets its own row with its own date, methods and proof, rather
+/// than being flattened into the statement's roll-up where the second payment
+/// would erase the first one's story.
+model settlement_payments {
+  id                   String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  settlement_id        String                 @db.Uuid
+  /// Total of this instalment — the sum of `breakdown`.
+  amount               Decimal                @db.Decimal(12, 2)
+  /// Human summary of this instalment's methods, e.g. "Cash" or "Cash, eSewa".
+  method               String
+  /// The {method, amount} lines making up this instalment: one payment can
+  /// still be split across methods (part cash, part bank) in a single act.
+  breakdown            Json
+  remark               String?
+  paid_at              DateTime               @default(now()) @db.Timestamptz(6)
+  recorded_by          String?                @db.Uuid
+  created_at           DateTime               @default(now()) @db.Timestamptz(6)
+  settlements          settlements            @relation(fields: [settlement_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users                users?                 @relation("settlement_payments_recorded_byTousers", fields: [recorded_by], references: [id], onUpdate: NoAction)
+  settlement_documents settlement_documents[]
+
+  @@index([settlement_id], map: "idx_settlement_payments_settlement_id")
+}
+
+/// Payment evidence. One row per uploaded file, so a statement can hold a
+/// receipt for each instalment plus several pictures of the same transfer —
+/// the single payment_receipt_path column could only ever hold the last one.
+/// `settlement_payment_id` says which instalment the file proves; null means
+/// it belongs to the statement as a whole (e.g. a tax invoice covering the
+/// full payout, or a file attached before instalments were tracked).
+model settlement_documents {
+  id                    String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  settlement_id         String               @db.Uuid
+  settlement_payment_id String?              @db.Uuid
+  /// "receipt" | "tax_invoice"
+  kind                  String
+  /// Relative path under /uploads, encrypted at rest like every other upload.
+  file_path             String
+  uploaded_by           String?              @db.Uuid
+  created_at            DateTime             @default(now()) @db.Timestamptz(6)
+  settlements           settlements          @relation(fields: [settlement_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  settlement_payments   settlement_payments? @relation(fields: [settlement_payment_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users                 users?               @relation("settlement_documents_uploaded_byTousers", fields: [uploaded_by], references: [id], onUpdate: NoAction)
+
+  @@index([settlement_id, kind], map: "idx_settlement_documents_settlement_kind")
+  @@index([settlement_payment_id], map: "idx_settlement_documents_payment_id")
 }
 
 model support_tickets {
@@ -595,6 +655,8 @@ model users {
   run_sheets                                             run_sheets[]
   settlements_settlements_approved_byTousers             settlements[]           @relation("settlements_approved_byTousers")
   settlements_settlements_settled_byTousers              settlements[]           @relation("settlements_settled_byTousers")
+  settlement_payments_recorded_by                        settlement_payments[]   @relation("settlement_payments_recorded_byTousers")
+  settlement_documents_uploaded_by                       settlement_documents[]  @relation("settlement_documents_uploaded_byTousers")
   vendor_payments_submitted_by                           vendor_payments[]       @relation("vendor_payments_submitted_byTousers")
   vendor_payments_reviewed_by                            vendor_payments[]       @relation("vendor_payments_reviewed_byTousers")
   support_tickets_support_tickets_assigned_toTousers     support_tickets[]       @relation("support_tickets_assigned_toTousers")
@@ -917,6 +979,10 @@ enum service_type {
 enum settlement_status {
   pending
   settled
+  // Some money has been recorded against the statement but not all of it —
+  // e.g. Rs. 1,000 of a Rs. 3,000 payout paid today, the rest next week. The
+  // bundled orders stay earmarked (and unpaid) until the balance clears.
+  partially_paid
   cancelled
 }
 

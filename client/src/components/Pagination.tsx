@@ -33,13 +33,17 @@ interface PaginationProps {
   pageSize?: number;
   /** Called when the user picks a different rows-per-page value. */
   onPageSizeChange?: (size: number) => void;
-  /** Options offered in the rows-per-page selector. Defaults to 10/20/50/100. */
+  /** Options offered in the rows-per-page selector. Defaults to 10/20/50/100/500. */
   pageSizeOptions?: number[];
   /** Noun shown next to the selector, e.g. "parcels". Defaults to "rows". */
   pageSizeLabel?: string;
 }
 
-const DEFAULT_PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
+// 500 is the largest page any list serves — every paginated endpoint's
+// MAX_PAGE_SIZE is at least that, and lists that page client-side already hold
+// the whole set in memory. Don't add a bigger number without raising those too,
+// or the option silently returns fewer rows than it promises.
+const DEFAULT_PAGE_SIZE_OPTIONS = [10, 20, 50, 100, 500];
 
 const Pagination: React.FC<PaginationProps> = ({
   page,

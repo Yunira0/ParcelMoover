@@ -59,6 +59,9 @@ export interface OrderCodListResponse {
 
 export type PayeeType = 'rider' | 'vendor';
 
+/** `partially_paid` means some money is on record but the payee is still owed the rest. */
+export type SettlementStatus = 'pending' | 'settled' | 'partially_paid' | 'cancelled';
+
 export interface SettlementListItem {
   id: string;
   statementId: string;
@@ -72,7 +75,9 @@ export interface SettlementListItem {
   createdAt: string;
   orderCount: number;
   amount: number;
-  status: 'pending' | 'settled' | 'cancelled';
+  status: SettlementStatus;
+  /** Recorded so far — between 0 and `amount` while partially paid. */
+  paidAmount: number;
   remark: string | null;
 }
 
@@ -98,7 +103,8 @@ export const getOrderCod = async (
   return response.data;
 };
 
-export type SettlementStatusFilter = 'pending' | 'settled' | 'cancelled';
+export type SettlementStatusFilter = SettlementStatus;
+
 
 export const getSettlements = async (
   payeeType: PayeeType,
@@ -148,8 +154,14 @@ export interface CreateSettlementResponse {
   amount: number;
   payableAmount: number;
   settlementDate: string | null;
-  status: 'pending' | 'settled' | 'cancelled';
+  status: SettlementStatus;
   remark: string | null;
+  /** Total recorded across every instalment so far. */
+  paidAmount: number;
+  /** What the payee is still owed — 0 once the statement is settled. */
+  remainingAmount: number;
+  /** The instalment a `paySettlement` call created, so its proof can be attached to it. */
+  paymentId?: string;
 }
 
 export const createSettlement = async (
@@ -160,12 +172,22 @@ export const createSettlement = async (
 };
 
 export interface PaySettlementDocuments {
-  /** Screenshot/PDF of the transfer confirmation. */
-  paymentReceipt?: File | null;
-  /** Tax invoice raised against this payout. */
-  taxInvoice?: File | null;
+  /** Screenshots/PDFs of the transfer confirmation. Several are allowed — a transfer can be photographed more than once. */
+  paymentReceipt?: File | File[] | null;
+  /** Tax invoice(s) raised against this payout. */
+  taxInvoice?: File | File[] | null;
 }
 
+const appendFiles = (form: FormData, field: string, value: File | File[] | null | undefined) => {
+  if (!value) return;
+  for (const file of Array.isArray(value) ? value : [value]) {
+    form.append(field, file);
+  }
+};
+
+// Records one payment against a statement. The total may be less than what's
+// outstanding — the statement then comes back `partially_paid` and this can be
+// called again for the balance.
 export const paySettlement = async (
   id: string,
   payments: SettlementPayment[],
@@ -178,8 +200,8 @@ export const paySettlement = async (
   form.append('payments', JSON.stringify(payments));
   // Omit rather than send "" - the field is optional server-side.
   if (remark?.trim()) form.append('remark', remark.trim());
-  if (documents?.paymentReceipt) form.append('paymentReceipt', documents.paymentReceipt);
-  if (documents?.taxInvoice) form.append('taxInvoice', documents.taxInvoice);
+  appendFiles(form, 'paymentReceipt', documents?.paymentReceipt);
+  appendFiles(form, 'taxInvoice', documents?.taxInvoice);
 
   // The header override is required, not cosmetic: the api instance defaults to
   // Content-Type: application/json, and axios serialises FormData to JSON when
@@ -193,19 +215,60 @@ export const paySettlement = async (
   return response.data;
 };
 
+export interface SettlementDocument {
+  id: string;
+  kind: 'receipt' | 'tax_invoice';
+  /** Which instalment this file proves; null when it covers the statement as a whole. */
+  paymentId: string | null;
+  /** Render a PDF placeholder rather than a broken <img> when true. */
+  isPdf: boolean;
+  uploadedAt: string;
+}
+
+/** One act of paying: its methods, amount, date and its own proof. */
+export interface SettlementPaymentRecord {
+  id: string;
+  amount: number;
+  method: string;
+  breakdown: SettlementPayment[];
+  remark: string | null;
+  paidAt: string;
+  documents: SettlementDocument[];
+}
+
+export interface AttachSettlementDocumentOptions {
+  /** Tie the files to one instalment. Omit to attach them to the statement as a whole. */
+  paymentId?: string;
+  /** Swap the file behind an existing document instead of adding another. Only valid with one file. */
+  replaceDocumentId?: string;
+}
+
 // Follow-up step after paySettlement — attaches the receipt/invoice as proof
-// once the payout is already on record. Either file may be sent alone.
+// once the payout is already on record. Either file may be sent alone, and each
+// call adds to what's already there rather than replacing it, so a statement
+// paid in instalments ends up with a receipt per instalment.
 export const attachSettlementDocuments = async (
   id: string,
   documents: PaySettlementDocuments,
-): Promise<{ success: boolean; message: string; data: { id: string; paymentReceiptPath: string | null; taxInvoicePath: string | null } }> => {
+  options: AttachSettlementDocumentOptions = {},
+): Promise<{ success: boolean; message: string; data: { id: string; documents: SettlementDocument[] } }> => {
   const form = new FormData();
-  if (documents.paymentReceipt) form.append('paymentReceipt', documents.paymentReceipt);
-  if (documents.taxInvoice) form.append('taxInvoice', documents.taxInvoice);
+  appendFiles(form, 'paymentReceipt', documents.paymentReceipt);
+  appendFiles(form, 'taxInvoice', documents.taxInvoice);
+  if (options.paymentId) form.append('paymentId', options.paymentId);
+  if (options.replaceDocumentId) form.append('replaceDocumentId', options.replaceDocumentId);
 
   const response = await api.patch(`/finance/settlements/${id}/documents`, form, {
     headers: { 'Content-Type': 'multipart/form-data' },
   });
+  return response.data;
+};
+
+export const deleteSettlementDocument = async (
+  id: string,
+  documentId: string,
+): Promise<{ success: boolean; message: string; data: { id: string; documents: SettlementDocument[] } }> => {
+  const response = await api.delete(`/finance/settlements/${id}/documents/${documentId}`);
   return response.data;
 };
 
@@ -282,10 +345,19 @@ export interface SettlementDetail {
   createdAt: string;
   amount: number;
   payableAmount: number;
-  status: 'pending' | 'settled' | 'cancelled';
+  /** Total recorded so far across every instalment. */
+  paidAmount: number;
+  /** What the payee is still owed. */
+  remainingAmount: number;
+  status: SettlementStatus;
   paymentMethod: string | null;
   payments: SettlementPayment[];
+  /** Each act of paying, oldest first, with the proof attached to it. */
+  paymentRecords: SettlementPaymentRecord[];
+  /** Every proof on this statement, including any not tied to an instalment. */
+  documents: SettlementDocument[];
   remark: string | null;
+  /** Newest document of each kind. Null when none is attached. */
   paymentReceiptPath: string | null;
   taxInvoicePath: string | null;
   items: SettlementDetailItem[];

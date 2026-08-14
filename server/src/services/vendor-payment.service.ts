@@ -15,7 +15,8 @@ import { invalidateVendorFinanceCache } from "./finance.service";
 
 type Actor = { id: string; roles: string[] };
 
-const MAX_PAGE_SIZE = 100;
+// 500 so the list can offer the same largest page as every other screen.
+const MAX_PAGE_SIZE = 500;
 const DEFAULT_PAGE_SIZE = 20;
 
 export type VendorPaymentStatusFilter = "pending" | "verified" | "rejected";

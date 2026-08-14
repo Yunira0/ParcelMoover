@@ -126,7 +126,8 @@ async function resolveLastActivityByParcel(
 }
 
 const DEFAULT_PAGE_SIZE = 20;
-const MAX_PAGE_SIZE = 100;
+// 500 so the list can offer the same largest page as every other screen.
+const MAX_PAGE_SIZE = 500;
 
 // Author filters for "unclosed comments": only remarks raised by a vendor
 // (owner/staff) or a rider — not internal admin/staff notes. The two groups get

@@ -106,3 +106,17 @@
     width: 100%;
   }
 }
+
+/* Status cell: the chip, plus how far a part payment has got. Stacked so the
+   progress line doesn't stretch the column when it isn't there. */
+.finance-status-cell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.finance-status-sub {
+  color: var(--color-text-caption);
+  font-feature-settings: 'tnum';
+  font-size: var(--font-size-xs);
+}

@@ -16,7 +16,9 @@ import {
   CreateSettlementInput,
   CreateSettlementResult,
   PaySettlementInput,
+  SettlementDocumentResult,
   SettlementPaymentInput,
+  SettlementPaymentRecordResult,
   OrderCodItem,
   OrderCodListResult,
   PendingCodBill,
@@ -32,7 +34,12 @@ import {
 
 type Actor = { id: string; roles: string[] };
 
-const MAX_PAGE_SIZE = 100;
+// Raised from 100 so the statement lists can offer a 500-row page. Reconciling
+// a month of payouts means scanning them all at once; paging through 5 screens
+// of 100 loses your place. The list query stays linear in rows (Prisma loads
+// the relations as a handful of queries, not one per row), so 500 costs about
+// 5x a page of 100 rather than blowing up.
+const MAX_PAGE_SIZE = 500;
 const DEFAULT_PAGE_SIZE = 20;
 
 // Same read-heavy, cache-worthy profile as the (already cached) dashboard
@@ -459,6 +466,7 @@ export async function listSettlements(
       orderCount: s.settlement_items.length,
       amount: Number(s.payable_amount ?? s.amount),
       status: s.status,
+      paidAmount: Number(s.paid_amount),
       remark: s.remark,
     };
   });
@@ -773,18 +781,54 @@ export async function createSettlement(
     paymentMethod: settlement.payment_method,
     payments: [],
     remark: settlement.remark,
+    paidAmount: 0,
+    remainingAmount: Math.abs(payableAmount),
   };
 }
 
-// Admin-only: records payment against a pending statement and flips it to
-// settled. Payments may be split across methods (e.g. part cash, part online)
-// but the total must match exactly what's payable - no under/over payment.
+// Money here is Decimal(12,2) in the database but plain floats in transit, so
+// every running total is snapped back to paisa before it's compared. Without
+// this, 1000 + 2000.00000000001 never equals 3000 and a fully-paid statement
+// would sit at partially_paid forever.
+const round2 = (value: number): number => Math.round(value * 100) / 100;
+
+// `breakdown` / `payments` are Json columns, so anything could be in there -
+// including nulls from rows written before the column existed.
+function toPaymentLines(value: Prisma.JsonValue | null): SettlementPaymentInput[] {
+  return Array.isArray(value) ? (value as unknown as SettlementPaymentInput[]) : [];
+}
+
+const isPdfPath = (filePath: string): boolean => filePath.toLowerCase().endsWith(".pdf");
+
+function toDocumentResult(doc: {
+  id: string;
+  kind: string;
+  settlement_payment_id: string | null;
+  file_path: string;
+  created_at: Date;
+}): SettlementDocumentResult {
+  return {
+    id: doc.id,
+    kind: doc.kind === "tax_invoice" ? "tax_invoice" : "receipt",
+    paymentId: doc.settlement_payment_id,
+    isPdf: isPdfPath(doc.file_path),
+    uploadedAt: doc.created_at.toISOString(),
+  };
+}
+
+// Admin-only: records one payment against a statement. A single call may split
+// the money across methods (e.g. part cash, part online), and may pay only part
+// of what's owed - Rs. 1,000 now and Rs. 2,000 next week is two calls, each
+// leaving its own instalment row with its own date and evidence. The statement
+// only flips to settled once the instalments add up to the full amount; until
+// then it sits at partially_paid and the bundled orders stay unpaid, because a
+// half-received payout hasn't actually cleared any individual order.
 export async function payForSettlement(
   actor: Actor,
   settlementId: string,
   input: PaySettlementInput,
 ): Promise<CreateSettlementResult> {
-  const { payments, remark, paymentReceiptPath, taxInvoicePath } = input;
+  const { payments, remark, paymentReceiptPaths, taxInvoicePaths } = input;
 
   if (!payments || payments.length === 0) {
     throw new AppError(400, "At least one payment is required");
@@ -809,6 +853,7 @@ export async function payForSettlement(
       settlement_items: {
         include: { cod_collections: { select: { id: true, collected_amount: true } } },
       },
+      settlement_payments: { orderBy: { paid_at: "asc" } },
     },
   });
   if (!settlement) {
@@ -816,6 +861,9 @@ export async function payForSettlement(
   }
   if (settlement.status === "settled") {
     throw new AppError(400, "This settlement has already been paid");
+  }
+  if (settlement.status === "cancelled") {
+    throw new AppError(400, "This settlement has been cancelled");
   }
 
   const payableAmount = Number(settlement.payable_amount ?? settlement.amount);
@@ -825,63 +873,119 @@ export async function payForSettlement(
   // total the absolute amount owed. (Rider legs are always >= 0.)
   const vendorOwesOffice = payableAmount < 0;
   const expectedTotal = Math.abs(payableAmount);
-  const paidTotal = payments.reduce((sum, p) => sum + p.amount, 0);
-  if (Math.round(paidTotal * 100) !== Math.round(expectedTotal * 100)) {
+  const alreadyPaid = Number(settlement.paid_amount);
+  const outstanding = round2(expectedTotal - alreadyPaid);
+  const paidTotal = round2(payments.reduce((sum, p) => sum + p.amount, 0));
+
+  // A statement can legitimately total Rs. 0 (every bundled order corrected to
+  // zero COD), and closing it still deserves a record of how - so a zero-amount
+  // instalment is only rejected when there is actually money outstanding.
+  if (paidTotal <= 0 && expectedTotal > 0) {
+    throw new AppError(400, "Payment amount must be greater than zero");
+  }
+  if (paidTotal > outstanding) {
     throw new AppError(
       400,
-      vendorOwesOffice
-        ? `Payment total (Rs. ${paidTotal}) must equal the amount owed by the vendor (Rs. ${expectedTotal})`
-        : `Payment total (Rs. ${paidTotal}) must equal the payable amount (Rs. ${expectedTotal})`,
+      alreadyPaid > 0
+        ? `Payment total (Rs. ${paidTotal}) is more than the Rs. ${outstanding} still outstanding on this statement`
+        : vendorOwesOffice
+          ? `Payment total (Rs. ${paidTotal}) is more than the Rs. ${expectedTotal} owed by the vendor`
+          : `Payment total (Rs. ${paidTotal}) is more than the payable amount (Rs. ${expectedTotal})`,
     );
   }
-  const paymentMethodSummary = Array.from(new Set(payments.map((p) => p.method))).join(", ");
 
-  const updated = await prisma.$transaction(async (tx) => {
-    const result = await tx.settlements.update({
-      where: { id: settlementId },
+  const newPaidTotal = round2(alreadyPaid + paidTotal);
+  const fullySettled = round2(expectedTotal - newPaidTotal) === 0;
+  const instalmentMethodSummary = Array.from(new Set(payments.map((p) => p.method))).join(", ");
+  // The statement header keeps showing every line ever recorded against it,
+  // across instalments - so a statement paid Rs. 1,000 cash then Rs. 2,000 by
+  // bank still reads "Cash, Bank" rather than only the most recent method.
+  const allPayments = [
+    ...settlement.settlement_payments.flatMap((sp) => toPaymentLines(sp.breakdown)),
+    ...payments,
+  ];
+  const paymentMethodSummary = Array.from(new Set(allPayments.map((p) => p.method))).join(", ");
+
+  const { settlement: updated, payment: instalment } = await prisma.$transaction(async (tx) => {
+    const payment = await tx.settlement_payments.create({
       data: {
-        status: "settled",
-        payment_method: paymentMethodSummary,
-        payments: payments as unknown as Prisma.InputJsonValue,
-        // Optional: store null rather than "" so the UI's `remark && ...` checks
-        // treat "no remark" the same as a statement that never had one.
+        settlement_id: settlementId,
+        amount: paidTotal,
+        method: instalmentMethodSummary,
+        breakdown: payments as unknown as Prisma.InputJsonValue,
         remark: remark?.trim() || null,
-        payment_receipt_path: paymentReceiptPath ?? null,
-        tax_invoice_path: taxInvoicePath ?? null,
-        settled_by: actor.id,
+        recorded_by: actor.id,
       },
     });
 
-    // Money has now actually moved, so mark each bundled collection paid on the
-    // relevant leg. remitted_amount / rider_remitted_amount vary per row (each
-    // equals that row's collected_amount - the cash actually collected), so
-    // this can't be a single shared updateMany.
-    const settledAt = new Date();
-    if (settlement.payee_type === "rider") {
-      await Promise.all(
-        settlement.settlement_items.map((si) =>
-          tx.cod_collections.update({
-            where: { id: si.cod_collection_id },
-            data: {
-              rider_payment_status: payment_status.paid,
-              rider_remitted_amount: si.cod_collections.collected_amount,
-              rider_settled_at: settledAt,
-            },
-          }),
-        ),
-      );
-    } else {
-      await Promise.all(
-        settlement.settlement_items.map((si) =>
-          tx.cod_collections.update({
-            where: { id: si.cod_collection_id },
-            data: {
-              payment_status: payment_status.paid,
-              remitted_amount: si.cod_collections.collected_amount,
-            },
-          }),
-        ),
-      );
+    const documentRows = [
+      ...(paymentReceiptPaths ?? []).map((filePath) => ({ kind: "receipt", filePath })),
+      ...(taxInvoicePaths ?? []).map((filePath) => ({ kind: "tax_invoice", filePath })),
+    ];
+    if (documentRows.length > 0) {
+      await tx.settlement_documents.createMany({
+        data: documentRows.map((doc) => ({
+          settlement_id: settlementId,
+          settlement_payment_id: payment.id,
+          kind: doc.kind,
+          file_path: doc.filePath,
+          uploaded_by: actor.id,
+        })),
+      });
+    }
+
+    const result = await tx.settlements.update({
+      where: { id: settlementId },
+      data: {
+        status: fullySettled ? "settled" : "partially_paid",
+        payment_method: paymentMethodSummary,
+        payments: allPayments as unknown as Prisma.InputJsonValue,
+        paid_amount: newPaidTotal,
+        // Optional: store null rather than "" so the UI's `remark && ...` checks
+        // treat "no remark" the same as a statement that never had one. An
+        // instalment without its own note leaves the statement's note alone.
+        ...(remark?.trim() ? { remark: remark.trim() } : {}),
+        // Only a completed payout has a "settled by" - a part payment leaves
+        // the statement open, so attributing it here would be a lie the revert
+        // path would then have to undo.
+        ...(fullySettled ? { settled_by: actor.id } : {}),
+      },
+    });
+
+    // Only once the payout has cleared in full does the money behind each
+    // bundled collection count as remitted: a part payment can't be assigned
+    // to particular orders, so marking any of them paid would overstate it.
+    // remitted_amount / rider_remitted_amount vary per row (each equals that
+    // row's collected_amount - the cash actually collected), so this can't be
+    // a single shared updateMany.
+    if (fullySettled) {
+      const settledAt = new Date();
+      if (settlement.payee_type === "rider") {
+        await Promise.all(
+          settlement.settlement_items.map((si) =>
+            tx.cod_collections.update({
+              where: { id: si.cod_collection_id },
+              data: {
+                rider_payment_status: payment_status.paid,
+                rider_remitted_amount: si.cod_collections.collected_amount,
+                rider_settled_at: settledAt,
+              },
+            }),
+          ),
+        );
+      } else {
+        await Promise.all(
+          settlement.settlement_items.map((si) =>
+            tx.cod_collections.update({
+              where: { id: si.cod_collection_id },
+              data: {
+                payment_status: payment_status.paid,
+                remitted_amount: si.cod_collections.collected_amount,
+              },
+            }),
+          ),
+        );
+      }
     }
 
     await tx.audit_logs.create({
@@ -889,21 +993,30 @@ export async function payForSettlement(
         actor_id: actor.id,
         entity_type: "settlement",
         entity_id: settlementId,
-        action: "PAY_SETTLEMENT",
-        new_data: { statementId: result.statement_id, paymentMethod: paymentMethodSummary, payableAmount },
+        action: fullySettled ? "PAY_SETTLEMENT" : "PART_PAY_SETTLEMENT",
+        new_data: {
+          statementId: result.statement_id,
+          paymentMethod: instalmentMethodSummary,
+          amount: paidTotal,
+          paidAmount: newPaidTotal,
+          payableAmount,
+          status: result.status,
+        },
       },
     });
 
-    return result;
+    return { settlement: result, payment };
   });
 
   if (settlement.rider_id) {
     await invalidateRiderFinanceCache(settlement.rider_id);
   } else if (settlement.vendor_id) {
     await invalidateVendorFinanceCache(settlement.vendor_id);
-    // A payout debits the vendor's running account, so it can push them across
-    // a credit threshold just as a delivery can. Fire-and-forget.
-    evaluateVendorBillingAsync(settlement.vendor_id);
+    // A completed payout debits the vendor's running account, so it can push
+    // them across a credit threshold just as a delivery can. A part payment
+    // doesn't - the balance is derived from the collections above, which only
+    // move once the payout clears. Fire-and-forget.
+    if (fullySettled) evaluateVendorBillingAsync(settlement.vendor_id);
   }
 
   return {
@@ -915,65 +1028,162 @@ export async function payForSettlement(
     settlementDate: updated.settlement_date ? formatNepalDate(updated.settlement_date) : null,
     status: updated.status,
     paymentMethod: updated.payment_method,
-    payments,
+    payments: allPayments,
     remark: updated.remark,
+    paidAmount: newPaidTotal,
+    remainingAmount: round2(expectedTotal - newPaidTotal),
+    paymentId: instalment.id,
   };
 }
 
-// Admin-only: attaches payment proof (receipt/tax invoice) to a statement
-// that's already been paid via payForSettlement. Deliberately a separate step
-// from paying - the proof is evidence the transfer happened, so it only makes
-// sense once the payment itself is on record, and staff shouldn't have to
-// have the file in hand at the moment they submit the payment amounts.
-// Either document may be sent alone; an omitted field leaves the other's
-// existing value untouched (so the receipt and invoice can be uploaded in
-// separate visits).
+// Admin-only: attaches payment proof (receipt/tax invoice) to a statement that
+// already has money recorded against it. Deliberately a separate step from
+// paying - the proof is evidence the transfer happened, so it only makes sense
+// once the payment itself is on record, and staff shouldn't have to have the
+// file in hand at the moment they submit the payment amounts.
+//
+// Every uploaded file becomes its own row, so this adds to what's there rather
+// than replacing it: a statement paid in instalments ends up with a receipt per
+// instalment, and a single transfer photographed twice keeps both pictures.
+// Pass `replaceDocumentId` for the one case that genuinely is a replacement -
+// swapping out a wrong or unreadable file.
 export async function attachSettlementDocuments(
   actor: Actor,
   settlementId: string,
   input: AttachSettlementDocumentsInput,
-): Promise<{ id: string; paymentReceiptPath: string | null; taxInvoicePath: string | null }> {
-  const { paymentReceiptPath, taxInvoicePath } = input;
-  if (paymentReceiptPath === undefined && taxInvoicePath === undefined) {
+): Promise<{ id: string; documents: SettlementDocumentResult[] }> {
+  const { paymentReceiptPaths = [], taxInvoicePaths = [], paymentId, replaceDocumentId } = input;
+  const incoming = [
+    ...paymentReceiptPaths.map((filePath) => ({ kind: "receipt" as const, filePath })),
+    ...taxInvoicePaths.map((filePath) => ({ kind: "tax_invoice" as const, filePath })),
+  ];
+  if (incoming.length === 0) {
     throw new AppError(400, "At least one document is required");
+  }
+  if (replaceDocumentId && incoming.length > 1) {
+    throw new AppError(400, "Only one file can be uploaded when replacing a document");
   }
 
   const settlement = await prisma.settlements.findUnique({ where: { id: settlementId } });
   if (!settlement) {
     throw new AppError(404, "Settlement not found");
   }
-  if (settlement.status !== "settled") {
-    throw new AppError(400, "Documents can only be attached to a paid statement");
+  if (settlement.status !== "settled" && settlement.status !== "partially_paid") {
+    throw new AppError(400, "Documents can only be attached to a statement with a payment recorded");
   }
 
-  const updated = await prisma.settlements.update({
-    where: { id: settlementId },
-    data: {
-      ...(paymentReceiptPath !== undefined ? { payment_receipt_path: paymentReceiptPath } : {}),
-      ...(taxInvoicePath !== undefined ? { tax_invoice_path: taxInvoicePath } : {}),
-    },
+  // Both ids are caller-supplied, so confirm they belong to *this* statement -
+  // otherwise proof could be moved onto, or lifted off, someone else's payout.
+  if (paymentId) {
+    const payment = await prisma.settlement_payments.findFirst({
+      where: { id: paymentId, settlement_id: settlementId },
+      select: { id: true },
+    });
+    if (!payment) throw new AppError(404, "Payment not found on this statement");
+  }
+  if (replaceDocumentId) {
+    const existing = await prisma.settlement_documents.findFirst({
+      where: { id: replaceDocumentId, settlement_id: settlementId },
+      select: { id: true },
+    });
+    if (!existing) throw new AppError(404, "Document not found on this statement");
+  }
+
+  await prisma.$transaction(async (tx) => {
+    if (replaceDocumentId) {
+      // Guaranteed present: `incoming` is non-empty and, under a replace,
+      // holds exactly one file - both checked above.
+      const doc = incoming[0]!;
+      await tx.settlement_documents.update({
+        where: { id: replaceDocumentId },
+        data: {
+          kind: doc.kind,
+          file_path: doc.filePath,
+          uploaded_by: actor.id,
+          ...(paymentId ? { settlement_payment_id: paymentId } : {}),
+        },
+      });
+    } else {
+      await tx.settlement_documents.createMany({
+        data: incoming.map((doc) => ({
+          settlement_id: settlementId,
+          settlement_payment_id: paymentId ?? null,
+          kind: doc.kind,
+          file_path: doc.filePath,
+          uploaded_by: actor.id,
+        })),
+      });
+    }
+
+    await tx.audit_logs.create({
+      data: {
+        actor_id: actor.id,
+        entity_type: "settlement",
+        entity_id: settlementId,
+        action: replaceDocumentId ? "REPLACE_SETTLEMENT_DOCUMENT" : "ATTACH_SETTLEMENT_DOCUMENTS",
+        new_data: {
+          paymentId: paymentId ?? null,
+          replacedDocumentId: replaceDocumentId ?? null,
+          receiptsAttached: paymentReceiptPaths.length,
+          taxInvoicesAttached: taxInvoicePaths.length,
+        },
+      },
+    });
   });
 
-  await prisma.audit_logs.create({
-    data: {
-      actor_id: actor.id,
-      entity_type: "settlement",
-      entity_id: settlementId,
-      action: "ATTACH_SETTLEMENT_DOCUMENTS",
-      new_data: { paymentReceiptAttached: paymentReceiptPath !== undefined, taxInvoiceAttached: taxInvoicePath !== undefined },
-    },
+  const documents = await prisma.settlement_documents.findMany({
+    where: { settlement_id: settlementId },
+    orderBy: { created_at: "asc" },
   });
 
-  return {
-    id: updated.id,
-    paymentReceiptPath: updated.payment_receipt_path,
-    taxInvoicePath: updated.tax_invoice_path,
-  };
+  return { id: settlementId, documents: documents.map(toDocumentResult) };
+}
+
+// Admin-only: drops one proof off a statement. Needed once a statement can
+// hold several of them - "Replace" can fix a wrong file, but nothing else could
+// remove a picture attached to the wrong statement entirely.
+export async function deleteSettlementDocument(
+  actor: Actor,
+  settlementId: string,
+  documentId: string,
+): Promise<{ id: string; documents: SettlementDocumentResult[] }> {
+  const existing = await prisma.settlement_documents.findFirst({
+    where: { id: documentId, settlement_id: settlementId },
+    select: { id: true, kind: true, file_path: true, settlement_payment_id: true },
+  });
+  if (!existing) throw new AppError(404, "Document not found on this statement");
+
+  await prisma.$transaction(async (tx) => {
+    await tx.settlement_documents.delete({ where: { id: documentId } });
+    await tx.audit_logs.create({
+      data: {
+        actor_id: actor.id,
+        entity_type: "settlement",
+        entity_id: settlementId,
+        action: "DELETE_SETTLEMENT_DOCUMENT",
+        // The file itself stays on disk, so a mistaken delete is recoverable
+        // from this entry - same as the files orphaned by a replacement.
+        old_data: {
+          documentId,
+          kind: existing.kind,
+          filePath: existing.file_path,
+          paymentId: existing.settlement_payment_id,
+        },
+      },
+    });
+  });
+
+  const documents = await prisma.settlement_documents.findMany({
+    where: { settlement_id: settlementId },
+    orderBy: { created_at: "asc" },
+  });
+
+  return { id: settlementId, documents: documents.map(toDocumentResult) };
 }
 
 // Admin-only, gated by the delegable EDIT_SETTLEMENTS permission: corrects an
 // unsettled statement's order list (add/remove cod_collections) after the
-// fact. Once a statement is settled (payment recorded via payForSettlement)
+// fact. Once any payment is recorded against a statement (via payForSettlement)
 // it's immutable - money has already moved, so this always re-checks status
 // even though the route middleware also gates on it being unsettled elsewhere.
 export async function updateSettlement(
@@ -992,8 +1202,15 @@ export async function updateSettlement(
   if (!settlement) {
     throw new AppError(404, "Settlement not found");
   }
-  if (settlement.status === "settled") {
-    throw new AppError(400, "This statement has already been paid and can no longer be edited");
+  if (settlement.status !== "pending") {
+    throw new AppError(
+      400,
+      settlement.status === "partially_paid"
+        ? "This statement has a payment recorded against it and can no longer be edited"
+        : settlement.status === "cancelled"
+          ? "This statement has been cancelled and can no longer be edited"
+          : "This statement has already been paid and can no longer be edited",
+    );
   }
 
   const payeeType = settlement.payee_type as "rider" | "vendor";
@@ -1124,18 +1341,21 @@ export async function updateSettlement(
     settlementDate: updated.settlement_date ? formatNepalDate(updated.settlement_date) : null,
     status: updated.status,
     paymentMethod: updated.payment_method,
-    payments: Array.isArray(updated.payments) ? (updated.payments as unknown as SettlementPaymentInput[]) : [],
+    payments: toPaymentLines(updated.payments),
     remark: updated.remark,
+    // Only a pending statement reaches here, so nothing has been paid on it.
+    paidAmount: 0,
+    remainingAmount: Math.abs(payableAmount),
   };
 }
 
 // Admin-only, gated by the delegable EDIT_SETTLEMENTS permission (same gate as
 // updateSettlement): undoes a mistaken "Make Payment" action. Flips a settled
-// statement back to pending and resets every bundled cod_collections leg back
-// to unpaid - the exact inverse of the writes payForSettlement made. The
-// statement and its settlement_items are left intact (not deleted), so it
-// re-enters the normal pending workflow: editable via updateSettlement,
-// payable again via payForSettlement.
+// (or partially paid) statement back to pending and resets every bundled
+// cod_collections leg back to unpaid - the exact inverse of the writes
+// payForSettlement made. The statement and its settlement_items are left intact
+// (not deleted), so it re-enters the normal pending workflow: editable via
+// updateSettlement, payable again via payForSettlement.
 export async function revertSettlement(
   actor: Actor,
   settlementId: string,
@@ -1148,13 +1368,25 @@ export async function revertSettlement(
   if (!settlement) {
     throw new AppError(404, "Settlement not found");
   }
-  if (settlement.status !== "settled") {
-    throw new AppError(400, "Only a settled statement can be reverted");
+  if (settlement.status !== "settled" && settlement.status !== "partially_paid") {
+    throw new AppError(400, "Only a statement with a payment recorded can be reverted");
   }
 
-  const previousPayments = Array.isArray(settlement.payments)
-    ? (settlement.payments as unknown as SettlementPaymentInput[])
-    : [];
+  const previousPayments = toPaymentLines(settlement.payments);
+  const wasSettled = settlement.status === "settled";
+  // Kept for the audit entry: the instalments and proof rows are deleted below,
+  // so this is the only remaining record that they existed. The files stay on
+  // disk, so a revert done by mistake is recoverable from here.
+  const [previousInstalments, previousDocuments] = await Promise.all([
+    prisma.settlement_payments.findMany({
+      where: { settlement_id: settlementId },
+      orderBy: { paid_at: "asc" },
+    }),
+    prisma.settlement_documents.findMany({
+      where: { settlement_id: settlementId },
+      orderBy: { created_at: "asc" },
+    }),
+  ]);
 
   const updated = await prisma.$transaction(async (tx) => {
     const result = await tx.settlements.update({
@@ -1163,22 +1395,39 @@ export async function revertSettlement(
         status: "pending",
         payment_method: null,
         payments: Prisma.DbNull,
+        paid_amount: 0,
         settled_by: null,
         remark: remark.trim(),
+        // Legacy single-document columns: cleared alongside the rows below so a
+        // reverted statement doesn't keep serving the old proof.
+        payment_receipt_path: null,
+        tax_invoice_path: null,
       },
     });
 
-    const collectionIds = settlement.settlement_items.map((si) => si.cod_collection_id);
-    if (settlement.payee_type === "rider") {
-      await tx.cod_collections.updateMany({
-        where: { id: { in: collectionIds } },
-        data: { rider_payment_status: payment_status.pending, rider_remitted_amount: 0, rider_settled_at: null },
-      });
-    } else {
-      await tx.cod_collections.updateMany({
-        where: { id: { in: collectionIds } },
-        data: { payment_status: payment_status.pending, remitted_amount: 0 },
-      });
+    // A reverted statement is unpaid again, so the instalments and the proof of
+    // them have to go with it - otherwise paying it a second time would show a
+    // history mixing payments that were undone with ones that stand. The
+    // documents cascade from the instalments, but any attached to the statement
+    // as a whole would survive that, so delete by statement.
+    await tx.settlement_documents.deleteMany({ where: { settlement_id: settlementId } });
+    await tx.settlement_payments.deleteMany({ where: { settlement_id: settlementId } });
+
+    // Only a fully settled statement ever marked its collections paid (a part
+    // payment leaves them pending), so only that case needs unwinding.
+    if (wasSettled) {
+      const collectionIds = settlement.settlement_items.map((si) => si.cod_collection_id);
+      if (settlement.payee_type === "rider") {
+        await tx.cod_collections.updateMany({
+          where: { id: { in: collectionIds } },
+          data: { rider_payment_status: payment_status.pending, rider_remitted_amount: 0, rider_settled_at: null },
+        });
+      } else {
+        await tx.cod_collections.updateMany({
+          where: { id: { in: collectionIds } },
+          data: { payment_status: payment_status.pending, remitted_amount: 0 },
+        });
+      }
     }
 
     await tx.audit_logs.create({
@@ -1191,6 +1440,18 @@ export async function revertSettlement(
           status: settlement.status,
           paymentMethod: settlement.payment_method,
           payments: previousPayments as unknown as Prisma.InputJsonValue,
+          paidAmount: Number(settlement.paid_amount),
+          instalments: previousInstalments.map((sp) => ({
+            id: sp.id,
+            amount: Number(sp.amount),
+            method: sp.method,
+            paidAt: sp.paid_at.toISOString(),
+          })),
+          documents: previousDocuments.map((doc) => ({
+            id: doc.id,
+            kind: doc.kind,
+            filePath: doc.file_path,
+          })),
           remark: settlement.remark,
         },
         new_data: { status: "pending", remark: remark.trim() },
@@ -1204,10 +1465,11 @@ export async function revertSettlement(
     await invalidateRiderFinanceCache(settlement.rider_id);
   } else if (settlement.vendor_id) {
     await invalidateVendorFinanceCache(settlement.vendor_id);
-    // Undoing a payout credits the vendor's running account back, so it can
-    // pull them back under a credit threshold just as a payout can push them
-    // over it. Fire-and-forget.
-    evaluateVendorBillingAsync(settlement.vendor_id);
+    // Undoing a completed payout credits the vendor's running account back, so
+    // it can pull them back under a credit threshold just as a payout can push
+    // them over it. Undoing a part payment doesn't move the balance, since it
+    // never moved the collections. Fire-and-forget.
+    if (wasSettled) evaluateVendorBillingAsync(settlement.vendor_id);
   }
 
   return {
@@ -1221,6 +1483,8 @@ export async function revertSettlement(
     paymentMethod: updated.payment_method,
     payments: [],
     remark: updated.remark,
+    paidAmount: 0,
+    remainingAmount: Math.abs(Number(updated.payable_amount ?? updated.amount)),
   };
 }
 
@@ -1267,12 +1531,19 @@ async function assertSettlementAccess(
 
 export type SettlementDocumentKind = "receipt" | "tax-invoice";
 
-// Resolves one of a statement's payment documents for a caller entitled to it.
-// Returns the stored (encrypted-at-rest) path; the controller streams it.
+/**
+ * Resolves one of a statement's payment documents for a caller entitled to it.
+ * Returns the stored (encrypted-at-rest) path; the controller streams it.
+ *
+ * `ref` is either a document id - a statement can hold several receipts now, so
+ * that's the only way to name a particular one - or, for links written before
+ * that, the kind "receipt" / "tax-invoice", which resolves to the newest
+ * document of that kind.
+ */
 export async function getSettlementDocumentPath(
   actor: Actor,
   settlementId: string,
-  kind: SettlementDocumentKind,
+  ref: string,
 ): Promise<string> {
   const settlement = await prisma.settlements.findUnique({
     where: { id: settlementId },
@@ -1289,11 +1560,30 @@ export async function getSettlementDocumentPath(
 
   await assertSettlementAccess(actor, settlement);
 
-  const path = kind === "receipt" ? settlement.payment_receipt_path : settlement.tax_invoice_path;
-  if (!path) {
-    throw new AppError(404, kind === "receipt" ? "No payment receipt attached" : "No tax invoice attached");
+  if (ref === "receipt" || ref === "tax-invoice") {
+    const kind = ref === "receipt" ? "receipt" : "tax_invoice";
+    const newest = await prisma.settlement_documents.findFirst({
+      where: { settlement_id: settlementId, kind },
+      orderBy: { created_at: "desc" },
+      select: { file_path: true },
+    });
+    // The legacy columns are the fallback for any row the partial-payments
+    // backfill couldn't reach.
+    const path =
+      newest?.file_path ??
+      (kind === "receipt" ? settlement.payment_receipt_path : settlement.tax_invoice_path);
+    if (!path) {
+      throw new AppError(404, kind === "receipt" ? "No payment receipt attached" : "No tax invoice attached");
+    }
+    return path;
   }
-  return path;
+
+  const document = await prisma.settlement_documents.findFirst({
+    where: { id: ref, settlement_id: settlementId },
+    select: { file_path: true },
+  });
+  if (!document) throw new AppError(404, "Document not found");
+  return document.file_path;
 }
 
 // Admin-only, gated by the delegable EDIT_SETTLEMENTS permission (same gate as
@@ -1360,6 +1650,10 @@ export async function cancelSettlement(
     paymentMethod: updated.payment_method,
     payments: [],
     remark: updated.remark,
+    // Only a pending (never-paid) statement can be cancelled, so nothing was
+    // ever recorded against it and nothing is owed on it any more.
+    paidAmount: 0,
+    remainingAmount: 0,
   };
 }
 
@@ -1371,6 +1665,13 @@ export async function getSettlementDetail(actor: Actor, settlementId: string): P
   const settlement = await prisma.settlements.findUnique({
     where: { id: settlementId },
     include: {
+      // Oldest first: the payment history reads as a story ("Rs. 1,000 on the
+      // 4th, Rs. 2,000 on the 11th"), which only works in the order it happened.
+      settlement_payments: {
+        orderBy: { paid_at: "asc" },
+        include: { settlement_documents: { orderBy: { created_at: "asc" } } },
+      },
+      settlement_documents: { orderBy: { created_at: "asc" } },
       settlement_items: {
         include: {
           cod_collections: {
@@ -1480,6 +1781,22 @@ export async function getSettlementDetail(actor: Actor, settlementId: string): P
     };
   });
 
+  const payableAmount = Number(settlement.payable_amount ?? settlement.amount);
+  const paidAmount = Number(settlement.paid_amount);
+  const documents = settlement.settlement_documents.map(toDocumentResult);
+  const paymentRecords: SettlementPaymentRecordResult[] = settlement.settlement_payments.map((sp) => ({
+    id: sp.id,
+    amount: Number(sp.amount),
+    method: sp.method,
+    breakdown: toPaymentLines(sp.breakdown),
+    remark: sp.remark,
+    paidAt: sp.paid_at.toISOString(),
+    documents: sp.settlement_documents.map(toDocumentResult),
+  }));
+  // Newest of each kind, for the callers that only ever wanted one document.
+  const newestOfKind = (kind: string): string | null =>
+    [...settlement.settlement_documents].reverse().find((doc) => doc.kind === kind)?.file_path ?? null;
+
   return {
     id: settlement.id,
     statementId: settlement.statement_id,
@@ -1496,15 +1813,19 @@ export async function getSettlementDetail(actor: Actor, settlementId: string): P
     transferDate: settlement.settlement_date ? formatNepalDate(settlement.settlement_date) : null,
     createdAt: settlement.created_at.toISOString(),
     amount: Number(settlement.amount),
-    payableAmount: Number(settlement.payable_amount ?? settlement.amount),
+    payableAmount,
+    paidAmount,
+    remainingAmount: round2(Math.abs(payableAmount) - paidAmount),
     status: settlement.status,
     paymentMethod: settlement.payment_method,
-    payments: Array.isArray(settlement.payments)
-      ? (settlement.payments as unknown as SettlementPaymentInput[])
-      : [],
+    payments: toPaymentLines(settlement.payments),
+    paymentRecords,
+    documents,
     remark: settlement.remark,
-    paymentReceiptPath: settlement.payment_receipt_path,
-    taxInvoicePath: settlement.tax_invoice_path,
+    // Fall back to the legacy columns for statements the partial-payments
+    // backfill couldn't reach.
+    paymentReceiptPath: newestOfKind("receipt") ?? settlement.payment_receipt_path,
+    taxInvoicePath: newestOfKind("tax_invoice") ?? settlement.tax_invoice_path,
     items,
   };
 }

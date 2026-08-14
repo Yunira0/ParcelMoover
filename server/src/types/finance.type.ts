@@ -62,6 +62,9 @@ export interface OrderCodListResult {
   meta: { page: number; pageSize: number; total: number; totalPages: number };
 }
 
+/** `partially_paid` sits between pending and settled — see the enum in schema.prisma. */
+export type SettlementStatus = "pending" | "settled" | "partially_paid" | "cancelled";
+
 export interface SettlementListItem {
   id: string;
   statementId: string;
@@ -75,7 +78,9 @@ export interface SettlementListItem {
   createdAt: string;
   orderCount: number;
   amount: number;
-  status: "pending" | "settled" | "cancelled";
+  status: SettlementStatus;
+  /** Total recorded against the statement so far — non-zero and below `amount` while partially_paid. */
+  paidAmount: number;
   remark: string | null;
 }
 
@@ -100,14 +105,41 @@ export interface PaySettlementInput {
   payments: SettlementPaymentInput[];
   remark?: string;
   /** Relative upload paths, set by the controller after the files are secured. */
-  paymentReceiptPath?: string | null;
-  taxInvoicePath?: string | null;
+  paymentReceiptPaths?: string[];
+  taxInvoicePaths?: string[];
 }
 
+export type SettlementDocumentKindInput = "receipt" | "tax_invoice";
+
 export interface AttachSettlementDocumentsInput {
-  /** Relative upload paths, set by the controller after the files are secured. Omitted fields leave the existing document untouched. */
-  paymentReceiptPath?: string | null;
-  taxInvoicePath?: string | null;
+  /** Relative upload paths, set by the controller after the files are secured. Each becomes its own document row — a statement can hold several receipts. */
+  paymentReceiptPaths?: string[];
+  taxInvoicePaths?: string[];
+  /** Which instalment the files prove. Omit to attach them to the statement as a whole. */
+  paymentId?: string;
+  /** Swap the file behind an existing document instead of adding another one. Only valid with exactly one uploaded file. */
+  replaceDocumentId?: string;
+}
+
+export interface SettlementDocumentResult {
+  id: string;
+  kind: SettlementDocumentKindInput;
+  /** Which instalment this file proves; null when it covers the statement as a whole. */
+  paymentId: string | null;
+  /** So the client can render a PDF placeholder instead of a broken <img>. */
+  isPdf: boolean;
+  uploadedAt: string;
+}
+
+/** One act of paying: its methods, its amount, its date and its own evidence. */
+export interface SettlementPaymentRecordResult {
+  id: string;
+  amount: number;
+  method: string;
+  breakdown: SettlementPaymentInput[];
+  remark: string | null;
+  paidAt: string;
+  documents: SettlementDocumentResult[];
 }
 
 export interface UpdateSettlementInput {
@@ -129,10 +161,16 @@ export interface CreateSettlementResult {
   amount: number;
   payableAmount: number;
   settlementDate: string | null;
-  status: "pending" | "settled" | "cancelled";
+  status: SettlementStatus;
   paymentMethod: string | null;
   payments: SettlementPaymentInput[];
   remark: string | null;
+  /** Total handed over so far across every instalment. */
+  paidAmount: number;
+  /** ABS(payableAmount) - paidAmount; 0 once the statement is settled. */
+  remainingAmount: number;
+  /** The instalment this call created, when it created one. Lets the pay flow attach proof to it. */
+  paymentId?: string;
 }
 
 export interface UnsettledOrderItem {
@@ -205,11 +243,19 @@ export interface SettlementDetailResult {
   createdAt: string;
   amount: number;
   payableAmount: number;
-  status: "pending" | "settled" | "cancelled";
+  /** Total recorded so far across every instalment. */
+  paidAmount: number;
+  /** ABS(payableAmount) - paidAmount — what the payee is still owed. */
+  remainingAmount: number;
+  status: SettlementStatus;
   paymentMethod: string | null;
   payments: SettlementPaymentInput[];
+  /** Each act of paying, oldest first, with the proof attached to it. */
+  paymentRecords: SettlementPaymentRecordResult[];
+  /** Every uploaded proof on this statement, including any not tied to an instalment. */
+  documents: SettlementDocumentResult[];
   remark: string | null;
-  /** Relative paths under /uploads; null until the statement is paid with evidence attached. */
+  /** Newest document of each kind, for callers that only want one. Null when none is attached. */
   paymentReceiptPath: string | null;
   taxInvoicePath: string | null;
   items: SettlementDetailItem[];

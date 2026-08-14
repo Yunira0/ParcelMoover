@@ -5,7 +5,12 @@ import Table from '../../components/Table';
 import Button from '../../components/Button';
 import Pagination from '../../components/Pagination';
 import StatusChip, { type StatusChipTone } from '../../components/StatusChip';
-import { getOrders, type Order, type OrderType, type ParcelStatus } from '../../services/orders.service';
+import {
+  getOrders,
+  type Order,
+  type OrderType,
+  type ParcelStatus,
+} from '../../services/orders.service';
 import { toBsDate } from '../../utils/nepaliDate';
 import { formatCurrency } from '../../utils/format';
 import './VendorMetricDetail.css';
@@ -111,7 +116,7 @@ export const METRICS: Record<string, MetricConfig> = {
   },
 };
 
-const DEFAULT_PAGE_SIZE = 10;
+const DEFAULT_PAGE_SIZE = 10  ;
 const SERVER_FETCH_PAGE_SIZE = 100;
 const MAX_FETCH_PAGES = 10; // safety cap: 1000 orders per metric page
 

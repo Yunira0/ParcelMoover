@@ -25,7 +25,8 @@ const TICKET_CATEGORY_NOTIFICATIONS: Record<string, { type: string; label: strin
 const WORKFLOW_STATUSES: TicketStatus[] = ["open", "pending", "closed"];
 
 const DEFAULT_PAGE_SIZE = 20;
-const MAX_PAGE_SIZE = 100;
+// 500 so the list can offer the same largest page as every other screen.
+const MAX_PAGE_SIZE = 500;
 
 const isStaff = (actor: Actor) =>
   actor.roles.includes("admin") || actor.roles.includes("super_admin");

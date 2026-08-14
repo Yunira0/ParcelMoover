@@ -83,11 +83,15 @@ export const paginationQuerySchema = z.object({
     .int("page must be an integer")
     .min(1, "page must be at least 1")
     .optional(),
+  // 500 matches the largest page the lists offer (see the per-service
+  // MAX_PAGE_SIZE constants, which clamp anything above their own ceiling).
+  // This is only the outer bound on what the API will parse — an endpoint whose
+  // service caps lower still returns its own maximum.
   pageSize: z.coerce
     .number()
     .int("pageSize must be an integer")
     .min(1, "pageSize must be at least 1")
-    .max(200, "pageSize cannot exceed 200")
+    .max(500, "pageSize cannot exceed 500")
     .optional(),
 });
 

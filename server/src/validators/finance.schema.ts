@@ -27,7 +27,7 @@ export type OrderCodQuery = z.infer<typeof orderCodQuerySchema>;
 
 // ── Settlements list query ────────────────────────────────────────────────────
 
-const SETTLEMENT_STATUSES = ["pending", "settled", "cancelled"] as const;
+const SETTLEMENT_STATUSES = ["pending", "settled", "partially_paid", "cancelled"] as const;
 
 export const settlementsQuerySchema = paginationQuerySchema.extend({
   payeeType: z.enum(PAYEE_TYPES),
@@ -66,6 +66,10 @@ export const paySettlementSchema = z.object({
   // a remark is only useful when there's something unusual to note.
   remark: z.string().trim().max(500).optional(),
 });
+
+// The service enforces the amount rules that need the statement in hand: the
+// total can be anything from a part payment up to whatever is still
+// outstanding, which this schema can't see.
 
 export type CreateSettlementBody = z.infer<typeof createSettlementSchema>;
 

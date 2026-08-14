@@ -159,7 +159,11 @@ function destinationSkipsTransit(destination: { valley?: string | null; name?: s
   return DIRECT_DELIVERY_FRINGE_AREAS.some((area) => name.includes(area));
 }
 
-const MAX_PAGE_SIZE = 100;
+// Raised from 100 so the order lists can offer a 500-row page — scanning a
+// day's parcels in one screen beats paging through five. An order row is
+// expensive (ORDERS_INCLUDE pulls nine relations, one nested three deep), but
+// Prisma batches per relation rather than per row, so the cost stays linear.
+const MAX_PAGE_SIZE = 500;
 const DEFAULT_PAGE_SIZE = 10;
 const MAX_BULK_IDS = 200;
 

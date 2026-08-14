@@ -18,6 +18,7 @@ import {
   getOrders,
   getStatusCounts,
   subscribeToOrderStatusChanged,
+  MAX_ORDER_PAGE_SIZE,
   type Order,
   type OrdersPageMeta,
   type ParcelStatus,
@@ -208,7 +209,7 @@ const OOVOperations: React.FC = () => {
       // enough rows in one page to fit the whole scanned batch, instead of
       // silently cutting it off at the default page size.
       const scannedTermCount = debouncedSearch ? debouncedSearch.split(',').map(t => t.trim()).filter(Boolean).length : 0;
-      const pageSize = scannedTermCount > 1 ? Math.min(100, Math.max(pageSizeChoice, scannedTermCount)) : pageSizeChoice;
+      const pageSize = scannedTermCount > 1 ? Math.min(MAX_ORDER_PAGE_SIZE, Math.max(pageSizeChoice, scannedTermCount)) : pageSizeChoice;
 
       const res = await getOrders({
         status: TAB_STATUSES[activeTab],
