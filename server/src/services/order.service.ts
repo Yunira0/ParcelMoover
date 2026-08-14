@@ -907,10 +907,25 @@ async function canOverrideCodOnBlockedParcel(actor: OrderActor, parcelId: string
 
   const collection = await prisma.cod_collections.findFirst({
     where: { parcel_id: parcelId },
-    select: { payment_status: true },
+    select: {
+      payment_status: true,
+      settlement_items: { select: { settlements: { select: { statement_id: true, payee_type: true } } }, take: 1 },
+    },
   });
   if (collection && collection.payment_status !== "pending") {
     throw new AppError(409, "COD has already been settled to the vendor and can no longer be edited here.");
+  }
+  // Also blocked while still pending, if it's already bundled into a
+  // settlement: that settlement's settlement_items row already froze this
+  // collection's amount at creation time, and editing the COD here would
+  // desync from it with no record of why. Staff must remove it via the
+  // settlement edit flow first.
+  if (collection && collection.settlement_items.length > 0) {
+    const stmt = collection.settlement_items[0]!.settlements;
+    throw new AppError(
+      409,
+      `This order is part of ${stmt.payee_type} settlement ${stmt.statement_id} — remove it from the settlement before editing COD.`,
+    );
   }
   return true;
 }
@@ -3663,18 +3678,25 @@ async function _updateParcelStatusImpl(
   }
 
   // An un-delivery must not silently blow away a COD that's already been
-  // swept into a paid settlement (rider or vendor leg) - that would desync
-  // the settlement ledger from what cod_collections says was collected.
+  // swept into a settlement - paid (rider or vendor leg) or still pending.
+  // A pending settlement already froze this collection's amount into its
+  // settlement_items row at creation time; reversing the collection out from
+  // under it would leave that statement showing stale, wrong figures with no
+  // record of why. Staff must remove it via the settlement edit flow first.
   if (isUndelivery) {
-    const cod = await prisma.cod_collections.findUnique({
-      where: { parcel_id: parcelId },
-      select: { rider_payment_status: true, payment_status: true },
+    const cod = await prisma.cod_collections.findFirst({
+      where: {
+        parcel_id: parcelId,
+        OR: [{ rider_payment_status: "paid" }, { payment_status: "paid" }, { settlement_items: { some: {} } }],
+      },
+      select: {
+        settlement_items: { select: { settlements: { select: { statement_id: true, payee_type: true } } }, take: 1 },
+      },
     });
-    if (cod?.rider_payment_status === "paid" || cod?.payment_status === "paid") {
-      throw new AppError(
-        409,
-        "This order's COD has already been settled — remove it from the settlement before undelivering.",
-      );
+    if (cod) {
+      const stmt = cod.settlement_items[0]?.settlements;
+      const reason = stmt ? `is part of ${stmt.payee_type} settlement ${stmt.statement_id}` : "has already been settled";
+      throw new AppError(409, `This order's COD ${reason} — resolve that before undelivering.`);
     }
   }
 
@@ -4121,20 +4143,23 @@ async function _bulkUpdateParcelStatusImpl(
     .map((p) => p.id);
 
   // Same guard as the single-parcel path: don't blow away a COD that's
-  // already been swept into a paid settlement.
+  // already been swept into a settlement - paid, or still pending (whose
+  // settlement_items row already froze this collection's amount).
   if (undeliverIds.length > 0) {
-    const settledCod = await prisma.cod_collections.findFirst({
+    const blockingCod = await prisma.cod_collections.findFirst({
       where: {
         parcel_id: { in: undeliverIds },
-        OR: [{ rider_payment_status: "paid" }, { payment_status: "paid" }],
+        OR: [{ rider_payment_status: "paid" }, { payment_status: "paid" }, { settlement_items: { some: {} } }],
       },
-      include: { parcels: { select: { tracking_id: true } } },
+      include: {
+        parcels: { select: { tracking_id: true } },
+        settlement_items: { select: { settlements: { select: { statement_id: true, payee_type: true } } }, take: 1 },
+      },
     });
-    if (settledCod) {
-      throw new AppError(
-        409,
-        `Order ${settledCod.parcels.tracking_id}'s COD has already been settled — remove it from the settlement before undelivering.`,
-      );
+    if (blockingCod) {
+      const stmt = blockingCod.settlement_items[0]?.settlements;
+      const reason = stmt ? `is part of ${stmt.payee_type} settlement ${stmt.statement_id}` : "has already been settled";
+      throw new AppError(409, `Order ${blockingCod.parcels.tracking_id}'s COD ${reason} — resolve that before undelivering.`);
     }
   }
 
