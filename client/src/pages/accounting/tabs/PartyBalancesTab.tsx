@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Table from '../../../components/Table';
-import SearchField from '../../../components/SearchField';
+import FilterDropdown from '../../../components/FilterDropdown';
 import { Banner } from '../ui';
 import { money, numClass } from '../format';
 import { listPartyBalances, type PartyBalance } from '../../../services/accounting.service';
@@ -11,11 +11,12 @@ import '../Accounting.css';
 // Two questions, one screen: which riders are holding our cash, and where do we
 // stand with each vendor. Both are the same control account broken down per
 // party, which is exactly what a subledger is — so the shell renders this one
-// component for both tabs and the text filter survives the toggle.
+// component for both tabs. The party filter is cleared on the toggle, since a
+// vendor is not a choice the rider list can offer.
 
 const PartyBalancesTab: React.FC<{ partyType: 'vendor' | 'rider' }> = ({ partyType }) => {
   const navigate = useNavigate();
-  const [search, setSearch] = useState('');
+  const [partyId, setPartyId] = useState('');
   const [rows, setRows] = useState<PartyBalance[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -36,31 +37,55 @@ const PartyBalancesTab: React.FC<{ partyType: 'vendor' | 'rider' }> = ({ partyTy
     void load();
   }, [load]);
 
-  // Filtered here rather than server-side: the party list is bounded by the
-  // number of vendors and riders, and filtering locally keeps typing instant.
-  const visible = useMemo(() => {
-    const needle = search.trim().toLowerCase();
-    if (!needle) return rows;
-    return rows.filter(
-      (row) => row.name.toLowerCase().includes(needle) || (row.subtitle ?? '').toLowerCase().includes(needle),
-    );
-  }, [rows, search]);
+  const isRider = partyType === 'rider';
+  const allLabel = isRider ? 'All riders' : 'All vendors';
+
+  // Built from the rows already on screen rather than fetched separately: the
+  // party list is bounded by the number of vendors and riders, and only parties
+  // with ledger activity belong in a ledger filter anyway. The subtitle rides
+  // along in the label so a party stays findable by it — SearchableSelect
+  // matches on the label text, and this is the same "a · b" shape the account
+  // ledger's dropdown uses.
+  const partyOptions = useMemo(
+    () => [
+      { value: '', label: allLabel },
+      ...rows.map((row) => ({
+        value: row.partyId,
+        label: row.subtitle ? `${row.name} · ${row.subtitle}` : row.name,
+      })),
+    ],
+    [rows, allLabel],
+  );
+
+  const visible = useMemo(
+    () => (partyId ? rows.filter((row) => row.partyId === partyId) : rows),
+    [rows, partyId],
+  );
 
   const total = useMemo(() => visible.reduce((sum, row) => sum + row.balance, 0), [visible]);
 
-  const isRider = partyType === 'rider';
+  // A party selected on one tab doesn't exist on the other, which would leave
+  // the table blank with a name still showing in the picker.
+  useEffect(() => {
+    setPartyId('');
+  }, [partyType]);
 
   return (
     <>
       <div className="acc-toolbar">
-        <label className="acc-filter-wide">
-          <span>SEARCH</span>
-          <SearchField
-            value={search}
-            onChange={setSearch}
-            placeholder={isRider ? 'Search riders' : 'Search vendors'}
-          />
-        </label>
+        <div className="acc-filters">
+          <div className="acc-filter-wide">
+            <FilterDropdown
+              label={isRider ? 'RIDER' : 'VENDOR'}
+              value={partyId}
+              options={partyOptions}
+              onChange={setPartyId}
+              placeholder={allLabel}
+              searchPlaceholder={isRider ? 'Search riders...' : 'Search vendors...'}
+              ariaLabel={isRider ? 'Rider' : 'Vendor'}
+            />
+          </div>
+        </div>
       </div>
 
       <Banner tone="info">
@@ -106,7 +131,7 @@ const PartyBalancesTab: React.FC<{ partyType: 'vendor' | 'rider' }> = ({ partyTy
             accessor: (row) => <span className={numClass(row.balance)}>{money(row.balance)}</span>,
           },
         ]}
-        emptyMessage={search ? 'Nobody matches that search.' : `No ${partyType} has any ledger activity yet.`}
+        emptyMessage={partyId ? 'That party has no ledger activity.' : `No ${partyType} has any ledger activity yet.`}
         footer={
           <tr>
             <td>{visible.length} {isRider ? 'riders' : 'vendors'}</td>
