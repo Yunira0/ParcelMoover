@@ -18,7 +18,15 @@
   gap: var(--space-4);
 }
 
-.dispatch-rider-filter {
+/* Rider filter, then vendor filter to its right. */
+.dispatch-filters {
+  align-items: center;
+  display: flex;
+  gap: var(--space-4);
+}
+
+.dispatch-rider-filter,
+.dispatch-vendor-filter {
   min-width: 220px;
 }
 
@@ -347,7 +355,14 @@
     width: 100%;
   }
 
-  .dispatch-rider-filter {
+  /* Side by side needs ~440px plus the gap; stack them instead of squeezing. */
+  .dispatch-filters {
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .dispatch-rider-filter,
+  .dispatch-vendor-filter {
     min-width: 0;
     width: 100%;
   }

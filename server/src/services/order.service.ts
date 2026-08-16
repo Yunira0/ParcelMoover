@@ -4986,7 +4986,7 @@ export async function applyExternalCarrierFollowUp(
 export async function getStatusCounts(
   actor: OrderActor,
   statusGroups: Record<string, string[]>,
-  filters: { deliveryRiderId?: string; search?: string } = {},
+  filters: { deliveryRiderId?: string; vendorId?: string[]; search?: string } = {},
 ): Promise<Record<string, number>> {
   const scope = await getActorScope(actor);
   const allStatuses = [...new Set(Object.values(statusGroups).flat())];
@@ -5003,6 +5003,12 @@ export async function getStatusCounts(
   // badges stay in step with the filtered list (see buildOrdersWhere).
   const riderSql: Prisma.Sql = filters.deliveryRiderId
     ? Prisma.sql`AND delivery_rider_id = ${filters.deliveryRiderId}::uuid`
+    : Prisma.empty;
+
+  // ANDed with scopeSql above rather than replacing it: a vendor-scoped actor
+  // filtering by vendor still only ever counts their own parcels.
+  const vendorSql: Prisma.Sql = filters.vendorId?.length
+    ? Prisma.sql`AND vendor_id = ANY(${filters.vendorId}::uuid[])`
     : Prisma.empty;
 
   // Mirrors buildOrdersWhere's search exactly, or a scan would show one row in
@@ -5044,6 +5050,7 @@ export async function getStatusCounts(
       AND status::text = ANY(${allStatuses})
       ${scopeSql}
       ${riderSql}
+      ${vendorSql}
       ${searchSql}
     GROUP BY status
   `);

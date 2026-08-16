@@ -413,12 +413,13 @@ export const getCodSettlementDetail = async (
 // and returns { pickup_ordered: 12, rider_assigned: 5 }.
 export const getStatusCounts = async (
   groups: Record<string, string[]>,
-  filters?: { deliveryRiderId?: string; search?: string },
+  filters?: { deliveryRiderId?: string; vendorId?: string[]; search?: string },
 ): Promise<Record<string, number>> => {
   const response = await api.get('/orders/status-counts', {
     params: {
       groups: JSON.stringify(groups),
       ...(filters?.deliveryRiderId ? { deliveryRiderId: filters.deliveryRiderId } : {}),
+      ...(filters?.vendorId?.length ? { vendorId: filters.vendorId.join(',') } : {}),
       ...(filters?.search ? { search: filters.search } : {}),
     },
   });
