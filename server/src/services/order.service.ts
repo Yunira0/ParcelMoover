@@ -2908,6 +2908,30 @@ async function computeDashboardSummary(
     ? Prisma.sql`AND delivery_rider_id = ${riderId}::uuid`
     : Prisma.empty;
 
+  // Every card on the rider dashboard deep-links to the list of orders behind
+  // it, so a card whose number is computed on different terms than its own
+  // drill-down is simply wrong - a rider taps "Total Picked Up: 340" and lands
+  // on three rows. The list is fixed at a status set (the rider APK is
+  // sideloaded and can't be updated), so the number is what has to move.
+  //
+  // Picked Up -> ?view=picked_up, which lists status = picked_up. For that
+  // status custody and handled scope agree, so no extra rider predicate is
+  // needed. The card stops being a lifetime tally and becomes "collected, not
+  // yet handed over at the hub" - which is the honest reading of a number you
+  // can tap into, and matches the Pickup lane riders already work from.
+  const pickedUpFilterSql: Prisma.Sql = riderId
+    ? Prisma.sql`status::text = 'picked_up'`
+    : Prisma.sql`status::text NOT IN ('pickup_ordered','rider_assigned','failed_pickup','cancelled')`;
+
+  // Total RTV -> ?view=return, which lists sent_to_vendor/returned_to_vendor.
+  // order_type = 'return' is a different question entirely (it counts return
+  // orders at any status, including ones this rider never carried back), so
+  // for a rider it's replaced by the statuses the list actually shows, scoped
+  // the same way custody scopes them: the rider who carried the return.
+  const returnsFilterSql: Prisma.Sql = riderId
+    ? Prisma.sql`status::text = ANY(ARRAY['sent_to_vendor','returned_to_vendor']) AND delivery_rider_id = ${riderId}::uuid`
+    : Prisma.sql`order_type::text = 'return'`;
+
   // Same scope (vendor/rider/none) as parcelWhere above, expressed as raw SQL so
   // it can be reused across both consolidated queries below. Casting the enum
   // columns to text and comparing against plain string arrays sidesteps
@@ -2955,8 +2979,8 @@ async function computeDashboardSummary(
       COUNT(*) FILTER (WHERE status::text = ANY(${IN_TRANSIT_STATUSES})) AS in_transit,
       COUNT(*) FILTER (WHERE status::text = ANY(${DELIVERY_PENDING_STATUSES})) AS pending_deliveries,
       COUNT(*) FILTER (WHERE status::text = ANY(ARRAY['delivered','partially_delivered']) ${riderDeliveredSql}) AS total_delivered,
-      COUNT(*) FILTER (WHERE status::text NOT IN ('pickup_ordered','rider_assigned','failed_pickup','cancelled')) AS total_picked_up,
-      COUNT(*) FILTER (WHERE order_type::text = 'return') AS total_returns,
+      COUNT(*) FILTER (WHERE ${pickedUpFilterSql}) AS total_picked_up,
+      COUNT(*) FILTER (WHERE ${returnsFilterSql}) AS total_returns,
       COUNT(*) FILTER (WHERE status::text = 'returned_to_vendor') AS total_returned_to_vendor,
       COUNT(*) FILTER (WHERE created_at >= ${todayStart}) AS todays_orders,
       COUNT(*) FILTER (WHERE status::text = ANY(ARRAY['delivered','partially_delivered']) AND delivered_at >= ${todayStart} ${riderDeliveredSql}) AS todays_delivered,
@@ -2966,7 +2990,7 @@ async function computeDashboardSummary(
       COALESCE(SUM(cod_amount) FILTER (WHERE status::text = ANY(${RETURN_PENDING_STATUSES})), 0) AS pending_returns_amount,
       COALESCE(SUM(cod_amount) FILTER (WHERE status::text = ANY(${IN_TRANSIT_STATUSES})), 0) AS in_transit_amount,
       COALESCE(SUM(cod_amount) FILTER (WHERE status::text = ANY(ARRAY['delivered','partially_delivered']) ${riderDeliveredSql}), 0) AS total_delivered_amount,
-      COALESCE(SUM(cod_amount) FILTER (WHERE order_type::text = 'return'), 0) AS total_returns_amount,
+      COALESCE(SUM(cod_amount) FILTER (WHERE ${returnsFilterSql}), 0) AS total_returns_amount,
       COALESCE(SUM(cod_amount) FILTER (WHERE status::text = 'returned_to_vendor'), 0) AS total_returned_to_vendor_amount
     FROM parcels
     WHERE deleted_at IS NULL ${parcelScopeSql}
@@ -4371,8 +4395,16 @@ async function _bulkUpdateParcelStatusImpl(
   let toLocationId: string | null = null;
   let originLocationId: string | null = null;
   let riderId: string | null = null;
+  let riderName: string | null = null;
 
   if (newStatus === "dispatched") {
+    // A manifest only exists when there's a destination to carry it to, so a
+    // rider named without one would be validated and then silently dropped
+    // along with the whole dispatch record. The ops UI already blocks this;
+    // this stops the API doing it quietly.
+    if (data.riderId && !data.toLocationId) {
+      throw new AppError(422, "A destination hub is required to dispatch a manifest to a rider");
+    }
     if (data.toLocationId) {
       const distinctOrigins = new Set(parcels.map((p) => p.current_location_id || ""));
       if (distinctOrigins.size !== 1 || distinctOrigins.has("")) {
@@ -4401,6 +4433,7 @@ async function _bulkUpdateParcelStatusImpl(
           throw new AppError(400, "Rider not found or inactive");
         }
         riderId = rider.id;
+        riderName = rider.name;
       }
     }
   }
@@ -4488,6 +4521,19 @@ async function _bulkUpdateParcelStatusImpl(
         data: parcels.map((p) => ({ dispatch_id: dispatch!.id, parcel_id: p.id })),
       });
     }
+
+    // The manifest number and its driver are otherwise write-only: nothing in
+    // the app has ever read dispatches.delivery_rider_id back, so ops picked a
+    // "Rider / vehicle" and the choice vanished. Folding it into the status
+    // history puts it on the order timeline, where ops already looks when a
+    // parcel goes missing in transit - and it needs no new endpoint or screen.
+    //
+    // Deliberately the timeline and not the rider app: a transfer driver is
+    // not the last-mile rider, holds no COD, and must not appear in anyone's
+    // custody list. This records who drove it, nothing more.
+    const dispatchRemark = dispatch
+      ? `Manifest ${dispatch.dispatch_no}${riderName ? ` · carried by ${riderName}` : ""}`
+      : null;
 
     const updateData: Prisma.parcelsUpdateInput = { status: newStatus as parcel_status };
     if (newStatus === "delivered") {
@@ -4655,7 +4701,9 @@ async function _bulkUpdateParcelStatusImpl(
         new_status: newStatus as parcel_status,
         location_id: toLocationId || data.toLocationId || p.current_location_id,
         changed_by: actor.id,
-        remarks: data.remarks || null,
+        remarks: dispatchRemark
+          ? [dispatchRemark, data.remarks?.trim()].filter(Boolean).join(" — ")
+          : data.remarks || null,
       })),
     });
     // See the single-update path for why this also needs to land in

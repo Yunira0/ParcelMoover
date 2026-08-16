@@ -40,6 +40,7 @@ const mockedPrisma = prisma as unknown as {
   vendors: { findUnique: ReturnType<typeof vi.fn>; findMany: ReturnType<typeof vi.fn> };
   riders: { findFirst: ReturnType<typeof vi.fn>; findUnique: ReturnType<typeof vi.fn> };
   cod_collections: { findFirst: ReturnType<typeof vi.fn> };
+  locations: { findUnique: ReturnType<typeof vi.fn> };
   $transaction: ReturnType<typeof vi.fn>;
 };
 const mockedRedis = redis as unknown as {
@@ -458,5 +459,69 @@ describe("carrier legs drop a stale internal rider", () => {
     expect(tx.parcels.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ delivery_rider_id: null }) }),
     );
+  });
+});
+
+// Nothing ever read dispatches.delivery_rider_id back, so ops picked a rider
+// for a manifest and the choice vanished.
+describe("the manifest rider is recorded where ops can see it", () => {
+  const ADMIN = { id: "admin-1", roles: ["admin"] };
+
+  function mockDispatchable() {
+    const tx = makeMockTx();
+    tx.dispatches = {
+      create: vi.fn().mockResolvedValue({ id: "d-1", dispatch_no: "DSP-0007" }),
+      findUnique: vi.fn().mockResolvedValue(null),
+    };
+    tx.dispatch_parcels = { createMany: vi.fn() };
+    mockedPrisma.$transaction.mockImplementation((fn: (t: unknown) => Promise<unknown>) => fn(tx));
+    mockedPrisma.parcels.findMany.mockResolvedValue([
+      makeFakeParcel({ status: "oov", current_location_id: "loc-a" }),
+    ]);
+    mockedPrisma.locations.findUnique.mockResolvedValue({ id: "loc-b", is_active: true });
+    mockedPrisma.riders.findFirst.mockResolvedValue({ id: "rider-9", name: "Sunita Devi" });
+    return tx;
+  }
+
+  it("names the manifest and its driver on the order timeline", async () => {
+    const tx = mockDispatchable();
+
+    await bulkUpdateParcelStatus(ADMIN, {
+      ids: ["parcel-1"],
+      status: "dispatched",
+      toLocationId: "loc-b",
+      riderId: "rider-9",
+    });
+
+    const history = tx.parcel_status_history.createMany.mock.calls[0]![0].data[0];
+    expect(history.remarks).toBe("Manifest DSP-0007 · carried by Sunita Devi");
+  });
+
+  it("still records the manifest when no driver was picked", async () => {
+    const tx = mockDispatchable();
+
+    await bulkUpdateParcelStatus(ADMIN, {
+      ids: ["parcel-1"],
+      status: "dispatched",
+      toLocationId: "loc-b",
+    });
+
+    expect(tx.parcel_status_history.createMany.mock.calls[0]![0].data[0].remarks).toBe(
+      "Manifest DSP-0007",
+    );
+  });
+
+  // Without a destination there is no manifest at all, so the rider would be
+  // validated and then dropped along with it.
+  it("refuses a manifest rider with no destination hub instead of dropping it", async () => {
+    mockDispatchable();
+
+    await expect(
+      bulkUpdateParcelStatus(ADMIN, {
+        ids: ["parcel-1"],
+        status: "dispatched",
+        riderId: "rider-9",
+      }),
+    ).rejects.toThrow(AppError);
   });
 });
