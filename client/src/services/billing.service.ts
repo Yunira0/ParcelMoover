@@ -1,5 +1,15 @@
 import api from '../utils/api';
 
+const API_ROOT = (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '');
+
+// The QR is served through its own endpoint, not the generic /uploads mount
+// (that one is staff-only, and the whole point of the QR is that vendors see
+// it). qrPath doubles as a cache-buster: each upload gets a fresh random
+// filename, so keying the URL on it forces a refetch the moment an admin
+// replaces the QR, instead of the browser reusing a cached image forever.
+export const paymentQrUrl = (qrPath: string): string =>
+  `${API_ROOT}/billing/qr?v=${encodeURIComponent(qrPath)}`;
+
 // ── Vendor credit control ────────────────────────────────────────────────────
 //
 // A vendor's account balance is negative when they owe the office delivery
@@ -97,7 +107,13 @@ export const submitVendorPayment = async (input: {
   if (input.note) form.append('note', input.note);
   if (input.proof) form.append('proof', input.proof);
 
-  const response = await api.post('/billing/payments', form);
+  // Header override required: the api instance defaults to Content-Type:
+  // application/json, which makes axios serialise FormData to JSON instead of
+  // multipart - the File would silently become {} and multer would never see
+  // it. See finance.service.ts's payment upload for the same fix.
+  const response = await api.post('/billing/payments', form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
   return response.data.data;
 };
 
@@ -127,7 +143,9 @@ export const updateBillingSettings = async (input: {
 export const uploadPaymentQr = async (qr: File): Promise<BillingSettings> => {
   const form = new FormData();
   form.append('qr', qr);
-  const response = await api.post('/billing/settings/qr', form);
+  const response = await api.post('/billing/settings/qr', form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
   return response.data.data;
 };
 

@@ -46,6 +46,8 @@ export interface CreateOrderInput {
    */
   confirmDuplicate?: boolean;
 
+  /** Vendor-declared: this shipment may be accepted in part without failing the whole delivery. */
+  allowPartialDelivery?: boolean;
   /**
    * Places the order even though the vendor's account balance is past its
    * block threshold. Honoured for super_admin only — see
@@ -55,6 +57,7 @@ export interface CreateOrderInput {
 }
 
 export interface UpdateOrderDetailsInput {
+  vendorId?: string;
   receiver?: OrderPartyInput;
 
   originLocationId?: string;
@@ -125,6 +128,9 @@ export interface ListOrdersQuery {
   status?: ParcelStatus[];
   orderType?: OrderType;
   search?: string;
+  // Narrow the list to these vendors. Always intersected with the actor's own
+  // scope, so it can only ever shrink what a vendor/sales actor already sees.
+  vendorId?: string[];
   // Narrows the list to parcels carried by one delivery rider.
   deliveryRiderId?: string;
   // Display-only page hint echoed back in meta; the actual position comes
@@ -140,6 +146,10 @@ export interface ListOrdersQuery {
   // Export-only: enrich each row with its first "arrived at origin" date via a
   // batched history query. Off by default to keep the list/table path lean.
   withArrival?: boolean;
+  // Narrows to parcels delivered since local midnight. The "Delivered today"
+  // dashboard card counts by delivered_at, so its drill-down needs the same
+  // filter server-side to page and total consistently with the card.
+  deliveredToday?: boolean;
 }
 
 export interface BulkUpdateParcelStatusInput {

@@ -21,7 +21,7 @@ import {
   getOrders,
   getStatusCounts,
   subscribeToOrderStatusChanged,
-  updateOrderStatus,
+  bulkUpdateOrderStatus,
   type Order,
   type ParcelStatus,
 } from '../services/orders.service';
@@ -33,6 +33,16 @@ import { commitScannedTerm, handleScannerPaste } from '../utils/scannerInput';
 import './PickupOperations.css';
 
 type PickupTab = 'pickup_ordered' | 'rider_assigned' | 'picked_up' | 'arrived' | 'failed' | 'cancelled';
+
+// Only meaningful on the "Arrived at Origin" tab, where it decides whether a
+// parcel skips Transit (see destinationSkipsTransit below).
+type ValleyFilter = 'all' | 'inside' | 'outside';
+
+const VALLEY_FILTER_OPTIONS: { value: ValleyFilter; label: string }[] = [
+  { value: 'all', label: 'All' },
+  { value: 'inside', label: 'Inside Valley' },
+  { value: 'outside', label: 'Outside Valley' },
+];
 
 // Groups (pickups) per page in the outer table.
 const PAGE_SIZE = 10;
@@ -366,6 +376,7 @@ const PickupOperations: React.FC = () => {
   );
   const [debouncedSearch, setDebouncedSearch] = useState(() => searchParams.get('search') || '');
   const [page, setPage] = useState(1);
+  const [pageSizeChoice, setPageSizeChoice] = useState(PAGE_SIZE);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [selectedIdsByTab, setSelectedIdsByTab] = useState<Record<PickupTab, Set<string | number>>>(createEmptyTabSelections);
@@ -379,6 +390,7 @@ const PickupOperations: React.FC = () => {
   const [expandedGroupId, setExpandedGroupId] = useState('');
   const [remarkPopupOrder, setRemarkPopupOrder] = useState<Order | null>(null);
   const [tabCounts, setTabCounts] = useState<Record<string, number>>({});
+  const [valleyFilter, setValleyFilter] = useState<ValleyFilter>('all');
 
   // Badge counts follow the search, so a scanned parcel shows "1" on its tab
   // instead of the unfiltered total. Guarded like loadPickups so a slow earlier
@@ -404,7 +416,7 @@ const PickupOperations: React.FC = () => {
   useEffect(() => {
     (async () => {
       try {
-        const res = await getRiders();
+        const res = await getRiders({ pageSize: 100 });
         if (res?.success && Array.isArray(res.data)) {
           setRiders(res.data.filter((r: { status: string }) => r.status === 'active'));
         }
@@ -468,7 +480,12 @@ const PickupOperations: React.FC = () => {
     setIsActionOpen(false);
     setActionError('');
     setRiderId('');
-  }, [activeTab, debouncedSearch]);
+  }, [activeTab, debouncedSearch, pageSizeChoice]);
+
+  // Valley filter only applies to "Arrived at Origin" - drop it on any other tab.
+  useEffect(() => {
+    setValleyFilter('all');
+  }, [activeTab]);
 
   // Keep tab/search bookmarkable - mirror into the URL (replacing history,
   // not pushing, so the back button doesn't step through every keystroke).
@@ -485,14 +502,17 @@ const PickupOperations: React.FC = () => {
     setSelectedIdsByTab(prev => ({ ...prev, [activeTab]: new Set() }));
   }, [activeTab, debouncedSearch]);
 
-  const visibleOrders = orders;
+  const visibleOrders = useMemo(() => {
+    if (activeTab !== 'arrived' || valleyFilter === 'all') return orders;
+    return orders.filter(order => order.destinationValley === valleyFilter);
+  }, [orders, activeTab, valleyFilter]);
   const selectedIds = selectedIdsByTab[activeTab];
   const groups = useMemo(() => groupOrdersByVendor(visibleOrders), [visibleOrders]);
-  const totalPages = Math.max(1, Math.ceil(groups.length / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(groups.length / pageSizeChoice));
   // Clamp instead of resetting so a reload that shrinks the list doesn't strand
   // the pager past the last page.
   const currentPage = Math.min(page, totalPages);
-  const pagedGroups = groups.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  const pagedGroups = groups.slice((currentPage - 1) * pageSizeChoice, currentPage * pageSizeChoice);
   // A group's row checkbox reads as checked only once every order inside it
   // is selected - the underlying selection stays order-scoped so bulk status
   // changes keep applying per-order exactly as before grouping was added.
@@ -618,14 +638,13 @@ const PickupOperations: React.FC = () => {
 
     setStatusUpdating(true);
     try {
-      await Promise.all(
-        selectedOrders.map(order => updateOrderStatus(
-          order.id,
-          selectedNextStatus,
-          isReasonRequiredAction ? reasonRemarks.trim() : undefined,
-          undefined,
-          isRiderAssignAction ? riderId : undefined,
-        )),
+      await bulkUpdateOrderStatus(
+        selectedOrders.map(order => order.id),
+        selectedNextStatus,
+        {
+          remarks: isReasonRequiredAction ? reasonRemarks.trim() : undefined,
+          riderId: isRiderAssignAction ? riderId : undefined,
+        },
       );
       await loadPickups();
 
@@ -775,7 +794,15 @@ const PickupOperations: React.FC = () => {
       {loadError && <p className="pickup-action-error">{loadError}</p>}
 
       <div className="pickup-toolbar">
-        <div />
+        {activeTab === 'arrived' ? (
+          <SegmentedTabs
+            ariaLabel="Filter by valley"
+            fullWidth={false}
+            value={valleyFilter}
+            onChange={setValleyFilter}
+            options={VALLEY_FILTER_OPTIONS}
+          />
+        ) : <div />}
         <div className="pickup-toolbar-actions">
           <div className="pickup-action-anchor">
             <Button variant="secondary" className="pickup-outline-btn" onClick={openStatusAction}>
@@ -883,7 +910,7 @@ const PickupOperations: React.FC = () => {
             onChange={event => setSearchQuery(event.target.value)}
             onKeyDown={event => commitScannedTerm(event, setScannedIds, setSearchQuery)}
             onPaste={event => handleScannerPaste(event, setScannedIds, setSearchQuery)}
-            placeholder="Search tracking id"
+            placeholder="Search tracking id or #2980"
           />
           {(searchQuery || scannedIds.length > 0) && (
             <button type="button" onClick={() => { setSearchQuery(''); setScannedIds([]); }} aria-label="Clear search">
@@ -940,9 +967,12 @@ const PickupOperations: React.FC = () => {
         page={currentPage}
         totalPages={totalPages}
         onPageChange={next => { setPage(next); setExpandedGroupId(''); }}
+        pageSize={pageSizeChoice}
+        pageSizeLabel="pickups"
+        onPageSizeChange={setPageSizeChoice}
         summary={
           `${groups.length} pickup${groups.length === 1 ? '' : 's'} · ` +
-          `${orders.length}${capped ? '+' : ''} order${orders.length === 1 ? '' : 's'}` +
+          `${visibleOrders.length}${capped ? '+' : ''} order${visibleOrders.length === 1 ? '' : 's'}` +
           (capped ? ` (showing the first ${orders.length})` : '')
         }
       />

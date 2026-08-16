@@ -122,3 +122,89 @@ If you did not expect this email, contact your account administrator.
     html,
   });
 }
+
+function getWebhooksUrl() {
+  const base = (process.env.APP_URL || "http://localhost:5173").replace(/\/$/, "");
+  return `${base}/developer/webhooks`;
+}
+
+/**
+ * Sent once, at the moment the delivery engine's circuit breaker trips an
+ * endpoint - after 5 separate events each exhausted all 12 retry attempts
+ * over ~24h without a single success in between (so, on the order of days
+ * of continuous failure). Until this existed, the only signal was a server
+ * log line and the dashboard's own `disabled_at` field, so a vendor whose
+ * receiving server crashed had no way to learn their order-status sync had
+ * silently stopped short of noticing on their own.
+ */
+export async function sendWebhookDisabledEmail(opts: {
+  to: string;
+  vendorName: string;
+  endpointName: string;
+  endpointUrl: string;
+}) {
+  const webhooksUrl = getWebhooksUrl();
+
+  const html = `
+    <div style="font-family:sans-serif;max-width:520px;margin:0 auto;color:#1a1a2e">
+      <h2 style="margin-bottom:4px">A webhook endpoint has been disabled</h2>
+      <p style="color:#4b5563;margin-top:0">
+        Hi ${opts.vendorName}, ParcelMoover stopped delivering order-status events to one of your
+        webhook endpoints after it failed every delivery attempt for several days in a row.
+        You will not receive further events on this endpoint until you re-enable it.
+      </p>
+
+      <div style="background:#f8f9fb;border:1px solid #e5e7eb;border-radius:8px;padding:20px;margin:24px 0">
+        <table style="border-collapse:collapse;width:100%">
+          <tr>
+            <td style="padding:8px 0;font-weight:600;width:34%;color:#374151">Endpoint</td>
+            <td style="padding:8px 0">${opts.endpointName}</td>
+          </tr>
+          <tr>
+            <td style="padding:8px 0;font-weight:600;color:#374151;border-top:1px solid #e5e7eb">URL</td>
+            <td style="padding:8px 0;border-top:1px solid #e5e7eb;word-break:break-all">${opts.endpointUrl}</td>
+          </tr>
+        </table>
+      </div>
+
+      <div style="background:#fffbeb;border-left:4px solid #f59e0b;border-radius:4px;padding:14px 16px;margin-bottom:24px">
+        <strong style="color:#92400e">Action required:</strong>
+        <span style="color:#78350f">
+          Fix whatever is rejecting or timing out these requests, then re-enable the endpoint from
+          your dashboard. Re-enabling clears the failure count and resumes delivery of new events -
+          it does not replay what was missed while disabled; use <code>GET /orders/statuses</code>
+          to reconcile anything you may have missed.
+        </span>
+      </div>
+
+      <a href="${webhooksUrl}"
+         style="display:inline-block;background:#4f46e5;color:#fff;text-decoration:none;padding:13px 28px;border-radius:7px;font-weight:600;font-size:15px">
+        Open Webhooks settings &rarr;
+      </a>
+    </div>
+  `;
+
+  const text = `
+A webhook endpoint has been disabled
+
+Hi ${opts.vendorName}, ParcelMoover stopped delivering order-status events to one of your webhook
+endpoints after it failed every delivery attempt for several days in a row. You will not receive
+further events on this endpoint until you re-enable it.
+
+  Endpoint: ${opts.endpointName}
+  URL:      ${opts.endpointUrl}
+
+ACTION REQUIRED: Fix whatever is rejecting or timing out these requests, then re-enable the
+endpoint at ${webhooksUrl}. Re-enabling clears the failure count and resumes delivery of new
+events - it does not replay what was missed while disabled; use GET /orders/statuses to
+reconcile anything you may have missed.
+  `.trim();
+
+  await getTransporter().sendMail({
+    from: getFrom(),
+    to: opts.to,
+    subject: `ParcelMoover webhook disabled: ${opts.endpointName}`,
+    text,
+    html,
+  });
+}

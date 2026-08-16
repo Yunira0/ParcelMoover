@@ -21,6 +21,7 @@ import Pagination from '../components/Pagination';
 import StatusChip, { type StatusChipTone } from '../components/StatusChip';
 import FilterDropdown from '../components/FilterDropdown';
 import MultiFilterDropdown from '../components/MultiFilterDropdown';
+import MultiFilterDropdownAsync from '../components/MultiFilterDropdownAsync';
 import QuickRemarkPopup from '../components/QuickRemarkPopup';
 import { toBsDate, toBsDateTime } from '../utils/nepaliDate';
 import { downloadExcel } from '../utils/excel';
@@ -28,15 +29,19 @@ import NepaliDatePicker from '../components/NepaliDatePicker';
 import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react';
 import {
   getOrders,
+  getOrderFilterOptions,
   redirectOrder,
   subscribeToOrderStatusChanged,
   ORDER_SORT_FIELDS,
+  MAX_ORDER_PAGE_SIZE,
   type CreateOrderInput,
   type Order,
+  type OrderFilterOptions,
   type OrdersPageMeta,
   type OrderSortField,
   type ParcelStatus,
 } from '../services/orders.service';
+import { searchVendors } from '../services/users.service';
 import { printLabels } from '../utils/printLabels';
 import { getCurrentUserRoles } from '../utils/auth';
 import { commitScannedTerm, handleScannerPaste } from '../utils/scannerInput';
@@ -149,7 +154,7 @@ interface SecondaryFilters {
   /** Inclusive AD dates (YYYY-MM-DD) compared against the selected dateField. */
   dateFrom: string;
   dateTo: string;
-  /** Multi-select: an order matches if its vendor is any of these (empty = all). */
+  /** Multi-select vendor ids; pushed to the server, empty = all. */
   vendor: string[];
   operationDept: string;
 }
@@ -174,8 +179,10 @@ const matchesKeyword = (order: Order, keyword: string) => {
 };
 
 // Filters the backend doesn't have a query param for (origin/rider/keyword/
-// destination/date range/vendor/department) - applied client-side on top of
-// whatever page the server already returned for the active tab + search.
+// destination/date range/department) - applied client-side on top of whatever
+// page the server already returned for the active tab + search. Status and
+// vendor are also re-checked here, but only as a no-op safety net: both are
+// pushed down to the query, so the rows are already narrowed server-side.
 // Nepal-local (UTC+5:45) AD date "YYYY-MM-DD" for an ISO timestamp - so the
 // status-updated date lines up with the same local-day bucketing createdAt uses.
 const toNepalDate = (iso?: string): string => {
@@ -208,7 +215,7 @@ const matchesSecondaryFilters = (order: Order, filters: SecondaryFilters) => {
     (filters.currentStatus.length === 0 || filters.currentStatus.includes(order.status)) &&
     (!filters.orderType || order.orderType === filters.orderType) &&
     matchesDateSpan &&
-    (filters.vendor.length === 0 || filters.vendor.includes(order.vendorName || order.senderName)) &&
+    (filters.vendor.length === 0 || (!!order.vendorId && filters.vendor.includes(order.vendorId))) &&
     matchesOperation;
 };
 
@@ -246,7 +253,7 @@ const OrderManagement: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const [orders, setOrders] = useState<Order[]>([]);
   const [meta, setMeta] = useState<OrdersPageMeta | null>(null);
-  const [optionsOrders, setOptionsOrders] = useState<Order[]>([]);
+  const [filterOptionsData, setFilterOptionsData] = useState<OrderFilterOptions>({ origins: [], destinations: [], riders: [] });
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [filter, setFilter] = useState<FilterTab>(() => {
@@ -354,7 +361,7 @@ const OrderManagement: React.FC = () => {
       // enough rows in one page to fit the whole scanned batch, instead of
       // silently cutting it off at the default page size.
       const scannedTermCount = debouncedSearch ? debouncedSearch.split(',').map(t => t.trim()).filter(Boolean).length : 0;
-      const pageSize = scannedTermCount > 1 ? Math.min(100, Math.max(pageSizeChoice, scannedTermCount)) : pageSizeChoice;
+      const pageSize = scannedTermCount > 1 ? Math.min(MAX_ORDER_PAGE_SIZE, Math.max(pageSizeChoice, scannedTermCount)) : pageSizeChoice;
 
       // The status set actually sent to the server. A `currentStatus` selection
       // is pushed down to the query (not just filtered client-side over one
@@ -370,6 +377,10 @@ const OrderManagement: React.FC = () => {
       const res = await getOrders({
         status: effectiveStatus,
         search: debouncedSearch || undefined,
+        // Pushed down for the same reason as `currentStatus`: filtering vendors
+        // client-side only ever narrowed the page already fetched, so picking a
+        // vendor with no parcels on the current page showed an empty table.
+        vendorId: vendor.length ? vendor : undefined,
         pageSize,
         cursor: pager.request.cursor,
         dir: pager.request.dir,
@@ -388,7 +399,7 @@ const OrderManagement: React.FC = () => {
     } finally {
       if (requestId === loadRequestIdRef.current) setLoading(false);
     }
-  }, [filter, currentStatus, debouncedSearch, pager.request, sortBy, sortDir, pageSizeChoice]);
+  }, [filter, currentStatus, vendor, debouncedSearch, pager.request, sortBy, sortDir, pageSizeChoice]);
 
   useEffect(() => { loadOrders(); }, [loadOrders]);
   useEffect(() => subscribeToOrderStatusChanged(loadOrders), [loadOrders]);
@@ -434,9 +445,9 @@ const OrderManagement: React.FC = () => {
     let cancelled = false;
     (async () => {
       try {
-        const res = await getOrders({ status: TAB_GROUPS[filter] });
-        if (!cancelled && res?.success && Array.isArray(res.data)) {
-          setOptionsOrders(res.data);
+        const res = await getOrderFilterOptions(TAB_GROUPS[filter]);
+        if (!cancelled && res?.success && res.data) {
+          setFilterOptionsData(res.data);
         }
       } catch {
         // dropdown options just won't refresh; not fatal
@@ -445,14 +456,27 @@ const OrderManagement: React.FC = () => {
     return () => { cancelled = true; };
   }, [filter]);
 
+  // Options are keyed by vendor id (not name) because the selection is sent to
+  // the server as ?vendorId=. The picker keeps its own id->label cache, so the
+  // trigger still shows vendor names once they've been loaded once.
+  const handleVendorFilterSearch = useCallback(async (search: string, offset: number) => {
+    const res = await searchVendors(search, 50, offset);
+    if (res?.success && Array.isArray(res.data)) {
+      const results = (res.data as { id?: string; label?: string }[])
+        .filter((v): v is { id: string; label: string } => Boolean(v.id && v.label))
+        .map(v => ({ id: v.id, label: v.label }));
+      return { results, hasMore: res.hasMore ?? false };
+    }
+    return { results: [], hasMore: false };
+  }, []);
+
   const filterOptions = useMemo(() => {
     return {
-      origins: uniqueValues(optionsOrders.map(order => order.origin)),
-      riders: uniqueValues(optionsOrders.map(order => order.riderName || '')),
-      destinations: uniqueValues(optionsOrders.map(order => order.destination)),
-      vendors: uniqueValues(optionsOrders.map(order => order.vendorName || order.senderName)),
+      origins: uniqueValues(filterOptionsData.origins),
+      riders: uniqueValues(filterOptionsData.riders),
+      destinations: uniqueValues(filterOptionsData.destinations),
     };
-  }, [optionsOrders]);
+  }, [filterOptionsData]);
 
   // Status/search are already applied server-side; only the filters the
   // backend has no query param for are applied here, on top of the current page.
@@ -636,6 +660,10 @@ const OrderManagement: React.FC = () => {
     </button>
   );
 
+  // Location names are stored as "HUB NAME - DISTRICT" (see locations.name);
+  // the ORIGIN column only needs the hub, not the district suffix.
+  const hubNameOnly = (locationName: string) => locationName.split(' - ')[0];
+
   const orderColumns = [
     {
       header: 'ORDER ID',
@@ -650,7 +678,7 @@ const OrderManagement: React.FC = () => {
       width: '180px',
       className: 'tracking-cell',
     },
-    { header: 'ORIGIN', accessor: (order: Order) => order.origin || '-', width: '150px' },
+    { header: 'ORIGIN', accessor: (order: Order) => (order.origin ? hubNameOnly(order.origin) : '-'), width: '150px' },
     {
       header: 'SENDER',
       accessor: (order: Order) => (
@@ -856,12 +884,13 @@ const OrderManagement: React.FC = () => {
                 aria-label="To date"
               />
             </label>
-            <MultiFilterDropdown
+            <MultiFilterDropdownAsync
               label="VENDOR"
               value={vendor}
               onChange={setVendor}
               placeholder="All Vendors"
-              options={filterOptions.vendors.map(value => ({ value, label: value }))}
+              searchPlaceholder="Search vendor by name..."
+              asyncSearch={handleVendorFilterSearch}
             />
             <FilterDropdown
               label="OPERATION DEPT"
@@ -921,7 +950,7 @@ const OrderManagement: React.FC = () => {
             onChange={event => setTrackingSearch(event.target.value)}
             onKeyDown={event => commitScannedTerm(event, setScannedIds, setTrackingSearch)}
             onPaste={event => handleScannerPaste(event, setScannedIds, setTrackingSearch)}
-            placeholder="TRK001 or TRK001, TRK002, TRK003"
+            placeholder="TRK001, #2980, or TRK001, TRK002, TRK003"
           />
           {(trackingSearch || scannedIds.length > 0) && (
             <button type="button" onClick={() => { setTrackingSearch(''); setScannedIds([]); }} aria-label="Clear search">
@@ -972,7 +1001,7 @@ const OrderManagement: React.FC = () => {
         totalPages={totalPages}
         cursor={pager.controls(meta)}
         pageSize={pageSizeChoice}
-        pageSizeLabel="parcels"
+        pageSizeLabel="orders"
         onPageSizeChange={(size) => {
           setPageSizeChoice(size);
           pager.reset();

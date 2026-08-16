@@ -11,29 +11,33 @@ COPY client/ ./
 RUN npm run build
 
 #######################################
-# Stage 2 — install server deps, generate Prisma client, compile TypeScript
+# Stage 2 — install ALL server deps (including dev), generate Prisma, compile TS
 #######################################
 FROM node:20-alpine AS server-build
-# Prisma's schema engine (used by `prisma generate` / `migrate deploy`) needs libssl.
 RUN apk add --no-cache openssl
 WORKDIR /app
 COPY server/package.json server/package-lock.json ./
 RUN npm ci
 COPY server/ ./
-# Runs inside this linux/musl container so the generated query engine binary
-# matches the runtime OS — never copy a client generated on the host.
-# prisma.config.ts reads DATABASE_URL via env() at config-load time even for
-# `generate`, which never actually connects to a DB — a placeholder is enough.
 ENV DATABASE_URL="postgresql://placeholder:placeholder@localhost:5432/placeholder"
 RUN npx prisma generate
 RUN npm run build
-# tsc only emits compiled .js from .ts sources — it silently drops the native
-# query-engine binary that `prisma generate` placed alongside the generated
-# client, which the compiled dist/index.js needs at runtime.
 RUN cp src/generated/prisma/*.so.node dist/generated/prisma/
 
 #######################################
-# Stage 3 — runtime image
+# Stage 3 — production-only server deps (no devDependencies)
+#######################################
+FROM node:20-alpine AS prod-deps
+RUN apk add --no-cache openssl
+WORKDIR /app
+COPY server/package.json server/package-lock.json ./
+# sharp ships multi-platform native binaries by default; restrict to musl/x64
+# so we don't pull in glibc binaries that will never be used on Alpine.
+ENV SHARP_IGNORE_GLOBAL_LIBVIPS=1
+RUN npm ci --omit=dev
+
+#######################################
+# Stage 4 — runtime image (production deps only)
 #######################################
 FROM node:20-alpine AS runtime
 RUN apk add --no-cache openssl tini \
@@ -43,13 +47,16 @@ WORKDIR /app
 ENV NODE_ENV=production \
     PORT=3000
 
-COPY --from=server-build /app/node_modules ./node_modules
+COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=server-build /app/package.json ./package.json
 COPY --from=server-build /app/dist ./dist
 COPY --from=server-build /app/prisma ./prisma
 COPY --from=server-build /app/prisma.config.ts ./prisma.config.ts
 # server.ts does `express.static("public")` — this is where the built SPA lives.
 COPY --from=client-build /app/client/dist ./public
+# Partner API reference page, served at GET /api/v1/docs. tsc doesn't copy
+# non-TS files into dist/, so this comes across from the server build context.
+COPY --from=server-build /app/docs-static ./docs-static
 
 RUN mkdir -p uploads && chown -R app:app /app
 USER app

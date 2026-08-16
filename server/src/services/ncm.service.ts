@@ -23,7 +23,11 @@ import {
  * our tracking id, NCM's vref_id field cap (order → parcel).
  */
 
-const HANDOFF_REMARK_PREFIX = "Parcel dispatched to destination";
+// Exported so other services (e.g. the COD settlement breakdown in
+// order.service.ts) can identify NCM-handled parcels the same durable way
+// this file does - a real parcel_remarks row, not a Redis cache entry (which
+// has a TTL and is only a lookup accelerator, never the source of truth).
+export const HANDOFF_REMARK_PREFIX = "Parcel dispatched to destination";
 const HANDOFF_REMARK_ORDER_RE = /Parcel dispatched to destination[^#]*#(\d+)/;
 
 // Which 3PL carries a parcel is our commercial arrangement, not the customer's

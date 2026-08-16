@@ -23,11 +23,16 @@ export interface Remark {
   lastRemarkAt: string;
 }
 
+/** Vendor owners and their staff are one author group; riders are the other. */
+export type RemarkAuthorGroup = 'vendor' | 'rider';
+
 export interface ListRemarksParams {
   status?: RemarkStatus;
   /** Server-side "unclosed comments" filter: workflow_status != closed, limited
-   *  to vendor/rider-raised remarks. Matches getUnclosedRemarksCount exactly. */
+   *  to vendor/rider-raised remarks. Matches getUnclosedRemarksCounts exactly. */
   unclosed?: boolean;
+  /** Only meaningful with `unclosed`; narrows to one author group. */
+  author?: RemarkAuthorGroup;
   search?: string;
   fromDate?: string;
   toDate?: string;
@@ -40,6 +45,8 @@ export interface RemarksPageMeta {
   pageSize: number;
   total: number;
   totalPages: number;
+  /** Breakdown of the whole filtered set (all pages), not just the rows returned. */
+  statusCounts?: Record<RemarkStatus, number>;
 }
 
 export interface RemarksListResponse {
@@ -75,6 +82,7 @@ export const getRemarks = async (params?: ListRemarksParams): Promise<RemarksLis
   const query: Record<string, string> = {};
   if (params?.status) query.status = params.status;
   if (params?.unclosed) query.unclosed = 'true';
+  if (params?.author) query.author = params.author;
   if (params?.search) query.search = params.search;
   if (params?.fromDate) query.fromDate = params.fromDate;
   if (params?.toDate) query.toDate = params.toDate;
@@ -110,7 +118,18 @@ export const setRemarkStatus = async (
   return response.data;
 };
 
-export const getUnclosedRemarksCount = async (): Promise<{ success: boolean; data: { count: number } }> => {
+export interface UnclosedRemarkCounts {
+  /** Both groups combined — not vendor + rider, so an account holding both roles
+   *  isn't counted twice. */
+  total: number;
+  vendor: number;
+  rider: number;
+}
+
+export const getUnclosedRemarksCounts = async (): Promise<{
+  success: boolean;
+  data: UnclosedRemarkCounts;
+}> => {
   const response = await api.get('/remarks/unclosed/count');
   return response.data;
 };

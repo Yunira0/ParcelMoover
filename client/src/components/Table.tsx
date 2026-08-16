@@ -42,6 +42,31 @@ interface TableProps<T> {
 // Tables that size every column explicitly (and pass minWidth) opt into
 // fixed layout instead, so their pixel-tuned widths are honored exactly.
 
+const SKELETON_ROWS = 6;
+
+// Mirrors the real row shape (checkbox column + one cell per column) instead
+// of a single "Loading..." text cell, so the table doesn't jump-cut its
+// layout the instant data arrives - the shimmer bars roughly telegraph where
+// content is about to land.
+const SkeletonRows = ({ columnCount, selectable }: { columnCount: number; selectable: boolean }) => (
+  <>
+    {Array.from({ length: SKELETON_ROWS }).map((_, rowIndex) => (
+      <tr key={`skeleton-${rowIndex}`} className="table-skeleton-row" aria-hidden="true">
+        {selectable && (
+          <td className="checkbox-column">
+            <span className="skeleton-bar skeleton-bar-checkbox" />
+          </td>
+        )}
+        {Array.from({ length: columnCount }).map((_, colIndex) => (
+          <td key={colIndex}>
+            <span className="skeleton-bar" />
+          </td>
+        ))}
+      </tr>
+    ))}
+  </>
+);
+
 const HeaderCheckbox = ({
   checked,
   indeterminate,
@@ -168,9 +193,12 @@ const Table = <T extends { id: string | number }>({
         </thead>
         <tbody>
           {loading ? (
-            <tr>
-              <td colSpan={colSpan} className="table-empty-cell">{loadingMessage}</td>
-            </tr>
+            <>
+              <tr>
+                <td colSpan={colSpan} className="sr-only" role="status">{loadingMessage}</td>
+              </tr>
+              <SkeletonRows columnCount={columns.length} selectable={selectable} />
+            </>
           ) : data.length === 0 ? (
             <tr>
               <td colSpan={colSpan} className="table-empty-cell">{emptyMessage}</td>

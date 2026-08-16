@@ -1,6 +1,6 @@
 import prisma from "../lib/prisma";
 import { AppError } from "../utils/AppError";
-import { invalidateDestinationPricingCache, ZONES, VALLEYS } from "./pricing.service";
+import { invalidateDestinationPricingCache, ZONES, VALLEYS, RING_ROADS } from "./pricing.service";
 
 export interface UpsertLocationInput {
   name: string;
@@ -15,6 +15,7 @@ export interface UpsertLocationInput {
   // Pricing classification (set by super admin in Settings)
   zone?: string | null; // major_cities | urban_areas | remote_areas
   valley?: string | null; // inside | outside
+  ringRoad?: string | null; // inside | outside - only meaningful when valley = inside
   perDestinationRate?: number | null;
   branchPerDestinationRate?: number | null;
 }
@@ -32,6 +33,7 @@ function mapLocation(loc: {
   is_active: boolean;
   zone: string | null;
   valley: string | null;
+  ring_road: string | null;
   per_destination_rate: { toString(): string } | null;
   branch_per_destination_rate: { toString(): string } | null;
 }) {
@@ -48,6 +50,7 @@ function mapLocation(loc: {
     isActive: loc.is_active,
     zone: loc.zone,
     valley: loc.valley,
+    ringRoad: loc.ring_road,
     perDestinationRate: loc.per_destination_rate === null ? null : Number(loc.per_destination_rate),
     branchPerDestinationRate: loc.branch_per_destination_rate === null ? null : Number(loc.branch_per_destination_rate),
   };
@@ -56,14 +59,17 @@ function mapLocation(loc: {
 // Destinations are top-level locations; covered areas are their children. Returns
 // destinations each with their nested areas, for the Settings management screen.
 export async function listManagedLocations() {
-  // Newest first so a freshly added destination/area shows at the top.
-  const all = await prisma.locations.findMany({ orderBy: { created_at: "desc" } });
-  const mapped = all.map(mapLocation);
+  // Fetch destinations (parent_id = null) with their areas in a single query.
+  // Newest first so a freshly added destination shows at the top.
+  const destinations = await prisma.locations.findMany({
+    where: { parent_id: null },
+    include: { other_locations: { orderBy: { name: "asc" } } },
+    orderBy: { created_at: "desc" },
+  });
 
-  const destinations = mapped.filter((l) => !l.parentId);
   return destinations.map((dest) => ({
-    ...dest,
-    areas: mapped.filter((l) => l.parentId === dest.id),
+    ...mapLocation(dest),
+    areas: dest.other_locations.map(mapLocation),
   }));
 }
 
@@ -124,6 +130,7 @@ export interface BulkImportDestination {
   city?: string;
   zone?: string;
   valley?: string;
+  ringRoad?: string;
   perDestinationRate?: number | null;
   // Rate for branch delivery (parcel dropped at the branch, not the door).
   branchPerDestinationRate?: number | null;
@@ -238,6 +245,21 @@ export async function bulkImportLocations(rows: BulkImportDestination[]) {
       continue;
     }
 
+    if (
+      row.ringRoad !== undefined &&
+      row.ringRoad !== null &&
+      !RING_ROADS.includes(row.ringRoad as (typeof RING_ROADS)[number])
+    ) {
+      results.push({
+        destination: destName,
+        action: "created",
+        areasCreated: [],
+        areasSkipped: [],
+        error: `Row skipped: ring road must be one of ${RING_ROADS.join(", ")}`,
+      });
+      continue;
+    }
+
     try {
       let dest = await prisma.locations.findFirst({
         where: { name: { equals: destName, mode: "insensitive" }, parent_id: null },
@@ -257,6 +279,7 @@ export async function bulkImportLocations(rows: BulkImportDestination[]) {
             is_active: true,
             zone: row.zone || null,
             valley: row.valley || null,
+            ring_road: row.ringRoad || null,
             per_destination_rate: row.perDestinationRate ?? null,
             branch_per_destination_rate: row.branchPerDestinationRate ?? null,
           },
@@ -274,6 +297,7 @@ export async function bulkImportLocations(rows: BulkImportDestination[]) {
             ...(row.district !== undefined ? { district: row.district?.trim() || null } : {}),
             ...(row.zone !== undefined ? { zone: row.zone || null } : {}),
             ...(row.valley !== undefined ? { valley: row.valley || null } : {}),
+            ...(row.ringRoad !== undefined ? { ring_road: row.ringRoad || null } : {}),
             ...(row.perDestinationRate !== undefined
               ? { per_destination_rate: row.perDestinationRate }
               : {}),
@@ -342,6 +366,7 @@ export async function updateLocation(id: string, input: Partial<UpsertLocationIn
       ...(input.isActive !== undefined ? { is_active: input.isActive } : {}),
       ...(input.zone !== undefined ? { zone: input.zone || null } : {}),
       ...(input.valley !== undefined ? { valley: input.valley || null } : {}),
+      ...(input.ringRoad !== undefined ? { ring_road: input.ringRoad || null } : {}),
       ...(input.perDestinationRate !== undefined
         ? { per_destination_rate: input.perDestinationRate }
         : {}),

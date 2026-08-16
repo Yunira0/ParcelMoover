@@ -12,8 +12,8 @@ export const ADMIN_PERMISSIONS = [
   // before/after payloads across every entity, so this is a real grant.
   "SYSTEM_LOGS_ACCESS",
   // Edit an unsettled (not yet paid) COD statement - add/remove orders to
-  // correct a mistake before money moves. Statements already marked settled
-  // can never be edited, permission or not.
+  // correct a mistake before money moves. Also covers reverting an already
+  // settled statement back to pending, to undo a mistaken payment record.
   "EDIT_SETTLEMENTS",
   // The whole Finance section: reading the books (journal, account ledgers,
   // trial balance, party subledgers, P&L and balance sheet), writing to them
@@ -26,6 +26,10 @@ export const ADMIN_PERMISSIONS = [
   // financial picture of the business across every vendor and rider, so it is
   // delegated deliberately, the same reasoning as SYSTEM_LOGS_ACCESS.
   "ACCOUNTING_ACCESS",
+  // Correct the COD amount on a delivered/RTV/RTO parcel - otherwise locked
+  // once a parcel reaches a terminal-ish status. Still blocked once the
+  // parcel's COD has actually been paid out to the vendor.
+  "EDIT_COD_LOCKED",
 ] as const;
 
 export type AdminPermission = (typeof ADMIN_PERMISSIONS)[number];

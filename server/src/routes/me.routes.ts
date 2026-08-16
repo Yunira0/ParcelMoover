@@ -15,6 +15,7 @@ const meReadLimiter = rateLimit({
   message: { success: false, message: "Too many requests, please slow down" },
   standardHeaders: true,
   legacyHeaders: false,
+  passOnStoreError: true,
   store: createRedisRateLimitStore("me-read"),
   keyGenerator: actorOrIpKey,
 });
@@ -25,6 +26,7 @@ const meWriteLimiter = rateLimit({
   message: { success: false, message: "Too many requests, please slow down" },
   standardHeaders: true,
   legacyHeaders: false,
+  passOnStoreError: true,
   store: createRedisRateLimitStore("me-write"),
   keyGenerator: actorOrIpKey,
 });

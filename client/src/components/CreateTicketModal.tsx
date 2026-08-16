@@ -56,10 +56,15 @@ const priorityOptions = (Object.keys(TICKET_PRIORITY_LABELS) as TicketPriority[]
   label: TICKET_PRIORITY_LABELS[p],
 }));
 
-const categoryOptions = (Object.keys(TICKET_CATEGORY_LABELS) as TicketCategory[]).map((c) => ({
-  value: c,
-  label: TICKET_CATEGORY_LABELS[c],
-}));
+// return_request is raised only via the Partner API (linked to an order by
+// the return-request endpoint) — this manual modal has no order picker for
+// it, so it's excluded here rather than offered as an orphaned category.
+const categoryOptions = (Object.keys(TICKET_CATEGORY_LABELS) as TicketCategory[])
+  .filter((c) => c !== 'return_request')
+  .map((c) => ({
+    value: c,
+    label: TICKET_CATEGORY_LABELS[c],
+  }));
 
 const CreateTicketModal: React.FC<CreateTicketModalProps> = ({ isOpen, onClose, onSuccess, initialCategory }) => {
   const [form, setForm] = useState<TicketFormState>(initialState);

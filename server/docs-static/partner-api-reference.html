@@ -1,0 +1,1061 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ParcelMoover Partner API — Developer Reference</title>
+<meta name="description" content="Integration reference for the ParcelMoover Partner API v1: orders, tracking, rates, COD settlements, and webhooks.">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+:root{
+  --rust:#c2410c; --rust-soft:#ffedd5;
+  --ink:#030712; --muted:#4b5563; --faint:#6b7280;
+  --border:#d1d5db; --canvas:#f3f4f6; --surface:#ffffff; --elevated:#e5e7eb;
+  --success:#15803d; --danger:#b91c1c; --info:#1d4ed8;
+  --code-bg:#f8f9fa;
+  --t-key:#1d4ed8; --t-str:#15803d; --t-num:#a16207; --t-lit:#7c3aed;
+  --t-com:#6b7280; --t-kw:#c2410c; --t-var:#b91c1c;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Helvetica,Arial,sans-serif;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+  --sidebar:280px;
+}
+
+/* Devs read API docs at 2am. Tokens flip; every rule below is theme-agnostic. */
+@media (prefers-color-scheme:dark){
+  :root{
+    --ink:#f3f4f6; --muted:#9ca3af; --faint:#6b7280;
+    --border:#374151; --canvas:#0b0f19; --surface:#111827; --elevated:#1f2937;
+    --rust:#fb923c; --rust-soft:#7c2d12;
+    --success:#4ade80; --danger:#f87171; --info:#60a5fa;
+    --code-bg:#0b0f19;
+    --t-key:#60a5fa; --t-str:#4ade80; --t-num:#fbbf24; --t-lit:#c4b5fd;
+    --t-com:#6b7280; --t-kw:#fb923c; --t-var:#f87171;
+  }
+}
+
+html{scroll-behavior:smooth}
+body{
+  font-family:var(--sans); font-size:14px; font-weight:500; line-height:1.65;
+  color:var(--ink); background:var(--canvas);
+  -webkit-font-smoothing:antialiased;
+}
+
+.layout{display:grid; grid-template-columns:var(--sidebar) minmax(0,1fr); align-items:start}
+
+/* Sidebar */
+.sidebar{
+  position:sticky; top:0; height:100vh; overflow-y:auto;
+  background:var(--surface); border-right:1px solid var(--border); padding:24px 0;
+}
+.brand{padding:0 20px 18px; border-bottom:1px solid var(--border); margin-bottom:16px}
+.brand-name{font-size:16px; font-weight:700; letter-spacing:-.01em}
+.brand-sub{font-size:12px; font-weight:500; color:var(--faint); margin-top:2px}
+.brand-badge{
+  display:inline-block; margin-top:10px; padding:2px 8px; border-radius:9999px;
+  background:var(--rust-soft); color:var(--rust); font-size:11px; font-weight:700;
+  letter-spacing:.04em; text-transform:uppercase;
+}
+.console-link{
+  display:inline-block; margin-top:12px; font-size:12.5px; font-weight:600;
+  color:var(--rust); text-decoration:none;
+}
+.console-link:hover{text-decoration:underline}
+.toc-link{
+  display:block; padding:5px 20px; color:var(--muted); text-decoration:none;
+  font-size:13px; border-left:2px solid transparent;
+}
+.toc-link:hover{color:var(--ink); background:var(--canvas)}
+.toc-link.toc-h3{padding-left:34px; font-size:12.5px; color:var(--faint)}
+.toc-link.active{color:var(--rust); border-left-color:var(--rust); background:var(--rust-soft)}
+@media (prefers-color-scheme:dark){ .toc-link.active{background:transparent} }
+
+/* Content */
+main{padding:48px 56px 120px; max-width:920px}
+
+h1,h2,h3,h4,h5,h6{line-height:1.25; letter-spacing:-.02em; scroll-margin-top:24px}
+h1{font-size:40px; font-weight:700; margin-bottom:8px}
+h2{font-size:28px; font-weight:700; margin:56px 0 16px; padding-top:24px; border-top:1px solid var(--border)}
+h3{font-size:21px; font-weight:650; margin:36px 0 12px}
+h4{font-size:16px; font-weight:650; margin:26px 0 10px; color:var(--muted)}
+h1+p{font-size:16px; color:var(--muted); font-weight:500}
+
+.anchor{
+  margin-left:8px; color:var(--border); text-decoration:none; font-weight:500;
+  opacity:0; transition:opacity .12s;
+}
+h1:hover .anchor,h2:hover .anchor,h3:hover .anchor,h4:hover .anchor{opacity:1}
+.anchor:hover{color:var(--rust)}
+
+p{margin:12px 0}
+a{color:var(--rust); text-decoration:underline; text-underline-offset:2px}
+strong{font-weight:680}
+/* hr is always hidden - h2 already carries its own border-top as the visual
+   divider, so a "---" right before every "## Heading" (the doc's own
+   convention) would otherwise double it up. There used to be a second rule
+   here (h2 plus-selector hr, and hr plus-selector h2), meant to reinforce
+   that - but the second half of that pair doesn't mean "an hr followed by
+   h2", it means "an h2 that follows an hr", and matched (hid, with zero
+   layout box) almost every h2 in the document, permanently. That's what
+   broke every top-level TOC link (nothing to scroll to) and the scrollspy
+   (getBoundingClientRect() on a display:none element is always all-zero, so
+   it looked "active" no matter the real scroll position). The base rule
+   below already covers the original concern on its own - nothing else is
+   needed. */
+hr{border:0; border-top:1px solid var(--border); margin:32px 0; display:none}
+
+ul,ol{margin:12px 0 12px 22px}
+li{margin:6px 0}
+
+/* Inline code — distinct from surrounding prose without shouting. */
+code{
+  font-family:var(--mono); font-size:12.5px; font-weight:500;
+  background:var(--elevated); padding:1.5px 5px; border-radius:3px;
+  word-break:break-word;
+}
+
+/* Code blocks: 1px border, no shadow — same-plane surface. */
+.code-block{position:relative; margin:16px 0}
+.code-block pre{
+  background:var(--code-bg); border:1px solid var(--border); border-radius:6px;
+  padding:16px 18px; overflow-x:auto;
+}
+.code-block pre code{background:none; padding:0; font-size:12.5px; line-height:1.6}
+.code-lang{
+  position:absolute; top:0; right:0; padding:3px 10px;
+  font-family:var(--mono); font-size:10.5px; font-weight:600;
+  color:var(--faint); text-transform:uppercase; letter-spacing:.06em;
+  border-left:1px solid var(--border); border-bottom:1px solid var(--border);
+  border-radius:0 6px 0 6px; background:var(--surface);
+}
+.copy-btn{
+  position:absolute; top:8px; right:64px; padding:3px 10px;
+  font-family:var(--sans); font-size:11px; font-weight:600; color:var(--muted);
+  background:var(--surface); border:1px solid var(--border); border-radius:4px;
+  cursor:pointer; opacity:0; transition:opacity .12s;
+}
+.code-block:hover .copy-btn{opacity:1}
+.copy-btn:hover{color:var(--rust); border-color:var(--rust)}
+.copy-btn.copied{color:var(--success); border-color:var(--success); opacity:1}
+
+.t-key{color:var(--t-key)} .t-str{color:var(--t-str)} .t-num{color:var(--t-num)}
+.t-lit{color:var(--t-lit)} .t-com{color:var(--t-com);font-style:italic}
+.t-kw{color:var(--t-kw)} .t-var{color:var(--t-var)}
+
+/* Tables — 1px separation, never a shadow. */
+.table-wrap{overflow-x:auto; margin:16px 0; border:1px solid var(--border); border-radius:6px}
+table{border-collapse:collapse; width:100%; font-size:13px}
+th,td{padding:9px 14px; text-align:left; vertical-align:top; border-bottom:1px solid var(--border)}
+th{
+  background:var(--elevated); font-weight:650; font-size:11.5px;
+  text-transform:uppercase; letter-spacing:.05em; color:var(--muted); white-space:nowrap;
+}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:hover{background:var(--canvas)}
+td:first-child{white-space:nowrap; font-family:var(--mono); font-size:12px}
+td code{background:none; padding:0}
+
+/* Note/callout boxes (> blockquotes). Plain 1px border, same-plane surface
+   rule as every other box on this page - no accent border. */
+.callout{
+  margin:16px 0; padding:12px 16px; border:1px solid var(--border); border-radius:6px;
+  background:var(--elevated); font-size:13.5px; color:var(--muted);
+}
+.callout code{background:var(--surface)}
+
+/* Quick Start step numbering - a CSS counter driven by document order (works
+   without real DOM nesting, unlike a descendant selector - headings render
+   as flat siblings, see the heading-parsing comment above). The Markdown
+   source just tags the relevant h3s "{.qs-step}"; this numbers them 1..n in
+   the order they appear, wherever body{counter-reset} sits relative to them. */
+body{counter-reset:qs-step}
+h3.qs-step{counter-increment:qs-step; display:flex; align-items:center; gap:12px}
+h3.qs-step::before{
+  content:counter(qs-step); flex:none; width:28px; height:28px; border-radius:50%;
+  background:var(--rust); color:#fff; font-size:14px; font-weight:700;
+  display:flex; align-items:center; justify-content:center;
+}
+
+/* ── UI mockups (the "diagram" fence passthrough) ──────────────────────────
+   Fake browser chrome + a simplified dashboard, built from div/CSS rather
+   than screenshots: never goes stale when the real UI's pixels shift, no
+   image assets to ship, and it inherits light/dark mode for free via the
+   page's own custom properties. Not meant to be pixel-accurate - just
+   enough shape (sidebar, tabs, a button, a reveal-once secret) that a
+   first-time reader recognizes the real dashboard when they get there. */
+.ui-mock{
+  margin:20px 0 28px; border:1px solid var(--border); border-radius:8px;
+  overflow:hidden; background:var(--surface);
+}
+.ui-mock-bar{
+  display:flex; align-items:center; gap:6px; padding:9px 12px;
+  background:var(--elevated); border-bottom:1px solid var(--border);
+}
+.ui-mock-dot{width:9px; height:9px; border-radius:50%; background:var(--border)}
+.ui-mock-url{
+  margin-left:8px; padding:3px 10px; border-radius:5px; background:var(--surface);
+  border:1px solid var(--border); font-family:var(--mono); font-size:11px; color:var(--faint);
+}
+.ui-mock-body{display:flex; min-height:180px}
+.ui-mock-nav{
+  width:150px; flex:none; padding:14px 0; border-right:1px solid var(--border);
+  background:var(--canvas); font-size:12px;
+}
+.ui-mock-nav-item{padding:7px 16px; color:var(--muted)}
+.ui-mock-nav-item.active{
+  color:var(--rust); font-weight:650; background:var(--rust-soft);
+  border-right:2px solid var(--rust);
+}
+.ui-mock-nav-sub{padding:6px 16px 6px 28px; color:var(--faint); font-size:11.5px}
+.ui-mock-nav-sub.active{color:var(--rust); font-weight:650}
+.ui-mock-content{flex:1; padding:18px 20px}
+.ui-mock-heading{font-size:14px; font-weight:700; margin-bottom:12px}
+.ui-mock-btn{
+  display:inline-flex; align-items:center; gap:6px; padding:6px 14px;
+  background:var(--rust); color:#fff; font-size:12px; font-weight:650;
+  border-radius:5px;
+}
+.ui-mock-field{
+  display:flex; flex-direction:column; gap:3px; margin-bottom:10px; max-width:320px;
+}
+.ui-mock-field label{font-size:11px; color:var(--faint); font-weight:650}
+.ui-mock-field .ui-mock-input{
+  padding:6px 10px; border:1px solid var(--border); border-radius:5px;
+  background:var(--canvas); font-size:12px; color:var(--muted);
+}
+.ui-mock-secret{
+  margin-top:12px; padding:10px 12px; border:1px dashed var(--rust); border-radius:6px;
+  background:var(--rust-soft); display:flex; align-items:center; justify-content:space-between; gap:10px;
+}
+.ui-mock-secret code{background:none; color:var(--ink); font-size:12.5px}
+.ui-mock-chip{
+  flex:none; padding:2px 8px; border-radius:9999px; background:var(--rust); color:#fff;
+  font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.04em;
+}
+@media (max-width:560px){ .ui-mock-nav{display:none} }
+
+@media (max-width:900px){
+  .layout{grid-template-columns:1fr}
+  /* A 30+ entry TOC dumped inline, un-bounded, above the content pushes a
+     first-time reader through a full screen of links before they reach any
+     actual doc - bound it to a scrollable strip instead, same as it already
+     behaves as a sticky panel on desktop. */
+  .sidebar{
+    position:static; height:auto; max-height:220px; overflow-y:auto;
+    border-right:0; border-bottom:1px solid var(--border);
+  }
+  main{padding:32px 20px 80px}
+  h1{font-size:30px} h2{font-size:23px} h3{font-size:18px}
+}
+</style>
+</head>
+<body>
+<div class="layout">
+  <nav class="sidebar">
+    <div class="brand">
+      <div class="brand-name">ParcelMoover</div>
+      <div class="brand-sub">Partner API Reference</div>
+      <span class="brand-badge">v1</span>
+      <a class="console-link" href="/api/v1/docs/console">Open try-it console &rarr;</a>
+    </div>
+<a class="toc-link toc-h2" href="#quick-start" data-slug="quick-start">Quick Start</a>
+<a class="toc-link toc-h3" href="#generate-an-api-key" data-slug="generate-an-api-key">Generate an API key</a>
+<a class="toc-link toc-h3" href="#test-your-connection" data-slug="test-your-connection">Test your connection</a>
+<a class="toc-link toc-h3" href="#make-your-first-request" data-slug="make-your-first-request">Make your first request</a>
+<a class="toc-link toc-h3" href="#set-up-a-webhook-essential-for-production" data-slug="set-up-a-webhook-essential-for-production">Set up a webhook (essential for production)</a>
+<a class="toc-link toc-h3" href="#youre-integrated" data-slug="youre-integrated">You're integrated</a>
+<a class="toc-link toc-h2" href="#authentication" data-slug="authentication">Authentication</a>
+<a class="toc-link toc-h3" href="#confirm-your-key-works" data-slug="confirm-your-key-works">Confirm your key works</a>
+<a class="toc-link toc-h2" href="#idempotency" data-slug="idempotency">Idempotency</a>
+<a class="toc-link toc-h2" href="#rate-limits" data-slug="rate-limits">Rate limits</a>
+<a class="toc-link toc-h2" href="#endpoints" data-slug="endpoints">Endpoints</a>
+<a class="toc-link toc-h3" href="#create-an-order" data-slug="create-an-order">Create an order</a>
+<a class="toc-link toc-h3" href="#track-an-order" data-slug="track-an-order">Track an order</a>
+<a class="toc-link toc-h3" href="#list-your-orders" data-slug="list-your-orders">List your orders</a>
+<a class="toc-link toc-h3" href="#edit-an-order-pre-dispatch-only" data-slug="edit-an-order-pre-dispatch-only">Edit an order (pre-dispatch only)</a>
+<a class="toc-link toc-h3" href="#request-a-return" data-slug="request-a-return">Request a return</a>
+<a class="toc-link toc-h3" href="#cancel-an-order" data-slug="cancel-an-order">Cancel an order</a>
+<a class="toc-link toc-h3" href="#bulk-status-lookup" data-slug="bulk-status-lookup">Bulk status lookup</a>
+<a class="toc-link toc-h2" href="#rates" data-slug="rates">Rates</a>
+<a class="toc-link toc-h3" href="#your-rate-card" data-slug="your-rate-card">Your rate card</a>
+<a class="toc-link toc-h3" href="#quote-a-single-destination" data-slug="quote-a-single-destination">Quote a single destination</a>
+<a class="toc-link toc-h2" href="#order-comments" data-slug="order-comments">Order comments</a>
+<a class="toc-link toc-h3" href="#read-the-comment-thread" data-slug="read-the-comment-thread">Read the comment thread</a>
+<a class="toc-link toc-h3" href="#add-a-comment" data-slug="add-a-comment">Add a comment</a>
+<a class="toc-link toc-h2" href="#support-tickets" data-slug="support-tickets">Support tickets</a>
+<a class="toc-link toc-h3" href="#open-a-ticket" data-slug="open-a-ticket">Open a ticket</a>
+<a class="toc-link toc-h3" href="#list-read-and-reply" data-slug="list-read-and-reply">List, read, and reply</a>
+<a class="toc-link toc-h2" href="#finance" data-slug="finance">Finance</a>
+<a class="toc-link toc-h2" href="#order-statuses" data-slug="order-statuses">Order statuses</a>
+<a class="toc-link toc-h2" href="#webhooks" data-slug="webhooks">Webhooks</a>
+<a class="toc-link toc-h3" href="#payload" data-slug="payload">Payload</a>
+<a class="toc-link toc-h3" href="#verifying-the-signature" data-slug="verifying-the-signature">Verifying the signature</a>
+<a class="toc-link toc-h3" href="#a-minimal-handler-nodeexpress" data-slug="a-minimal-handler-nodeexpress">A minimal handler (Node/Express)</a>
+<a class="toc-link toc-h3" href="#receiving-webhooks-locally" data-slug="receiving-webhooks-locally">Receiving webhooks locally</a>
+<a class="toc-link toc-h3" href="#testing-your-endpoint-is-connected" data-slug="testing-your-endpoint-is-connected">Testing your endpoint is connected</a>
+<a class="toc-link toc-h3" href="#delivery-guarantees" data-slug="delivery-guarantees">Delivery guarantees</a>
+<a class="toc-link toc-h3" href="#retries" data-slug="retries">Retries</a>
+<a class="toc-link toc-h2" href="#errors" data-slug="errors">Errors</a>
+<a class="toc-link toc-h2" href="#openapi-spec" data-slug="openapi-spec">OpenAPI spec</a>
+<a class="toc-link toc-h2" href="#integration-checklist" data-slug="integration-checklist">Integration checklist</a>
+  </nav>
+  <main>
+<h1 id="parcelmoover-partner-api-v1">ParcelMoover Partner API v1<a class="anchor" href="#parcelmoover-partner-api-v1" aria-label="Link to this section">#</a></h1>
+<p>Integrate your e-commerce store with ParcelMoover: place delivery orders (including exchanges), track and edit them pre-dispatch, request returns, list shipments, and read your COD/settlement finance data programmatically.</p>
+<p><strong>Base URL:</strong> <code>https://portal.parcelmoover.com/api/v1</code> — there is no separate sandbox or staging environment; this is the one URL every example in this doc uses, in development and in production alike.</p>
+<p>All requests and responses are JSON (<code>Content-Type: application/json</code>).</p>
+<p><strong>Read this online instead:</strong> this whole reference is served as a browsable web page at <strong><code>GET /api/v1/docs</code></strong>, and a console for trying every endpoint against your own API key lives at <strong><code>GET /api/v1/docs/console</code></strong>. Neither needs a key to open. The machine-readable OpenAPI 3.1 spec is at <strong><code>GET /api/v1/openapi.json</code></strong>, also unauthenticated, and is generated from the same validators the API enforces, so it can't drift.</p>
+<hr>
+<h2 id="quick-start">Quick Start<a class="anchor" href="#quick-start" aria-label="Link to this section">#</a></h2>
+<p>New to this API? This is the fast path to your first order — everything here is covered again in full depth further down; treat this as the on-ramp, not the whole reference.</p>
+<h3 id="generate-an-api-key" class="qs-step">Generate an API key<a class="anchor" href="#generate-an-api-key" aria-label="Link to this section">#</a></h3>
+<p>This is the only credential you actually need to place a first test order. The webhook step further down isn't optional for a real integration, though — see why once you get there.</p>
+<div class="ui-mock">
+  <div class="ui-mock-bar">
+    <span class="ui-mock-dot"></span><span class="ui-mock-dot"></span><span class="ui-mock-dot"></span>
+    <span class="ui-mock-url">portal.parcelmoover.com/developer/api-keys</span>
+  </div>
+  <div class="ui-mock-body">
+    <div class="ui-mock-nav">
+      <div class="ui-mock-nav-item">Dashboard</div>
+      <div class="ui-mock-nav-item">Orders</div>
+      <div class="ui-mock-nav-item active">Account</div>
+      <div class="ui-mock-nav-sub">Profile</div>
+      <div class="ui-mock-nav-sub active">Developer</div>
+    </div>
+    <div class="ui-mock-content">
+      <div class="ui-mock-heading">API Keys</div>
+      <span class="ui-mock-btn">+ Generate Key</span>
+      <div class="ui-mock-secret">
+        <code>pm_live_9f2a...c7e1</code>
+        <span class="ui-mock-chip">shown once</span>
+      </div>
+    </div>
+  </div>
+</div>
+<ol>
+<li>Log into the dashboard as your vendor account owner.</li>
+<li>Go to <strong>Account → Developer → API Keys tab</strong>.</li>
+<li>Click <strong>Generate Key</strong> and copy it immediately — <code>pm_live_...</code> is shown once and can't be retrieved again if you navigate away.</li>
+</ol>
+<div class="callout">Full detail on sending the key, revoking it, and its scope: see <a href="#authentication">Authentication</a> below.</div>
+<h3 id="test-your-connection" class="qs-step">Test your connection<a class="anchor" href="#test-your-connection" aria-label="Link to this section">#</a></h3>
+<p>Before building anything real, confirm the key actually works — one call, no side effects, nothing to clean up if you got it wrong:</p>
+<div class="code-block"><span class="code-lang">bash</span><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code><span class="t-kw">curl</span> &quot;https://portal.parcelmoover.com/api/v1/ping&quot; \
+  -H &quot;Authorization: Bearer <span class="t-var">$KEY</span>&quot;</code></pre></div>
+<div class="code-block"><span class="code-lang">json</span><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code>{ &quot;success&quot;: <span class="t-lit">true</span>, &quot;message&quot;: &quot;pong&quot;, &quot;data&quot;: { &quot;vendorId&quot;: &quot;a1c9...&quot; } }</code></pre></div>
+<p>A <code>401</code> here means the key itself is wrong, expired, or revoked — fix that before debugging anything downstream, since every other endpoint will fail the same way for the same reason. <code>vendorId</code> in the response is your own account's id — worth checking once so you know which vendor account a given key belongs to (useful if your team has more than one).</p>
+<h3 id="make-your-first-request" class="qs-step">Make your first request<a class="anchor" href="#make-your-first-request" aria-label="Link to this section">#</a></h3>
+<p>Every request needs the key above, plus a client-generated <code>Idempotency-Key</code> UUID on any <code>POST</code>. This creates a single delivery order:</p>
+<div class="code-block"><span class="code-lang">bash</span><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code>BASE=&quot;https://portal.parcelmoover.com/api/v1&quot;
+KEY=&quot;pm_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx&quot;
+
+<span class="t-kw">curl</span> -X POST &quot;<span class="t-var">$BASE</span>/orders&quot; \
+  -H &quot;Authorization: Bearer <span class="t-var">$KEY</span>&quot; \
+  -H &quot;Idempotency-Key: $(uuidgen)&quot; \
+  -H &quot;Content-Type: application/json&quot; \
+  -d <span class="t-str">'{
+    &quot;receiver&quot;: { &quot;name&quot;: &quot;Ram Sharma&quot;, &quot;phone&quot;: &quot;9841234567&quot;, &quot;address&quot;: &quot;Baneshwor, Kathmandu&quot; },
+    &quot;destinationLocationId&quot;: &quot;Kathmandu&quot;,
+    &quot;codAmount&quot;: 1500,
+    &quot;weightKg&quot;: 1.2
+  }'</span></code></pre></div>
+<p>You'll get back a <code>trackingId</code> — that's what you show your customer and use for every follow-up call. Full field-by-field reference, plus Node.js/Python/PHP equivalents: see <a href="#create-an-order">Create an order</a> below.</p>
+<h3 id="set-up-a-webhook-essential-for-production" class="qs-step">Set up a webhook (essential for production)<a class="anchor" href="#set-up-a-webhook-essential-for-production" aria-label="Link to this section">#</a></h3>
+<p><strong>Do this before you go live.</strong> The API will technically accept orders without a webhook registered — <code>POST /orders/statuses</code> exists for polling — but every real integration needs to know the moment a status changes: delivered, failed, cancelled. Polling on a timer means either hammering the API with requests that come back unchanged, or missing time-sensitive changes between polls. A webhook is the only way to know immediately, and it's what every serious integration ends up building regardless. Treat this step as required, not optional, for anything beyond a first test order.</p>
+<div class="ui-mock">
+  <div class="ui-mock-bar">
+    <span class="ui-mock-dot"></span><span class="ui-mock-dot"></span><span class="ui-mock-dot"></span>
+    <span class="ui-mock-url">portal.parcelmoover.com/developer/webhooks</span>
+  </div>
+  <div class="ui-mock-body">
+    <div class="ui-mock-nav">
+      <div class="ui-mock-nav-item">Dashboard</div>
+      <div class="ui-mock-nav-item">Orders</div>
+      <div class="ui-mock-nav-item active">Account</div>
+      <div class="ui-mock-nav-sub">Developer</div>
+      <div class="ui-mock-nav-sub active">Webhooks</div>
+    </div>
+    <div class="ui-mock-content">
+      <div class="ui-mock-heading">Add Endpoint</div>
+      <div class="ui-mock-field">
+        <label>URL</label>
+        <div class="ui-mock-input">https://yourapp.example/webhooks/parcelmoover</div>
+      </div>
+      <span class="ui-mock-btn">Save Endpoint</span>
+      <div class="ui-mock-secret">
+        <code>whsec_4b7d...a12f</code>
+        <span class="ui-mock-chip">shown once</span>
+      </div>
+    </div>
+  </div>
+</div>
+<ol>
+<li>Go to <strong>Account → Developer → Webhooks tab</strong>.</li>
+<li>Click <strong>Add Endpoint</strong>, name it, and give it your <code>https://</code> receiving URL. Developing locally? <code>localhost</code> won't be accepted — see <a href="#receiving-webhooks-locally">Receiving webhooks locally</a> below for the one extra step (a tunnel like ngrok) that fixes this.</li>
+<li>Copy the secret immediately — <code>whsec_...</code> is shown once. You'll use it to verify every delivery's signature.</li>
+<li>Click <strong>Test</strong> on the endpoint and confirm you get a <code>succeeded</code> delivery before wiring up real order flows — see <a href="#testing-your-endpoint-is-connected">Testing your endpoint is connected</a>.</li>
+</ol>
+<div class="callout">Full detail — payload shape, signature verification code, a minimal handler, local dev via ngrok, and retry/reliability guarantees: see <a href="#webhooks">Webhooks</a> below.</div>
+<h3 id="youre-integrated">You're integrated<a class="anchor" href="#youre-integrated" aria-label="Link to this section">#</a></h3>
+<ul>
+<li>Try every endpoint live against your own key, no code required: <strong><code>GET /api/v1/docs/console</code></strong>.</li>
+<li>Full endpoint-by-endpoint reference starts at <a href="#authentication">Authentication</a> and continues through <a href="#errors">Errors</a>.</li>
+</ul>
+<hr>
+<h2 id="authentication">Authentication<a class="anchor" href="#authentication" aria-label="Link to this section">#</a></h2>
+<p>Every request must carry an API key. A ParcelMoover vendor account owner generates keys from the dashboard: <strong>Sidebar → Account → Developer → API Keys tab → Generate Key</strong> (webhook endpoints live in the <strong>Webhooks</strong> tab right alongside it). The full key (<code>pm_live_...</code>) is shown <strong>once</strong> at creation — store it securely.</p>
+<p>Send the key on every request:</p>
+<div class="code-block"><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code>Authorization: Bearer pm_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</code></pre></div>
+<p>(<code>X-API-Key: &lt;key&gt;</code> is also accepted.)</p>
+<p>Orders you create belong to the vendor account that owns the key, and you can only read your own orders. Keys can be revoked at any time from the same dashboard page; a revoked key gets <code>401</code> immediately.</p>
+<p><strong>Never</strong> embed the key in browser/mobile client code — call the API from your server only.</p>
+<h3 id="confirm-your-key-works">Confirm your key works<a class="anchor" href="#confirm-your-key-works" aria-label="Link to this section">#</a></h3>
+<div class="code-block"><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code>GET /api/v1/ping</code></pre></div>
+<p>Returns <code>{ &quot;success&quot;: true, &quot;message&quot;: &quot;pong&quot;, &quot;data&quot;: { &quot;vendorId&quot;: &quot;...&quot; } }</code> for a valid key, or <code>401</code> if it's wrong, expired, or revoked — with zero side effects either way. This is the fastest way to isolate &quot;my key is bad&quot; from &quot;something else is wrong&quot; before debugging further; see <a href="#test-your-connection">Test your connection</a> in Quick Start for the full walkthrough.</p>
+<hr>
+<h2 id="idempotency">Idempotency<a class="anchor" href="#idempotency" aria-label="Link to this section">#</a></h2>
+<p><code>POST /orders</code> requires an <code>Idempotency-Key</code> header containing a UUID you generate. If the request times out or errors on your side, retry with the <strong>same</strong> key: you will get back the original response instead of a duplicate order. Use a <strong>new</strong> UUID for each distinct order.</p>
+<div class="code-block"><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code>Idempotency-Key: 9f1b6c1e-8f2a-4b3c-9d4e-5f6a7b8c9d0e</code></pre></div>
+<hr>
+<h2 id="rate-limits">Rate limits<a class="anchor" href="#rate-limits" aria-label="Link to this section">#</a></h2>
+<p>Limits are per API key, per minute:</p>
+<div class="table-wrap"><table><thead><tr><th>Operations</th><th>Limit</th></tr></thead><tbody><tr><td>Reads (<code>GET</code>)</td><td>120/min</td></tr><tr><td>Writes (<code>POST</code>, <code>PATCH</code>)</td><td>30/min</td></tr><tr><td>Bulk status lookup (<code>POST /orders/statuses</code>)</td><td>20/min</td></tr></tbody></table></div>
+<p>Exceeding a limit returns <code>429</code> with <code>{ &quot;success&quot;: false, &quot;message&quot;: &quot;Too many requests, please slow down&quot;, &quot;error&quot;: { &quot;code&quot;: &quot;RATE_LIMITED&quot; } }</code>. Standard <code>RateLimit-*</code> response headers indicate your remaining quota — back off and retry after the window resets.</p>
+<hr>
+<h2 id="endpoints">Endpoints<a class="anchor" href="#endpoints" aria-label="Link to this section">#</a></h2>
+<h3 id="create-an-order">Create an order<a class="anchor" href="#create-an-order" aria-label="Link to this section">#</a></h3>
+<div class="code-block"><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code>POST /api/v1/orders</code></pre></div>
+<p>Headers: <code>Authorization</code>, <code>Idempotency-Key</code> (UUID, required), <code>Content-Type: application/json</code>.</p>
+<h4 id="request-body">Request body<a class="anchor" href="#request-body" aria-label="Link to this section">#</a></h4>
+<div class="table-wrap"><table><thead><tr><th>Field</th><th>Type</th><th>Required</th><th>Notes</th></tr></thead><tbody><tr><td><code>receiver</code></td><td>object</td><td>✅</td><td>Delivery contact — your customer.</td></tr><tr><td><code>receiver.name</code></td><td>string</td><td>✅</td><td>2–100 chars.</td></tr><tr><td><code>receiver.phone</code></td><td>string</td><td>✅</td><td><strong>Nepali mobile number only</strong> — 10 digits starting <code>97</code> or <code>98</code>, with an optional <code>+977</code>/<code>977</code> country code. <code>9841234567</code> and <code>+9779841234567</code> are both fine; landlines and non-Nepali numbers are rejected. Must differ from the sender's phone.</td></tr><tr><td><code>receiver.alternatePhone</code></td><td>string</td><td>—</td><td>Looser: any 10–15 digits with an optional leading <code>+</code>.</td></tr><tr><td><code>receiver.email</code></td><td>string</td><td>—</td><td></td></tr><tr><td><code>receiver.address</code></td><td>string</td><td>—</td><td><strong>Free text, any string</strong> — up to 255 chars, not validated against a real address database or a fixed list. <strong>Required unless <code>serviceType</code> is <code>branch_delivery</code></strong> — a home delivery with no street address is rejected. Unlike the destination hub above/below, there's nothing here for ParcelMoover to reject as &quot;unrecognized.&quot;</td></tr><tr><td><code>receiver.locationId</code></td><td>UUID or hub name</td><td>—</td><td>The receiver's destination branch/hub — same value as <code>destinationLocationId</code> below. Setting either one satisfies the destination requirement; the dashboard's own order form sets both.</td></tr><tr><td><code>sender</code></td><td>object</td><td>—</td><td>Pickup contact. <strong>Omit it and ParcelMoover fills it from your vendor account's registered pickup profile</strong> (business name, phone, pickup landmark). Provide it only to override — e.g. shipping from a different warehouse. Same fields as <code>receiver</code> (<code>name</code> and <code>phone</code> required when provided; <code>phone</code> has the same Nepali-mobile rule).</td></tr><tr><td><code>orderType</code></td><td>string</td><td>—</td><td><code>delivery</code> (default), <code>exchange</code>, or <code>return</code>. On an <code>exchange</code> order, ops confirming delivery auto-creates a linked return parcel — it isn't something you create yourself; find it later via <code>sourceOrderId</code> on the new parcel (see <a href="#track-an-order">Track an order</a>).</td></tr><tr><td><code>serviceType</code></td><td>string</td><td>—</td><td><code>home_delivery</code> (default) or <code>branch_delivery</code>.</td></tr><tr><td><code>pieces</code></td><td>integer</td><td>—</td><td>≥ 1. Number of packages.</td></tr><tr><td><code>weightKg</code></td><td>number</td><td>✅</td><td>&gt; 0. Billable weight — this is what your rate is quoted against, so it must be sent explicitly rather than defaulted.</td></tr><tr><td><code>codAmount</code></td><td>number</td><td>✅</td><td>≥ 0. Cash to collect from the receiver on delivery (NPR). Send <code>0</code> explicitly for prepaid orders — the field can't be omitted, so a forgotten COD can never silently ship as prepaid.</td></tr><tr><td><code>packageType</code></td><td>string</td><td>—</td><td>Free text, max 50 chars, e.g. <code>&quot;electronics&quot;</code>. Defaults to <code>&quot;Parcel&quot;</code> if omitted — same as what the dashboard's own order form pre-fills, so an order created via the API looks the same as one created by staff.</td></tr><tr><td><code>deliveryInstruction</code></td><td>string</td><td>—</td><td>Max 500 chars.</td></tr><tr><td><code>pickupAddress</code></td><td>string</td><td>—</td><td>Max 255 chars. Overrides the sender address for pickup.</td></tr><tr><td><code>scheduledPickupAt</code></td><td>string</td><td>—</td><td>ISO-8601 datetime with offset, e.g. <code>2026-07-15T10:00:00+05:45</code>.</td></tr><tr><td><code>originLocationId</code></td><td>UUID</td><td>—</td><td>Your pickup hub. Optional — vendors normally have one fixed hub, resolved automatically; only set this if you dispatch from more than one.</td></tr><tr><td><code>destinationLocationId</code></td><td>UUID or hub name</td><td>✅*</td><td>The destination branch/hub (&quot;To&quot;) — see below for how to pick one. \*Required unless you set <code>receiver.locationId</code> instead; one of the two must be present, and sending both (to the same value) is fine.</td></tr><tr><td><code>allowPartialDelivery</code></td><td>boolean</td><td>—</td><td>Flags that this shipment (e.g. a multi-item order) may be accepted in part without failing the whole delivery. Informational only — the actual outcome is still reported by the rider/ops side; you read it back via <code>partialDeliveryRemarks</code>/<code>partialCodCollected</code> on the order once it happens.</td></tr></tbody></table></div>
+<p>The <strong>delivery charge is computed by ParcelMoover</strong> from your vendor rate agreement — you cannot set it. It appears on the order when you fetch it.</p>
+<h4 id="picking-a-destination-the-to-branchhub">Picking a destination (the &quot;To&quot; branch/hub)<a class="anchor" href="#picking-a-destination-the-to-branchhub" aria-label="Link to this section">#</a></h4>
+<p><strong>This must be one of ParcelMoover's existing destination hubs — not an arbitrary place name.</strong> You're picking from a fixed, known list of branches/cities ParcelMoover actually delivers to, the same list the dashboard's own order form picks from — you can't ship to a hub that isn't already in our system, and there's no &quot;add a new destination&quot; available through the API.</p>
+<p><code>destinationLocationId</code> (and <code>receiver.locationId</code>) accept <strong>either</strong> a location UUID <strong>or</strong> the hub's plain name/code — e.g. <code>&quot;Kathmandu&quot;</code> or <code>&quot;POKHARA&quot;</code>. Matching is an <strong>exact</strong> (case-insensitive) match against <code>destinationName</code> or its code, both drawn from <code>GET /api/v1/rates</code> — not a fuzzy or partial match, so <code>&quot;Kathmandu Valley&quot;</code> or <code>&quot;KTM&quot;</code> (unless that's the literal code) will fail even though a human would recognize what you meant. Call <a href="#rates"><code>GET /api/v1/rates</code></a> once, cache the list of <code>destinationId</code>/<code>destinationName</code> pairs, and use one of those exact values — that also matches the ParcelMoover Excel rate import's own naming, so it stays in sync automatically as hubs are added. An unrecognized name is rejected immediately with a clear <code>DESTINATION_NOT_FOUND</code> error rather than silently accepted:</p>
+<div class="code-block"><span class="code-lang">json</span><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code>{ &quot;success&quot;: <span class="t-lit">false</span>, &quot;message&quot;: &quot;Unknown destination hub: \&quot;Notaplace\&quot;. See GET /api/v1/rates for valid names.&quot;, &quot;error&quot;: { &quot;code&quot;: &quot;DESTINATION_NOT_FOUND&quot; } }</code></pre></div>
+<p>If you want to show a searchable picker (matching the ParcelMoover dashboard's own order form) or a live shipping-cost estimate before the order is placed, call <a href="#rates"><code>GET /api/v1/rates</code></a> once to list every valid <code>destinationName</code>, and <a href="#rates"><code>GET /api/v1/rates/quote</code></a> for the price — both also accept the same UUID-or-name value.</p>
+<p><strong>Contrast this with <code>receiver.address</code> / <code>sender.address</code>, right below</strong> — those are free text with no such restriction. The destination hub is a controlled selection (must already exist in ParcelMoover); the street address underneath it is not (any string you send is stored as-is).</p>
+<h4 id="example-curl">Example — cURL<a class="anchor" href="#example-curl" aria-label="Link to this section">#</a></h4>
+<div class="code-block"><span class="code-lang">bash</span><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code><span class="t-com"># $DESTINATION_ID is a destinationId from GET /api/v1/rates — see &quot;Picking a</span>
+<span class="t-com"># destination&quot; above. Everything else here matches the dashboard's own form.</span>
+<span class="t-kw">curl</span> -X POST &quot;<span class="t-var">$BASE</span>/api/v1/orders&quot; \
+  -H &quot;Authorization: Bearer <span class="t-var">$KEY</span>&quot; \
+  -H &quot;Idempotency-Key: $(uuidgen)&quot; \
+  -H &quot;Content-Type: application/json&quot; \
+  -d <span class="t-str">'{
+    &quot;receiver&quot;: { &quot;name&quot;: &quot;Ram Sharma&quot;, &quot;phone&quot;: &quot;9841234567&quot;, &quot;address&quot;: &quot;Baneshwor, Kathmandu&quot;, &quot;locationId&quot;: &quot;'</span>&quot;<span class="t-var">$DESTINATION_ID</span>&quot;<span class="t-str">'&quot; },
+    &quot;destinationLocationId&quot;: &quot;'</span>&quot;<span class="t-var">$DESTINATION_ID</span>&quot;<span class="t-str">'&quot;,
+    &quot;serviceType&quot;: &quot;home_delivery&quot;,
+    &quot;codAmount&quot;: 1500,
+    &quot;pieces&quot;: 1,
+    &quot;weightKg&quot;: 1.2,
+    &quot;deliveryInstruction&quot;: &quot;Call before delivery&quot;
+  }'</span></code></pre></div>
+<h4 id="example-nodejs-18-no-dependencies">Example — Node.js (18+, no dependencies)<a class="anchor" href="#example-nodejs-18-no-dependencies" aria-label="Link to this section">#</a></h4>
+<div class="code-block"><span class="code-lang">js</span><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code><span class="t-var">const</span> BASE = process.env.PARCELMOOVER_BASE_URL; <span class="t-com">// e.g. &quot;https://…/api/v1&quot;</span>
+<span class="t-var">const</span> KEY  = process.env.PARCELMOOVER_API_KEY;
+
+<span class="t-com">// destinationId comes from GET /api/v1/rates — see &quot;Picking a destination&quot; above.</span>
+<span class="t-var">const</span> destinationId = &quot;a350d017-18a6<span class="t-kw">-4610</span>-835c-bc9929a5fb23&quot;; <span class="t-com">// e.g. POKHARA</span>
+
+<span class="t-var">const</span> res = <span class="t-var">await</span> fetch(<span class="t-str">`${BASE}/orders`</span>, {
+  method: &quot;POST&quot;,
+  headers: {
+    &quot;Authorization&quot;: <span class="t-str">`Bearer ${KEY}`</span>,
+    &quot;Idempotency-Key&quot;: crypto.randomUUID(), <span class="t-com">// persist this to retry safely</span>
+    &quot;Content-Type&quot;: &quot;application/json&quot;,
+  },
+  body: JSON.stringify({
+    receiver: { name: &quot;Ram Sharma&quot;, phone: &quot;<span class="t-kw">9841234567</span>&quot;, address: &quot;Baneshwor, Kathmandu&quot;, locationId: destinationId },
+    destinationLocationId: destinationId,
+    serviceType: &quot;home_delivery&quot;,
+    codAmount: <span class="t-kw">1500</span>,
+    pieces: <span class="t-kw">1</span>,
+    weightKg: <span class="t-kw">1.2</span>,
+    deliveryInstruction: &quot;Call before delivery&quot;,
+  }),
+});
+
+<span class="t-var">const</span> body = <span class="t-var">await</span> res.json();
+<span class="t-var">if</span> (!res.ok) <span class="t-var">throw</span> <span class="t-var">new</span> Error(<span class="t-str">`ParcelMoover ${res.status}: ${body.message}`</span>);
+console.log(body.data.trackingId); <span class="t-com">// &quot;PM-260713-GFQK93S5YN894-Q&quot;</span></code></pre></div>
+<h4 id="example-python-pip-install-requests">Example — Python (<code>pip install requests</code>)<a class="anchor" href="#example-python-pip-install-requests" aria-label="Link to this section">#</a></h4>
+<div class="code-block"><span class="code-lang">python</span><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code><span class="t-var">import</span> os, uuid, requests
+
+BASE = os.environ[&quot;PARCELMOOVER_BASE_URL&quot;]  <span class="t-com"># e.g. &quot;https://…/api/v1&quot;</span>
+KEY  = os.environ[&quot;PARCELMOOVER_API_KEY&quot;]
+
+<span class="t-com"># destination_id comes from GET /api/v1/rates — see &quot;Picking a destination&quot; above.</span>
+destination_id = &quot;a350d017-18a6<span class="t-kw">-4610</span>-835c-bc9929a5fb23&quot;  <span class="t-com"># e.g. POKHARA</span>
+
+resp = requests.post(
+    f&quot;{BASE}/orders&quot;,
+    headers={
+        &quot;Authorization&quot;: f&quot;Bearer {KEY}&quot;,
+        &quot;Idempotency-Key&quot;: str(uuid.uuid4()),  <span class="t-com"># persist this to retry safely</span>
+    },
+    json={
+        &quot;receiver&quot;: {&quot;name&quot;: &quot;Ram Sharma&quot;, &quot;phone&quot;: &quot;<span class="t-kw">9841234567</span>&quot;, &quot;address&quot;: &quot;Baneshwor, Kathmandu&quot;, &quot;locationId&quot;: destination_id},
+        &quot;destinationLocationId&quot;: destination_id,
+        &quot;serviceType&quot;: &quot;home_delivery&quot;,
+        &quot;codAmount&quot;: <span class="t-kw">1500</span>,
+        &quot;pieces&quot;: <span class="t-kw">1</span>,
+        &quot;weightKg&quot;: <span class="t-kw">1.2</span>,
+        &quot;deliveryInstruction&quot;: &quot;Call before delivery&quot;,
+    },
+    timeout=<span class="t-kw">30</span>,
+)
+
+body = resp.json()
+<span class="t-var">if</span> not resp.ok:
+    <span class="t-var">raise</span> RuntimeError(f&quot;ParcelMoover {resp.status_code}: {body[<span class="t-str">'message'</span>]}&quot;)
+print(body[&quot;data&quot;][&quot;trackingId&quot;])  <span class="t-com"># &quot;PM-260713-GFQK93S5YN894-Q&quot;</span></code></pre></div>
+<h4 id="example-php-74-built-in-curl-extension">Example — PHP (7.4+, built-in cURL extension)<a class="anchor" href="#example-php-74-built-in-curl-extension" aria-label="Link to this section">#</a></h4>
+<div class="code-block"><span class="code-lang">php</span><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code>&lt;?php
+<span class="t-kw">function</span> uuidv4(): string {
+    <span class="t-var">$d</span> = random_bytes(16);
+    <span class="t-var">$d</span>[6] = chr(ord(<span class="t-var">$d</span>[6]) &amp; 0x0f | 0x40);
+    <span class="t-var">$d</span>[8] = chr(ord(<span class="t-var">$d</span>[8]) &amp; 0x3f | 0x80);
+    <span class="t-kw">return</span> vsprintf(<span class="t-str">'%s%s-%s-%s-%s-%s%s%s'</span>, str_split(bin2hex(<span class="t-var">$d</span>), 4));
+}
+
+<span class="t-var">$base</span> = getenv(<span class="t-str">'PARCELMOOVER_BASE_URL'</span>); <span class="t-com">// e.g. &quot;https://…/api/v1&quot;</span>
+<span class="t-var">$key</span>  = getenv(<span class="t-str">'PARCELMOOVER_API_KEY'</span>);
+<span class="t-com">// destinationId comes from GET /api/v1/rates — see &quot;Picking a destination&quot; above.</span>
+<span class="t-var">$destinationId</span> = <span class="t-str">'a350d017-18a6-4610-835c-bc9929a5fb23'</span>; <span class="t-com">// e.g. POKHARA</span>
+
+<span class="t-var">$ch</span> = curl_init(&quot;<span class="t-var">$base</span>/orders&quot;);
+curl_setopt_array(<span class="t-var">$ch</span>, [
+    CURLOPT_RETURNTRANSFER =&gt; <span class="t-kw">true</span>,
+    CURLOPT_POST           =&gt; <span class="t-kw">true</span>,
+    CURLOPT_TIMEOUT        =&gt; 30,
+    CURLOPT_HTTPHEADER     =&gt; [
+        &quot;Authorization: Bearer <span class="t-var">$key</span>&quot;,
+        <span class="t-str">'Idempotency-Key: '</span> . uuidv4(), <span class="t-com">// persist this to retry safely</span>
+        <span class="t-str">'Content-Type: application/json'</span>,
+    ],
+    CURLOPT_POSTFIELDS =&gt; json_encode([
+        <span class="t-str">'receiver'</span> =&gt; [<span class="t-str">'name'</span> =&gt; <span class="t-str">'Ram Sharma'</span>, <span class="t-str">'phone'</span> =&gt; <span class="t-str">'9841234567'</span>, <span class="t-str">'address'</span> =&gt; <span class="t-str">'Baneshwor, Kathmandu'</span>, <span class="t-str">'locationId'</span> =&gt; <span class="t-var">$destinationId</span>],
+        <span class="t-str">'destinationLocationId'</span> =&gt; <span class="t-var">$destinationId</span>,
+        <span class="t-str">'serviceType'</span> =&gt; <span class="t-str">'home_delivery'</span>,
+        <span class="t-str">'codAmount'</span> =&gt; 1500,
+        <span class="t-str">'pieces'</span>    =&gt; 1,
+        <span class="t-str">'weightKg'</span>  =&gt; 1.2,
+        <span class="t-str">'deliveryInstruction'</span> =&gt; <span class="t-str">'Call before delivery'</span>,
+    ]),
+]);
+
+<span class="t-var">$body</span>   = json_decode(curl_exec(<span class="t-var">$ch</span>), <span class="t-kw">true</span>);
+<span class="t-var">$status</span> = curl_getinfo(<span class="t-var">$ch</span>, CURLINFO_RESPONSE_CODE);
+curl_close(<span class="t-var">$ch</span>);
+
+<span class="t-kw">if</span> (<span class="t-var">$status</span> &gt;= 400) {
+    throw <span class="t-kw">new</span> RuntimeException(&quot;ParcelMoover <span class="t-var">$status</span>: {<span class="t-var">$body</span>[<span class="t-str">'message'</span>]}&quot;);
+}
+<span class="t-kw">echo</span> <span class="t-var">$body</span>[<span class="t-str">'data'</span>][<span class="t-str">'trackingId'</span>]; <span class="t-com">// &quot;PM-260713-GFQK93S5YN894-Q&quot;</span></code></pre></div>
+<h4 id="response-201-created">Response — <code>201 Created</code><a class="anchor" href="#response-201-created" aria-label="Link to this section">#</a></h4>
+<div class="code-block"><span class="code-lang">json</span><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code>{
+  &quot;success&quot;: <span class="t-lit">true</span>,
+  &quot;message&quot;: &quot;Order created successfully&quot;,
+  &quot;data&quot;: {
+    &quot;id&quot;: &quot;59d2df43<span class="t-num">-1463</span>-42f4-a571-6c514a31f451&quot;,
+    &quot;trackingId&quot;: &quot;PM<span class="t-num">-260713</span>-GFQK93S5YN894-Q&quot;,
+    &quot;status&quot;: &quot;pickup_ordered&quot;,
+    &quot;createdAt&quot;: &quot;<span class="t-num">2026</span><span class="t-num">-07</span>-13T08:<span class="t-num">07</span>:<span class="t-num">18.</span>497Z&quot;
+  }
+}</code></pre></div>
+<p>Save the <code>trackingId</code> — it is the handle for tracking, and what you show your customer.</p>
+<hr>
+<h3 id="track-an-order">Track an order<a class="anchor" href="#track-an-order" aria-label="Link to this section">#</a></h3>
+<div class="code-block"><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code>GET /api/v1/orders/{trackingId}</code></pre></div>
+<p>Returns the full current state of one of <strong>your</strong> orders, including remarks and the complete status timeline. An order that isn't yours returns <code>404</code>. This is for on-demand lookups and reconciliation, not a status-sync loop — register a <a href="#webhooks">webhook</a> for that instead.</p>
+<h4 id="example">Example<a class="anchor" href="#example" aria-label="Link to this section">#</a></h4>
+<div class="code-block"><span class="code-lang">bash</span><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code><span class="t-kw">curl</span> &quot;<span class="t-var">$BASE</span>/api/v1/orders/PM-260713-GFQK93S5YN894-Q&quot; -H &quot;Authorization: Bearer <span class="t-var">$KEY</span>&quot;</code></pre></div>
+<div class="code-block"><span class="code-lang">js</span><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code><span class="t-com">// Node.js</span>
+<span class="t-var">const</span> res = <span class="t-var">await</span> fetch(<span class="t-str">`${BASE}/orders/${trackingId}`</span>, {
+  headers: { &quot;Authorization&quot;: <span class="t-str">`Bearer ${KEY}`</span> },
+});
+<span class="t-var">const</span> body = <span class="t-var">await</span> res.json();
+<span class="t-var">if</span> (!res.ok) <span class="t-var">throw</span> <span class="t-var">new</span> Error(<span class="t-str">`ParcelMoover ${res.status}: ${body.message}`</span>);
+console.log(body.data.status); <span class="t-com">// e.g. &quot;picked_up&quot;</span></code></pre></div>
+<div class="code-block"><span class="code-lang">python</span><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code><span class="t-com"># Python</span>
+resp = requests.get(
+    f&quot;{BASE}/orders/{tracking_id}&quot;,
+    headers={&quot;Authorization&quot;: f&quot;Bearer {KEY}&quot;},
+    timeout=<span class="t-kw">30</span>,
+)
+body = resp.json()
+<span class="t-var">if</span> not resp.ok:
+    <span class="t-var">raise</span> RuntimeError(f&quot;ParcelMoover {resp.status_code}: {body[<span class="t-str">'message'</span>]}&quot;)
+print(body[&quot;data&quot;][&quot;status&quot;])  <span class="t-com"># e.g. &quot;picked_up&quot;</span></code></pre></div>
+<div class="code-block"><span class="code-lang">php</span><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code><span class="t-com">// PHP</span>
+<span class="t-var">$ch</span> = curl_init(&quot;<span class="t-var">$base</span>/orders/<span class="t-var">$trackingId</span>&quot;);
+curl_setopt_array(<span class="t-var">$ch</span>, [
+    CURLOPT_RETURNTRANSFER =&gt; <span class="t-kw">true</span>,
+    CURLOPT_TIMEOUT        =&gt; 30,
+    CURLOPT_HTTPHEADER     =&gt; [&quot;Authorization: Bearer <span class="t-var">$key</span>&quot;],
+]);
+<span class="t-var">$body</span> = json_decode(curl_exec(<span class="t-var">$ch</span>), <span class="t-kw">true</span>);
+curl_close(<span class="t-var">$ch</span>);
+<span class="t-kw">echo</span> <span class="t-var">$body</span>[<span class="t-str">'data'</span>][<span class="t-str">'status'</span>]; <span class="t-com">// e.g. &quot;picked_up&quot;</span></code></pre></div>
+<h4 id="response-200-ok-abridged">Response — <code>200 OK</code> (abridged)<a class="anchor" href="#response-200-ok-abridged" aria-label="Link to this section">#</a></h4>
+<div class="code-block"><span class="code-lang">json</span><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code>{
+  &quot;success&quot;: <span class="t-lit">true</span>,
+  &quot;data&quot;: {
+    &quot;id&quot;: &quot;59d2df43-…&quot;,
+    &quot;orderNumber&quot;: <span class="t-num">658266</span>,
+    &quot;trackingId&quot;: &quot;PM<span class="t-num">-260713</span>-GFQK93S5YN894-Q&quot;,
+    &quot;status&quot;: &quot;picked_up&quot;,
+    &quot;orderType&quot;: &quot;delivery&quot;,
+    &quot;serviceType&quot;: &quot;dtd&quot;,
+    &quot;senderName&quot;: &quot;My Store&quot;,
+    &quot;senderPhone&quot;: &quot;<span class="t-num">9810000005</span>&quot;,
+    &quot;receiverName&quot;: &quot;Ram Sharma&quot;,
+    &quot;receiverPhone&quot;: &quot;<span class="t-num">9841234567</span>&quot;,
+    &quot;receiverAddress&quot;: &quot;Baneshwor, Kathmandu&quot;,
+    &quot;origin&quot;: &quot;Kathmandu Hub&quot;,
+    &quot;destination&quot;: &quot;Baneshwor, Kathmandu&quot;,
+    &quot;pieces&quot;: <span class="t-num">1</span>,
+    &quot;weightKg&quot;: <span class="t-num">1.2</span>,
+    &quot;attemptCount&quot;: <span class="t-num">0</span>,
+    &quot;codAmount&quot;: <span class="t-num">1500</span>,
+    &quot;deliveryCharge&quot;: <span class="t-num">100</span>,
+    &quot;packageType&quot;: &quot;Parcel&quot;,
+    &quot;deliveryInstruction&quot;: &quot;Call before delivery&quot;,
+    &quot;allowPartialDelivery&quot;: <span class="t-lit">false</span>,
+    &quot;partialDeliveryRemarks&quot;: <span class="t-lit">null</span>,
+    &quot;partialCodCollected&quot;: <span class="t-lit">null</span>,
+    &quot;sourceOrderId&quot;: <span class="t-lit">null</span>,
+    &quot;statusHistory&quot;: [
+      {
+        &quot;oldStatus&quot;: &quot;pickup_ordered&quot;,
+        &quot;newStatus&quot;: &quot;picked_up&quot;,
+        &quot;remarks&quot;: &quot;&quot;,
+        &quot;changedBy&quot;: &quot;Kathmandu Hub&quot;,
+        &quot;changedByType&quot;: &quot;branch&quot;,
+        &quot;createdAt&quot;: &quot;<span class="t-num">13</span> Jul <span class="t-num">2026</span>, <span class="t-num">2</span>:<span class="t-num">15</span> PM&quot;
+      }
+    ],
+    &quot;remarks&quot;: []
+  }
+}</code></pre></div>
+<hr>
+<h3 id="list-your-orders">List your orders<a class="anchor" href="#list-your-orders" aria-label="Link to this section">#</a></h3>
+<div class="code-block"><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code>GET /api/v1/orders?status=&lt;status[,status]&gt;&amp;page=&lt;n&gt;&amp;pageSize=&lt;1-100&gt;</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>Query param</th><th>Notes</th></tr></thead><tbody><tr><td><code>page</code></td><td>Default <code>1</code>.</td></tr><tr><td><code>pageSize</code></td><td>Default <code>20</code>, max <code>100</code>.</td></tr><tr><td><code>status</code></td><td>Optional filter; comma-separated, e.g. <code>status=delivered,cancelled</code>.</td></tr></tbody></table></div>
+<h4 id="example-1">Example<a class="anchor" href="#example-1" aria-label="Link to this section">#</a></h4>
+<div class="code-block"><span class="code-lang">bash</span><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code><span class="t-kw">curl</span> &quot;<span class="t-var">$BASE</span>/api/v1/orders?status=sent_for_delivery&amp;page=1&amp;pageSize=50&quot; -H &quot;Authorization: Bearer <span class="t-var">$KEY</span>&quot;</code></pre></div>
+<div class="code-block"><span class="code-lang">js</span><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code><span class="t-com">// Node.js</span>
+<span class="t-var">const</span> params = <span class="t-var">new</span> URLSearchParams({ status: &quot;sent_for_delivery&quot;, page: &quot;<span class="t-kw">1</span>&quot;, pageSize: &quot;<span class="t-kw">50</span>&quot; });
+<span class="t-var">const</span> res = <span class="t-var">await</span> fetch(<span class="t-str">`${BASE}/orders?${params}`</span>, {
+  headers: { &quot;Authorization&quot;: <span class="t-str">`Bearer ${KEY}`</span> },
+});
+<span class="t-var">const</span> { data, meta } = <span class="t-var">await</span> res.json();
+console.log(<span class="t-str">`${data.length} of ${meta.total} orders`</span>);</code></pre></div>
+<div class="code-block"><span class="code-lang">python</span><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code><span class="t-com"># Python</span>
+resp = requests.get(
+    f&quot;{BASE}/orders&quot;,
+    headers={&quot;Authorization&quot;: f&quot;Bearer {KEY}&quot;},
+    params={&quot;status&quot;: &quot;sent_for_delivery&quot;, &quot;page&quot;: <span class="t-kw">1</span>, &quot;pageSize&quot;: <span class="t-kw">50</span>},
+    timeout=<span class="t-kw">30</span>,
+)
+body = resp.json()
+print(f&quot;{len(body[<span class="t-str">'data'</span>])} of {body[<span class="t-str">'meta'</span>][<span class="t-str">'total'</span>]} orders&quot;)</code></pre></div>
+<div class="code-block"><span class="code-lang">php</span><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code><span class="t-com">// PHP</span>
+<span class="t-var">$query</span> = http_build_query([<span class="t-str">'status'</span> =&gt; <span class="t-str">'sent_for_delivery'</span>, <span class="t-str">'page'</span> =&gt; 1, <span class="t-str">'pageSize'</span> =&gt; 50]);
+<span class="t-var">$ch</span> = curl_init(&quot;<span class="t-var">$base</span>/orders?<span class="t-var">$query</span>&quot;);
+curl_setopt_array(<span class="t-var">$ch</span>, [
+    CURLOPT_RETURNTRANSFER =&gt; <span class="t-kw">true</span>,
+    CURLOPT_TIMEOUT        =&gt; 30,
+    CURLOPT_HTTPHEADER     =&gt; [&quot;Authorization: Bearer <span class="t-var">$key</span>&quot;],
+]);
+<span class="t-var">$body</span> = json_decode(curl_exec(<span class="t-var">$ch</span>), <span class="t-kw">true</span>);
+curl_close(<span class="t-var">$ch</span>);
+printf(&quot;%d of %d orders&quot;, count(<span class="t-var">$body</span>[<span class="t-str">'data'</span>]), <span class="t-var">$body</span>[<span class="t-str">'meta'</span>][<span class="t-str">'total'</span>]);</code></pre></div>
+<h4 id="response-200-ok">Response — <code>200 OK</code><a class="anchor" href="#response-200-ok" aria-label="Link to this section">#</a></h4>
+<div class="code-block"><span class="code-lang">json</span><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code>{
+  &quot;success&quot;: <span class="t-lit">true</span>,
+  &quot;data&quot;: [ { &quot;...same shape as the track endpoint's summary fields...&quot; } ],
+  &quot;meta&quot;: {
+    &quot;page&quot;: <span class="t-num">1</span>,
+    &quot;pageSize&quot;: <span class="t-num">20</span>,
+    &quot;total&quot;: <span class="t-num">42</span>,
+    &quot;totalPages&quot;: <span class="t-num">3</span>,
+    &quot;hasNextPage&quot;: <span class="t-lit">true</span>,
+    &quot;hasPrevPage&quot;: <span class="t-lit">false</span>
+  }
+}</code></pre></div>
+<hr>
+<h3 id="edit-an-order-pre-dispatch-only">Edit an order (pre-dispatch only)<a class="anchor" href="#edit-an-order-pre-dispatch-only" aria-label="Link to this section">#</a></h3>
+<div class="code-block"><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code>PATCH /api/v1/orders/{trackingId}</code></pre></div>
+<p>Headers: <code>Authorization</code>, <code>Idempotency-Key</code> (UUID, required), <code>Content-Type: application/json</code>.</p>
+<p>Corrects details on an order that's still in your hands — including a receiver address/phone &quot;redirect&quot; before it's ever dispatched. Accepts the same fields as create (minus <code>sender</code>/<code>pickupAddress</code>/<code>scheduledPickupAt</code>): <code>receiver</code>, <code>originLocationId</code>, <code>destinationLocationId</code>, <code>orderType</code>, <code>serviceType</code>, <code>pieces</code>, <code>weightKg</code>, <code>codAmount</code>, <code>packageType</code>, <code>deliveryInstruction</code> — at least one is required.</p>
+<p>Only works from <code>pickup_ordered</code>, <code>rider_assigned</code>, or <code>failed_pickup</code> — the same window <a href="#cancel-an-order">cancel</a> allows. Once the order is picked up and moving through the network, this returns <code>409</code> (&quot;contact support to change it&quot;).</p>
+<h4 id="example-curl-1">Example — cURL<a class="anchor" href="#example-curl-1" aria-label="Link to this section">#</a></h4>
+<div class="code-block"><span class="code-lang">bash</span><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code><span class="t-kw">curl</span> -X PATCH &quot;<span class="t-var">$BASE</span>/api/v1/orders/PM-260713-GFQK93S5YN894-Q&quot; \
+  -H &quot;Authorization: Bearer <span class="t-var">$KEY</span>&quot; \
+  -H &quot;Idempotency-Key: $(uuidgen)&quot; \
+  -H &quot;Content-Type: application/json&quot; \
+  -d <span class="t-str">'{
+    &quot;receiver&quot;: { &quot;name&quot;: &quot;Ram Sharma&quot;, &quot;phone&quot;: &quot;9841234567&quot;, &quot;address&quot;: &quot;New Baneshwor, Kathmandu&quot; }
+  }'</span></code></pre></div>
+<h4 id="response-200-ok-1">Response — <code>200 OK</code><a class="anchor" href="#response-200-ok-1" aria-label="Link to this section">#</a></h4>
+<div class="code-block"><span class="code-lang">json</span><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code>{
+  &quot;success&quot;: <span class="t-lit">true</span>,
+  &quot;message&quot;: &quot;Order updated&quot;,
+  &quot;data&quot;: {
+    &quot;id&quot;: &quot;59d2df43<span class="t-num">-1463</span>-42f4-a571-6c514a31f451&quot;,
+    &quot;trackingId&quot;: &quot;PM<span class="t-num">-260713</span>-GFQK93S5YN894-Q&quot;,
+    &quot;status&quot;: &quot;pickup_ordered&quot;,
+    &quot;updatedAt&quot;: &quot;<span class="t-num">2026</span><span class="t-num">-07</span>-23T09:<span class="t-num">12</span>:<span class="t-num">00.</span>000Z&quot;
+  }
+}</code></pre></div>
+<hr>
+<h3 id="request-a-return">Request a return<a class="anchor" href="#request-a-return" aria-label="Link to this section">#</a></h3>
+<div class="code-block"><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code>POST /api/v1/orders/{trackingId}/return-request</code></pre></div>
+<p>Headers: <code>Authorization</code>, <code>Idempotency-Key</code> (UUID, required), <code>Content-Type: application/json</code>.</p>
+<p>Opens a <strong>pending request for ops staff to review</strong> — it does not itself move the order through the return-to-vendor workflow (<code>follow_up</code> → <code>ready_to_return</code> → <code>sent_to_vendor</code> → <code>returned_to_vendor</code>), which stays staff-managed. Track its resolution via <code>GET /tickets/{id}</code> using the <code>ticketId</code> in the response, or watch the order's own <code>status</code>/your <a href="#webhooks">webhook</a> for the RTO stages once staff act on it. Returns <code>409</code> if the order is already <code>cancelled</code> or <code>returned_to_vendor</code>.</p>
+<h4 id="request-body-1">Request body<a class="anchor" href="#request-body-1" aria-label="Link to this section">#</a></h4>
+<div class="table-wrap"><table><thead><tr><th>Field</th><th>Type</th><th>Required</th><th>Notes</th></tr></thead><tbody><tr><td><code>reason</code></td><td>string</td><td>✅</td><td>3–500 chars.</td></tr><tr><td><code>notes</code></td><td>string</td><td>—</td><td>Max 2000 chars.</td></tr></tbody></table></div>
+<h4 id="example-curl-2">Example — cURL<a class="anchor" href="#example-curl-2" aria-label="Link to this section">#</a></h4>
+<div class="code-block"><span class="code-lang">bash</span><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code><span class="t-kw">curl</span> -X POST &quot;<span class="t-var">$BASE</span>/api/v1/orders/PM-260713-GFQK93S5YN894-Q/return-request&quot; \
+  -H &quot;Authorization: Bearer <span class="t-var">$KEY</span>&quot; \
+  -H &quot;Idempotency-Key: $(uuidgen)&quot; \
+  -H &quot;Content-Type: application/json&quot; \
+  -d <span class="t-str">'{ &quot;reason&quot;: &quot;Customer refused package&quot;, &quot;notes&quot;: &quot;Left at the door, customer unreachable&quot; }'</span></code></pre></div>
+<h4 id="response-201-created-1">Response — <code>201 Created</code><a class="anchor" href="#response-201-created-1" aria-label="Link to this section">#</a></h4>
+<div class="code-block"><span class="code-lang">json</span><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code>{
+  &quot;success&quot;: <span class="t-lit">true</span>,
+  &quot;message&quot;: &quot;Return request submitted&quot;,
+  &quot;data&quot;: { &quot;id&quot;: &quot;8b1e...&quot;, &quot;ticketId&quot;: &quot;TKT<span class="t-num">-260723</span>-AB12CD&quot;, &quot;status&quot;: &quot;pending&quot; }
+}</code></pre></div>
+<hr>
+<h3 id="cancel-an-order">Cancel an order<a class="anchor" href="#cancel-an-order" aria-label="Link to this section">#</a></h3>
+<div class="code-block"><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code>POST /api/v1/orders/{trackingId}/cancel</code></pre></div>
+<p>Headers: <code>Authorization</code>, <code>Idempotency-Key</code> (UUID, required).</p>
+<p>Only works while the order hasn't been picked up yet — status <code>pickup_ordered</code>, <code>rider_assigned</code>, or <code>failed_pickup</code>. Once it's moved past that, this returns <code>409</code>/<code>422</code> instead — reach out through <a href="#order-comments">order comments</a> or a <a href="#support-tickets">support ticket</a> if you need to intervene on a later stage.</p>
+<h4 id="request-body-2">Request body<a class="anchor" href="#request-body-2" aria-label="Link to this section">#</a></h4>
+<div class="table-wrap"><table><thead><tr><th>Field</th><th>Type</th><th>Required</th><th>Notes</th></tr></thead><tbody><tr><td><code>reason</code></td><td>string</td><td>—</td><td>Max 500 chars. Recorded as a remark on the order.</td></tr></tbody></table></div>
+<h4 id="example-2">Example<a class="anchor" href="#example-2" aria-label="Link to this section">#</a></h4>
+<div class="code-block"><span class="code-lang">bash</span><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code><span class="t-kw">curl</span> -X POST &quot;<span class="t-var">$BASE</span>/api/v1/orders/PM-260713-GFQK93S5YN894-Q/cancel&quot; \
+  -H &quot;Authorization: Bearer <span class="t-var">$KEY</span>&quot; \
+  -H &quot;Idempotency-Key: $(uuidgen)&quot; \
+  -H &quot;Content-Type: application/json&quot; \
+  -d <span class="t-str">'{ &quot;reason&quot;: &quot;Customer cancelled before dispatch&quot; }'</span></code></pre></div>
+<h4 id="response-200-ok-2">Response — <code>200 OK</code><a class="anchor" href="#response-200-ok-2" aria-label="Link to this section">#</a></h4>
+<div class="code-block"><span class="code-lang">json</span><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code>{
+  &quot;success&quot;: <span class="t-lit">true</span>,
+  &quot;message&quot;: &quot;Order cancelled&quot;,
+  &quot;data&quot;: { &quot;trackingId&quot;: &quot;PM<span class="t-num">-260713</span>-GFQK93S5YN894-Q&quot;, &quot;status&quot;: &quot;cancelled&quot; }
+}</code></pre></div>
+<hr>
+<h3 id="bulk-status-lookup">Bulk status lookup<a class="anchor" href="#bulk-status-lookup" aria-label="Link to this section">#</a></h3>
+<div class="code-block"><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code>POST /api/v1/orders/statuses</code></pre></div>
+<p>Look up the current status of up to 100 orders in a single call — for reconciliation, not a substitute for <a href="#webhooks">webhooks</a>. Tracking IDs that don't exist or aren't yours come back in <code>notFound</code> instead of failing the whole request.</p>
+<h4 id="request-body-3">Request body<a class="anchor" href="#request-body-3" aria-label="Link to this section">#</a></h4>
+<div class="table-wrap"><table><thead><tr><th>Field</th><th>Type</th><th>Required</th><th>Notes</th></tr></thead><tbody><tr><td><code>trackingIds</code></td><td>string[]</td><td>✅</td><td>1–100 tracking IDs.</td></tr></tbody></table></div>
+<h4 id="example-3">Example<a class="anchor" href="#example-3" aria-label="Link to this section">#</a></h4>
+<div class="code-block"><span class="code-lang">bash</span><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code><span class="t-kw">curl</span> -X POST &quot;<span class="t-var">$BASE</span>/api/v1/orders/statuses&quot; \
+  -H &quot;Authorization: Bearer <span class="t-var">$KEY</span>&quot; \
+  -H &quot;Content-Type: application/json&quot; \
+  -d <span class="t-str">'{ &quot;trackingIds&quot;: [&quot;PM-260713-GFQK93S5YN894-Q&quot;, &quot;PM-NOPE-00000000000-X&quot;] }'</span></code></pre></div>
+<h4 id="response-200-ok-3">Response — <code>200 OK</code><a class="anchor" href="#response-200-ok-3" aria-label="Link to this section">#</a></h4>
+<div class="code-block"><span class="code-lang">json</span><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code>{
+  &quot;success&quot;: <span class="t-lit">true</span>,
+  &quot;data&quot;: [
+    { &quot;trackingId&quot;: &quot;PM<span class="t-num">-260713</span>-GFQK93S5YN894-Q&quot;, &quot;status&quot;: &quot;delivered&quot;, &quot;updatedAt&quot;: &quot;<span class="t-num">2026</span><span class="t-num">-07</span>-22T11:<span class="t-num">16</span>:<span class="t-num">28.</span>210Z&quot; }
+  ],
+  &quot;notFound&quot;: [&quot;PM-NOPE<span class="t-num">-00000000000</span>-X&quot;]
+}</code></pre></div>
+<hr>
+<h2 id="rates">Rates<a class="anchor" href="#rates" aria-label="Link to this section">#</a></h2>
+<p>Two read-only endpoints for pricing your own shipments — no order needed.</p>
+<h3 id="your-rate-card">Your rate card<a class="anchor" href="#your-rate-card" aria-label="Link to this section">#</a></h3>
+<div class="code-block"><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code>GET /api/v1/rates</code></pre></div>
+<p>Returns your full rate card — the home-delivery and branch-delivery base rate to every active destination, under your own rate agreement (flat, zone, or per-destination, whichever ParcelMoover has configured for your account).</p>
+<h4 id="example-4">Example<a class="anchor" href="#example-4" aria-label="Link to this section">#</a></h4>
+<div class="code-block"><span class="code-lang">bash</span><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code><span class="t-kw">curl</span> &quot;<span class="t-var">$BASE</span>/api/v1/rates&quot; -H &quot;Authorization: Bearer <span class="t-var">$KEY</span>&quot;</code></pre></div>
+<h4 id="response-200-ok-abridged-1">Response — <code>200 OK</code> (abridged)<a class="anchor" href="#response-200-ok-abridged-1" aria-label="Link to this section">#</a></h4>
+<div class="code-block"><span class="code-lang">json</span><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code>{
+  &quot;success&quot;: <span class="t-lit">true</span>,
+  &quot;data&quot;: {
+    &quot;rateType&quot;: &quot;flat&quot;,
+    &quot;freeWeightKg&quot;: <span class="t-num">2</span>,
+    &quot;extraWeightPercent&quot;: <span class="t-num">5</span>,
+    &quot;rates&quot;: [
+      { &quot;destinationId&quot;: &quot;a350d017-...&quot;, &quot;destinationName&quot;: &quot;POKHARA&quot;, &quot;zone&quot;: &quot;urban_areas&quot;, &quot;valley&quot;: &quot;outside&quot;, &quot;homeRate&quot;: <span class="t-num">150</span>, &quot;branchRate&quot;: <span class="t-num">150</span>, &quot;note&quot;: <span class="t-lit">null</span> }
+    ]
+  }
+}</code></pre></div>
+<h3 id="quote-a-single-destination">Quote a single destination<a class="anchor" href="#quote-a-single-destination" aria-label="Link to this section">#</a></h3>
+<div class="code-block"><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code>GET /api/v1/rates/quote?destinationLocationId=&lt;uuid&gt;&amp;weightKg=&lt;n&gt;&amp;serviceType=&lt;home_delivery|branch_delivery&gt;</code></pre></div>
+<p>Use this to show a shipping cost estimate before checkout, without creating an order.</p>
+<div class="table-wrap"><table><thead><tr><th>Query param</th><th>Required</th><th>Notes</th></tr></thead><tbody><tr><td><code>destinationLocationId</code></td><td>✅</td><td>A destination id <strong>or</strong> hub name (e.g. <code>Kathmandu</code>) — get one from <code>GET /api/v1/rates</code> above, or just pass the name directly.</td></tr><tr><td><code>weightKg</code></td><td>—</td><td>Default <code>1</code>.</td></tr><tr><td><code>serviceType</code></td><td>—</td><td><code>home_delivery</code> (default) or <code>branch_delivery</code>.</td></tr></tbody></table></div>
+<h4 id="example-5">Example<a class="anchor" href="#example-5" aria-label="Link to this section">#</a></h4>
+<div class="code-block"><span class="code-lang">bash</span><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code><span class="t-kw">curl</span> &quot;<span class="t-var">$BASE</span>/api/v1/rates/quote?destinationLocationId=a350d017-...&amp;weightKg=3&quot; -H &quot;Authorization: Bearer <span class="t-var">$KEY</span>&quot;</code></pre></div>
+<h4 id="response-200-ok-4">Response — <code>200 OK</code><a class="anchor" href="#response-200-ok-4" aria-label="Link to this section">#</a></h4>
+<div class="code-block"><span class="code-lang">json</span><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code>{
+  &quot;success&quot;: <span class="t-lit">true</span>,
+  &quot;data&quot;: {
+    &quot;baseCharge&quot;: <span class="t-num">150</span>,
+    &quot;weightSurcharge&quot;: <span class="t-num">7.5</span>,
+    &quot;totalPayable&quot;: <span class="t-num">157.5</span>,
+    &quot;freeWeightKg&quot;: <span class="t-num">2</span>,
+    &quot;rateType&quot;: &quot;flat&quot;,
+    &quot;basis&quot;: &quot;Flat home rate (outside valley)&quot;,
+    &quot;valley&quot;: &quot;outside&quot;
+  }
+}</code></pre></div>
+<hr>
+<h2 id="order-comments">Order comments<a class="anchor" href="#order-comments" aria-label="Link to this section">#</a></h2>
+<p>A lightweight, threaded comment log on an order — visible to both you and ParcelMoover ops. Use it for delivery instructions raised after the fact, or clarifying an address with support, without opening a full ticket.</p>
+<h3 id="read-the-comment-thread">Read the comment thread<a class="anchor" href="#read-the-comment-thread" aria-label="Link to this section">#</a></h3>
+<div class="code-block"><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code>GET /api/v1/orders/{trackingId}/remarks</code></pre></div>
+<h4 id="example-6">Example<a class="anchor" href="#example-6" aria-label="Link to this section">#</a></h4>
+<div class="code-block"><span class="code-lang">bash</span><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code><span class="t-kw">curl</span> &quot;<span class="t-var">$BASE</span>/api/v1/orders/PM-260713-GFQK93S5YN894-Q/remarks&quot; -H &quot;Authorization: Bearer <span class="t-var">$KEY</span>&quot;</code></pre></div>
+<h3 id="add-a-comment">Add a comment<a class="anchor" href="#add-a-comment" aria-label="Link to this section">#</a></h3>
+<div class="code-block"><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code>POST /api/v1/orders/{trackingId}/remarks</code></pre></div>
+<p>Headers: <code>Authorization</code>, <code>Idempotency-Key</code> (UUID, required).</p>
+<div class="table-wrap"><table><thead><tr><th>Field</th><th>Type</th><th>Required</th><th>Notes</th></tr></thead><tbody><tr><td><code>remark</code></td><td>string</td><td>✅</td><td>1–2000 chars.</td></tr><tr><td><code>parentRemarkId</code></td><td>UUID</td><td>—</td><td>Reply to an existing remark from the thread above.</td></tr></tbody></table></div>
+<h4 id="example-7">Example<a class="anchor" href="#example-7" aria-label="Link to this section">#</a></h4>
+<div class="code-block"><span class="code-lang">bash</span><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code><span class="t-kw">curl</span> -X POST &quot;<span class="t-var">$BASE</span>/api/v1/orders/PM-260713-GFQK93S5YN894-Q/remarks&quot; \
+  -H &quot;Authorization: Bearer <span class="t-var">$KEY</span>&quot; \
+  -H &quot;Idempotency-Key: $(uuidgen)&quot; \
+  -H &quot;Content-Type: application/json&quot; \
+  -d <span class="t-str">'{ &quot;remark&quot;: &quot;Please deliver after 5pm — customer is at work until then&quot; }'</span></code></pre></div>
+<h4 id="response-201-created-2">Response — <code>201 Created</code><a class="anchor" href="#response-201-created-2" aria-label="Link to this section">#</a></h4>
+<div class="code-block"><span class="code-lang">json</span><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code>{
+  &quot;success&quot;: <span class="t-lit">true</span>,
+  &quot;message&quot;: &quot;Remark added&quot;,
+  &quot;data&quot;: {
+    &quot;id&quot;: &quot;a8d1c6f5-...&quot;,
+    &quot;remark&quot;: &quot;Please deliver after 5pm — customer is at work until then&quot;,
+    &quot;addedBy&quot;: &quot;My Store&quot;,
+    &quot;createdAt&quot;: &quot;<span class="t-num">2026</span><span class="t-num">-07</span>-22T13:<span class="t-num">55</span>:<span class="t-num">20.</span>526Z&quot;,
+    &quot;parentRemarkId&quot;: <span class="t-lit">null</span>,
+    &quot;parentAuthor&quot;: <span class="t-lit">null</span>,
+    &quot;parentSnippet&quot;: <span class="t-lit">null</span>
+  }
+}</code></pre></div>
+<hr>
+<h2 id="support-tickets">Support tickets<a class="anchor" href="#support-tickets" aria-label="Link to this section">#</a></h2>
+<p>Raise and track support tickets programmatically instead of using the dashboard.</p>
+<h3 id="open-a-ticket">Open a ticket<a class="anchor" href="#open-a-ticket" aria-label="Link to this section">#</a></h3>
+<div class="code-block"><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code>POST /api/v1/tickets</code></pre></div>
+<p>Headers: <code>Authorization</code>, <code>Idempotency-Key</code> (UUID, required).</p>
+<div class="table-wrap"><table><thead><tr><th>Field</th><th>Type</th><th>Required</th><th>Notes</th></tr></thead><tbody><tr><td><code>subject</code></td><td>string</td><td>✅</td><td>3–200 chars.</td></tr><tr><td><code>category</code></td><td>string</td><td>—</td><td>Max 50 chars, e.g. <code>&quot;pickup&quot;</code>, <code>&quot;delivery&quot;</code>, <code>&quot;cod_settlement&quot;</code>.</td></tr><tr><td><code>priority</code></td><td>string</td><td>—</td><td><code>low</code>, <code>medium</code>, <code>high</code>, or <code>urgent</code>.</td></tr><tr><td><code>description</code></td><td>string</td><td>—</td><td>Max 2000 chars.</td></tr><tr><td><code>customerName</code> / <code>customerPhone</code></td><td>string</td><td>—</td><td>If the ticket concerns a specific customer.</td></tr></tbody></table></div>
+<h4 id="example-8">Example<a class="anchor" href="#example-8" aria-label="Link to this section">#</a></h4>
+<div class="code-block"><span class="code-lang">bash</span><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code><span class="t-kw">curl</span> -X POST &quot;<span class="t-var">$BASE</span>/api/v1/tickets&quot; \
+  -H &quot;Authorization: Bearer <span class="t-var">$KEY</span>&quot; \
+  -H &quot;Idempotency-Key: $(uuidgen)&quot; \
+  -H &quot;Content-Type: application/json&quot; \
+  -d <span class="t-str">'{ &quot;subject&quot;: &quot;Wrong COD amount on PM-260713-GFQK93S5YN894-Q&quot;, &quot;category&quot;: &quot;cod_settlement&quot;, &quot;priority&quot;: &quot;high&quot; }'</span></code></pre></div>
+<h4 id="response-201-created-3">Response — <code>201 Created</code><a class="anchor" href="#response-201-created-3" aria-label="Link to this section">#</a></h4>
+<div class="code-block"><span class="code-lang">json</span><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code>{
+  &quot;success&quot;: <span class="t-lit">true</span>,
+  &quot;message&quot;: &quot;Ticket created&quot;,
+  &quot;data&quot;: {
+    &quot;id&quot;: &quot;195d1bd1-...&quot;,
+    &quot;ticketId&quot;: &quot;TKT<span class="t-num">-260722</span>-DAMMDS&quot;,
+    &quot;subject&quot;: &quot;Wrong COD amount on PM<span class="t-num">-260713</span>-GFQK93S5YN894-Q&quot;,
+    &quot;category&quot;: &quot;cod_settlement&quot;,
+    &quot;priority&quot;: &quot;high&quot;,
+    &quot;status&quot;: &quot;pending&quot;,
+    &quot;assignedTo&quot;: &quot;Unassigned&quot;,
+    &quot;createdAt&quot;: &quot;<span class="t-num">2026</span><span class="t-num">-07</span><span class="t-num">-22</span>&quot;
+  }
+}</code></pre></div>
+<h3 id="list-read-and-reply">List, read, and reply<a class="anchor" href="#list-read-and-reply" aria-label="Link to this section">#</a></h3>
+<div class="code-block"><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code>GET  /api/v1/tickets                — list your tickets (filters: status, priority, category, fromDate, toDate, page, pageSize)
+GET  /api/v1/tickets/{id}           — ticket detail + reply thread
+POST /api/v1/tickets/{id}/replies   — add a reply (Idempotency-Key required; body: { &quot;message&quot;: &quot;...&quot; })</code></pre></div>
+<hr>
+<h2 id="finance">Finance<a class="anchor" href="#finance" aria-label="Link to this section">#</a></h2>
+<p>Read-only endpoints mirroring the dashboard's Finance views — always scoped to your own vendor account. There is no create/edit-settlement endpoint here; recording a payment against a statement stays an admin-only dashboard action.</p>
+<div class="code-block"><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code>GET /api/v1/finance/pending-cod                        — your current pending COD statement
+GET /api/v1/finance/order-cod?status=&amp;page=&amp;pageSize=   — per-order COD payment status (status: settled | not_settled)
+GET /api/v1/finance/settlements?fromDate=&amp;toDate=&amp;page=&amp;pageSize=  — your settlement statements
+GET /api/v1/finance/settlements/{id}                    — line-item detail of one statement
+GET /api/v1/finance/unsettled-orders                    — orders with COD collected but not yet settled</code></pre></div>
+<h4 id="example-curl-3">Example — cURL<a class="anchor" href="#example-curl-3" aria-label="Link to this section">#</a></h4>
+<div class="code-block"><span class="code-lang">bash</span><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code><span class="t-kw">curl</span> &quot;<span class="t-var">$BASE</span>/api/v1/finance/pending-cod&quot; -H &quot;Authorization: Bearer <span class="t-var">$KEY</span>&quot;</code></pre></div>
+<h4 id="response-200-ok-abridged-pending-cod">Response — <code>200 OK</code> (abridged, <code>pending-cod</code>)<a class="anchor" href="#response-200-ok-abridged-pending-cod" aria-label="Link to this section">#</a></h4>
+<div class="code-block"><span class="code-lang">json</span><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code>{
+  &quot;success&quot;: <span class="t-lit">true</span>,
+  &quot;data&quot;: {
+    &quot;vendor&quot;: { &quot;id&quot;: &quot;...&quot;, &quot;name&quot;: &quot;My Store&quot;, &quot;phone&quot;: &quot;<span class="t-num">9810000005</span>&quot;, &quot;email&quot;: <span class="t-lit">null</span>, &quot;address&quot;: <span class="t-lit">null</span> },
+    &quot;statementDate&quot;: &quot;<span class="t-num">2026</span><span class="t-num">-07</span>-23T09:<span class="t-num">00</span>:<span class="t-num">00.</span>000Z&quot;,
+    &quot;items&quot;: [
+      { &quot;orderNumber&quot;: <span class="t-num">658266</span>, &quot;trackingId&quot;: &quot;PM<span class="t-num">-260713</span>-GFQK93S5YN894-Q&quot;, &quot;receiverName&quot;: &quot;Ram Sharma&quot;, &quot;receiverPhone&quot;: &quot;<span class="t-num">9841234567</span>&quot;, &quot;destination&quot;: &quot;Baneshwor, Kathmandu&quot;, &quot;codAmount&quot;: <span class="t-num">1500</span>, &quot;deliveryCharge&quot;: <span class="t-num">100</span> }
+    ],
+    &quot;totals&quot;: { &quot;totalCod&quot;: <span class="t-num">1500</span>, &quot;deliveryCharges&quot;: <span class="t-num">100</span>, &quot;payableAmount&quot;: <span class="t-num">1400</span> }
+  }
+}</code></pre></div>
+<hr>
+<h2 id="order-statuses">Order statuses<a class="anchor" href="#order-statuses" aria-label="Link to this section">#</a></h2>
+<p>An order moves through these <code>status</code> values:</p>
+<div class="table-wrap"><table><thead><tr><th>Status</th><th>Meaning</th></tr></thead><tbody><tr><td><code>pickup_ordered</code></td><td>Order received; awaiting rider assignment.</td></tr><tr><td><code>rider_assigned</code></td><td>A pickup rider has been assigned.</td></tr><tr><td><code>picked_up</code></td><td>Parcel collected from the sender.</td></tr><tr><td><code>arrived</code></td><td>Arrived at the origin hub.</td></tr><tr><td><code>dispatched</code> / <code>arrived_at_branch</code></td><td>Moving between branches.</td></tr><tr><td><code>ready_to_deliver</code> / <code>sent_for_delivery</code></td><td>Out for delivery.</td></tr><tr><td><code>delivered</code></td><td>Delivered; COD (if any) collected.</td></tr><tr><td><code>partially_delivered</code></td><td>Delivered with partial COD collection — see <code>partialDeliveryRemarks</code>/<code>partialCodCollected</code> on the order, or <code>allowPartialDelivery</code> if you flagged this shipment as partial-delivery-eligible at creation.</td></tr><tr><td><code>failed_pickup</code> / <code>failed_delivery</code></td><td>Attempt failed; will be retried or followed up.</td></tr><tr><td><code>hold</code></td><td>Temporarily held — see remarks.</td></tr><tr><td><code>oov</code></td><td>Out of coverage — handed to a partner carrier for the last leg.</td></tr><tr><td><code>follow_up</code>, <code>ready_to_return</code>, <code>sent_to_vendor</code>, <code>returned_to_vendor</code></td><td>Return-to-vendor flow, driven by ops staff — not something you move through the API directly. A <a href="#request-a-return">return request</a> only opens a pending review; staff then advance these stages from the dashboard.</td></tr><tr><td><code>cancelled</code></td><td>Order cancelled.</td></tr><tr><td><code>loss_and_damage</code></td><td>Reported lost or damaged.</td></tr></tbody></table></div>
+<p><strong>Register a webhook</strong> (see below) to be notified the moment an order's status changes — that's the supported way to keep your system in sync, and it's the only one that doesn't cost you a standing polling loop. <code>GET /orders/{trackingId}</code> still exists for on-demand lookups (a support agent checking one order, or reconciling after your webhook endpoint was down) — it's not meant to be called on a timer.</p>
+<hr>
+<h2 id="webhooks">Webhooks<a class="anchor" href="#webhooks" aria-label="Link to this section">#</a></h2>
+<p><strong>Set this up before going to production.</strong> It's not enforced by the API — you can create and track orders with nothing but the endpoints above — but every real integration ends up needing this: it's the only way to learn about a status change (delivered, failed, cancelled) the moment it happens, instead of discovering it late on a poll or missing it between polls entirely.</p>
+<p>Register an endpoint from your dashboard — sidebar <strong>Account → Developer → Webhooks tab</strong> (<code>/developer/webhooks</code>), or via <code>POST /api/webhooks</code> (session-authenticated — this is a dashboard-side call, not part of <code>/api/v1</code>) — and we'll POST a signed event to it every time one of your orders' status changes.</p>
+<h3 id="payload">Payload<a class="anchor" href="#payload" aria-label="Link to this section">#</a></h3>
+<div class="code-block"><span class="code-lang">json</span><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code>{
+  &quot;id&quot;: &quot;b6f2...&quot;,
+  &quot;type&quot;: &quot;order.status_changed&quot;,
+  &quot;created_at&quot;: &quot;<span class="t-num">2026</span><span class="t-num">-07</span>-22T09:<span class="t-num">15</span>:<span class="t-num">00.</span>000Z&quot;,
+  &quot;data&quot;: {
+    &quot;trackingId&quot;: &quot;PM123456&quot;,
+    &quot;orderId&quot;: &quot;b6f2...&quot;,
+    &quot;vendorId&quot;: &quot;a1c9...&quot;,
+    &quot;oldStatus&quot;: &quot;sent_for_delivery&quot;,
+    &quot;newStatus&quot;: &quot;delivered&quot;,
+    &quot;changedAt&quot;: &quot;<span class="t-num">2026</span><span class="t-num">-07</span>-22T09:<span class="t-num">15</span>:<span class="t-num">00.</span>000Z&quot;
+  }
+}</code></pre></div>
+<h3 id="verifying-the-signature">Verifying the signature<a class="anchor" href="#verifying-the-signature" aria-label="Link to this section">#</a></h3>
+<p>Every request carries:</p>
+<ul>
+<li><code>X-ParcelMoover-Event</code> — the event type (currently always <code>order.status_changed</code>, plus <code>webhook.test</code> for test pings sent from the dashboard).</li>
+<li><code>X-ParcelMoover-Delivery</code> — a UUID identifying this event, <strong>the same value as the payload's own <code>id</code> field</strong>. It stays identical across every retry of the same event, so either one works as your dedup key.</li>
+<li><code>X-ParcelMoover-Signature</code> — <code>t=&lt;unix_seconds&gt;,v1=&lt;hex_hmac_sha256&gt;</code>, where the HMAC is computed over <code>&quot;&lt;t&gt;.&lt;raw_request_body&gt;&quot;</code> using your endpoint's secret (shown once when you create the endpoint).</li>
+</ul>
+<div class="code-block"><span class="code-lang">js</span><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code><span class="t-var">const</span> crypto = require(&quot;crypto&quot;);
+
+<span class="t-var">function</span> verifyParcelMooverSignature(rawBody, signatureHeader, secret, toleranceSeconds = <span class="t-kw">300</span>) {
+  <span class="t-var">const</span> parts = Object.fromEntries(signatureHeader.split(&quot;,&quot;).map((p) =&gt; p.split(&quot;=&quot;)));
+  <span class="t-var">const</span> t = Number(parts.t);
+  <span class="t-var">if</span> (!t || Math.abs(Date.now() / <span class="t-kw">1000</span> - t) &gt; toleranceSeconds) <span class="t-var">return</span> false; <span class="t-com">// stale/replayed</span>
+
+  <span class="t-var">const</span> expected = crypto.createHmac(&quot;sha256&quot;, secret).update(<span class="t-str">`${t}.${rawBody}`</span>).digest(&quot;hex&quot;);
+  <span class="t-var">const</span> a = Buffer.from(expected, &quot;hex&quot;);
+  <span class="t-var">const</span> b = Buffer.from(parts.v1 || &quot;&quot;, &quot;hex&quot;);
+  <span class="t-var">return</span> a.length === b.length &amp;&amp; crypto.timingSafeEqual(a, b);
+}</code></pre></div>
+<p>Always verify against the <strong>raw</strong> request body (before your framework parses it as JSON) — re-serializing and comparing JSON can produce a different byte sequence than what was signed.</p>
+<h3 id="a-minimal-handler-nodeexpress">A minimal handler (Node/Express)<a class="anchor" href="#a-minimal-handler-nodeexpress" aria-label="Link to this section">#</a></h3>
+<div class="code-block"><span class="code-lang">js</span><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code><span class="t-var">const</span> express = require(&quot;express&quot;);
+<span class="t-var">const</span> app = express();
+
+<span class="t-com">// express.raw(), not express.json() - signature verification needs the exact</span>
+<span class="t-com">// bytes ParcelMoover sent, not a re-serialized copy of the parsed object.</span>
+app.post(&quot;/webhooks/parcelmoover&quot;, express.raw({ type: &quot;application/json&quot; }), (req, res) =&gt; {
+  <span class="t-var">const</span> signature = req.headers[&quot;x-parcelmoover-signature&quot;];
+  <span class="t-var">if</span> (!verifyParcelMooverSignature(req.body, signature, process.env.PARCELMOOVER_WEBHOOK_SECRET)) {
+    <span class="t-var">return</span> res.status(<span class="t-kw">401</span>).end();
+  }
+
+  <span class="t-var">const</span> event = JSON.parse(req.body);
+
+  <span class="t-com">// Respond first - see &quot;Retries&quot; below for why a slow response counts as a</span>
+  <span class="t-com">// failure. Do the real work (enqueue, update your DB, etc.) after this.</span>
+  res.status(<span class="t-kw">200</span>).end();
+
+  console.log(event.type, event.data.trackingId, event.data.newStatus);
+});
+
+app.listen(<span class="t-kw">4000</span>);</code></pre></div>
+<p><code>verifyParcelMooverSignature</code> is the function defined above. Whatever port you pick here (<code>4000</code> above) is what you'll point a tunnel at in the next section if you're developing locally.</p>
+<h3 id="receiving-webhooks-locally">Receiving webhooks locally<a class="anchor" href="#receiving-webhooks-locally" aria-label="Link to this section">#</a></h3>
+<p>Every webhook you register is checked against the <strong>same hosted API</strong> as everywhere else in this doc (<code>https://portal.parcelmoover.com</code>) — so <code>http://localhost:4000</code> is never accepted as an endpoint URL, even while you're still developing on your own machine. ParcelMoover's servers have to reach yours over the public internet, so registration always requires a real, publicly reachable <code>https://</code> URL.</p>
+<p>The standard fix is a tunnel that exposes your local server on a public HTTPS URL — <a href="https://ngrok.com" target="_blank" rel="noopener noreferrer">ngrok</a> is the most common:</p>
+<div class="code-block"><span class="code-lang">bash</span><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code><span class="t-com"># Point this at whatever port your handler above is listening on</span>
+ngrok http 4000</code></pre></div>
+<p>ngrok prints a forwarding URL that looks like <code>https://a1b2-203-0-113-1.ngrok-free.app</code>. Register <code>https://a1b2-203-0-113-1.ngrok-free.app/webhooks/parcelmoover</code> as your endpoint URL — the <code>/webhooks/parcelmoover</code> path is just a convention matching the handler above, not a requirement; use whatever path your app actually listens on. Any HTTPS tunnel works the same way (Cloudflare Tunnel, localtunnel, etc.); ngrok is just the one most people already have.</p>
+<div class="callout">On ngrok's free tier the forwarding URL changes every time you restart it. Update your registered endpoint URL each time you restart the tunnel, or deliveries will start bouncing with a connection error until you do.</div>
+<h3 id="testing-your-endpoint-is-connected">Testing your endpoint is connected<a class="anchor" href="#testing-your-endpoint-is-connected" aria-label="Link to this section">#</a></h3>
+<p>Once registered, confirm the whole path works before wiring up real order flows:</p>
+<ol>
+<li>Open the endpoint in the dashboard and click <strong>Test</strong> (or <code>POST /api/webhooks/{id}/test</code>) — this queues a synthetic <code>webhook.test</code> event through the exact same delivery pipeline real events use.</li>
+<li>Check your own server logs, or ngrok's local request inspector at <code>http://127.0.0.1:4040</code>, to confirm the <code>POST</code> actually arrived.</li>
+<li>Check the endpoint's <strong>Deliveries</strong> list in the dashboard (or <code>GET /api/webhooks/{id}/deliveries</code>) for the result — a <code>succeeded</code> row with a <code>2xx</code> status code means you're fully connected, signature check included.</li>
+</ol>
+<div class="table-wrap"><table><thead><tr><th>What you see</th><th>What it means</th></tr></thead><tbody><tr><td>No delivery row appears at all</td><td>The test didn't queue — make sure you clicked <strong>Test</strong> on the endpoint you actually registered.</td></tr><tr><td><code>last_error</code> mentions a connection failure or timeout</td><td>ParcelMoover couldn't reach the URL — the tunnel isn't running, the port doesn't match, or the URL is a stale ngrok session from an earlier restart.</td></tr><tr><td><code>last_status_code</code> is non-2xx (e.g. <code>401</code>, <code>500</code>)</td><td>Your handler received the request but rejected or errored on it. <code>401</code> almost always means signature verification failed — check you're verifying the raw body, not <code>req.body</code> from <code>express.json()</code>. <code>500</code> means your handler threw before responding.</td></tr><tr><td><code>succeeded</code> with a <code>2xx</code> code</td><td>You're connected end-to-end.</td></tr></tbody></table></div>
+<p>A failed test retries on the same backoff schedule as real events (see <a href="#retries">Retries</a> below) — you don't have to wait it out. Fix the issue and click <strong>Test</strong> again, or manually retry that one delivery from the Deliveries list.</p>
+<h3 id="delivery-guarantees">Delivery guarantees<a class="anchor" href="#delivery-guarantees" aria-label="Link to this section">#</a></h3>
+<p>Webhooks are <strong>at-least-once, not exactly-once, and not ordered</strong>:</p>
+<ul>
+<li><strong>Expect duplicates.</strong> A delivery is retried whenever we can't confirm success — including when your server <em>did</em> process it but the response was lost (a timeout, a network blip, your load balancer dropping the connection). Make your handler idempotent, keyed on the delivery id described above, rather than assuming a fresh id on every call.</li>
+<li><strong>Expect out-of-order arrival.</strong> Two events for the <em>same</em> order can be delivered out of order if the earlier one hits a slow retry cycle while a later one succeeds on the first attempt. Don't treat &quot;most recently received&quot; as &quot;most recent state&quot; — compare <code>data.changedAt</code> (or trust <code>data.newStatus</code> only if it's ahead of what you already have) instead of blindly overwriting on every webhook.</li>
+<li><strong>Expect the occasional gap.</strong> If your endpoint is down long enough to exhaust the retry window below, that one event is gone for good — retries don't continue past 12 attempts. Poll <code>POST /orders/statuses</code> periodically regardless of whether you use webhooks, so a missed event self-heals instead of leaving your system stuck on a stale status.</li>
+</ul>
+<h3 id="retries">Retries<a class="anchor" href="#retries" aria-label="Link to this section">#</a></h3>
+<p>A non-2xx response (or a request we can't complete within 10s) is retried with exponential backoff — roughly 30s, 1m, 2m, 4m, ... capped at 6h between attempts, for up to 12 attempts spanning about 24 hours. Return <code>2xx</code> promptly — do the actual processing after responding if it's slow, since a slow response counts toward the same 10s timeout as a failed one.</p>
+<p>If an endpoint fails its <strong>entire</strong> retry window five separate times in a row (so, on the order of days of continuous failure with no successful delivery in between), it's automatically disabled and you'll get an email at your account's registered address — delivery of new events stops until you fix and re-enable it from the dashboard (which also resets the failure count). Re-enabling does <strong>not</strong> replay what was missed while disabled; reconcile with <code>POST /orders/statuses</code> after fixing it.</p>
+<hr>
+<h2 id="errors">Errors<a class="anchor" href="#errors" aria-label="Link to this section">#</a></h2>
+<p>Every error is JSON with this shape:</p>
+<div class="code-block"><span class="code-lang">json</span><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code>{
+  &quot;success&quot;: <span class="t-lit">false</span>,
+  &quot;message&quot;: &quot;Human-readable explanation&quot;,
+  &quot;error&quot;: { &quot;code&quot;: &quot;STABLE_MACHINE_READABLE_CODE&quot; }
+}</code></pre></div>
+<p><code>error.code</code> is safe to branch your integration logic on — it won't change even if we reword <code>message</code>. Validation failures (<code>400</code>) additionally include <code>error.fields</code>:</p>
+<div class="code-block"><span class="code-lang">json</span><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code>{
+  &quot;success&quot;: <span class="t-lit">false</span>,
+  &quot;message&quot;: &quot;Validation failed&quot;,
+  &quot;error&quot;: {
+    &quot;code&quot;: &quot;VALIDATION_ERROR&quot;,
+    &quot;fields&quot;: [ { &quot;field&quot;: &quot;receiver.phone&quot;, &quot;message&quot;: &quot;Enter a valid Nepali mobile number (e.g. 98XXXXXXXX)&quot; } ]
+  }
+}</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>HTTP status</th><th><code>error.code</code></th><th>Meaning</th></tr></thead><tbody><tr><td><code>400</code></td><td><code>VALIDATION_ERROR</code></td><td>Malformed request — missing/invalid fields, missing or non-UUID <code>Idempotency-Key</code>.</td></tr><tr><td><code>401</code></td><td><code>UNAUTHORIZED</code></td><td>Missing, invalid, or revoked API key.</td></tr><tr><td><code>403</code></td><td><code>FORBIDDEN</code></td><td>Not allowed for this vendor.</td></tr><tr><td><code>404</code></td><td><code>NOT_FOUND</code></td><td>Order/ticket not found (or not yours), or unknown endpoint.</td></tr><tr><td><code>409</code></td><td><code>CONFLICT</code></td><td>E.g. an <code>Idempotency-Key</code> replayed with a <em>different</em> body, or the order is already in a terminal status.</td></tr><tr><td><code>422</code></td><td><code>VALIDATION_ERROR</code></td><td>Request understood but not processable (invalid status transition, business-rule rejection).</td></tr><tr><td><code>429</code></td><td><code>RATE_LIMITED</code></td><td>Rate limit exceeded — back off and retry.</td></tr><tr><td><code>500</code></td><td><code>INTERNAL_ERROR</code></td><td>Server error — safe to retry a <code>POST</code> with the same <code>Idempotency-Key</code>.</td></tr></tbody></table></div>
+<hr>
+<h2 id="openapi-spec">OpenAPI spec<a class="anchor" href="#openapi-spec" aria-label="Link to this section">#</a></h2>
+<p>The full request/response schema for every endpoint above, generated straight from the same validation the API runs — so it can never drift from what's actually enforced:</p>
+<div class="code-block"><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code>GET /api/v1/openapi.json</code></pre></div>
+<p>No API key required to fetch it. Paste the URL into <a href="https://editor.swagger.io" target="_blank" rel="noopener noreferrer">Swagger Editor</a> or Postman's &quot;Import from link&quot; for a browsable, interactive version, or feed it to an OpenAPI code generator for a typed client in your language of choice.</p>
+<hr>
+<h2 id="integration-checklist">Integration checklist<a class="anchor" href="#integration-checklist" aria-label="Link to this section">#</a></h2>
+<ol>
+<li>Generate an API key from the vendor dashboard and store it server-side (env var / secrets manager — never in client code).</li>
+<li>Call <code>GET /ping</code> once to confirm the key works before writing any other integration code.</li>
+<li>On checkout/fulfilment, <code>POST /orders</code> with a fresh UUID <code>Idempotency-Key</code>; persist the returned <code>trackingId</code> against your order.</li>
+<li>Retry failed creates (network error, <code>5xx</code>) with the <strong>same</strong> <code>Idempotency-Key</code> — extend the same pattern to cancel, remarks, and ticket calls.</li>
+<li><strong>Register a webhook endpoint before going live</strong> and verify <code>X-ParcelMoover-Signature</code> on every request before trusting the payload; that's how you sync status back to your system without polling. Show the returned <code>trackingId</code> to your customer at creation time.</li>
+<li>Use <code>GET /orders/{trackingId}</code> and <code>POST /orders/statuses</code> only for on-demand lookups or reconciliation (e.g. catching up after your webhook endpoint was down) — not as a scheduled polling loop.</li>
+<li>Handle <code>401</code> by alerting yourself (key revoked/rotated) and <code>429</code> with exponential backoff; branch on <code>error.code</code> rather than parsing <code>message</code> text.</li>
+<li>Rotate keys periodically: generate a new key, switch traffic, then revoke the old one (up to 5 active keys per account).</li>
+</ol>
+  </main>
+</div>
+<script>
+// Copy buttons
+document.querySelectorAll('.copy-btn').forEach(function(btn){
+  btn.addEventListener('click', function(){
+    var code = btn.parentElement.querySelector('code');
+    navigator.clipboard.writeText(code.innerText).then(function(){
+      btn.textContent = 'Copied'; btn.classList.add('copied');
+      setTimeout(function(){ btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 1400);
+    });
+  });
+});
+
+// Scrollspy: highlight the TOC entry for the section currently in view.
+var links = {};
+document.querySelectorAll('.toc-link').forEach(function(a){ links[a.dataset.slug] = a; });
+var targets = Object.keys(links).map(function(s){ return document.getElementById(s); }).filter(Boolean);
+var current = null;
+function sync(){
+  // Default to the first section, not null: before you've scrolled past
+  // Quick Start's heading (true for the entire top of the page, since it
+  // sits below the intro paragraph and base-URL table), every target's top
+  // is > 100 and nothing satisfied the loop below - so nothing was ever
+  // marked active until you scrolled past the first heading.
+  var best = targets[0] || null;
+  for (var i = 0; i < targets.length; i++) {
+    if (targets[i].getBoundingClientRect().top <= 100) best = targets[i];
+  }
+  if (best && best.id !== current) {
+    if (current && links[current]) links[current].classList.remove('active');
+    links[best.id].classList.add('active');
+    current = best.id;
+  }
+}
+sync();
+window.addEventListener('scroll', function(){ window.requestAnimationFrame(sync); }, { passive: true });
+</script>
+</body>
+</html>

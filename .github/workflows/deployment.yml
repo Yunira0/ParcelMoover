@@ -71,6 +71,7 @@ jobs:
         run: |
           npm ci
           npm run build
+          
 
   # ── Stage 2: build the image HERE, not on the 1GB production box.
   # Building on the server OOM-killed it on 2026-07-16 and locked out SSH.
@@ -152,6 +153,9 @@ jobs:
       - name: Rsync release to staging dir on host
         run: |
           rsync -az --delete \
+            --exclude='client' \
+            --exclude='docs' \
+            --exclude='readme.md' \
             -e "ssh -i ~/.ssh/deploy_key" \
             /tmp/release/ \
             ubuntu@"$SSH_HOST":/var/www/parcelmoover-staging/
@@ -203,7 +207,16 @@ jobs:
               --exclude='deploy/.env.production' \
               --exclude='deploy/.env.production.*' \
               --exclude='deploy/.last-good-image' \
+              --exclude='client' \
+              --exclude='docs' \
+              --exclude='readme.md' \
               /var/www/parcelmoover-staging/ "$APP_DIR"/
+
+            # Sync nginx configs from repo and reload (gzip + cache headers)
+            sudo cp "$APP_DIR/deploy/nginx/nginx.conf" /etc/nginx/nginx.conf
+            sudo cp "$APP_DIR/deploy/nginx/parcelmoover.conf" /etc/nginx/sites-available/parcelmoover.conf
+            sudo ln -sf /etc/nginx/sites-available/parcelmoover.conf /etc/nginx/sites-enabled/parcelmoover.conf
+            sudo nginx -t && sudo systemctl reload nginx
 
             echo "$GHCR_TOKEN" | sudo docker login ghcr.io -u "$GHCR_USER" --password-stdin
 
@@ -223,8 +236,10 @@ jobs:
               | grep -q deploy_db-data || { echo "WRONG DB VOLUME MOUNTED"; exit 1; }
 
             # old images pile up fast on a 19GB disk — keep the rollback
-            # target and current, prune the rest
-            sudo docker image prune -f >/dev/null
+            # target and current, prune the rest (including old tagged images)
+            sudo docker image prune -a -f >/dev/null
+            # also clean build cache that accumulates from manual builds
+            sudo docker builder prune -f >/dev/null 2>&1 || true
           EOF
 
       - name: Health check (retry up to 60s)

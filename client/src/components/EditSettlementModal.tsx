@@ -8,6 +8,7 @@ import {
   type UnsettledOrderItem,
 } from '../services/finance.service';
 import './Modal.css';
+import './EditSettlementModal.css';
 import '../pages/SettlementCreatePage.css';
 
 interface EditSettlementModalProps {
@@ -120,12 +121,12 @@ const EditSettlementModal: React.FC<EditSettlementModalProps> = ({
           </Button>
         </div>
         <form onSubmit={handleSubmit}>
-          <p style={{ fontSize: '13px', color: 'var(--color-text-caption)', margin: '0 0 var(--space-4)' }}>
+          <p className="esm-intro">
             Correct a mistake in this unsettled statement — remove an order that shouldn't be here, or add one that's
             missing. This is only possible before payment is recorded.
           </p>
 
-          <div style={{ marginBottom: 'var(--space-4)' }}>
+          <div className="esm-section">
             <label className="scp-label">Currently included ({currentItems.length})</label>
             {currentItems.length === 0 ? (
               <div className="scp-empty">No orders in this statement.</div>
@@ -172,12 +173,12 @@ const EditSettlementModal: React.FC<EditSettlementModalProps> = ({
                 </table>
               </div>
             )}
-            <p style={{ fontSize: '12px', color: 'var(--color-text-caption)', margin: 'var(--space-2) 0 0' }}>
+            <p className="esm-hint">
               Uncheck an order to remove it from the statement.
             </p>
           </div>
 
-          <div style={{ marginBottom: 'var(--space-4)' }}>
+          <div className="esm-section">
             <label className="scp-label">Add other unsettled orders</label>
             {fetchingOrders ? (
               <div className="scp-empty">Loading orders...</div>
@@ -228,7 +229,7 @@ const EditSettlementModal: React.FC<EditSettlementModalProps> = ({
           </div>
 
           {error && (
-            <p className="error-text" style={{ marginTop: 'var(--space-3)' }}>
+            <p className="error-text esm-error">
               {error}
             </p>
           )}

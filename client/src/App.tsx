@@ -27,6 +27,7 @@ import './App.css'
 
 const DashboardRouter = lazy(() => import('./pages/DashboardRouter'))
 const OverviewOrdersPage = lazy(() => import('./pages/OverviewOrdersPage'))
+const CodSettlementDetailPage = lazy(() => import('./pages/CodSettlementDetailPage'))
 const OrdersRouter = lazy(() => import('./pages/OrdersRouter'))
 const CreateOrderPage = lazy(() => import('./pages/CreateOrderPage'))
 const OrderDetailPage = lazy(() => import('./pages/OrderDetailPage'))
@@ -48,6 +49,8 @@ const JournalPage = lazy(() => import('./pages/accounting/JournalPage'))
 const LedgerReportPage = lazy(() => import('./pages/accounting/LedgerReportPage'))
 const PartySearchPage = lazy(() => import('./pages/accounting/PartySearchPage'))
 const AccountingPersonPage = lazy(() => import('./pages/accounting/AccountingPersonPage'))
+const SettlementPayPage = lazy(() => import('./pages/SettlementPayPage'))
+const FinanceManagement = lazy(() => import('./pages/FinanceManagement'))
 const DeliveryRateSettings = lazy(() => import('./pages/DeliveryRateSettings'))
 const Settings = lazy(() => import('./pages/settings/Settings'))
 const SlaSettings = lazy(() => import('./pages/SlaSettings'))
@@ -70,8 +73,8 @@ const VendorOrderPayments = lazy(() => import('./pages/vendor/VendorOrderPayment
 const VendorBilling = lazy(() => import('./pages/vendor/VendorBilling'))
 const BillingManagement = lazy(() => import('./pages/BillingManagement'))
 const VendorUserManagement = lazy(() => import('./pages/vendor/VendorUserManagement'))
-const VendorApiKeys = lazy(() => import('./pages/vendor/VendorApiKeys'))
-const VendorWebhooks = lazy(() => import('./pages/vendor/VendorWebhooks'))
+const VendorDeveloper = lazy(() => import('./pages/vendor/VendorDeveloper'))
+const VendorPrintSettings = lazy(() => import('./pages/vendor/VendorPrintSettings'))
 const StaffFormPage = lazy(() => import('./pages/vendor/StaffFormPage'))
 const BulkOrderPage = lazy(() => import('./pages/vendor/BulkOrderPage'))
 const VendorDeliveryCharges = lazy(() => import('./pages/vendor/VendorDeliveryCharges'))
@@ -112,6 +115,13 @@ function App() {
           <Route
             path="/overview/:metric"
             element={<RoleGuard allowedRoles={['super_admin', 'admin']}><OverviewOrdersPage /></RoleGuard>}
+          />
+          {/* Drill-down behind a line of the COD Settlement card. Same audience
+              as the card itself (Dashboard.tsx), which DashboardRouter shows to
+              everyone who isn't vendor-side or sales. */}
+          <Route
+            path="/cod/:bucket"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'rider']}><CodSettlementDetailPage /></RoleGuard>}
           />
           <Route path="/orders" element={<OrdersRouter />} />
           <Route
@@ -183,6 +193,13 @@ function App() {
           {/* COD Management was this page's rider/vendor toggle; both halves now
               live on their own Finance entry. */}
           <Route path="/finance" element={<CodManagementRedirect />} />
+          {/* The pre-reorg Finance screen, kept reachable after the merge with
+              upstream rather than sitting dead: /finance itself belongs to the
+              redirect above, so this keeps its own path. */}
+          <Route
+            path="/finance/legacy"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']}><FinanceManagement /></RoleGuard>}
+          />
           <Route
             path="/reports"
             element={<RoleGuard allowedRoles={['super_admin', 'admin']}><ReportsPage /></RoleGuard>}
@@ -243,9 +260,15 @@ function App() {
             path="/remarks"
             element={<RoleGuard allowedRoles={['super_admin', 'admin', 'vendor', 'vendor_staff', 'sales']}><Remarks /></RoleGuard>}
           />
+          {/* Same page, one route per author group. The `key` forces a remount so
+              search/page state from one queue doesn't carry into the other. */}
           <Route
             path="/unclosed-remarks"
-            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'vendor', 'vendor_staff', 'sales']}><UnclosedRemarks /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'vendor', 'vendor_staff', 'sales']}><UnclosedRemarks key="vendor" author="vendor" /></RoleGuard>}
+          />
+          <Route
+            path="/rider-remarks"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'vendor', 'vendor_staff', 'sales']}><UnclosedRemarks key="rider" author="rider" /></RoleGuard>}
           />
           <Route
             path="/remarks/:id"
@@ -254,6 +277,11 @@ function App() {
           <Route
             path="/finance/settlements/new"
             element={<RoleGuard allowedRoles={['super_admin', 'admin']}><SettlementCreatePage /></RoleGuard>}
+          />
+          {/* Must precede /finance/settlements/:id or ":id" would swallow "pay". */}
+          <Route
+            path="/finance/settlements/:id/pay"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']}><SettlementPayPage /></RoleGuard>}
           />
           <Route
             path="/finance/settlements/:id"
@@ -381,12 +409,16 @@ function App() {
             element={<RoleGuard allowedRoles={['vendor', 'vendor_staff']} requiredPermission="DELIVERY_CHARGES_ACCESS"><VendorDeliveryCharges /></RoleGuard>}
           />
           <Route
+            path="/print-settings"
+            element={<RoleGuard allowedRoles={['vendor', 'vendor_staff']} requiredPermission="ORDER_ACCESS"><VendorPrintSettings /></RoleGuard>}
+          />
+          <Route
             path="/developer/api-keys"
-            element={<RoleGuard allowedRoles={['vendor']}><VendorApiKeys /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['vendor']}><VendorDeveloper /></RoleGuard>}
           />
           <Route
             path="/developer/webhooks"
-            element={<RoleGuard allowedRoles={['vendor']}><VendorWebhooks /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['vendor']}><VendorDeveloper /></RoleGuard>}
           />
           <Route path="/profile" element={<ProfilePage />} />
         </Route>

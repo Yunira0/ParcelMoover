@@ -37,11 +37,20 @@ async function startServer() {
   // stores) here, after Redis is confirmed ready (or given up on above).
   const { default: app } = await import("./server");
 
+  // A deploy swaps the running code but not the Redis cache, so cached
+  // dashboard/order-list entries computed by the previous process's query
+  // logic can outlive the deploy by up to their TTL. Flushing them on boot
+  // means a code change is visible the instant the new process is live,
+  // not "eventually, once the old entry expires."
+  const { invalidateOrderCaches } = await import("./services/order.service");
+  invalidateOrderCaches().catch((err) => console.error("[Startup] Cache invalidation failed:", err));
+
   app.listen(port, () => {
     console.log(`[Startup] Server is running on port ${port}`);
     console.log(generateTrackingId());
     verifyMailer();
     startNcmReconciliation();
+    startUpayaReconciliation();
     startKycDocumentPurge();
     startWebhookDelivery();
     startLedgerPostingSweep();
@@ -97,6 +106,41 @@ function startNcmReconciliation() {
   }, NCM_RECONCILE_INTERVAL_MS).unref();
 }
 
+// Same reasoning as NCM above: Upaya webhooks may be missed, and there's no
+// documented bulk status endpoint to poll, so this sweeps in-flight parcels
+// one Track Order call at a time (bounded per sweep — see RECONCILE_BATCH in
+// upaya.service.ts).
+const UPAYA_RECONCILE_INTERVAL_MS = 30 * 60 * 1000;
+const UPAYA_RECONCILE_LOCK_KEY = "upaya:reconcile-lock";
+
+function startUpayaReconciliation() {
+  if (!process.env.UPAYA_BASE_URL || !process.env.UPAYA_API_KEY) return;
+
+  setInterval(async () => {
+    try {
+      const acquired = await redis.set(
+        UPAYA_RECONCILE_LOCK_KEY,
+        "1",
+        "EX",
+        Math.floor(UPAYA_RECONCILE_INTERVAL_MS / 1000) - 60,
+        "NX",
+      );
+      if (!acquired) return;
+    } catch {
+      // Redis down — run anyway; reconciliation is idempotent.
+    }
+    try {
+      const { reconcileUpayaStatuses } = await import("./services/upaya.service");
+      const result = await reconcileUpayaStatuses();
+      if (result.checked > 0) {
+        console.log(`[Upaya] reconciliation: checked ${result.checked}, applied ${result.applied}`);
+      }
+    } catch (error) {
+      console.error("[Upaya] reconciliation sweep failed:", error);
+    }
+  }, UPAYA_RECONCILE_INTERVAL_MS).unref();
+}
+
 // Rejected KYC applicants' documents (citizenship/PAN/business-cert scans)
 // are purged 30 days after rejection - see purgeExpiredRejectedKycDocuments.
 // Same Redis NX lock pattern as NCM reconciliation so only one instance runs
@@ -147,8 +191,10 @@ function startWebhookDelivery() {
       );
       if (!locked) return;
     } catch {
-      // Redis down — run anyway; delivery is idempotent (rows only move
-      // forward: pending -> succeeded/failed).
+      // Redis down — run anyway rather than stalling delivery entirely.
+      // webhookDispatch.service.ts has its own in-process reentrancy guard
+      // for exactly this case, so a Redis outage degrades to "no cross-tick
+      // coordination" rather than "sweeps race each other every 15s."
       locked = false;
     }
     try {

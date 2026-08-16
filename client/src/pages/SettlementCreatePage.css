@@ -74,6 +74,19 @@
   gap: var(--space-3);
 }
 
+/* Header row that carries an action button (e.g. Download Excel) on the right. */
+.scp-section-bar {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  justify-content: space-between;
+}
+
+.scp-section-bar .scp-section-header {
+  flex: 1 1 260px;
+}
+
 .scp-section-icon {
   align-items: center;
   background: var(--color-background-elevated);
@@ -158,6 +171,7 @@
 
 .scp-table tbody tr {
   cursor: pointer;
+  transition: background-color 150ms ease;
 }
 
 .scp-table tbody tr:hover {
@@ -169,8 +183,21 @@
   background: var(--color-background-primary-invert-default);
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .scp-table tbody tr {
+    transition: none;
+  }
+}
+
 .scp-mono {
   font-family: monospace;
+  font-size: 12px;
+}
+
+/* Secondary lines inside a cell, e.g. the receiver's phone and address under
+   their name. */
+.scp-subtext {
+  color: var(--color-text-caption);
   font-size: 12px;
 }
 

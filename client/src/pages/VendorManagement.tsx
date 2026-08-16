@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Plus, Search, ChevronDown } from 'lucide-react';
 import Table, { TableRowActions } from '../components/Table';
 import { toBsDate } from '../utils/nepaliDate';
 import UserActionModal from '../components/UserActionModal';
 import PageHeader from '../components/PageHeader';
+import Pagination from '../components/Pagination';
 import SegmentedTabs from '../components/SegmentedTabs';
 import StatusChip from '../components/StatusChip';
 import ToggleSwitch from '../components/ToggleSwitch';
@@ -34,11 +35,12 @@ interface VendorUser {
   salesEditUsed: boolean;
 }
 
+// Starting rows-per-page. The selector below the table can change it; the
+// server caps any value at 100 (auth.controller LIST_MAX_PAGE_SIZE).
+const PAGE_SIZE = 20;
+
 const VendorManagement: React.FC = () => {
   const navigate = useNavigate();
-  // Admins can edit any vendor and reset passwords. Sales can onboard new
-  // clients (auto-linked to them) and gets exactly one self-service edit on
-  // a vendor assigned to them - see canEditRow below for the per-row check.
   const isAdmin = isAdminSide();
   const isPureSales = isSalesUser();
   const currentUserId = getCurrentUser()?.id;
@@ -60,25 +62,30 @@ const VendorManagement: React.FC = () => {
   const [filter, setFilter] = useState<'all' | 'high-volume' | 'active'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [activeStatus, setActiveStatus] = useState('all');
-  const [companyFilter, setCompanyFilter] = useState('all');
-  const [locationFilter, setLocationFilter] = useState('all');
   const [vendors, setVendors] = useState<VendorUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionMode, setActionMode] = useState<'edit' | 'password'>('edit');
   const [activeVendor, setActiveVendor] = useState<VendorUser | null>(null);
-  const [statusSavingIds, setStatusSavingIds] = useState<Set<string>>(new Set());
-  const [statusError, setStatusError] = useState('');
+  const [page, setPage] = useState(1);
+  const [pageSizeChoice, setPageSizeChoice] = useState(PAGE_SIZE);
+  const [totalPages, setTotalPages] = useState(1);
+  const [total, setTotal] = useState(0);
 
-  const loadVendors = async () => {
+  const loadVendors = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await getVendors();
+      const params: Record<string, string | number> = { page, pageSize: pageSizeChoice };
+      if (searchQuery) params.search = searchQuery;
+      if (activeStatus !== 'all') params.status = activeStatus;
+
+      const res = await getVendors(params);
       if (res && res.success && Array.isArray(res.data)) {
         setVendors(res.data);
-      } else if (Array.isArray(res)) {
-        setVendors(res);
+        if (res.meta) {
+          setTotalPages(res.meta.totalPages);
+          setTotal(res.meta.total);
+        }
       } else {
-        console.error('Unexpected vendors response shape:', res);
         setVendors([]);
       }
     } catch (err) {
@@ -87,32 +94,21 @@ const VendorManagement: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [page, pageSizeChoice, searchQuery, activeStatus]);
 
   useEffect(() => {
     loadVendors();
-  }, []);
+  }, [loadVendors]);
 
-  // Optimistic toggle: flip the row immediately, revert if the server rejects it.
-  const toggleVendorStatus = async (vendor: VendorUser) => {
-    const nextStatus = vendor.status === 'active' ? 'inactive' : 'active';
-    setStatusError('');
-    setStatusSavingIds(prev => new Set(prev).add(vendor.id));
-    setVendors(prev => prev.map(v => (v.id === vendor.id ? { ...v, status: nextStatus } : v)));
-    try {
-      await updateUserStatus('vendor', vendor.id, nextStatus);
-    } catch (err) {
-      console.error('Failed to update vendor status:', err);
-      setVendors(prev => prev.map(v => (v.id === vendor.id ? { ...v, status: vendor.status } : v)));
-      setStatusError(`Failed to set ${vendor.client} ${nextStatus}. Please try again.`);
-    } finally {
-      setStatusSavingIds(prev => {
-        const next = new Set(prev);
-        next.delete(vendor.id);
-        return next;
-      });
-    }
-  };
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setPage(1);
+  }, [searchQuery, activeStatus, filter]);
+
+  // Client-side filter for tab (high-volume requires order count which comes from server)
+  const displayVendors = filter === 'high-volume'
+    ? vendors.filter(v => v.orders.total > 100)
+    : vendors;
 
   const columns = [
     { header: 'SN', accessor: 'sn' as keyof VendorUser, width: '50px' },
@@ -121,8 +117,8 @@ const VendorManagement: React.FC = () => {
     { header: 'EMAIL', accessor: 'email' as keyof VendorUser },
     { header: 'PHONE', accessor: 'phone' as keyof VendorUser },
     { header: 'LOCATION', accessor: 'location' as keyof VendorUser },
-    { 
-      header: 'ORDERS', 
+    {
+      header: 'ORDERS',
       accessor: (item: VendorUser) => (
         <div className="orders-info">
           <span>TOTAL ORDERS: {item.orders.total}</span>
@@ -131,26 +127,17 @@ const VendorManagement: React.FC = () => {
         </div>
       )
     },
-    { 
-      header: 'COD DUE', 
+    {
+      header: 'COD DUE',
       accessor: (item: VendorUser) => `Rs. ${item.codDue}`
     },
-    { 
-      header: 'STATUS', 
+    {
+      header: 'STATUS',
       accessor: (item: VendorUser) => (
-        <div className="vendor-status-cell">
-          <ToggleSwitch
-            checked={item.status === 'active'}
-            disabled={statusSavingIds.has(item.id)}
-            onChange={() => toggleVendorStatus(item)}
-            ariaLabel={`Set ${item.client} ${item.status === 'active' ? 'inactive' : 'active'}`}
-          />
-          <StatusChip variant="solid" tone={item.status === 'active' ? 'success' : 'danger'}>
-            {item.status}
-          </StatusChip>
-        </div>
-      ),
-      width: '150px',
+        <StatusChip variant="solid" tone={item.status === 'active' ? 'success' : 'danger'}>
+          {item.status}
+        </StatusChip>
+      )
     },
     // The API sends these as AD "YYYY-MM-DD"; every date shown in this app is BS.
     { header: 'JOINED', accessor: (v: VendorUser) => toBsDate(v.joined) || '—' },
@@ -179,29 +166,6 @@ const VendorManagement: React.FC = () => {
         }]
       : []),
   ];
-
-  // Dynamic filter options
-  const companies = ['all', ...Array.from(new Set(vendors.map(v => v.company)))];
-  const locations = ['all', ...Array.from(new Set(vendors.map(v => v.location)))];
-
-  const filteredVendors = vendors.filter(vendor => {
-    const matchesSearch = searchQuery === '' || 
-      vendor.client.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      vendor.company.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      vendor.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      vendor.phone.includes(searchQuery) ||
-      vendor.location.toLowerCase().includes(searchQuery.toLowerCase());
-    
-    const matchesTab = filter === 'all' || 
-      (filter === 'active' && vendor.status === 'active') ||
-      (filter === 'high-volume' && vendor.orders.total > 100);
-
-    const matchesStatus = activeStatus === 'all' || vendor.status === activeStatus;
-    const matchesCompany = companyFilter === 'all' || vendor.company === companyFilter;
-    const matchesLocation = locationFilter === 'all' || vendor.location === locationFilter;
-    
-    return matchesSearch && matchesTab && matchesStatus && matchesCompany && matchesLocation;
-  });
 
   return (
     <div className="vendor-management-container">
@@ -252,9 +216,9 @@ const VendorManagement: React.FC = () => {
         <div className="search-and-dropdowns">
           <div className="search-box">
             <Search size={16} style={{ color: 'var(--color-text-caption)' }} />
-            <input 
-              type="text" 
-              placeholder="Search client, phone, email, company..." 
+            <input
+              type="text"
+              placeholder="Search client, phone, email, company..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
@@ -268,35 +232,28 @@ const VendorManagement: React.FC = () => {
             </select>
             <ChevronDown size={12} style={{ color: 'var(--color-text-caption)', flexShrink: 0 }} />
           </div>
-
-          <div className="dropdown-filter">
-            <select value={companyFilter} onChange={(e) => setCompanyFilter(e.target.value)}>
-              <option value="all">Company</option>
-              {companies.filter(c => c !== 'all').map(company => (
-                <option key={company} value={company}>{company}</option>
-              ))}
-            </select>
-            <ChevronDown size={12} style={{ color: 'var(--color-text-caption)', flexShrink: 0 }} />
-          </div>
-
-          <div className="dropdown-filter">
-            <select value={locationFilter} onChange={(e) => setLocationFilter(e.target.value)}>
-              <option value="all">Location</option>
-              {locations.filter(l => l !== 'all').map(location => (
-                <option key={location} value={location}>{location}</option>
-              ))}
-            </select>
-            <ChevronDown size={12} style={{ color: 'var(--color-text-caption)', flexShrink: 0 }} />
-          </div>
         </div>
       </div>
-
-      {statusError && <p className="vendor-status-error">{statusError}</p>}
 
       {loading ? (
         <div className="loading-state">Loading vendors...</div>
       ) : (
-        <Table columns={columns} data={filteredVendors} selectable={false} />
+        <>
+          <Table columns={columns} data={displayVendors} selectable={false} />
+          <Pagination
+            page={page}
+            totalPages={totalPages}
+            onPageChange={setPage}
+            ariaLabel="Vendor management pagination"
+            summary={`${total} vendor${total !== 1 ? 's' : ''} total`}
+            pageSize={pageSizeChoice}
+            pageSizeLabel="vendors"
+            onPageSizeChange={(size) => {
+              setPageSizeChoice(size);
+              setPage(1);
+            }}
+          />
+        </>
       )}
 
       <UserActionModal

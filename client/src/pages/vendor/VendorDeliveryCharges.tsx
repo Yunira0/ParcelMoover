@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Search } from 'lucide-react';
 import PageHeader from '../../components/PageHeader';
 import Table from '../../components/Table';
+import Pagination from '../../components/Pagination';
 import StatusChip from '../../components/StatusChip';
 import { getMyDeliveryRates, type VendorSelfRate, type VendorSelfRates } from '../../services/deliveryRates.service';
 import { formatCurrency as formatMoney } from '../../utils/format';
@@ -26,9 +27,14 @@ const ZONE_LABELS: Record<string, string> = {
   inside_valley: 'Inside valley',
 };
 
+// The full rate card arrives in one response, so rows are paged client-side.
+const PAGE_SIZE = 20;
+
 const VendorDeliveryCharges: React.FC = () => {
   const [data, setData] = useState<VendorSelfRates | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [page, setPage] = useState(1);
+  const [pageSizeChoice, setPageSizeChoice] = useState(PAGE_SIZE);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -67,6 +73,13 @@ const VendorDeliveryCharges: React.FC = () => {
       : rates;
     return filtered.map((rate) => ({ ...rate, id: rate.destinationId }));
   }, [rates, searchQuery]);
+
+  const totalPages = Math.max(1, Math.ceil(visibleRates.length / pageSizeChoice));
+  const currentPage = Math.min(page, totalPages);
+  const pagedRates = visibleRates.slice(
+    (currentPage - 1) * pageSizeChoice,
+    currentPage * pageSizeChoice,
+  );
 
   type Row = VendorSelfRate & { id: string };
 
@@ -141,7 +154,10 @@ const VendorDeliveryCharges: React.FC = () => {
         <Search size={16} />
         <input
           value={searchQuery}
-          onChange={(event) => setSearchQuery(event.target.value)}
+          onChange={(event) => {
+            setSearchQuery(event.target.value);
+            setPage(1);
+          }}
           placeholder="Search by destination or covered area"
         />
       </label>
@@ -150,13 +166,29 @@ const VendorDeliveryCharges: React.FC = () => {
 
       <Table
         columns={columns}
-        data={visibleRates}
+        data={pagedRates}
         selectable={false}
         loading={loading}
         loadingMessage="Loading delivery charges..."
         emptyMessage="No delivery charges available."
         minWidth="1000px"
       />
+
+      {visibleRates.length > 0 && (
+        <Pagination
+          ariaLabel="Delivery charges pagination"
+          page={currentPage}
+          totalPages={totalPages}
+          onPageChange={setPage}
+          pageSize={pageSizeChoice}
+          pageSizeLabel="destinations"
+          onPageSizeChange={(size) => {
+            setPageSizeChoice(size);
+            setPage(1);
+          }}
+          summary={`${visibleRates.length} destination${visibleRates.length === 1 ? '' : 's'}`}
+        />
+      )}
     </div>
   );
 };

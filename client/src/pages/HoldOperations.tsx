@@ -48,6 +48,7 @@ const HoldOperations: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState(() => searchParams.get('search') || '');
   const [debouncedSearch, setDebouncedSearch] = useState(() => searchParams.get('search') || '');
   const pager = useCursorPagination();
+  const [pageSizeChoice, setPageSizeChoice] = useState(PAGE_SIZE);
   const [loading, setLoading] = useState(true);
   const [selectedIds, setSelectedIds] = useState<Set<string | number>>(new Set());
   const [statusUpdating, setStatusUpdating] = useState(false);
@@ -79,7 +80,7 @@ const HoldOperations: React.FC = () => {
       const res = await getOrders({
         status: ['hold'],
         search: debouncedSearch || undefined,
-        pageSize: PAGE_SIZE,
+        pageSize: pageSizeChoice,
         cursor: pager.request.cursor,
         dir: pager.request.dir,
       }, signal);
@@ -92,7 +93,7 @@ const HoldOperations: React.FC = () => {
     } finally {
       if (!signal?.aborted) setLoading(false);
     }
-  }, [debouncedSearch, pager.request]);
+  }, [debouncedSearch, pager.request, pageSizeChoice]);
 
   // Cancel an in-flight fetch when a newer one supersedes it (fast page/search
   // changes) or the page unmounts, so a stale response can't overwrite fresher data.
@@ -316,7 +317,7 @@ const HoldOperations: React.FC = () => {
         <input
           value={searchQuery}
           onChange={(event) => setSearchQuery(event.target.value)}
-          placeholder="Search tracking id"
+          placeholder="Search tracking id or #2980"
         />
       </label>
 
@@ -340,6 +341,12 @@ const HoldOperations: React.FC = () => {
         page={pager.page}
         totalPages={totalPages}
         cursor={pager.controls(meta)}
+        pageSize={pageSizeChoice}
+        pageSizeLabel="held orders"
+        onPageSizeChange={(size) => {
+          setPageSizeChoice(size);
+          pager.reset();
+        }}
         summary={`${totalCount} order${totalCount === 1 ? '' : 's'}`}
       />
 

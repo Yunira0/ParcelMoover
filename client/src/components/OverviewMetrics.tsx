@@ -15,7 +15,9 @@ export type MetricKey = 'pendingPickups' | 'pendingReturns' | 'inTransit' | 'pen
 export interface MetricStatusGroup {
   label: string;
   statuses: ParcelStatus[];
-  /** deliveredToday counts only orders delivered today - filtered by deliveredAt. */
+  /** deliveredToday counts only orders delivered today. Sent to the list API as
+   *  `deliveredToday`, so the drill-down pages and totals off the same filter
+   *  the card counts with rather than trimming a page client-side. */
   todayOnly?: boolean;
 }
 

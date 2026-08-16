@@ -50,7 +50,7 @@ function touchLastUsed(keyId: string): void {
 }
 
 function unauthorized(res: Response, message: string) {
-  return res.status(401).json({ success: false, message });
+  return res.status(401).json({ success: false, message, error: { code: "UNAUTHORIZED" } });
 }
 
 export async function apiKeyAuthMiddleware(req: Request, res: Response, next: NextFunction) {

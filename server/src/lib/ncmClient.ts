@@ -69,7 +69,7 @@ export async function ncmFetch<T = any>(path: string, options: NcmRequestOptions
           continue;
         }
         throw new AppError(
-          response.status >= 500 ? 502 : response.status,
+          response.status >= 400 && response.status < 500 ? 502 : response.status,
           formatNcmError(json, response.status),
           "NCM_ERROR",
           response.status === 429 ? parseRetryAfterSeconds(response, json) : undefined,

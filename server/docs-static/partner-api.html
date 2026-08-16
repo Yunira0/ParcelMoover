@@ -1,0 +1,1997 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ParcelMoover Partner Dashboard</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --rust: #c2410c;
+      --rust-invert: #ffedd5;
+      --ink: #030712;
+      --slate-caption: #4b5563;
+      --slate-placeholder: #6b7280;
+      --border: #d1d5db;
+      --elevated: #e5e7eb;
+      --canvas: #f3f4f6;
+      --surface: #ffffff;
+      --success: #15803d;
+      --success-surface: rgb(21 128 61 / 10%);
+      --warning: #a16207;
+      --warning-surface: rgb(161 98 7 / 10%);
+      --danger: #dc2626;
+      --danger-text: #b91c1c;
+      --danger-chip: #991b1b;
+      --info: #1d4ed8;
+      --info-surface: rgb(29 78 216 / 10%);
+      --radius-sm: 2px;
+      --radius: 4px;
+      --radius-md: 6px;
+      --radius-lg: 8px;
+      --radius-full: 9999px;
+      --font: 'Inter', system-ui, -apple-system, sans-serif;
+    }
+
+    body {
+      font-family: var(--font);
+      font-size: 14px;
+      font-weight: 500;
+      line-height: 20px;
+      color: var(--ink);
+      background: var(--canvas);
+      min-height: 100vh;
+    }
+
+    .layout {
+      display: flex;
+      min-height: 100vh;
+    }
+
+    .sidebar {
+      width: 220px;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      padding: 16px 0;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .sidebar-brand {
+      padding: 0 16px 16px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 8px;
+    }
+
+    .sidebar-brand h1 {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--rust);
+    }
+
+    .sidebar-brand span {
+      font-size: 12px;
+      font-weight: 400;
+      color: var(--slate-caption);
+    }
+
+    .sidebar-brand .docs-link {
+      display: block;
+      margin-top: 10px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--rust);
+      text-decoration: none;
+    }
+
+    .sidebar-brand .docs-link:hover { text-decoration: underline; }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 16px;
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--slate-caption);
+      cursor: pointer;
+      border: none;
+      background: none;
+      width: 100%;
+      text-align: left;
+      transition: color 0.15s, background 0.15s;
+    }
+
+    .nav-item:hover {
+      color: var(--ink);
+      background: var(--canvas);
+    }
+
+    .nav-item.active {
+      color: var(--rust);
+      background: var(--rust-invert);
+    }
+
+    .nav-item svg {
+      width: 18px;
+      height: 18px;
+      flex-shrink: 0;
+    }
+
+    .main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+
+    .header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 16px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .header h2 {
+      font-size: 20px;
+      font-weight: 700;
+    }
+
+    .content {
+      padding: 24px;
+      flex: 1;
+      overflow-y: auto;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 20px;
+      margin-bottom: 16px;
+    }
+
+    .card-title {
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 16px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--slate-caption);
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 16px;
+    }
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .form-group.full {
+      grid-column: 1 / -1;
+    }
+
+    label {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--slate-caption);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    label .required {
+      color: var(--danger);
+      margin-left: 2px;
+    }
+
+    input, select, textarea {
+      font-family: var(--font);
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--ink);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 8px 10px;
+      height: 36px;
+      outline: none;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+
+    input:focus, select:focus, textarea:focus {
+      border-color: var(--rust);
+      box-shadow: 0 0 0 2px rgb(194 65 12 / 12%);
+    }
+
+    input::placeholder, textarea::placeholder {
+      color: var(--slate-placeholder);
+    }
+
+    textarea {
+      min-height: 72px;
+      resize: vertical;
+    }
+
+    .btn {
+      font-family: var(--font);
+      font-size: 14px;
+      font-weight: 500;
+      height: 36px;
+      padding: 0 12px;
+      border-radius: var(--radius);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: background 0.15s, border-color 0.15s, color 0.15s;
+      white-space: nowrap;
+    }
+
+    .btn-primary {
+      background: var(--rust);
+      color: var(--surface);
+      border: 1px solid var(--rust);
+    }
+
+    .btn-primary:hover {
+      background: #9a3412;
+      border-color: #9a3412;
+    }
+
+    .btn-secondary {
+      background: var(--surface);
+      color: var(--ink);
+      border: 1px solid var(--border);
+    }
+
+    .btn-secondary:hover {
+      background: var(--canvas);
+    }
+
+    .btn-outline {
+      background: var(--surface);
+      color: var(--rust);
+      border: 1px solid var(--rust);
+    }
+
+    .btn-outline:hover {
+      background: var(--rust);
+      color: var(--surface);
+    }
+
+    .btn-danger {
+      background: #fef2f2;
+      color: var(--danger-text);
+      border: 1px solid #fecaca;
+    }
+
+    .btn-danger:hover {
+      background: #fee2e2;
+    }
+
+    .btn-ghost {
+      background: transparent;
+      color: var(--slate-caption);
+      border: none;
+      padding: 0 8px;
+    }
+
+    .btn-ghost:hover {
+      color: var(--ink);
+      background: var(--canvas);
+    }
+
+    .btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .btn-group {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .table-container {
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    thead {
+      background: var(--elevated);
+    }
+
+    th {
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--slate-caption);
+      padding: 10px 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+
+    td {
+      padding: 12px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: middle;
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    tbody tr:hover {
+      background: var(--canvas);
+    }
+
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 8px;
+      border-radius: var(--radius-full);
+      font-size: 12px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .chip-success {
+      background: var(--success-surface);
+      color: var(--success);
+    }
+
+    .chip-warning {
+      background: var(--warning-surface);
+      color: var(--warning);
+    }
+
+    .chip-danger {
+      background: rgb(220 38 38 / 10%);
+      color: var(--danger-text);
+    }
+
+    .chip-info {
+      background: var(--info-surface);
+      color: var(--info);
+    }
+
+    .chip-neutral {
+      background: var(--canvas);
+      color: var(--slate-caption);
+    }
+
+    .pagination {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 0;
+    }
+
+    .pagination-info {
+      font-size: 13px;
+      color: var(--slate-caption);
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 48px 24px;
+      color: var(--slate-caption);
+    }
+
+    .empty-state svg {
+      width: 48px;
+      height: 48px;
+      margin-bottom: 12px;
+      opacity: 0.4;
+    }
+
+    .empty-state p {
+      font-size: 14px;
+    }
+
+    .filter-bar {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+      align-items: flex-end;
+    }
+
+    .filter-bar .form-group {
+      min-width: 160px;
+    }
+
+    .toast-container {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      z-index: 1000;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .toast {
+      background: var(--ink);
+      color: var(--surface);
+      padding: 12px 16px;
+      border-radius: var(--radius-lg);
+      font-size: 14px;
+      font-weight: 500;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+      max-width: 400px;
+      animation: toastIn 0.2s ease-out;
+    }
+
+    .toast-error {
+      background: var(--danger-chip);
+    }
+
+    .toast-success {
+      background: var(--success);
+    }
+
+    @keyframes toastIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .status-timeline {
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+      padding: 0 0 0 20px;
+      border-left: 2px solid var(--border);
+      margin: 16px 0;
+    }
+
+    .status-step {
+      position: relative;
+      padding: 8px 0 16px 16px;
+    }
+
+    .status-step::before {
+      content: '';
+      position: absolute;
+      left: -25px;
+      top: 12px;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--border);
+      border: 2px solid var(--surface);
+    }
+
+    .status-step.completed::before {
+      background: var(--success);
+    }
+
+    .status-step.current::before {
+      background: var(--rust);
+    }
+
+    .status-step .step-label {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--ink);
+    }
+
+    .status-step .step-meta {
+      font-size: 12px;
+      color: var(--slate-placeholder);
+    }
+
+    .detail-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+    }
+
+    .detail-item {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .detail-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--slate-caption);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .detail-value {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--ink);
+    }
+
+    .comment-thread {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .comment {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 12px;
+    }
+
+    .comment-header {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+
+    .comment-author {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--ink);
+    }
+
+    .comment-date {
+      font-size: 12px;
+      color: var(--slate-placeholder);
+    }
+
+    .comment-body {
+      font-size: 14px;
+      color: var(--ink);
+    }
+
+    .comment-reply {
+      margin-left: 20px;
+      border-left: 2px solid var(--border);
+      padding-left: 12px;
+    }
+
+    .tab-content {
+      display: none;
+    }
+
+    .tab-content.active {
+      display: block;
+    }
+
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.4);
+      z-index: 100;
+      display: none;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modal-backdrop.open {
+      display: flex;
+    }
+
+    .modal {
+      background: var(--surface);
+      border-radius: var(--radius-lg);
+      box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+      width: 100%;
+      max-width: 560px;
+      max-height: 80vh;
+      overflow-y: auto;
+      margin: 16px;
+    }
+
+    .modal-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .modal-header h3 {
+      font-size: 16px;
+      font-weight: 600;
+    }
+
+    .modal-body {
+      padding: 20px;
+    }
+
+    .modal-footer {
+      padding: 16px 20px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+
+    @media (max-width: 768px) {
+      .sidebar {
+        display: none;
+      }
+      .content {
+        padding: 16px;
+      }
+      .filter-bar {
+        flex-direction: column;
+      }
+      .form-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <nav class="sidebar">
+      <div class="sidebar-brand">
+        <h1>ParcelMoover</h1>
+        <span>Partner Dashboard</span>
+        <a class="docs-link" href="/api/v1/docs">&larr; Back to API reference</a>
+      </div>
+      <button class="nav-item active" data-tab="settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        Settings
+      </button>
+      <button class="nav-item" data-tab="orders">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+        Orders
+      </button>
+      <button class="nav-item" data-tab="actions">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+        Order Actions
+      </button>
+      <button class="nav-item" data-tab="bulk">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        Bulk Lookup
+      </button>
+      <button class="nav-item" data-tab="rates">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+        Rates
+      </button>
+      <button class="nav-item" data-tab="tickets">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+        Tickets
+      </button>
+      <button class="nav-item" data-tab="finance">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+        Finance
+      </button>
+    </nav>
+
+    <main class="main">
+      <header class="header">
+        <h2 id="page-title">Settings</h2>
+        <div id="header-actions"></div>
+      </header>
+
+      <div class="content">
+        <!-- Settings Tab -->
+        <div class="tab-content active" id="tab-settings">
+          <div class="card">
+            <div class="card-title">API Configuration</div>
+            <div class="form-grid">
+              <div class="form-group">
+                <label>API Key <span class="required">*</span></label>
+                <input type="password" id="cfg-api-key" placeholder="pm_live_...">
+              </div>
+              <div class="form-group">
+                <label>Base URL</label>
+                <input type="url" id="cfg-base-url" placeholder="http://localhost:3000/api/v1">
+              </div>
+            </div>
+            <div class="btn-group" style="margin-top: 16px;">
+              <button class="btn btn-primary" onclick="saveConfig()">Save Configuration</button>
+              <button class="btn btn-secondary" onclick="testConnection()">Test Connection</button>
+              <button class="btn btn-ghost" onclick="clearConfig()">Clear</button>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-title">Status</div>
+            <p id="connection-status" style="color: var(--slate-caption);">Not connected. Enter your API key and test the connection.</p>
+          </div>
+        </div>
+
+        <!-- Orders Tab -->
+        <div class="tab-content" id="tab-orders">
+          <div class="card">
+            <div class="card-title">Create Order</div>
+            <form id="create-order-form" onsubmit="createOrder(event)">
+              <div class="form-grid">
+                <div class="form-group">
+                  <label>Receiver Name <span class="required">*</span></label>
+                  <input type="text" id="ord-receiver-name" required>
+                </div>
+                <div class="form-group">
+                  <label>Receiver Phone <span class="required">*</span></label>
+                  <input type="text" id="ord-receiver-phone" required placeholder="98XXXXXXXX">
+                </div>
+                <div class="form-group">
+                  <label>Receiver Email</label>
+                  <input type="email" id="ord-receiver-email">
+                </div>
+                <div class="form-group">
+                  <label>Receiver Address <span class="required">*</span></label>
+                  <input type="text" id="ord-receiver-address" maxlength="255"
+                         placeholder="Required for home delivery">
+                </div>
+                <div class="form-group">
+                  <label>Destination (Hub Name or UUID) <span class="required">*</span></label>
+                  <input type="text" id="ord-destination" placeholder="e.g. Kathmandu" required>
+                </div>
+                <div class="form-group">
+                  <label>Order Type</label>
+                  <select id="ord-type">
+                    <option value="delivery">Delivery</option>
+                    <option value="exchange">Exchange</option>
+                    <option value="return">Return</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label>Service Type</label>
+                  <select id="ord-service">
+                    <option value="home_delivery">Home Delivery</option>
+                    <option value="branch_delivery">Branch Delivery</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label>Pieces</label>
+                  <input type="number" id="ord-pieces" value="1" min="1">
+                </div>
+                <div class="form-group">
+                  <label>Weight (kg)</label>
+                  <input type="number" id="ord-weight" value="1" min="0.1" step="0.1">
+                </div>
+                <div class="form-group">
+                  <label>COD Amount (NPR)</label>
+                  <input type="number" id="ord-cod" value="0" min="0">
+                </div>
+                <div class="form-group">
+                  <label>Package Type</label>
+                  <input type="text" id="ord-package-type" maxlength="50" placeholder="e.g. electronics">
+                </div>
+                <div class="form-group full">
+                  <label>Delivery Instruction</label>
+                  <textarea id="ord-instruction" maxlength="500" rows="2"></textarea>
+                </div>
+              </div>
+              <div class="btn-group" style="margin-top: 16px;">
+                <button type="submit" class="btn btn-primary">Create Order</button>
+                <button type="reset" class="btn btn-secondary">Clear</button>
+              </div>
+            </form>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Your Orders</div>
+            <div class="filter-bar">
+              <div class="form-group">
+                <label>Status</label>
+                <select id="orders-filter-status" onchange="loadOrders()">
+                  <option value="">All</option>
+                  <option value="pickup_ordered">Pickup Ordered</option>
+                  <option value="picked_up">Picked Up</option>
+                  <option value="dispatched">Dispatched</option>
+                  <option value="sent_for_delivery">Sent for Delivery</option>
+                  <option value="delivered">Delivered</option>
+                  <option value="cancelled">Cancelled</option>
+                  <option value="failed_pickup">Failed Pickup</option>
+                  <option value="failed_delivery">Failed Delivery</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Page Size</label>
+                <select id="orders-page-size" onchange="loadOrders()">
+                  <option value="20">20</option>
+                  <option value="50">50</option>
+                  <option value="100">100</option>
+                </select>
+              </div>
+              <button class="btn btn-secondary" onclick="loadOrders()">Refresh</button>
+            </div>
+            <div id="orders-table-container">
+              <div class="empty-state">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                <p>No orders yet. Create your first order above or click Refresh.</p>
+              </div>
+            </div>
+            <div class="pagination" id="orders-pagination" style="display:none;">
+              <span class="pagination-info" id="orders-pagination-info"></span>
+              <div class="btn-group">
+                <button class="btn btn-secondary btn-sm" id="orders-prev" onclick="ordersPrevPage()">Previous</button>
+                <button class="btn btn-secondary btn-sm" id="orders-next" onclick="ordersNextPage()">Next</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Track Order</div>
+            <div class="form-grid">
+              <div class="form-group">
+                <label>Tracking ID</label>
+                <input type="text" id="track-id" placeholder="PM-XXXXXXXXXX-XXXXXXXXXX-X">
+              </div>
+              <div class="form-group" style="justify-content: flex-end;">
+                <button class="btn btn-primary" onclick="trackOrder()">Track</button>
+              </div>
+            </div>
+            <div id="track-result" style="margin-top: 16px;"></div>
+          </div>
+        </div>
+
+        <!-- Order Actions Tab -->
+        <div class="tab-content" id="tab-actions">
+          <div class="card">
+            <div class="card-title">Edit Order (Pre-dispatch only)</div>
+            <div class="form-grid">
+              <div class="form-group">
+                <label>Tracking ID <span class="required">*</span></label>
+                <input type="text" id="edit-tracking" placeholder="PM-XXXXXXXXXX-XXXXXXXXXX-X">
+              </div>
+              <div class="form-group">
+                <label>New Receiver Name</label>
+                <input type="text" id="edit-name">
+              </div>
+              <div class="form-group">
+                <label>New Receiver Phone</label>
+                <input type="text" id="edit-phone">
+              </div>
+              <div class="form-group">
+                <label>New Receiver Address</label>
+                <input type="text" id="edit-address">
+              </div>
+              <div class="form-group">
+                <label>New Destination</label>
+                <input type="text" id="edit-destination">
+              </div>
+              <div class="form-group">
+                <label>New COD Amount</label>
+                <input type="number" id="edit-cod" min="0">
+              </div>
+            </div>
+            <div class="btn-group" style="margin-top: 16px;">
+              <button class="btn btn-primary" onclick="editOrder()">Update Order</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Cancel Order</div>
+            <div class="form-grid">
+              <div class="form-group">
+                <label>Tracking ID <span class="required">*</span></label>
+                <input type="text" id="cancel-tracking" placeholder="PM-XXXXXXXXXX-XXXXXXXXXX-X">
+              </div>
+              <div class="form-group">
+                <label>Reason</label>
+                <input type="text" id="cancel-reason" maxlength="500">
+              </div>
+            </div>
+            <div class="btn-group" style="margin-top: 16px;">
+              <button class="btn btn-danger" onclick="cancelOrder()">Cancel Order</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Request Return</div>
+            <div class="form-grid">
+              <div class="form-group">
+                <label>Tracking ID <span class="required">*</span></label>
+                <input type="text" id="return-tracking" placeholder="PM-XXXXXXXXXX-XXXXXXXXXX-X">
+              </div>
+              <div class="form-group">
+                <label>Reason <span class="required">*</span></label>
+                <input type="text" id="return-reason" maxlength="500" required>
+              </div>
+              <div class="form-group full">
+                <label>Notes</label>
+                <textarea id="return-notes" maxlength="2000" rows="3"></textarea>
+              </div>
+            </div>
+            <div class="btn-group" style="margin-top: 16px;">
+              <button class="btn btn-primary" onclick="requestReturn()">Submit Return Request</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Order Comments</div>
+            <div class="form-grid">
+              <div class="form-group">
+                <label>Tracking ID <span class="required">*</span></label>
+                <input type="text" id="comment-tracking" placeholder="PM-XXXXXXXXXX-XXXXXXXXXX-X">
+              </div>
+              <div class="form-group" style="justify-content: flex-end;">
+                <button class="btn btn-secondary" onclick="loadComments()">Load Comments</button>
+              </div>
+              <div class="form-group full">
+                <label>New Comment</label>
+                <textarea id="comment-text" maxlength="2000" rows="2"></textarea>
+              </div>
+            </div>
+            <div class="btn-group" style="margin-top: 12px;">
+              <button class="btn btn-primary" onclick="addComment()">Add Comment</button>
+            </div>
+            <div id="comments-thread" class="comment-thread" style="margin-top: 16px;"></div>
+          </div>
+        </div>
+
+        <!-- Bulk Lookup Tab -->
+        <div class="tab-content" id="tab-bulk">
+          <div class="card">
+            <div class="card-title">Bulk Status Lookup</div>
+            <div class="form-group">
+              <label>Tracking IDs (one per line, up to 100)</label>
+              <textarea id="bulk-ids" rows="8" placeholder="PM-260713-GFQK93S5YN894-Q&#10;PM-260714-ABCDEF123456-X"></textarea>
+            </div>
+            <div class="btn-group" style="margin-top: 16px;">
+              <button class="btn btn-primary" onclick="bulkLookup()">Look Up Status</button>
+            </div>
+            <div id="bulk-results" style="margin-top: 16px;"></div>
+          </div>
+        </div>
+
+        <!-- Rates Tab -->
+        <div class="tab-content" id="tab-rates">
+          <div class="card">
+            <div class="card-title">Your Rate Card</div>
+            <div class="btn-group" style="margin-bottom: 16px;">
+              <button class="btn btn-primary" onclick="loadRates()">Load Rate Card</button>
+            </div>
+            <div id="rates-result"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Get Shipping Quote</div>
+            <div class="form-grid">
+              <div class="form-group">
+                <label>Destination (Name or UUID) <span class="required">*</span></label>
+                <input type="text" id="quote-destination" placeholder="e.g. Kathmandu">
+              </div>
+              <div class="form-group">
+                <label>Weight (kg)</label>
+                <input type="number" id="quote-weight" value="1" min="0.1" step="0.1">
+              </div>
+              <div class="form-group">
+                <label>Service Type</label>
+                <select id="quote-service">
+                  <option value="home_delivery">Home Delivery</option>
+                  <option value="branch_delivery">Branch Delivery</option>
+                </select>
+              </div>
+            </div>
+            <div class="btn-group" style="margin-top: 16px;">
+              <button class="btn btn-primary" onclick="getQuote()">Get Quote</button>
+            </div>
+            <div id="quote-result" style="margin-top: 16px;"></div>
+          </div>
+        </div>
+
+        <!-- Tickets Tab -->
+        <div class="tab-content" id="tab-tickets">
+          <div class="card">
+            <div class="card-title">Create Ticket</div>
+            <form id="create-ticket-form" onsubmit="createTicket(event)">
+              <div class="form-grid">
+                <div class="form-group full">
+                  <label>Subject <span class="required">*</span></label>
+                  <input type="text" id="ticket-subject" required maxlength="200">
+                </div>
+                <div class="form-group">
+                  <label>Category</label>
+                  <input type="text" id="ticket-category" maxlength="50" placeholder="e.g. pickup, delivery, cod_settlement">
+                </div>
+                <div class="form-group">
+                  <label>Priority</label>
+                  <select id="ticket-priority">
+                    <option value="low">Low</option>
+                    <option value="medium" selected>Medium</option>
+                    <option value="high">High</option>
+                    <option value="urgent">Urgent</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label>Customer Name</label>
+                  <input type="text" id="ticket-customer-name">
+                </div>
+                <div class="form-group">
+                  <label>Customer Phone</label>
+                  <input type="text" id="ticket-customer-phone">
+                </div>
+                <div class="form-group full">
+                  <label>Description</label>
+                  <textarea id="ticket-description" maxlength="2000" rows="3"></textarea>
+                </div>
+              </div>
+              <div class="btn-group" style="margin-top: 16px;">
+                <button type="submit" class="btn btn-primary">Create Ticket</button>
+              </div>
+            </form>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Your Tickets</div>
+            <div class="filter-bar">
+              <div class="form-group">
+                <label>Status</label>
+                <select id="tickets-filter-status" onchange="loadTickets()">
+                  <option value="">All</option>
+                  <option value="pending">Pending</option>
+                  <option value="in_progress">In Progress</option>
+                  <option value="resolved">Resolved</option>
+                  <option value="closed">Closed</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Priority</label>
+                <select id="tickets-filter-priority" onchange="loadTickets()">
+                  <option value="">All</option>
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                  <option value="urgent">Urgent</option>
+                </select>
+              </div>
+              <button class="btn btn-secondary" onclick="loadTickets()">Refresh</button>
+            </div>
+            <div id="tickets-table-container">
+              <div class="empty-state">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                <p>No tickets yet. Create your first ticket above.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="card" id="ticket-detail-card" style="display:none;">
+            <div class="card-title">Ticket Details</div>
+            <div id="ticket-detail"></div>
+            <div style="margin-top: 16px;">
+              <div class="form-group">
+                <label>Add Reply</label>
+                <textarea id="ticket-reply" rows="3" maxlength="2000"></textarea>
+              </div>
+              <div class="btn-group" style="margin-top: 8px;">
+                <button class="btn btn-primary" onclick="addTicketReply()">Send Reply</button>
+                <button class="btn btn-secondary" onclick="closeTicketDetail()">Close</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Finance Tab -->
+        <div class="tab-content" id="tab-finance">
+          <div class="card">
+            <div class="card-title">Pending COD Statement</div>
+            <div class="btn-group" style="margin-bottom: 16px;">
+              <button class="btn btn-primary" onclick="loadPendingCOD()">Load Statement</button>
+            </div>
+            <div id="pending-cod-result"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">COD Order Status</div>
+            <div class="filter-bar">
+              <div class="form-group">
+                <label>Status</label>
+                <select id="cod-filter-status" onchange="loadCODOrders()">
+                  <option value="">All</option>
+                  <option value="settled">Settled</option>
+                  <option value="not_settled">Not Settled</option>
+                </select>
+              </div>
+              <button class="btn btn-secondary" onclick="loadCODOrders()">Refresh</button>
+            </div>
+            <div id="cod-orders-result"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Settlements</div>
+            <div class="filter-bar">
+              <div class="form-group">
+                <label>From Date</label>
+                <input type="date" id="settlement-from">
+              </div>
+              <div class="form-group">
+                <label>To Date</label>
+                <input type="date" id="settlement-to">
+              </div>
+              <button class="btn btn-secondary" onclick="loadSettlements()">Refresh</button>
+            </div>
+            <div id="settlements-result"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Unsettled Orders</div>
+            <div class="btn-group" style="margin-bottom: 16px;">
+              <button class="btn btn-primary" onclick="loadUnsettled()">Load Unsettled</button>
+            </div>
+            <div id="unsettled-result"></div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <div class="toast-container" id="toast-container"></div>
+
+  <div class="modal-backdrop" id="modal-backdrop">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="modal-title"></h3>
+        <button class="btn btn-ghost" onclick="closeModal()">&times;</button>
+      </div>
+      <div class="modal-body" id="modal-body"></div>
+      <div class="modal-footer" id="modal-footer"></div>
+    </div>
+  </div>
+
+  <script>
+    // Default to this page's own origin — the console is served from the same
+    // host as the API (dev: localhost:3000, prod: portal.parcelmoover.com), so
+    // deriving it here means the default is always correct instead of needing
+    // an edit whenever this file moves between environments.
+    const DEFAULT_BASE_URL = window.location.origin + '/api/v1';
+
+    const App = {
+      config: {
+        apiKey: localStorage.getItem('pm_api_key') || '',
+        baseURL: localStorage.getItem('pm_base_url') || DEFAULT_BASE_URL
+      },
+      orders: { page: 1, data: [], meta: null },
+      tickets: { data: [] },
+      currentTicketId: null
+    };
+
+    // Toast notifications
+    function toast(message, type = 'info') {
+      const container = document.getElementById('toast-container');
+      const el = document.createElement('div');
+      el.className = `toast toast-${type}`;
+      el.textContent = message;
+      container.appendChild(el);
+      setTimeout(() => el.remove(), 4000);
+    }
+
+    // API helper
+    async function api(method, path, body = null) {
+      if (!App.config.apiKey) {
+        toast('Please set your API key in Settings', 'error');
+        throw new Error('No API key');
+      }
+
+      const headers = {
+        'Authorization': `Bearer ${App.config.apiKey}`,
+        'Content-Type': 'application/json'
+      };
+
+      if (method === 'POST' || method === 'PATCH') {
+        headers['Idempotency-Key'] = crypto.randomUUID();
+      }
+
+      const opts = { method, headers };
+      if (body) opts.body = JSON.stringify(body);
+
+      const res = await fetch(`${App.config.baseURL}${path}`, opts);
+      const data = await res.json();
+
+      if (!res.ok) {
+        const msg = data.message || `HTTP ${res.status}`;
+        const code = data.error?.code || '';
+        throw new Error(`${msg}${code ? ' (' + code + ')' : ''}`);
+      }
+
+      return data;
+    }
+
+    // Navigation
+    document.querySelectorAll('.nav-item').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+        btn.classList.add('active');
+        document.getElementById(`tab-${btn.dataset.tab}`).classList.add('active');
+        document.getElementById('page-title').textContent = btn.textContent.trim();
+      });
+    });
+
+    // Config
+    function loadConfig() {
+      document.getElementById('cfg-api-key').value = App.config.apiKey;
+      document.getElementById('cfg-base-url').value = App.config.baseURL;
+      updateConnectionStatus();
+    }
+
+    function saveConfig() {
+      App.config.apiKey = document.getElementById('cfg-api-key').value.trim();
+      App.config.baseURL = document.getElementById('cfg-base-url').value.trim() || DEFAULT_BASE_URL;
+      localStorage.setItem('pm_api_key', App.config.apiKey);
+      localStorage.setItem('pm_base_url', App.config.baseURL);
+      toast('Configuration saved', 'success');
+      updateConnectionStatus();
+    }
+
+    function clearConfig() {
+      App.config.apiKey = '';
+      App.config.baseURL = DEFAULT_BASE_URL;
+      localStorage.removeItem('pm_api_key');
+      localStorage.removeItem('pm_base_url');
+      document.getElementById('cfg-api-key').value = '';
+      document.getElementById('cfg-base-url').value = App.config.baseURL;
+      document.getElementById('connection-status').textContent = 'Configuration cleared.';
+      document.getElementById('connection-status').style.color = 'var(--slate-caption)';
+      toast('Configuration cleared');
+    }
+
+    async function testConnection() {
+      saveConfig();
+      const status = document.getElementById('connection-status');
+      status.textContent = 'Testing connection...';
+      status.style.color = 'var(--slate-caption)';
+      try {
+        await api('GET', '/rates');
+        status.textContent = 'Connected successfully!';
+        status.style.color = 'var(--success)';
+        toast('Connection successful', 'success');
+      } catch (e) {
+        status.textContent = `Connection failed: ${e.message}`;
+        status.style.color = 'var(--danger)';
+        toast('Connection failed', 'error');
+      }
+    }
+
+    function updateConnectionStatus() {
+      const status = document.getElementById('connection-status');
+      if (App.config.apiKey) {
+        status.textContent = `API key configured. Base URL: ${App.config.baseURL}`;
+        status.style.color = 'var(--success)';
+      } else {
+        status.textContent = 'Not connected. Enter your API key and test the connection.';
+        status.style.color = 'var(--slate-caption)';
+      }
+    }
+
+    // Orders
+    async function createOrder(e) {
+      e.preventDefault();
+      const receiver = {
+        name: document.getElementById('ord-receiver-name').value.trim(),
+        phone: document.getElementById('ord-receiver-phone').value.trim(),
+        email: document.getElementById('ord-receiver-email').value.trim() || undefined,
+        address: document.getElementById('ord-receiver-address').value.trim() || undefined
+      };
+
+      const body = { receiver };
+      const dest = document.getElementById('ord-destination').value.trim();
+      if (!dest) { toast('A destination hub is required', 'error'); return; }
+      body.destinationLocationId = dest;
+      receiver.locationId = dest;
+
+      const orderType = document.getElementById('ord-type').value;
+      const serviceType = document.getElementById('ord-service').value;
+      if (orderType !== 'delivery') body.orderType = orderType;
+      if (serviceType !== 'home_delivery') body.serviceType = serviceType;
+
+      // Address is only required for home delivery - a branch delivery is
+      // collected at the hub, so don't block it on an address the API won't ask for.
+      if (serviceType === 'home_delivery' && !receiver.address) {
+        toast('Receiver address is required for home delivery', 'error');
+        return;
+      }
+
+      const pieces = parseInt(document.getElementById('ord-pieces').value);
+      const weight = parseFloat(document.getElementById('ord-weight').value);
+      const cod = parseFloat(document.getElementById('ord-cod').value);
+      const pkgType = document.getElementById('ord-package-type').value.trim();
+      const instruction = document.getElementById('ord-instruction').value.trim();
+
+      if (pieces > 1) body.pieces = pieces;
+      // weightKg and codAmount are required by the API and must be sent even at
+      // their default values - a 1kg prepaid order still has to say so.
+      body.weightKg = weight;
+      body.codAmount = cod;
+      if (pkgType) body.packageType = pkgType;
+      if (instruction) body.deliveryInstruction = instruction;
+
+      try {
+        const res = await api('POST', '/orders', body);
+        toast(`Order created: ${res.data.trackingId}`, 'success');
+        document.getElementById('create-order-form').reset();
+        loadOrders();
+      } catch (e) {
+        toast(e.message, 'error');
+      }
+    }
+
+    async function loadOrders() {
+      const status = document.getElementById('orders-filter-status').value;
+      const pageSize = document.getElementById('orders-page-size').value;
+      const params = new URLSearchParams({ page: App.orders.page, pageSize });
+      if (status) params.set('status', status);
+
+      try {
+        const res = await api('GET', `/orders?${params}`);
+        App.orders.data = res.data;
+        App.orders.meta = res.meta;
+        renderOrdersTable();
+        renderOrdersPagination();
+      } catch (e) {
+        toast(e.message, 'error');
+      }
+    }
+
+    function renderOrdersTable() {
+      const container = document.getElementById('orders-table-container');
+      if (!App.orders.data.length) {
+        container.innerHTML = `<div class="empty-state"><p>No orders found.</p></div>`;
+        return;
+      }
+
+      const statusClass = (s) => {
+        if (['delivered'].includes(s)) return 'chip-success';
+        if (['picked_up', 'dispatched', 'sent_for_delivery', 'arrived'].includes(s)) return 'chip-info';
+        if (['pickup_ordered', 'rider_assigned'].includes(s)) return 'chip-warning';
+        if (['cancelled', 'failed_pickup', 'failed_delivery', 'loss_and_damage'].includes(s)) return 'chip-danger';
+        return 'chip-neutral';
+      };
+
+      container.innerHTML = `
+        <div class="table-container"><table>
+          <thead><tr>
+            <th>Tracking ID</th>
+            <th>Status</th>
+            <th>Receiver</th>
+            <th>Phone</th>
+            <th>Destination</th>
+            <th>COD</th>
+            <th>Created</th>
+          </tr></thead>
+          <tbody>${App.orders.data.map(o => `
+            <tr>
+              <td><code style="font-size:12px;">${o.trackingId}</code></td>
+              <td><span class="chip ${statusClass(o.status)}">${o.status.replace(/_/g, ' ')}</span></td>
+              <td>${o.receiverName || '—'}</td>
+              <td>${o.receiverPhone || '—'}</td>
+              <td>${o.destination || '—'}</td>
+              <td>${o.codAmount ? o.codAmount.toLocaleString() + ' NPR' : '—'}</td>
+              <td>${o.createdAt ? new Date(o.createdAt).toLocaleDateString() : '—'}</td>
+            </tr>
+          `).join('')}</tbody>
+        </table></div>`;
+    }
+
+    function renderOrdersPagination() {
+      const pag = document.getElementById('orders-pagination');
+      const info = document.getElementById('orders-pagination-info');
+      if (!App.orders.meta) { pag.style.display = 'none'; return; }
+
+      pag.style.display = 'flex';
+      const m = App.orders.meta;
+      info.textContent = `Page ${m.page} of ${m.totalPages} (${m.total} orders)`;
+      document.getElementById('orders-prev').disabled = !m.hasPrevPage;
+      document.getElementById('orders-next').disabled = !m.hasNextPage;
+    }
+
+    function ordersPrevPage() {
+      if (App.orders.meta?.hasPrevPage) {
+        App.orders.page--;
+        loadOrders();
+      }
+    }
+
+    function ordersNextPage() {
+      if (App.orders.meta?.hasNextPage) {
+        App.orders.page++;
+        loadOrders();
+      }
+    }
+
+    async function trackOrder() {
+      const trackingId = document.getElementById('track-id').value.trim();
+      if (!trackingId) { toast('Enter a tracking ID', 'error'); return; }
+
+      const container = document.getElementById('track-result');
+      container.innerHTML = '<p style="color:var(--slate-caption)">Loading...</p>';
+
+      try {
+        const res = await api('GET', `/orders/${trackingId}`);
+        const o = res.data;
+
+        const statusClass = (s) => {
+          if (['delivered'].includes(s)) return 'chip-success';
+          if (['picked_up', 'dispatched', 'sent_for_delivery'].includes(s)) return 'chip-info';
+          if (['pickup_ordered', 'rider_assigned'].includes(s)) return 'chip-warning';
+          if (['cancelled', 'failed_pickup', 'failed_delivery'].includes(s)) return 'chip-danger';
+          return 'chip-neutral';
+        };
+
+        container.innerHTML = `
+          <div class="detail-grid">
+            <div class="detail-item"><span class="detail-label">Tracking ID</span><span class="detail-value">${o.trackingId}</span></div>
+            <div class="detail-item"><span class="detail-label">Status</span><span class="chip ${statusClass(o.status)}">${o.status.replace(/_/g, ' ')}</span></div>
+            <div class="detail-item"><span class="detail-label">Order Type</span><span class="detail-value">${o.orderType || '—'}</span></div>
+            <div class="detail-item"><span class="detail-label">Service Type</span><span class="detail-value">${o.serviceType || '—'}</span></div>
+            <div class="detail-item"><span class="detail-label">Receiver</span><span class="detail-value">${o.receiverName || '—'}</span></div>
+            <div class="detail-item"><span class="detail-label">Phone</span><span class="detail-value">${o.receiverPhone || '—'}</span></div>
+            <div class="detail-item"><span class="detail-label">Address</span><span class="detail-value">${o.receiverAddress || '—'}</span></div>
+            <div class="detail-item"><span class="detail-label">Origin</span><span class="detail-value">${o.origin || '—'}</span></div>
+            <div class="detail-item"><span class="detail-label">Destination</span><span class="detail-value">${o.destination || '—'}</span></div>
+            <div class="detail-item"><span class="detail-label">Pieces</span><span class="detail-value">${o.pieces || '—'}</span></div>
+            <div class="detail-item"><span class="detail-label">Weight</span><span class="detail-value">${o.weightKg ? o.weightKg + ' kg' : '—'}</span></div>
+            <div class="detail-item"><span class="detail-label">COD Amount</span><span class="detail-value">${o.codAmount ? o.codAmount.toLocaleString() + ' NPR' : '—'}</span></div>
+            <div class="detail-item"><span class="detail-label">Delivery Charge</span><span class="detail-value">${o.deliveryCharge ? o.deliveryCharge.toLocaleString() + ' NPR' : '—'}</span></div>
+            <div class="detail-item"><span class="detail-label">Instruction</span><span class="detail-value">${o.deliveryInstruction || '—'}</span></div>
+          </div>
+          ${o.statusHistory?.length ? `
+            <h4 style="margin-top:20px;font-size:13px;font-weight:600;color:var(--slate-caption);text-transform:uppercase;letter-spacing:0.04em;">Status Timeline</h4>
+            <div class="status-timeline">
+              ${o.statusHistory.map((s, i) => `
+                <div class="status-step ${i === o.statusHistory.length - 1 ? 'current' : 'completed'}">
+                  <div class="step-label">${s.oldStatus?.replace(/_/g, ' ') || '—'} → ${s.newStatus?.replace(/_/g, ' ') || '—'}</div>
+                  <div class="step-meta">${s.changedBy || ''} ${s.createdAt ? '· ' + s.createdAt : ''}</div>
+                  ${s.remarks ? `<div class="step-meta">${s.remarks}</div>` : ''}
+                </div>
+              `).join('')}
+            </div>
+          ` : ''}
+          ${o.remarks?.length ? `
+            <h4 style="margin-top:20px;font-size:13px;font-weight:600;color:var(--slate-caption);text-transform:uppercase;letter-spacing:0.04em;">Remarks</h4>
+            <div class="comment-thread">
+              ${o.remarks.map(r => `
+                <div class="comment">
+                  <div class="comment-header">
+                    <span class="comment-author">${r.addedBy || 'System'}</span>
+                    <span class="comment-date">${r.createdAt || ''}</span>
+                  </div>
+                  <div class="comment-body">${r.remark || r.message || '—'}</div>
+                </div>
+              `).join('')}
+            </div>
+          ` : ''}`;
+      } catch (e) {
+        container.innerHTML = `<p style="color:var(--danger)">${e.message}</p>`;
+      }
+    }
+
+    // Edit Order
+    async function editOrder() {
+      const trackingId = document.getElementById('edit-tracking').value.trim();
+      if (!trackingId) { toast('Enter a tracking ID', 'error'); return; }
+
+      const body = {};
+      const name = document.getElementById('edit-name').value.trim();
+      const phone = document.getElementById('edit-phone').value.trim();
+      const address = document.getElementById('edit-address').value.trim();
+      const dest = document.getElementById('edit-destination').value.trim();
+      const cod = document.getElementById('edit-cod').value;
+
+      if (name || phone || address) {
+        body.receiver = {};
+        if (name) body.receiver.name = name;
+        if (phone) body.receiver.phone = phone;
+        if (address) body.receiver.address = address;
+      }
+      if (dest) body.destinationLocationId = dest;
+      if (cod !== '') body.codAmount = parseFloat(cod);
+
+      if (!Object.keys(body).length) {
+        toast('Enter at least one field to update', 'error');
+        return;
+      }
+
+      try {
+        await api('PATCH', `/orders/${trackingId}`, body);
+        toast('Order updated', 'success');
+      } catch (e) {
+        toast(e.message, 'error');
+      }
+    }
+
+    // Cancel Order
+    async function cancelOrder() {
+      const trackingId = document.getElementById('cancel-tracking').value.trim();
+      if (!trackingId) { toast('Enter a tracking ID', 'error'); return; }
+
+      if (!confirm(`Cancel order ${trackingId}?`)) return;
+
+      const reason = document.getElementById('cancel-reason').value.trim();
+      const body = reason ? { reason } : {};
+
+      try {
+        await api('POST', `/orders/${trackingId}/cancel`, body);
+        toast('Order cancelled', 'success');
+      } catch (e) {
+        toast(e.message, 'error');
+      }
+    }
+
+    // Return Request
+    async function requestReturn() {
+      const trackingId = document.getElementById('return-tracking').value.trim();
+      const reason = document.getElementById('return-reason').value.trim();
+      if (!trackingId || !reason) { toast('Tracking ID and reason are required', 'error'); return; }
+
+      const notes = document.getElementById('return-notes').value.trim();
+      const body = { reason };
+      if (notes) body.notes = notes;
+
+      try {
+        const res = await api('POST', `/orders/${trackingId}/return-request`, body);
+        toast(`Return request submitted. Ticket: ${res.data.ticketId}`, 'success');
+      } catch (e) {
+        toast(e.message, 'error');
+      }
+    }
+
+    // Comments
+    async function loadComments() {
+      const trackingId = document.getElementById('comment-tracking').value.trim();
+      if (!trackingId) { toast('Enter a tracking ID', 'error'); return; }
+
+      try {
+        const res = await api('GET', `/orders/${trackingId}/remarks`);
+        const container = document.getElementById('comments-thread');
+
+        if (!res.data?.length) {
+          container.innerHTML = '<p style="color:var(--slate-caption);padding:12px 0;">No comments yet.</p>';
+          return;
+        }
+
+        container.innerHTML = res.data.map(r => `
+          <div class="comment">
+            <div class="comment-header">
+              <span class="comment-author">${r.addedBy || 'Unknown'}</span>
+              <span class="comment-date">${r.createdAt ? new Date(r.createdAt).toLocaleString() : ''}</span>
+            </div>
+            <div class="comment-body">${r.remark || r.message || '—'}</div>
+          </div>
+        `).join('');
+      } catch (e) {
+        toast(e.message, 'error');
+      }
+    }
+
+    async function addComment() {
+      const trackingId = document.getElementById('comment-tracking').value.trim();
+      const remark = document.getElementById('comment-text').value.trim();
+      if (!trackingId || !remark) { toast('Tracking ID and comment are required', 'error'); return; }
+
+      try {
+        await api('POST', `/orders/${trackingId}/remarks`, { remark });
+        toast('Comment added', 'success');
+        document.getElementById('comment-text').value = '';
+        loadComments();
+      } catch (e) {
+        toast(e.message, 'error');
+      }
+    }
+
+    // Bulk Lookup
+    async function bulkLookup() {
+      const ids = document.getElementById('bulk-ids').value.split('\n').map(s => s.trim()).filter(Boolean);
+      if (!ids.length) { toast('Enter at least one tracking ID', 'error'); return; }
+      if (ids.length > 100) { toast('Maximum 100 tracking IDs', 'error'); return; }
+
+      const container = document.getElementById('bulk-results');
+      container.innerHTML = '<p style="color:var(--slate-caption)">Looking up...</p>';
+
+      try {
+        const res = await api('POST', '/orders/statuses', { trackingIds: ids });
+        let html = '';
+
+        if (res.data?.length) {
+          const statusClass = (s) => {
+            if (['delivered'].includes(s)) return 'chip-success';
+            if (['picked_up', 'dispatched', 'sent_for_delivery'].includes(s)) return 'chip-info';
+            if (['pickup_ordered', 'rider_assigned'].includes(s)) return 'chip-warning';
+            if (['cancelled', 'failed_pickup', 'failed_delivery'].includes(s)) return 'chip-danger';
+            return 'chip-neutral';
+          };
+
+          html += `<div class="table-container"><table>
+            <thead><tr><th>Tracking ID</th><th>Status</th><th>Updated At</th></tr></thead>
+            <tbody>${res.data.map(o => `
+              <tr>
+                <td><code style="font-size:12px;">${o.trackingId}</code></td>
+                <td><span class="chip ${statusClass(o.status)}">${o.status.replace(/_/g, ' ')}</span></td>
+                <td>${o.updatedAt ? new Date(o.updatedAt).toLocaleString() : '—'}</td>
+              </tr>
+            `).join('')}</tbody>
+          </table></div>`;
+        }
+
+        if (res.notFound?.length) {
+          html += `<div style="margin-top:12px;"><p style="color:var(--danger);font-size:13px;">Not found: ${res.notFound.join(', ')}</p></div>`;
+        }
+
+        container.innerHTML = html || '<p style="color:var(--slate-caption)">No results.</p>';
+      } catch (e) {
+        container.innerHTML = `<p style="color:var(--danger)">${e.message}</p>`;
+      }
+    }
+
+    // Rates
+    async function loadRates() {
+      const container = document.getElementById('rates-result');
+      container.innerHTML = '<p style="color:var(--slate-caption)">Loading rates...</p>';
+
+      try {
+        const res = await api('GET', '/rates');
+        const d = res.data;
+
+        let html = `
+          <div class="detail-grid" style="margin-bottom:16px;">
+            <div class="detail-item"><span class="detail-label">Rate Type</span><span class="detail-value">${d.rateType || '—'}</span></div>
+            <div class="detail-item"><span class="detail-label">Free Weight</span><span class="detail-value">${d.freeWeightKg || 0} kg</span></div>
+            <div class="detail-item"><span class="detail-label">Extra Weight %</span><span class="detail-value">${d.extraWeightPercent || 0}%</span></div>
+          </div>`;
+
+        if (d.rates?.length) {
+          html += `<div class="table-container"><table>
+            <thead><tr><th>Destination</th><th>Zone</th><th>Valley</th><th>Home Rate</th><th>Branch Rate</th><th>Note</th></tr></thead>
+            <tbody>${d.rates.map(r => `
+              <tr>
+                <td><strong>${r.destinationName || '—'}</strong></td>
+                <td>${r.zone || '—'}</td>
+                <td>${r.valley || '—'}</td>
+                <td>${r.homeRate ? r.homeRate.toLocaleString() + ' NPR' : '—'}</td>
+                <td>${r.branchRate ? r.branchRate.toLocaleString() + ' NPR' : '—'}</td>
+                <td>${r.note || '—'}</td>
+              </tr>
+            `).join('')}</tbody>
+          </table></div>`;
+        }
+
+        container.innerHTML = html;
+      } catch (e) {
+        container.innerHTML = `<p style="color:var(--danger)">${e.message}</p>`;
+      }
+    }
+
+    async function getQuote() {
+      const dest = document.getElementById('quote-destination').value.trim();
+      const weight = document.getElementById('quote-weight').value;
+      const service = document.getElementById('quote-service').value;
+      if (!dest) { toast('Enter a destination', 'error'); return; }
+
+      const params = new URLSearchParams({ destinationLocationId: dest, weightKg: weight, serviceType: service });
+      const container = document.getElementById('quote-result');
+
+      try {
+        const res = await api('GET', `/rates/quote?${params}`);
+        const d = res.data;
+
+        container.innerHTML = `
+          <div class="detail-grid">
+            <div class="detail-item"><span class="detail-label">Base Charge</span><span class="detail-value">${d.baseCharge?.toLocaleString() || 0} NPR</span></div>
+            <div class="detail-item"><span class="detail-label">Weight Surcharge</span><span class="detail-value">${d.weightSurcharge?.toLocaleString() || 0} NPR</span></div>
+            <div class="detail-item"><span class="detail-label">Total Payable</span><span class="detail-value" style="color:var(--rust);font-weight:700;">${d.totalPayable?.toLocaleString() || 0} NPR</span></div>
+            <div class="detail-item"><span class="detail-label">Free Weight</span><span class="detail-value">${d.freeWeightKg || 0} kg</span></div>
+            <div class="detail-item"><span class="detail-label">Rate Type</span><span class="detail-value">${d.rateType || '—'}</span></div>
+            <div class="detail-item"><span class="detail-label">Basis</span><span class="detail-value">${d.basis || '—'}</span></div>
+          </div>`;
+      } catch (e) {
+        container.innerHTML = `<p style="color:var(--danger)">${e.message}</p>`;
+      }
+    }
+
+    // Tickets
+    async function createTicket(e) {
+      e.preventDefault();
+      const body = {
+        subject: document.getElementById('ticket-subject').value.trim(),
+        category: document.getElementById('ticket-category').value.trim() || undefined,
+        priority: document.getElementById('ticket-priority').value,
+        description: document.getElementById('ticket-description').value.trim() || undefined,
+        customerName: document.getElementById('ticket-customer-name').value.trim() || undefined,
+        customerPhone: document.getElementById('ticket-customer-phone').value.trim() || undefined
+      };
+
+      try {
+        const res = await api('POST', '/tickets', body);
+        toast(`Ticket created: ${res.data.ticketId}`, 'success');
+        document.getElementById('create-ticket-form').reset();
+        loadTickets();
+      } catch (e) {
+        toast(e.message, 'error');
+      }
+    }
+
+    async function loadTickets() {
+      const status = document.getElementById('tickets-filter-status').value;
+      const priority = document.getElementById('tickets-filter-priority').value;
+      const params = new URLSearchParams();
+      if (status) params.set('status', status);
+      if (priority) params.set('priority', priority);
+
+      try {
+        const res = await api('GET', `/tickets?${params}`);
+        App.tickets.data = res.data;
+        renderTicketsTable();
+      } catch (e) {
+        toast(e.message, 'error');
+      }
+    }
+
+    function renderTicketsTable() {
+      const container = document.getElementById('tickets-table-container');
+      if (!App.tickets.data?.length) {
+        container.innerHTML = `<div class="empty-state"><p>No tickets found.</p></div>`;
+        return;
+      }
+
+      const priorityClass = (p) => {
+        if (p === 'urgent' || p === 'high') return 'chip-danger';
+        if (p === 'medium') return 'chip-warning';
+        return 'chip-neutral';
+      };
+
+      const statusClass = (s) => {
+        if (s === 'resolved' || s === 'closed') return 'chip-success';
+        if (s === 'in_progress') return 'chip-info';
+        return 'chip-warning';
+      };
+
+      container.innerHTML = `
+        <div class="table-container"><table>
+          <thead><tr><th>Ticket ID</th><th>Subject</th><th>Status</th><th>Priority</th><th>Category</th><th>Created</th></tr></thead>
+          <tbody>${App.tickets.data.map(t => `
+            <tr style="cursor:pointer;" onclick="viewTicket('${t.id || t.ticketId}')">
+              <td><code style="font-size:12px;">${t.ticketId || '—'}</code></td>
+              <td>${t.subject || '—'}</td>
+              <td><span class="chip ${statusClass(t.status)}">${t.status || '—'}</span></td>
+              <td><span class="chip ${priorityClass(t.priority)}">${t.priority || '—'}</span></td>
+              <td>${t.category || '—'}</td>
+              <td>${t.createdAt || '—'}</td>
+            </tr>
+          `).join('')}</tbody>
+        </table></div>`;
+    }
+
+    async function viewTicket(id) {
+      App.currentTicketId = id;
+      try {
+        const res = await api('GET', `/tickets/${id}`);
+        const t = res.data;
+        const card = document.getElementById('ticket-detail-card');
+        card.style.display = 'block';
+
+        document.getElementById('ticket-detail').innerHTML = `
+          <div class="detail-grid">
+            <div class="detail-item"><span class="detail-label">Ticket ID</span><span class="detail-value">${t.ticketId || '—'}</span></div>
+            <div class="detail-item"><span class="detail-label">Subject</span><span class="detail-value">${t.subject || '—'}</span></div>
+            <div class="detail-item"><span class="detail-label">Status</span><span class="detail-value">${t.status || '—'}</span></div>
+            <div class="detail-item"><span class="detail-label">Priority</span><span class="detail-value">${t.priority || '—'}</span></div>
+            <div class="detail-item"><span class="detail-label">Category</span><span class="detail-value">${t.category || '—'}</span></div>
+            <div class="detail-item"><span class="detail-label">Assigned To</span><span class="detail-value">${t.assignedTo || '—'}</span></div>
+          </div>
+          ${t.description ? `<p style="margin-top:12px;color:var(--slate-caption)">${t.description}</p>` : ''}
+          ${t.replies?.length ? `
+            <h4 style="margin-top:20px;font-size:13px;font-weight:600;color:var(--slate-caption);text-transform:uppercase;letter-spacing:0.04em;">Replies</h4>
+            <div class="comment-thread">
+              ${t.replies.map(r => `
+                <div class="comment">
+                  <div class="comment-header">
+                    <span class="comment-author">${r.author || '—'}</span>
+                    <span class="comment-date">${r.createdAt || ''}</span>
+                  </div>
+                  <div class="comment-body">${r.message || '—'}</div>
+                </div>
+              `).join('')}
+            </div>
+          ` : ''}`;
+      } catch (e) {
+        toast(e.message, 'error');
+      }
+    }
+
+    function closeTicketDetail() {
+      document.getElementById('ticket-detail-card').style.display = 'none';
+      App.currentTicketId = null;
+    }
+
+    async function addTicketReply() {
+      if (!App.currentTicketId) return;
+      const message = document.getElementById('ticket-reply').value.trim();
+      if (!message) { toast('Enter a reply', 'error'); return; }
+
+      try {
+        await api('POST', `/tickets/${App.currentTicketId}/replies`, { message });
+        toast('Reply sent', 'success');
+        document.getElementById('ticket-reply').value = '';
+        viewTicket(App.currentTicketId);
+      } catch (e) {
+        toast(e.message, 'error');
+      }
+    }
+
+    // Finance
+    async function loadPendingCOD() {
+      const container = document.getElementById('pending-cod-result');
+      container.innerHTML = '<p style="color:var(--slate-caption)">Loading...</p>';
+
+      try {
+        const res = await api('GET', '/finance/pending-cod');
+        const d = res.data;
+
+        let html = `
+          <div class="detail-grid" style="margin-bottom:16px;">
+            <div class="detail-item"><span class="detail-label">Vendor</span><span class="detail-value">${d.vendor?.name || '—'}</span></div>
+            <div class="detail-item"><span class="detail-label">Statement Date</span><span class="detail-value">${d.statementDate ? new Date(d.statementDate).toLocaleDateString() : '—'}</span></div>
+            <div class="detail-item"><span class="detail-label">Total COD</span><span class="detail-value">${d.totals?.totalCod?.toLocaleString() || 0} NPR</span></div>
+            <div class="detail-item"><span class="detail-label">Delivery Charges</span><span class="detail-value">${d.totals?.deliveryCharges?.toLocaleString() || 0} NPR</span></div>
+            <div class="detail-item"><span class="detail-label">Payable Amount</span><span class="detail-value" style="color:var(--success);font-weight:700;">${d.totals?.payableAmount?.toLocaleString() || 0} NPR</span></div>
+          </div>`;
+
+        if (d.items?.length) {
+          html += `<div class="table-container"><table>
+            <thead><tr><th>Order #</th><th>Tracking ID</th><th>Receiver</th><th>Phone</th><th>Destination</th><th>COD</th><th>Charge</th></tr></thead>
+            <tbody>${d.items.map(i => `
+              <tr>
+                <td>${i.orderNumber || '—'}</td>
+                <td><code style="font-size:12px;">${i.trackingId}</code></td>
+                <td>${i.receiverName || '—'}</td>
+                <td>${i.receiverPhone || '—'}</td>
+                <td>${i.destination || '—'}</td>
+                <td>${i.codAmount?.toLocaleString() || 0} NPR</td>
+                <td>${i.deliveryCharge?.toLocaleString() || 0} NPR</td>
+              </tr>
+            `).join('')}</tbody>
+          </table></div>`;
+        }
+
+        container.innerHTML = html;
+      } catch (e) {
+        container.innerHTML = `<p style="color:var(--danger)">${e.message}</p>`;
+      }
+    }
+
+    async function loadCODOrders() {
+      const status = document.getElementById('cod-filter-status').value;
+      const params = new URLSearchParams();
+      if (status) params.set('status', status);
+
+      const container = document.getElementById('cod-orders-result');
+      container.innerHTML = '<p style="color:var(--slate-caption)">Loading...</p>';
+
+      try {
+        const res = await api('GET', `/finance/order-cod?${params}`);
+        if (!res.data?.length) {
+          container.innerHTML = '<p style="color:var(--slate-caption)">No COD orders found.</p>';
+          return;
+        }
+
+        container.innerHTML = `<div class="table-container"><table>
+          <thead><tr><th>Tracking ID</th><th>Status</th><th>COD Amount</th></tr></thead>
+          <tbody>${res.data.map(o => `
+            <tr>
+              <td><code style="font-size:12px;">${o.trackingId || '—'}</code></td>
+              <td><span class="chip ${o.status === 'settled' ? 'chip-success' : 'chip-warning'}">${o.status || '—'}</span></td>
+              <td>${o.codAmount?.toLocaleString() || 0} NPR</td>
+            </tr>
+          `).join('')}</tbody>
+        </table></div>`;
+      } catch (e) {
+        container.innerHTML = `<p style="color:var(--danger)">${e.message}</p>`;
+      }
+    }
+
+    async function loadSettlements() {
+      const from = document.getElementById('settlement-from').value;
+      const to = document.getElementById('settlement-to').value;
+      const params = new URLSearchParams();
+      if (from) params.set('fromDate', from);
+      if (to) params.set('toDate', to);
+
+      const container = document.getElementById('settlements-result');
+      container.innerHTML = '<p style="color:var(--slate-caption)">Loading...</p>';
+
+      try {
+        const res = await api('GET', `/finance/settlements?${params}`);
+        if (!res.data?.length) {
+          container.innerHTML = '<p style="color:var(--slate-caption)">No settlements found.</p>';
+          return;
+        }
+
+        container.innerHTML = `<div class="table-container"><table>
+          <thead><tr><th>ID</th><th>Date</th><th>Amount</th></tr></thead>
+          <tbody>${res.data.map(s => `
+            <tr style="cursor:pointer;" onclick="viewSettlement('${s.id}')">
+              <td><code style="font-size:12px;">${s.id || '—'}</code></td>
+              <td>${s.date || s.createdAt || '—'}</td>
+              <td>${s.amount?.toLocaleString() || s.total?.toLocaleString() || 0} NPR</td>
+            </tr>
+          `).join('')}</tbody>
+        </table></div>`;
+      } catch (e) {
+        container.innerHTML = `<p style="color:var(--danger)">${e.message}</p>`;
+      }
+    }
+
+    async function viewSettlement(id) {
+      try {
+        const res = await api('GET', `/finance/settlements/${id}`);
+        const d = res.data;
+
+        let html = '<div class="detail-grid">';
+        if (d) {
+          Object.entries(d).forEach(([k, v]) => {
+            if (typeof v !== 'object' && v !== null) {
+              html += `<div class="detail-item"><span class="detail-label">${k.replace(/_/g, ' ')}</span><span class="detail-value">${v}</span></div>`;
+            }
+          });
+        }
+        html += '</div>';
+
+        if (d.items?.length) {
+          html += `<div class="table-container" style="margin-top:16px;"><table>
+            <thead><tr>${Object.keys(d.items[0]).map(k => `<th>${k.replace(/_/g, ' ')}</th>`).join('')}</tr></thead>
+            <tbody>${d.items.map(i => `<tr>${Object.values(i).map(v => `<td>${v ?? '—'}</td>`).join('')}</tr>`).join('')}</tbody>
+          </table></div>`;
+        }
+
+        document.getElementById('modal-title').textContent = `Settlement ${id}`;
+        document.getElementById('modal-body').innerHTML = html;
+        document.getElementById('modal-footer').innerHTML = '<button class="btn btn-secondary" onclick="closeModal()">Close</button>';
+        document.getElementById('modal-backdrop').classList.add('open');
+      } catch (e) {
+        toast(e.message, 'error');
+      }
+    }
+
+    async function loadUnsettled() {
+      const container = document.getElementById('unsettled-result');
+      container.innerHTML = '<p style="color:var(--slate-caption)">Loading...</p>';
+
+      try {
+        const res = await api('GET', '/finance/unsettled-orders');
+        if (!res.data?.length) {
+          container.innerHTML = '<p style="color:var(--slate-caption)">No unsettled orders.</p>';
+          return;
+        }
+
+        container.innerHTML = `<div class="table-container"><table>
+          <thead><tr><th>Tracking ID</th><th>Receiver</th><th>COD Amount</th><th>Status</th></tr></thead>
+          <tbody>${res.data.map(o => `
+            <tr>
+              <td><code style="font-size:12px;">${o.trackingId || '—'}</code></td>
+              <td>${o.receiverName || '—'}</td>
+              <td>${o.codAmount?.toLocaleString() || 0} NPR</td>
+              <td>${o.status || '—'}</td>
+            </tr>
+          `).join('')}</tbody>
+        </table></div>`;
+      } catch (e) {
+        container.innerHTML = `<p style="color:var(--danger)">${e.message}</p>`;
+      }
+    }
+
+    // Modal
+    function closeModal() {
+      document.getElementById('modal-backdrop').classList.remove('open');
+    }
+
+    document.getElementById('modal-backdrop').addEventListener('click', (e) => {
+      if (e.target === e.currentTarget) closeModal();
+    });
+
+    // Init
+    loadConfig();
+  </script>
+</body>
+</html>

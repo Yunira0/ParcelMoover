@@ -3,9 +3,13 @@ import {
   addOrderRemark,
   bulkCreateOrders,
   bulkUpdateParcelStatus,
+  COD_DETAIL_BUCKETS,
+  CodDetailBucket,
   createOrder,
+  getCodSettlementDetail,
   getDashboardSummary,
   getOrderByTrackingId,
+  getOrderFilterOptions,
   getPublicOrderTracking,
   getRiderRunSheet,
   getSenderProfile,
@@ -30,6 +34,25 @@ const UUID_REGEX =
 const VALID_STATUSES = new Set(Object.keys(STATUS_TRANSITIONS));
 const VALID_ORDER_TYPES: OrderType[] = ["delivery", "exchange", "return"];
 const MAX_BULK_IDS = 200;
+
+// Multi-select vendor filter: repeated `?vendorId=` params or one
+// comma-separated list. Capped so a hand-crafted URL can't build an
+// unbounded IN (...) list.
+const MAX_VENDOR_FILTER_IDS = 100;
+
+function parseVendorIdQuery(raw: unknown): string[] | undefined {
+  if (!raw) return undefined;
+  const values = Array.isArray(raw) ? raw : String(raw).split(",");
+  const ids = values.map((v) => String(v).trim()).filter(Boolean);
+  if (ids.length === 0) return undefined;
+  if (ids.length > MAX_VENDOR_FILTER_IDS) {
+    throw new Error(`vendorId accepts at most ${MAX_VENDOR_FILTER_IDS} ids`);
+  }
+  if (!ids.every((id) => UUID_REGEX.test(id))) {
+    throw new Error("vendorId must be a UUID or comma-separated list of UUIDs");
+  }
+  return ids;
+}
 
 function parseStatusQuery(raw: unknown): ParcelStatus[] | undefined {
   if (!raw) return undefined;
@@ -184,6 +207,13 @@ export async function listOrdersController(req: Request, res: Response) {
       return res.status(400).json({ success: false, message: e.message });
     }
 
+    let vendorIdFilter: string[] | undefined;
+    try {
+      vendorIdFilter = parseVendorIdQuery(req.query.vendorId);
+    } catch (e: any) {
+      return res.status(400).json({ success: false, message: e.message });
+    }
+
     const search = typeof req.query.search === "string" ? req.query.search : undefined;
 
     let orderType: OrderType | undefined;
@@ -260,6 +290,7 @@ export async function listOrdersController(req: Request, res: Response) {
       {
         ...(status ? { status } : {}),
         ...(orderType ? { orderType } : {}),
+        ...(vendorIdFilter ? { vendorId: vendorIdFilter } : {}),
         ...(search ? { search } : {}),
         ...(deliveryRiderId ? { deliveryRiderId } : {}),
         ...(page !== undefined ? { page } : {}),
@@ -268,7 +299,9 @@ export async function listOrdersController(req: Request, res: Response) {
         ...(dir !== undefined ? { dir } : {}),
         ...(sortBy ? { sortBy } : {}),
         ...(sortDir ? { sortDir } : {}),
-        ...(req.query.withArrival === "true" ? { withArrival: true } : {}),
+        // Both already coerced to real booleans by listOrdersQuerySchema.
+        ...(req.query.withArrival ? { withArrival: true } : {}),
+        ...(req.query.deliveredToday ? { deliveredToday: true } : {}),
       },
     );
 
@@ -281,6 +314,37 @@ export async function listOrdersController(req: Request, res: Response) {
     return res.status(error.statusCode || 500).json({
       success: false,
       message: error.message || "Failed to load orders",
+    });
+  }
+}
+
+// GET /orders/filter-options — lean, tab-scoped values for the orders list
+// page's origin/rider/destination filter dropdowns. Deliberately separate
+// from listOrdersController: that endpoint's page size is small (10 rows) and
+// its full include is heavy, neither of which fit "representative dropdown
+// values for the current tab".
+export async function getOrderFilterOptionsController(req: Request, res: Response) {
+  try {
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized",
+      });
+    }
+
+    let status: ParcelStatus[] | undefined;
+    try {
+      status = parseStatusQuery(req.query.status);
+    } catch (e: any) {
+      return res.status(400).json({ success: false, message: e.message });
+    }
+
+    const data = await getOrderFilterOptions({ id: req.user.id, roles: req.user.roles }, status);
+    return res.status(200).json({ success: true, data });
+  } catch (error: any) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to load filter options",
     });
   }
 }
@@ -545,6 +609,36 @@ export async function dashboardSummaryController(req: Request, res: Response) {
     return res.status(error.statusCode || 500).json({
       success: false,
       message: error.message || "Failed to load dashboard summary",
+    });
+  }
+}
+
+// GET /orders/cod-settlement-detail?bucket=... — the underlying rows behind
+// one line of the COD Settlement dashboard card (drill-down).
+export async function codSettlementDetailController(req: Request, res: Response) {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const bucket = req.query.bucket;
+    if (typeof bucket !== "string" || !COD_DETAIL_BUCKETS.includes(bucket as CodDetailBucket)) {
+      return res.status(400).json({
+        success: false,
+        message: `bucket must be one of: ${COD_DETAIL_BUCKETS.join(", ")}`,
+      });
+    }
+
+    const result = await getCodSettlementDetail(
+      { id: req.user.id, roles: req.user.roles },
+      bucket as CodDetailBucket,
+    );
+
+    return res.status(200).json({ success: true, data: result.rows, capped: result.capped });
+  } catch (error: any) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to load COD settlement detail",
     });
   }
 }

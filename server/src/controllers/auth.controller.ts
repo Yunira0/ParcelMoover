@@ -31,7 +31,9 @@ const locationLabel = (location?: { name: string; city: string | null; district:
 };
 
 const LIST_DEFAULT_PAGE_SIZE = 20;
-const LIST_MAX_PAGE_SIZE = 100;
+// 500 so the admin/vendor/rider lists can offer the same largest page as every
+// other screen.
+const LIST_MAX_PAGE_SIZE = 500;
 
 function paginationFromQuery(req: Request) {
   const page = Number.isFinite(Number(req.query.page)) ? Math.max(1, Number(req.query.page)) : 1;
@@ -289,6 +291,7 @@ export const login = async (req: Request, res: Response) => {
       success: true,
       message: "Login successful",
       data: result.user,
+      accessToken: result.token,
       csrfToken,
     });
   } catch (error: any) {
@@ -301,40 +304,52 @@ export const login = async (req: Request, res: Response) => {
   }
 };
 
-// No page/pageSize params here (unlike getVendorsController/getRidersController) -
-// the admin list UI (AdminManagement.tsx) renders the full list client-side with
-// no pagination controls. This cap is just a defensive ceiling against unbounded
-// growth, not real pagination; adding that would need a matching frontend change.
-const ADMINS_LIST_CAP = 500;
-
-export const getAdminsController = async (_req: Request, res: Response) => {
+export const getAdminsController = async (req: Request, res: Response) => {
   try {
+    const { page, pageSize, skip } = paginationFromQuery(req);
+
+    const search = typeof req.query.search === "string" ? req.query.search.trim() : "";
+    const statusFilter = typeof req.query.status === "string" ? req.query.status.trim() : "";
+
     // The root super admin never appears in Admin Management — its profile
     // lives on its own Profile page. Super admins *granted* the role later
     // still show, so the grant stays visible and revocable.
-    const [admins, rootSuperAdminUserId] = await Promise.all([
+    const rootSuperAdminUserId = await getRootSuperAdminUserId();
+
+    const where: Record<string, unknown> = {
+      users: { is: { deleted_at: null, ...(statusFilter && statusFilter !== "all" ? { status: statusFilter } : {}) } },
+      user_id: { not: rootSuperAdminUserId },
+    };
+
+    if (search) {
+      where.OR = [
+        { users: { is: { full_name: { contains: search, mode: "insensitive" } } } },
+        { users: { is: { email: { contains: search, mode: "insensitive" } } } },
+        { users: { is: { phone: { contains: search } } } },
+        { position: { contains: search, mode: "insensitive" } } as any,
+      ];
+    }
+
+    const [total, admins] = await Promise.all([
+      prisma.admins.count({ where }),
       prisma.admins.findMany({
-        where: {
-          users: { is: { deleted_at: null } },
-        },
+        where,
         include: {
           users: { include: { user_roles: { include: { roles: true } } } },
           locations: true,
         },
         orderBy: { created_at: "desc" },
-        take: ADMINS_LIST_CAP,
+        skip,
+        take: pageSize,
       }),
-      getRootSuperAdminUserId(),
     ]);
 
     return res.status(200).json({
       success: true,
-      data: admins
-        .filter((admin) => admin.user_id !== rootSuperAdminUserId)
-        .map((admin, index) => ({
+      data: admins.map((admin, index) => ({
         id: admin.id,
         userId: admin.user_id,
-        sn: index + 1,
+        sn: skip + index + 1,
         name: admin.users.full_name,
         email: admin.users.email || "",
         phone: admin.users.phone || "",
@@ -347,6 +362,7 @@ export const getAdminsController = async (_req: Request, res: Response) => {
         permissions: admin.permissions,
         isSuperAdmin: admin.users.user_roles.some((ur) => ur.roles.code === "super_admin"),
       })),
+      meta: { page, pageSize, total, totalPages: Math.max(1, Math.ceil(total / pageSize)) },
     });
   } catch (error: any) {
     return res.status(500).json({
@@ -375,7 +391,29 @@ export const getVendorsController = async (req: Request, res: Response) => {
       });
       scope = { id: staffRecord?.vendor_id ?? "__none__" };
     }
-    const where = { deleted_at: null, ...scope };
+    const where: Record<string, unknown> = { deleted_at: null, ...scope };
+
+    // Optional server-side filters for the vendor management page.
+    const search = typeof req.query.search === "string" ? req.query.search.trim() : "";
+    const statusFilter = typeof req.query.status === "string" ? req.query.status.trim() : "";
+    const companyFilter = typeof req.query.company === "string" ? req.query.company.trim() : "";
+    const locationFilter = typeof req.query.location === "string" ? req.query.location.trim() : "";
+
+    if (search) {
+      // search_text (business_name + client_name + phone + email, lowercased)
+      // is GIN-trigram indexed - a single `contains` on it stays fast at any
+      // vendor count, unlike ILIKE-ing four separate unindexed columns.
+      where.search_text = { contains: search.toLowerCase(), mode: "insensitive" };
+    }
+    if (statusFilter && (statusFilter === "active" || statusFilter === "inactive")) {
+      where.status = statusFilter;
+    }
+    if (companyFilter) {
+      where.business_name = companyFilter;
+    }
+    if (locationFilter) {
+      where.locations = { name: locationFilter };
+    }
 
     const { page, pageSize, skip } = paginationFromQuery(req);
 
@@ -465,6 +503,179 @@ export const getVendorsController = async (req: Request, res: Response) => {
         lastOrderedDate: formatDate(lastOrderByVendor.get(vendor.id) ?? vendor.last_ordered_at),
       })),
       meta: { page, pageSize, total, totalPages: Math.max(1, Math.ceil(total / pageSize)) },
+    });
+  } catch (error: any) {
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Failed to load vendors",
+    });
+  }
+};
+
+const TOP_VENDORS_LIMIT = 4;
+
+// Ranks vendors by real order volume, scoped the same way getVendorsController
+// is - unlike that endpoint (which pages "newest first" and leaves ranking to
+// the client), this ranks in the DB first so a vendor onboarded long ago but
+// with the most orders isn't stuck off the end of page 1.
+export const getTopVendorsController = async (req: Request, res: Response) => {
+  try {
+    const roles = req.user?.roles ?? [];
+    const isStaff = roles.includes("super_admin") || roles.includes("admin");
+    let scope: Record<string, unknown> = {};
+    if (roles.includes("sales") && !isStaff) {
+      scope = { sales_user_id: req.user!.id };
+    } else if (roles.includes("vendor") && !isStaff) {
+      scope = { user_id: req.user!.id };
+    } else if (roles.includes("vendor_staff") && !isStaff) {
+      const staffRecord = await prisma.vendor_staff.findFirst({
+        where: { user_id: req.user!.id, deleted_at: null, enabled: true },
+        select: { vendor_id: true },
+      });
+      scope = { id: staffRecord?.vendor_id ?? "__none__" };
+    }
+    const where: Record<string, unknown> = { deleted_at: null, ...scope };
+
+    const scopedVendors = await prisma.vendors.findMany({ where, select: { id: true } });
+    const scopedVendorIds = scopedVendors.map((v) => v.id);
+    if (scopedVendorIds.length === 0) {
+      return res.status(200).json({ success: true, data: [] });
+    }
+
+    const ranked = await prisma.parcels.groupBy({
+      by: ["vendor_id"],
+      where: { vendor_id: { in: scopedVendorIds }, deleted_at: null },
+      _count: { _all: true },
+      orderBy: { _count: { vendor_id: "desc" } },
+      take: TOP_VENDORS_LIMIT,
+    });
+
+    const topVendorIds = ranked.map((r) => r.vendor_id).filter((id): id is string => !!id);
+    if (topVendorIds.length === 0) {
+      return res.status(200).json({ success: true, data: [] });
+    }
+
+    const [vendors, statusCounts] = await Promise.all([
+      prisma.vendors.findMany({ where: { id: { in: topVendorIds } } }),
+      prisma.parcels.groupBy({
+        by: ["vendor_id", "status"],
+        where: { vendor_id: { in: topVendorIds }, deleted_at: null },
+        _count: { _all: true },
+      }),
+    ]);
+
+    const ordersByVendor = new Map<string, { total: number; delivered: number; returned: number }>();
+    for (const row of statusCounts) {
+      const vendorId = row.vendor_id as string | null;
+      if (!vendorId) continue;
+      const entry = ordersByVendor.get(vendorId) ?? { total: 0, delivered: 0, returned: 0 };
+      entry.total += row._count._all;
+      if (row.status === "delivered") entry.delivered += row._count._all;
+      if ((RETURNED_STATUSES as readonly string[]).includes(row.status)) entry.returned += row._count._all;
+      ordersByVendor.set(vendorId, entry);
+    }
+
+    const vendorById = new Map(vendors.map((v) => [v.id, v]));
+
+    return res.status(200).json({
+      success: true,
+      // topVendorIds is already in rank order - preserve it rather than
+      // re-deriving order from the vendors.findMany result.
+      data: topVendorIds
+        .map((id) => vendorById.get(id))
+        .filter((v): v is NonNullable<typeof v> => !!v)
+        .map((vendor) => ({
+          id: vendor.id,
+          client: vendor.client_name,
+          company: vendor.business_name || "",
+          orders: ordersByVendor.get(vendor.id) ?? { total: 0, delivered: 0, returned: 0 },
+        })),
+    });
+  } catch (error: any) {
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Failed to load top vendors",
+    });
+  }
+};
+
+const DROPDOWN_DEFAULT_LIMIT = 50;
+const DROPDOWN_MAX_LIMIT = 200;
+
+// Used to guard the { id: { equals: search } } clause below - the vendors.id
+// column is @db.Uuid, so a non-UUID search string (e.g. "kath") makes Postgres
+// throw "invalid input syntax for type uuid" and 500 every typed search. Only
+// match by id when the search string actually looks like a UUID.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export const getVendorsDropdownController = async (req: Request, res: Response) => {
+  try {
+    const roles = req.user?.roles ?? [];
+    const isStaff = roles.includes("super_admin") || roles.includes("admin");
+    let scope: Record<string, unknown> = {};
+    if (roles.includes("sales") && !isStaff) {
+      scope = { sales_user_id: req.user!.id };
+    } else if (roles.includes("vendor") && !isStaff) {
+      scope = { user_id: req.user!.id };
+    } else if (roles.includes("vendor_staff") && !isStaff) {
+      const staffRecord = await prisma.vendor_staff.findFirst({
+        where: { user_id: req.user!.id, deleted_at: null, enabled: true },
+        select: { vendor_id: true },
+      });
+      scope = { id: staffRecord?.vendor_id ?? "__none__" };
+    }
+
+    const search = typeof req.query.search === "string" ? req.query.search.trim() : "";
+    const limit = Number.isFinite(Number(req.query.limit))
+      ? Math.min(DROPDOWN_MAX_LIMIT, Math.max(1, Number(req.query.limit)))
+      : DROPDOWN_DEFAULT_LIMIT;
+    const offset = Number.isFinite(Number(req.query.offset))
+      ? Math.max(0, Number(req.query.offset))
+      : 0;
+
+    const where: Record<string, unknown> = { deleted_at: null, ...scope };
+
+    if (search) {
+      // Same search_text fast-path as getVendorsController above - a plain
+      // OR across business_name/client_name/phone/email has no supporting
+      // index and would full-scan the table on every keystroke.
+      where.OR = [
+        ...(UUID_RE.test(search) ? [{ id: { equals: search } }] : []),
+        { search_text: { contains: search.toLowerCase(), mode: "insensitive" } },
+      ];
+    }
+
+    const [vendors, totalCount] = await Promise.all([
+      prisma.vendors.findMany({
+        where,
+        select: {
+          id: true,
+          business_name: true,
+          client_name: true,
+          phone: true,
+          location_id: true,
+          pickup_landmark: true,
+          address: true,
+        },
+        orderBy: { created_at: "desc" },
+        skip: offset,
+        take: limit,
+      }),
+      prisma.vendors.count({ where }),
+    ]);
+
+    const hasMore = offset + vendors.length < totalCount;
+
+    return res.status(200).json({
+      success: true,
+      data: vendors.map((v) => ({
+        id: v.id,
+        label: v.business_name || v.client_name,
+        phone: v.phone,
+        address: v.pickup_landmark || v.address || "",
+        locationId: v.location_id,
+      })),
+      hasMore,
     });
   } catch (error: any) {
     return res.status(500).json({

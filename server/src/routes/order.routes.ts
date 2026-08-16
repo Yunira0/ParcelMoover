@@ -11,6 +11,7 @@ import {
   updateOrderStatusSchema,
   bulkUpdateOrderStatusSchema,
   listOrdersQuerySchema,
+  orderFilterOptionsQuerySchema,
   addOrderRemarkSchema,
   runSheetQuerySchema,
   redirectOrderSchema,
@@ -19,9 +20,11 @@ import {
   addOrderRemarkController,
   bulkCreateOrdersController,
   bulkUpdateOrderStatusController,
+  codSettlementDetailController,
   createOrderController,
   dashboardSummaryController,
   getOrderByTrackingIdController,
+  getOrderFilterOptionsController,
   getPublicOrderTrackingController,
   getSenderProfileController,
   getStatusCountsController,
@@ -142,6 +145,17 @@ orderRouter.get(
   dashboardSummaryController,
 );
 
+// GET /orders/cod-settlement-detail — drill-down rows behind one line of the
+// COD Settlement card. Same audience/scope as dashboard-summary.
+orderRouter.get(
+  "/cod-settlement-detail",
+  authMiddleware,
+  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider", "sales"),
+  requireStaffPermission("DASHBOARD_ACCESS"),
+  orderReadLimiter,
+  codSettlementDetailController,
+);
+
 // GET /orders/status-counts — lightweight per-status-group counts for operation
 // page tab badges. Accepts a JSON-encoded groups map as a query param.
 orderRouter.get(
@@ -172,6 +186,18 @@ orderRouter.get(
   orderReadLimiter,
   validate(runSheetQuerySchema, "query"),
   riderRunSheetController,
+);
+
+// GET /orders/filter-options — lean, tab-scoped values for the orders list
+// page's origin/rider/destination dropdowns (must come before "/").
+orderRouter.get(
+  "/filter-options",
+  authMiddleware,
+  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider", "sales"),
+  requireStaffPermission("ORDER_ACCESS"),
+  orderReadLimiter,
+  validate(orderFilterOptionsQuerySchema, "query"),
+  getOrderFilterOptionsController,
 );
 
 orderRouter.get(

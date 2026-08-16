@@ -11,12 +11,14 @@ import {
   setRemarkStatus,
   REMARK_STATUS_LABELS,
   type Remark,
+  type RemarkAuthorGroup,
   type RemarkStatus,
 } from '../services/remarks.service';
 import { toBsDate } from '../utils/nepaliDate';
 import './UnclosedRemarks.css';
 
 const PAGE_SIZE = 10;
+const SEARCH_DEBOUNCE_MS = 300;
 
 const STATUS_TONE: Record<RemarkStatus, StatusChipTone> = {
   open: 'info',
@@ -24,12 +26,38 @@ const STATUS_TONE: Record<RemarkStatus, StatusChipTone> = {
   closed: 'success',
 };
 
-const UnclosedRemarks: React.FC = () => {
+// Vendor- and rider-raised comments get their own routes rather than sharing one
+// list, so the two queues can be worked independently. Everything below the
+// heading is identical, so the page takes the group as a prop.
+const AUTHOR_COPY: Record<RemarkAuthorGroup, { title: string; subtitle: string }> = {
+  vendor: {
+    title: 'Unclosed Remarks',
+    subtitle: 'Open and pending remarks raised by vendors that need attention.',
+  },
+  rider: {
+    title: 'Rider Remarks',
+    subtitle: 'Open and pending remarks raised by riders that need attention.',
+  },
+};
+
+interface UnclosedRemarksProps {
+  author: RemarkAuthorGroup;
+}
+
+const UnclosedRemarks: React.FC<UnclosedRemarksProps> = ({ author }) => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [remarks, setRemarks] = useState<Remark[]>([]);
   const [searchQuery, setSearchQuery] = useState(() => searchParams.get('search') || '');
+  // Search hits the server (the list is paginated there), so debounce the input
+  // rather than firing a request per keystroke.
+  const [appliedSearch, setAppliedSearch] = useState(searchQuery.trim());
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(PAGE_SIZE);
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+  const [openCount, setOpenCount] = useState(0);
+  const [pendingCount, setPendingCount] = useState(0);
   const [loading, setLoading] = useState(true);
   // Tracks the remark whose "Mark as Done" request is in flight, to disable just that button.
   const [markingDoneId, setMarkingDoneId] = useState<string | null>(null);
@@ -37,34 +65,58 @@ const UnclosedRemarks: React.FC = () => {
   const loadRemarks = useCallback(async () => {
     setLoading(true);
     try {
-      // Filter unclosed server-side (not just "the latest 20 of any status") -
-      // otherwise a page full of recently-closed remarks pushes older unclosed
-      // ones off this list entirely while the nav badge's true DB count stays high.
+      // Paginate on the server. Fetching one big page and slicing it here capped
+      // the list at the server's max page size, so once the backlog grew past
+      // that the nav badge said "99+" while this page's total stopped short of it.
       // Server applies the canonical "unclosed" filter (status != closed,
       // vendor/rider-raised) - identical for every role and matching the
       // "Unclosed cmt" badge count, so closed remarks never leak into this list.
-      const res = await getRemarks({ unclosed: true, pageSize: 100 });
+      const res = await getRemarks({
+        unclosed: true,
+        author,
+        page,
+        pageSize,
+        search: appliedSearch || undefined,
+      });
       if (res?.success && Array.isArray(res.data)) {
         setRemarks(res.data);
+        setTotal(res.meta?.total ?? res.data.length);
+        setTotalPages(res.meta?.totalPages ?? 1);
+        // Counts come from the server over every page, not just the rows here.
+        setOpenCount(res.meta?.statusCounts?.open ?? 0);
+        setPendingCount(res.meta?.statusCounts?.pending ?? 0);
       }
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [author, page, pageSize, appliedSearch]);
 
   useEffect(() => { loadRemarks(); }, [loadRemarks]);
-  useEffect(() => { setPage(1); }, [searchQuery]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setAppliedSearch(searchQuery.trim()), SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  useEffect(() => { setPage(1); }, [appliedSearch, pageSize]);
+
+  // Closing the last remark on the final page leaves that page empty - step back
+  // instead of showing an empty table with pages still listed behind it.
+  useEffect(() => {
+    if (!loading && page > totalPages) setPage(totalPages);
+  }, [loading, page, totalPages]);
 
   const markAsDone = useCallback(async (remarkId: string) => {
     setMarkingDoneId(remarkId);
     try {
       await setRemarkStatus(remarkId, 'closed');
-      // This page only lists unclosed remarks, so a newly-closed one drops off the list.
-      setRemarks((prev) => prev.filter((remark) => remark.id !== remarkId));
+      // This page only lists unclosed remarks, so a newly-closed one drops off
+      // the list; refetch so the totals and the following rows shift up with it.
+      await loadRemarks();
     } finally {
       setMarkingDoneId(null);
     }
-  }, []);
+  }, [loadRemarks]);
 
   // Keep search bookmarkable - mirror into the URL (replacing history, not
   // pushing, so the back button doesn't step through every keystroke).
@@ -74,29 +126,13 @@ const UnclosedRemarks: React.FC = () => {
     setSearchParams(next, { replace: true });
   }, [searchQuery, setSearchParams]);
 
-  const filtered = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    return remarks
-      .filter((r) => r.status !== 'closed')
-      .filter((r) => !q ||
-        r.customerName.toLowerCase().includes(q) ||
-        r.customerPhone.toLowerCase().includes(q) ||
-        r.trackingId.toLowerCase().includes(q) ||
-        r.subject.toLowerCase().includes(q),
-      );
-  }, [remarks, searchQuery]);
-
-  const openCount = filtered.filter((r) => r.status === 'open').length;
-  const pendingCount = filtered.filter((r) => r.status === 'pending').length;
-
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const visible = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const visible = remarks;
 
   const columns = useMemo(
     () => [
       {
         header: 'SN',
-        accessor: (r: Remark) => (page - 1) * PAGE_SIZE + visible.findIndex((row) => row.id === r.id) + 1,
+        accessor: (r: Remark) => (page - 1) * pageSize + visible.findIndex((row) => row.id === r.id) + 1,
         width: '50px',
         className: 'ucr-sn-cell',
       },
@@ -157,19 +193,16 @@ const UnclosedRemarks: React.FC = () => {
         width: '240px',
       },
     ],
-    [page, visible, navigate, markAsDone, markingDoneId],
+    [page, pageSize, visible, navigate, markAsDone, markingDoneId],
   );
 
   return (
     <div className="ucr-container">
-      <PageHeader
-        title="Unclosed Remarks"
-        subtitle="All open and pending remarks that need attention."
-      />
+      <PageHeader title={AUTHOR_COPY[author].title} subtitle={AUTHOR_COPY[author].subtitle} />
 
       <div className="ucr-stats">
         <div className="ucr-stat-chip">
-          <span className="ucr-stat-value">{filtered.length}</span>
+          <span className="ucr-stat-value">{total}</span>
           <span className="ucr-stat-label">Total unclosed</span>
         </div>
         <div className="ucr-stat-chip ucr-stat-open">
@@ -212,7 +245,10 @@ const UnclosedRemarks: React.FC = () => {
         page={page}
         totalPages={totalPages}
         onPageChange={setPage}
-        summary={`${filtered.length} remark${filtered.length === 1 ? '' : 's'}`}
+        pageSize={pageSize}
+        pageSizeLabel="remarks"
+        onPageSizeChange={setPageSize}
+        summary={`${total} remark${total === 1 ? '' : 's'}`}
       />
     </div>
   );

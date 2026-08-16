@@ -1,11 +1,12 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Info } from 'lucide-react';
 import FormField from '../components/FormField';
+import SearchableSelectAsync from '../components/SearchableSelectAsync';
 import PageHeader from '../components/PageHeader';
 import BillingStatusBanner from '../components/BillingStatusBanner';
 import Button from '../components/Button';
-import { getLocations, getVendors } from '../services/users.service';
+import { getLocations, searchVendors } from '../services/users.service';
 import { getVendorQuote } from '../services/pricing.service';
 import { createOrder, updateOrder, getSenderProfile, type CreateOrderInput, type UpdateOrderInput, type OrderType, type ServiceType } from '../services/orders.service';
 import { isVendorSide } from '../utils/auth';
@@ -60,7 +61,7 @@ const defaultFormState = {
   contactNumber: '',
   alternateNumber: '',
   address: '',
-  weightKg: '1',
+  weightKg: '2',
   codAmount: '',
   itemValue: '0',
   packageType: 'Parcel',
@@ -109,12 +110,23 @@ const CreateOrderPage: React.FC = () => {
   // Orders keyed in by a plain admin always originate from that admin's own
   // hub — only a super_admin may pick a different origin (server enforces it).
 
-  const [vendors, setVendors] = useState<VendorOption[]>([]);
   // For a vendor/vendor_staff actor, this is their own vendor (fetched via
   // /orders/sender-profile, which resolves correctly for both roles - unlike
   // matching the vendors list by userId, which only ever matched the vendor
   // owner's account, never a staff member's).
   const [myVendorProfile, setMyVendorProfile] = useState<VendorOption | null>(null);
+  // Distinguish "a fetch failed" (network/timeout/server error) from a vendor
+  // that genuinely has no hub set - the two used to collapse into the same
+  // "No hub assigned - contact an admin" message, which is wrong (and
+  // unactionable) when the real cause is a flaky connection. The origin hub
+  // name depends on BOTH the sender-profile fetch (for fixedOriginId) and the
+  // locations fetch (to look up its display name), so either failing alone
+  // must surface here - tracked separately since they resolve independently
+  // and a later success on one shouldn't mask an earlier failure on the other.
+  const [profileLoadError, setProfileLoadError] = useState(false);
+  const [locationsLoadError, setLocationsLoadError] = useState(false);
+  // Stores the full details of the vendor selected from the async dropdown.
+  const [selectedVendorDetails, setSelectedVendorDetails] = useState<VendorOption | null>(null);
   const [locationOptions, setLocationOptions] = useState<LocationOption[]>([]);
   const [form, setForm] = useState<FormState>(defaultFormState);
   const [submitting, setSubmitting] = useState(false);
@@ -126,9 +138,11 @@ const CreateOrderPage: React.FC = () => {
   // to create the order anyway.
   const [duplicateWarning, setDuplicateWarning] = useState('');
 
-  const [quote, setQuote] = useState<{ weightSurcharge: number; baseCharge: number; totalPayable: number } | null>(null);
+  const [quote, setQuote] = useState<{ weightSurcharge: number; baseCharge: number; totalPayable: number; basis?: string } | null>(null);
   const [quoteError, setQuoteError] = useState('');
   const [quoteLoading, setQuoteLoading] = useState(false);
+  // Bumped by the "Retry" link on a failed profile load to re-run the effect below.
+  const [profileRetryToken, setProfileRetryToken] = useState(0);
 
   useEffect(() => {
     if (isVendorActor) {
@@ -140,6 +154,7 @@ const CreateOrderPage: React.FC = () => {
         try {
           const res = await getSenderProfile();
           if (res?.success) {
+            setProfileLoadError(false);
             setMyVendorProfile({
               id: res.data.id,
               userId: null,
@@ -148,27 +163,12 @@ const CreateOrderPage: React.FC = () => {
               address: res.data.address,
               locationId: res.data.locationId,
             });
+          } else {
+            setProfileLoadError(true);
           }
         } catch (err) {
           console.error('Failed to load vendor profile:', err);
-        }
-      })();
-    } else {
-      (async () => {
-        try {
-          const res = await getVendors();
-          if (res?.success && Array.isArray(res.data)) {
-            setVendors(res.data.map((v: any) => ({
-              id: v.id,
-              userId: v.userId,
-              label: v.company || v.client,
-              phone: v.phone,
-              address: v.address || '',
-              locationId: v.locationId ?? null,
-            })));
-          }
-        } catch (err) {
-          console.error('Failed to load vendors:', err);
+          setProfileLoadError(true);
         }
       })();
     }
@@ -176,13 +176,17 @@ const CreateOrderPage: React.FC = () => {
       try {
         const res = await getLocations();
         if (res?.success && Array.isArray(res.data)) {
+          setLocationsLoadError(false);
           setLocationOptions(res.data.map((l: any) => ({ id: l.id, name: l.name, code: l.code, parentId: l.parent_id })));
+        } else {
+          setLocationsLoadError(true);
         }
       } catch (err) {
         console.error('Failed to load locations:', err);
+        setLocationsLoadError(true);
       }
     })();
-  }, [isVendorActor]);
+  }, [isVendorActor, profileRetryToken]);
 
   // Prefill from a "copy"/"edit" navigation (replaces the old modal's initialData prop)
   useEffect(() => {
@@ -220,7 +224,25 @@ const CreateOrderPage: React.FC = () => {
 
   // When actor is a vendor (or vendor_staff), their own sender identity is
   // implicit - no Vendor picker shown.
-  const selectedVendor = isVendorActor ? myVendorProfile ?? undefined : vendors.find(v => v.id === form.vendorId);
+  const selectedVendor = isVendorActor ? myVendorProfile ?? undefined : selectedVendorDetails ?? undefined;
+
+  // Async search for vendor dropdown — fetches from server on each keystroke.
+  const handleVendorSearch = useCallback(async (search: string, offset: number) => {
+    const res = await searchVendors(search, 50, offset);
+    if (res?.success && Array.isArray(res.data)) {
+      return {
+        results: res.data.map((v: any) => ({
+          id: v.id,
+          label: v.label,
+          phone: v.phone,
+          address: v.address,
+          locationId: v.locationId,
+        })),
+        hasMore: res.hasMore ?? false,
+      };
+    }
+    return { results: [], hasMore: false };
+  }, []);
 
   // The single admin hub all orders originate from. Matched by code first, name as fallback.
   const imadolHub = locationOptions.find(
@@ -229,11 +251,17 @@ const CreateOrderPage: React.FC = () => {
 
   // Origin ("From") is always fixed to the Imadol admin hub — for vendors it's their
   // assigned hub (Imadol), for admins we lock it to Imadol too rather than a free picker.
+  // Edit mode only: leave the parcel's real originLocationId (from prefillInitialData)
+  // alone. There can be more than one location row that resolves as "Imadol" (matched
+  // loosely by name/code), so forcing it here can silently reassign an existing order
+  // to a different-but-identical-looking Imadol row - which then also reads as a real
+  // "origin changed" edit server-side, defeating the COD-only edit allowance on a
+  // delivered/RTV/RTO parcel purely because of this reset, not an actual user change.
   const fixedOriginId = isVendorActor ? selectedVendor?.locationId : imadolHub?.id;
   useEffect(() => {
-    if (!fixedOriginId) return;
+    if (!fixedOriginId || isEditMode) return;
     setForm(prev => (prev.originLocationId === fixedOriginId ? prev : { ...prev, originLocationId: fixedOriginId }));
-  }, [fixedOriginId]);
+  }, [fixedOriginId, isEditMode]);
 
   const weightKgNumber = Number(form.weightKg) || 0;
 
@@ -241,7 +269,9 @@ const CreateOrderPage: React.FC = () => {
   // (per-destination / zone / flat) — mirrors the server-side charge in
   // order.service.ts so the displayed number matches what gets saved.
   useEffect(() => {
-    const vendorId = selectedVendor?.id;
+    // For admin actors, use form.vendorId directly (set synchronously on selection).
+    // For vendor actors, use selectedVendor.id resolved from their own profile.
+    const vendorId = isVendorActor ? selectedVendor?.id : form.vendorId;
     // Need a destination, a weight, and a resolvable vendor (admins must pick one).
     if (!form.destinationLocationId || !weightKgNumber || (!isVendorActor && !form.vendorId)) {
       setQuote(null);
@@ -253,7 +283,7 @@ const CreateOrderPage: React.FC = () => {
     setQuoteError('');
     const timer = setTimeout(async () => {
       try {
-        const res = await getVendorQuote(form.destinationLocationId, weightKgNumber, vendorId);
+        const res = await getVendorQuote(form.destinationLocationId, weightKgNumber, vendorId, form.serviceType);
         if (!cancelled && res?.success) {
           setQuote(res.data);
         }
@@ -271,7 +301,7 @@ const CreateOrderPage: React.FC = () => {
       }
     }, 400);
     return () => { cancelled = true; clearTimeout(timer); };
-  }, [form.destinationLocationId, weightKgNumber, form.vendorId, selectedVendor?.id, isVendorActor]);
+  }, [form.destinationLocationId, weightKgNumber, form.vendorId, form.serviceType, selectedVendor?.id, isVendorActor]);
 
   const setField = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm(prev => ({ ...prev, [key]: value }));
@@ -288,6 +318,51 @@ const CreateOrderPage: React.FC = () => {
     // changed order is re-checked (and re-warned) rather than force-created.
     if (duplicateWarning) setDuplicateWarning('');
   };
+
+  // When a vendor is selected from the async dropdown, store full details.
+  const handleVendorSelect = useCallback((id: string) => {
+    setField('vendorId', id);
+    // Fetch the full details for this vendor to use in form submission.
+    searchVendors(id, 1).then(res => {
+      if (res?.success && Array.isArray(res.data)) {
+        const v = res.data.find((x: any) => x.id === id);
+        if (v) {
+          setSelectedVendorDetails({
+            id: v.id,
+            userId: null,
+            label: v.label,
+            phone: v.phone,
+            address: v.address || '',
+            locationId: v.locationId ?? null,
+          });
+        }
+      }
+    }).catch(() => {});
+  }, [setField]);
+
+  // Edit mode: the vendor picker is disabled (vendor is fixed), so
+  // handleVendorSelect never fires to populate selectedVendorDetails.
+  // Fetch it directly from the prefilled vendorId, or submission always
+  // fails with "Vendor profile is still loading."
+  useEffect(() => {
+    if (!isEditMode || isVendorActor || !form.vendorId || selectedVendorDetails) return;
+    let cancelled = false;
+    searchVendors(form.vendorId, 1).then(res => {
+      if (cancelled || !res?.success || !Array.isArray(res.data)) return;
+      const v = res.data.find((x: any) => x.id === form.vendorId);
+      if (v) {
+        setSelectedVendorDetails({
+          id: v.id,
+          userId: null,
+          label: v.label,
+          phone: v.phone,
+          address: v.address || '',
+          locationId: v.locationId ?? null,
+        });
+      }
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [isEditMode, isVendorActor, form.vendorId, selectedVendorDetails]);
 
   // keepVendor is set after a successful create: an admin keying in a batch of
   // orders for one vendor shouldn't have to re-pick that vendor every time. The
@@ -362,6 +437,13 @@ const CreateOrderPage: React.FC = () => {
     // admin-created orders), so don't demand one.
     if (!isVendorActor && !form.vendorId && !isEditMode) {
       errors.vendorId = 'Please select a vendor.';
+    }
+    // The sender is auto-filled from the vendor profile. If selectedVendor
+    // hasn't loaded yet, sender would fall back to the same form fields as
+    // the receiver, making them identical regardless of what's typed.
+    if (!selectedVendor) {
+      setGeneralError('Vendor profile is still loading. Please wait a moment and try again.');
+      return;
     }
     // Edit mode: older/imported parcels may predate route locations — leaving
     // them unset means "unchanged", so only creation demands them.
@@ -444,6 +526,9 @@ const CreateOrderPage: React.FC = () => {
       setSubmitting(true);
       try {
         const editPayload: UpdateOrderInput = {
+          // Empty means "leave it as it is", not "unassign" — matches the
+          // origin/destination convention right below.
+          vendorId: !isVendorActor && payload.vendorId ? payload.vendorId : undefined,
           receiver: payload.receiver,
           // Empty means "leave the route as it is", not "clear it".
           originLocationId: payload.originLocationId || undefined,
@@ -511,18 +596,14 @@ const CreateOrderPage: React.FC = () => {
           {!isVendorActor && (
             <div className="order-card">
               <h2>Vendor</h2>
-              <FormField
-                label="Vendor Name"
-                required
-                type="searchable-select"
-                searchableOptions={vendors.map(v => ({ id: v.id, label: v.label }))}
+              <SearchableSelectAsync
+                asyncSearch={handleVendorSearch}
                 value={form.vendorId}
-                onChange={id => setField('vendorId', id)}
+                onChange={handleVendorSelect}
                 placeholder="Select vendor"
                 searchPlaceholder="Search vendor by name..."
                 emptyMessage="No vendors found."
-                error={fieldErrors.vendorId}
-                disabled={isEditMode}
+                initialLabel={selectedVendor?.label}
               />
             </div>
           )}
@@ -556,11 +637,27 @@ const CreateOrderPage: React.FC = () => {
             <div className="order-field-row">
               <FormField
                 label="From"
-                value={originHubName || 'No hub assigned - contact an admin'}
+                value={
+                  isVendorActor && (profileLoadError || locationsLoadError)
+                    ? 'Could not load your hub - check your connection'
+                    : originHubName || 'No hub assigned - contact an admin'
+                }
                 onChange={() => {}}
                 disabled
                 error={fieldErrors.originLocationId}
               />
+              {isVendorActor && (profileLoadError || locationsLoadError) && (
+                <p className="order-form-error">
+                  Couldn't load your hub info.{' '}
+                  <button
+                    type="button"
+                    className="order-form-error-retry"
+                    onClick={() => setProfileRetryToken(t => t + 1)}
+                  >
+                    Retry
+                  </button>
+                </p>
+              )}
               <FormField
                 label="To"
                 required
@@ -723,6 +820,7 @@ const CreateOrderPage: React.FC = () => {
               <span>Base Charge</span>
               <span>{quote ? quote.baseCharge.toLocaleString(undefined, { maximumFractionDigits: 2 }) : '-'}</span>
             </div>
+            {quote?.basis && <p className="order-summary-basis">{quote.basis}</p>}
             {quote !== null && quote.weightSurcharge > 0 && (
               <div className="order-summary-row">
                 <span>Weight Surcharge</span>

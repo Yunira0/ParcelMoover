@@ -1,14 +1,15 @@
-import React, { useState } from 'react';
+import React, { lazy, Suspense, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Upload } from 'lucide-react';
 import PageHeader from '../../components/PageHeader';
 import SegmentedTabs from '../../components/SegmentedTabs';
 import Button from '../../components/Button';
 import DestinationsSettings from './DestinationsSettings';
-import DestinationsImport from './DestinationsImport';
 import RateSetup from './RateSetup';
 import { hasAdminPermission } from '../../utils/auth';
 import './Settings.css';
+
+const DestinationsImport = lazy(() => import('./DestinationsImport'));
 
 type Tab = 'destinations' | 'rates';
 
@@ -60,9 +61,9 @@ const Settings: React.FC = () => {
 
       <div className="settings-body">
         {showImport ? (
-          // One flat sheet sets both the destination branch and its rate
-          // (per-destination rate, zone, valley), so a single import serves both tabs.
-          <DestinationsImport />
+          <Suspense fallback={<p className="dest-muted">Loading import…</p>}>
+            <DestinationsImport />
+          </Suspense>
         ) : (
           <>
             {tab === 'destinations' && <DestinationsSettings />}

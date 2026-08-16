@@ -83,17 +83,32 @@ export const paginationQuerySchema = z.object({
     .int("page must be an integer")
     .min(1, "page must be at least 1")
     .optional(),
+  // 500 matches the largest page the lists offer (see the per-service
+  // MAX_PAGE_SIZE constants, which clamp anything above their own ceiling).
+  // This is only the outer bound on what the API will parse — an endpoint whose
+  // service caps lower still returns its own maximum.
   pageSize: z.coerce
     .number()
     .int("pageSize must be an integer")
     .min(1, "pageSize must be at least 1")
-    .max(200, "pageSize cannot exceed 200")
+    .max(500, "pageSize cannot exceed 500")
     .optional(),
 });
 
 export const isoDateStringSchema = z
   .string()
   .datetime({ message: "Must be a valid ISO-8601 datetime string", offset: true })
+  .optional();
+
+// Accepts either a bare "YYYY-MM-DD" (what date-only pickers like
+// NepaliDatePicker emit) or a full ISO-8601 datetime. Use this instead of
+// isoDateStringSchema for any fromDate/toDate pair fed by a date-only picker -
+// the stricter schema silently 400s those requests since it requires a time
+// component, exactly like the server's own `new Date(raw)` parsing already
+// tolerates either form.
+export const flexibleDateStringSchema = z
+  .string()
+  .refine((val) => !Number.isNaN(Date.parse(val)), { message: "Must be a valid date" })
   .optional();
 
 export const uuidParamSchema = z.object({

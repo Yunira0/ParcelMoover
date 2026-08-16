@@ -6,6 +6,8 @@ import { requireStaffPermission } from "../middlewares/staffPermission.middlewar
 import { requireAdminPermission } from "../middlewares/adminPermission.middleware";
 import { csrfProtection } from "../middlewares/csrf.middleware";
 import { validate } from "../middlewares/validate.middleware";
+import { parseMultipartJson } from "../middlewares/multipartJson.middleware";
+import { settlementDocsUpload } from "../lib/settlementUpload";
 import {
   pendingCodQuerySchema,
   orderCodQuerySchema,
@@ -13,6 +15,8 @@ import {
   createSettlementSchema,
   paySettlementSchema,
   updateSettlementSchema,
+  revertSettlementSchema,
+  cancelSettlementSchema,
 } from "../validators/finance.schema";
 import { createRedisRateLimitStore } from "../lib/rateLimitStore";
 import {
@@ -22,8 +26,13 @@ import {
   getUnsettledOrdersController,
   createSettlementController,
   payForSettlementController,
+  attachSettlementDocumentsController,
+  deleteSettlementDocumentController,
   updateSettlementController,
+  revertSettlementController,
+  cancelSettlementController,
   getSettlementDetailController,
+  getSettlementDocumentController,
 } from "../controllers/finance.controller";
 
 const financeRouter: Router = Router();
@@ -48,6 +57,7 @@ const settlementCreateLimiter = rateLimit({
   message: { success: false, message: "Too many settlements created, please slow down" },
   standardHeaders: true,
   legacyHeaders: false,
+  passOnStoreError: true,
   store: createRedisRateLimitStore("finance-settlement-create"),
   keyGenerator: actorOrIpKey,
 });
@@ -95,6 +105,19 @@ financeRouter.get(
   getSettlementDetailController,
 );
 
+// GET /api/finance/settlements/:id/documents/:doc — one payment proof for a
+// statement, by document id (or the legacy "receipt" / "tax-invoice" aliases,
+// which resolve to the newest of that kind). Same audience as the detail route
+// above, so the payee reaches their own paperwork; /uploads stays admin-only.
+financeRouter.get(
+  "/settlements/:id/documents/:doc",
+  authMiddleware,
+  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider", "sales"),
+  requireStaffPermission("FINANCE_ACCESS"),
+  financeReadLimiter,
+  getSettlementDocumentController,
+);
+
 // POST /api/finance/settlements — create + immediately settle a statement
 // bundling selected pending cod_collections for a rider or vendor
 financeRouter.post(
@@ -107,16 +130,45 @@ financeRouter.post(
   createSettlementController,
 );
 
-// POST /api/finance/settlements/:id/pay — record payment against a pending
-// statement and flip it to settled
+// POST /api/finance/settlements/:id/pay — record a payment against a statement
+// that still has money outstanding. Pays it off in full, or in part (leaving it
+// partially_paid for a later call). Multipart: optional payment receipts and
+// tax invoices alongside the payment rows.
 financeRouter.post(
   "/settlements/:id/pay",
   authMiddleware,
   csrfProtection,
   authorizeRoles("super_admin", "admin"),
   settlementCreateLimiter,
+  settlementDocsUpload,
+  parseMultipartJson("payments"),
   validate(paySettlementSchema),
   payForSettlementController,
+);
+
+// PATCH /api/finance/settlements/:id/documents — attach payment proof to a
+// statement with a payment recorded against it. Adds to whatever is already
+// there, so a statement paid in instalments keeps a receipt per instalment
+// (super_admin/admin, same audience as pay)
+financeRouter.patch(
+  "/settlements/:id/documents",
+  authMiddleware,
+  csrfProtection,
+  authorizeRoles("super_admin", "admin"),
+  settlementCreateLimiter,
+  settlementDocsUpload,
+  attachSettlementDocumentsController,
+);
+
+// DELETE /api/finance/settlements/:id/documents/:documentId — remove one proof
+// from a statement holding several (same audience as attaching one)
+financeRouter.delete(
+  "/settlements/:id/documents/:documentId",
+  authMiddleware,
+  csrfProtection,
+  authorizeRoles("super_admin", "admin"),
+  settlementCreateLimiter,
+  deleteSettlementDocumentController,
 );
 
 // PATCH /api/finance/settlements/:id — correct an unsettled statement's order
@@ -130,6 +182,34 @@ financeRouter.patch(
   settlementCreateLimiter,
   validate(updateSettlementSchema),
   updateSettlementController,
+);
+
+// POST /api/finance/settlements/:id/revert — undo a mistaken "Make Payment"
+// action: flips a settled statement back to pending (super_admin always
+// allowed; a plain admin needs EDIT_SETTLEMENTS, same gate as editing)
+financeRouter.post(
+  "/settlements/:id/revert",
+  authMiddleware,
+  csrfProtection,
+  authorizeRoles("super_admin", "admin"),
+  requireAdminPermission("EDIT_SETTLEMENTS"),
+  settlementCreateLimiter,
+  validate(revertSettlementSchema),
+  revertSettlementController,
+);
+
+// POST /api/finance/settlements/:id/cancel — cancel a pending (unpaid)
+// statement, releasing its bundled orders back for a future statement (super_admin
+// always allowed; a plain admin needs EDIT_SETTLEMENTS, same gate as editing/revert)
+financeRouter.post(
+  "/settlements/:id/cancel",
+  authMiddleware,
+  csrfProtection,
+  authorizeRoles("super_admin", "admin"),
+  requireAdminPermission("EDIT_SETTLEMENTS"),
+  settlementCreateLimiter,
+  validate(cancelSettlementSchema),
+  cancelSettlementController,
 );
 
 // GET /api/finance/unsettled-orders — unsettled COD orders for rider or vendor

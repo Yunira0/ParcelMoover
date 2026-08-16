@@ -14,6 +14,35 @@ type Actor = { id: string; roles: string[] };
 const RATE_CACHE_PREFIX = "delivery-rate:";
 const RATE_CACHE_TTL_SECONDS = 5 * 60;
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// Resolves a vendor-supplied destination reference to a real location id -
+// either it's already a location UUID, or it's a hub name/code (e.g.
+// "POKHARA", matching what GET /api/v1/rates lists) that gets looked up
+// case-insensitively against active top-level hubs, the same set
+// bulkImportDeliveryRates matches Excel rows against. A typo'd hub name
+// fails loudly here instead of silently landing on nothing downstream.
+export async function resolveDestinationRef(ref: string): Promise<string> {
+  const trimmed = ref.trim();
+  if (UUID_RE.test(trimmed)) return trimmed;
+
+  const hub = await prisma.locations.findFirst({
+    where: {
+      parent_id: null,
+      is_active: true,
+      OR: [
+        { name: { equals: trimmed, mode: "insensitive" } },
+        { code: { equals: trimmed, mode: "insensitive" } },
+      ],
+    },
+    select: { id: true },
+  });
+  if (!hub) {
+    throw new AppError(400, `Unknown destination hub: "${trimmed}". See GET /api/v1/rates for valid names.`, "DESTINATION_NOT_FOUND");
+  }
+  return hub.id;
+}
+
 interface CachedRate {
   baseCharge: number;
   branchBaseCharge: number | null;
@@ -318,6 +347,7 @@ function buildVendorOverrides(vendor: NonNullable<Awaited<ReturnType<typeof reso
   return {
     flatInsideValley: n(vendor.flat_inside_valley),
     flatOutsideValley: n(vendor.flat_outside_valley),
+    flatOutsideRingRoad: n(vendor.flat_outside_ring_road),
     zoneMajorCities: n(vendor.zone_major_cities),
     zoneUrbanAreas: n(vendor.zone_urban_areas),
     zoneRemoteAreas: n(vendor.zone_remote_areas),
@@ -326,6 +356,7 @@ function buildVendorOverrides(vendor: NonNullable<Awaited<ReturnType<typeof reso
     extraWeightPercent: n(vendor.extra_weight_percent),
     branchFlatInsideValley: n(vendor.branch_flat_inside_valley),
     branchFlatOutsideValley: n(vendor.branch_flat_outside_valley),
+    branchFlatOutsideRingRoad: n(vendor.branch_flat_outside_ring_road),
     branchZoneMajorCities: n(vendor.branch_zone_major_cities),
     branchZoneUrbanAreas: n(vendor.branch_zone_urban_areas),
     branchZoneRemoteAreas: n(vendor.branch_zone_remote_areas),
@@ -389,6 +420,7 @@ export async function getVendorSelfRates(actor: Actor) {
         coveredAreas: coveredAreasByDest.get(dest.id) ?? [],
         zone: dest.zone,
         valley: dest.valley,
+        ringRoad: dest.ring_road,
         homeRate,
         branchRate,
         note,
@@ -405,4 +437,22 @@ export async function getVendorSelfRates(actor: Actor) {
     extraWeightPercent,
     rates: rows,
   };
+}
+
+// Single-destination quick quote for THIS vendor (their own rate model +
+// overrides, same resolution as getVendorSelfRates) - used to price a
+// shipment before booking it, without pulling the whole rate card.
+export async function getVendorSingleQuote(
+  actor: Actor,
+  destinationLocationId: string,
+  weightKg = 1,
+  serviceType: "home_delivery" | "branch_delivery" = "home_delivery",
+) {
+  const vendor = await resolveActorVendor(actor);
+  if (!vendor) throw new AppError(404, "No vendor profile found for this account");
+
+  const overrides = buildVendorOverrides(vendor);
+  const rateType = (vendor.rate_type as RateType) ?? "flat";
+
+  return getVendorQuote(rateType, destinationLocationId, weightKg, overrides, serviceType);
 }

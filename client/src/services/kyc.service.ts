@@ -83,8 +83,11 @@ export const submitKycApplication = async (data: KycApplicationInput) => {
   return response.data;
 };
 
-export const getKycApplications = async (status?: string) => {
-  const params = status && status !== 'all' ? { status } : {};
+export const getKycApplications = async (status?: string, page?: number, pageSize?: number) => {
+  const params: Record<string, string | number> = {};
+  if (status && status !== 'all') params.status = status;
+  if (page) params.page = page;
+  if (pageSize) params.pageSize = pageSize;
   const response = await api.get('/kyc/applications', { params });
   return response.data;
 };

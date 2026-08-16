@@ -190,3 +190,27 @@
   margin: 0;
   padding: var(--space-2);
 }
+
+.searchable-select-more {
+  color: var(--color-text-caption);
+  font-size: var(--font-size-sm);
+  margin: 0;
+  padding: var(--space-2);
+  text-align: center;
+}
+
+@keyframes searchable-select-spin {
+  to { transform: rotate(360deg); }
+}
+
+.searchable-select-spinner {
+  flex-shrink: 0;
+  animation: searchable-select-spin 0.6s linear infinite;
+  color: var(--color-text-caption);
+}
+
+.searchable-select-loading-more {
+  display: flex;
+  justify-content: center;
+  padding: var(--space-2);
+}

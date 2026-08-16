@@ -44,6 +44,7 @@ export interface RegisterUserInput {
   // Per-vendor rate overrides (sent as strings; blank → use Settings default)
   flatInsideValley?: string;
   flatOutsideValley?: string;
+  flatOutsideRingRoad?: string;
   zoneMajorCities?: string;
   zoneUrbanAreas?: string;
   zoneRemoteAreas?: string;
@@ -53,6 +54,7 @@ export interface RegisterUserInput {
   returnOutsideValleyPercent?: string;
   branchFlatInsideValley?: string;
   branchFlatOutsideValley?: string;
+  branchFlatOutsideRingRoad?: string;
   branchZoneMajorCities?: string;
   branchZoneUrbanAreas?: string;
   branchZoneRemoteAreas?: string;
@@ -105,6 +107,7 @@ export interface UpdateUserProfileInput {
   rateType?: string;
   flatInsideValley?: string;
   flatOutsideValley?: string;
+  flatOutsideRingRoad?: string;
   zoneMajorCities?: string;
   zoneUrbanAreas?: string;
   zoneRemoteAreas?: string;
@@ -114,6 +117,7 @@ export interface UpdateUserProfileInput {
   returnOutsideValleyPercent?: string;
   branchFlatInsideValley?: string;
   branchFlatOutsideValley?: string;
+  branchFlatOutsideRingRoad?: string;
   branchZoneMajorCities?: string;
   branchZoneUrbanAreas?: string;
   branchZoneRemoteAreas?: string;
@@ -148,23 +152,55 @@ export const registerUser = async (data: RegisterUserInput) => {
   });
 
   const response = await api.post('/auth/users/register', form, {
-    headers: { 'Content-Type': 'multipart/form-data' },
+    // Multipart uploads can be slow on production networks, especially with
+    // camera-shot KYC images. Let the browser set the boundary header and give
+    // this write a longer timeout than normal JSON requests.
+    timeout: 120000,
   });
   return response.data;
 };
 
-export const getAdmins = async () => {
-  const response = await api.get('/auth/users/admins'); 
+export const getAdmins = async (params?: {
+  page?: number;
+  pageSize?: number;
+  search?: string;
+  status?: string;
+}) => {
+  const response = await api.get('/auth/users/admins', { params });
   return response.data;
 };
 
-export const getVendors = async () => {
-  const response = await api.get('/auth/users/vendors');
+export const getVendors = async (params?: {
+  page?: number;
+  pageSize?: number;
+  search?: string;
+  status?: string;
+  company?: string;
+  location?: string;
+}) => {
+  const response = await api.get('/auth/users/vendors', { params });
   return response.data;
 };
 
-export const getRiders = async () => {
-  const response = await api.get('/auth/users/riders');
+export const getTopVendors = async () => {
+  const response = await api.get('/auth/users/vendors/top');
+  return response.data;
+};
+
+export const searchVendors = async (search: string, limit = 50, offset = 0) => {
+  const response = await api.get('/auth/users/vendors/dropdown', {
+    params: { search, limit, offset },
+  });
+  return response.data;
+};
+
+export const getRiders = async (params?: {
+  page?: number;
+  pageSize?: number;
+  search?: string;
+  status?: string;
+}) => {
+  const response = await api.get('/auth/users/riders', { params });
   return response.data;
 };
 
@@ -207,6 +243,7 @@ export const ADMIN_PERMISSIONS = [
   { code: 'SYSTEM_LOGS_ACCESS', label: 'System Logs', description: 'Read the system audit logs, including who changed what across the app.' },
   { code: 'EDIT_SETTLEMENTS', label: 'Edit COD Statements', description: 'Correct an unsettled COD statement (add/remove orders) before it is paid out.' },
   { code: 'ACCOUNTING_ACCESS', label: 'Finance', description: 'The whole Finance section: the books, party balances and reports, plus recording expenses, posting journal entries and closing a month. This is the full financial picture of the business.' },
+  { code: 'EDIT_COD_LOCKED', label: 'Edit COD (any status)', description: 'Correct the COD amount on a delivered, returned-to-vendor, or RTO parcel, as long as it hasn’t been settled to the vendor yet.' },
 ] as const;
 
 export type AdminPermissionCode = (typeof ADMIN_PERMISSIONS)[number]['code'];

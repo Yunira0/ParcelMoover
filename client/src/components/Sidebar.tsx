@@ -28,6 +28,7 @@ import {
   Webhook,
   BookOpen,
   NotebookPen,
+  Printer,
   LogOut,
   ChevronDown,
   ChevronLeft,
@@ -237,8 +238,16 @@ const VendorSidebar: React.FC = () => {
         <SidebarItem to="/user-management" icon={Users} label="User Management" />
         <SidebarItem to="/tickets" icon={Ticket} label="Tickets" />
         <SidebarItem to="/delivery-charges" icon={Truck} label="Delivery Charges" />
-        <SidebarItem to="/developer/api-keys" icon={KeyRound} label="API Keys" />
-        <SidebarItem to="/developer/webhooks" icon={Webhook} label="Webhooks" />
+
+        {/* Setup-once items, not daily nav - Print Settings (a printer
+            preference) and Developer (API keys/webhooks) are unrelated
+            concerns, kept as separate pages, just grouped here so they don't
+            compete for attention with the items a vendor uses every day. */}
+        <SidebarSection label="Settings" />
+        <div className="sidebar-subnav">
+          <SubItem to="/print-settings" icon={Printer} label="Print Settings" />
+          <SubItem to="/developer/api-keys" icon={KeyRound} label="Developer" />
+        </div>
       </div>
 
       <div className="sidebar-footer">
@@ -261,9 +270,7 @@ const VendorStaffSidebar: React.FC = () => {
         {has('DASHBOARD_ACCESS') && (
           <SidebarItem to="/dashboard" icon={LayoutDashboard} label="Dashboard" />
         )}
-        {has('ORDER_ACCESS') && (
-          <SidebarItem to="/orders" icon={Package} label="Orders" />
-        )}
+        {has('ORDER_ACCESS') && <SidebarItem to="/orders" icon={Package} label="Orders" />}
         {has('FINANCE_ACCESS') && (
           <>
             <SidebarSection label="COD Management" />
@@ -279,6 +286,15 @@ const VendorStaffSidebar: React.FC = () => {
         {has('USER_ACCESS') && <SidebarItem to="/user-management" icon={Users} label="User Management" />}
         {has('REMARKS_ACCESS') && <SidebarItem to="/remarks" icon={MessageSquare} label="Remarks" />}
         {has('DELIVERY_CHARGES_ACCESS') && <SidebarItem to="/delivery-charges" icon={Truck} label="Delivery Charges" />}
+
+        {has('ORDER_ACCESS') && (
+          <>
+            <SidebarSection label="Settings" />
+            <div className="sidebar-subnav">
+              <SubItem to="/print-settings" icon={Printer} label="Print Settings" />
+            </div>
+          </>
+        )}
       </div>
 
       <div className="sidebar-footer">

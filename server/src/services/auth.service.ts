@@ -51,6 +51,7 @@ interface UpdateManagedUserInput {
   rateType?: string;
   flatInsideValley?: string | number;
   flatOutsideValley?: string | number;
+  flatOutsideRingRoad?: string | number;
   zoneMajorCities?: string | number;
   zoneUrbanAreas?: string | number;
   zoneRemoteAreas?: string | number;
@@ -61,6 +62,7 @@ interface UpdateManagedUserInput {
   returnOutsideValleyPercent?: string | number;
   branchFlatInsideValley?: string | number;
   branchFlatOutsideValley?: string | number;
+  branchFlatOutsideRingRoad?: string | number;
   branchZoneMajorCities?: string | number;
   branchZoneUrbanAreas?: string | number;
   branchZoneRemoteAreas?: string | number;
@@ -87,16 +89,23 @@ function putRate(obj: Record<string, unknown>, key: string, val: string | number
   obj[key] = Number.isFinite(n) ? n : null;
 }
 
-// The "Sales" department is the one department that maps to a real RBAC role
-// (used for authorization/scoping across finance, orders, tickets, vendors -
-// see the `sales` role in prisma/seed-roles.ts). A Sales-department admin
-// still gets a normal `admins` profile row, but the `sales` role REPLACES
-// the base `admin` role rather than sitting alongside it - every "is this a
-// pure sales account" check in the app (client and server) tests for
-// `sales` without `admin`, and `admin`/`super_admin` are already treated as
-// unrestricted staff wherever vendor/ticket/order data gets scoped to a
-// sales rep's own vendors. Leaving `admin` in place would silently grant a
-// sales account full admin access instead of the intended vendor-scoped view.
+// Account-creation only: picks the RBAC role for a new admin-type account
+// based on the department chosen at signup. The "Sales" department is the
+// one department that maps to a real RBAC role (used for authorization/
+// scoping across finance, orders, tickets, vendors - see the `sales` role in
+// prisma/seed-roles.ts). A Sales-department admin still gets a normal
+// `admins` profile row, but the `sales` role REPLACES the base `admin` role
+// rather than sitting alongside it - every "is this a pure sales account"
+// check in the app (client and server) tests for `sales` without `admin`,
+// and `admin`/`super_admin` are already treated as unrestricted staff
+// wherever vendor/ticket/order data gets scoped to a sales rep's own
+// vendors. Leaving `admin` in place would silently grant a sales account
+// full admin access instead of the intended vendor-scoped view.
+//
+// NOT called on profile edits: department is a display attribute past
+// creation, and editing it must not silently re-derive RBAC role membership.
+// Role changes for an existing account go through the dedicated role and
+// permissions endpoints (setAdminSuperAdminRole / updateAdminPermissions).
 async function syncSalesRoleForDepartment(
   tx: Pick<typeof prisma, "roles" | "user_roles">,
   userId: string,
@@ -332,10 +341,12 @@ export async function updateManagedUserProfile(
       putText(u, "bank_account_holder", data.bankAccountHolder);
       if (data.locationId !== undefined) u.location_id = data.locationId || null;
       if (joinedAt) u.joined_at = joinedAt;
+      // Department is a display attribute only past account creation - it must
+      // not silently re-derive the account's RBAC role (that previously made
+      // routine department edits grant/revoke the `admin`/`sales` role as a
+      // side effect). Role changes go through the dedicated role/permissions
+      // endpoints instead.
       const updatedAdmin = await tx.admins.update({ where: { id }, data: u });
-      if (data.department !== undefined) {
-        await syncSalesRoleForDepartment(tx, userId, data.department);
-      }
       return updatedAdmin;
     }
 
@@ -359,6 +370,7 @@ export async function updateManagedUserProfile(
       if (data.rateType && ["per_destination", "zone", "flat"].includes(data.rateType)) u.rate_type = data.rateType;
       putRate(u, "flat_inside_valley", data.flatInsideValley);
       putRate(u, "flat_outside_valley", data.flatOutsideValley);
+      putRate(u, "flat_outside_ring_road", data.flatOutsideRingRoad);
       putRate(u, "zone_major_cities", data.zoneMajorCities);
       putRate(u, "zone_urban_areas", data.zoneUrbanAreas);
       putRate(u, "zone_remote_areas", data.zoneRemoteAreas);
@@ -369,6 +381,7 @@ export async function updateManagedUserProfile(
       putRate(u, "return_outside_valley_percent", data.returnOutsideValleyPercent);
       putRate(u, "branch_flat_inside_valley", data.branchFlatInsideValley);
       putRate(u, "branch_flat_outside_valley", data.branchFlatOutsideValley);
+      putRate(u, "branch_flat_outside_ring_road", data.branchFlatOutsideRingRoad);
       putRate(u, "branch_zone_major_cities", data.branchZoneMajorCities);
       putRate(u, "branch_zone_urban_areas", data.branchZoneUrbanAreas);
       putRate(u, "branch_zone_remote_areas", data.branchZoneRemoteAreas);
@@ -423,6 +436,7 @@ export async function getManagedUserDetail(actorUserId: string, type: ManagedUse
       salesEditUsed: v.sales_edited_at !== null,
       rateType: v.rate_type,
       flatInsideValley: num(v.flat_inside_valley), flatOutsideValley: num(v.flat_outside_valley),
+      flatOutsideRingRoad: num(v.flat_outside_ring_road),
       zoneMajorCities: num(v.zone_major_cities), zoneUrbanAreas: num(v.zone_urban_areas),
       zoneRemoteAreas: num(v.zone_remote_areas), zoneInsideValley: num(v.zone_inside_valley),
       insideValleyFlatRate: num(v.inside_valley_flat_rate),
@@ -430,6 +444,7 @@ export async function getManagedUserDetail(actorUserId: string, type: ManagedUse
       returnInsideValleyPercent: num(v.return_inside_valley_percent),
       returnOutsideValleyPercent: num(v.return_outside_valley_percent),
       branchFlatInsideValley: num(v.branch_flat_inside_valley), branchFlatOutsideValley: num(v.branch_flat_outside_valley),
+      branchFlatOutsideRingRoad: num(v.branch_flat_outside_ring_road),
       branchZoneMajorCities: num(v.branch_zone_major_cities), branchZoneUrbanAreas: num(v.branch_zone_urban_areas),
       branchZoneRemoteAreas: num(v.branch_zone_remote_areas), branchZoneInsideValley: num(v.branch_zone_inside_valley),
       pickupLandmark: v.pickup_landmark, billingBusinessName: v.billing_business_name,
@@ -825,9 +840,10 @@ export async function registerUserBySuperAdmin(
           sales_user_id: data.salesUserId ?? null,
           rate_type: ["per_destination", "zone", "flat"].includes(data.rateType ?? "")
             ? data.rateType!
-            : "flat",
+            : "per_destination",
           flat_inside_valley: parseRate(data.flatInsideValley),
           flat_outside_valley: parseRate(data.flatOutsideValley),
+          flat_outside_ring_road: parseRate(data.flatOutsideRingRoad),
           zone_major_cities: parseRate(data.zoneMajorCities),
           zone_urban_areas: parseRate(data.zoneUrbanAreas),
           zone_remote_areas: parseRate(data.zoneRemoteAreas),
@@ -838,6 +854,7 @@ export async function registerUserBySuperAdmin(
           return_outside_valley_percent: parseRate(data.returnOutsideValleyPercent),
           branch_flat_inside_valley: parseRate(data.branchFlatInsideValley),
           branch_flat_outside_valley: parseRate(data.branchFlatOutsideValley),
+          branch_flat_outside_ring_road: parseRate(data.branchFlatOutsideRingRoad),
           branch_zone_major_cities: parseRate(data.branchZoneMajorCities),
           branch_zone_urban_areas: parseRate(data.branchZoneUrbanAreas),
           branch_zone_remote_areas: parseRate(data.branchZoneRemoteAreas),
@@ -1100,6 +1117,7 @@ export async function getCurrentUserProfile(userId: string) {
     roles: user.user_roles.map((userRole) => userRole.roles.code),
     hubId,
     hubName,
+    department: user.admins?.department ?? null,
     // Delegated permissions for plain admin accounts (super_admin holds all).
     permissions: user.admins?.permissions ?? [],
   };

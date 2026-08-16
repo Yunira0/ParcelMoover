@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Search, ShieldCheck } from 'lucide-react';
 import Table, { TableRowActions } from '../components/Table';
 import { toBsDate } from '../utils/nepaliDate';
 import UserActionModal from '../components/UserActionModal';
 import PageHeader from '../components/PageHeader';
+import Pagination from '../components/Pagination';
 import SegmentedTabs from '../components/SegmentedTabs';
 import StatusChip from '../components/StatusChip';
 import Button from '../components/Button';
@@ -24,9 +25,7 @@ interface AdminUser {
   position: string;
   joined: string;
   status: 'active' | 'inactive';
-  /** Delegated privileges granted by a super_admin (see ADMIN_PERMISSIONS). */
   permissions?: string[];
-  /** Whether this account also carries the super_admin role. */
   isSuperAdmin?: boolean;
 }
 
@@ -34,11 +33,13 @@ const PERMISSION_LABELS: Record<string, string> = Object.fromEntries(
   ADMIN_PERMISSIONS.map((p) => [p.code, p.label]),
 );
 
+// Starting rows-per-page. The selector below the table can change it; the
+// server caps any value at 100 (auth.controller LIST_MAX_PAGE_SIZE).
+const PAGE_SIZE = 20;
+
 const AdminManagement: React.FC = () => {
   const navigate = useNavigate();
   const isSuperAdmin = getCurrentUserRoles().includes('super_admin');
-  // Creating/editing fellow admin accounts needs the delegated MANAGE_USERS
-  // permission (matches the /admin/new and /admin/:id/edit route guards).
   const canManageAdmins = hasAdminPermission('MANAGE_USERS');
   const [filter, setFilter] = useState<'all' | 'active'>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -46,37 +47,49 @@ const AdminManagement: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [actionMode, setActionMode] = useState<'edit' | 'password'>('edit');
   const [activeAdmin, setActiveAdmin] = useState<AdminUser | null>(null);
+  const [page, setPage] = useState(1);
+  const [pageSizeChoice, setPageSizeChoice] = useState(PAGE_SIZE);
+  const [totalPages, setTotalPages] = useState(1);
+  const [total, setTotal] = useState(0);
 
-  // Permissions modal (super_admin only)
   const [permAdmin, setPermAdmin] = useState<AdminUser | null>(null);
   const [permDraft, setPermDraft] = useState<string[]>([]);
   const [superAdminDraft, setSuperAdminDraft] = useState(false);
   const [permSaving, setPermSaving] = useState(false);
   const [permError, setPermError] = useState('');
 
-  // Status toggle
   const [statusSavingIds, setStatusSavingIds] = useState<Set<string>>(new Set());
   const [statusError, setStatusError] = useState('');
 
-  const loadAdmins = async () => {
+  const loadAdmins = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await getAdmins();
+      const params: Record<string, string | number> = { page, pageSize: pageSizeChoice };
+      if (searchQuery) params.search = searchQuery;
+      if (filter !== 'all') params.status = filter;
+
+      const res = await getAdmins(params);
       if (res && res.success && Array.isArray(res.data)) {
         setAdmins(res.data);
-      } else if (Array.isArray(res)) {
-        setAdmins(res);
+        if (res.meta) {
+          setTotalPages(res.meta.totalPages);
+          setTotal(res.meta.total);
+        }
       }
     } catch (err) {
       console.error('Failed to load admins:', err);
     } finally {
       setLoading(false);
     }
-  };
+  }, [page, pageSizeChoice, searchQuery, filter]);
 
   useEffect(() => {
     loadAdmins();
-  }, []);
+  }, [loadAdmins]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [searchQuery, filter]);
 
   const openPermissions = (admin: AdminUser) => {
     setPermError('');
@@ -100,9 +113,6 @@ const AdminManagement: React.FC = () => {
       if (roleChanged) {
         await updateAdminRole(permAdmin.id, superAdminDraft);
       }
-      // A super admin implicitly holds every permission, and the server
-      // rejects granting explicit ones on top - only save the list for
-      // accounts that end up as plain admins.
       if (!superAdminDraft) {
         await updateAdminPermissions(permAdmin.id, permDraft);
       }
@@ -115,7 +125,6 @@ const AdminManagement: React.FC = () => {
     }
   };
 
-  // Optimistic toggle: flip the row immediately, revert if the server rejects it.
   const toggleAdminStatus = async (admin: AdminUser) => {
     const nextStatus = admin.status === 'active' ? 'inactive' : 'active';
     setStatusError('');
@@ -180,8 +189,6 @@ const AdminManagement: React.FC = () => {
       ),
       width: '150px'
     },
-    // Editing fellow admins is MANAGE_USERS-gated server-side, so admins
-    // without the grant get a read-only listing with no dead action buttons.
     ...(canManageAdmins
       ? [{
           header: 'ACTION',
@@ -205,17 +212,6 @@ const AdminManagement: React.FC = () => {
         }]
       : []),
   ];
-
-  const filteredAdmins = admins.filter(admin => {
-    const matchesFilter = filter === 'all' || admin.status === 'active';
-    const matchesSearch = searchQuery === '' ||
-      (admin.name && admin.name.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      (admin.email && admin.email.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      (admin.phone && admin.phone.includes(searchQuery)) ||
-      (admin.position && admin.position.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      (admin.location && admin.location.toLowerCase().includes(searchQuery.toLowerCase()));
-    return matchesFilter && matchesSearch;
-  });
 
   return (
     <div className="admin-management-container">
@@ -261,7 +257,22 @@ const AdminManagement: React.FC = () => {
       {loading ? (
         <div className="loading-state">Loading admins...</div>
       ) : (
-        <Table columns={columns} data={filteredAdmins} selectable={false} />
+        <>
+          <Table columns={columns} data={admins} selectable={false} />
+          <Pagination
+            page={page}
+            totalPages={totalPages}
+            onPageChange={setPage}
+            ariaLabel="Admin management pagination"
+            summary={`${total} admin${total !== 1 ? 's' : ''} total`}
+            pageSize={pageSizeChoice}
+            pageSizeLabel="admins"
+            onPageSizeChange={(size) => {
+              setPageSizeChoice(size);
+              setPage(1);
+            }}
+          />
+        </>
       )}
 
       <UserActionModal

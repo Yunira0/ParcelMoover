@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { Prisma } from "../generated/prisma/client";
 import prisma from "../lib/prisma";
 import { decryptSecret, signPayload } from "../lib/webhookCrypto";
+import { sendWebhookDisabledEmail } from "../lib/mailer";
 
 // Delivery engine for outbound vendor webhooks. There's no job queue in this
 // codebase and Redis isn't configured as durable storage, so Postgres is the
@@ -38,36 +39,72 @@ export async function emitWebhookEvent(
   eventType: string,
   data: WebhookEventData,
 ): Promise<void> {
+  await emitWebhookEventsBatch(tx, eventType, [{ vendorId, data }]);
+}
+
+/**
+ * Same as emitWebhookEvent, but for many (vendorId, data) pairs sharing one
+ * eventType in a single round trip - one endpoint lookup keyed on all vendor
+ * ids instead of one lookup per event, and one createMany for every delivery
+ * row. Built for bulk status-change requests, where the naive per-parcel
+ * emitWebhookEvent call was N sequential queries inside one open transaction.
+ */
+export async function emitWebhookEventsBatch(
+  tx: Prisma.TransactionClient,
+  eventType: string,
+  events: Array<{ vendorId: string; data: WebhookEventData }>,
+): Promise<void> {
+  if (events.length === 0) return;
+
+  const vendorIds = Array.from(new Set(events.map((e) => e.vendorId)));
   const endpoints = await tx.webhook_endpoints.findMany({
     where: {
-      vendor_id: vendorId,
+      vendor_id: { in: vendorIds },
       enabled: true,
       disabled_at: null,
     },
-    select: { id: true, event_types: true },
+    select: { id: true, vendor_id: true, event_types: true },
   });
+  if (endpoints.length === 0) return;
 
-  const targets = endpoints.filter(
-    (e) => e.event_types.length === 0 || e.event_types.includes(eventType),
-  );
-  if (targets.length === 0) return;
+  const endpointsByVendor = new Map<string, typeof endpoints>();
+  for (const endpoint of endpoints) {
+    const list = endpointsByVendor.get(endpoint.vendor_id);
+    if (list) list.push(endpoint);
+    else endpointsByVendor.set(endpoint.vendor_id, [endpoint]);
+  }
 
   const createdAt = new Date();
-  await tx.webhook_deliveries.createMany({
-    data: targets.map((endpoint) => ({
-      webhook_endpoint_id: endpoint.id,
-      event_type: eventType,
-      event_id: crypto.randomUUID(),
-      payload: {
-        id: crypto.randomUUID(),
-        type: eventType,
-        created_at: createdAt.toISOString(),
-        data,
-      } as Prisma.InputJsonValue,
-      status: "pending",
-      next_attempt_at: createdAt,
-    })),
-  });
+  const rows: Prisma.webhook_deliveriesCreateManyInput[] = [];
+  for (const event of events) {
+    const vendorEndpoints = endpointsByVendor.get(event.vendorId);
+    if (!vendorEndpoints) continue;
+    const targets = vendorEndpoints.filter(
+      (e) => e.event_types.length === 0 || e.event_types.includes(eventType),
+    );
+    for (const endpoint of targets) {
+      // One id shared by the X-ParcelMoover-Delivery header and the payload's
+      // own `id` field (previously two independent randomUUID() calls) - a
+      // vendor dedup-ing on whichever one they noticed first should always
+      // get the same value back on retries.
+      const eventId = crypto.randomUUID();
+      rows.push({
+        webhook_endpoint_id: endpoint.id,
+        event_type: eventType,
+        event_id: eventId,
+        payload: {
+          id: eventId,
+          type: eventType,
+          created_at: createdAt.toISOString(),
+          data: event.data,
+        } as Prisma.InputJsonValue,
+        status: "pending",
+        next_attempt_at: createdAt,
+      });
+    }
+  }
+  if (rows.length === 0) return;
+  await tx.webhook_deliveries.createMany({ data: rows });
 }
 
 type PendingDelivery = {
@@ -166,7 +203,7 @@ async function failDelivery(
   const endpoint = await prisma.webhook_endpoints.update({
     where: { id: delivery.webhook_endpoint_id },
     data: { consecutive_failures: { increment: 1 } },
-    select: { id: true, consecutive_failures: true, disabled_at: true },
+    select: { id: true, name: true, url: true, consecutive_failures: true, disabled_at: true },
   });
 
   if (!endpoint.disabled_at && endpoint.consecutive_failures >= CIRCUIT_BREAKER_THRESHOLD) {
@@ -177,6 +214,40 @@ async function failDelivery(
     console.warn(
       `[Webhook] Endpoint ${endpoint.id} auto-disabled after ${endpoint.consecutive_failures} consecutive failed deliveries`,
     );
+    await notifyEndpointDisabled(endpoint.id, endpoint.name, endpoint.url);
+  }
+}
+
+// Best-effort - a mail failure here must never re-throw into the delivery
+// sweep, which has already committed the disable and moved on to the next
+// row. Runs off the hot path (only on the rare breaker-trip), so the extra
+// vendor/user lookup here (rather than joining it into every batch query)
+// is the right tradeoff.
+async function notifyEndpointDisabled(endpointId: string, name: string, url: string): Promise<void> {
+  try {
+    const endpoint = await prisma.webhook_endpoints.findUnique({
+      where: { id: endpointId },
+      select: {
+        vendors: {
+          select: {
+            client_name: true,
+            email: true,
+            users: { select: { email: true } },
+          },
+        },
+      },
+    });
+    const to = endpoint?.vendors.email || endpoint?.vendors.users?.email;
+    if (!to) return;
+
+    await sendWebhookDisabledEmail({
+      to,
+      vendorName: endpoint.vendors.client_name,
+      endpointName: name,
+      endpointUrl: url,
+    });
+  } catch (error) {
+    console.error(`[Webhook] Failed to send disable notification for endpoint ${endpointId}:`, error);
   }
 }
 
@@ -192,7 +263,29 @@ async function runWithConcurrency<T>(items: T[], limit: number, fn: (item: T) =>
   await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
 }
 
+// Second, cheaper guard against overlapping sweeps, on top of the Redis lock
+// in index.ts. That lock is skipped entirely when Redis errors on acquire
+// ("run anyway; delivery is idempotent" - see the comment there), and a full
+// sweep can legitimately run past the 15s tick interval under a large batch
+// (up to BATCH_SIZE at DELIVERY_CONCURRENCY, each up to REQUEST_TIMEOUT_MS).
+// Without this, either case lets two sweeps race the same "pending" rows
+// before either has written back a new status, double-firing each one.
+// Rows are still safe if this guard is somehow bypassed - retries are
+// idempotent for a vendor that dedupes on the delivery id per the docs -
+// this just keeps that from becoming the common case.
+let sweepInFlight = false;
+
 export async function runDeliverySweep(): Promise<{ attempted: number }> {
+  if (sweepInFlight) return { attempted: 0 };
+  sweepInFlight = true;
+  try {
+    return await runDeliverySweepInner();
+  } finally {
+    sweepInFlight = false;
+  }
+}
+
+async function runDeliverySweepInner(): Promise<{ attempted: number }> {
   const due = (await prisma.webhook_deliveries.findMany({
     where: {
       status: "pending",

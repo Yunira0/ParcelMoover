@@ -1,14 +1,17 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { ExternalLink, FileText } from 'lucide-react';
+import { CheckCircle2, ExternalLink, FileText, X } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import SegmentedTabs from '../components/SegmentedTabs';
 import Table from '../components/Table';
 import Button from '../components/Button';
+import FileField from '../components/FileField';
+import '../components/Modal.css';
 import { getCurrentUserRoles } from '../utils/auth';
 import {
   getBillingSettings,
   listVendorBalances,
   listVendorPayments,
+  paymentQrUrl,
   reviewVendorPayment,
   updateBillingSettings,
   uploadPaymentQr,
@@ -19,12 +22,15 @@ import {
 import { formatCurrency } from '../utils/format';
 import { toBsDate } from '../utils/nepaliDate';
 import { apiErrorMessage } from '../utils/serverValidation';
+import './vendor/VendorFinance.css';
 import './vendor/VendorBilling.css';
 import './BillingManagement.css';
 
 const API_BASE = (import.meta.env.VITE_API_URL || '/api').replace(/\/api\/?$/, '');
 const uploadUrl = (path: string) =>
   `${API_BASE}/${path.replace(/\\/g, '/').replace(/^.*?(uploads\/)/, '$1')}`;
+
+const isImagePath = (path: string) => /\.(jpe?g|png|webp|gif)$/i.test(path);
 
 type Tab = 'queue' | 'vendors' | 'settings';
 
@@ -42,9 +48,17 @@ const BillingManagement: React.FC = () => {
 
   // Verification queue
   const [claims, setClaims] = useState<VendorPayment[]>([]);
+  // Real pending count from the server, not claims.length — the queue only
+  // ever loads one page (pageSize: 50), so the visible rows undercount the
+  // badge once the queue backs up past that.
+  const [claimsTotal, setClaimsTotal] = useState(0);
   const [claimsLoading, setClaimsLoading] = useState(true);
   const [reviewing, setReviewing] = useState<string | null>(null);
   const [remarks, setRemarks] = useState<Record<string, string>>({});
+  // Proof screenshots deserve a focused look while comparing them against the
+  // claim's stated amount/reference — an inline preview beats losing the
+  // queue's place to a new tab for every row.
+  const [previewProof, setPreviewProof] = useState<string | null>(null);
 
   // Vendor balances
   const [balances, setBalances] = useState<VendorBalanceRow[]>([]);
@@ -56,12 +70,27 @@ const BillingManagement: React.FC = () => {
   const [block, setBlock] = useState('');
   const [savingSettings, setSavingSettings] = useState(false);
   const [settingsMessage, setSettingsMessage] = useState('');
+  const [settingsError, setSettingsError] = useState('');
+
+  // QR replace is staged, not immediate: picking a file only previews it, so
+  // a wrong click can't silently swap the QR every vendor pays against.
+  const [qrFile, setQrFile] = useState<File | null>(null);
+  const [qrUploading, setQrUploading] = useState(false);
+  const [qrMessage, setQrMessage] = useState('');
+  const [qrError, setQrError] = useState('');
+
+  // Vendor-facing note shown right under the QR, e.g. "Fonepay to 98XX-XXXXXX".
+  const [note, setNote] = useState('');
+  const [savingNote, setSavingNote] = useState(false);
+  const [noteMessage, setNoteMessage] = useState('');
+  const [noteError, setNoteError] = useState('');
 
   const loadClaims = useCallback(async () => {
     setClaimsLoading(true);
     try {
       const res = await listVendorPayments({ status: 'pending', pageSize: 50 });
       setClaims(res.data);
+      setClaimsTotal(res.meta.total);
       setError('');
     } catch (err) {
       setError(apiErrorMessage(err, 'Failed to load payment claims.'));
@@ -88,6 +117,7 @@ const BillingManagement: React.FC = () => {
       setSettings(data);
       setWarn(String(data.warnThreshold));
       setBlock(String(data.blockThreshold));
+      setNote(data.paymentNote ?? '');
     } catch (err) {
       setError(apiErrorMessage(err, 'Failed to load billing settings.'));
     }
@@ -121,7 +151,7 @@ const BillingManagement: React.FC = () => {
     event.preventDefault();
     setSavingSettings(true);
     setSettingsMessage('');
-    setError('');
+    setSettingsError('');
     try {
       const updated = await updateBillingSettings({
         warnThreshold: Number(warn),
@@ -130,19 +160,40 @@ const BillingManagement: React.FC = () => {
       setSettings(updated);
       setSettingsMessage('Thresholds saved.');
     } catch (err) {
-      setError(apiErrorMessage(err, 'Failed to save thresholds.'));
+      setSettingsError(apiErrorMessage(err, 'Failed to save thresholds.'));
     } finally {
       setSavingSettings(false);
     }
   };
 
-  const handleQrUpload = async (file: File) => {
-    setError('');
+  const handleSaveNote = async () => {
+    setSavingNote(true);
+    setNoteMessage('');
+    setNoteError('');
     try {
-      setSettings(await uploadPaymentQr(file));
-      setSettingsMessage('Payment QR updated.');
+      const updated = await updateBillingSettings({ paymentNote: note.trim() || null });
+      setSettings(updated);
+      setNoteMessage('Note saved.');
     } catch (err) {
-      setError(apiErrorMessage(err, 'Failed to upload QR.'));
+      setNoteError(apiErrorMessage(err, 'Failed to save note.'));
+    } finally {
+      setSavingNote(false);
+    }
+  };
+
+  const handleQrUpload = async () => {
+    if (!qrFile) return;
+    setQrUploading(true);
+    setQrError('');
+    setQrMessage('');
+    try {
+      setSettings(await uploadPaymentQr(qrFile));
+      setQrMessage('QR updated — vendors will see this immediately.');
+      setQrFile(null);
+    } catch (err) {
+      setQrError(apiErrorMessage(err, 'Failed to upload QR.'));
+    } finally {
+      setQrUploading(false);
     }
   };
 
@@ -155,9 +206,19 @@ const BillingManagement: React.FC = () => {
       header: 'PROOF',
       accessor: (p: VendorPayment) =>
         p.proofPath ? (
-          <a href={uploadUrl(p.proofPath)} target="_blank" rel="noreferrer" className="billing-doc-link">
-            <FileText size={14} /> View <ExternalLink size={12} />
-          </a>
+          isImagePath(p.proofPath) ? (
+            <button
+              type="button"
+              className="billing-doc-link billing-doc-preview-btn"
+              onClick={() => setPreviewProof(p.proofPath)}
+            >
+              <FileText size={14} /> View
+            </button>
+          ) : (
+            <a href={uploadUrl(p.proofPath)} target="_blank" rel="noreferrer" className="billing-doc-link">
+              <FileText size={14} /> View <ExternalLink size={12} />
+            </a>
+          )
         ) : (
           '—'
         ),
@@ -238,7 +299,7 @@ const BillingManagement: React.FC = () => {
         options={(Object.keys(TAB_LABELS) as Tab[]).map((tab) => ({
           value: tab,
           label: TAB_LABELS[tab],
-          ...(tab === 'queue' ? { count: claims.length } : {}),
+          ...(tab === 'queue' ? { count: claimsTotal } : {}),
         }))}
       />
 
@@ -301,7 +362,12 @@ const BillingManagement: React.FC = () => {
                   disabled={!isSuperAdmin || savingSettings}
                 />
               </label>
-              {settingsMessage && <p className="billing-success">{settingsMessage}</p>}
+              {settingsError && <p className="vendor-finance-error">{settingsError}</p>}
+              {settingsMessage && (
+                <p className="billing-success">
+                  <CheckCircle2 size={14} /> {settingsMessage}
+                </p>
+              )}
               {isSuperAdmin ? (
                 <Button type="submit" variant="primary" disabled={savingSettings}>
                   {savingSettings ? 'Saving...' : 'Save thresholds'}
@@ -315,25 +381,92 @@ const BillingManagement: React.FC = () => {
           <section className="billing-card">
             <h3>Payment QR</h3>
             <p className="billing-hint">Shown to every vendor on their billing page.</p>
+
             {settings?.paymentQrPath ? (
-              <img className="billing-qr" src={uploadUrl(settings.paymentQrPath)} alt="Payment QR" />
+              <img className="billing-qr" src={paymentQrUrl(settings.paymentQrPath)} alt="Current payment QR" />
             ) : (
               <p className="billing-hint">No QR uploaded yet.</p>
             )}
+
+            <label className="billing-form-label">Note shown below the QR</label>
+            <textarea
+              className="billing-note-input"
+              rows={2}
+              maxLength={280}
+              placeholder="e.g. Fonepay to 98XX-XXXXXX — ParcelMoover Pvt. Ltd."
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              disabled={!isSuperAdmin || savingNote}
+            />
+            {noteError && <p className="vendor-finance-error">{noteError}</p>}
+            {noteMessage && (
+              <p className="billing-success">
+                <CheckCircle2 size={14} /> {noteMessage}
+              </p>
+            )}
             {isSuperAdmin && (
-              <label className="billing-file">
-                Upload a new QR
-                <input
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) void handleQrUpload(file);
+              <Button
+                variant="secondary"
+                onClick={handleSaveNote}
+                disabled={savingNote || note.trim() === (settings?.paymentNote ?? '')}
+              >
+                {savingNote ? 'Saving...' : 'Save note'}
+              </Button>
+            )}
+
+            {isSuperAdmin && (
+              <>
+                <FileField
+                  label={settings?.paymentQrPath ? 'Replace with a new QR' : 'Upload a QR'}
+                  hint="JPG, PNG, or WebP · max 5 MB"
+                  file={qrFile}
+                  onChange={(file) => {
+                    setQrFile(file);
+                    setQrError('');
+                    setQrMessage('');
                   }}
                 />
-              </label>
+                {qrError && <p className="vendor-finance-error">{qrError}</p>}
+                {qrMessage && (
+                  <p className="billing-success">
+                    <CheckCircle2 size={14} /> {qrMessage}
+                  </p>
+                )}
+                {qrFile && (
+                  <div className="billing-review-actions">
+                    <Button variant="secondary" onClick={() => setQrFile(null)} disabled={qrUploading}>
+                      Cancel
+                    </Button>
+                    <Button variant="primary" onClick={handleQrUpload} disabled={qrUploading}>
+                      {qrUploading ? 'Uploading...' : 'Replace QR'}
+                    </Button>
+                  </div>
+                )}
+              </>
             )}
           </section>
+        </div>
+      )}
+
+      {previewProof && (
+        <div className="modal-overlay" onClick={() => setPreviewProof(null)}>
+          <div className="billing-proof-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="billing-proof-modal-header">
+              <span>Payment proof</span>
+              <button
+                type="button"
+                className="billing-proof-modal-close"
+                onClick={() => setPreviewProof(null)}
+                aria-label="Close preview"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <img src={uploadUrl(previewProof)} alt="Submitted payment proof" />
+            <a href={uploadUrl(previewProof)} target="_blank" rel="noreferrer" className="billing-doc-link">
+              Open full size <ExternalLink size={12} />
+            </a>
+          </div>
         </div>
       )}
     </div>

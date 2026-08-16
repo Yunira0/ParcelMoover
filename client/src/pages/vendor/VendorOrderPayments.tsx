@@ -13,6 +13,9 @@ import { downloadExcel } from '../../utils/excel';
 import './VendorFinance.css';
 
 type TabValue = 'all' | CodPaymentFilter;
+// The server caps any value at 200 here (the shared paginationQuerySchema
+// limit; finance.service MAX_PAGE_SIZE is higher but only the statement lists
+// offer pages that large).
 const PAGE_SIZE = 20;
 
 const formatCurrency = (value: number) => formatCurrencyBase(value, 0);
@@ -20,9 +23,11 @@ const formatCurrency = (value: number) => formatCurrencyBase(value, 0);
 const VendorOrderPayments: React.FC = () => {
   const [tab, setTab] = useState<TabValue>('all');
   const [page, setPage] = useState(1);
+  const [pageSizeChoice, setPageSizeChoice] = useState(PAGE_SIZE);
   const [items, setItems] = useState<OrderCodItem[]>([]);
   const [settledCount, setSettledCount] = useState(0);
   const [notSettledCount, setNotSettledCount] = useState(0);
+  const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -36,12 +41,13 @@ const VendorOrderPayments: React.FC = () => {
     setLoading(true);
     setError('');
 
-    getOrderCod(tab === 'all' ? undefined : tab, page, PAGE_SIZE)
+    getOrderCod(tab === 'all' ? undefined : tab, page, pageSizeChoice)
       .then((res) => {
         if (!active) return;
         setItems(res.data);
         setSettledCount(res.settledCount);
         setNotSettledCount(res.notSettledCount);
+        setTotal(res.meta.total);
         setTotalPages(res.meta.totalPages);
       })
       .catch((err) => {
@@ -54,7 +60,7 @@ const VendorOrderPayments: React.FC = () => {
     return () => {
       active = false;
     };
-  }, [tab, page]);
+  }, [tab, page, pageSizeChoice]);
 
   const handleExport = () => {
     if (items.length === 0) return;
@@ -79,7 +85,7 @@ const VendorOrderPayments: React.FC = () => {
     );
   };
 
-  const rows = items.map((item, index) => ({ ...item, sn: (page - 1) * PAGE_SIZE + index + 1 }));
+  const rows = items.map((item, index) => ({ ...item, sn: (page - 1) * pageSizeChoice + index + 1 }));
 
   const columns = [
     { header: 'SN', accessor: 'sn' as const, width: '60px' },
@@ -147,6 +153,13 @@ const VendorOrderPayments: React.FC = () => {
         page={page}
         totalPages={totalPages}
         onPageChange={setPage}
+        pageSize={pageSizeChoice}
+        pageSizeLabel="orders"
+        onPageSizeChange={(size) => {
+          setPageSizeChoice(size);
+          setPage(1);
+        }}
+        summary={`${total} order${total === 1 ? '' : 's'}`}
       />
     </div>
   );

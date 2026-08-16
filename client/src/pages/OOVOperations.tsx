@@ -18,6 +18,7 @@ import {
   getOrders,
   getStatusCounts,
   subscribeToOrderStatusChanged,
+  MAX_ORDER_PAGE_SIZE,
   type Order,
   type OrdersPageMeta,
   type ParcelStatus,
@@ -25,6 +26,7 @@ import {
 import { downloadExcel } from '../utils/excel';
 import { getLocations, getRiders } from '../services/users.service';
 import { handoffToNcm } from '../services/ncm.service';
+import { handoffParcelsToUpaya } from '../services/upaya.service';
 import { toBsDate, toBsDateTime } from '../utils/nepaliDate';
 import { printLabels } from '../utils/printLabels';
 import { commitScannedTerm, handleScannerPaste } from '../utils/scannerInput';
@@ -121,6 +123,7 @@ const OOVOperations: React.FC = () => {
   );
   const [debouncedSearch, setDebouncedSearch] = useState(() => searchParams.get('search') || '');
   const pager = useCursorPagination();
+  const [pageSizeChoice, setPageSizeChoice] = useState(PAGE_SIZE);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [selectionByTab, setSelectionByTab] = useState<Record<OOVTab, Map<string, Order>>>(createEmptySelections);
@@ -129,7 +132,7 @@ const OOVOperations: React.FC = () => {
   const [statusUpdating, setStatusUpdating] = useState(false);
   const [actionError, setActionError] = useState('');
   const [remarkPopupOrder, setRemarkPopupOrder] = useState<Order | null>(null);
-  const [dispatchMethod, setDispatchMethod] = useState<'manifest' | 'tpl'>('manifest');
+  const [dispatchMethod, setDispatchMethod] = useState<'manifest' | 'tpl' | 'upaya'>('manifest');
   const [locations, setLocations] = useState<{ id: string; name: string }[]>([]);
   const [riders, setRiders] = useState<{ id: string; name: string }[]>([]);
   const [toLocationId, setToLocationId] = useState('');
@@ -181,7 +184,7 @@ const OOVOperations: React.FC = () => {
   useEffect(() => {
     (async () => {
       try {
-        const [locRes, riderRes] = await Promise.all([getLocations(), getRiders()]);
+        const [locRes, riderRes] = await Promise.all([getLocations(), getRiders({ pageSize: 100 })]);
         if (locRes?.success && Array.isArray(locRes.data)) {
           setLocations(locRes.data.filter((loc: any) => loc.is_hub));
         }
@@ -207,7 +210,7 @@ const OOVOperations: React.FC = () => {
       // enough rows in one page to fit the whole scanned batch, instead of
       // silently cutting it off at the default page size.
       const scannedTermCount = debouncedSearch ? debouncedSearch.split(',').map(t => t.trim()).filter(Boolean).length : 0;
-      const pageSize = scannedTermCount > 1 ? Math.min(100, Math.max(PAGE_SIZE, scannedTermCount)) : PAGE_SIZE;
+      const pageSize = scannedTermCount > 1 ? Math.min(MAX_ORDER_PAGE_SIZE, Math.max(pageSizeChoice, scannedTermCount)) : pageSizeChoice;
 
       const res = await getOrders({
         status: TAB_STATUSES[activeTab],
@@ -228,7 +231,7 @@ const OOVOperations: React.FC = () => {
     } finally {
       if (requestId === loadRequestIdRef.current) setLoading(false);
     }
-  }, [activeTab, debouncedSearch, pager.request]);
+  }, [activeTab, debouncedSearch, pager.request, pageSizeChoice]);
 
   useEffect(() => {
     loadOovOrders();
@@ -344,6 +347,20 @@ const OOVOperations: React.FC = () => {
         // Hand off to the courier partner: creates their orders; parcels stay
         // in Transit until the partner's pickup webhook moves them to In Transit.
         const res = await handoffToNcm(ids);
+        const failed = (res.data ?? []).filter(item => !item.success);
+        if (failed.length > 0) {
+          setActionError(
+            failed.map(item => `${item.trackingId}: ${item.error || 'failed'}`).join(' · '),
+          );
+          await loadOovOrders();
+          return;
+        }
+      } else if (isDispatchAction && dispatchMethod === 'upaya') {
+        // Hand off to Upaya: creates the Upaya orders (area + service type
+        // both auto-derived server-side per parcel) and moves the parcel
+        // straight to dispatched (same as NCM/manifest), then Upaya's
+        // webhooks/reconciliation carry it the rest of the way.
+        const res = await handoffParcelsToUpaya(ids);
         const failed = (res.data ?? []).filter(item => !item.success);
         if (failed.length > 0) {
           setActionError(
@@ -614,6 +631,17 @@ const OOVOperations: React.FC = () => {
                       />
                       <span>Via Courier Partner</span>
                     </label>
+                    <label className="oov-dispatch-radio">
+                      <input
+                        type="radio"
+                        name="dispatchMethod"
+                        value="upaya"
+                        checked={dispatchMethod === 'upaya'}
+                        onChange={() => setDispatchMethod('upaya')}
+                        disabled={statusUpdating}
+                      />
+                      <span>Via 3PL (Upaya)</span>
+                    </label>
                   </div>
                 )}
                 {isDispatchAction && dispatchMethod === 'tpl' && (
@@ -622,6 +650,15 @@ const OOVOperations: React.FC = () => {
                       The courier partner's destination branch is matched automatically from each order's destination
                       hub. Orders whose destination has no matching branch are skipped, and orders stay in Transit
                       until the partner confirms pickup, then follow their tracking automatically.
+                    </p>
+                  </div>
+                )}
+                {isDispatchAction && dispatchMethod === 'upaya' && (
+                  <div className="oov-manifest-fields">
+                    <p className="oov-status-empty">
+                      Upaya delivery area and service type are both matched automatically from each order's
+                      destination hub. Orders whose destination has no confident match are skipped, and orders move
+                      straight to dispatched, then follow Upaya's tracking automatically.
                     </p>
                   </div>
                 )}
@@ -705,7 +742,7 @@ const OOVOperations: React.FC = () => {
             onChange={event => setSearchQuery(event.target.value)}
             onKeyDown={event => commitScannedTerm(event, setScannedIds, setSearchQuery)}
             onPaste={event => handleScannerPaste(event, setScannedIds, setSearchQuery)}
-            placeholder="Search tracking id"
+            placeholder="Search tracking id or #2980"
           />
           {(searchQuery || scannedIds.length > 0) && (
             <button type="button" onClick={() => { setSearchQuery(''); setScannedIds([]); }} aria-label="Clear search">
@@ -754,6 +791,12 @@ const OOVOperations: React.FC = () => {
         page={pager.page}
         totalPages={totalPages}
         cursor={pager.controls(meta)}
+        pageSize={pageSizeChoice}
+        pageSizeLabel="transit orders"
+        onPageSizeChange={(size) => {
+          setPageSizeChoice(size);
+          pager.reset();
+        }}
         summary={`${totalCount} order${totalCount === 1 ? '' : 's'}`}
       />
 

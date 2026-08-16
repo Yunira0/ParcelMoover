@@ -47,6 +47,39 @@
   background-color: var(--color-background-surface);
 }
 
+/* Deliberately its own class, not .tracking-id-link: a statement id is the
+   row's primary action (open the statement), so it earns the one accent
+   color the system allows for that role - unlike a tracking id, which is a
+   reference, not an action. */
+.statement-id-link {
+  background: none;
+  border: none;
+  color: var(--color-primary);
+  cursor: pointer;
+  font: inherit;
+  font-weight: var(--font-weight-semi-bold);
+  padding: 0;
+  text-decoration: none;
+  transition: color 150ms ease;
+}
+
+.statement-id-link:hover {
+  color: var(--color-primary-hover);
+  text-decoration: underline;
+}
+
+.statement-id-link:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+  border-radius: var(--border-radius-default);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .statement-id-link {
+    transition: none;
+  }
+}
+
 .cod-bill {
   background-color: var(--color-background-surface);
   border: 1px solid var(--color-border-default);
@@ -136,4 +169,13 @@
   font-size: var(--font-size-md);
   border-top: 1px solid var(--color-border-default);
   padding-top: var(--space-2);
+}
+
+/* How much of a part-paid settlement has actually landed — the status chip
+   alone can't say whether the payout is nearly done or barely started. */
+.vendor-settlement-status-sub {
+  color: var(--color-text-caption);
+  font-feature-settings: 'tnum';
+  font-size: var(--font-size-xs);
+  margin-top: var(--space-1);
 }

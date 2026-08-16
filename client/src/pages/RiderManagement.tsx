@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Search } from 'lucide-react';
 import Table, { TableRowActions } from '../components/Table';
 import { toBsDate } from '../utils/nepaliDate';
 import UserActionModal from '../components/UserActionModal';
 import PageHeader from '../components/PageHeader';
+import Pagination from '../components/Pagination';
 import SegmentedTabs from '../components/SegmentedTabs';
 import StatusChip from '../components/StatusChip';
 import ToggleSwitch from '../components/ToggleSwitch';
@@ -28,6 +29,10 @@ interface RiderUser {
   joined: string;
 }
 
+// Starting rows-per-page. The selector below the table can change it; the
+// server caps any value at 100 (auth.controller LIST_MAX_PAGE_SIZE).
+const PAGE_SIZE = 20;
+
 const RiderManagement: React.FC = () => {
   const navigate = useNavigate();
   const [riders, setRiders] = useState<RiderUser[]>([]);
@@ -38,17 +43,26 @@ const RiderManagement: React.FC = () => {
   const [activeRider, setActiveRider] = useState<RiderUser | null>(null);
   const [statusSavingIds, setStatusSavingIds] = useState<Set<string>>(new Set());
   const [statusError, setStatusError] = useState('');
+  const [page, setPage] = useState(1);
+  const [pageSizeChoice, setPageSizeChoice] = useState(PAGE_SIZE);
+  const [totalPages, setTotalPages] = useState(1);
+  const [total, setTotal] = useState(0);
 
-  const loadRiders = async () => {
+  const loadRiders = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await getRiders();
+      const params: Record<string, string | number> = { page, pageSize: pageSizeChoice };
+      if (searchQuery) params.search = searchQuery;
+      if (filter !== 'all') params.status = filter;
+
+      const res = await getRiders(params);
       if (res && res.success && Array.isArray(res.data)) {
         setRiders(res.data);
-      } else if (Array.isArray(res)) {
-        setRiders(res);
+        if (res.meta) {
+          setTotalPages(res.meta.totalPages);
+          setTotal(res.meta.total);
+        }
       } else {
-        console.error('Unexpected riders response shape:', res);
         setRiders([]);
       }
     } catch (err) {
@@ -56,15 +70,16 @@ const RiderManagement: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [page, pageSizeChoice, searchQuery, filter]);
 
   useEffect(() => {
     loadRiders();
-  }, []);
+  }, [loadRiders]);
 
-  // Optimistic toggle: flip the row immediately, revert if the server rejects it.
-  // Inactive riders can't log in to the rider app and stop appearing in the
-  // active-rider pickers used by assignment flows.
+  useEffect(() => {
+    setPage(1);
+  }, [searchQuery, filter]);
+
   const toggleRiderStatus = async (rider: RiderUser) => {
     const nextStatus = rider.status === 'active' ? 'inactive' : 'active';
     setStatusError('');
@@ -136,17 +151,6 @@ const RiderManagement: React.FC = () => {
     }
   ];
 
-  const filteredRiders = riders.filter(rider => {
-    const matchesSearch = searchQuery === '' ||
-      (rider.name && rider.name.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      (rider.email && rider.email.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      (rider.phone && rider.phone.includes(searchQuery));
-    
-    const matchesFilter = filter === 'all' || (filter === 'active' && rider.status === 'active');
-    
-    return matchesSearch && matchesFilter;
-  });
-
   return (
     <div className="rider-management-container">
       <PageHeader
@@ -182,10 +186,25 @@ const RiderManagement: React.FC = () => {
 
       {statusError && <p className="rider-status-error">{statusError}</p>}
 
-      {loading && riders.length === 0 ? (
+      {loading ? (
         <div className="loading-state">Loading riders...</div>
       ) : (
-        <Table columns={columns} data={filteredRiders} selectable={false} />
+        <>
+          <Table columns={columns} data={riders} selectable={false} />
+          <Pagination
+            page={page}
+            totalPages={totalPages}
+            onPageChange={setPage}
+            ariaLabel="Rider management pagination"
+            summary={`${total} rider${total !== 1 ? 's' : ''} total`}
+            pageSize={pageSizeChoice}
+            pageSizeLabel="riders"
+            onPageSizeChange={(size) => {
+              setPageSizeChoice(size);
+              setPage(1);
+            }}
+          />
+        </>
       )}
 
       <UserActionModal

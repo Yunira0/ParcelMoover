@@ -1,0 +1,122 @@
+.finance-management-container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  width: 100%;
+}
+
+.finance-filters {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.finance-filter-row {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.finance-entity-filter {
+  width: 260px;
+}
+
+.finance-entity-filter .form-group {
+  margin: 0;
+}
+
+.finance-date-range {
+  align-items: center;
+  display: flex;
+  gap: var(--space-2);
+}
+
+.finance-date-range-sep {
+  color: var(--color-text-caption);
+}
+
+.finance-status-select {
+  background-color: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-default);
+  color: var(--color-text-default);
+  font-family: var(--typography-font-family-default);
+  font-size: var(--font-size-sm);
+  height: 36px;
+  padding: 0 var(--space-2);
+}
+
+.finance-status-select:focus {
+  border-color: var(--color-border-primary);
+  box-shadow: var(--shadow-focus);
+  outline: none;
+}
+
+.finance-error {
+  color: var(--color-danger-text);
+  font-size: var(--font-size-sm);
+}
+
+/* Deliberately its own class, not .tracking-id-link: a statement id is the
+   row's primary action (open the statement), so it earns the one accent
+   color the system allows for that role - unlike a tracking id, which is a
+   reference, not an action. */
+.statement-id-link {
+  background: none;
+  border: none;
+  color: var(--color-primary);
+  cursor: pointer;
+  font: inherit;
+  font-weight: var(--font-weight-semi-bold);
+  padding: 0;
+  text-decoration: none;
+  transition: color 150ms ease;
+}
+
+.statement-id-link:hover {
+  color: var(--color-primary-hover);
+  text-decoration: underline;
+}
+
+.statement-id-link:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+  border-radius: var(--border-radius-default);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .statement-id-link {
+    transition: none;
+  }
+}
+
+.loading-state {
+  padding: var(--space-6);
+  text-align: center;
+  color: var(--color-text-caption);
+  font-size: var(--font-size-md);
+  background-color: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-modal);
+}
+
+@media (max-width: 768px) {
+  .finance-entity-filter {
+    width: 100%;
+  }
+}
+
+/* Status cell: the chip, plus how far a part payment has got. Stacked so the
+   progress line doesn't stretch the column when it isn't there. */
+.finance-status-cell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.finance-status-sub {
+  color: var(--color-text-caption);
+  font-feature-settings: 'tnum';
+  font-size: var(--font-size-xs);
+}

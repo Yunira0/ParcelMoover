@@ -1,13 +1,20 @@
 import React, { useEffect, useState } from 'react';
 import PageHeader from '../../components/PageHeader';
+import Pagination from '../../components/Pagination';
 import type { PendingCodBill } from '../../services/finance.service';
 import { getPendingCod } from '../../services/finance.service';
 import { formatCurrency } from '../../utils/format';
 import { toBsDate } from '../../utils/nepaliDate';
 import './VendorFinance.css';
 
+// The whole bill arrives in one response, so the rows are paged client-side —
+// the totals below always cover every order, not just the visible page.
+const PAGE_SIZE = 20;
+
 const VendorPendingCod: React.FC = () => {
   const [bill, setBill] = useState<PendingCodBill | null>(null);
+  const [page, setPage] = useState(1);
+  const [pageSizeChoice, setPageSizeChoice] = useState(PAGE_SIZE);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -31,6 +38,11 @@ const VendorPendingCod: React.FC = () => {
       active = false;
     };
   }, []);
+
+  const items = bill?.items ?? [];
+  const totalPages = Math.max(1, Math.ceil(items.length / pageSizeChoice));
+  const currentPage = Math.min(page, totalPages);
+  const pagedItems = items.slice((currentPage - 1) * pageSizeChoice, currentPage * pageSizeChoice);
 
   return (
     <div className="vendor-finance-page">
@@ -79,9 +91,9 @@ const VendorPendingCod: React.FC = () => {
               </tr>
             </thead>
             <tbody>
-              {bill.items.map((item, index) => (
+              {pagedItems.map((item, index) => (
                 <tr key={item.trackingId}>
-                  <td>{index + 1}</td>
+                  <td>{(currentPage - 1) * pageSizeChoice + index + 1}</td>
                   <td>#{item.orderNumber}</td>
                   <td>{item.trackingId}</td>
                   <td>
@@ -95,6 +107,23 @@ const VendorPendingCod: React.FC = () => {
               ))}
             </tbody>
           </table>
+
+          <Pagination
+            ariaLabel="Pending COD pagination"
+            page={currentPage}
+            totalPages={totalPages}
+            onPageChange={setPage}
+            pageSize={pageSizeChoice}
+            pageSizeLabel="orders"
+            onPageSizeChange={(size) => {
+              setPageSizeChoice(size);
+              setPage(1);
+            }}
+            summary={`Showing ${(currentPage - 1) * pageSizeChoice + 1}–${Math.min(
+              currentPage * pageSizeChoice,
+              items.length,
+            )} of ${items.length} order${items.length === 1 ? '' : 's'}`}
+          />
 
           <div className="cod-bill-totals">
             <div>

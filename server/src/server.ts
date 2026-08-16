@@ -18,6 +18,7 @@ import SlaRoutes from "./routes/sla.routes"
 import PickupTimeSlotsRoutes from "./routes/pickupTimeSlots.routes"
 import PaymentMethodRoutes from "./routes/payment-method.routes"
 import NcmRoutes from "./routes/ncm.routes"
+import UpayaRoutes from "./routes/upaya.routes"
 import ApiKeyRoutes from "./routes/apiKey.routes"
 import WebhookRoutes from "./routes/webhook.routes"
 import PublicApiRoutes from "./routes/publicApi.routes"
@@ -25,6 +26,7 @@ import MeRoutes from "./routes/me.routes"
 import AuditLogRoutes from "./routes/auditLog.routes"
 import BillingRoutes from "./routes/billing.routes"
 import AccountingRoutes from "./routes/accounting.routes"
+import VendorPrintSettingsRoutes from "./routes/vendorPrintSettings.routes"
 import prisma, { pool } from "./lib/prisma";
 import cookiesParser from "cookie-parser";
 import {authMiddleware} from "./middlewares/auth.middleware";
@@ -70,6 +72,8 @@ app.use(helmet({
       ...helmet.contentSecurityPolicy.getDefaultDirectives(),
       "upgrade-insecure-requests": null,
       "img-src": ["'self'", "data:", "https://images.unsplash.com"],
+      // SheetJS (xlsx) creates web workers from blob URLs for parsing.
+      "worker-src": ["'self'", "blob:"],
     },
   },
 }));
@@ -79,7 +83,9 @@ app.use(cors({
 }));
 app.use(express.json({ limit: "1mb" }));
 app.use(cookiesParser());
-app.use(express.static("public"));
+app.use((req, res, next) => {
+  express.static("public")(req, res, next);
+});
 
 // Liveness/readiness probe for load balancers and container orchestration -
 // deliberately ahead of rate limiting/auth so it's always fast and unthrottled.
@@ -103,6 +109,9 @@ const globalLimiter = rateLimit({
   message: { success: false, message: "Too many requests, please slow down" },
   standardHeaders: true,
   legacyHeaders: false,
+  // Redis is an acceleration/shared-state dependency, not a reason to take the
+  // whole API down. Route-specific limiters already use the same fail-open mode.
+  passOnStoreError: true,
   store: createRedisRateLimitStore("global"),
   keyGenerator: (req) => ipKeyGenerator(req.ip ?? "unknown"),
 });
@@ -139,6 +148,7 @@ app.use("/api/finance", FinanceRoutes)
 app.use("/api/billing", BillingRoutes)
 
 app.use("/api/accounting", AccountingRoutes)
+app.use("/api/vendor-settings", VendorPrintSettingsRoutes)
 
 app.use("/api/staff", StaffRoutes)
 
@@ -155,6 +165,10 @@ app.use("/api/payment-methods", PaymentMethodRoutes)
 
 // NCM (Nepal Can Move) 3PL integration — includes the public webhook receiver.
 app.use("/api/ncm", NcmRoutes)
+
+// Upaya 3PL integration (second outside-valley carrier, alongside NCM) —
+// includes the public webhook receiver.
+app.use("/api/upaya", UpayaRoutes)
 
 // Vendor self-service management of partner API keys (dashboard, JWT-authed).
 app.use("/api/api-keys", ApiKeyRoutes)
@@ -202,11 +216,17 @@ app.use((req, res, next) => {
   if (req.method !== "GET" || req.path.startsWith("/api") || req.path.startsWith("/uploads")) {
     return next();
   }
-  // A path with a file extension is a missing static asset — typically a
-  // hashed JS/CSS chunk from a previous deploy that an open tab still
-  // references — not a client-side route. Answering it with index.html makes
-  // the browser fail with "'text/html' is not a valid JavaScript MIME type";
-  // a clean 404 lets the client detect the stale deploy and recover.
+
+  if (req.path === "/rider" || req.path.startsWith("/rider/")) {
+    const stripped = req.path.replace(/^\/rider/, '') || '/';
+    if (path.extname(stripped) !== "") {
+      return res.sendFile(stripped, { root: "public/.rider" }, (err) => {
+        if (err) return res.status(404).end();
+      });
+    }
+    return res.sendFile("index.html", { root: "public/.rider" });
+  }
+
   if (path.extname(req.path) !== "") {
     return res.status(404).end();
   }

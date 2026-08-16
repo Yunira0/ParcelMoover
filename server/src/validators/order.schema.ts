@@ -7,6 +7,7 @@ import {
   optionalUuidSchema,
   paginationQuerySchema,
 } from "./common";
+import { ORDER_SORT_FIELDS } from "../types/order.type";
 
 // ── Enums (must stay in sync with order.type.ts) ──────────────────────────────
 
@@ -90,6 +91,9 @@ export const createOrderSchema = z.object({
   pickupAddress: z.string().max(255).optional(),
   scheduledPickupAt: z.string().datetime({ offset: true }).optional(),
   confirmDuplicate: z.boolean().optional(),
+  // Vendor-declared: this shipment may be accepted in part without failing
+  // the whole delivery. Informational only — see allow_partial_delivery on parcels.
+  allowPartialDelivery: z.boolean().optional(),
   // Places the order even though the vendor's account is past its block
   // threshold. Honoured for super_admin only — see assertVendorCanCreateOrder.
   overrideBillingBlock: z.boolean().optional(),
@@ -101,6 +105,7 @@ export type CreateOrderInput = z.infer<typeof createOrderSchema>;
 
 export const updateOrderDetailsSchema = z
   .object({
+    vendorId: optionalUuidSchema,
     receiver: orderPartySchema.optional(),
     originLocationId: optionalUuidSchema,
     destinationLocationId: optionalUuidSchema,
@@ -202,6 +207,12 @@ export type BulkUpdateOrderStatusInput = z.infer<typeof bulkUpdateOrderStatusSch
 
 // ── List orders (query params) ────────────────────────────────────────────────
 
+// Query-string booleans arrive as the strings "true"/"false". z.coerce.boolean
+// would read "false" as true, so match the literal the client actually sends.
+const booleanFlagSchema = z
+  .preprocess((val) => (val === undefined ? undefined : val === true || val === "true"), z.boolean().optional())
+  .optional();
+
 export const listOrdersQuerySchema = paginationQuerySchema.extend({
   status: z
     .preprocess((val) => {
@@ -211,10 +222,20 @@ export const listOrdersQuerySchema = paginationQuerySchema.extend({
     }, z.array(z.enum(PARCEL_STATUSES)).optional())
     .optional(),
   orderType: z.enum(ORDER_TYPES).optional(),
+  // Multi-select vendor filter, sent as a comma-separated list of vendor ids
+  // (or repeated params). Intersected with the actor's scope server-side.
+  vendorId: z
+    .preprocess((val) => {
+      if (!val) return undefined;
+      const raw = Array.isArray(val) ? val : String(val).split(",");
+      const ids = raw.map((s) => String(s).trim()).filter(Boolean);
+      return ids.length ? ids : undefined;
+    }, z.array(uuidSchema).max(100).optional())
+    .optional(),
   // A barcode scanner builds this up as a comma-separated list of full
   // tracking ids (~27 chars each incl. separator) - 100 chars only fit ~3
   // scans before every further scan gets rejected outright. Sized for the
-  // client's 100-term scan batch cap (order.service.ts MAX_PAGE_SIZE).
+  // client's 100-term scan batch cap (scannerInput.ts MAX_SCANNED_TERMS).
   search: z.string().max(3000).optional(),
   // Narrows the list to parcels carried by one delivery rider.
   deliveryRiderId: optionalUuidSchema,
@@ -222,9 +243,26 @@ export const listOrdersQuerySchema = paginationQuerySchema.extend({
   // treated as "no cursor" by the service, so only the length is bounded here.
   cursor: z.string().max(400).optional(),
   dir: z.enum(["next", "prev"]).optional(),
+  // Every field below must stay declared here even though the controller
+  // re-validates it: `validate(..., "query")` replaces req.query with the
+  // parsed object, and a plain z.object strips whatever it doesn't declare -
+  // so an undeclared param never reaches the controller at all.
+  sortBy: z.enum(ORDER_SORT_FIELDS).optional(),
+  sortDir: z.enum(["asc", "desc"]).optional(),
+  withArrival: booleanFlagSchema,
+  // Narrows to parcels delivered since local midnight, matching the
+  // "Delivered today" dashboard card's own count (getDashboardSummary).
+  deliveredToday: booleanFlagSchema,
 });
 
 export type ListOrdersQuery = z.infer<typeof listOrdersQuerySchema>;
+
+// GET /orders/filter-options — just the status scoping listOrdersQuerySchema
+// already validates, without the pagination/search/sort fields that endpoint
+// doesn't use.
+export const orderFilterOptionsQuerySchema = z.object({
+  status: listOrdersQuerySchema.shape.status,
+});
 
 // ── Rider run sheet (query params) ───────────────────────────────────────────
 

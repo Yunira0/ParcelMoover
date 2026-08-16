@@ -105,6 +105,7 @@ const ReturnOperations: React.FC = () => {
   });
   const [searchQuery, setSearchQuery] = useState(() => searchParams.get('search') || '');
   const [page, setPage] = useState(1);
+  const [pageSizeChoice, setPageSizeChoice] = useState(PAGE_SIZE);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [truncated, setTruncated] = useState(false);
@@ -144,7 +145,7 @@ const ReturnOperations: React.FC = () => {
 
   useEffect(() => { loadReturns(); }, []);
   useEffect(() => subscribeToOrderStatusChanged(loadReturns), []);
-  useEffect(() => { setPage(1); setSelectedIds(new Set()); setActionMsg(''); }, [activeTab, searchQuery]);
+  useEffect(() => { setPage(1); setSelectedIds(new Set()); setActionMsg(''); }, [activeTab, searchQuery, pageSizeChoice]);
 
   // Keep tab/search bookmarkable - mirror into the URL (replacing history,
   // not pushing, so the back button doesn't step through every keystroke).
@@ -163,7 +164,9 @@ const ReturnOperations: React.FC = () => {
       return (
         order.trackingId.toLowerCase().includes(q) ||
         order.senderName.toLowerCase().includes(q) ||
-        order.receiverName.toLowerCase().includes(q)
+        order.receiverName.toLowerCase().includes(q) ||
+        // The order id as the table shows it, with or without the leading "#".
+        `#${order.orderNumber}`.includes(q.startsWith('#') ? q : `#${q}`)
       );
     });
   }, [orders, activeTab, searchQuery]);
@@ -177,8 +180,8 @@ const ReturnOperations: React.FC = () => {
     return counts;
   }, [orders]);
 
-  const totalPages = Math.max(1, Math.ceil(filteredOrders.length / PAGE_SIZE));
-  const visibleOrders = filteredOrders.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const totalPages = Math.max(1, Math.ceil(filteredOrders.length / pageSizeChoice));
+  const visibleOrders = filteredOrders.slice((page - 1) * pageSizeChoice, page * pageSizeChoice);
   const visibleOrderIds = visibleOrders.map((order) => order.id);
   const allVisibleSelected = visibleOrderIds.length > 0 && visibleOrderIds.every((id) => selectedIds.has(id));
   const someVisibleSelected = visibleOrderIds.some((id) => selectedIds.has(id));
@@ -263,7 +266,7 @@ const ReturnOperations: React.FC = () => {
       `#${order.orderNumber}`,
       toBsDate(order.createdAt) || '',
       order.trackingId,
-      order.orderType === 'return' ? 'Return order' : 'RTO',
+      order.orderType === 'return' ? 'Return order' : 'RTV',
       order.senderName,
       order.receiverName,
       order.destination,
@@ -305,7 +308,7 @@ const ReturnOperations: React.FC = () => {
       header: 'TYPE',
       accessor: (order: Order) => (
         <StatusChip tone={order.orderType === 'return' ? 'info' : 'warning'}>
-          {order.orderType === 'return' ? 'Return order' : 'RTO'}
+          {order.orderType === 'return' ? 'Return order' : 'RTV'}
         </StatusChip>
       ),
       width: '140px',
@@ -431,7 +434,7 @@ const ReturnOperations: React.FC = () => {
         <input
           value={searchQuery}
           onChange={(event) => setSearchQuery(event.target.value)}
-          placeholder="Search tracking id"
+          placeholder="Search tracking id or #2980"
         />
       </label>
 
@@ -455,6 +458,9 @@ const ReturnOperations: React.FC = () => {
         page={page}
         totalPages={totalPages}
         onPageChange={setPage}
+        pageSize={pageSizeChoice}
+        pageSizeLabel="return orders"
+        onPageSizeChange={setPageSizeChoice}
         summary={`${filteredOrders.length} order${filteredOrders.length === 1 ? '' : 's'}`}
       />
 

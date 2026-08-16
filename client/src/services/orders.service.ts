@@ -96,6 +96,10 @@ export interface Order {
   vendorId: string | null;
   vendorName?: string;
   vendorLocation?: string;
+  // Resolved sticker print size (mm) - the vendor's own override, or the app
+  // default when unset. See printLabels.ts.
+  labelWidthMm: number;
+  labelHeightMm: number;
   riderName?: string;
   remarks?: string;
   lastUpdatedBy?: string;
@@ -106,6 +110,13 @@ export interface Order {
   arrivedAtOrigin?: string;
   /** AD "YYYY-MM-DD" the parcel was delivered, or '' if not delivered. */
   deliveredAt?: string;
+  /** Vendor-declared at creation: this shipment may be accepted in part. */
+  allowPartialDelivery?: boolean;
+  /** Set once a rider/admin marks the parcel partially_delivered. */
+  partialDeliveryRemarks?: string | null;
+  partialCodCollected?: number | null;
+  /** Set only on an auto-created return leg — points back at its source exchange order. */
+  sourceOrderId?: string | null;
 }
 
 export const ORDER_SORT_FIELDS = ['createdAt', 'codAmount', 'deliveryCharge', 'trackingId', 'status'] as const;
@@ -115,6 +126,8 @@ export interface ListOrdersParams {
   status?: ParcelStatus[];
   orderType?: OrderType;
   search?: string;
+  /** Narrow to these vendors. Server intersects it with the caller's own scope. */
+  vendorId?: string[];
   /** Narrows the list to parcels carried by one delivery rider. */
   deliveryRiderId?: string;
   /** Display-only page hint echoed back in meta; position comes from the cursor. */
@@ -127,6 +140,9 @@ export interface ListOrdersParams {
   sortDir?: 'asc' | 'desc';
   /** Export-only: include each order's first "arrived at origin" date. */
   withArrival?: boolean;
+  /** Narrow to parcels delivered since local midnight, as the dashboard's
+   *  "Delivered today" card counts them. */
+  deliveredToday?: boolean;
 }
 
 export interface OrdersPageMeta {
@@ -234,8 +250,15 @@ export interface DashboardSummary {
     totalCod: number;
     settledCod: number;
     pendingCod: number;
-    /** Cash riders have collected but not yet remitted to the office. */
-    codFromRider: number;
+    /** codFromPmRider + codFromNcm (+ future 3PLs) - the umbrella "COD to
+     *  collect from riders" figure; carriers below break it down. */
+    codFromRiders: number;
+    /** Cash a ParcelMoover rider has collected but not yet remitted to the office. */
+    codFromPmRider: number;
+    /** Cash NCM collected on our behalf, not yet remitted to the office. */
+    codFromNcm: number;
+    /** Cash Upaya's placeholder rider is holding, not yet remitted to the office. */
+    codFromUpaya: number;
     /** Delivery charge owed on orders whose COD hasn't been settled yet. */
     pendingDeliveryCharge: number;
     /** Total delivery charges (office cut) on the delivered orders in the COD window. */
@@ -250,6 +273,12 @@ export interface DashboardSummary {
   weeklyTrend: DashboardTrendDay[];
   updatedAt: string;
 }
+
+/**
+ * The largest page this endpoint will serve (order.service MAX_PAGE_SIZE).
+ * Asking for more is clamped server-side, so don't offer a bigger number.
+ */
+export const MAX_ORDER_PAGE_SIZE = 500;
 
 const ORDER_STATUS_CHANGED_EVENT = 'parcelmoover:order-status-changed';
 
@@ -266,6 +295,7 @@ export const getOrders = async (params?: ListOrdersParams, signal?: AbortSignal)
   const query: Record<string, string> = {};
   if (params?.status?.length) query.status = params.status.join(',');
   if (params?.orderType) query.orderType = params.orderType;
+  if (params?.vendorId?.length) query.vendorId = params.vendorId.join(',');
   if (params?.search) query.search = params.search;
   if (params?.deliveryRiderId) query.deliveryRiderId = params.deliveryRiderId;
   if (params?.page !== undefined) query.page = String(params.page);
@@ -275,8 +305,29 @@ export const getOrders = async (params?: ListOrdersParams, signal?: AbortSignal)
   if (params?.sortBy) query.sortBy = params.sortBy;
   if (params?.sortDir) query.sortDir = params.sortDir;
   if (params?.withArrival) query.withArrival = 'true';
+  if (params?.deliveredToday) query.deliveredToday = 'true';
 
   const response = await api.get('/orders', { params: query, signal });
+  return response.data;
+};
+
+export interface OrderFilterOptions {
+  origins: string[];
+  destinations: string[];
+  riders: string[];
+}
+
+// Lean, tab-scoped values for the orders list page's filter dropdowns -
+// deliberately not routed through getOrders/listOrders, whose page is only
+// 10 rows and whose full include is too heavy to reuse just for 3 strings.
+export const getOrderFilterOptions = async (
+  status?: ParcelStatus[],
+  signal?: AbortSignal,
+): Promise<{ success: boolean; data: OrderFilterOptions }> => {
+  const response = await api.get('/orders/filter-options', {
+    params: status?.length ? { status: status.join(',') } : {},
+    signal,
+  });
   return response.data;
 };
 
@@ -287,7 +338,10 @@ export const getAllOrders = async (
   params?: Omit<ListOrdersParams, 'page' | 'pageSize' | 'cursor' | 'dir'>,
   signal?: AbortSignal,
 ): Promise<Order[]> => {
-  const PAGE_SIZE = 100; // server MAX_PAGE_SIZE
+  // Deliberately below MAX_ORDER_PAGE_SIZE: an export walks every page anyway,
+  // so a smaller batch just trades a few more round-trips for lighter
+  // responses and a shorter time to the first one.
+  const PAGE_SIZE = 100;
   const all: Order[] = [];
   let cursor: string | undefined;
 
@@ -311,6 +365,47 @@ export const getAllOrders = async (
 export const getDashboardSummary = async (trendDays: 7 | 30 = 7) => {
   const response = await api.get('/orders/dashboard-summary', { params: { trendDays } });
   return response.data;
+};
+
+// ── COD settlement drill-down ───────────────────────────────────────────────
+// One bucket per line of the COD Settlement dashboard card. Carrier buckets
+// ('pm-rider', 'ncm', 'upaya') sit under the "COD to collect from riders"
+// heading; a future 3PL adds its slug here and a matching FILTER clause
+// server-side.
+export const COD_DETAIL_BUCKETS = [
+  'total',
+  'settled',
+  'pending',
+  'pm-rider',
+  'ncm',
+  'upaya',
+  'delivery-charge',
+] as const;
+export type CodDetailBucket = (typeof COD_DETAIL_BUCKETS)[number];
+
+export interface CodDetailRow {
+  id: string;
+  trackingId: string;
+  orderNumber: number;
+  vendorName: string;
+  receiverName: string;
+  riderName: string | null;
+  collectedAmount: number;
+  riderRemittedAmount: number;
+  remittedAmount: number;
+  deliveryCharge: number;
+  /** The figure this bucket is measuring for this row — these sum to the
+   *  amount shown on the dashboard card line that linked here. */
+  bucketAmount: number;
+  deliveredAt: string | null;
+}
+
+export const getCodSettlementDetail = async (
+  bucket: CodDetailBucket,
+  signal?: AbortSignal,
+): Promise<{ rows: CodDetailRow[]; capped: boolean }> => {
+  const response = await api.get('/orders/cod-settlement-detail', { params: { bucket }, signal });
+  return { rows: response.data?.data ?? [], capped: Boolean(response.data?.capped) };
 };
 
 // Returns per-status-group counts for operation page tab badges.
@@ -523,7 +618,7 @@ export const createOrder = async (data: CreateOrderInput) => {
   return response.data;
 };
 
-export type UpdateOrderInput = Partial<Omit<CreateOrderInput, 'sender' | 'vendorId' | 'deliveryCharge' | 'pickupAddress' | 'scheduledPickupAt'>>;
+export type UpdateOrderInput = Partial<Omit<CreateOrderInput, 'sender' | 'deliveryCharge' | 'pickupAddress' | 'scheduledPickupAt'>>;
 
 export const updateOrder = async (orderId: string, data: UpdateOrderInput) => {
   const idempotencyKey = uuidv4();

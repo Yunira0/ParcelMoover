@@ -3,14 +3,17 @@ import { Link } from 'react-router-dom';
 import { MoreVertical } from 'lucide-react';
 import SegmentedTabs from '../SegmentedTabs';
 import Table from '../Table';
+import Pagination from '../Pagination';
 import StatusChip, { type StatusChipTone } from '../StatusChip';
-import type { Order, ParcelStatus } from '../../services/orders.service';
+import type { Order, OrdersPageMeta, ParcelStatus } from '../../services/orders.service';
 import { getOrders } from '../../services/orders.service';
+import { useCursorPagination } from '../../hooks/useCursorPagination';
 import { toBsDateLabel } from '../../utils/nepaliDate';
 import './VendorOrderDetails.css';
 
 type DetailsTab = 'all' | 'delivered' | 'return';
-const RECENT_ORDERS_LIMIT = 8;
+// The selector below the table goes up to 500 (order.service MAX_PAGE_SIZE).
+const PAGE_SIZE = 10;
 
 const formatMoney = (value: number) => `Rs. ${value.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 
@@ -38,23 +41,34 @@ const getStatusTone = (status: ParcelStatus): StatusChipTone => {
 const VendorOrderDetails: React.FC = () => {
   const [tab, setTab] = useState<DetailsTab>('all');
   const [orders, setOrders] = useState<Order[]>([]);
+  const [meta, setMeta] = useState<OrdersPageMeta | null>(null);
+  // The orders endpoint is keyset-paginated (no row offsets), so navigation
+  // goes through the cursors it hands back rather than a page number.
+  const pager = useCursorPagination();
+  const [pageSizeChoice, setPageSizeChoice] = useState(PAGE_SIZE);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
+  const changeTab = (next: DetailsTab) => {
+    setTab(next);
+    pager.reset();
+  };
 
   useEffect(() => {
     let active = true;
     setLoading(true);
     setError('');
 
-    getOrders(
-      tab === 'delivered'
-        ? { status: ['delivered'] }
-        : tab === 'return'
-          ? { orderType: 'return' }
-          : undefined,
-    )
+    getOrders({
+      ...(tab === 'delivered' ? { status: ['delivered' as ParcelStatus] } : {}),
+      ...(tab === 'return' ? { orderType: 'return' as const } : {}),
+      ...pager.request,
+      pageSize: pageSizeChoice,
+    })
       .then((res) => {
-        if (active) setOrders(res.data.slice(0, RECENT_ORDERS_LIMIT));
+        if (!active) return;
+        setOrders(res.data);
+        setMeta(res.meta ?? null);
       })
       .catch(() => {
         if (active) setError('Failed to load orders.');
@@ -66,7 +80,7 @@ const VendorOrderDetails: React.FC = () => {
     return () => {
       active = false;
     };
-  }, [tab]);
+  }, [tab, pager.request, pageSizeChoice]);
 
   const columns = [
     {
@@ -118,7 +132,7 @@ const VendorOrderDetails: React.FC = () => {
         ariaLabel="Order details filter"
         fullWidth={false}
         value={tab}
-        onChange={setTab}
+        onChange={changeTab}
         options={[
           { value: 'all', label: 'All' },
           { value: 'delivered', label: 'Delivered' },
@@ -135,6 +149,20 @@ const VendorOrderDetails: React.FC = () => {
         loading={loading}
         loadingMessage="Loading orders..."
         emptyMessage="No orders found."
+      />
+
+      <Pagination
+        ariaLabel="Order details pagination"
+        page={pager.page}
+        totalPages={meta?.totalPages ?? 1}
+        cursor={pager.controls(meta)}
+        pageSize={pageSizeChoice}
+        pageSizeLabel="orders"
+        onPageSizeChange={(size) => {
+          setPageSizeChoice(size);
+          pager.reset();
+        }}
+        summary={meta ? `${meta.total} order${meta.total === 1 ? '' : 's'}` : undefined}
       />
     </div>
   );

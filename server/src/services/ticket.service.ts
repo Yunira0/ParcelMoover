@@ -1,7 +1,7 @@
 import prisma from "../lib/prisma";
 import { AppError } from "../utils/AppError";
 import { getDatePart, randomBase32 } from "../utils/trackingId";
-import { CreateTicketInput, ListTicketsParams, TicketStatus } from "../types/ticket.type";
+import { CreateTicketInput, ListTicketsParams, TicketStatus, TicketWorkflowStatus } from "../types/ticket.type";
 import { createNotification } from "./notification.service";
 import { notifyAdmins } from "./order.service";
 
@@ -15,6 +15,9 @@ const TICKET_CATEGORY_NOTIFICATIONS: Record<string, { type: string; label: strin
   delivery: { type: "dispatch", label: "Delivery" },
   cod_settlement: { type: "cod_settlement", label: "COD Settlement" },
   loss_and_damage: { type: "loss_and_damage", label: "Loss & Damage" },
+  // Raised by the Partner API (POST /api/v1/orders/:trackingId/return-request) -
+  // never auto-advances the RTO workflow, staff must review and action it.
+  return_request: { type: "return_request", label: "Return Request" },
 };
 
 // Workflow: pending (un-opened) → open (staff opened it) → closed (resolved).
@@ -22,7 +25,8 @@ const TICKET_CATEGORY_NOTIFICATIONS: Record<string, { type: string; label: strin
 const WORKFLOW_STATUSES: TicketStatus[] = ["open", "pending", "closed"];
 
 const DEFAULT_PAGE_SIZE = 20;
-const MAX_PAGE_SIZE = 100;
+// 500 so the list can offer the same largest page as every other screen.
+const MAX_PAGE_SIZE = 500;
 
 const isStaff = (actor: Actor) =>
   actor.roles.includes("admin") || actor.roles.includes("super_admin");
@@ -32,7 +36,7 @@ function generateTicketNo(date = new Date()) {
 }
 
 // Map any stored status onto the pending/open/closed workflow.
-function normalizeStatus(status: string): TicketStatus {
+function normalizeStatus(status: string): TicketWorkflowStatus {
   if (status === "closed" || status === "resolved") return "closed";
   if (status === "pending") return "pending";
   return "open"; // open, in_progress, or anything else
@@ -52,6 +56,7 @@ function mapTicket(
     status: string;
     created_at: Date;
     users_support_tickets_assigned_toTousers?: { full_name: string } | null;
+    parcels?: { tracking_id: string } | null;
   },
   vendorName?: string | null,
 ) {
@@ -68,6 +73,9 @@ function mapTicket(
     status: normalizeStatus(ticket.status),
     assignedTo: ticket.users_support_tickets_assigned_toTousers?.full_name || "Unassigned",
     createdAt: ticket.created_at.toISOString().slice(0, 10),
+    // Set only for tickets linked to an order (e.g. return_request) - lets
+    // staff jump straight from the ticket to the order.
+    trackingId: ticket.parcels?.tracking_id ?? null,
   };
 }
 
@@ -114,6 +122,7 @@ async function resolveVendorNamesBulk(createdByIds: string[]): Promise<Map<strin
 
 const TICKET_INCLUDE = {
   users_support_tickets_assigned_toTousers: true,
+  parcels: { select: { tracking_id: true } },
 } as const;
 
 // Resolves the vendor (name + phone) behind a batch of ticket creators in a
@@ -242,6 +251,7 @@ export async function createTicket(actor: Actor, input: CreateTicketInput) {
       status: "pending", // un-opened until support opens it
       assigned_to: input.assignedTo || null,
       created_by: actor.id,
+      parcel_id: input.parcelId || null,
     },
     include: TICKET_INCLUDE,
   });
@@ -340,8 +350,18 @@ export async function listTickets(actor: Actor, params: ListTicketsParams = {}) 
   const page = Math.max(1, params.page ?? 1);
   const skip = (page - 1) * take;
 
-  const [total, tickets] = await Promise.all([
+  // Tab counts cover everything this actor can see, deliberately ignoring the
+  // status tab and the other filters - they're the "how much is out there"
+  // pills, so they must not shrink as the operator narrows the table.
+  const countWhere = await scopeWhere(actor);
+
+  const [total, statusGroups, tickets] = await Promise.all([
     prisma.support_tickets.count({ where }),
+    prisma.support_tickets.groupBy({
+      by: ["status"],
+      where: countWhere,
+      _count: { _all: true },
+    }),
     prisma.support_tickets.findMany({
       where,
       include: TICKET_INCLUDE,
@@ -350,6 +370,15 @@ export async function listTickets(actor: Actor, params: ListTicketsParams = {}) 
       take,
     }),
   ]);
+
+  // Fold the stored statuses (including legacy in_progress/resolved) into the
+  // three workflow buckets the tabs offer.
+  const statusCounts = { all: 0, pending: 0, open: 0, closed: 0 };
+  statusGroups.forEach((group) => {
+    const count = group._count._all;
+    statusCounts.all += count;
+    statusCounts[normalizeStatus(group.status)] += count;
+  });
 
   const vendorByCreator = await resolveVendorsByCreators(
     tickets.map((t) => t.created_by).filter((x): x is string => !!x),
@@ -369,6 +398,7 @@ export async function listTickets(actor: Actor, params: ListTicketsParams = {}) 
       pageSize: take,
       total,
       totalPages: Math.max(1, Math.ceil(total / take)),
+      statusCounts,
     },
   };
 }

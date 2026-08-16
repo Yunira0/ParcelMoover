@@ -8,9 +8,12 @@ import type { SettlementListItem } from '../../services/finance.service';
 import { getSettlements } from '../../services/finance.service';
 import { formatCurrency as formatCurrencyBase } from '../../utils/format';
 import { toBsDate } from '../../utils/nepaliDate';
+import { settlementStatusLabel, settlementStatusTone } from '../../utils/settlementStatus';
 import NepaliDatePicker from '../../components/NepaliDatePicker';
 import './VendorFinance.css';
 
+// The selector below the table goes up to 500, this endpoint's ceiling
+// (finance.service MAX_PAGE_SIZE).
 const PAGE_SIZE = 20;
 
 const formatCurrency = (value: number) => formatCurrencyBase(value, 0);
@@ -20,7 +23,9 @@ const VendorSettlements: React.FC = () => {
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
   const [page, setPage] = useState(1);
+  const [pageSizeChoice, setPageSizeChoice] = useState(PAGE_SIZE);
   const [items, setItems] = useState<SettlementListItem[]>([]);
+  const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -34,10 +39,11 @@ const VendorSettlements: React.FC = () => {
     setLoading(true);
     setError('');
 
-    getSettlements('vendor', undefined, page, PAGE_SIZE, fromDate || undefined, toDate || undefined)
+    getSettlements('vendor', undefined, page, pageSizeChoice, fromDate || undefined, toDate || undefined)
       .then((res) => {
         if (!active) return;
         setItems(res.data);
+        setTotal(res.meta.total);
         setTotalPages(res.meta.totalPages);
       })
       .catch((err) => {
@@ -51,9 +57,9 @@ const VendorSettlements: React.FC = () => {
       active = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, fromDate, toDate, dateRangeInvalid]);
+  }, [page, pageSizeChoice, fromDate, toDate, dateRangeInvalid]);
 
-  const rows = items.map((item, index) => ({ ...item, sn: (page - 1) * PAGE_SIZE + index + 1 }));
+  const rows = items.map((item, index) => ({ ...item, sn: (page - 1) * pageSizeChoice + index + 1 }));
 
   const columns = [
     { header: 'SN', accessor: 'sn' as const, width: '60px' },
@@ -62,16 +68,8 @@ const VendorSettlements: React.FC = () => {
       accessor: (item: SettlementListItem) => (
         <button
           type="button"
+          className="statement-id-link"
           onClick={() => navigate(`/finance/settlements/${item.id}`)}
-          style={{
-            background: 'none',
-            border: 'none',
-            padding: 0,
-            color: 'var(--color-primary)',
-            textDecoration: 'underline',
-            cursor: 'pointer',
-            font: 'inherit',
-          }}
         >
           {item.statementId}
         </button>
@@ -83,9 +81,17 @@ const VendorSettlements: React.FC = () => {
     {
       header: 'STATUS',
       accessor: (item: SettlementListItem) => (
-        <StatusChip variant="solid" tone={item.status === 'settled' ? 'success' : 'warning'}>
-          {item.status === 'settled' ? 'Settled' : 'Pending'}
-        </StatusChip>
+        <>
+          <StatusChip variant="solid" tone={settlementStatusTone(item.status)}>
+            {settlementStatusLabel(item.status)}
+          </StatusChip>
+          {/* The chip alone doesn't say how much of the payout has landed. */}
+          {item.status === 'partially_paid' && (
+            <div className="vendor-settlement-status-sub">
+              {formatCurrency(item.paidAmount)} of {formatCurrency(item.amount)} received
+            </div>
+          )}
+        </>
       ),
     },
     { header: 'REMARK', accessor: (item: SettlementListItem) => item.remark || '-' },
@@ -136,7 +142,19 @@ const VendorSettlements: React.FC = () => {
         emptyMessage="No settlements found."
       />
 
-      <Pagination ariaLabel="Settlements pagination" page={page} totalPages={totalPages} onPageChange={setPage} />
+      <Pagination
+        ariaLabel="Settlements pagination"
+        page={page}
+        totalPages={totalPages}
+        onPageChange={setPage}
+        pageSize={pageSizeChoice}
+        pageSizeLabel="settlements"
+        onPageSizeChange={(size) => {
+          setPageSizeChoice(size);
+          setPage(1);
+        }}
+        summary={`${total} settlement${total === 1 ? '' : 's'}`}
+      />
     </div>
   );
 };

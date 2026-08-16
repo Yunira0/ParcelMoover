@@ -21,6 +21,11 @@ import './Remarks.css';
 
 const PAGE_SIZE = 10;
 
+// The whole set this page filters, counts and pages over in memory. Matches the
+// endpoint's ceiling (remark.service MAX_PAGE_SIZE) so it can't be smaller than
+// the largest rows-per-page the selector offers.
+const MAX_REMARKS_FETCH = 500;
+
 type RemarkTab = 'all' | 'unclosed' | RemarkStatus;
 
 // pending (un-opened) → open (opened) → closed workflow. ("unclosed" is retained
@@ -79,6 +84,7 @@ const Remarks: React.FC = () => {
     return fromUrl && fromUrl in RANGE_DAYS ? (fromUrl as DateRange) : '';
   });
   const [page, setPage] = useState(1);
+  const [pageSizeChoice, setPageSizeChoice] = useState(PAGE_SIZE);
   const [loading, setLoading] = useState(true);
   const [selectedIds, setSelectedIds] = useState<Set<string | number>>(new Set());
   // Tracks the remark whose "Mark as Done" request is in flight, to disable just that button.
@@ -99,9 +105,11 @@ const Remarks: React.FC = () => {
     try {
       // This page computes tab counts/filters client-side over the fetched set,
       // so the default 20-row page silently made every tab (not just Unclosed)
-      // undercount once there were more remarks than that - pull a much larger
-      // page so counts reflect reality.
-      const res = await getRemarks({ pageSize: 100 });
+      // undercount once there were more remarks than that - pull the largest
+      // page the endpoint serves so counts reflect reality. It also has to be
+      // at least the biggest rows-per-page on offer, or picking 500 below would
+      // page over a set that only ever held a fraction of that.
+      const res = await getRemarks({ pageSize: MAX_REMARKS_FETCH });
       if (res?.success && Array.isArray(res.data)) {
         setRemarks(res.data);
       }
@@ -113,7 +121,7 @@ const Remarks: React.FC = () => {
   useEffect(() => { loadRemarks(); }, [loadRemarks]);
   useEffect(() => subscribeToRemarkStatusChanged(loadRemarks), [loadRemarks]);
 
-  useEffect(() => { setPage(1); }, [searchQuery, activeTab, dateRange]);
+  useEffect(() => { setPage(1); }, [searchQuery, activeTab, dateRange, pageSizeChoice]);
 
   // Keep the active tab in sync with the ?status= param so re-navigating to it
   // (e.g. from the "Unclosed cmt" button) switches tabs without a remount.
@@ -148,8 +156,8 @@ const Remarks: React.FC = () => {
     });
   }, [remarks, searchQuery, activeTab, dateRange]);
 
-  const totalPages = Math.max(1, Math.ceil(filteredRemarks.length / PAGE_SIZE));
-  const visibleRemarks = filteredRemarks.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const totalPages = Math.max(1, Math.ceil(filteredRemarks.length / pageSizeChoice));
+  const visibleRemarks = filteredRemarks.slice((page - 1) * pageSizeChoice, page * pageSizeChoice);
   const visibleIds = visibleRemarks.map((remark) => remark.id);
   const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedIds.has(id));
   const someVisibleSelected = visibleIds.some((id) => selectedIds.has(id));
@@ -199,7 +207,7 @@ const Remarks: React.FC = () => {
   const columns = useMemo(() => [
     {
       header: 'SN',
-      accessor: (remark: Remark) => ((page - 1) * PAGE_SIZE) + visibleRemarks.findIndex((row) => row.id === remark.id) + 1,
+      accessor: (remark: Remark) => ((page - 1) * pageSizeChoice) + visibleRemarks.findIndex((row) => row.id === remark.id) + 1,
       width: '50px',
       className: 'remarks-sn-cell',
     },
@@ -263,7 +271,7 @@ const Remarks: React.FC = () => {
       ),
       width: '240px',
     },
-  ], [page, visibleRemarks, navigate, markAsDone, markingDoneId]);
+  ], [page, pageSizeChoice, visibleRemarks, navigate, markAsDone, markingDoneId]);
 
   return (
     <div className="remarks-container">
@@ -327,6 +335,9 @@ const Remarks: React.FC = () => {
         page={page}
         totalPages={totalPages}
         onPageChange={setPage}
+        pageSize={pageSizeChoice}
+        pageSizeLabel="remarks"
+        onPageSizeChange={setPageSizeChoice}
         summary={`${filteredRemarks.length} remark${filteredRemarks.length === 1 ? '' : 's'}`}
       />
     </div>

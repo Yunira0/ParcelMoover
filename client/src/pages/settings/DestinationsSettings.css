@@ -408,3 +408,60 @@
   background: var(--color-background-surface);
   color: var(--color-text-default);
 }
+
+/* ── Search bar ── */
+.dest-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.dest-search-icon {
+  position: absolute;
+  left: 12px;
+  color: var(--color-text-placeholder);
+  pointer-events: none;
+}
+
+.dest-search-input {
+  width: 100%;
+  padding: 8px 36px 8px 36px;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-lg);
+  font-size: var(--font-size-sm);
+  font-family: var(--typography-font-family-default);
+  background: var(--color-background-surface);
+  color: var(--color-text-default);
+  transition: border-color 150ms ease;
+}
+
+.dest-search-input::placeholder {
+  color: var(--color-text-placeholder);
+}
+
+.dest-search-input:focus {
+  outline: none;
+  border-color: var(--color-border-strong, var(--color-text-caption));
+}
+
+.dest-search-clear {
+  position: absolute;
+  right: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 50%;
+  background: var(--color-background-elevated);
+  color: var(--color-text-caption);
+  cursor: pointer;
+  padding: 0;
+  transition: all 120ms ease;
+}
+
+.dest-search-clear:hover {
+  background: var(--color-danger-surface);
+  color: var(--color-danger-default);
+}

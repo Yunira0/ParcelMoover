@@ -14,6 +14,7 @@ import {
 } from "../services/vendor-payment.service";
 import { resolveOwnVendorId } from "../services/vendor-scope.service";
 import { flattenMulterFiles, secureUploadedFiles } from "../lib/secureUploadedFiles";
+import { sendEncryptedFile } from "../lib/serveEncryptedDocument";
 import prisma from "../lib/prisma";
 import { AppError } from "../utils/AppError";
 
@@ -32,8 +33,11 @@ function fail(res: Response, error: any, fallback: string) {
   });
 }
 
-// Staff may look at any vendor by id; a vendor account is always pinned to its
-// own record regardless of what it asks for.
+// Staff may look at any vendor by id. A sales rep may look at a vendor id
+// they own, mirroring the sales_user_id scoping already enforced on order
+// creation (see isSalesActor in order.service.ts) — never an arbitrary one.
+// A vendor/vendor_staff account is always pinned to its own record regardless
+// of what it asks for.
 async function resolveTargetVendorId(req: Request): Promise<string> {
   const roles = req.user!.roles;
   if (isStaff(roles)) {
@@ -42,6 +46,19 @@ async function resolveTargetVendorId(req: Request): Promise<string> {
       throw new AppError(400, "vendorId is required and must be a valid UUID");
     }
     return raw;
+  }
+
+  if (roles.includes("sales")) {
+    const raw = req.query.vendorId;
+    if (typeof raw !== "string" || !UUID_REGEX.test(raw)) {
+      throw new AppError(400, "vendorId is required and must be a valid UUID");
+    }
+    const vendor = await prisma.vendors.findFirst({
+      where: { id: raw, sales_user_id: req.user!.id, deleted_at: null },
+      select: { id: true },
+    });
+    if (!vendor) throw new AppError(404, "Vendor not found");
+    return vendor.id;
   }
 
   const ownVendorId = await resolveOwnVendorId({ id: req.user!.id, roles });
@@ -92,6 +109,24 @@ export async function updateBillingSettingsController(req: Request, res: Respons
     return res.status(200).json({ success: true, data: settings });
   } catch (error: any) {
     return fail(res, error, "Failed to update billing settings");
+  }
+}
+
+// GET /api/billing/qr — the Fonepay QR image itself. Deliberately routes
+// around the admin-only /uploads mount (see serveEncryptedDocument's doc
+// comment): the QR isn't sensitive, and vendors are the ones who actually
+// need to see it to pay. Every billing-eligible role may fetch it.
+export async function getPaymentQrFileController(req: Request, res: Response) {
+  try {
+    if (!req.user) return res.status(401).json({ success: false, message: "Unauthorized" });
+
+    const settings = await getBillingSettings();
+    if (!settings.paymentQrPath) {
+      return res.status(404).json({ success: false, message: "No payment QR configured" });
+    }
+    await sendEncryptedFile(res, settings.paymentQrPath);
+  } catch (error: any) {
+    return fail(res, error, "Failed to load payment QR");
   }
 }
 

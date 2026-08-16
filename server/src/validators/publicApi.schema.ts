@@ -1,15 +1,34 @@
 import { z } from "zod";
-import { createOrderSchema, PARCEL_STATUSES } from "./order.schema";
-import { paginationQuerySchema } from "./common";
+import { createOrderSchema, updateOrderDetailsSchema, PARCEL_STATUSES } from "./order.schema";
+import { createTicketSchema } from "./ticket.schema";
+import { isoDateStringSchema, optionalUuidSchema, paginationQuerySchema } from "./common";
 
 // Public partner API (/api/v1) request shapes. Kept separate from the internal
 // order schemas so the public contract can stay stable even if internal
 // endpoints evolve.
 
+// Accepts either a real location UUID or a hub name/code (e.g. "POKHARA" -
+// the same names GET /api/v1/rates lists and the same ones the Excel bulk
+// rate import matches against). Kept permissive at the schema layer since
+// only the database knows which names are real; resolveDestinationRef in
+// delivery-rate.service.ts does the actual strict lookup before the value
+// ever reaches the internal (UUID-only) order-creation service.
+const hubReferenceSchema = z
+  .string()
+  .trim()
+  .min(1, "must not be empty")
+  .max(100, "must not exceed 100 characters");
+
 // vendorId and deliveryCharge are staff-side fields: the vendor is derived
 // from the API key, and vendor delivery charges are always server-quoted.
 // sender is optional here (unlike the internal schema): when omitted, the
 // controller fills it from the key owner's vendor profile via getSenderProfile.
+//
+// codAmount and weightKg are optional internally (staff fill them in as the
+// parcel is handled) but required here: the internal defaults - 0 COD and 1kg -
+// are both silent money bugs for an integration. A forgotten codAmount ships
+// the goods and collects nothing; a forgotten weightKg underbills the vendor,
+// and createOrder only reprices on a later edit.
 export const publicCreateOrderSchema = createOrderSchema
   .omit({
     vendorId: true,
@@ -17,9 +36,54 @@ export const publicCreateOrderSchema = createOrderSchema
   })
   .extend({
     sender: createOrderSchema.shape.sender.optional(),
+    receiver: createOrderSchema.shape.receiver.extend({
+      locationId: hubReferenceSchema.optional(),
+    }),
+    destinationLocationId: hubReferenceSchema.optional(),
+    codAmount: z.number().min(0, "codAmount cannot be negative"),
+    weightKg: z.number().positive("weightKg must be a positive number"),
+  })
+  .superRefine((data, ctx) => {
+    // createOrder resolves the destination as destinationLocationId ||
+    // receiver.locationId, and skips rate quoting entirely when both are
+    // absent - which silently books the order at a delivery_charge of 0.
+    // Either field satisfies this; neither does not.
+    if (!data.destinationLocationId && !data.receiver.locationId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["destinationLocationId"],
+        message:
+          "A destination is required: set destinationLocationId (or receiver.locationId) to a hub name or UUID from GET /api/v1/rates",
+      });
+    }
+
+    // serviceType defaults to home_delivery, so an absent one counts as one.
+    // A branch_delivery is collected at the hub and needs no street address.
+    if ((data.serviceType ?? "home_delivery") === "home_delivery" && !data.receiver.address) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["receiver", "address"],
+        message: "receiver.address is required for home_delivery orders",
+      });
+    }
   });
 
 export type PublicCreateOrderInput = z.infer<typeof publicCreateOrderSchema>;
+
+// ── Update order (pre-dispatch edit / address change) ──────────────────────────
+// Same VENDOR_EDITABLE_STATUSES restriction the dashboard's own vendor users
+// have: only while the parcel is still pickup_ordered/rider_assigned/failed_pickup,
+// enforced inside updateOrderDetails - not re-implemented here.
+
+export const publicUpdateOrderSchema = updateOrderDetailsSchema.safeExtend({
+  receiver: updateOrderDetailsSchema.shape.receiver
+    .unwrap()
+    .safeExtend({ locationId: hubReferenceSchema.optional() })
+    .optional(),
+  destinationLocationId: hubReferenceSchema.optional(),
+});
+
+export type PublicUpdateOrderInput = z.infer<typeof publicUpdateOrderSchema>;
 
 export const publicListOrdersQuerySchema = paginationQuerySchema.extend({
   pageSize: z.coerce
@@ -38,3 +102,89 @@ export const publicListOrdersQuerySchema = paginationQuerySchema.extend({
 });
 
 export type PublicListOrdersQuery = z.infer<typeof publicListOrdersQuerySchema>;
+
+// ── Rate quote ────────────────────────────────────────────────────────────────
+
+export const publicQuoteQuerySchema = z.object({
+  destinationLocationId: hubReferenceSchema,
+  weightKg: z.coerce.number().positive("weightKg must be greater than 0").optional(),
+  serviceType: z.enum(["home_delivery", "branch_delivery"]).optional(),
+});
+
+export type PublicQuoteQuery = z.infer<typeof publicQuoteQuerySchema>;
+
+// ── Cancel order ──────────────────────────────────────────────────────────────
+
+export const publicCancelOrderSchema = z.object({
+  reason: z.string().trim().max(500, "reason must not exceed 500 characters").optional(),
+});
+
+export type PublicCancelOrderInput = z.infer<typeof publicCancelOrderSchema>;
+
+// ── Bulk status lookup ────────────────────────────────────────────────────────
+
+export const publicBulkStatusSchema = z.object({
+  trackingIds: z
+    .array(z.string())
+    .min(1, "trackingIds must include at least one tracking id")
+    .max(100, "trackingIds cannot exceed 100 per request"),
+});
+
+export type PublicBulkStatusInput = z.infer<typeof publicBulkStatusSchema>;
+
+// ── Order remarks (comments) ──────────────────────────────────────────────────
+
+export const publicAddRemarkSchema = z.object({
+  remark: z.string().trim().min(1, "remark is required").max(2000, "remark must not exceed 2000 characters"),
+  parentRemarkId: optionalUuidSchema,
+});
+
+export type PublicAddRemarkInput = z.infer<typeof publicAddRemarkSchema>;
+
+// ── Tickets ───────────────────────────────────────────────────────────────────
+
+// assignedTo/status are staff-side ticket-routing fields; parcelId isn't
+// exposed publicly today because the internal ticket read shape doesn't
+// surface it back anywhere either (dashboard or API) - wiring only the
+// write side would be a half-finished link.
+export const publicCreateTicketSchema = createTicketSchema.omit({
+  assignedTo: true,
+  status: true,
+  parcelId: true,
+});
+
+export type PublicCreateTicketInput = z.infer<typeof publicCreateTicketSchema>;
+
+export const publicTicketReplySchema = z.object({
+  message: z.string().trim().min(1, "message is required").max(2000, "message must not exceed 2000 characters"),
+});
+
+export type PublicTicketReplyInput = z.infer<typeof publicTicketReplySchema>;
+
+// ── Return request (pending, staff-actioned — does not move parcel status) ────
+
+export const publicReturnRequestSchema = z.object({
+  reason: z
+    .string()
+    .trim()
+    .min(3, "reason must be at least 3 characters")
+    .max(500, "reason must not exceed 500 characters"),
+  notes: z.string().trim().max(2000, "notes must not exceed 2000 characters").optional(),
+});
+
+export type PublicReturnRequestInput = z.infer<typeof publicReturnRequestSchema>;
+
+// ── Finance (COD / settlements) — read-only, always scoped to the key's own vendor ─
+
+export const publicOrderCodQuerySchema = paginationQuerySchema.extend({
+  status: z.enum(["settled", "not_settled"]).optional(),
+});
+
+export type PublicOrderCodQuery = z.infer<typeof publicOrderCodQuerySchema>;
+
+export const publicSettlementsQuerySchema = paginationQuerySchema.extend({
+  fromDate: isoDateStringSchema,
+  toDate: isoDateStringSchema,
+});
+
+export type PublicSettlementsQuery = z.infer<typeof publicSettlementsQuerySchema>;

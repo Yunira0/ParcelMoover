@@ -1,10 +1,13 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { AlertTriangle, CheckCircle2, Clock, Upload } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Clock, QrCode } from 'lucide-react';
 import PageHeader from '../../components/PageHeader';
 import Button from '../../components/Button';
+import FileField from '../../components/FileField';
+import Pagination from '../../components/Pagination';
 import {
   getBillingStatus,
   listVendorPayments,
+  paymentQrUrl,
   submitVendorPayment,
   type BillingStatus,
   type VendorPayment,
@@ -15,21 +18,22 @@ import { apiErrorMessage } from '../../utils/serverValidation';
 import './VendorFinance.css';
 import './VendorBilling.css';
 
-// Doc/QR paths are stored relative ("uploads/billing/x.jpg") and served off the
-// API origin, which is not the same as the SPA origin in dev.
-const API_BASE = (import.meta.env.VITE_API_URL || '/api').replace(/\/api\/?$/, '');
-const uploadUrl = (path: string) =>
-  `${API_BASE}/${path.replace(/\\/g, '/').replace(/^.*?(uploads\/)/, '$1')}`;
-
 const STATUS_LABEL: Record<VendorPayment['status'], string> = {
   pending: 'Awaiting verification',
   verified: 'Verified',
   rejected: 'Rejected',
 };
 
+// The server caps any value at 100 (vendor-payment.service MAX_PAGE_SIZE).
+const PAGE_SIZE = 20;
+
 const VendorBilling: React.FC = () => {
   const [status, setStatus] = useState<BillingStatus | null>(null);
   const [payments, setPayments] = useState<VendorPayment[]>([]);
+  const [page, setPage] = useState(1);
+  const [pageSizeChoice, setPageSizeChoice] = useState(PAGE_SIZE);
+  const [paymentsTotal, setPaymentsTotal] = useState(0);
+  const [paymentsTotalPages, setPaymentsTotalPages] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -42,23 +46,29 @@ const VendorBilling: React.FC = () => {
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
   const [submitted, setSubmitted] = useState('');
+  // The QR is fetched through an authenticated endpoint now, not a static
+  // file - worth a distinct failure state from "no QR configured" so a
+  // network hiccup doesn't read as "support hasn't set this up."
+  const [qrLoadFailed, setQrLoadFailed] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const [statusData, paymentsData] = await Promise.all([
         getBillingStatus(),
-        listVendorPayments({ pageSize: 20 }),
+        listVendorPayments({ page, pageSize: pageSizeChoice }),
       ]);
       setStatus(statusData);
       setPayments(paymentsData.data);
+      setPaymentsTotal(paymentsData.meta.total);
+      setPaymentsTotalPages(paymentsData.meta.totalPages);
       setError('');
     } catch (err) {
       setError(apiErrorMessage(err, 'Failed to load billing details.'));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [page, pageSizeChoice]);
 
   useEffect(() => {
     void load();
@@ -87,10 +97,12 @@ const VendorBilling: React.FC = () => {
     try {
       await submitVendorPayment({ amount: parsed, reference, note, proof });
       setSubmitted('Payment submitted. It will be credited once our team verifies it.');
-      setAmount('');
+      setAmount(null);
       setReference('');
       setNote('');
       setProof(null);
+      // The new payment is the newest row, so jump back to the first page.
+      setPage(1);
       await load();
     } catch (err) {
       setFormError(apiErrorMessage(err, 'Failed to submit payment.'));
@@ -109,7 +121,14 @@ const VendorBilling: React.FC = () => {
       />
 
       {loading ? (
-        <div className="loading-state">Loading billing details...</div>
+        <div className="billing-skeleton-set" aria-busy="true" aria-label="Loading billing details">
+          <div className="billing-skeleton billing-skeleton-banner" />
+          <div className="billing-grid">
+            <div className="billing-skeleton billing-skeleton-card" />
+            <div className="billing-skeleton billing-skeleton-card" />
+          </div>
+          <div className="billing-skeleton billing-skeleton-table" />
+        </div>
       ) : error ? (
         <p className="vendor-finance-error">{error}</p>
       ) : !status ? (
@@ -143,26 +162,16 @@ const VendorBilling: React.FC = () => {
               <h3>Account balance</h3>
               <div className="billing-breakdown">
                 <div>
-                  <span>COD collected for you</span>
+                  <span>COD collected</span>
                   <span>{formatCurrency(status.codCollected)}</span>
                 </div>
                 <div>
                   <span>Delivery charges</span>
                   <span className="billing-debit">-{formatCurrency(status.deliveryCharges)}</span>
                 </div>
-                <div>
-                  <span>Already paid out to you</span>
-                  <span className="billing-debit">-{formatCurrency(status.payouts)}</span>
-                </div>
-                <div>
-                  <span>Payments received from you</span>
-                  <span>{formatCurrency(status.paymentsReceived)}</span>
-                </div>
                 <div className="billing-breakdown-total">
-                  <span>{status.balance < 0 ? 'You owe' : 'Owed to you'}</span>
-                  <span className={status.balance < 0 ? 'billing-debit' : ''}>
-                    {formatCurrency(Math.abs(status.balance))}
-                  </span>
+                  <span>Due delivery charge</span>
+                  <span className={owed > 0 ? 'billing-debit' : ''}>{formatCurrency(owed)}</span>
                 </div>
               </div>
               {status.pendingPaymentAmount > 0 && (
@@ -175,106 +184,150 @@ const VendorBilling: React.FC = () => {
 
             <section className="billing-card">
               <h3>Pay delivery charges</h3>
-              {status.paymentQrPath ? (
-                <img
-                  className="billing-qr"
-                  src={uploadUrl(status.paymentQrPath)}
-                  alt="Scan to pay via Fonepay"
-                />
-              ) : (
-                <p className="billing-hint">
-                  No payment QR has been configured yet. Please contact support to arrange payment.
-                </p>
-              )}
-              {status.paymentNote && <p className="billing-hint">{status.paymentNote}</p>}
 
-              <form className="billing-form" onSubmit={handleSubmit}>
-                <label>
-                  Amount paid
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={amountValue}
-                    onChange={(e) => setAmount(e.target.value)}
-                    placeholder="0.00"
-                    disabled={submitting}
+              <div className="billing-step">
+                <h4 className="billing-step-title">1. Scan and pay via Fonepay</h4>
+                {status.paymentQrPath && !qrLoadFailed ? (
+                  <img
+                    className="billing-qr"
+                    src={paymentQrUrl(status.paymentQrPath)}
+                    alt="Scan to pay via Fonepay"
+                    onError={() => setQrLoadFailed(true)}
                   />
-                </label>
-                <label>
-                  Transaction reference
-                  <input
-                    value={reference}
-                    onChange={(e) => setReference(e.target.value)}
-                    placeholder="From your payment app"
-                    disabled={submitting}
-                  />
-                </label>
-                <label>
-                  Note (optional)
-                  <input
-                    value={note}
-                    onChange={(e) => setNote(e.target.value)}
-                    disabled={submitting}
-                  />
-                </label>
-                <label className="billing-file">
-                  <Upload size={14} />
-                  {proof ? proof.name : 'Attach payment screenshot (optional)'}
-                  <input
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp,application/pdf"
-                    onChange={(e) => setProof(e.target.files?.[0] ?? null)}
-                    disabled={submitting}
-                  />
-                </label>
+                ) : (
+                  <p className="billing-hint">
+                    <QrCode size={14} />
+                    {status.paymentQrPath
+                      ? "The QR couldn't be loaded. Refresh the page, or contact support if it keeps failing."
+                      : 'No payment QR has been configured yet. Please contact support to arrange payment.'}
+                  </p>
+                )}
+                {status.paymentNote && <p className="billing-hint">{status.paymentNote}</p>}
+              </div>
 
-                {formError && <p className="vendor-finance-error">{formError}</p>}
-                {submitted && <p className="billing-success">{submitted}</p>}
+              <div className="billing-step">
+                <h4 className="billing-step-title">2. Tell us you paid</h4>
+                <form className="billing-form" onSubmit={handleSubmit}>
+                  <label>
+                    Amount paid
+                    <div className="billing-amount-field">
+                      <span className="billing-amount-prefix">Rs.</span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={amountValue}
+                        onChange={(e) => setAmount(e.target.value)}
+                        placeholder="0.00"
+                        disabled={submitting}
+                        aria-invalid={Boolean(formError)}
+                      />
+                    </div>
+                    {suggestedAmount && (
+                      <span className="billing-field-hint">
+                        Suggested: {formatCurrency(Number(suggestedAmount))}
+                      </span>
+                    )}
+                  </label>
+                  <label>
+                    Transaction reference
+                    <input
+                      value={reference}
+                      onChange={(e) => setReference(e.target.value)}
+                      placeholder="From your payment app"
+                      disabled={submitting}
+                    />
+                  </label>
+                  <label>
+                    Note (optional)
+                    <input
+                      value={note}
+                      onChange={(e) => setNote(e.target.value)}
+                      disabled={submitting}
+                    />
+                  </label>
+                  <FileField
+                    label="Payment screenshot (optional)"
+                    hint="JPG, PNG, WebP or PDF · max 5 MB"
+                    file={proof}
+                    onChange={setProof}
+                  />
 
-                <Button type="submit" variant="primary" disabled={submitting}>
-                  {submitting ? 'Submitting...' : 'I have paid'}
-                </Button>
-                <p className="billing-hint">
-                  Payments are credited once our team matches them against our statement.
-                </p>
-              </form>
+                  {formError && <p className="vendor-finance-error">{formError}</p>}
+                  {submitted && (
+                    <p className="billing-success">
+                      <CheckCircle2 size={14} /> {submitted}
+                    </p>
+                  )}
+
+                  <Button type="submit" variant="primary" disabled={submitting}>
+                    {submitting ? 'Submitting...' : 'I have paid'}
+                  </Button>
+                  <p className="billing-hint">
+                    Payments are credited once our team matches them against our statement.
+                  </p>
+                </form>
+              </div>
             </section>
           </div>
 
           <section className="billing-card">
             <h3>Payment history</h3>
             {payments.length === 0 ? (
-              <p className="billing-hint">No payments submitted yet.</p>
+              <div className="billing-empty">
+                <Clock size={20} />
+                <p>
+                  No payments yet. Once you pay via the QR above and submit it, it'll show up here
+                  awaiting verification.
+                </p>
+              </div>
             ) : (
-              <table className="cod-bill-table">
-                <thead>
-                  <tr>
-                    <th>Date</th>
-                    <th>Amount</th>
-                    <th>Reference</th>
-                    <th>Status</th>
-                    <th>Remark</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {payments.map((payment) => (
-                    <tr key={payment.id}>
-                      <td>{toBsDate(payment.createdAt)}</td>
-                      <td>{formatCurrency(payment.amount)}</td>
-                      <td>{payment.reference || '—'}</td>
-                      <td>
-                        <span className={`billing-pill billing-pill-${payment.status}`}>
-                          {payment.status === 'verified' && <CheckCircle2 size={12} />}
-                          {payment.status === 'pending' && <Clock size={12} />}
-                          {STATUS_LABEL[payment.status]}
-                        </span>
-                      </td>
-                      <td>{payment.reviewRemark || '—'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <>
+                <div className="billing-table-scroll">
+                  <table className="cod-bill-table">
+                    <thead>
+                      <tr>
+                        <th>Date</th>
+                        <th>Amount</th>
+                        <th>Reference</th>
+                        <th>Status</th>
+                        <th>Remark</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {payments.map((payment) => (
+                        <tr key={payment.id}>
+                          <td>{toBsDate(payment.createdAt)}</td>
+                          <td>{formatCurrency(payment.amount)}</td>
+                          <td>{payment.reference || '—'}</td>
+                          <td>
+                            <span className={`billing-pill billing-pill-${payment.status}`}>
+                              {payment.status === 'verified' && <CheckCircle2 size={12} />}
+                              {payment.status === 'pending' && <Clock size={12} />}
+                              {STATUS_LABEL[payment.status]}
+                            </span>
+                          </td>
+                          <td>{payment.reviewRemark || '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <Pagination
+                  ariaLabel="Payment history pagination"
+                  page={page}
+                  totalPages={paymentsTotalPages}
+                  onPageChange={setPage}
+                  pageSize={pageSizeChoice}
+                  pageSizeLabel="payments"
+                  onPageSizeChange={(size) => {
+                    setPageSizeChoice(size);
+                    setPage(1);
+                  }}
+                  summary={`${paymentsTotal} payment${paymentsTotal === 1 ? '' : 's'}`}
+                />
+              </>
             )}
           </section>
         </>
