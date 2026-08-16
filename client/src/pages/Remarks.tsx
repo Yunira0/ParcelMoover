@@ -21,6 +21,11 @@ import './Remarks.css';
 
 const PAGE_SIZE = 10;
 
+// The whole set this page filters, counts and pages over in memory. Matches the
+// endpoint's ceiling (remark.service MAX_PAGE_SIZE) so it can't be smaller than
+// the largest rows-per-page the selector offers.
+const MAX_REMARKS_FETCH = 500;
+
 type RemarkTab = 'all' | 'unclosed' | RemarkStatus;
 
 // pending (un-opened) → open (opened) → closed workflow. ("unclosed" is retained
@@ -100,9 +105,11 @@ const Remarks: React.FC = () => {
     try {
       // This page computes tab counts/filters client-side over the fetched set,
       // so the default 20-row page silently made every tab (not just Unclosed)
-      // undercount once there were more remarks than that - pull a much larger
-      // page so counts reflect reality.
-      const res = await getRemarks({ pageSize: 100 });
+      // undercount once there were more remarks than that - pull the largest
+      // page the endpoint serves so counts reflect reality. It also has to be
+      // at least the biggest rows-per-page on offer, or picking 500 below would
+      // page over a set that only ever held a fraction of that.
+      const res = await getRemarks({ pageSize: MAX_REMARKS_FETCH });
       if (res?.success && Array.isArray(res.data)) {
         setRemarks(res.data);
       }

@@ -12,7 +12,7 @@ import { toBsDateLabel } from '../../utils/nepaliDate';
 import './VendorOrderDetails.css';
 
 type DetailsTab = 'all' | 'delivered' | 'return';
-// The server caps any value at 100 (order.service MAX_PAGE_SIZE).
+// The selector below the table goes up to 500 (order.service MAX_PAGE_SIZE).
 const PAGE_SIZE = 10;
 
 const formatMoney = (value: number) => `Rs. ${value.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;

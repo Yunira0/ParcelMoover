@@ -235,7 +235,7 @@ export const listOrdersQuerySchema = paginationQuerySchema.extend({
   // A barcode scanner builds this up as a comma-separated list of full
   // tracking ids (~27 chars each incl. separator) - 100 chars only fit ~3
   // scans before every further scan gets rejected outright. Sized for the
-  // client's 100-term scan batch cap (order.service.ts MAX_PAGE_SIZE).
+  // client's 100-term scan batch cap (scannerInput.ts MAX_SCANNED_TERMS).
   search: z.string().max(3000).optional(),
   // Narrows the list to parcels carried by one delivery rider.
   deliveryRiderId: optionalUuidSchema,

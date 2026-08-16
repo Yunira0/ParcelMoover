@@ -12,7 +12,9 @@ import { formatCurrency as formatCurrencyBase, formatDate } from '../../utils/fo
 import './VendorFinance.css';
 
 type TabValue = 'all' | CodPaymentFilter;
-// The server caps any value at 100 (finance.service MAX_PAGE_SIZE).
+// The server caps any value at 200 here (the shared paginationQuerySchema
+// limit; finance.service MAX_PAGE_SIZE is higher but only the statement lists
+// offer pages that large).
 const PAGE_SIZE = 20;
 
 const formatCurrency = (value: number) => formatCurrencyBase(value, 0);

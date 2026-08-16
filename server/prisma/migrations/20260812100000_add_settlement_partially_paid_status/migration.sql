@@ -1,0 +1,11 @@
+-- A payout no longer has to clear in one act: Rs. 1,000 can be recorded today
+-- and the remaining Rs. 2,000 next week. Between those two moments the
+-- statement is neither pending (money has moved) nor settled (the payee is
+-- still owed), so it needs a state of its own.
+--
+-- Its own migration because PostgreSQL will not let a value added by
+-- ALTER TYPE be used in the same transaction that adds it, and Prisma runs one
+-- migration file per transaction. The tables that go with this land in
+-- 20260812100100_add_settlement_partial_payments.
+-- BEFORE 'cancelled' keeps the on-disk value order matching schema.prisma.
+ALTER TYPE "settlement_status" ADD VALUE 'partially_paid' BEFORE 'cancelled';
