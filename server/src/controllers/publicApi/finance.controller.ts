@@ -5,8 +5,11 @@ import {
   listSettlements,
   getUnsettledOrders,
   getSettlementDetail,
+  getSettlementDocumentPath,
 } from "../../services/finance.service";
 import { PublicOrderCodQuery, PublicSettlementsQuery } from "../../validators/publicApi.schema";
+import { sendEncryptedFile } from "../../lib/serveEncryptedDocument";
+import prisma from "../../lib/prisma";
 import { actorFrom, sendError, UUID_REGEX } from "./shared";
 
 // Read-only mirrors of the vendor-facing dashboard finance views. payeeType/
@@ -74,6 +77,48 @@ export async function publicGetSettlementController(req: Request, res: Response)
     return res.status(200).json({ success: true, data: detail });
   } catch (error: any) {
     return sendError(res, error, "Failed to load settlement");
+  }
+}
+
+// The settlement detail above hands back paymentReceiptPath/taxInvoicePath, and
+// the /uploads mount is admin-only — so without this a key holder is told their
+// own paperwork exists but has no way to fetch it. Streams raw bytes rather than
+// the usual { success, data } envelope; the same is true of GET /billing/qr.
+export async function publicGetSettlementDocumentController(req: Request, res: Response) {
+  try {
+    if (!req.apiKey) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const { id, kind } = req.params;
+    if (typeof id !== "string" || !UUID_REGEX.test(id)) {
+      return res.status(400).json({ success: false, message: "Invalid settlement id" });
+    }
+    if (kind !== "receipt" && kind !== "tax-invoice") {
+      return res.status(400).json({ success: false, message: "Unknown document" });
+    }
+
+    const storedPath = await getSettlementDocumentPath(actorFrom(req), id, kind);
+
+    // Mirrors the audit entry both the /uploads mount and the dashboard's own
+    // document route write, so an API-key view is as traceable as a staff one.
+    prisma.audit_logs
+      .create({
+        data: {
+          actor_id: req.apiKey.userId,
+          entity_type: "document",
+          entity_id: id,
+          action: "VIEW_DOCUMENT",
+          new_data: { settlementId: id, kind, via: "partner_api", apiKeyId: req.apiKey.id },
+          ip_address: req.ip || null,
+          user_agent: req.get("user-agent") || null,
+        },
+      })
+      .catch((err) => console.error("[audit] Failed to log document view:", err));
+
+    return await sendEncryptedFile(res, storedPath);
+  } catch (error: any) {
+    return sendError(res, error, "Failed to load document");
   }
 }
 

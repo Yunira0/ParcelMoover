@@ -69,6 +69,11 @@ function makeMockTx() {
       findUnique: vi.fn().mockResolvedValue(null),
     },
     run_sheet_parcels: { createMany: vi.fn() },
+    dispatches: {
+      create: vi.fn().mockResolvedValue({ id: "d-1", dispatch_no: "DSP-0007" }),
+      findUnique: vi.fn().mockResolvedValue(null),
+    },
+    dispatch_parcels: { createMany: vi.fn() },
     webhook_endpoints: { findMany: vi.fn().mockResolvedValue([]) },
     webhook_deliveries: { createMany: vi.fn() },
   };
@@ -469,11 +474,6 @@ describe("the manifest rider is recorded where ops can see it", () => {
 
   function mockDispatchable() {
     const tx = makeMockTx();
-    tx.dispatches = {
-      create: vi.fn().mockResolvedValue({ id: "d-1", dispatch_no: "DSP-0007" }),
-      findUnique: vi.fn().mockResolvedValue(null),
-    };
-    tx.dispatch_parcels = { createMany: vi.fn() };
     mockedPrisma.$transaction.mockImplementation((fn: (t: unknown) => Promise<unknown>) => fn(tx));
     mockedPrisma.parcels.findMany.mockResolvedValue([
       makeFakeParcel({ status: "oov", current_location_id: "loc-a" }),

@@ -188,3 +188,11 @@ export const publicSettlementsQuerySchema = paginationQuerySchema.extend({
 });
 
 export type PublicSettlementsQuery = z.infer<typeof publicSettlementsQuerySchema>;
+
+// ── Billing (account balance / payment claims) ─────────────────────────────────
+
+export const publicVendorPaymentsQuerySchema = paginationQuerySchema.extend({
+  status: z.enum(["pending", "verified", "rejected"]).optional(),
+});
+
+export type PublicVendorPaymentsQuery = z.infer<typeof publicVendorPaymentsQuerySchema>;
