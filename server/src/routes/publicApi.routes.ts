@@ -16,7 +16,9 @@ import {
   publicSettlementsQuerySchema,
   publicTicketReplySchema,
   publicUpdateOrderSchema,
+  publicVendorPaymentsQuerySchema,
 } from "../validators/publicApi.schema";
+import { paymentProofUpload } from "../lib/billingUpload";
 import { listTicketsQuerySchema } from "../validators/ticket.schema";
 import { buildOpenApiDocument } from "../lib/openapi";
 import {
@@ -45,10 +47,17 @@ import { publicCreateReturnRequestController } from "../controllers/publicApi/re
 import {
   publicGetPendingCodController,
   publicGetSettlementController,
+  publicGetSettlementDocumentController,
   publicGetUnsettledOrdersController,
   publicListOrderCodController,
   publicListSettlementsController,
 } from "../controllers/publicApi/finance.controller";
+import {
+  publicGetBillingStatusController,
+  publicGetPaymentQrFileController,
+  publicListVendorPaymentsController,
+  publicSubmitVendorPaymentController,
+} from "../controllers/publicApi/billing.controller";
 
 // Public partner API v1 — external e-commerce integrations authenticate with
 // vendor API keys (header-only, no cookies → no CSRF middleware here).
@@ -117,13 +126,18 @@ publicApiRouter.get("/openapi.json", (req, res) => {
 // server runs from server/ (so this is server/docs-static/), and the runtime
 // image copies the same directory to /app/docs-static alongside WORKDIR.
 function sendDocPage(res: Response, file: string) {
-  // Both pages are single self-contained files with inline <style> and
+  // These pages are single self-contained files with inline <style> and
   // <script>, which the app-wide helmet CSP (script-src 'self') would block.
   // Scoped to these static, no-user-content routes rather than loosened globally.
+  //
+  // img-src includes blob: because the console renders binary responses (the
+  // payment QR, settlement receipts) via URL.createObjectURL — a blob: URL is
+  // covered by neither 'self' nor data:, so without it those images silently
+  // fail to load.
   res.setHeader(
     "Content-Security-Policy",
     "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https:; " +
-      "font-src 'self' https: data:; img-src 'self' data:; connect-src 'self'",
+      "font-src 'self' https: data:; img-src 'self' data: blob:; connect-src 'self'",
   );
   res.sendFile(file, { root: "docs-static" }, (err) => {
     if (err) {
@@ -295,6 +309,41 @@ publicApiRouter.get(
   publicReadLimiter,
   publicGetUnsettledOrdersController,
 );
+
+// GET /api/v1/finance/settlements/:id/documents/:kind — payment receipt or tax
+// invoice for one of your statements (kind: receipt | tax-invoice). Streams the
+// file itself, not a JSON envelope.
+publicApiRouter.get(
+  "/finance/settlements/:id/documents/:kind",
+  publicReadLimiter,
+  publicGetSettlementDocumentController,
+);
+
+// GET /api/v1/billing/status — account balance, thresholds, and current state.
+publicApiRouter.get("/billing/status", publicReadLimiter, publicGetBillingStatusController);
+
+// GET /api/v1/billing/payments — your payment-claim history (?status=pending|verified|rejected).
+publicApiRouter.get(
+  "/billing/payments",
+  publicReadLimiter,
+  validate(publicVendorPaymentsQuerySchema, "query"),
+  publicListVendorPaymentsController,
+);
+
+// POST /api/v1/billing/payments — file a payment claim with optional proof
+// (multipart: amount, reference?, note?, method?, proof? — requires UUID
+// Idempotency-Key header). paymentProofUpload must run before the controller,
+// since the multipart body doesn't exist until multer has parsed it.
+publicApiRouter.post(
+  "/billing/payments",
+  publicWriteLimiter,
+  paymentProofUpload,
+  publicSubmitVendorPaymentController,
+);
+
+// GET /api/v1/billing/qr — the Fonepay QR image to pay against. Streams the
+// file itself, not a JSON envelope.
+publicApiRouter.get("/billing/qr", publicReadLimiter, publicGetPaymentQrFileController);
 
 // Express's default 404 responds with HTML; API clients should always get JSON.
 publicApiRouter.use((_req, res) => {

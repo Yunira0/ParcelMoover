@@ -286,6 +286,7 @@ h3.qs-step::before{
 <a class="toc-link toc-h3" href="#open-a-ticket" data-slug="open-a-ticket">Open a ticket</a>
 <a class="toc-link toc-h3" href="#list-read-and-reply" data-slug="list-read-and-reply">List, read, and reply</a>
 <a class="toc-link toc-h2" href="#finance" data-slug="finance">Finance</a>
+<a class="toc-link toc-h2" href="#billing" data-slug="billing">Billing</a>
 <a class="toc-link toc-h2" href="#order-statuses" data-slug="order-statuses">Order statuses</a>
 <a class="toc-link toc-h2" href="#webhooks" data-slug="webhooks">Webhooks</a>
 <a class="toc-link toc-h3" href="#payload" data-slug="payload">Payload</a>
@@ -301,9 +302,9 @@ h3.qs-step::before{
   </nav>
   <main>
 <h1 id="parcelmoover-partner-api-v1">ParcelMoover Partner API v1<a class="anchor" href="#parcelmoover-partner-api-v1" aria-label="Link to this section">#</a></h1>
-<p>Integrate your e-commerce store with ParcelMoover: place delivery orders (including exchanges), track and edit them pre-dispatch, request returns, list shipments, and read your COD/settlement finance data programmatically.</p>
+<p>Integrate your e-commerce store with ParcelMoover: place delivery orders (including exchanges), track and edit them pre-dispatch, request returns, list shipments, read your COD/settlement finance data, and manage your account billing — all programmatically.</p>
 <p><strong>Base URL:</strong> <code>https://portal.parcelmoover.com/api/v1</code> — there is no separate sandbox or staging environment; this is the one URL every example in this doc uses, in development and in production alike.</p>
-<p>All requests and responses are JSON (<code>Content-Type: application/json</code>).</p>
+<p>All requests and responses are JSON (<code>Content-Type: application/json</code>), with three deliberate exceptions: <code>POST /billing/payments</code> takes <code>multipart/form-data</code> because it accepts a proof file, and the two document endpoints (<code>GET /finance/settlements/{id}/documents/{kind}</code> and <code>GET /billing/qr</code>) stream the file itself rather than a JSON envelope.</p>
 <p><strong>Read this online instead:</strong> this whole reference is served as a browsable web page at <strong><code>GET /api/v1/docs</code></strong>, and a console for trying every endpoint against your own API key lives at <strong><code>GET /api/v1/docs/console</code></strong>. Neither needs a key to open. The machine-readable OpenAPI 3.1 spec is at <strong><code>GET /api/v1/openapi.json</code></strong>, also unauthenticated, and is generated from the same validators the API enforces, so it can't drift.</p>
 <hr>
 <h2 id="quick-start">Quick Start<a class="anchor" href="#quick-start" aria-label="Link to this section">#</a></h2>
@@ -877,7 +878,9 @@ POST /api/v1/tickets/{id}/replies   — add a reply (Idempotency-Key required; b
 GET /api/v1/finance/order-cod?status=&amp;page=&amp;pageSize=   — per-order COD payment status (status: settled | not_settled)
 GET /api/v1/finance/settlements?fromDate=&amp;toDate=&amp;page=&amp;pageSize=  — your settlement statements
 GET /api/v1/finance/settlements/{id}                    — line-item detail of one statement
+GET /api/v1/finance/settlements/{id}/documents/{kind}   — payment receipt / tax invoice (kind: receipt | tax-invoice)
 GET /api/v1/finance/unsettled-orders                    — orders with COD collected but not yet settled</code></pre></div>
+<div class="callout"><strong><code>/documents/{kind}</code> returns the file itself, not JSON.</strong> It is the only way to fetch the <code>paymentReceiptPath</code> / <code>taxInvoicePath</code> values that appear on a settlement detail — those are internal paths you cannot request directly. Available once the statement has been paid with the document attached; <code>404</code> otherwise.  ``<code>bash curl &quot;$BASE/api/v1/finance/settlements/$ID/documents/receipt&quot; \   -H &quot;Authorization: Bearer $KEY&quot; -o receipt.pdf </code>``</div>
 <h4 id="example-curl-3">Example — cURL<a class="anchor" href="#example-curl-3" aria-label="Link to this section">#</a></h4>
 <div class="code-block"><span class="code-lang">bash</span><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code><span class="t-kw">curl</span> &quot;<span class="t-var">$BASE</span>/api/v1/finance/pending-cod&quot; -H &quot;Authorization: Bearer <span class="t-var">$KEY</span>&quot;</code></pre></div>
 <h4 id="response-200-ok-abridged-pending-cod">Response — <code>200 OK</code> (abridged, <code>pending-cod</code>)<a class="anchor" href="#response-200-ok-abridged-pending-cod" aria-label="Link to this section">#</a></h4>
@@ -892,6 +895,43 @@ GET /api/v1/finance/unsettled-orders                    — orders with COD coll
     &quot;totals&quot;: { &quot;totalCod&quot;: <span class="t-num">1500</span>, &quot;deliveryCharges&quot;: <span class="t-num">100</span>, &quot;payableAmount&quot;: <span class="t-num">1400</span> }
   }
 }</code></pre></div>
+<hr>
+<h2 id="billing">Billing<a class="anchor" href="#billing" aria-label="Link to this section">#</a></h2>
+<p>Your account balance with the office, and the payment claims you file against it — the same <strong>Billing &amp; Payments</strong> view the dashboard shows, scoped to your own vendor account.</p>
+<div class="code-block"><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code>GET  /api/v1/billing/status                              — balance, thresholds, and billing state
+GET  /api/v1/billing/payments?status=&amp;page=&amp;pageSize=     — your claim history (status: pending | verified | rejected)
+POST /api/v1/billing/payments                            — file a payment claim (multipart; Idempotency-Key required)
+GET  /api/v1/billing/qr                                  — the Fonepay QR image to pay against</code></pre></div>
+<p><code>balance</code> is <strong>negative when you owe the office</strong>. <code>state</code> tells you whether ordering is unrestricted, near the warn threshold, or blocked, and <code>amountToClearBlock</code> is what would lift a block. Claims you have filed but that have not been verified yet appear as <code>pendingPaymentAmount</code> and are <strong>not</strong> in <code>balance</code>.</p>
+<h4 id="response-200-ok-abridged-status">Response — <code>200 OK</code> (abridged, <code>status</code>)<a class="anchor" href="#response-200-ok-abridged-status" aria-label="Link to this section">#</a></h4>
+<div class="code-block"><span class="code-lang">json</span><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code>{
+  &quot;success&quot;: <span class="t-lit">true</span>,
+  &quot;data&quot;: {
+    &quot;vendorId&quot;: &quot;...&quot;,
+    &quot;state&quot;: &quot;warn&quot;,
+    &quot;codCollected&quot;: <span class="t-num">184500</span>,
+    &quot;deliveryCharges&quot;: <span class="t-num">12300</span>,
+    &quot;payouts&quot;: <span class="t-num">170000</span>,
+    &quot;paymentsReceived&quot;: <span class="t-num">0</span>,
+    &quot;balance&quot;: -<span class="t-num">1800</span>,
+    &quot;warnThreshold&quot;: -<span class="t-num">1000</span>,
+    &quot;blockThreshold&quot;: -<span class="t-num">5000</span>,
+    &quot;amountToClearBlock&quot;: <span class="t-num">0</span>,
+    &quot;pendingPaymentAmount&quot;: <span class="t-num">1500</span>,
+    &quot;paymentNote&quot;: &quot;Please include your business name in the transfer remark.&quot;
+  }
+}</code></pre></div>
+<h4 id="filing-a-claim">Filing a claim<a class="anchor" href="#filing-a-claim" aria-label="Link to this section">#</a></h4>
+<p><code>multipart/form-data</code>, not JSON — <code>amount</code> is required and must be greater than zero; <code>reference</code>, <code>note</code>, <code>method</code> (default <code>fonepay</code>) and a <code>proof</code> file are optional. Proof may be JPG, PNG, WebP or PDF, up to 5MB.</p>
+<div class="code-block"><span class="code-lang">bash</span><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code><span class="t-kw">curl</span> -X POST &quot;<span class="t-var">$BASE</span>/api/v1/billing/payments&quot; \
+  -H &quot;Authorization: Bearer <span class="t-var">$KEY</span>&quot; \
+  -H &quot;Idempotency-Key: $(uuidgen)&quot; \
+  -F amount=1500 \
+  -F reference=FP2607231234 \
+  -F proof=@payment-screenshot.png</code></pre></div>
+<p>Responds <code>201</code> with the created claim (<code>status: &quot;pending&quot;</code>). <strong>Filing a claim does not move money</strong> — your balance only changes once our team verifies it, after which the claim reads <code>verified</code> and <code>paymentsReceived</code> goes up.</p>
+<p><code>GET /api/v1/billing/qr</code> returns the QR <strong>image itself</strong>, not JSON:</p>
+<div class="code-block"><span class="code-lang">bash</span><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code><span class="t-kw">curl</span> &quot;<span class="t-var">$BASE</span>/api/v1/billing/qr&quot; -H &quot;Authorization: Bearer <span class="t-var">$KEY</span>&quot; -o fonepay.png</code></pre></div>
 <hr>
 <h2 id="order-statuses">Order statuses<a class="anchor" href="#order-statuses" aria-label="Link to this section">#</a></h2>
 <p>An order moves through these <code>status</code> values:</p>
