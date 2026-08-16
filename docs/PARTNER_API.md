@@ -1,10 +1,10 @@
 # ParcelMoover Partner API v1
 
-Integrate your e-commerce store with ParcelMoover: place delivery orders (including exchanges), track and edit them pre-dispatch, request returns, list shipments, and read your COD/settlement finance data programmatically.
+Integrate your e-commerce store with ParcelMoover: place delivery orders (including exchanges), track and edit them pre-dispatch, request returns, list shipments, read your COD/settlement finance data, and manage your account billing — all programmatically.
 
 **Base URL:** `https://portal.parcelmoover.com/api/v1` — there is no separate sandbox or staging environment; this is the one URL every example in this doc uses, in development and in production alike.
 
-All requests and responses are JSON (`Content-Type: application/json`).
+All requests and responses are JSON (`Content-Type: application/json`), with three deliberate exceptions: `POST /billing/payments` takes `multipart/form-data` because it accepts a proof file, and the two document endpoints (`GET /finance/settlements/{id}/documents/{kind}` and `GET /billing/qr`) stream the file itself rather than a JSON envelope.
 
 **Read this online instead:** this whole reference is served as a browsable web page at **`GET /api/v1/docs`**, and a console for trying every endpoint against your own API key lives at **`GET /api/v1/docs/console`**. Neither needs a key to open. The machine-readable OpenAPI 3.1 spec is at **`GET /api/v1/openapi.json`**, also unauthenticated, and is generated from the same validators the API enforces, so it can't drift.
 
@@ -914,8 +914,16 @@ GET /api/v1/finance/pending-cod                        — your current pending 
 GET /api/v1/finance/order-cod?status=&page=&pageSize=   — per-order COD payment status (status: settled | not_settled)
 GET /api/v1/finance/settlements?fromDate=&toDate=&page=&pageSize=  — your settlement statements
 GET /api/v1/finance/settlements/{id}                    — line-item detail of one statement
+GET /api/v1/finance/settlements/{id}/documents/{kind}   — payment receipt / tax invoice (kind: receipt | tax-invoice)
 GET /api/v1/finance/unsettled-orders                    — orders with COD collected but not yet settled
 ```
+
+> **`/documents/{kind}` returns the file itself, not JSON.** It is the only way to fetch the `paymentReceiptPath` / `taxInvoicePath` values that appear on a settlement detail — those are internal paths you cannot request directly. Available once the statement has been paid with the document attached; `404` otherwise.
+>
+> ```bash
+> curl "$BASE/api/v1/finance/settlements/$ID/documents/receipt" \
+>   -H "Authorization: Bearer $KEY" -o receipt.pdf
+> ```
 
 #### Example — cURL
 
@@ -937,6 +945,64 @@ curl "$BASE/api/v1/finance/pending-cod" -H "Authorization: Bearer $KEY"
     "totals": { "totalCod": 1500, "deliveryCharges": 100, "payableAmount": 1400 }
   }
 }
+```
+
+---
+
+## Billing
+
+Your account balance with the office, and the payment claims you file against it — the same **Billing & Payments** view the dashboard shows, scoped to your own vendor account.
+
+```
+GET  /api/v1/billing/status                              — balance, thresholds, and billing state
+GET  /api/v1/billing/payments?status=&page=&pageSize=     — your claim history (status: pending | verified | rejected)
+POST /api/v1/billing/payments                            — file a payment claim (multipart; Idempotency-Key required)
+GET  /api/v1/billing/qr                                  — the Fonepay QR image to pay against
+```
+
+`balance` is **negative when you owe the office**. `state` tells you whether ordering is unrestricted, near the warn threshold, or blocked, and `amountToClearBlock` is what would lift a block. Claims you have filed but that have not been verified yet appear as `pendingPaymentAmount` and are **not** in `balance`.
+
+#### Response — `200 OK` (abridged, `status`)
+
+```json
+{
+  "success": true,
+  "data": {
+    "vendorId": "...",
+    "state": "warn",
+    "codCollected": 184500,
+    "deliveryCharges": 12300,
+    "payouts": 170000,
+    "paymentsReceived": 0,
+    "balance": -1800,
+    "warnThreshold": -1000,
+    "blockThreshold": -5000,
+    "amountToClearBlock": 0,
+    "pendingPaymentAmount": 1500,
+    "paymentNote": "Please include your business name in the transfer remark."
+  }
+}
+```
+
+#### Filing a claim
+
+`multipart/form-data`, not JSON — `amount` is required and must be greater than zero; `reference`, `note`, `method` (default `fonepay`) and a `proof` file are optional. Proof may be JPG, PNG, WebP or PDF, up to 5MB.
+
+```bash
+curl -X POST "$BASE/api/v1/billing/payments" \
+  -H "Authorization: Bearer $KEY" \
+  -H "Idempotency-Key: $(uuidgen)" \
+  -F amount=1500 \
+  -F reference=FP2607231234 \
+  -F proof=@payment-screenshot.png
+```
+
+Responds `201` with the created claim (`status: "pending"`). **Filing a claim does not move money** — your balance only changes once our team verifies it, after which the claim reads `verified` and `paymentsReceived` goes up.
+
+`GET /api/v1/billing/qr` returns the QR **image itself**, not JSON:
+
+```bash
+curl "$BASE/api/v1/billing/qr" -H "Authorization: Bearer $KEY" -o fonepay.png
 ```
 
 ---
