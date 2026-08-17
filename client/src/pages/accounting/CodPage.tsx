@@ -41,7 +41,12 @@ const CodPage: React.FC<{ payeeType: 'rider' | 'vendor' }> = ({ payeeType }) => 
         actionIcon={<Plus size={16} />}
         onAction={() => navigate(`/finance/settlements/new?type=${payeeType}`)}
       >
-        <TicketCategoryButton category="cod_settlement" notificationType="cod_settlement" />
+        <TicketCategoryButton
+          category="cod_settlement"
+          notificationType="cod_settlement"
+          to="/cod-settlement-requests"
+          label="Settlement Requests"
+        />
       </PageHeader>
 
       <SettlementsTab payeeType={payeeType} />

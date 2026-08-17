@@ -706,6 +706,7 @@ const OrderManagement: React.FC = () => {
         <div className="finance-cell">
           <span>COD: {formatMoney(order.codAmount)}</span>
           <span>D. Charge: {formatMoney(order.deliveryCharge)}</span>
+          <span>Collected: {formatMoney(order.collectedAmount)}</span>
         </div>
       ),
       width: '160px',
