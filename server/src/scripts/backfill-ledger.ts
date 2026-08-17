@@ -14,7 +14,8 @@
 // progress required.
 //
 // Usage:
-//   ts-node --transpile-only scripts/backfill-ledger.ts [options]
+//   npm run backfill:ledger -- [options]          (development, via ts-node)
+//   node dist/scripts/backfill-ledger.js [options] (production, no ts-node there)
 //
 //   --dry-run              count what would be posted, write nothing
 //   --from=YYYY-MM-DD      only events on or after this AD date
@@ -22,10 +23,15 @@
 //   --chunk=200            entries per transaction (default 200)
 //   --opening-cash=<amt>   record counted cash in hand as at --from (see below)
 //   --reset --yes          delete the ledger and start over (never in production)
+//
+// Lives under src/ rather than beside the other scripts precisely so `tsc`
+// compiles it into dist/ and type-checks it. The deployed image carries prod
+// dependencies only - no ts-node - so a script outside src/ cannot be run
+// against production at all.
 import "dotenv/config";
-import prisma from "../src/lib/prisma";
-import { AppError } from "../src/utils/AppError";
-import { ACCOUNT, loadMethodAccounts, type MethodAccounts } from "../src/services/accounting/accounts";
+import prisma from "../lib/prisma";
+import { AppError } from "../utils/AppError";
+import { ACCOUNT, loadMethodAccounts, type MethodAccounts } from "../services/accounting/accounts";
 import {
   postCodCollected,
   postDeliveryChargeEarned,
@@ -34,7 +40,7 @@ import {
   postVendorPaymentVerified,
   postVendorSettlement,
   type PostOutcome,
-} from "../src/services/accounting/events";
+} from "../services/accounting/events";
 
 type EventKind = "cod_collected" | "delivery_charge" | "rider_remittance" | "vendor_settlement" | "vendor_payment";
 
@@ -390,9 +396,17 @@ async function main() {
   }
 
   console.log("\nPosting...");
+  // Loaded once for the whole run rather than per chunk. The live posting path
+  // re-reads this per batch because an admin may add a payment method at any
+  // moment; a replay of history has no such race, and one read is enough.
+  //
+  // Passing it is not optional: without it every bank and wallet payment
+  // resolves to no account and cashLines refuses the entry, so the entire
+  // non-cash half of the history lands in the failure list instead of the books.
+  const methodAccounts = await loadMethodAccounts(prisma);
   const chunkSize = Math.max(1, options.chunk);
   for (let index = 0; index < events.length; index += chunkSize) {
-    await postChunk(events.slice(index, index + chunkSize), tally);
+    await postChunk(events.slice(index, index + chunkSize), tally, methodAccounts);
     const done = Math.min(index + chunkSize, events.length);
     process.stdout.write(`\r  ${done}/${events.length}`);
   }
