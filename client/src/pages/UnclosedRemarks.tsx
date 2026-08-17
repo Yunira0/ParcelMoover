@@ -56,7 +56,6 @@ const UnclosedRemarks: React.FC<UnclosedRemarksProps> = ({ author }) => {
   const [pageSize, setPageSize] = useState(PAGE_SIZE);
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
-  const [openCount, setOpenCount] = useState(0);
   const [pendingCount, setPendingCount] = useState(0);
   const [loading, setLoading] = useState(true);
   // Tracks the remark whose "Mark as Done" request is in flight, to disable just that button.
@@ -83,7 +82,8 @@ const UnclosedRemarks: React.FC<UnclosedRemarksProps> = ({ author }) => {
         setTotal(res.meta?.total ?? res.data.length);
         setTotalPages(res.meta?.totalPages ?? 1);
         // Counts come from the server over every page, not just the rows here.
-        setOpenCount(res.meta?.statusCounts?.open ?? 0);
+        // Opened remarks aren't counted separately - "Open" alongside "Pending"
+        // reads as the same thing to staff; both are covered by "Total unclosed".
         setPendingCount(res.meta?.statusCounts?.pending ?? 0);
       }
     } finally {
@@ -204,10 +204,6 @@ const UnclosedRemarks: React.FC<UnclosedRemarksProps> = ({ author }) => {
         <div className="ucr-stat-chip">
           <span className="ucr-stat-value">{total}</span>
           <span className="ucr-stat-label">Total unclosed</span>
-        </div>
-        <div className="ucr-stat-chip ucr-stat-open">
-          <span className="ucr-stat-value">{openCount}</span>
-          <span className="ucr-stat-label">Open</span>
         </div>
         <div className="ucr-stat-chip ucr-stat-pending">
           <span className="ucr-stat-value">{pendingCount}</span>

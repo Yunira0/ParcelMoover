@@ -8,9 +8,8 @@ import PageHeader from '../components/PageHeader';
 import Pagination from '../components/Pagination';
 import SegmentedTabs from '../components/SegmentedTabs';
 import StatusChip from '../components/StatusChip';
-import ToggleSwitch from '../components/ToggleSwitch';
 import KycManagement from './KycManagement';
-import { getVendors, updateUserStatus } from '../services/users.service';
+import { getVendors } from '../services/users.service';
 import { isAdminSide, isSalesUser, hasAnyRole, getCurrentUser, hasAdminPermission } from '../utils/auth';
 import './VendorManagement.css';
 

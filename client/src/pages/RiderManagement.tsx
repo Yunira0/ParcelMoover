@@ -27,6 +27,9 @@ interface RiderUser {
   payment: string;
   status: 'active' | 'inactive';
   joined: string;
+  // Non-null only for placeholder rows standing in for a 3PL (NCM/Upaya)
+  // rather than a real employee — see riders.carrier_code.
+  carrierCode: string | null;
 }
 
 // Starting rows-per-page. The selector below the table can change it; the
@@ -102,7 +105,20 @@ const RiderManagement: React.FC = () => {
 
   const columns = [
     { header: 'SN', accessor: 'sn' as keyof RiderUser, width: '34px' },
-    { header: 'NAME', accessor: 'name' as keyof RiderUser, width: '100px' },
+    {
+      header: 'NAME',
+      accessor: (item: RiderUser) => (
+        <div className="rider-name-cell">
+          {item.name}
+          {item.carrierCode && (
+            <StatusChip variant="outline" tone="neutral">
+              {item.carrierCode === 'ncm' ? 'NCM' : item.carrierCode === 'upaya' ? 'Upaya' : item.carrierCode}
+            </StatusChip>
+          )}
+        </div>
+      ),
+      width: '100px',
+    },
     { header: 'EMAIL', accessor: 'email' as keyof RiderUser, width: '160px' },
     { header: 'PHONE', accessor: 'phone' as keyof RiderUser, width: '124px' },
     { header: 'LOCATION', accessor: 'location' as keyof RiderUser },

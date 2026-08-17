@@ -37,7 +37,6 @@
   white-space: nowrap;
 }
 
-.ucr-stat-open .ucr-stat-value  { color: #2563eb; }
 .ucr-stat-pending .ucr-stat-value { color: #d97706; }
 
 /* ── Search ── */

@@ -43,6 +43,9 @@ interface RiderFormInput {
   email: string;
   password: string;
   confirmPassword: string;
+  // '' | 'ncm' | 'upaya' — marks this rider as a 3PL placeholder rather than
+  // a real employee (super_admin only).
+  carrierCode: string;
 }
 
 const emptyForm: RiderFormInput = {
@@ -66,6 +69,7 @@ const emptyForm: RiderFormInput = {
   email: '',
   password: '',
   confirmPassword: '',
+  carrierCode: '',
 };
 
 const FileInput: React.FC<{
@@ -132,7 +136,7 @@ const RiderFormPage: React.FC = () => {
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   // A plain admin's riders always land in that admin's own hub; only a
   // super_admin may pick another service branch (server enforces the same).
-  const { hubLocked, isPlainAdmin } = useHubLock();
+  const { hubLocked, isPlainAdmin, isSuperAdmin } = useHubLock();
   const hubFieldDisabled = hubLocked || (isEdit && isPlainAdmin);
 
   useEffect(() => {
@@ -187,6 +191,7 @@ const RiderFormPage: React.FC = () => {
           bankName: s(d.bankName),
           bankAccountNo: s(d.bankAccountNo),
           bankAccountHolder: s(d.bankAccountHolder),
+          carrierCode: s(d.carrierCode),
         }));
       })
       .catch(() => setError('Failed to load rider details.'));
@@ -269,6 +274,7 @@ const RiderFormPage: React.FC = () => {
           bankName: form.bankName,
           bankAccountNo: form.bankAccountNo,
           bankAccountHolder: form.bankAccountHolder,
+          ...(isSuperAdmin ? { carrierCode: form.carrierCode } : {}),
         });
         navigate('/riders');
         return;
@@ -294,6 +300,7 @@ const RiderFormPage: React.FC = () => {
         panVatDoc: form.panVatDoc,
         licenceDoc: form.licenceDoc,
         bluebookDoc: form.blueBookDoc,
+        ...(isSuperAdmin ? { carrierCode: form.carrierCode } : {}),
       });
       setSubmitted(true);
     } catch (err: any) {
@@ -460,6 +467,19 @@ const RiderFormPage: React.FC = () => {
                   onChange={set('pan')}
                   placeholder="PAN number"
                 />
+                {isSuperAdmin && (
+                  <FormField
+                    label="Carrier"
+                    type="select"
+                    value={form.carrierCode}
+                    onChange={set('carrierCode')}
+                    placeholder="None — internal rider"
+                    options={[
+                      { value: 'ncm', label: 'NCM' },
+                      { value: 'upaya', label: 'Upaya' },
+                    ]}
+                  />
+                )}
               </div>
             </section>
           </div>
