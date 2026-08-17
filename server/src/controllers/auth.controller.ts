@@ -764,6 +764,7 @@ export const getRidersController = async (req: Request, res: Response) => {
         payment: "COD",
         status: rider.status,
         joined: formatDate(rider.joined_at),
+        carrierCode: rider.carrier_code,
       })),
       meta: { page, pageSize, total, totalPages: Math.max(1, Math.ceil(total / pageSize)) },
     });
