@@ -56,17 +56,6 @@
   line-height: 1.1;
 }
 
-/* COD value of the orders behind the count, shown under it (matches the vendor
-   and sales overview cards). */
-.overview-metric-amount {
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semi-bold);
-  color: var(--color-primary);
-  font-variant-numeric: tabular-nums;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 
 .overview-metric-delta {
   display: inline-flex;

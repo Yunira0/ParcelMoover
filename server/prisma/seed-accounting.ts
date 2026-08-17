@@ -3,6 +3,12 @@
 // because it creates demo users), this touches no user or money data and is
 // safe to run against any environment.
 //
+// Not the only installer any more: 20260817090000_install_chart_of_accounts
+// inserts the same accounts on deploy, because a deployed environment has no
+// ts-node to run this with and was left with an empty chart. That migration
+// only ever inserts; this script is still how names and descriptions are
+// refreshed after the chart above changes.
+//
 // Idempotent: re-running updates the descriptive fields of existing accounts
 // and adds any that are new. It never changes an account's `code`, `type` or
 // `normal_side`, because journal_lines already reference the row - silently

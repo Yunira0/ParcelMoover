@@ -64,6 +64,9 @@ export interface RegisterUserInput {
     licenceNo?: string;
     vehicleNo?: string;
     salaryCommission?: string;
+    // "" | "ncm" | "upaya" — flags this rider as a 3PL placeholder rather
+    // than a real employee; super_admin only (see registerUserBySuperAdmin).
+    carrierCode?: string;
 
     // --- Vendor profile ---
     pickupLandmark?: string;

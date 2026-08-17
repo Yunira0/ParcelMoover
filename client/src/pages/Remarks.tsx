@@ -30,7 +30,9 @@ type RemarkTab = 'all' | 'unclosed' | RemarkStatus;
 
 // pending (un-opened) → open (opened) → closed workflow. ("unclosed" is retained
 // as a deep-link alias — any non-closed remark — but isn't shown as its own tab.)
-const TAB_ORDER: RemarkTab[] = ['all', 'pending', 'open', 'closed'];
+// "open" is likewise not its own tab: alongside "Pending" the two read as the
+// same thing to staff. Opened remarks still appear under "All" with an "Open" chip.
+const TAB_ORDER: RemarkTab[] = ['all', 'pending', 'closed'];
 
 const TAB_LABELS: Record<RemarkTab, string> = {
   all: 'All',

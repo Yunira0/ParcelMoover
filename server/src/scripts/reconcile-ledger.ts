@@ -22,13 +22,18 @@
 // without a posting.
 //
 // Usage:
-//   ts-node --transpile-only scripts/reconcile-ledger.ts [--limit=50] [--verbose]
+//   npm run reconcile:ledger -- [--limit=50] [--verbose]     (development)
+//   node dist/scripts/reconcile-ledger.js [--limit=50] [--verbose]  (production)
+//
+// Under src/ for the same reason as backfill-ledger.ts: the deployed image has
+// no ts-node, and being able to prove the books agree matters most exactly
+// where the money is real.
 import "dotenv/config";
-import { Prisma } from "../src/generated/prisma/client";
-import prisma from "../src/lib/prisma";
-import redis from "../src/lib/redis";
-import { getVendorAccountBalance } from "../src/services/billing.service";
-import { ACCOUNT } from "../src/services/accounting/accounts";
+import { Prisma } from "../generated/prisma/client";
+import prisma from "../lib/prisma";
+import redis from "../lib/redis";
+import { getVendorAccountBalance } from "../services/billing.service";
+import { ACCOUNT } from "../services/accounting/accounts";
 
 const ZERO = new Prisma.Decimal(0);
 const money = (value: Prisma.Decimal) => value.toFixed(2);

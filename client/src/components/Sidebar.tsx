@@ -25,7 +25,6 @@ import {
   Truck,
   ScrollText,
   KeyRound,
-  Webhook,
   BookOpen,
   NotebookPen,
   Printer,
