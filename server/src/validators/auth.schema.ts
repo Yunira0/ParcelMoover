@@ -45,6 +45,12 @@ const optionalMinMaxString = (minLen: number, maxLen: number) =>
     })
     .pipe(z.string().min(minLen).max(maxLen).optional());
 
+// "" | "ncm" | "upaya" | undefined - "" means "clear to null" (same
+// omitted-vs-blanked convention as optionalAuthString above), a real value
+// marks the rider row as a placeholder standing in for that 3PL rather than
+// a genuine employee (see riders.carrier_code in schema.prisma).
+const carrierCodeSchema = z.union([z.literal(""), z.enum(["ncm", "upaya"])]).optional();
+
 export const registerUserSchema = z
   .object({
     type: z.enum(MANAGED_USER_TYPES, {
@@ -116,6 +122,7 @@ export const registerUserSchema = z
     licenceNo: optionalAuthString(50),
     vehicleNo: optionalAuthString(50),
     salaryCommission: optionalAuthString(100),
+    carrierCode: carrierCodeSchema,
   })
   .superRefine((data, ctx) => {
     if (data.type === "vendor" && !data.clientName) {
@@ -211,6 +218,7 @@ export const updateManagedUserSchema = z.object({
   licenceNo: optionalAuthString(50),
   vehicleNo: optionalAuthString(50),
   salaryCommission: optionalAuthString(100),
+  carrierCode: carrierCodeSchema,
 });
 
 export type UpdateManagedUserInput = z.infer<typeof updateManagedUserSchema>;

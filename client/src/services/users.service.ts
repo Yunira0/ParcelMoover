@@ -36,6 +36,9 @@ export interface RegisterUserInput {
   licenceNo?: string;
   vehicleNo?: string;
   salaryCommission?: string;
+  // '' | 'ncm' | 'upaya' — marks this rider as a 3PL placeholder rather than
+  // a real employee. Super_admin only.
+  carrierCode?: string;
 
   // Vendor profile
   sales?: string;
@@ -131,6 +134,7 @@ export interface UpdateUserProfileInput {
   licenceNo?: string;
   vehicleNo?: string;
   salaryCommission?: string;
+  carrierCode?: string;
 }
 
 export const getManagedUser = async (type: 'admin' | 'vendor' | 'rider', id: string) => {
