@@ -76,6 +76,7 @@ interface UpdateManagedUserInput {
   licenceNo?: string;
   vehicleNo?: string;
   salaryCommission?: string;
+  carrierCode?: string;
 }
 
 // Sets a text field when provided; empty string clears it to null.
@@ -280,9 +281,12 @@ export async function updateManagedUserProfile(
   }
 
   // Only a super_admin may move an account to another hub; edits by a plain
-  // admin leave the record's existing hub untouched.
+  // admin leave the record's existing hub untouched. Same restriction for
+  // carrierCode - it redirects a carrier's COD in the finance dashboard, so a
+  // plain admin can't silently reroute it.
   if (!actorRoles.includes("super_admin")) {
     delete data.locationId;
+    delete data.carrierCode;
   }
 
   const profile = await getManagedProfile(data.type, id);
@@ -404,6 +408,7 @@ export async function updateManagedUserProfile(
     putText(u, "bank_name", data.bankName);
     putText(u, "bank_account_no", data.bankAccountNo);
     putText(u, "bank_account_holder", data.bankAccountHolder);
+    putText(u, "carrier_code", data.carrierCode);
     if (data.locationId !== undefined) u.location_id = data.locationId || null;
     if (joinedAt) u.joined_at = joinedAt;
     if (data.status) u.status = data.status;
@@ -480,6 +485,7 @@ export async function getManagedUserDetail(actorUserId: string, type: ManagedUse
     salaryCommission: r.salary_commission, pan: r.pan,
     bankName: r.bank_name, bankAccountNo: r.bank_account_no, bankAccountHolder: r.bank_account_holder,
     joinedAt: dateStr(r.joined_at),
+    carrierCode: r.carrier_code ?? "",
   };
 }
 
@@ -743,6 +749,13 @@ export async function registerUserBySuperAdmin(
     data.locationId = superAdmin.admins.location_id;
   }
 
+  // carrierCode flags a rider row as a 3PL placeholder rather than a real
+  // employee, which redirects that carrier's COD in the finance dashboard -
+  // only a super_admin may set it.
+  if (!isSuperAdmin) {
+    delete data.carrierCode;
+  }
+
   validateRegisterInput(data);
 
   const role = await prisma.roles.findUnique({
@@ -913,6 +926,7 @@ export async function registerUserBySuperAdmin(
         bank_account_holder: data.bankAccountHolder ?? null,
         status: "active",
         joined_at: data.joinedAt ? new Date(data.joinedAt) : null,
+        carrier_code: data.carrierCode || null,
       },
     });
     await tx.audit_logs.create({

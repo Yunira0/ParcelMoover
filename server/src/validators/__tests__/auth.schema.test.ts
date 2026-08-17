@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { updateManagedUserSchema } from "../auth.schema";
+import { registerUserSchema, updateManagedUserSchema } from "../auth.schema";
 
 // Regression: updateManagedUserSchema used to omit the branch-delivery and
 // return-percent vendor rate overrides even though registerUserSchema, the
@@ -52,5 +52,43 @@ describe("updateManagedUserSchema - vendor branch/return rate overrides", () => 
       expect(result.data.zoneMajorCities).toBe("155");
       expect(result.data.extraWeightPercent).toBe("10");
     }
+  });
+});
+
+// carrierCode flags a rider row as a 3PL placeholder (see riders.carrier_code)
+// rather than a real employee - it's the field the finance dashboard's
+// cod_from_ncm/cod_from_upaya buckets read, so it must round-trip exactly and
+// reject anything outside the two known carriers.
+describe("carrierCode - rider 3PL placeholder flag", () => {
+  it("accepts 'ncm' and 'upaya' on register and update", () => {
+    for (const carrierCode of ["ncm", "upaya"] as const) {
+      expect(
+        registerUserSchema.safeParse({
+          type: "rider",
+          fullName: "Test Rider",
+          email: "rider@example.com",
+          phone: "9800000000",
+          password: "password123",
+          carrierCode,
+        }).success,
+      ).toBe(true);
+      expect(updateManagedUserSchema.safeParse({ type: "rider", carrierCode }).success).toBe(true);
+    }
+  });
+
+  it("accepts '' as clear-to-null on update", () => {
+    const result = updateManagedUserSchema.safeParse({ type: "rider", carrierCode: "" });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.carrierCode).toBe("");
+  });
+
+  it("rejects any value other than 'ncm'/'upaya'/''", () => {
+    expect(updateManagedUserSchema.safeParse({ type: "rider", carrierCode: "dhl" }).success).toBe(false);
+  });
+
+  it("omits carrierCode from the parsed result when not provided", () => {
+    const result = updateManagedUserSchema.safeParse({ type: "rider" });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.carrierCode).toBeUndefined();
   });
 });
