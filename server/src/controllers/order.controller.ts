@@ -877,6 +877,22 @@ export async function getStatusCountsController(req: Request, res: Response) {
       deliveryRiderId = req.query.deliveryRiderId;
     }
 
+    // Comma-separated (or repeated) vendor ids, matching the list endpoint's
+    // vendorId filter so the tab badges agree with the table beneath them.
+    // Capped at 100 like listOrdersSchema, for the same reason.
+    let vendorId: string[] | undefined;
+    if (req.query.vendorId !== undefined) {
+      const raw = Array.isArray(req.query.vendorId) ? req.query.vendorId : String(req.query.vendorId).split(",");
+      const ids = raw.map((s) => String(s).trim()).filter(Boolean);
+      if (ids.length > 100) {
+        return res.status(400).json({ success: false, message: "vendorId accepts at most 100 ids" });
+      }
+      if (ids.some((id) => !UUID_REGEX.test(id))) {
+        return res.status(400).json({ success: false, message: "vendorId must be a comma-separated list of uuids" });
+      }
+      if (ids.length) vendorId = ids;
+    }
+
     // Same 3000-char ceiling the list endpoint's schema applies, since a
     // scanner batches comma-separated tracking ids into this too.
     let search: string | undefined;
@@ -892,6 +908,7 @@ export async function getStatusCountsController(req: Request, res: Response) {
       groups,
       {
         ...(deliveryRiderId ? { deliveryRiderId } : {}),
+        ...(vendorId ? { vendorId } : {}),
         ...(search ? { search } : {}),
       },
     );

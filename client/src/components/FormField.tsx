@@ -9,7 +9,11 @@ import './FormField.css';
 
 export type FormFieldOption = { value: string; label: string };
 
-export type FormFieldType = 'text' | 'email' | 'password' | 'number' | 'date' | 'datetime-local' | 'select' | 'searchable-select' | 'searchable-select-async' | 'combobox' | 'textarea';
+export type FormFieldType = 'text' | 'email' | 'password' | 'number' | 'decimal' | 'date' | 'datetime-local' | 'select' | 'searchable-select' | 'searchable-select-async' | 'combobox' | 'textarea';
+
+/** Digits with at most one decimal point. Deliberately permits a trailing "."
+ *  and an empty string — both are states you pass through while typing. */
+const PARTIAL_DECIMAL = /^\d*\.?\d*$/;
 
 interface FormFieldProps {
   label: string;
@@ -125,6 +129,29 @@ const FormField: React.FC<FormFieldProps> = ({
             ))}
           </datalist>
         </>
+      ) : type === 'decimal' ? (
+        // A money field, and deliberately not <input type="number">.
+        //
+        // A number input reports an empty string for any value the browser
+        // cannot parse *yet* — and "1500." is one of them. Bound to state, that
+        // means the field blanks itself the moment you press the decimal point,
+        // so an amount with paisa cannot be typed at all. Text plus
+        // inputMode="decimal" keeps the numeric keypad on mobile, keeps the
+        // half-typed value, and rejects anything that is not a number here
+        // instead of silently discarding it.
+        <input
+          id={id}
+          type="text"
+          inputMode="decimal"
+          required={required}
+          disabled={disabled}
+          placeholder={placeholder}
+          autoComplete={autoComplete}
+          value={value ?? ''}
+          onChange={(e) => {
+            if (PARTIAL_DECIMAL.test(e.target.value)) onChange(e.target.value);
+          }}
+        />
       ) : type === 'date' ? (
         <NepaliDatePicker
           value={value === undefined ? '' : String(value)}

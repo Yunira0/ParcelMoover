@@ -2,6 +2,7 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { ClipboardList, RotateCcw, Truck, Package, PackageCheck, TrendingUp, TrendingDown, type LucideIcon } from 'lucide-react';
 import type { DashboardSummary, ParcelStatus } from '../services/orders.service';
+import { formatCurrency } from '../utils/format';
 import './OverviewMetrics.css';
 
 export type MetricKey = 'pendingPickups' | 'pendingReturns' | 'inTransit' | 'pendingDeliveries' | 'deliveredToday';
@@ -43,6 +44,8 @@ interface Metric {
   color: string;
   label: string;
   value: number;
+  /** COD value of the orders this card counts, in Rs. */
+  amount: number;
 }
 
 // Flat metric strip (matches the dashboard concept): the pending pipeline plus
@@ -50,16 +53,16 @@ interface Metric {
 // it counts (with an Excel export).
 const OverviewMetrics: React.FC<OverviewMetricsProps> = ({ overview, today, loading = false, deltas }) => {
   const metrics: Metric[] = [
-    { key: 'pendingPickups', icon: ClipboardList, color: 'var(--color-primary)', label: 'Pending pickups', value: overview.pendingPickups },
-    { key: 'pendingReturns', icon: RotateCcw, color: 'var(--color-danger-default)', label: 'Pending returns', value: overview.pendingReturns },
-    { key: 'inTransit', icon: Truck, color: 'var(--color-info-text)', label: 'In transit', value: overview.inTransit },
-    { key: 'pendingDeliveries', icon: Package, color: 'var(--color-background-warning-default)', label: 'Pending deliveries', value: overview.pendingDeliveries },
-    { key: 'deliveredToday', icon: PackageCheck, color: 'var(--color-success-default)', label: 'Delivered today', value: today.delivered },
+    { key: 'pendingPickups', icon: ClipboardList, color: 'var(--color-primary)', label: 'Pending pickups', value: overview.pendingPickups, amount: overview.pendingPickupsAmount },
+    { key: 'pendingReturns', icon: RotateCcw, color: 'var(--color-danger-default)', label: 'Pending returns', value: overview.pendingReturns, amount: overview.pendingReturnsAmount },
+    { key: 'inTransit', icon: Truck, color: 'var(--color-info-text)', label: 'In transit', value: overview.inTransit, amount: overview.inTransitAmount },
+    { key: 'pendingDeliveries', icon: Package, color: 'var(--color-background-warning-default)', label: 'Pending deliveries', value: overview.pendingDeliveries, amount: overview.pendingDeliveriesAmount },
+    { key: 'deliveredToday', icon: PackageCheck, color: 'var(--color-success-default)', label: 'Delivered today', value: today.delivered, amount: today.deliveredAmount },
   ];
 
   return (
     <div className="overview-metrics">
-      {metrics.map(({ key, icon: Icon, color, label, value }) => {
+      {metrics.map(({ key, icon: Icon, color, label, value, amount }) => {
         const delta = deltas?.[key];
         const hasDelta = !loading && delta !== undefined && delta !== null;
         const up = (delta ?? 0) >= 0;
@@ -68,13 +71,14 @@ const OverviewMetrics: React.FC<OverviewMetricsProps> = ({ overview, today, load
             key={key}
             to={`/overview/${key}`}
             className="overview-metric"
-            aria-label={`${label}: ${loading ? 'loading' : value} — view orders`}
+            aria-label={`${label}: ${loading ? 'loading' : `${value} orders worth ${formatCurrency(amount ?? 0, 0)}`} — view orders`}
           >
             <span className="overview-metric-top">
               <Icon size={16} style={{ color }} />
               <span className="overview-metric-label">{label}</span>
             </span>
             <span className="overview-metric-value">{loading ? '…' : value.toLocaleString()}</span>
+            <span className="overview-metric-amount">{loading ? '—' : formatCurrency(amount ?? 0, 0)}</span>
             {hasDelta && (
               <span className={`overview-metric-delta ${up ? 'is-up' : 'is-down'}`}>
                 {up ? <TrendingUp size={13} /> : <TrendingDown size={13} />}

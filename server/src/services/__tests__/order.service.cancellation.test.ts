@@ -41,12 +41,17 @@ function makeMockTx() {
     parcels: {
       update: vi.fn().mockResolvedValue({ id: "parcel-1", status: "cancelled" }),
       updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      // Read back by the ledger sync at the end of the transaction. Empty is
+      // the honest answer here: a cancellation moves no money, so there is
+      // nothing for it to post.
+      findMany: vi.fn().mockResolvedValue([]),
     },
     parcel_status_history: { create: vi.fn(), createMany: vi.fn() },
     parcel_remarks: { create: vi.fn(), createMany: vi.fn() },
     audit_logs: { create: vi.fn(), createMany: vi.fn() },
     webhook_endpoints: { findMany: vi.fn().mockResolvedValue([]) },
     webhook_deliveries: { createMany: vi.fn() },
+    journal_entries: { findMany: vi.fn().mockResolvedValue([]) },
   };
 }
 

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Search } from 'lucide-react';
 import Table, { TableRowActions } from '../components/Table';
+import { toBsDate } from '../utils/nepaliDate';
 import UserActionModal from '../components/UserActionModal';
 import PageHeader from '../components/PageHeader';
 import Pagination from '../components/Pagination';
@@ -134,7 +135,7 @@ const RiderManagement: React.FC = () => {
       ),
       width: '150px'
     },
-    { header: 'JOINED', accessor: 'joined' as keyof RiderUser, width: '113px' },
+    { header: 'JOINED', accessor: (r: RiderUser) => toBsDate(r.joined) || '—', width: '113px' },
     {
       header: 'ACTION',
       accessor: (item: RiderUser) => (

@@ -5,7 +5,8 @@
   padding: var(--space-4);
   min-width: 0;
   flex: 1;
-  height: 133px;
+  /* A floor, not a fixed height - cards carrying a hint line need the room. */
+  min-height: 133px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -63,4 +64,25 @@
   font-size: var(--font-size-2xl);
   font-weight: var(--font-weight-bold);
   line-height: var(--line-height-2xl);
+  /* Figures in a row of cards should line up digit for digit. */
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-value-positive {
+  color: var(--color-background-success-default);
+}
+
+.stat-value-negative {
+  color: var(--color-danger-text);
+}
+
+.stat-value-muted {
+  color: var(--color-text-caption);
+}
+
+.stat-hint {
+  color: var(--color-text-caption);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-regular);
+  line-height: var(--line-height-xs);
 }

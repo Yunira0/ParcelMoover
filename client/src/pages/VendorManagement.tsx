@@ -1,14 +1,17 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Plus, Search, ChevronDown } from 'lucide-react';
 import Table, { TableRowActions } from '../components/Table';
+import { toBsDate } from '../utils/nepaliDate';
 import UserActionModal from '../components/UserActionModal';
 import PageHeader from '../components/PageHeader';
 import Pagination from '../components/Pagination';
 import SegmentedTabs from '../components/SegmentedTabs';
 import StatusChip from '../components/StatusChip';
-import { getVendors } from '../services/users.service';
-import { isAdminSide, isSalesUser, hasAnyRole, getCurrentUser } from '../utils/auth';
+import ToggleSwitch from '../components/ToggleSwitch';
+import KycManagement from './KycManagement';
+import { getVendors, updateUserStatus } from '../services/users.service';
+import { isAdminSide, isSalesUser, hasAnyRole, getCurrentUser, hasAdminPermission } from '../utils/auth';
 import './VendorManagement.css';
 
 interface VendorUser {
@@ -44,6 +47,18 @@ const VendorManagement: React.FC = () => {
   const canManage = isAdmin || isPureSales;
   const canEdit = canManage;
   const canCreate = isAdminSide() || hasAnyRole(['sales']);
+  // KYC is the application a vendor account starts life as, so it lives here
+  // as a second view rather than as a section of its own. Sales never sees it.
+  const canReviewKyc = hasAdminPermission('KYC_ACCESS');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const view: 'vendors' | 'kyc' =
+    canReviewKyc && searchParams.get('tab') === 'kyc' ? 'kyc' : 'vendors';
+  const selectView = (next: 'vendors' | 'kyc') => {
+    const params = new URLSearchParams(searchParams);
+    if (next === 'kyc') params.set('tab', 'kyc');
+    else params.delete('tab');
+    setSearchParams(params, { replace: true });
+  };
   const [filter, setFilter] = useState<'all' | 'high-volume' | 'active'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [activeStatus, setActiveStatus] = useState('all');
@@ -124,8 +139,9 @@ const VendorManagement: React.FC = () => {
         </StatusChip>
       )
     },
-    { header: 'JOINED', accessor: 'joined' as keyof VendorUser },
-    { header: 'LAST ORDERED DATE', accessor: 'lastOrderedDate' as keyof VendorUser },
+    // The API sends these as AD "YYYY-MM-DD"; every date shown in this app is BS.
+    { header: 'JOINED', accessor: (v: VendorUser) => toBsDate(v.joined) || '—' },
+    { header: 'LAST ORDERED DATE', accessor: (v: VendorUser) => toBsDate(v.lastOrderedDate) || '—' },
     ...(canEdit
       ? [{
           header: 'ACTION',
@@ -155,12 +171,35 @@ const VendorManagement: React.FC = () => {
     <div className="vendor-management-container">
       <PageHeader
         title="VENDOR MANAGEMENT"
-        subtitle="Oversee client accounts, delivery statistics, and financial tracking."
-        actionLabel={canCreate ? 'Add new' : undefined}
-        actionIcon={canCreate ? <Plus size={16} /> : undefined}
-        onAction={canCreate ? () => navigate('/vendors/new') : undefined}
+        subtitle={
+          view === 'kyc'
+            ? 'Review and approve vendor onboarding applications.'
+            : 'Oversee client accounts, delivery statistics, and financial tracking.'
+        }
+        actionLabel={canCreate && view === 'vendors' ? 'Add new' : undefined}
+        actionIcon={canCreate && view === 'vendors' ? <Plus size={16} /> : undefined}
+        onAction={canCreate && view === 'vendors' ? () => navigate('/vendors/new') : undefined}
       />
 
+      {canReviewKyc && (
+        <div className="vendor-views">
+          <SegmentedTabs
+            ariaLabel="Vendor management view"
+            fullWidth={false}
+            value={view}
+            onChange={selectView}
+            options={[
+              { value: 'vendors', label: 'Vendors' },
+              { value: 'kyc', label: 'KYC Applications' },
+            ]}
+          />
+        </div>
+      )}
+
+      {view === 'kyc' ? (
+        <KycManagement embedded />
+      ) : (
+      <>
       <div className="vendor-filters">
         <SegmentedTabs
           ariaLabel="Vendor filter"
@@ -225,6 +264,8 @@ const VendorManagement: React.FC = () => {
         onClose={() => setActiveVendor(null)}
         onSuccess={loadVendors}
       />
+      </>
+      )}
     </div>
   );
 };

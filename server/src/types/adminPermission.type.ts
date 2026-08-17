@@ -15,6 +15,17 @@ export const ADMIN_PERMISSIONS = [
   // correct a mistake before money moves. Also covers reverting an already
   // settled statement back to pending, to undo a mistaken payment record.
   "EDIT_SETTLEMENTS",
+  // The whole Finance section: reading the books (journal, account ledgers,
+  // trial balance, party subledgers, P&L and balance sheet), writing to them
+  // (expenses, manual entries, reversals) and closing a BS month.
+  //
+  // Reading, writing and closing were three separate grants once. They are one
+  // now because nobody was ever given the reports without also being given the
+  // ability to post - the split cost a decision at every grant and bought
+  // nothing. It is still a real grant, not an open door: this is the whole
+  // financial picture of the business across every vendor and rider, so it is
+  // delegated deliberately, the same reasoning as SYSTEM_LOGS_ACCESS.
+  "ACCOUNTING_ACCESS",
   // Correct the COD amount on a delivered/RTV/RTO parcel - otherwise locked
   // once a parcel reaches a terminal-ish status. Still blocked once the
   // parcel's COD has actually been paid out to the vendor.

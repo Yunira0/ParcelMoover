@@ -675,6 +675,10 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
         Finance
       </button>
+      <button class="nav-item" data-tab="billing">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4z"/></svg>
+        Billing
+      </button>
     </nav>
 
     <main class="main">
@@ -1124,6 +1128,58 @@
             <div id="unsettled-result"></div>
           </div>
         </div>
+
+        <!-- Billing Tab -->
+        <div class="tab-content" id="tab-billing">
+          <div class="card">
+            <div class="card-title">Account Status</div>
+            <div class="btn-group" style="margin-bottom: 16px;">
+              <button class="btn btn-primary" onclick="loadBillingStatus()">Load Status</button>
+              <button class="btn btn-secondary" onclick="viewPaymentQr()">View Payment QR</button>
+            </div>
+            <div id="billing-status-result"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">File a Payment</div>
+            <p style="color:var(--slate-caption); margin-bottom:16px;">
+              Records that you have paid the office. This does not change your balance &mdash; an admin verifies it first.
+            </p>
+            <div class="filter-bar">
+              <div class="form-group">
+                <label>Amount (NPR)</label>
+                <input type="number" id="payment-amount" min="1" step="0.01" placeholder="1500">
+              </div>
+              <div class="form-group">
+                <label>Reference</label>
+                <input type="text" id="payment-reference" placeholder="FP2607231234">
+              </div>
+              <div class="form-group">
+                <label>Proof (optional)</label>
+                <input type="file" id="payment-proof" accept="image/jpeg,image/png,image/webp,application/pdf">
+              </div>
+              <button class="btn btn-primary" onclick="submitPayment()">Submit Claim</button>
+            </div>
+            <div id="payment-submit-result"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Payment History</div>
+            <div class="filter-bar">
+              <div class="form-group">
+                <label>Status</label>
+                <select id="payment-filter-status" onchange="loadPayments()">
+                  <option value="">All</option>
+                  <option value="pending">Pending</option>
+                  <option value="verified">Verified</option>
+                  <option value="rejected">Rejected</option>
+                </select>
+              </div>
+              <button class="btn btn-secondary" onclick="loadPayments()">Refresh</button>
+            </div>
+            <div id="payments-result"></div>
+          </div>
+        </div>
       </div>
     </main>
   </div>
@@ -1197,6 +1253,59 @@
       }
 
       return data;
+    }
+
+    // POST /billing/payments takes multipart/form-data (it accepts a proof
+    // file), so Content-Type must be left unset for the browser to add the
+    // boundary. Everything else matches api() above.
+    async function apiForm(method, path, formData) {
+      if (!App.config.apiKey) {
+        toast('Please set your API key in Settings', 'error');
+        throw new Error('No API key');
+      }
+
+      const res = await fetch(`${App.config.baseURL}${path}`, {
+        method,
+        headers: {
+          'Authorization': `Bearer ${App.config.apiKey}`,
+          'Idempotency-Key': crypto.randomUUID()
+        },
+        body: formData
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        const msg = data.message || `HTTP ${res.status}`;
+        const code = data.error?.code || '';
+        throw new Error(`${msg}${code ? ' (' + code + ')' : ''}`);
+      }
+
+      return data;
+    }
+
+    // The document endpoints (settlement receipt/tax invoice, payment QR)
+    // stream the file itself rather than a JSON envelope — errors still come
+    // back as JSON, so only parse on failure.
+    async function apiBlob(path) {
+      if (!App.config.apiKey) {
+        toast('Please set your API key in Settings', 'error');
+        throw new Error('No API key');
+      }
+
+      const res = await fetch(`${App.config.baseURL}${path}`, {
+        headers: { 'Authorization': `Bearer ${App.config.apiKey}` }
+      });
+
+      if (!res.ok) {
+        let msg = `HTTP ${res.status}`;
+        try {
+          const data = await res.json();
+          msg = data.message || msg;
+        } catch (e) { /* non-JSON error body */ }
+        throw new Error(msg);
+      }
+
+      return res.blob();
     }
 
     // Navigation
@@ -1947,8 +2056,25 @@
 
         document.getElementById('modal-title').textContent = `Settlement ${id}`;
         document.getElementById('modal-body').innerHTML = html;
-        document.getElementById('modal-footer').innerHTML = '<button class="btn btn-secondary" onclick="closeModal()">Close</button>';
+
+        // paymentReceiptPath/taxInvoicePath are internal paths — the documents
+        // endpoint is the only way to actually fetch them.
+        const docButtons = [
+          d.paymentReceiptPath ? `<button class="btn btn-secondary" onclick="viewSettlementDocument('${id}', 'receipt')">Payment Receipt</button>` : '',
+          d.taxInvoicePath ? `<button class="btn btn-secondary" onclick="viewSettlementDocument('${id}', 'tax-invoice')">Tax Invoice</button>` : ''
+        ].join('');
+        document.getElementById('modal-footer').innerHTML =
+          `${docButtons}<button class="btn btn-secondary" onclick="closeModal()">Close</button>`;
         document.getElementById('modal-backdrop').classList.add('open');
+      } catch (e) {
+        toast(e.message, 'error');
+      }
+    }
+
+    async function viewSettlementDocument(id, kind) {
+      try {
+        const blob = await apiBlob(`/finance/settlements/${id}/documents/${kind}`);
+        window.open(URL.createObjectURL(blob), '_blank');
       } catch (e) {
         toast(e.message, 'error');
       }
@@ -1959,20 +2085,138 @@
       container.innerHTML = '<p style="color:var(--slate-caption)">Loading...</p>';
 
       try {
+        // This endpoint returns { items, totalCod, ... } — not a bare array,
+        // unlike the other finance lists.
         const res = await api('GET', '/finance/unsettled-orders');
-        if (!res.data?.length) {
+        const items = res.data?.items || [];
+        if (!items.length) {
           container.innerHTML = '<p style="color:var(--slate-caption)">No unsettled orders.</p>';
           return;
         }
 
         container.innerHTML = `<div class="table-container"><table>
-          <thead><tr><th>Tracking ID</th><th>Receiver</th><th>COD Amount</th><th>Status</th></tr></thead>
-          <tbody>${res.data.map(o => `
+          <thead><tr><th>Tracking ID</th><th>Receiver</th><th>Collected</th><th>Delivery Charge</th><th>Net Payable</th></tr></thead>
+          <tbody>${items.map(o => `
             <tr>
               <td><code style="font-size:12px;">${o.trackingId || '—'}</code></td>
               <td>${o.receiverName || '—'}</td>
-              <td>${o.codAmount?.toLocaleString() || 0} NPR</td>
-              <td>${o.status || '—'}</td>
+              <td>${o.collectedAmount?.toLocaleString() || 0} NPR</td>
+              <td>${o.deliveryCharge?.toLocaleString() || 0} NPR</td>
+              <td>${o.netPayable?.toLocaleString() || 0} NPR</td>
+            </tr>
+          `).join('')}</tbody>
+        </table></div>
+        <p style="margin-top:12px;color:var(--slate-caption)">
+          Total COD ${res.data.totalCod?.toLocaleString() || 0} NPR &middot;
+          Charges ${res.data.totalDeliveryCharge?.toLocaleString() || 0} NPR &middot;
+          Net payable ${res.data.totalNetPayable?.toLocaleString() || 0} NPR
+        </p>`;
+      } catch (e) {
+        container.innerHTML = `<p style="color:var(--danger)">${e.message}</p>`;
+      }
+    }
+
+    // ── Billing ────────────────────────────────────────────────────────────
+
+    async function loadBillingStatus() {
+      const container = document.getElementById('billing-status-result');
+      container.innerHTML = '<p style="color:var(--slate-caption)">Loading...</p>';
+
+      try {
+        const d = (await api('GET', '/billing/status')).data;
+        const owed = (d.balance ?? 0) < 0;
+
+        container.innerHTML = `<div class="detail-grid">
+          <div class="detail-item"><span class="detail-label">state</span><span class="detail-value">${d.state ?? '—'}</span></div>
+          <div class="detail-item">
+            <span class="detail-label">balance</span>
+            <span class="detail-value" style="color:${owed ? 'var(--danger)' : 'inherit'}">
+              ${d.balance?.toLocaleString() ?? 0} NPR${owed ? ' (you owe the office)' : ''}
+            </span>
+          </div>
+          <div class="detail-item"><span class="detail-label">pending claims</span><span class="detail-value">${d.pendingPaymentAmount?.toLocaleString() ?? 0} NPR</span></div>
+          <div class="detail-item"><span class="detail-label">amount to clear block</span><span class="detail-value">${d.amountToClearBlock?.toLocaleString() ?? 0} NPR</span></div>
+          <div class="detail-item"><span class="detail-label">warn threshold</span><span class="detail-value">${d.warnThreshold?.toLocaleString() ?? 0} NPR</span></div>
+          <div class="detail-item"><span class="detail-label">block threshold</span><span class="detail-value">${d.blockThreshold?.toLocaleString() ?? 0} NPR</span></div>
+          <div class="detail-item"><span class="detail-label">COD collected</span><span class="detail-value">${d.codCollected?.toLocaleString() ?? 0} NPR</span></div>
+          <div class="detail-item"><span class="detail-label">payouts</span><span class="detail-value">${d.payouts?.toLocaleString() ?? 0} NPR</span></div>
+        </div>
+        ${d.paymentNote ? `<p style="margin-top:12px;color:var(--slate-caption)">${d.paymentNote}</p>` : ''}`;
+      } catch (e) {
+        container.innerHTML = `<p style="color:var(--danger)">${e.message}</p>`;
+      }
+    }
+
+    async function viewPaymentQr() {
+      try {
+        const blob = await apiBlob('/billing/qr');
+        const url = URL.createObjectURL(blob);
+        document.getElementById('modal-title').textContent = 'Payment QR';
+        document.getElementById('modal-body').innerHTML =
+          `<img src="${url}" alt="Fonepay payment QR" style="max-width:100%;">`;
+        document.getElementById('modal-footer').innerHTML =
+          '<button class="btn btn-secondary" onclick="closeModal()">Close</button>';
+        document.getElementById('modal-backdrop').classList.add('open');
+      } catch (e) {
+        toast(e.message, 'error');
+      }
+    }
+
+    async function submitPayment() {
+      const container = document.getElementById('payment-submit-result');
+      const amount = document.getElementById('payment-amount').value;
+      const reference = document.getElementById('payment-reference').value;
+      const proof = document.getElementById('payment-proof').files[0];
+
+      if (!amount || Number(amount) <= 0) {
+        toast('Enter an amount greater than zero', 'error');
+        return;
+      }
+
+      const form = new FormData();
+      form.append('amount', amount);
+      if (reference) form.append('reference', reference);
+      if (proof) form.append('proof', proof);
+
+      container.innerHTML = '<p style="color:var(--slate-caption)">Submitting...</p>';
+
+      try {
+        const res = await apiForm('POST', '/billing/payments', form);
+        container.innerHTML = `<p style="color:var(--slate-caption)">${res.message}</p>`;
+        toast('Payment claim filed', 'success');
+        document.getElementById('payment-amount').value = '';
+        document.getElementById('payment-reference').value = '';
+        document.getElementById('payment-proof').value = '';
+        loadPayments();
+      } catch (e) {
+        container.innerHTML = `<p style="color:var(--danger)">${e.message}</p>`;
+      }
+    }
+
+    async function loadPayments() {
+      const container = document.getElementById('payments-result');
+      container.innerHTML = '<p style="color:var(--slate-caption)">Loading...</p>';
+
+      const status = document.getElementById('payment-filter-status').value;
+      const params = new URLSearchParams();
+      if (status) params.set('status', status);
+
+      try {
+        const res = await api('GET', `/billing/payments?${params}`);
+        if (!res.data?.length) {
+          container.innerHTML = '<p style="color:var(--slate-caption)">No payment claims yet.</p>';
+          return;
+        }
+
+        container.innerHTML = `<div class="table-container"><table>
+          <thead><tr><th>Date</th><th>Amount</th><th>Reference</th><th>Proof</th><th>Status</th></tr></thead>
+          <tbody>${res.data.map(p => `
+            <tr>
+              <td>${p.createdAt || '—'}</td>
+              <td>${p.amount?.toLocaleString() || 0} NPR</td>
+              <td>${p.reference || '—'}</td>
+              <td>${p.hasProof ? 'Yes' : '—'}</td>
+              <td>${p.status || '—'}${p.reviewRemark ? ` &mdash; ${p.reviewRemark}` : ''}</td>
             </tr>
           `).join('')}</tbody>
         </table></div>`;

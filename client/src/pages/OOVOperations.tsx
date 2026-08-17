@@ -26,6 +26,7 @@ import {
 import { downloadExcel } from '../utils/excel';
 import { getLocations, getRiders } from '../services/users.service';
 import { handoffToNcm } from '../services/ncm.service';
+import { handoffParcelsToUpaya } from '../services/upaya.service';
 import { toBsDate, toBsDateTime } from '../utils/nepaliDate';
 import { printLabels } from '../utils/printLabels';
 import { commitScannedTerm, handleScannerPaste } from '../utils/scannerInput';
@@ -131,7 +132,7 @@ const OOVOperations: React.FC = () => {
   const [statusUpdating, setStatusUpdating] = useState(false);
   const [actionError, setActionError] = useState('');
   const [remarkPopupOrder, setRemarkPopupOrder] = useState<Order | null>(null);
-  const [dispatchMethod, setDispatchMethod] = useState<'manifest' | 'tpl'>('manifest');
+  const [dispatchMethod, setDispatchMethod] = useState<'manifest' | 'tpl' | 'upaya'>('manifest');
   const [locations, setLocations] = useState<{ id: string; name: string }[]>([]);
   const [riders, setRiders] = useState<{ id: string; name: string }[]>([]);
   const [toLocationId, setToLocationId] = useState('');
@@ -183,7 +184,7 @@ const OOVOperations: React.FC = () => {
   useEffect(() => {
     (async () => {
       try {
-        const [locRes, riderRes] = await Promise.all([getLocations(), getRiders()]);
+        const [locRes, riderRes] = await Promise.all([getLocations(), getRiders({ pageSize: 100 })]);
         if (locRes?.success && Array.isArray(locRes.data)) {
           setLocations(locRes.data.filter((loc: any) => loc.is_hub));
         }
@@ -343,9 +344,23 @@ const OOVOperations: React.FC = () => {
       const ids = selectedOrders.map(order => String(order.id));
 
       if (isDispatchAction && dispatchMethod === 'tpl') {
-        // Hand off to NCM: creates the NCM orders; parcels stay in Transit
-        // until NCM's pickup webhook moves them to In Transit.
+        // Hand off to the courier partner: creates their orders; parcels stay
+        // in Transit until the partner's pickup webhook moves them to In Transit.
         const res = await handoffToNcm(ids);
+        const failed = (res.data ?? []).filter(item => !item.success);
+        if (failed.length > 0) {
+          setActionError(
+            failed.map(item => `${item.trackingId}: ${item.error || 'failed'}`).join(' · '),
+          );
+          await loadOovOrders();
+          return;
+        }
+      } else if (isDispatchAction && dispatchMethod === 'upaya') {
+        // Hand off to Upaya: creates the Upaya orders (area + service type
+        // both auto-derived server-side per parcel) and moves the parcel
+        // straight to dispatched (same as NCM/manifest), then Upaya's
+        // webhooks/reconciliation carry it the rest of the way.
+        const res = await handoffParcelsToUpaya(ids);
         const failed = (res.data ?? []).filter(item => !item.success);
         if (failed.length > 0) {
           setActionError(
@@ -418,7 +433,9 @@ const OOVOperations: React.FC = () => {
   };
 
   const buildExportRows = (rows: Order[]) => {
-    const headers = ['#', 'Date', 'Tracking ID', 'Order Type', 'Sender', 'Receiver', 'Location', 'Weight', 'COD', 'Last Updated', 'Remarks'];
+    // Mirrors the table on screen, where the Last Updated cell shows who and
+    // when - two things, so two columns here rather than one.
+    const headers = ['Order ID', 'Date', 'Tracking ID', 'Order Type', 'Sender', 'Receiver', 'Location', 'Address', 'Weight', 'COD', 'Last Updated By', 'Last Updated', 'Remarks'];
     const dataRows = rows.map(order => [
       `#${order.orderNumber}`,
       toBsDate(order.createdAt),
@@ -427,9 +444,11 @@ const OOVOperations: React.FC = () => {
       order.senderName,
       order.receiverName,
       order.destination,
+      order.receiverAddress || '',
       order.weightKg ? `${order.weightKg} Kg` : '',
       order.codAmount,
-      toBsDate(order.lastUpdatedAt) || '',
+      order.lastUpdatedBy || '',
+      toBsDateTime(order.lastUpdatedAt) || '',
       order.remarks || '',
     ]);
     return { headers, rows: dataRows };
@@ -497,7 +516,18 @@ const OOVOperations: React.FC = () => {
       ),
       width: '238px',
     },
-    { header: 'LOCATION', accessor: (order: Order) => order.destination || '-', width: '130px' },
+    {
+      header: 'LOCATION',
+      // Destination hub plus the receiver's street address - riders and hub
+      // staff need both to route a parcel, not just the hub name.
+      accessor: (order: Order) => (
+        <div className="oov-location-cell">
+          <span>{order.destination || '-'}</span>
+          {order.receiverAddress && <small title={order.receiverAddress}>{order.receiverAddress}</small>}
+        </div>
+      ),
+      width: '180px',
+    },
     { header: 'WEIGHT', accessor: (order: Order) => (order.weightKg ? `${order.weightKg} Kg` : '-'), width: '80px' },
     { header: 'COD', accessor: (order: Order) => formatMoney(order.codAmount), width: '113px' },
     {
@@ -599,16 +629,36 @@ const OOVOperations: React.FC = () => {
                         onChange={() => setDispatchMethod('tpl')}
                         disabled={statusUpdating}
                       />
-                      <span>Via 3PL (NCM)</span>
+                      <span>Via Courier Partner</span>
+                    </label>
+                    <label className="oov-dispatch-radio">
+                      <input
+                        type="radio"
+                        name="dispatchMethod"
+                        value="upaya"
+                        checked={dispatchMethod === 'upaya'}
+                        onChange={() => setDispatchMethod('upaya')}
+                        disabled={statusUpdating}
+                      />
+                      <span>Via 3PL (Upaya)</span>
                     </label>
                   </div>
                 )}
                 {isDispatchAction && dispatchMethod === 'tpl' && (
                   <div className="oov-manifest-fields">
                     <p className="oov-status-empty">
-                      NCM destination branch is matched automatically from each order's destination hub. Orders whose
-                      destination has no matching NCM branch are skipped, and orders stay in Transit until NCM
-                      confirms pickup, then follow NCM tracking automatically.
+                      The courier partner's destination branch is matched automatically from each order's destination
+                      hub. Orders whose destination has no matching branch are skipped, and orders stay in Transit
+                      until the partner confirms pickup, then follow their tracking automatically.
+                    </p>
+                  </div>
+                )}
+                {isDispatchAction && dispatchMethod === 'upaya' && (
+                  <div className="oov-manifest-fields">
+                    <p className="oov-status-empty">
+                      Upaya delivery area and service type are both matched automatically from each order's
+                      destination hub. Orders whose destination has no confident match are skipped, and orders move
+                      straight to dispatched, then follow Upaya's tracking automatically.
                     </p>
                   </div>
                 )}
@@ -732,7 +782,7 @@ const OOVOperations: React.FC = () => {
         loading={loading && orders.length === 0}
         loadingMessage="Loading orders..."
         emptyMessage="No orders found."
-        minWidth="1480px"
+        minWidth="1530px"
         tableClassName="oov-table"
       />
 

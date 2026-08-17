@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import Table from '../components/Table';
 import SearchableSelect from '../components/SearchableSelect';
+import SearchableSelectAsync from '../components/SearchableSelectAsync';
 import Button from '../components/Button';
 import SegmentedTabs from '../components/SegmentedTabs';
 import PageHeader from '../components/PageHeader';
@@ -26,7 +27,7 @@ import {
   type ParcelStatus,
 } from '../services/orders.service';
 import { downloadExcel } from '../utils/excel';
-import { getRiders } from '../services/users.service';
+import { getRiders, searchVendors } from '../services/users.service';
 import { printLabels } from '../utils/printLabels';
 import { useCursorPagination } from '../hooks/useCursorPagination';
 import { toBsDate, toBsDateTime } from '../utils/nepaliDate';
@@ -154,6 +155,14 @@ const DispatchOperations: React.FC = () => {
   // Delivery-rider filter for the list itself (distinct from `riderId`, which
   // is the rider being assigned by the Action popover).
   const [riderFilter, setRiderFilter] = useState(() => searchParams.get('rider') || '');
+  // Vendor filter for the list. Server-side searched rather than fetched as one
+  // list like riders: riders are capped at ~100 active, vendors run into the
+  // hundreds and a single fetch would silently truncate the options.
+  const [vendorFilter, setVendorFilter] = useState(() => searchParams.get('vendor') || '');
+  // The picker only knows a vendor's name once that vendor turns up in a search
+  // page, so a filter restored from the URL would otherwise read "All vendors"
+  // while actually filtering. Resolved once, below.
+  const [vendorFilterLabel, setVendorFilterLabel] = useState('');
   const [partialRemarks, setPartialRemarks] = useState('');
   const [partialCodCollected, setPartialCodCollected] = useState('');
   const [reasonRemarks, setReasonRemarks] = useState('');
@@ -170,13 +179,14 @@ const DispatchOperations: React.FC = () => {
     try {
       const counts = await getStatusCounts(TAB_STATUSES, {
         ...(riderFilter ? { deliveryRiderId: riderFilter } : {}),
+        ...(vendorFilter ? { vendorId: [vendorFilter] } : {}),
         ...(debouncedSearch ? { search: debouncedSearch } : {}),
       });
       if (requestId === countsRequestIdRef.current) setTabCounts(counts);
     } catch {
       // non-fatal; tabs just won't show counts
     }
-  }, [riderFilter, debouncedSearch]);
+  }, [riderFilter, vendorFilter, debouncedSearch]);
 
   useEffect(() => { void loadTabCounts(); }, [loadTabCounts]);
   useEffect(() => subscribeToOrderStatusChanged(loadTabCounts), [loadTabCounts]);
@@ -184,7 +194,7 @@ const DispatchOperations: React.FC = () => {
   useEffect(() => {
     (async () => {
       try {
-        const res = await getRiders();
+        const res = await getRiders({ pageSize: 100 });
         if (res?.success && Array.isArray(res.data)) {
           setRiders(res.data.filter((r: { status: string }) => r.status === 'active'));
         }
@@ -194,6 +204,44 @@ const DispatchOperations: React.FC = () => {
     })();
   }, []);
 
+  // The async picker builds its options from the server, so unlike the rider
+  // select there is no natural "All vendors" row to reset the filter to. One is
+  // prepended to the first page - and the server offset is shifted back by it
+  // on every later page, since the component advances its own offset by
+  // `results.length` and would otherwise skip a real vendor at each boundary.
+  const handleVendorSearch = useCallback(async (search: string, offset: number) => {
+    const isFirstPage = offset === 0;
+    const res = await searchVendors(search, 50, isFirstPage ? 0 : offset - 1);
+    const results = res?.success && Array.isArray(res.data)
+      ? res.data.map((v: { id: string; label: string }) => ({ id: v.id, label: v.label }))
+      : [];
+    return {
+      results: isFirstPage ? [{ id: '', label: 'All vendors' }, ...results] : results,
+      hasMore: res?.hasMore ?? false,
+    };
+  }, []);
+
+  // Resolve the name for a vendor restored from ?vendor=. The dropdown endpoint
+  // matches a bare uuid against the id, so this needs no separate lookup.
+  useEffect(() => {
+    if (!vendorFilter) {
+      setVendorFilterLabel('');
+      return;
+    }
+    if (vendorFilterLabel) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await searchVendors(vendorFilter, 1, 0);
+        const match = res?.success && Array.isArray(res.data) ? res.data[0] : null;
+        if (!cancelled && match?.label) setVendorFilterLabel(match.label);
+      } catch {
+        // picker falls back to its placeholder; the filter itself still applies
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [vendorFilter, vendorFilterLabel]);
+
   // Debounce search input so every keystroke doesn't fire a request.
   useEffect(() => {
     const handle = setTimeout(() => setDebouncedSearch(combinedSearch), SEARCH_DEBOUNCE_MS);
@@ -202,7 +250,7 @@ const DispatchOperations: React.FC = () => {
 
   useEffect(() => {
     pager.reset();
-  }, [activeTab, debouncedSearch, riderFilter, pager.reset]);
+  }, [activeTab, debouncedSearch, riderFilter, vendorFilter, pager.reset]);
 
   // Keep tab/search bookmarkable - mirror into the URL (replacing history,
   // not pushing, so the back button doesn't step through every keystroke).
@@ -211,8 +259,9 @@ const DispatchOperations: React.FC = () => {
     if (activeTab !== 'ready_to_deliver') next.set('tab', activeTab);
     if (debouncedSearch) next.set('search', debouncedSearch);
     if (riderFilter) next.set('rider', riderFilter);
+    if (vendorFilter) next.set('vendor', vendorFilter);
     setSearchParams(next, { replace: true });
-  }, [activeTab, debouncedSearch, riderFilter, setSearchParams]);
+  }, [activeTab, debouncedSearch, riderFilter, vendorFilter, setSearchParams]);
 
   // Scanning several parcels in a row fires one debounced search per scan -
   // without this, a slower-to-resolve earlier request can land after a later
@@ -233,6 +282,7 @@ const DispatchOperations: React.FC = () => {
         status: TAB_STATUSES[activeTab],
         search: debouncedSearch || undefined,
         deliveryRiderId: riderFilter || undefined,
+        vendorId: vendorFilter ? [vendorFilter] : undefined,
         pageSize,
         cursor: pager.request.cursor,
         dir: pager.request.dir,
@@ -249,7 +299,7 @@ const DispatchOperations: React.FC = () => {
     } finally {
       if (requestId === loadRequestIdRef.current) setLoading(false);
     }
-  }, [activeTab, debouncedSearch, riderFilter, pager.request, pageSizeChoice]);
+  }, [activeTab, debouncedSearch, riderFilter, vendorFilter, pager.request, pageSizeChoice]);
 
   useEffect(() => { loadDispatches(); }, [loadDispatches]);
   useEffect(() => subscribeToOrderStatusChanged(loadDispatches), [loadDispatches]);
@@ -451,6 +501,7 @@ const DispatchOperations: React.FC = () => {
         status: TAB_STATUSES[activeTab],
         search: debouncedSearch || undefined,
         deliveryRiderId: riderFilter || undefined,
+        vendorId: vendorFilter ? [vendorFilter] : undefined,
       });
       if (res?.success && Array.isArray(res.data)) {
         rows = res.data;
@@ -459,7 +510,8 @@ const DispatchOperations: React.FC = () => {
       // fall back to the currently loaded page
     }
 
-    const headers = ['SN', 'Date', 'Tracking ID', 'Order Type', 'Sender', 'Receiver', 'Location', 'Weight', 'COD', 'Attempt', 'Delivery Rider', 'Last Updated', 'Remarks'];
+    // Same columns, in the same order, as the table on screen.
+    const headers = ['Order ID', 'Date', 'Tracking ID', 'Order Type', 'Sender', 'Receiver', 'Location', 'Address', 'Weight', 'COD', 'Attempt', 'Delivery Rider', 'Last Updated', 'Remarks'];
     const csvRows = rows.map(order => [
       `#${order.orderNumber}`,
       toBsDate(order.createdAt) || '',
@@ -468,11 +520,14 @@ const DispatchOperations: React.FC = () => {
       order.senderName,
       order.receiverName,
       order.destination,
+      order.receiverAddress || '',
       order.weightKg ? `${order.weightKg} Kg` : '',
-      formatMoney(order.codAmount),
+      // A number, not formatMoney's "Rs. 1,200" - a formatted string is text to
+      // Excel and the column will not total.
+      order.codAmount,
       order.attemptCount,
       order.riderName || '',
-      toBsDate(order.lastUpdatedAt) || '',
+      toBsDateTime(order.lastUpdatedAt) || '',
       order.remarks || '',
     ]);
     downloadExcel('dispatch-orders.xlsx', 'Dispatch Orders', headers, csvRows);
@@ -528,7 +583,18 @@ const DispatchOperations: React.FC = () => {
       ),
       width: '170px',
     },
-    { header: 'LOCATION', accessor: (order: Order) => order.destination || '-', width: '140px' },
+    {
+      header: 'LOCATION',
+      // Destination hub plus the receiver's street address - riders and hub
+      // staff need both to route a parcel, not just the hub name.
+      accessor: (order: Order) => (
+        <div className="dispatch-location-cell">
+          <span>{order.destination || '-'}</span>
+          {order.receiverAddress && <small title={order.receiverAddress}>{order.receiverAddress}</small>}
+        </div>
+      ),
+      width: '190px',
+    },
     { header: 'WEIGHT', accessor: (order: Order) => (order.weightKg ? `${order.weightKg} Kg` : '-'), width: '90px' },
     { header: 'COD', accessor: (order: Order) => formatMoney(order.codAmount), width: '100px' },
     { header: 'ATTEMPT', accessor: (order: Order) => order.attemptCount, width: '90px' },
@@ -573,21 +639,41 @@ const DispatchOperations: React.FC = () => {
       {loadError && <p className="dispatch-action-error">{loadError}</p>}
 
       <div className="dispatch-toolbar">
-        <div className="dispatch-rider-filter">
-          <SearchableSelect
-            options={[{ id: '', label: 'All riders' }, ...riders.map(r => ({ id: r.id, label: r.name }))]}
-            value={riderFilter}
-            onChange={id => {
-              setRiderFilter(id);
-              pager.reset();
-              setIsActionOpen(false);
-              setActionError('');
-              setRiderId('');
-            }}
-            placeholder="All riders"
-            searchPlaceholder="Search rider by name..."
-            emptyMessage="No active riders found."
-          />
+        <div className="dispatch-filters">
+          <div className="dispatch-rider-filter">
+            <SearchableSelect
+              options={[{ id: '', label: 'All riders' }, ...riders.map(r => ({ id: r.id, label: r.name }))]}
+              value={riderFilter}
+              onChange={id => {
+                setRiderFilter(id);
+                pager.reset();
+                setIsActionOpen(false);
+                setActionError('');
+                setRiderId('');
+              }}
+              placeholder="All riders"
+              searchPlaceholder="Search rider by name..."
+              emptyMessage="No active riders found."
+            />
+          </div>
+          <div className="dispatch-vendor-filter">
+            <SearchableSelectAsync
+              asyncSearch={handleVendorSearch}
+              value={vendorFilter}
+              initialLabel={vendorFilterLabel || undefined}
+              onChange={id => {
+                setVendorFilter(id);
+                setVendorFilterLabel('');
+                pager.reset();
+                setIsActionOpen(false);
+                setActionError('');
+                setRiderId('');
+              }}
+              placeholder="All vendors"
+              searchPlaceholder="Search vendor by name..."
+              emptyMessage="No vendors found."
+            />
+          </div>
         </div>
         <div className="dispatch-toolbar-actions">
           <div className="dispatch-action-anchor">
@@ -816,7 +902,7 @@ const DispatchOperations: React.FC = () => {
         loading={loading && orders.length === 0}
         loadingMessage="Loading dispatch orders..."
         emptyMessage="No dispatch orders found."
-        minWidth="1680px"
+        minWidth="1730px"
         tableClassName="dispatch-table"
       />
 

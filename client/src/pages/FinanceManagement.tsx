@@ -47,7 +47,7 @@ const FinanceManagement: React.FC = () => {
   useEffect(() => {
     if (activeType !== 'rider') return;
     let active = true;
-    getRiders()
+    getRiders({ pageSize: 100 })
       .then((res) => {
         if (!active || !res?.success || !Array.isArray(res.data)) return;
         setRiderOptions(res.data.map((r: any) => ({ value: r.id, label: r.name || '' })));

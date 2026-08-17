@@ -1,0 +1,11 @@
+-- Supports the ledger posting sweep (startLedgerPostingSweep in src/index.ts),
+-- which every fifteen minutes asks for parcels touched in the last hour so it
+-- can re-post anything the fire-and-forget bulk path dropped.
+--
+-- Without this the sweep scans the whole parcels table on a timer, which is a
+-- cost that grows with the business for a query that almost always returns
+-- nothing interesting. `updated_at` had no index of its own - the table is
+-- indexed on created_at and delivered_at, neither of which moves when a parcel
+-- is un-delivered or its COD is corrected, and those are exactly the cases the
+-- sweep exists to catch.
+CREATE INDEX IF NOT EXISTS "idx_parcels_updated_at" ON "parcels" ("updated_at");

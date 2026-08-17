@@ -18,7 +18,15 @@
   gap: var(--space-4);
 }
 
-.dispatch-rider-filter {
+/* Rider filter, then vendor filter to its right. */
+.dispatch-filters {
+  align-items: center;
+  display: flex;
+  gap: var(--space-4);
+}
+
+.dispatch-rider-filter,
+.dispatch-vendor-filter {
   min-width: 220px;
 }
 
@@ -162,6 +170,28 @@
   color: var(--color-text-placeholder);
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-regular);
+}
+
+/* Destination hub on top, receiver address beneath it. */
+.dispatch-location-cell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.dispatch-location-cell span {
+  color: var(--color-text-default);
+  font-weight: var(--font-weight-semi-bold);
+}
+
+.dispatch-location-cell small {
+  color: var(--color-text-placeholder);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-regular);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .dispatch-remarks-cell {
@@ -325,7 +355,14 @@
     width: 100%;
   }
 
-  .dispatch-rider-filter {
+  /* Side by side needs ~440px plus the gap; stack them instead of squeezing. */
+  .dispatch-filters {
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .dispatch-rider-filter,
+  .dispatch-vendor-filter {
     min-width: 0;
     width: 100%;
   }

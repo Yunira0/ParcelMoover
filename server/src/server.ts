@@ -18,12 +18,14 @@ import SlaRoutes from "./routes/sla.routes"
 import PickupTimeSlotsRoutes from "./routes/pickupTimeSlots.routes"
 import PaymentMethodRoutes from "./routes/payment-method.routes"
 import NcmRoutes from "./routes/ncm.routes"
+import UpayaRoutes from "./routes/upaya.routes"
 import ApiKeyRoutes from "./routes/apiKey.routes"
 import WebhookRoutes from "./routes/webhook.routes"
 import PublicApiRoutes from "./routes/publicApi.routes"
 import MeRoutes from "./routes/me.routes"
 import AuditLogRoutes from "./routes/auditLog.routes"
 import BillingRoutes from "./routes/billing.routes"
+import AccountingRoutes from "./routes/accounting.routes"
 import VendorPrintSettingsRoutes from "./routes/vendorPrintSettings.routes"
 import prisma, { pool } from "./lib/prisma";
 import cookiesParser from "cookie-parser";
@@ -145,6 +147,7 @@ app.use("/api/finance", FinanceRoutes)
 
 app.use("/api/billing", BillingRoutes)
 
+app.use("/api/accounting", AccountingRoutes)
 app.use("/api/vendor-settings", VendorPrintSettingsRoutes)
 
 app.use("/api/staff", StaffRoutes)
@@ -162,6 +165,10 @@ app.use("/api/payment-methods", PaymentMethodRoutes)
 
 // NCM (Nepal Can Move) 3PL integration — includes the public webhook receiver.
 app.use("/api/ncm", NcmRoutes)
+
+// Upaya 3PL integration (second outside-valley carrier, alongside NCM) —
+// includes the public webhook receiver.
+app.use("/api/upaya", UpayaRoutes)
 
 // Vendor self-service management of partner API keys (dashboard, JWT-authed).
 app.use("/api/api-keys", ApiKeyRoutes)

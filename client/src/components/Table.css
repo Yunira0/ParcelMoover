@@ -55,8 +55,29 @@
   min-width: 80px;
 }
 
-.custom-table tr:last-child td {
+.custom-table tbody tr:last-child td {
   border-bottom: none;
+}
+
+/* Totals rows (see the `footer` prop): the same weight as a header, at the
+   bottom - so a column of figures reads down to its own sum. */
+.custom-table tfoot td {
+  background-color: var(--color-background-elevated);
+  border-top: 1px solid var(--color-border-default);
+  color: var(--color-text-default);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-bold);
+  line-height: var(--line-height-sm);
+  padding: var(--space-3) var(--space-2);
+  vertical-align: middle;
+}
+
+.custom-table tbody tr.clickable-row {
+  cursor: pointer;
+}
+
+.custom-table tbody tr.clickable-row:hover td {
+  background-color: var(--color-background-canvas);
 }
 
 .custom-table tr.selected-row td {

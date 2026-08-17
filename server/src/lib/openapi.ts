@@ -12,6 +12,7 @@ import {
   publicSettlementsQuerySchema,
   publicTicketReplySchema,
   publicUpdateOrderSchema,
+  publicVendorPaymentsQuerySchema,
 } from "../validators/publicApi.schema";
 import { listTicketsQuerySchema } from "../validators/ticket.schema";
 
@@ -95,7 +96,7 @@ export function buildOpenApiDocument(baseUrl: string) {
     openapi: "3.1.0",
     info: {
       title: "ParcelMoover Partner API",
-      version: "1.1.0",
+      version: "1.2.0",
       description:
         "Vendor-facing API for placing and tracking orders, quoting delivery rates, and raising support tickets. " +
         "Every request authenticates with a vendor API key (Settings → Developer → API Keys). " +
@@ -321,7 +322,7 @@ export function buildOpenApiDocument(baseUrl: string) {
           summary: "Your current pending COD statement",
           operationId: "getPendingCod",
           responses: {
-            200: { description: "Pending COD bill", content: { "application/json": { schema: { type: "object" } } } },
+            200: { description: "Pending COD bill", content: { "application/json": { schema: { "$ref": "#/components/schemas/PendingCodResponse" } } } },
             ...errorResponses(401, 403, 429),
           },
         },
@@ -332,7 +333,7 @@ export function buildOpenApiDocument(baseUrl: string) {
           operationId: "listOrderCod",
           parameters: queryParams(publicOrderCodQuerySchema),
           responses: {
-            200: { description: "Paginated order COD list", content: { "application/json": { schema: { type: "object" } } } },
+            200: { description: "Paginated order COD list", content: { "application/json": { schema: { "$ref": "#/components/schemas/OrderCodListResponse" } } } },
             ...errorResponses(400, 401, 403, 429),
           },
         },
@@ -343,7 +344,7 @@ export function buildOpenApiDocument(baseUrl: string) {
           operationId: "listSettlements",
           parameters: queryParams(publicSettlementsQuerySchema),
           responses: {
-            200: { description: "Paginated settlement list", content: { "application/json": { schema: { type: "object" } } } },
+            200: { description: "Paginated settlement list", content: { "application/json": { schema: { "$ref": "#/components/schemas/SettlementListResponse" } } } },
             ...errorResponses(400, 401, 403, 429),
           },
         },
@@ -356,8 +357,36 @@ export function buildOpenApiDocument(baseUrl: string) {
             { name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } },
           ],
           responses: {
-            200: { description: "Line-item settlement detail", content: { "application/json": { schema: { type: "object" } } } },
+            200: { description: "Line-item settlement detail", content: { "application/json": { schema: { "$ref": "#/components/schemas/SettlementDetailResponse" } } } },
             ...errorResponses(401, 403, 404, 429),
+          },
+        },
+      },
+      "/finance/settlements/{id}/documents/{kind}": {
+        get: {
+          summary: "Payment receipt or tax invoice for a statement",
+          description:
+            "Streams the document itself (image or PDF), not a JSON envelope - `Content-Type` reflects the stored file. " +
+            "Only available once the statement has been paid with the document attached; returns 404 otherwise.",
+          operationId: "getSettlementDocument",
+          parameters: [
+            { name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } },
+            {
+              name: "kind",
+              in: "path",
+              required: true,
+              schema: { type: "string", enum: ["receipt", "tax-invoice"] },
+            },
+          ],
+          responses: {
+            200: {
+              description: "The document bytes",
+              content: {
+                "application/pdf": { schema: { type: "string", format: "binary" } },
+                "image/*": { schema: { type: "string", format: "binary" } },
+              },
+            },
+            ...errorResponses(400, 401, 403, 404, 429),
           },
         },
       },
@@ -366,8 +395,77 @@ export function buildOpenApiDocument(baseUrl: string) {
           summary: "Orders with COD collected but not yet settled",
           operationId: "getUnsettledOrders",
           responses: {
-            200: { description: "Unsettled order list", content: { "application/json": { schema: { type: "object" } } } },
+            200: { description: "Unsettled order list", content: { "application/json": { schema: { "$ref": "#/components/schemas/UnsettledOrdersResponse" } } } },
             ...errorResponses(401, 403, 429),
+          },
+        },
+      },
+      "/billing/status": {
+        get: {
+          summary: "Account balance, thresholds, and billing state",
+          description:
+            "`balance` is negative when you owe the office. `state` reflects whether ordering is unrestricted, " +
+            "near the warn threshold, or blocked; `amountToClearBlock` is what would lift a block. " +
+            "`pendingPaymentAmount` covers claims you have filed that an admin has not yet verified - it is not in `balance` yet.",
+          operationId: "getBillingStatus",
+          responses: {
+            200: { description: "Billing status", content: { "application/json": { schema: { "$ref": "#/components/schemas/BillingStatusResponse" } } } },
+            ...errorResponses(401, 403, 429),
+          },
+        },
+      },
+      "/billing/payments": {
+        get: {
+          summary: "Your payment-claim history",
+          operationId: "listVendorPayments",
+          parameters: queryParams(publicVendorPaymentsQuerySchema),
+          responses: {
+            200: { description: "Paginated payment claims", content: { "application/json": { schema: { "$ref": "#/components/schemas/VendorPaymentsResponse" } } } },
+            ...errorResponses(400, 401, 403, 429),
+          },
+        },
+        post: {
+          summary: "File a payment claim",
+          description:
+            "Records that you have paid the office, optionally with a proof screenshot or PDF (max 5MB; JPG, PNG, WebP, PDF). " +
+            "Filing a claim does not change your balance - an admin must verify it first.",
+          operationId: "submitVendorPayment",
+          parameters: [idempotencyKeyHeader],
+          requestBody: {
+            required: true,
+            content: {
+              "multipart/form-data": {
+                schema: {
+                  type: "object",
+                  required: ["amount"],
+                  properties: {
+                    amount: { type: "number", exclusiveMinimum: 0, description: "Amount paid, in NPR." },
+                    reference: { type: "string", description: "Bank/wallet transaction reference." },
+                    note: { type: "string" },
+                    method: { type: "string", default: "fonepay" },
+                    proof: { type: "string", format: "binary", description: "Screenshot or PDF of the payment confirmation." },
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            201: { description: "Claim filed, pending verification", content: { "application/json": { schema: { "$ref": "#/components/schemas/VendorPaymentResponse" } } } },
+            ...errorResponses(400, 401, 403, 422, 429),
+          },
+        },
+      },
+      "/billing/qr": {
+        get: {
+          summary: "The Fonepay QR to pay against",
+          description: "Streams the QR image itself, not a JSON envelope. Returns 404 if no QR is configured.",
+          operationId: "getPaymentQr",
+          responses: {
+            200: {
+              description: "The QR image bytes",
+              content: { "image/*": { schema: { type: "string", format: "binary" } } },
+            },
+            ...errorResponses(401, 403, 404, 429),
           },
         },
       },
@@ -406,6 +504,286 @@ export function buildOpenApiDocument(baseUrl: string) {
         AddRemarkRequest: toSchema(publicAddRemarkSchema),
         CreateTicketRequest: toSchema(publicCreateTicketSchema),
         TicketReplyRequest: toSchema(publicTicketReplySchema),
+
+        // ── Finance / billing responses ────────────────────────────────────
+        // Mirrors server/src/types/finance.type.ts and the VendorPaymentItem /
+        // VendorBillingStatus interfaces, minus the internal upload paths the
+        // public controllers strip.
+        PaginationMeta: {
+          type: "object",
+          properties: {
+            page: { type: "integer" },
+            pageSize: { type: "integer" },
+            total: { type: "integer" },
+            totalPages: { type: "integer" },
+          },
+        },
+        PendingCodResponse: {
+          type: "object",
+          properties: {
+            success: { type: "boolean" },
+            data: {
+              type: "object",
+              properties: {
+                vendor: {
+                  type: "object",
+                  properties: {
+                    id: { type: "string", format: "uuid" },
+                    name: { type: "string" },
+                    phone: { type: "string" },
+                    email: { type: ["string", "null"] },
+                    address: { type: ["string", "null"] },
+                  },
+                },
+                statementDate: { type: "string", format: "date-time" },
+                items: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      orderNumber: { type: "integer" },
+                      trackingId: { type: "string" },
+                      receiverName: { type: "string" },
+                      receiverPhone: { type: "string" },
+                      destination: { type: "string" },
+                      codAmount: { type: "number" },
+                      deliveryCharge: { type: "number" },
+                    },
+                  },
+                },
+                totals: {
+                  type: "object",
+                  properties: {
+                    totalCod: { type: "number" },
+                    deliveryCharges: { type: "number" },
+                    payableAmount: { type: "number" },
+                  },
+                },
+              },
+            },
+          },
+        },
+        OrderCodListResponse: {
+          type: "object",
+          properties: {
+            success: { type: "boolean" },
+            data: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  id: { type: "string", format: "uuid", description: "The COD collection id." },
+                  trackingId: { type: "string" },
+                  receiverName: { type: "string" },
+                  receiverPhone: { type: "string" },
+                  createdAt: { type: "string", format: "date-time" },
+                  deliveredAt: { type: ["string", "null"], format: "date-time" },
+                  status: { type: "string", enum: ["settled", "not_settled"] },
+                  netPayable: { type: "number", description: "Cash collected minus the delivery charge." },
+                },
+              },
+            },
+            settledCount: { type: "integer" },
+            notSettledCount: { type: "integer" },
+            meta: { "$ref": "#/components/schemas/PaginationMeta" },
+          },
+        },
+        SettlementListResponse: {
+          type: "object",
+          properties: {
+            success: { type: "boolean" },
+            data: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  id: { type: "string", format: "uuid" },
+                  statementId: { type: "string" },
+                  payeeType: { type: "string", enum: ["vendor"] },
+                  payeeName: { type: "string" },
+                  payeePhone: { type: "string" },
+                  bankName: { type: ["string", "null"] },
+                  bankAccountNo: { type: ["string", "null"] },
+                  bankAccountHolder: { type: ["string", "null"] },
+                  transferDate: { type: ["string", "null"], format: "date-time" },
+                  createdAt: { type: "string", format: "date-time" },
+                  orderCount: { type: "integer" },
+                  amount: { type: "number" },
+                  status: { type: "string", enum: ["pending", "settled", "cancelled"] },
+                  remark: { type: ["string", "null"] },
+                },
+              },
+            },
+            meta: { "$ref": "#/components/schemas/PaginationMeta" },
+          },
+        },
+        SettlementDetailResponse: {
+          type: "object",
+          properties: {
+            success: { type: "boolean" },
+            data: {
+              type: "object",
+              properties: {
+                id: { type: "string", format: "uuid" },
+                statementId: { type: "string" },
+                payeeType: { type: "string", enum: ["vendor"] },
+                payeeId: { type: "string", format: "uuid" },
+                payeeName: { type: "string" },
+                payeePhone: { type: "string" },
+                payeeEmail: { type: ["string", "null"] },
+                payeeAddress: { type: ["string", "null"] },
+                payeePan: { type: ["string", "null"] },
+                bankName: { type: ["string", "null"] },
+                bankAccountNo: { type: ["string", "null"] },
+                bankAccountHolder: { type: ["string", "null"] },
+                transferDate: { type: ["string", "null"], format: "date-time" },
+                createdAt: { type: "string", format: "date-time" },
+                amount: { type: "number" },
+                payableAmount: { type: "number" },
+                status: { type: "string", enum: ["pending", "settled", "cancelled"] },
+                paymentMethod: { type: ["string", "null"] },
+                payments: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      method: { type: "string", enum: ["cash", "online"] },
+                      amount: { type: "number" },
+                    },
+                  },
+                },
+                remark: { type: ["string", "null"] },
+                paymentReceiptPath: {
+                  type: ["string", "null"],
+                  description: "Internal path; fetch the file via GET /finance/settlements/{id}/documents/receipt.",
+                },
+                taxInvoicePath: {
+                  type: ["string", "null"],
+                  description: "Internal path; fetch the file via GET /finance/settlements/{id}/documents/tax-invoice.",
+                },
+                items: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      codCollectionId: { type: "string", format: "uuid" },
+                      orderNumber: { type: "integer" },
+                      trackingId: { type: "string" },
+                      reference: { type: ["string", "null"] },
+                      receiverName: { type: "string" },
+                      receiverPhone: { type: "string" },
+                      receiverAddress: { type: ["string", "null"] },
+                      orderType: { type: "string" },
+                      isReturnToVendor: { type: "boolean" },
+                      pieces: { type: "integer" },
+                      weightKg: { type: ["number", "null"] },
+                      codAmount: { type: "number" },
+                      collectedAmount: { type: "number" },
+                      deliveryCharge: { type: "number" },
+                      settledAmount: { type: "number" },
+                      deliveredAt: { type: ["string", "null"], format: "date-time" },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        UnsettledOrdersResponse: {
+          type: "object",
+          properties: {
+            success: { type: "boolean" },
+            data: {
+              type: "object",
+              properties: {
+                items: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      id: { type: "string", format: "uuid" },
+                      codCollectionId: { type: "string", format: "uuid" },
+                      orderNumber: { type: "integer" },
+                      trackingId: { type: "string" },
+                      receiverName: { type: "string" },
+                      receiverPhone: { type: "string" },
+                      receiverAddress: { type: ["string", "null"] },
+                      destination: { type: "string" },
+                      orderType: { type: "string" },
+                      isReturnToVendor: {
+                        type: "boolean",
+                        description: "True both for genuine return orders and for deliveries bounced back to you.",
+                      },
+                      codAmount: { type: "number", description: "Declared COD on the parcel - informational." },
+                      collectedAmount: { type: "number", description: "Cash actually collected." },
+                      deliveryCharge: { type: "number" },
+                      netPayable: { type: "number" },
+                    },
+                  },
+                },
+                totalCod: { type: "number" },
+                totalDeliveryCharge: { type: "number" },
+                totalNetPayable: { type: "number" },
+              },
+            },
+          },
+        },
+        BillingStatusResponse: {
+          type: "object",
+          properties: {
+            success: { type: "boolean" },
+            data: {
+              type: "object",
+              properties: {
+                vendorId: { type: "string", format: "uuid" },
+                state: { type: "string", description: "Whether ordering is unrestricted, near the warn threshold, or blocked." },
+                codCollected: { type: "number", description: "Lifetime COD collected on your parcels." },
+                deliveryCharges: { type: "number", description: "Lifetime delivery charges earned by the office." },
+                payouts: { type: "number", description: "Lifetime net already paid out to you via settled statements." },
+                paymentsReceived: { type: "number", description: "Lifetime verified payments you have made to the office." },
+                balance: { type: "number", description: "Negative means you owe the office." },
+                warnThreshold: { type: "number" },
+                blockThreshold: { type: "number" },
+                amountToClearBlock: { type: "number" },
+                pendingPaymentAmount: { type: "number", description: "Filed claims not yet verified; not counted in balance." },
+                paymentNote: { type: ["string", "null"] },
+              },
+            },
+          },
+        },
+        VendorPayment: {
+          type: "object",
+          properties: {
+            id: { type: "string", format: "uuid" },
+            vendorId: { type: "string", format: "uuid" },
+            vendorName: { type: "string" },
+            amount: { type: "number" },
+            method: { type: "string" },
+            reference: { type: ["string", "null"] },
+            hasProof: { type: "boolean", description: "Whether a proof file was attached to the claim." },
+            status: { type: "string", enum: ["pending", "verified", "rejected"] },
+            note: { type: ["string", "null"] },
+            reviewRemark: { type: ["string", "null"] },
+            reviewedAt: { type: ["string", "null"], format: "date-time" },
+            createdAt: { type: "string", format: "date-time" },
+          },
+        },
+        VendorPaymentsResponse: {
+          type: "object",
+          properties: {
+            success: { type: "boolean" },
+            data: { type: "array", items: { "$ref": "#/components/schemas/VendorPayment" } },
+            meta: { "$ref": "#/components/schemas/PaginationMeta" },
+          },
+        },
+        VendorPaymentResponse: {
+          type: "object",
+          properties: {
+            success: { type: "boolean" },
+            message: { type: "string" },
+            data: { "$ref": "#/components/schemas/VendorPayment" },
+          },
+        },
         ErrorResponse: {
           type: "object",
           properties: {
