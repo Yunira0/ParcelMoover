@@ -3824,6 +3824,16 @@ async function _updateParcelStatusImpl(
     );
   }
 
+  // Idempotent no-op: a parcel already at the requested status isn't a
+  // transition at all - STATUS_TRANSITIONS uniformly disallows self-
+  // transitions, so this can only mean the parcel got here between the
+  // client rendering it and this request landing (another actor's request,
+  // a reconcile sweep, or the caller's own resubmitted scan). Report success
+  // instead of 422ing on 'X → X'; there is nothing left to do.
+  if (!isSuperAdmin && currentStatus === newStatus) {
+    return parcel;
+  }
+
   // validate the transition is allowed
   if (!isSuperAdmin) {
     const allowed = STATUS_TRANSITIONS[
@@ -4349,6 +4359,9 @@ export interface BulkUpdateResult {
     dispatchNo: string;
     toLocationId: string;
   };
+  // Parcels in the request that were already at `status` and were dropped
+  // from the batch as a no-op rather than failing the whole request.
+  alreadyUpToDate?: number;
 }
 
 /**
@@ -4427,7 +4440,7 @@ async function _bulkUpdateParcelStatusImpl(
     throw new AppError(403, "Rider profile not found or inactive");
   }
 
-  const parcels = await prisma.parcels.findMany({
+  let parcels = await prisma.parcels.findMany({
     where: {
       id: { in: ids },
       deleted_at: null,
@@ -4439,6 +4452,25 @@ async function _bulkUpdateParcelStatusImpl(
 
   if (parcels.length !== ids.length) {
     throw new AppError(404, "One or more parcels were not found or do not belong to your account");
+  }
+
+  // Idempotent no-op: a parcel already at the target status isn't a
+  // transition at all - STATUS_TRANSITIONS uniformly disallows self-
+  // transitions - so it can only mean the parcel got here between the client
+  // rendering this batch and this request landing (another actor's request,
+  // a reconcile sweep, or the caller's own resubmitted scan). Drop it from
+  // the batch instead of 422ing the whole thing on 'X → X', same as if it
+  // had never been selected. Terminal statuses are excluded from this skip -
+  // those fall through to the terminal-state check below, unchanged, same as
+  // the single-parcel path.
+  const isNoOp = (p: (typeof parcels)[number]) =>
+    p.status === newStatus && !TERMINAL_STATUSES.includes(p.status as parcel_status);
+  const alreadyDoneCount = parcels.filter(isNoOp).length;
+  parcels = parcels.filter((p) => !isNoOp(p));
+  const idsToUpdate = parcels.map((p) => p.id);
+
+  if (parcels.length === 0) {
+    return { updatedCount: 0, status: newStatus, alreadyUpToDate: alreadyDoneCount };
   }
 
   for (const parcel of parcels) {
@@ -4694,11 +4726,11 @@ async function _bulkUpdateParcelStatusImpl(
 
     // A batch hand-off to a delivery rider opens one run sheet for the batch.
     if (newStatus === "sent_for_delivery" && parcelRiderId) {
-      await createRunSheet(tx, parcelRiderId, ids, actor.id);
+      await createRunSheet(tx, parcelRiderId, idsToUpdate, actor.id);
     }
 
     await tx.parcels.updateMany({
-      where: { id: { in: ids } },
+      where: { id: { in: idsToUpdate } },
       data: updateData,
     });
 
@@ -4748,7 +4780,7 @@ async function _bulkUpdateParcelStatusImpl(
     // nothing else in the app ever sets cod_collections.rider_id otherwise.
     if (riderAssignmentField === "delivery_rider_id" && parcelRiderId) {
       await tx.cod_collections.updateMany({
-        where: { parcel_id: { in: ids } },
+        where: { parcel_id: { in: idsToUpdate } },
         data: { rider_id: parcelRiderId },
       });
     }
@@ -4884,7 +4916,7 @@ async function _bulkUpdateParcelStatusImpl(
     // the loop was issuing N sequential round trips while holding transaction locks.
     if (newStatus === "arrived_at_branch") {
       const links = await tx.dispatch_parcels.findMany({
-        where: { parcel_id: { in: ids } },
+        where: { parcel_id: { in: idsToUpdate } },
         select: { dispatch_id: true },
         distinct: ["dispatch_id"],
       });
@@ -4913,6 +4945,7 @@ async function _bulkUpdateParcelStatusImpl(
       ...(dispatch && toLocationId
         ? { dispatch: { id: dispatch.id, dispatchNo: dispatch.dispatch_no, toLocationId } }
         : {}),
+      ...(alreadyDoneCount > 0 ? { alreadyUpToDate: alreadyDoneCount } : {}),
     };
   });
 
