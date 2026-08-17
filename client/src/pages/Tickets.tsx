@@ -29,7 +29,10 @@ type TicketTab = 'all' | TicketStatus;
 const PAGE_SIZE = 10;
 const SEARCH_DEBOUNCE_MS = 300;
 
-const TAB_ORDER: TicketTab[] = ['all', 'pending', 'open', 'closed'];
+// 'open' is a real workflow status (support has replied) but isn't offered as
+// its own tab - having both "Pending" and "Open" read as the same thing to
+// staff. Those tickets are still listed under "All" with an "Open" chip.
+const TAB_ORDER: TicketTab[] = ['all', 'pending', 'closed'];
 
 const TAB_LABELS: Record<TicketTab, string> = {
   all: 'All',
