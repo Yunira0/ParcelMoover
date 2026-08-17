@@ -234,9 +234,19 @@ const VendorSidebar: React.FC = () => {
           <SubItem to="/finance/billing" icon={Wallet} label="Billing & Payments" />
         </div>
 
+        {/* Tickets and Remarks are the two ways a vendor asks us something, so
+            they group together rather than sitting under Account beside user
+            management and delivery charges. Same pairing the admin and sales
+            sidebars already make under "Customer Experience" - the vendor-facing
+            name for it is Support. */}
+        <SidebarSection label="Support" />
+        <div className="sidebar-subnav">
+          <SubItem to="/tickets" icon={Ticket} label="Tickets" />
+          <SubItem to="/remarks" icon={MessageSquare} label="Remarks" />
+        </div>
+
         <SidebarSection label="Account" />
         <SidebarItem to="/user-management" icon={Users} label="User Management" />
-        <SidebarItem to="/tickets" icon={Ticket} label="Tickets" />
         <SidebarItem to="/delivery-charges" icon={Truck} label="Delivery Charges" />
 
         {/* Setup-once items, not daily nav - Print Settings (a printer
@@ -283,9 +293,19 @@ const VendorStaffSidebar: React.FC = () => {
             </div>
           </>
         )}
-        {has('TICKETS_ACCESS') && <SidebarItem to="/tickets" icon={Ticket} label="Tickets" />}
+        {/* Grouped as on the vendor owner's sidebar. The header is gated on the
+            two permissions together, so a staff member with neither does not
+            get a "Support" heading with nothing under it. */}
+        {(has('TICKETS_ACCESS') || has('REMARKS_ACCESS')) && (
+          <>
+            <SidebarSection label="Support" />
+            <div className="sidebar-subnav">
+              {has('TICKETS_ACCESS') && <SubItem to="/tickets" icon={Ticket} label="Tickets" />}
+              {has('REMARKS_ACCESS') && <SubItem to="/remarks" icon={MessageSquare} label="Remarks" />}
+            </div>
+          </>
+        )}
         {has('USER_ACCESS') && <SidebarItem to="/user-management" icon={Users} label="User Management" />}
-        {has('REMARKS_ACCESS') && <SidebarItem to="/remarks" icon={MessageSquare} label="Remarks" />}
         {has('DELIVERY_CHARGES_ACCESS') && <SidebarItem to="/delivery-charges" icon={Truck} label="Delivery Charges" />}
 
         {has('ORDER_ACCESS') && (

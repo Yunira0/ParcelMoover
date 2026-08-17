@@ -62,7 +62,7 @@ const ReturnOperations = lazy(() => import('./pages/ReturnOperations'))
 const HoldOperations = lazy(() => import('./pages/HoldOperations'))
 const LossAndDamageOperations = lazy(() => import('./pages/LossAndDamageOperations'))
 const RiderRunSheet = lazy(() => import('./pages/RiderRunSheet'))
-const CXCenter = lazy(() => import('./pages/CXCenter'))
+const Tickets = lazy(() => import('./pages/Tickets'))
 const Remarks = lazy(() => import('./pages/Remarks'))
 const UnclosedRemarks = lazy(() => import('./pages/UnclosedRemarks'))
 const RemarkDetail = lazy(() => import('./pages/RemarkDetail'))
@@ -252,7 +252,7 @@ function App() {
           />
           <Route
             path="/tickets"
-            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'vendor', 'vendor_staff', 'sales']}><CXCenter /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'vendor', 'vendor_staff', 'sales']}><Tickets /></RoleGuard>}
           />
           <Route
             path="/tickets/:id"
