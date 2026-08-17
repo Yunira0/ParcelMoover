@@ -181,7 +181,12 @@ const FinanceManagement: React.FC = () => {
         actionIcon={<Plus size={16} />}
         onAction={() => navigate(`/finance/settlements/new?type=${activeType}`)}
       >
-        <TicketCategoryButton category="cod_settlement" notificationType="cod_settlement" />
+        <TicketCategoryButton
+          category="cod_settlement"
+          notificationType="cod_settlement"
+          to="/cod-settlement-requests"
+          label="Settlement Requests"
+        />
       </PageHeader>
 
       <div className="finance-filters">

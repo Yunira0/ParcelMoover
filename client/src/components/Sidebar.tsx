@@ -228,6 +228,7 @@ const VendorSidebar: React.FC = () => {
         <SidebarSection label="Finance" />
         <div className="sidebar-subnav">
           <SubItem to="/finance/settlements" icon={Banknote} label="Settlements" />
+          <SubItem to="/vendor/cod-settlement-requests" icon={Banknote} label="Request COD" />
           <SubItem to="/finance/order-payments" icon={ClipboardList} label="Order Payments" />
           <SubItem to="/finance/pending-cod" icon={Receipt} label="Pending COD" />
           <SubItem to="/finance/billing" icon={Wallet} label="Billing & Payments" />
@@ -275,6 +276,7 @@ const VendorStaffSidebar: React.FC = () => {
             <SidebarSection label="COD Management" />
             <div className="sidebar-subnav">
               <SubItem to="/finance/settlements" icon={Banknote} label="Settlements" />
+              <SubItem to="/vendor/cod-settlement-requests" icon={Banknote} label="Request COD" />
               <SubItem to="/finance/order-payments" icon={ClipboardList} label="Order Payments" />
               <SubItem to="/finance/pending-cod" icon={Receipt} label="Pending COD" />
               <SubItem to="/finance/billing" icon={Wallet} label="Billing & Payments" />
@@ -404,6 +406,9 @@ const AdminSidebar: React.FC<{ isSuperAdmin: boolean }> = ({ isSuperAdmin }) => 
               match={['/accounting/transactions/vendor-cod', '/billing']}
             >
               <SubItem to="/accounting/transactions/vendor-cod" icon={Store} label="COD & Settlements" />
+              {/* The vendor's side of the same relationship: what they have
+                  asked to be paid, before any of it becomes a settlement. */}
+              <SubItem to="/cod-settlement-requests" icon={Banknote} label="Settlement Requests" />
               <SubItem to="/billing" icon={Receipt} label="Billing & Credit" />
             </SidebarGroup>
 

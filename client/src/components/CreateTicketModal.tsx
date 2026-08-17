@@ -28,9 +28,6 @@ interface TicketFormState {
   priority: TicketPriority;
   subject: string;
   description: string;
-  bankName: string;
-  accountNumber: string;
-  accountName: string;
   numberOfParcels: string;
   pickupSlot: string;
   pickupDate: 'today' | 'tomorrow';
@@ -42,9 +39,6 @@ const initialState: TicketFormState = {
   priority: 'medium',
   subject: '',
   description: '',
-  bankName: '',
-  accountNumber: '',
-  accountName: '',
   numberOfParcels: '',
   pickupSlot: '',
   pickupDate: 'today',
@@ -56,11 +50,20 @@ const priorityOptions = (Object.keys(TICKET_PRIORITY_LABELS) as TicketPriority[]
   label: TICKET_PRIORITY_LABELS[p],
 }));
 
-// return_request is raised only via the Partner API (linked to an order by
-// the return-request endpoint) — this manual modal has no order picker for
-// it, so it's excluded here rather than offered as an orphaned category.
+// Categories that exist as labels (so old tickets still render with a proper
+// name) but can no longer be raised here:
+//
+//   return_request  — Partner API only, linked to an order by the
+//                     return-request endpoint. This modal has no order picker.
+//   cod_settlement  — moved out of tickets entirely. It has its own table and
+//                     workflow, and a vendor may hold only one live request at
+//                     a time, which a ticket could not express. The server
+//                     refuses this category too, so removing it here is the
+//                     signpost, not the rule.
+const RETIRED_CATEGORIES: TicketCategory[] = ['return_request', 'cod_settlement'];
+
 const categoryOptions = (Object.keys(TICKET_CATEGORY_LABELS) as TicketCategory[])
-  .filter((c) => c !== 'return_request')
+  .filter((c) => !RETIRED_CATEGORIES.includes(c))
   .map((c) => ({
     value: c,
     label: TICKET_CATEGORY_LABELS[c],
@@ -153,21 +156,6 @@ const CreateTicketModal: React.FC<CreateTicketModalProps> = ({ isOpen, onClose, 
     if (category === 'general') {
       if (!subject.trim() || !description.trim()) return { error: 'Please fill in all fields.' };
       return { payload: { category, priority, subject: subject.trim(), description: description.trim() } };
-    }
-
-    if (category === 'cod_settlement') {
-      const { bankName, accountNumber, accountName } = form;
-      if (!bankName.trim() || !accountNumber.trim() || !accountName.trim() || !description.trim()) {
-        return { error: 'Please fill in all fields.' };
-      }
-      const composed = [
-        `Bank Name: ${bankName.trim()}`,
-        `Account Number: ${accountNumber.trim()}`,
-        `Account Name: ${accountName.trim()}`,
-        '',
-        description.trim(),
-      ].join('\n');
-      return { payload: { category, priority, subject: 'COD Settlement request', description: composed } };
     }
 
     if (category === 'pickup') {
@@ -268,30 +256,6 @@ const CreateTicketModal: React.FC<CreateTicketModalProps> = ({ isOpen, onClose, 
                 value={form.subject}
                 onChange={(value) => update({ subject: value })}
               />
-            )}
-
-            {form.category === 'cod_settlement' && (
-              <>
-                <FormField
-                  label="Bank Name"
-                  required
-                  value={form.bankName}
-                  onChange={(value) => update({ bankName: value })}
-                />
-                <FormField
-                  label="Account Number"
-                  required
-                  value={form.accountNumber}
-                  onChange={(value) => update({ accountNumber: value })}
-                />
-                <FormField
-                  label="Account Name"
-                  required
-                  className="ticket-field-full"
-                  value={form.accountName}
-                  onChange={(value) => update({ accountName: value })}
-                />
-              </>
             )}
 
             {form.category === 'pickup' && (

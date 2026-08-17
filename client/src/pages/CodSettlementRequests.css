@@ -1,0 +1,90 @@
+/* Shared by the vendor-facing request page and the staff review page.
+   One file rather than two: the two screens are the same object seen from
+   either side, and splitting the styles guaranteed they would drift. */
+
+.cod-request-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  width: 100%;
+}
+
+.cod-request-header h1 {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.cod-request-header p {
+  margin: var(--space-2) 0 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-caption);
+  max-width: 70ch;
+}
+
+.cod-request-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-5);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+}
+
+.cod-request-card h2 {
+  margin: 0;
+  font-size: var(--font-size-md);
+}
+
+.cod-request-hint {
+  margin: 0;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-caption);
+  max-width: 70ch;
+}
+
+/* Two across on a wide screen, stacked on a narrow one. The note field spans
+   both, since a free-text box in a half-width column is uncomfortable to type in. */
+.cod-request-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--space-4);
+}
+
+.cod-request-form > *:last-child {
+  grid-column: 1 / -1;
+}
+
+.cod-request-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.cod-request-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.cod-request-outcome {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-caption);
+}
+
+/* Stacked bank details inside a table cell - same shape as .finance-cell on
+   the orders table, kept local so the two can diverge if they need to. */
+.cod-request-account {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cod-request-account span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
