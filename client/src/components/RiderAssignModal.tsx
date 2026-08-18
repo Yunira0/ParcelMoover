@@ -50,7 +50,7 @@ const RiderAssignModal: React.FC<RiderAssignModalProps> = ({
     setRiderId('');
     if (riders.length > 0) return;
     setLoading(true);
-    getRiders()
+    getRiders({ pageSize: 100 })
       .then((res) => {
         if (res?.success && Array.isArray(res.data)) {
           setRiders(res.data.filter((r: RiderRecord) => r.status === 'active'));

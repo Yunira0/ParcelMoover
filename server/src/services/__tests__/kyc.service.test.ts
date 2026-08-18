@@ -110,6 +110,21 @@ describe("approveKycApplication", () => {
     });
   });
 
+  // Regression: this used to be left unset, so it fell to the schema default of
+  // "flat" and a vendor who signed up through KYC was priced on a different
+  // model from one an admin created by hand (registerVendor already defaults to
+  // per_destination).
+  it("puts a KYC vendor on per-destination rates, like an admin-created vendor", async () => {
+    const tx = makeMockTx();
+    mockedPrisma.$transaction.mockImplementation((fn: (tx: unknown) => Promise<unknown>) => fn(tx));
+
+    await approveKycApplication("app-1", "reviewer-1");
+
+    const call = tx.vendors.create.mock.calls[0];
+    if (!call) throw new Error("vendors.create was not called");
+    expect(call[0].data.rate_type).toBe("per_destination");
+  });
+
   it("rejects when the application is not pending", async () => {
     mockedPrisma.vendor_kyc_applications.findUnique.mockResolvedValue({
       ...pendingApplication,

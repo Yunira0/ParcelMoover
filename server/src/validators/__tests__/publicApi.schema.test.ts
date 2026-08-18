@@ -5,6 +5,7 @@ import {
   publicReturnRequestSchema,
   publicSettlementsQuerySchema,
   publicUpdateOrderSchema,
+  publicVendorPaymentsQuerySchema,
 } from "../publicApi.schema";
 
 const baseReceiver = { name: "Jane Doe", phone: "9800000000" };
@@ -129,5 +130,28 @@ describe("publicOrderCodQuerySchema / publicSettlementsQuerySchema", () => {
       publicSettlementsQuerySchema.safeParse({ fromDate: "2026-01-01T00:00:00Z" }).success,
     ).toBe(true);
     expect(publicSettlementsQuerySchema.safeParse({ fromDate: "2026-01-01" }).success).toBe(false);
+  });
+});
+
+describe("publicVendorPaymentsQuerySchema", () => {
+  it("only allows the three real claim states as a status filter", () => {
+    for (const status of ["pending", "verified", "rejected"]) {
+      expect(publicVendorPaymentsQuerySchema.safeParse({ status }).success).toBe(true);
+    }
+    expect(publicVendorPaymentsQuerySchema.safeParse({ status: "approved" }).success).toBe(false);
+  });
+
+  it("treats the status filter as optional", () => {
+    expect(publicVendorPaymentsQuerySchema.safeParse({}).success).toBe(true);
+  });
+
+  // vendorId is never a public param — the API key's own vendor is the scope,
+  // so a caller-supplied one must not survive into the service filters.
+  it("strips a caller-supplied vendorId", () => {
+    const result = publicVendorPaymentsQuerySchema.safeParse({
+      vendorId: "11111111-1111-4111-8111-111111111111",
+    });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data).not.toHaveProperty("vendorId");
   });
 });

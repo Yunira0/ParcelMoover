@@ -37,14 +37,14 @@ export async function ncmHandoffController(req: Request, res: Response) {
       success: failed.length === 0,
       message:
         failed.length === 0
-          ? `Handed off ${results.length} parcel${results.length === 1 ? "" : "s"} to NCM`
+          ? `Handed off ${results.length} parcel${results.length === 1 ? "" : "s"} to the courier partner`
           : `${results.length - failed.length} of ${results.length} parcels handed off; ${failed.length} failed`,
       data: results,
     });
   } catch (error: any) {
     return res.status(error.statusCode || 500).json({
       success: false,
-      message: error.message || "NCM handoff failed",
+      message: error.message || "Courier partner handoff failed",
     });
   }
 }

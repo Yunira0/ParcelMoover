@@ -185,6 +185,8 @@ model locations {
   parties                                                          parties[]
   riders                                                           riders[]
   vendors                                                          vendors[]
+  journal_lines                                                    journal_lines[]
+  expenses                                                         expenses[]
 
   @@index([parent_id], map: "idx_locations_parent_id")
   @@index([name(ops: raw("gin_trgm_ops"))], map: "idx_locations_name_trgm", type: Gin)
@@ -353,8 +355,13 @@ model parcels {
   pickup_tasks                                         pickup_tasks?
   run_sheet_parcels                                    run_sheet_parcels[]
   support_tickets                                      support_tickets[]
+  journal_lines                                        journal_lines[]
 
   @@index([created_at(sort: Desc)], map: "idx_parcels_created_at")
+  /// Drives the ledger posting sweep's "touched since" window. Distinct from
+  /// created_at and delivered_at, neither of which moves when a parcel is
+  /// un-delivered or its COD is corrected.
+  @@index([updated_at], map: "idx_parcels_updated_at")
   @@index([order_number(sort: Desc), id(sort: Desc)], map: "idx_parcels_order_number_id")
   @@index([created_by], map: "idx_parcels_created_by")
   @@index([source_order_id], map: "idx_parcels_source_order_id")
@@ -530,6 +537,7 @@ model settlements {
   settlement_items                     settlement_items[]
   settlement_payments                  settlement_payments[]
   settlement_documents                 settlement_documents[]
+  cod_settlement_requests              cod_settlement_requests[]
   users_settlements_approved_byTousers users?             @relation("settlements_approved_byTousers", fields: [approved_by], references: [id], onUpdate: NoAction)
   riders                               riders?            @relation(fields: [rider_id], references: [id], onUpdate: NoAction)
   users_settlements_settled_byTousers  users?             @relation("settlements_settled_byTousers", fields: [settled_by], references: [id], onUpdate: NoAction)
@@ -617,6 +625,55 @@ model support_tickets {
   @@index([status, created_at(sort: Desc)], map: "idx_support_tickets_status")
 }
 
+/// A vendor asking to be paid out the COD we are holding for them.
+///
+/// Deliberately not a support ticket. This used to be raised as one (category
+/// "cod_settlement"), which meant a vendor could open unlimited simultaneous
+/// requests for the same money, and the bank details they sent were flattened
+/// into free-text ticket description. Here the fields are columns, and the
+/// partial unique index below is what actually enforces one live request at a
+/// time - a service-level check alone would race two concurrent submissions.
+///
+/// Distinct from `settlements`: this is the *ask*. The settlement is the money
+/// actually moving, created by an admin once they act on the request, and
+/// linked back through settlement_id.
+model cod_settlement_requests {
+  id             String                        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  request_no     String                        @unique
+  vendor_id      String                        @db.Uuid
+  /// Where the vendor wants the money sent. Captured per request rather than
+  /// read off the vendor record, because a payout account can differ from the
+  /// account registered at KYC and we need the one they asked for on the day.
+  bank_name      String
+  account_number String
+  account_name   String
+  note           String?
+  /// The vendor's unsettled COD when they asked, in paisa-accurate decimal.
+  /// A snapshot for the admin's context, not an authority - the payable figure
+  /// is recomputed at settlement time and will have moved on.
+  amount_snapshot Decimal?                     @db.Decimal(12, 2)
+  status         cod_settlement_request_status @default(open)
+  /// Set when an admin settles the request against a real payout.
+  settlement_id  String?                       @db.Uuid
+  /// Why a request was rejected - shown back to the vendor, so they know
+  /// whether to fix something and re-raise.
+  decision_note  String?
+  created_by     String?                       @db.Uuid
+  reviewed_by    String?                       @db.Uuid
+  reviewed_at    DateTime?                     @db.Timestamptz(6)
+  closed_at      DateTime?                     @db.Timestamptz(6)
+  created_at     DateTime                      @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime                      @default(now()) @updatedAt @db.Timestamptz(6)
+
+  vendors     vendors      @relation(fields: [vendor_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  settlements settlements? @relation(fields: [settlement_id], references: [id], onUpdate: NoAction)
+  created_by_user users?   @relation("cod_settlement_requests_created_byTousers", fields: [created_by], references: [id], onUpdate: NoAction)
+  reviewed_by_user users?  @relation("cod_settlement_requests_reviewed_byTousers", fields: [reviewed_by], references: [id], onUpdate: NoAction)
+
+  @@index([vendor_id, created_at(sort: Desc)], map: "idx_cod_settlement_requests_vendor")
+  @@index([status, created_at(sort: Desc)], map: "idx_cod_settlement_requests_status")
+}
+
 model user_roles {
   user_id    String   @db.Uuid
   role_id    String   @db.Uuid
@@ -661,6 +718,12 @@ model users {
   vendor_payments_reviewed_by                            vendor_payments[]       @relation("vendor_payments_reviewed_byTousers")
   support_tickets_support_tickets_assigned_toTousers     support_tickets[]       @relation("support_tickets_assigned_toTousers")
   support_tickets_support_tickets_created_byTousers      support_tickets[]       @relation("support_tickets_created_byTousers")
+  cod_settlement_requests_created_by                     cod_settlement_requests[] @relation("cod_settlement_requests_created_byTousers")
+  cod_settlement_requests_reviewed_by                    cod_settlement_requests[] @relation("cod_settlement_requests_reviewed_byTousers")
+  journal_entries                                        journal_entries[]
+  accounting_periods                                     accounting_periods[]
+  expenses_created                                       expenses[]              @relation("expenses_created_by")
+  expenses_voided                                        expenses[]              @relation("expenses_voided_by")
   user_roles                                             user_roles[]
   vendor_staff                                           vendor_staff?
   vendors                                                vendors?                @relation("vendor_owner")
@@ -753,6 +816,7 @@ model vendors {
   api_keys              api_keys[]
   webhook_endpoints     webhook_endpoints[]
   vendor_payments       vendor_payments[]
+  cod_settlement_requests cod_settlement_requests[]
 
   @@index([location_id], map: "idx_vendors_location_id")
   @@index([sales_user_id], map: "idx_vendors_sales_user_id")
@@ -927,8 +991,13 @@ model payment_methods {
   name       String   @unique
   is_active  Boolean  @default(true)
   sort_order Int      @default(0)
+  /// The ledger account this method's money lands in. Created with the method,
+  /// so adding "Prabhu Bank" gives it a balance of its own rather than merging
+  /// into a shared bucket. Null only for rows created before this existed.
+  ledger_account_id String?          @db.Uuid
   created_at DateTime @default(now()) @db.Timestamptz(6)
   updated_at DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+  ledger_account    ledger_accounts? @relation(fields: [ledger_account_id], references: [id], onUpdate: NoAction)
 }
 
 enum exception_status {
@@ -1008,6 +1077,20 @@ enum ticket_status {
   pending
 }
 
+/// Lifecycle of a vendor's request to be paid out their collected COD.
+///
+/// `open` and `in_progress` are the *live* states - a vendor may hold only one
+/// request in either at a time (see the partial unique index on the model).
+/// `settled` and `rejected` are both terminal and both release that hold:
+/// rejection has to unblock, or one refused request would lock a vendor out of
+/// ever asking again.
+enum cod_settlement_request_status {
+  open
+  in_progress
+  settled
+  rejected
+}
+
 enum user_status {
   active
   inactive
@@ -1074,6 +1157,245 @@ model ticket_replies {
   created_at  DateTime @default(now()) @db.Timestamptz(6)
 
   @@index([ticket_id, created_at], map: "idx_ticket_replies_ticket_id")
+}
+
+// ── Accounting ledger ────────────────────────────────────────────────────────
+//
+// A double-entry general ledger posted alongside the operational tables above.
+// It does not replace them: every money event still writes cod_collections /
+// settlements / vendor_payments as before, and *additionally* posts a journal
+// entry inside the same transaction, so the books can never drift from
+// operations.
+//
+// The books are kept in Bikram Sambat: a period is a BS month and a fiscal year
+// runs Shrawan -> Ashadh. AD timestamps remain the stored truth; the BS strings
+// here are derived at post time (see utils/bikramSambat.ts) and denormalized
+// only so reports can group and sort without converting per row.
+
+/// Chart of accounts. Codes follow the usual 1xxx asset / 2xxx liability /
+/// 3xxx equity / 4xxx revenue / 5xxx expense blocks; see
+/// services/accounting/accounts.ts for the seeded set and their meanings.
+model ledger_accounts {
+  id             String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code           String              @unique
+  name           String
+  type           ledger_account_type
+  /// Which side increases this account. Derivable from `type` for ordinary
+  /// accounts, but stored so a contra account (natural side flipped against its
+  /// type) can exist later without a schema change.
+  normal_side    ledger_normal_side
+  parent_id      String?             @db.Uuid
+  /// A control account is only ever posted to with a party attached, so its
+  /// balance decomposes into a per-party subledger (cash held by each rider,
+  /// owed to each vendor). Enforced by the posting service.
+  is_control     Boolean             @default(false)
+  /// Which party dimension `is_control` keys on. Null for non-control accounts.
+  subledger_type ledger_party_type?
+  description    String?
+  is_active      Boolean             @default(true)
+  created_at     DateTime            @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime            @default(now()) @updatedAt @db.Timestamptz(6)
+  parent           ledger_accounts?  @relation("ledger_account_tree", fields: [parent_id], references: [id], onUpdate: NoAction)
+  children         ledger_accounts[] @relation("ledger_account_tree")
+  journal_lines    journal_lines[]
+  expense_category expenses[]        @relation("expense_category")
+  expense_funding  expenses[]        @relation("expense_funding")
+  payment_methods  payment_methods[]
+
+  @@index([parent_id], map: "idx_ledger_accounts_parent_id")
+  @@index([type, code], map: "idx_ledger_accounts_type_code")
+}
+
+/// One balanced transaction: sum(debit) = sum(credit) across its lines,
+/// enforced by a deferred constraint trigger so a multi-statement insert can
+/// still build the entry line by line.
+///
+/// Entries are immutable once posted. A mistake is corrected by posting a
+/// reversal (status `voided` on the original, a new entry pointing back at it
+/// via reversal_of_id) - never by updating or deleting, or the audit trail
+/// stops being one.
+model journal_entries {
+  id             String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  entry_no       String                @unique
+  /// The AD instant the economic event happened - not when it was recorded.
+  entry_date     DateTime              @db.Timestamptz(6)
+  /// Derived from entry_date on the Nepal calendar day: `2083-04-22`.
+  bs_date        String
+  /// `2083-04`. FK to the period whose lock governs this entry.
+  period_key     String
+  memo           String?
+  /// What produced this entry: `cod_collection`, `settlement`,
+  /// `vendor_payment`, `opening_balance`, `manual`, `reversal`.
+  source_type    String
+  source_id      String?               @db.Uuid
+  /// Distinguishes several entries sharing one source row - a delivered parcel
+  /// posts both `cod_collected` and `delivery_charge_earned` off the same
+  /// cod_collection. Together with source_type/source_id this is the
+  /// idempotency key that makes re-running a post (retry, backfill re-run) a
+  /// no-op instead of a double count.
+  event_key      String
+  status         journal_entry_status  @default(posted)
+  reversal_of_id String?               @db.Uuid
+  posted_by      String?               @db.Uuid
+  created_at     DateTime              @default(now()) @db.Timestamptz(6)
+  lines          journal_lines[]
+  period         accounting_periods    @relation(fields: [period_key], references: [period_key], onUpdate: NoAction)
+  reversal_of    journal_entries?      @relation("journal_entry_reversal", fields: [reversal_of_id], references: [id], onUpdate: NoAction)
+  reversed_by    journal_entries[]     @relation("journal_entry_reversal")
+  users          users?                @relation(fields: [posted_by], references: [id], onUpdate: NoAction)
+
+  /// Postgres treats NULLs as distinct here, so manual entries (source_id null)
+  /// never collide with each other while sourced entries stay deduplicated.
+  @@unique([source_type, source_id, event_key], map: "uq_journal_entries_source")
+  @@index([period_key, entry_date], map: "idx_journal_entries_period")
+  @@index([entry_date(sort: Desc)], map: "idx_journal_entries_entry_date")
+  @@index([source_type, source_id], map: "idx_journal_entries_source_lookup")
+  @@index([reversal_of_id], map: "idx_journal_entries_reversal_of")
+}
+
+/// One side of one entry. Exactly one of debit/credit is non-zero (CHECK), so
+/// there is no ambiguity about direction and no zero-value filler lines.
+model journal_lines {
+  id          String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  entry_id    String             @db.Uuid
+  line_no     Int
+  account_id  String             @db.Uuid
+  debit       Decimal            @default(0) @db.Decimal(14, 2)
+  credit      Decimal            @default(0) @db.Decimal(14, 2)
+  /// Subledger dimension. Polymorphic by design (a line can point at a vendor,
+  /// a rider or a payment method), so party_id carries no FK - the same
+  /// standalone-table pattern used by ticket_replies and vendor_staff.
+  party_type  ledger_party_type?
+  party_id    String?            @db.Uuid
+  location_id String?            @db.Uuid
+  parcel_id   String?            @db.Uuid
+  memo        String?
+  /// Copied from the parent entry. Safe to denormalize precisely because
+  /// entries are immutable, and it keeps the ledger and subledger reports off a
+  /// join-then-sort over the whole entries table.
+  entry_date  DateTime           @db.Timestamptz(6)
+  created_at  DateTime           @default(now()) @db.Timestamptz(6)
+  entry       journal_entries    @relation(fields: [entry_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  account     ledger_accounts    @relation(fields: [account_id], references: [id], onUpdate: NoAction)
+  locations   locations?         @relation(fields: [location_id], references: [id], onUpdate: NoAction)
+  parcels     parcels?           @relation(fields: [parcel_id], references: [id], onUpdate: NoAction)
+
+  @@unique([entry_id, line_no], map: "uq_journal_lines_entry_line")
+  @@index([account_id, entry_date(sort: Desc)], map: "idx_journal_lines_account_date")
+  @@index([party_type, party_id, entry_date(sort: Desc)], map: "idx_journal_lines_party_date")
+  @@index([entry_id], map: "idx_journal_lines_entry_id")
+  @@index([parcel_id], map: "idx_journal_lines_parcel_id")
+}
+
+/// One BS month of books. Closing a period freezes it: the posting service
+/// refuses any entry whose period_key is closed, so a correction to a closed
+/// month has to be posted into an open one, the way it works on paper.
+model accounting_periods {
+  id          String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// `2083-04`, the join key used by journal_entries.
+  period_key  String                   @unique
+  /// `2083/84` - the fiscal year (Shrawan-Ashadh) this month belongs to.
+  fiscal_year String
+  bs_year     Int
+  bs_month    Int
+  /// Half-open AD range [starts_at, ends_at) covering the BS month. Stored
+  /// because BS month lengths vary 29-32 days and are revised year to year -
+  /// resolving the boundary once at creation keeps every later query honest.
+  starts_at   DateTime                 @db.Timestamptz(6)
+  ends_at     DateTime                 @db.Timestamptz(6)
+  status      accounting_period_status @default(open)
+  closed_by   String?                  @db.Uuid
+  closed_at   DateTime?                @db.Timestamptz(6)
+  created_at  DateTime                 @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime                 @default(now()) @updatedAt @db.Timestamptz(6)
+  entries     journal_entries[]
+  users       users?                   @relation(fields: [closed_by], references: [id], onUpdate: NoAction)
+
+  @@unique([bs_year, bs_month], map: "uq_accounting_periods_bs_month")
+  @@index([fiscal_year, bs_month], map: "idx_accounting_periods_fiscal_year")
+}
+
+/// Money going out that no other table records - rent, fuel, salaries, rider
+/// commission. Everything else in the ledger is derived from an operational row
+/// that already existed; without this one the books could show revenue but
+/// never profit.
+///
+/// A thin operational record: the journal entry is the real artifact. This row
+/// exists so the entry has something to be listed, searched and voided from,
+/// since the entry itself is immutable.
+model expenses {
+  id           String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  expense_no   String          @unique
+  expense_date DateTime        @db.Timestamptz(6)
+  bs_date      String
+  /// The 5xxx account this is a cost of.
+  account_id   String          @db.Uuid
+  /// The cash, bank or wallet account it came out of.
+  paid_from_id String          @db.Uuid
+  amount       Decimal         @db.Decimal(14, 2)
+  payee        String?
+  reference    String?
+  note         String?
+  location_id  String?         @db.Uuid
+  /// Who this was spent on - the rider whose bike was fuelled, the staff member
+  /// paid. Carried onto the journal line so one query returns everything the
+  /// company has paid to or collected from a person, across every account.
+  party_type   ledger_party_type?
+  party_id     String?         @db.Uuid
+  status       expense_status  @default(recorded)
+  created_by   String?         @db.Uuid
+  voided_by    String?         @db.Uuid
+  voided_at    DateTime?       @db.Timestamptz(6)
+  void_reason  String?
+  created_at   DateTime        @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime        @default(now()) @updatedAt @db.Timestamptz(6)
+  account      ledger_accounts @relation("expense_category", fields: [account_id], references: [id], onUpdate: NoAction)
+  paid_from    ledger_accounts @relation("expense_funding", fields: [paid_from_id], references: [id], onUpdate: NoAction)
+  locations    locations?      @relation(fields: [location_id], references: [id], onUpdate: NoAction)
+  creator      users?          @relation("expenses_created_by", fields: [created_by], references: [id], onUpdate: NoAction)
+  voider       users?          @relation("expenses_voided_by", fields: [voided_by], references: [id], onUpdate: NoAction)
+
+  @@index([expense_date(sort: Desc)], map: "idx_expenses_date")
+  @@index([account_id, expense_date(sort: Desc)], map: "idx_expenses_account")
+  @@index([status, expense_date(sort: Desc)], map: "idx_expenses_status")
+  @@index([party_type, party_id, expense_date(sort: Desc)], map: "idx_expenses_party")
+}
+
+enum expense_status {
+  recorded
+  voided
+}
+
+enum ledger_account_type {
+  asset
+  liability
+  equity
+  revenue
+  expense
+}
+
+enum ledger_normal_side {
+  debit
+  credit
+}
+
+enum journal_entry_status {
+  posted
+  voided
+}
+
+enum accounting_period_status {
+  open
+  closed
+}
+
+/// Subledger dimensions a journal line can be attributed to.
+enum ledger_party_type {
+  vendor
+  rider
+  payment_method
+  location
+  user
 }
 
 // Vendor-owned staff accounts with per-member permission flags.

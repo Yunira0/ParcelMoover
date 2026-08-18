@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Search, ShieldCheck } from 'lucide-react';
 import Table, { TableRowActions } from '../components/Table';
+import { toBsDate } from '../utils/nepaliDate';
 import UserActionModal from '../components/UserActionModal';
 import PageHeader from '../components/PageHeader';
 import Pagination from '../components/Pagination';
@@ -151,7 +152,7 @@ const AdminManagement: React.FC = () => {
     { header: 'PHONE', accessor: 'phone' as keyof AdminUser },
     { header: 'LOCATION', accessor: 'location' as keyof AdminUser },
     { header: 'POSITION', accessor: 'position' as keyof AdminUser },
-    { header: 'JOINED', accessor: 'joined' as keyof AdminUser },
+    { header: 'JOINED', accessor: (a: AdminUser) => toBsDate(a.joined) || '—' },
     ...(isSuperAdmin
       ? [{
           header: 'PERMISSIONS',

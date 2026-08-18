@@ -4,9 +4,11 @@ import { Plus, Ticket, Banknote, Bike, ArrowDownToLine } from 'lucide-react';
 import Button from '../Button';
 import './VendorQuickActions.css';
 
-// Raise Ticket / Request COD / Pickup Request all ride on the ticket system:
-// "/tickets?new=<category>" opens the create-ticket modal pre-set to that
-// category (COD settlement and pickup have dedicated forms in the modal).
+// Raise Ticket / Pickup Request ride on the ticket system: "/tickets?new=<category>"
+// opens the create-ticket modal pre-set to that category.
+//
+// Request COD does not. It has its own page and its own rule — one live request
+// per vendor — so it links straight there rather than opening a ticket.
 const VendorQuickActions: React.FC = () => {
   const navigate = useNavigate();
 
@@ -20,7 +22,7 @@ const VendorQuickActions: React.FC = () => {
         Raise Ticket
         <Ticket size={16} />
       </Button>
-      <Button variant="outline" onClick={() => navigate('/tickets?new=cod_settlement')}>
+      <Button variant="outline" onClick={() => navigate('/vendor/cod-settlement-requests')}>
         Request COD
         <Banknote size={16} />
       </Button>

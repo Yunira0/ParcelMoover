@@ -91,6 +91,8 @@ export interface Order {
   codAmount: number;
   itemValue: number;
   deliveryCharge: number;
+  /** Cash actually collected from the receiver. 0 until delivered, and below codAmount on a partial. */
+  collectedAmount: number;
   packageType?: string;
   deliveryInstruction?: string;
   vendorId: string | null;
@@ -204,6 +206,14 @@ export interface DashboardSummary {
     inTransit: number;
     inTransitAmount: number;
     pendingDeliveries: number;
+    pendingDeliveriesAmount: number;
+    /** Vendor-shaped split of the pipeline (see the vendor/sales overview
+     *  cards): only what we haven't collected yet counts as awaiting pickup,
+     *  and everything from pickup to the customer's door is one bucket. */
+    awaitingPickup: number;
+    awaitingPickupAmount: number;
+    inDelivery: number;
+    inDeliveryAmount: number;
     totalDelivered: number;
     totalDeliveredAmount: number;
     totalReturns: number;
@@ -215,6 +225,8 @@ export interface DashboardSummary {
   today: {
     totalOrders: number;
     delivered: number;
+    /** COD value of the parcels delivered today. */
+    deliveredAmount: number;
     inTransit: number;
     returns: number;
     /** Parcels that became returned_to_vendor today (by status-history date). */
@@ -403,12 +415,13 @@ export const getCodSettlementDetail = async (
 // and returns { pickup_ordered: 12, rider_assigned: 5 }.
 export const getStatusCounts = async (
   groups: Record<string, string[]>,
-  filters?: { deliveryRiderId?: string; search?: string },
+  filters?: { deliveryRiderId?: string; vendorId?: string[]; search?: string },
 ): Promise<Record<string, number>> => {
   const response = await api.get('/orders/status-counts', {
     params: {
       groups: JSON.stringify(groups),
       ...(filters?.deliveryRiderId ? { deliveryRiderId: filters.deliveryRiderId } : {}),
+      ...(filters?.vendorId?.length ? { vendorId: filters.vendorId.join(',') } : {}),
       ...(filters?.search ? { search: filters.search } : {}),
     },
   });

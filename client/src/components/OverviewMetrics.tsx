@@ -68,7 +68,7 @@ const OverviewMetrics: React.FC<OverviewMetricsProps> = ({ overview, today, load
             key={key}
             to={`/overview/${key}`}
             className="overview-metric"
-            aria-label={`${label}: ${loading ? 'loading' : value} — view orders`}
+            aria-label={`${label}: ${loading ? 'loading' : `${value} orders`} — view orders`}
           >
             <span className="overview-metric-top">
               <Icon size={16} style={{ color }} />

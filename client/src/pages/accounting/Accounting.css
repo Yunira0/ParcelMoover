@@ -1,0 +1,459 @@
+/* Layout and ledger-specific typography for the Finance (accounting) section.
+   Everything the design system already owns lives in its own component and is
+   deliberately absent here: tables are <Table>, figures are <StatCard>, badges
+   are <StatusChip>, inputs are <FormField>/<SearchField>, buttons are <Button>.
+   What is left is the section's own shapes - the panel that groups a statement,
+   the figure column of a ledger, the debit/credit lines of a journal entry. */
+
+.acc-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  width: 100%;
+}
+
+/* ── Toolbar ─────────────────────────────────────────────────────────────── */
+
+.acc-toolbar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.acc-filters {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+/* The CAPS-label-over-control shape every filter panel in the app uses.
+   Direct child only on the span - without `>` it cascades into the controls'
+   own nested spans (a dropdown's value, the date picker's placeholder) and
+   shrinks them to this caption size. */
+.acc-filters label,
+.acc-period-picker label,
+.acc-toolbar > label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.acc-filters label > span,
+.acc-period-picker label > span,
+.acc-toolbar > label > span {
+  color: var(--color-text-caption);
+  font-family: var(--typography-font-family-default);
+  font-size: var(--font-size-xxs);
+  font-weight: var(--font-weight-semi-bold);
+  line-height: var(--line-height-xxs);
+  text-transform: uppercase;
+}
+
+.acc-filter {
+  min-width: 190px;
+}
+
+.acc-filter-wide {
+  min-width: 300px;
+}
+
+/* ── Period picker ───────────────────────────────────────────────────────── */
+
+.acc-period-picker {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.acc-period-picker > label {
+  min-width: 170px;
+}
+
+/* ── Figure rows ─────────────────────────────────────────────────────────── */
+
+.acc-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--space-4);
+}
+
+/* Money has a direction, and it should be readable at a glance. */
+.acc-pos { color: var(--color-background-success-default); }
+.acc-neg { color: var(--color-danger-text); }
+.acc-muted { color: var(--color-text-caption); }
+
+/* ── Panels ──────────────────────────────────────────────────────────────── */
+
+.acc-panel {
+  background: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-modal);
+  overflow: hidden;
+}
+
+.acc-panel-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  border-bottom: 1px solid var(--color-border-default);
+  flex-wrap: wrap;
+}
+
+.acc-panel-head h2 {
+  font-family: var(--typography-font-family-default);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semi-bold);
+  line-height: var(--line-height-md);
+  color: var(--color-text-default);
+  margin: 0;
+}
+
+.acc-panel-head p {
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-sm);
+  color: var(--color-text-caption);
+  margin: var(--space-1) 0 0;
+}
+
+.acc-panel-body {
+  padding: var(--space-4);
+}
+
+/* A <Table> inside a panel is part of that panel, not a box within a box - the
+   same treatment nested drill-down tables get (see Table.css). */
+.acc-panel .table-container {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+
+.acc-grid-2 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: var(--space-6);
+  align-items: start;
+}
+
+/* ── Ledger cells ────────────────────────────────────────────────────────── */
+
+/* Every figure column: aligned right, tabular, so columns of numbers line up
+   digit for digit - the entire point of a ledger. */
+.acc-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+th.acc-num {
+  text-align: right;
+}
+
+/* The brought-forward figure a running-balance column starts from - weighted
+   like the totals row it eventually reaches. */
+.custom-table tbody tr.acc-opening-row td {
+  background-color: var(--color-background-elevated);
+  font-weight: var(--font-weight-bold);
+}
+
+/* Sits after a name as its account/period code. Block, not inline: run together
+   with the name it produced "Cash in Hand1000", and a leading space would be
+   collapsed away by JSX anyway. */
+.acc-code {
+  display: block;
+  font-family: var(--mono);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-regular);
+  line-height: var(--line-height-xs);
+  color: var(--color-text-caption);
+  margin-top: var(--space-0-5);
+}
+
+/* In a journal line the code leads the account name on one line. */
+.acc-line-account .acc-code {
+  display: inline;
+  margin-right: var(--space-1);
+}
+
+.acc-entry-no {
+  font-family: var(--mono);
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-xs);
+  color: var(--color-text-primary);
+}
+
+.acc-link {
+  color: var(--color-text-primary);
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+  text-decoration: none;
+}
+
+.acc-link:hover {
+  text-decoration: underline;
+}
+
+.acc-sub {
+  display: block;
+  margin-top: var(--space-0-5);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-regular);
+  line-height: var(--line-height-xs);
+  color: var(--color-text-caption);
+}
+
+/* ── Journal entry lines ─────────────────────────────────────────────────── */
+
+/* Rendered inside a <Table> expansion cell, which strips its own padding so
+   nested tables can run edge to edge - so the padding belongs here. */
+.acc-lines {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.acc-line {
+  display: grid;
+  grid-template-columns: var(--size-6) 1fr auto auto;
+  gap: var(--space-3);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-sm);
+  color: var(--color-text-default);
+  align-items: baseline;
+}
+
+/* By / To. The voucher's own words for which side a line is on. */
+.acc-line-prefix {
+  color: var(--color-text-caption);
+  font-weight: var(--font-weight-semi-bold);
+}
+
+/* The indent is what makes a credit read as a credit at a glance, the way it
+   would be written by hand. */
+.acc-line-credit .acc-line-account {
+  padding-left: var(--space-6);
+}
+
+.acc-line-amount {
+  font-variant-numeric: tabular-nums;
+  min-width: 96px;
+  text-align: right;
+}
+
+/* The day book's footing. Column widths match the Debit and Credit columns of
+   the table above so the figures sit under them. */
+.acc-daybook-total {
+  display: grid;
+  grid-template-columns: 1fr 130px 130px;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-top: 2px solid var(--color-text-default);
+  color: var(--color-text-default);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semi-bold);
+  text-align: right;
+}
+
+.acc-daybook-total > span:first-child {
+  color: var(--color-text-caption);
+  font-weight: var(--font-weight-regular);
+}
+
+/* ── Banners ─────────────────────────────────────────────────────────────── */
+
+.acc-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid transparent;
+  border-radius: var(--border-radius-modal);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-sm);
+}
+
+.acc-banner svg {
+  flex-shrink: 0;
+}
+
+.acc-banner-info {
+  background: var(--color-info-surface);
+  border-color: var(--color-info-text);
+  color: var(--color-info-text);
+}
+
+.acc-banner-warning {
+  background: var(--color-warning-surface);
+  border-color: var(--color-background-warning-default);
+  color: var(--color-background-warning-default);
+}
+
+.acc-banner-danger {
+  background: var(--color-danger-surface);
+  border-color: var(--color-danger-border);
+  color: var(--color-danger-text);
+}
+
+.acc-banner-success {
+  background: var(--color-success-surface);
+  border-color: var(--color-background-success-default);
+  color: var(--color-background-success-default);
+}
+
+/* ── Modals ──────────────────────────────────────────────────────────────── */
+
+.acc-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* Modal bodies here are taller than the two-field forms elsewhere in the app -
+   a journal entry has an unbounded number of lines. */
+.acc-modal-body {
+  max-height: 60vh;
+  overflow-y: auto;
+  padding-right: var(--space-1);
+}
+
+.acc-entry-lines {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* A line plus the party row that appears under it on a control account. */
+.acc-entry-line-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1-5);
+}
+
+.acc-entry-line {
+  display: grid;
+  grid-template-columns: minmax(140px, 2fr) minmax(90px, 1fr) minmax(90px, 1fr) var(--size-9);
+  gap: var(--space-2);
+  align-items: end;
+}
+
+.acc-entry-head {
+  color: var(--color-text-caption);
+  font-size: var(--font-size-xxs);
+  font-weight: var(--font-weight-semi-bold);
+  line-height: var(--line-height-xxs);
+  text-transform: uppercase;
+}
+
+/* The debit and credit columns, heading and input alike: figures line up on
+   their last digit, the way they would in the ledger this becomes. */
+.acc-entry-head span:nth-child(2),
+.acc-entry-head span:nth-child(3) {
+  text-align: right;
+}
+
+.acc-entry-line > .form-group:nth-child(2) input,
+.acc-entry-line > .form-group:nth-child(3) input {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A line carrying an amount on both sides. Marked rather than corrected — the
+   message under the lines says why, and the input stays as typed. */
+.acc-entry-line-invalid input {
+  border-color: var(--color-danger-default);
+}
+
+.acc-entry-line-invalid input:focus {
+  border-color: var(--color-danger-default);
+  box-shadow: 0 0 0 2px rgb(220 38 38 / 12%);
+}
+
+/* Indented under its line so it reads as belonging to it rather than as
+   another line of the entry. */
+.acc-entry-party {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding-left: var(--space-3);
+  border-left: 2px solid var(--color-border-default);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-sm);
+}
+
+.acc-party-search {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.acc-party-results {
+  position: absolute;
+  z-index: var(--z-dropdown);
+  top: calc(100% + var(--space-1));
+  left: 0;
+  right: 0;
+  margin: 0;
+  padding: var(--space-1);
+  list-style: none;
+  max-height: 220px;
+  overflow-y: auto;
+  background: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-modal);
+  box-shadow: var(--shadow-lg);
+}
+
+.acc-party-results button {
+  display: block;
+  width: 100%;
+  padding: var(--space-2) var(--space-2-5);
+  border: none;
+  border-radius: var(--border-radius-default);
+  background: none;
+  color: var(--color-text-default);
+  text-align: left;
+  font-family: var(--typography-font-family-default);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-regular);
+  cursor: pointer;
+}
+
+.acc-party-results button:hover {
+  background: var(--color-background-canvas);
+}
+
+.acc-entry-totals {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-5);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--color-border-default);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-sm);
+  color: var(--color-text-caption);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 640px) {
+  .acc-entry-line {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .acc-toolbar,
+  .acc-filters {
+    align-items: stretch;
+  }
+}

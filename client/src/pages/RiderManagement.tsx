@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Search } from 'lucide-react';
 import Table, { TableRowActions } from '../components/Table';
+import { toBsDate } from '../utils/nepaliDate';
 import UserActionModal from '../components/UserActionModal';
 import PageHeader from '../components/PageHeader';
 import Pagination from '../components/Pagination';
@@ -26,6 +27,9 @@ interface RiderUser {
   payment: string;
   status: 'active' | 'inactive';
   joined: string;
+  // Non-null only for placeholder rows standing in for a 3PL (NCM/Upaya)
+  // rather than a real employee — see riders.carrier_code.
+  carrierCode: string | null;
 }
 
 // Starting rows-per-page. The selector below the table can change it; the
@@ -101,7 +105,20 @@ const RiderManagement: React.FC = () => {
 
   const columns = [
     { header: 'SN', accessor: 'sn' as keyof RiderUser, width: '34px' },
-    { header: 'NAME', accessor: 'name' as keyof RiderUser, width: '100px' },
+    {
+      header: 'NAME',
+      accessor: (item: RiderUser) => (
+        <div className="rider-name-cell">
+          {item.name}
+          {item.carrierCode && (
+            <StatusChip variant="outline" tone="neutral">
+              {item.carrierCode === 'ncm' ? 'NCM' : item.carrierCode === 'upaya' ? 'Upaya' : item.carrierCode}
+            </StatusChip>
+          )}
+        </div>
+      ),
+      width: '100px',
+    },
     { header: 'EMAIL', accessor: 'email' as keyof RiderUser, width: '160px' },
     { header: 'PHONE', accessor: 'phone' as keyof RiderUser, width: '124px' },
     { header: 'LOCATION', accessor: 'location' as keyof RiderUser },
@@ -134,7 +151,7 @@ const RiderManagement: React.FC = () => {
       ),
       width: '150px'
     },
-    { header: 'JOINED', accessor: 'joined' as keyof RiderUser, width: '113px' },
+    { header: 'JOINED', accessor: (r: RiderUser) => toBsDate(r.joined) || '—', width: '113px' },
     {
       header: 'ACTION',
       accessor: (item: RiderUser) => (

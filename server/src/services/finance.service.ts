@@ -1,5 +1,5 @@
 import { Prisma } from "../generated/prisma/client";
-import { parcel_status, payment_status, settlement_status } from "../generated/prisma/enums";
+import { order_type, parcel_status, payment_status, settlement_status } from "../generated/prisma/enums";
 import prisma from "../lib/prisma";
 import redis, { scanAndDelete } from "../lib/redis";
 import { AppError } from "../utils/AppError";
@@ -8,6 +8,7 @@ import { getDatePart, randomBase32 } from "../utils/trackingId";
 import { resolveOwnVendorId } from "./vendor-scope.service";
 import { createNotification } from "./notification.service";
 import { evaluateVendorBillingAsync } from "./billing.service";
+import { syncSettlementPostings } from "./accounting/sync";
 
 import { getActivePaymentMethodNames } from "./payment-method.service";
 import {
@@ -560,6 +561,17 @@ export async function getUnsettledOrders(
   // even if cash was recorded as collected before the cancellation happened
   // (e.g. a super_admin force-cancelling an already-delivered parcel).
   const notCancelled: Prisma.cod_collectionsWhereInput = { parcels: { status: { not: parcel_status.cancelled } } };
+  // An RTV/RTO parcel (genuine return order_type, or a plain delivery bounced
+  // back to returned_to_vendor) never had COD collected on the rider's leg -
+  // collected_amount is 0 - so there's nothing for the rider to settle for it.
+  // It still owes the vendor a return delivery charge, so it stays visible on
+  // the vendor leg (see isReturnToVendor below) - only excluded here.
+  const riderNotReturned: Prisma.cod_collectionsWhereInput = {
+    parcels: {
+      status: { notIn: [parcel_status.cancelled, parcel_status.returned_to_vendor] },
+      order_type: { not: order_type.return },
+    },
+  };
 
   const where: Prisma.cod_collectionsWhereInput = riderId
     ? {
@@ -570,7 +582,7 @@ export async function getUnsettledOrders(
         // same collection independently, so this is scoped to rider statements
         // only - a vendor statement on this collection must not hide it here.
         settlement_items: { none: { settlements: { payee_type: "rider" } } },
-        ...notCancelled,
+        ...riderNotReturned,
       }
     : {
         ...(vendorId ? { vendor_id: vendorId } : {}),
@@ -707,6 +719,14 @@ export async function createSettlement(
           // would wrongly reject settling a corrected-to-0 order at 0.
           collected_at: { not: null },
           settlement_items: { none: { settlements: { payee_type: "rider" } } },
+          // Mirrors getUnsettledOrders' riderNotReturned guard - RTV/RTO
+          // parcels (nothing collected on this leg) must not be settleable
+          // into a rider statement even via a direct createSettlement call
+          // bypassing the picker UI.
+          parcels: {
+            status: { not: parcel_status.returned_to_vendor },
+            order_type: { not: order_type.return },
+          },
         }
       : {
           id: { in: codCollectionIds },
@@ -1083,6 +1103,19 @@ export async function payForSettlement(
       },
     });
 
+    // Money has moved, so the books say so - in the same transaction that
+    // moved it. A rider statement debits cash and clears that rider's holding;
+    // a vendor statement settles their account in whichever direction the
+    // payable points.
+    //
+    // This runs for a part payment too, not just a completed one: the cash
+    // genuinely changed hands either way, and the postings are derived from the
+    // statement's paid amount rather than its settled/unsettled status.
+    await syncSettlementPostings(tx, [settlementId], {
+      actorId: actor.id,
+      reason: "settlement paid",
+    });
+
     return {
       settlement: result,
       payment,
@@ -1429,6 +1462,15 @@ export async function updateSettlement(
         },
         new_data: { codCollectionIds, amount: grossAmount, payableAmount },
       },
+    });
+
+    // Only an unsettled statement is editable, so in practice there is nothing
+    // posted to restate. Syncing anyway costs one indexed lookup and means this
+    // path stays correct if that rule is ever relaxed - the ledger should not
+    // depend on a guard living in another function.
+    await syncSettlementPostings(tx, [settlement.id], {
+      actorId: actor.id,
+      reason: "settlement order list edited",
     });
 
     return { settlement: result, payeeType, targetId, payableAmount };

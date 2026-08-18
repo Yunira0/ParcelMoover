@@ -99,10 +99,58 @@
   font-weight: var(--font-weight-regular);
 }
 
+/* Destination hub on top, receiver address beneath it. */
+.return-location-cell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.return-location-cell span {
+  color: var(--color-text-default);
+  font-weight: var(--font-weight-semi-bold);
+}
+
+.return-location-cell small {
+  color: var(--color-text-placeholder);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-regular);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .return-updated-cell {
   display: flex;
   flex-direction: column;
   gap: 2px;
+}
+
+.return-remarks-cell {
+  max-width: 160px;
+}
+
+.return-remarks-cell-btn {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--color-text-primary);
+  cursor: pointer;
+  text-align: left;
+  border-bottom: 1px dashed var(--color-border-default);
+  transition: all 150ms ease;
+}
+
+.return-remarks-cell-btn:hover {
+  color: var(--color-background-primary-default);
+  border-bottom-color: var(--color-background-primary-default);
 }
 
 

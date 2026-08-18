@@ -626,7 +626,7 @@ const OrderManagement: React.FC = () => {
       // fall back to the currently loaded page / selection
     }
 
-    const headers = ['#', 'Tracking ID', 'Origin', 'Sender', 'Receiver', 'Receiver Phone', 'Receiver Address', 'Destination', 'COD', 'Delivery Charge', 'Weight', 'Status', 'Rider', 'Remarks', 'Order Created Date', 'Arrived at Origin Date', 'Delivered At', 'Last Updated By', 'Last Updated At'];
+    const headers = ['Order ID', 'Tracking ID', 'Origin', 'Sender', 'Receiver', 'Receiver Phone', 'Receiver Address', 'Destination', 'COD', 'Delivery Charge', 'Weight', 'Status', 'Rider', 'Remarks', 'Order Created Date', 'Arrived at Origin Date', 'Delivered At', 'Last Updated By', 'Last Updated At'];
     const rows = exportOrders.map(order => [
       `#${order.orderNumber}`,
       order.trackingId,
@@ -706,6 +706,7 @@ const OrderManagement: React.FC = () => {
         <div className="finance-cell">
           <span>COD: {formatMoney(order.codAmount)}</span>
           <span>D. Charge: {formatMoney(order.deliveryCharge)}</span>
+          <span>Collected: {formatMoney(order.collectedAmount)}</span>
         </div>
       ),
       width: '160px',

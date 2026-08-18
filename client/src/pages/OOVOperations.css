@@ -157,6 +157,28 @@
   font-weight: var(--font-weight-regular);
 }
 
+/* Destination hub on top, receiver address beneath it. */
+.oov-location-cell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.oov-location-cell span {
+  color: var(--color-text-default);
+  font-weight: var(--font-weight-semi-bold);
+}
+
+.oov-location-cell small {
+  color: var(--color-text-placeholder);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-regular);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .oov-updated-cell {
   display: flex;
   flex-direction: column;
@@ -285,21 +307,41 @@
 
 .oov-dispatch-method {
   display: flex;
-  gap: var(--space-4);
+  flex-direction: column;
+  gap: var(--space-2);
   margin-top: var(--space-3);
 }
 
+/* Same bordered-row language as .oov-status-option above it, so the two
+   stacked choice lists in this popover read as one consistent pattern
+   instead of a button list next to a bare native radio row. Fixes both the
+   off-brand blue radio dot (native accent-color) and the cramped 3-column
+   text wrap a fixed-width flex row produced once a third option was added. */
 .oov-dispatch-radio {
   align-items: center;
+  background: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-default);
   color: var(--color-text-default);
   cursor: pointer;
   display: flex;
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-medium);
   gap: var(--space-2);
+  min-height: 36px;
+  padding: var(--space-2);
+  width: 100%;
+}
+
+.oov-dispatch-radio:hover,
+.oov-dispatch-radio:has(input:checked) {
+  background: var(--color-background-primary-invert-default);
+  border-color: var(--color-border-primary);
+  color: var(--color-text-primary);
 }
 
 .oov-dispatch-radio input[type="radio"] {
+  accent-color: var(--color-background-primary-default);
   cursor: pointer;
   margin: 0;
 }

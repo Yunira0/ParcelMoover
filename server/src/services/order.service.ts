@@ -22,7 +22,7 @@ import { generateRunSheetNo } from "../utils/runSheetNo";
 import { NEPAL_UTC_OFFSET_MS, formatNepalDate as formatDate } from "../utils/nepalTime";
 import { resolveOwnVendorId, isStaffActor } from "./vendor-scope.service";
 import { hasAdminPermission } from "../middlewares/adminPermission.middleware";
-import { invalidateVendorFinanceCache } from "./finance.service";
+import { invalidateVendorFinanceCache, invalidateRiderFinanceCache } from "./finance.service";
 import { emitWebhookEvent, emitWebhookEventsBatch } from "./webhookDispatch.service";
 import { getVendorStatusLabel } from "../utils/orderStatusLabel";
 import {
@@ -31,6 +31,7 @@ import {
   evaluateVendorsBillingAsync,
   statusAffectsBalance,
 } from "./billing.service";
+import { syncParcelPostings, syncParcelPostingsAsync } from "./accounting/sync";
 
 type Party = { name: string; phone: string; alternate_phone?: string | null };
 function buildSearchText(trackingId: string, sender: Party, receiver: Party): string {
@@ -56,6 +57,7 @@ import { getDeliveryQuote } from "./delivery-rate.service";
 import { getVendorQuote, getReturnDeliveryQuote, RateType, ServiceType } from "./pricing.service";
 import { resolveLabelSize } from "./vendorPrintSettings.service";
 import { HANDOFF_REMARK_PREFIX as NCM_HANDOFF_REMARK_PREFIX } from "./ncm.service";
+import { HANDOFF_REMARK_PREFIX as UPAYA_HANDOFF_REMARK_PREFIX } from "./upaya.service";
 
 // Maps a vendor row's branch-rate override columns to VendorRateOverrides keys.
 function branchOverrides(v: {
@@ -171,6 +173,26 @@ const DELIVERY_PENDING_STATUSES: parcel_status[] = [
   "failed_delivery",
 ];
 
+// The vendor/sales overview cards split the pipeline differently from the
+// admin dashboard: a vendor only calls a parcel "pending pickup" until we
+// physically take it, and everything after that is one "in progress" bucket
+// all the way to the customer's door. The admin cards instead split that span
+// into pending-pickups / in-transit / pending-deliveries by hub stage. Both
+// views are legitimate, so they get their own counters rather than one being
+// bent to fit the other - these two must stay in step with IN_DELIVERY_STATUSES
+// in the client's VendorMetricDetail, which lists the orders behind the card.
+const AWAITING_PICKUP_STATUSES: parcel_status[] = ["pickup_ordered", "rider_assigned"];
+
+const IN_DELIVERY_STATUSES: parcel_status[] = [
+  "picked_up",
+  "arrived",
+  "oov",
+  "dispatched",
+  "arrived_at_branch",
+  "ready_to_deliver",
+  "sent_for_delivery",
+];
+
 // Hub-level transitions: confirming hub arrival and building/closing a
 // dispatch manifest are branch operations for admin/hub staff to perform,
 // not something the picking-up rider should be able to trigger themselves.
@@ -189,6 +211,11 @@ const TERMINAL_STATUSES: parcel_status[] = [
   "cancelled",
   "returned_to_vendor",
 ];
+
+// The two statuses that mean "the rider handed the parcel over and took the
+// customer's cash" - i.e. the ones that stamp the COD ledger (see the
+// cod_collections upserts in updateParcelStatus / bulkUpdateParcelStatus).
+const DELIVERY_STATUSES: parcel_status[] = ["delivered", "partially_delivered"];
 
 // Hold / Loss & Damage are only reachable from the ops dashboard's dedicated
 // pages (HoldOperations / LossAndDamageOperations), both admin-gated in the
@@ -402,6 +429,46 @@ const REASON_REQUIRED_STATUSES: parcel_status[] = [
 const PICKUP_LEG_STATUSES: parcel_status[] = ["pickup_ordered", "rider_assigned", "picked_up", "failed_pickup"];
 const DELIVERY_LEG_STATUSES: parcel_status[] = ["ready_to_deliver", "sent_for_delivery", "failed_delivery"];
 
+// Statuses where a delivery rider is genuinely holding the parcel, or has just
+// finished with it and must stay on record for COD attribution. Anywhere else
+// the parcel is back with the hub and no rider has a claim on it - so
+// parcels.delivery_rider_id is cleared on the way out (see leavingDelivery).
+// Deliberately excludes ready_to_deliver: that means "waiting to be handed to
+// a rider", which may well be a different one.
+// sent_to_vendor/returned_to_vendor are here for the same "stays on record"
+// reason as delivered: sent_to_vendor assigns a delivery rider (see
+// RIDER_ASSIGNMENT_FIELD) to carry the RTO parcel back, so that rider's claim
+// has to survive the hand-over to the vendor or their returns history empties
+// out. Being in this set is what makes the claim *releasable* at all - without
+// it leavingDelivery is false for every transition out of sent_to_vendor, so a
+// super_admin forcing the parcel back off returned_to_vendor carried the old
+// rider into whatever the parcel did next.
+const DELIVERY_RIDER_HELD_STATUSES: parcel_status[] = [
+  "sent_for_delivery",
+  "failed_delivery",
+  "delivered",
+  "partially_delivered",
+  "sent_to_vendor",
+  "returned_to_vendor",
+];
+
+// The pickup-leg mirror of the release above, keyed on where the parcel is
+// *going* rather than where it has been. pickup_ordered means "in the pool,
+// waiting for a rider to be assigned" - the exact counterpart of
+// ready_to_deliver on the delivery leg - so arriving there must drop whoever
+// held it before, or a rider who failed a pickup keeps listing a parcel that
+// is no longer theirs and offers them no action (RIDER_TRANSITIONS lets riders
+// make that failed_pickup -> pickup_ordered move themselves).
+//
+// Deliberately NOT a "leaving a held set" rule like the delivery leg. Clearing
+// pickup_rider_id at the hub hand-over (picked_up -> arrived) would erase the
+// historical record of who collected the parcel, which riderHandledFilter, the
+// dashboard's total_picked_up, the per-rider counts in auth.controller and the
+// pickup-leg location label in finance.service all read.
+function releasesPickupRider(newStatus: parcel_status): boolean {
+  return newStatus === "pickup_ordered";
+}
+
 function assertRiderOwnsLeg(
   currentStatus: parcel_status,
   parcel: { pickup_rider_id: string | null; delivery_rider_id: string | null },
@@ -420,6 +487,79 @@ function assertRiderOwnsLeg(
     return;
   }
   throw new AppError(403, "Riders cannot update this parcel from its current status");
+}
+
+// Rider read scope comes in two strengths, because "parcels I am responsible
+// for right now" and "parcels I ever handled" are different questions and were
+// previously answered by the same flat
+// `pickup_rider_id = me OR delivery_rider_id = me`.
+//
+// ── Custody: what the rider app LISTS ────────────────────────────────────────
+// A parcel is in a rider's list if they are its delivery rider, or if they are
+// its pickup rider and it has not yet left the origin hub. Their custody ends
+// at that handover: from dispatch onward the parcel is in someone else's hands
+// - another hub, a delivery rider, or a 3PL - and it never comes back to them,
+// not even once delivered.
+//
+// Both halves of the NCM complaint live here. A carrier moves the parcel to
+// sent_for_delivery and then delivered with delivery_rider_id still NULL, so a
+// scope that let the pickup rider keep it (a) dropped live NCM orders into
+// their queue with delivery buttons that assertRiderOwnsLeg 403s on, and
+// (b) filed NCM's completed deliveries under "Orders you have delivered" for
+// whoever happened to collect the parcel days earlier.
+//
+// This is also the rule that matters most operationally: it works on APKs
+// already installed in the field, because the server simply stops returning
+// the rows the old client asks for.
+const PICKUP_RIDER_CUSTODY_STATUSES: parcel_status[] = [...PICKUP_LEG_STATUSES, "arrived"];
+
+function riderCustodyFilter(riderId: string): Prisma.parcelsWhereInput {
+  return {
+    OR: [
+      { delivery_rider_id: riderId },
+      { pickup_rider_id: riderId, status: { in: PICKUP_RIDER_CUSTODY_STATUSES } },
+    ],
+  };
+}
+
+// Same rule for the raw-SQL queries. `alias` prefixes the columns when the
+// query joins (e.g. "p."); empty for single-table scans.
+function riderCustodySql(riderId: string, alias = ""): Prisma.Sql {
+  const col = (name: string) => Prisma.raw(`${alias}${name}`);
+  return Prisma.sql`AND (
+    ${col("delivery_rider_id")} = ${riderId}::uuid
+    OR (${col("pickup_rider_id")} = ${riderId}::uuid
+        AND ${col("status")}::text = ANY(${PICKUP_RIDER_CUSTODY_STATUSES}))
+  )`;
+}
+
+// ── Handled: what the rider's STATS count ───────────────────────────────────
+// Deliberately looser. "Picked Up" on the rider dashboard is a tally of work
+// done, not a task list, so a parcel they collected still counts while it is in
+// transit or out with a 3PL - narrowing this to custody would drop a rider's
+// headline number to near zero whenever their day's pickups are mid-transit.
+// The delivery leg is still excluded: a parcel out with a different rider was
+// never this one's to count.
+function riderHandledFilter(riderId: string): Prisma.parcelsWhereInput {
+  return {
+    OR: [
+      { delivery_rider_id: riderId },
+      { pickup_rider_id: riderId, status: { notIn: DELIVERY_LEG_STATUSES } },
+    ],
+  };
+}
+
+function riderHandledSql(riderId: string, alias = ""): Prisma.Sql {
+  return riderScopeSqlFor(riderId, DELIVERY_LEG_STATUSES, alias);
+}
+
+function riderScopeSqlFor(riderId: string, excluded: parcel_status[], alias: string): Prisma.Sql {
+  const col = (name: string) => Prisma.raw(`${alias}${name}`);
+  return Prisma.sql`AND (
+    ${col("delivery_rider_id")} = ${riderId}::uuid
+    OR (${col("pickup_rider_id")} = ${riderId}::uuid
+        AND ${col("status")}::text <> ALL(${excluded}))
+  )`;
 }
 
 async function resolveActiveRider(riderId: string) {
@@ -955,10 +1095,25 @@ async function canOverrideCodOnBlockedParcel(actor: OrderActor, parcelId: string
 
   const collection = await prisma.cod_collections.findFirst({
     where: { parcel_id: parcelId },
-    select: { payment_status: true },
+    select: {
+      payment_status: true,
+      settlement_items: { select: { settlements: { select: { statement_id: true, payee_type: true } } }, take: 1 },
+    },
   });
   if (collection && collection.payment_status !== "pending") {
     throw new AppError(409, "COD has already been settled to the vendor and can no longer be edited here.");
+  }
+  // Also blocked while still pending, if it's already bundled into a
+  // settlement: that settlement's settlement_items row already froze this
+  // collection's amount at creation time, and editing the COD here would
+  // desync from it with no record of why. Staff must remove it via the
+  // settlement edit flow first.
+  if (collection && collection.settlement_items.length > 0) {
+    const stmt = collection.settlement_items[0]!.settlements;
+    throw new AppError(
+      409,
+      `This order is part of ${stmt.payee_type} settlement ${stmt.statement_id} — remove it from the settlement before editing COD.`,
+    );
   }
   return true;
 }
@@ -1154,6 +1309,38 @@ export async function updateOrderDetails(
     }
   }
 
+  // Correcting COD on an already-delivered parcel (see canOverrideCodOnBlockedParcel
+  // above) has to keep cod_collections.collected_amount honest, or the
+  // settlement ledger keeps showing the pre-correction figure as cash in hand.
+  // How depends on which kind of delivery it was:
+  //   - "delivered": the rider collected the full declared COD, so collected
+  //     tracks the corrected amount exactly.
+  //   - "partially_delivered": collected is an independently counted figure -
+  //     the cash the customer actually handed over. Correcting a wrong DECLARED
+  //     amount must not move COUNTED cash, so it's left alone and only clamped
+  //     if the correction drops the total below what was already collected.
+  // Other blocked statuses (cancelled/returned_to_vendor/loss_and_damage) never
+  // had a real collection event, so their collected_amount stays untouched.
+  // Same "still pending" guard as the cod_amount write below - once the vendor
+  // leg is paid, the parcel's COD can no longer drift from what was settled.
+  let codSyncCollectedAmount: number | null = null;
+  if (
+    data.codAmount !== undefined &&
+    changedKeys.has("COD amount") &&
+    ["delivered", "partially_delivered"].includes(parcel.status)
+  ) {
+    const existingCod = await prisma.cod_collections.findUnique({
+      where: { parcel_id: parcel.id },
+      select: { collected_amount: true, payment_status: true },
+    });
+    if (existingCod && existingCod.payment_status === "pending") {
+      codSyncCollectedAmount =
+        parcel.status === "delivered"
+          ? data.codAmount
+          : Math.min(Number(existingCod.collected_amount), data.codAmount);
+    }
+  }
+
   const updated = await prisma.$transaction(async (tx) => {
     let receiverId = parcel.receiver_id;
     let receiver = currentReceiver;
@@ -1194,6 +1381,11 @@ export async function updateOrderDetails(
         pieces: data.pieces ?? parcel.pieces,
         weight_kg: weightKg,
         cod_amount: data.codAmount ?? parcel.cod_amount,
+        // Mirrors the clamp above so the parcel's own record of the partial
+        // never exceeds (or disagrees with) the collection it's derived from.
+        ...(codSyncCollectedAmount !== null && parcel.status === "partially_delivered"
+          ? { partial_cod_collected: codSyncCollectedAmount }
+          : {}),
         item_value: data.itemValue ?? parcel.item_value,
         delivery_charge: deliveryCharge,
         package_type: data.packageType !== undefined ? data.packageType || null : parcel.package_type,
@@ -1250,14 +1442,25 @@ export async function updateOrderDetails(
       writes.push(
         tx.cod_collections.updateMany({
           where: { parcel_id: parcel.id, payment_status: "pending" },
+          // Blanket-zeroing collected_amount here used to be safe because
+          // EDIT_BLOCKED_STATUSES kept this path off delivered parcels. It no
+          // longer does - EDIT_COD_LOCKED lets staff correct the COD on a
+          // delivered/RTV/RTO parcel - so the collected figure has to be
+          // resolved by the caller (codSyncCollectedAmount) rather than reset.
           data: {
             ...(data.codAmount !== undefined && changedKeys.has("COD amount") ? { cod_amount: data.codAmount } : {}),
+            ...(codSyncCollectedAmount !== null ? { collected_amount: codSyncCollectedAmount } : {}),
             ...(vendorChanged ? { vendor_id: newVendor!.id } : {}),
           },
         }),
       );
     }
     await Promise.all(writes);
+
+    // A COD or delivery-charge edit changes what was posted. Restating it here
+    // keeps the ledger matching the parcel without the caller having to know
+    // which fields moved.
+    await syncParcelPostings(tx, [parcel.id], { actorId: actor.id, reason: "order details edited" });
 
     return updatedParcel;
   });
@@ -1422,6 +1625,10 @@ export async function redirectOrder(
       },
     });
 
+    // The diversion fee raised delivery_charge. If this parcel had already
+    // earned its charge the posted revenue is now understated, so restate it.
+    await syncParcelPostings(tx, [parcel.id], { actorId: actor.id, reason: "order redirected" });
+
     return { parcel: updatedParcel, redirect };
   });
 
@@ -1570,9 +1777,7 @@ function buildOrdersWhere(
     conditions.push({ vendor_id: { in: scope.vendorIds } });
   }
   if (scope.riderId) {
-    conditions.push({
-      OR: [{ pickup_rider_id: scope.riderId }, { delivery_rider_id: scope.riderId }],
-    });
+    conditions.push(riderCustodyFilter(scope.riderId));
   }
   if (query.status?.length) {
     conditions.push({ status: { in: query.status as parcel_status[] } });
@@ -1718,6 +1923,11 @@ const ORDERS_INCLUDE = {
     take: 1,
     include: { users: { include: { user_roles: { include: { roles: true } } } } },
   },
+  // One column, not the whole row. cod_collections.parcel_id is unique, so this
+  // is a single indexed join per parcel - but this include is already the
+  // expensive part of every list query (see the note above getOrderFilterOptions),
+  // so it takes only the figure the finance column actually renders.
+  cod_collections: { select: { collected_amount: true } },
 } satisfies Prisma.parcelsInclude;
 
 // Role tag appended to "last updated by" so staff can tell at a glance which
@@ -1763,9 +1973,16 @@ function mapOrder(
   arrivedByParcelId?: Map<string, string>,
 ) {
   const latestHistory = parcel.parcel_status_history[0];
+  // The delivery rider is who this column is about; the pickup rider only
+  // stands in while the parcel is still on the pickup leg. Past that, falling
+  // back to them labelled whoever collected the parcel as its delivery rider -
+  // so a 3PL-carried order (no delivery rider at all) showed up in ops looking
+  // like it had been assigned to a rider who never saw it again.
   const rider =
     parcel.riders_parcels_delivery_rider_idToriders ||
-    parcel.riders_parcels_pickup_rider_idToriders;
+    (PICKUP_LEG_STATUSES.includes(parcel.status) || parcel.status === "arrived"
+      ? parcel.riders_parcels_pickup_rider_idToriders
+      : null);
   const vendorName = parcel.vendors?.business_name || parcel.vendors?.client_name || "";
   // A vendor's label-size override describes the sticker stock loaded in
   // *their own* printer, so it only applies when the vendor is the one
@@ -1831,6 +2048,11 @@ function mapOrder(
     codAmount: Number(parcel.cod_amount),
     itemValue: Number(parcel.item_value),
     deliveryCharge: Number(parcel.delivery_charge),
+    // Cash actually taken from the receiver, as opposed to cod_amount, which is
+    // what was meant to be taken. The two differ on a partial delivery, and
+    // collected stays 0 until someone marks the parcel delivered. This is the
+    // same figure finance settles on and the ledger posts from.
+    collectedAmount: Number(parcel.cod_collections?.collected_amount ?? 0),
     packageType: parcel.package_type || "",
     deliveryInstruction: parcel.delivery_instruction || "",
     vendorId: parcel.vendor_id,
@@ -2344,6 +2566,8 @@ const ORDER_DETAIL_INCLUDE = {
       to_location: true,
     },
   },
+  // Detail spreads mapOrder, so it needs everything mapOrder reads.
+  cod_collections: { select: { collected_amount: true } },
 } satisfies Prisma.parcelsInclude;
 
 // Internal staff whose real names must never surface to vendors/riders - their
@@ -2373,7 +2597,7 @@ export async function getOrderByTrackingId(actor: OrderActor, trackingId: string
       deleted_at: null,
       ...(vendorId ? { vendor_id: vendorId } : {}),
       ...(vendorIds ? { vendor_id: { in: vendorIds } } : {}),
-      ...(riderId ? { OR: [{ pickup_rider_id: riderId }, { delivery_rider_id: riderId }] } : {}),
+      ...(riderId ? riderHandledFilter(riderId) : {}),
     },
     include: ORDER_DETAIL_INCLUDE,
   });
@@ -2565,7 +2789,7 @@ export async function getOrderStatusesByTrackingIds(actor: OrderActor, trackingI
       deleted_at: null,
       ...(vendorId ? { vendor_id: vendorId } : {}),
       ...(vendorIds ? { vendor_id: { in: vendorIds } } : {}),
-      ...(riderId ? { OR: [{ pickup_rider_id: riderId }, { delivery_rider_id: riderId }] } : {}),
+      ...(riderId ? riderHandledFilter(riderId) : {}),
     },
     select: { tracking_id: true, status: true, updated_at: true },
   });
@@ -2603,7 +2827,7 @@ export async function addOrderRemark(
       deleted_at: null,
       ...(vendorId ? { vendor_id: vendorId } : {}),
       ...(vendorIds ? { vendor_id: { in: vendorIds } } : {}),
-      ...(riderId ? { OR: [{ pickup_rider_id: riderId }, { delivery_rider_id: riderId }] } : {}),
+      ...(riderId ? riderHandledFilter(riderId) : {}),
     },
     select: { id: true, tracking_id: true },
   });
@@ -2737,14 +2961,7 @@ async function computeDashboardSummary(
     deleted_at: null,
     ...(vendorId ? { vendor_id: vendorId } : {}),
     ...(vendorIds ? { vendor_id: { in: vendorIds } } : {}),
-    ...(riderId
-      ? {
-          OR: [
-            { pickup_rider_id: riderId },
-            { delivery_rider_id: riderId },
-          ],
-        }
-      : {}),
+    ...(riderId ? riderHandledFilter(riderId) : {}),
   };
 
   const codWhere: Prisma.cod_collectionsWhereInput = {
@@ -2787,6 +3004,40 @@ async function computeDashboardSummary(
     return { start, end };
   });
 
+  // "Delivered" on the rider dashboard is a claim about who handed the parcel
+  // over, not merely who touched it - so for a rider it counts only their own
+  // deliveries. Without this a 3PL delivery (delivery_rider_id NULL) was filed
+  // under whichever rider had collected the parcel days earlier, and riders
+  // reported NCM "delivering in their name". Empty for vendor/staff/sales
+  // scopes, which are not making that claim.
+  const riderDeliveredSql: Prisma.Sql = riderId
+    ? Prisma.sql`AND delivery_rider_id = ${riderId}::uuid`
+    : Prisma.empty;
+
+  // Every card on the rider dashboard deep-links to the list of orders behind
+  // it, so a card whose number is computed on different terms than its own
+  // drill-down is simply wrong - a rider taps "Total Picked Up: 340" and lands
+  // on three rows. The list is fixed at a status set (the rider APK is
+  // sideloaded and can't be updated), so the number is what has to move.
+  //
+  // Picked Up -> ?view=picked_up, which lists status = picked_up. For that
+  // status custody and handled scope agree, so no extra rider predicate is
+  // needed. The card stops being a lifetime tally and becomes "collected, not
+  // yet handed over at the hub" - which is the honest reading of a number you
+  // can tap into, and matches the Pickup lane riders already work from.
+  const pickedUpFilterSql: Prisma.Sql = riderId
+    ? Prisma.sql`status::text = 'picked_up'`
+    : Prisma.sql`status::text NOT IN ('pickup_ordered','rider_assigned','failed_pickup','cancelled')`;
+
+  // Total RTV -> ?view=return, which lists sent_to_vendor/returned_to_vendor.
+  // order_type = 'return' is a different question entirely (it counts return
+  // orders at any status, including ones this rider never carried back), so
+  // for a rider it's replaced by the statuses the list actually shows, scoped
+  // the same way custody scopes them: the rider who carried the return.
+  const returnsFilterSql: Prisma.Sql = riderId
+    ? Prisma.sql`status::text = ANY(ARRAY['sent_to_vendor','returned_to_vendor']) AND delivery_rider_id = ${riderId}::uuid`
+    : Prisma.sql`order_type::text = 'return'`;
+
   // Same scope (vendor/rider/none) as parcelWhere above, expressed as raw SQL so
   // it can be reused across both consolidated queries below. Casting the enum
   // columns to text and comparing against plain string arrays sidesteps
@@ -2796,7 +3047,7 @@ async function computeDashboardSummary(
     : vendorIds
     ? Prisma.sql`AND vendor_id = ANY(${vendorIds}::uuid[])`
     : riderId
-    ? Prisma.sql`AND (pickup_rider_id = ${riderId}::uuid OR delivery_rider_id = ${riderId}::uuid)`
+    ? riderHandledSql(riderId)
     : Prisma.empty;
 
   // The 11 overview/today metrics below all count the same `parcels` table
@@ -2811,6 +3062,8 @@ async function computeDashboardSummary(
       pending_returns: bigint;
       in_transit: bigint;
       pending_deliveries: bigint;
+      awaiting_pickup: bigint;
+      in_delivery: bigint;
       total_delivered: bigint;
       total_picked_up: bigint;
       total_returns: bigint;
@@ -2822,6 +3075,10 @@ async function computeDashboardSummary(
       pending_pickups_amount: string;
       pending_returns_amount: string;
       in_transit_amount: string;
+      pending_deliveries_amount: string;
+      awaiting_pickup_amount: string;
+      in_delivery_amount: string;
+      todays_delivered_amount: string;
       total_delivered_amount: string;
       total_returns_amount: string;
       total_returned_to_vendor_amount: string;
@@ -2833,19 +3090,25 @@ async function computeDashboardSummary(
       COUNT(*) FILTER (WHERE status::text = ANY(${RETURN_PENDING_STATUSES})) AS pending_returns,
       COUNT(*) FILTER (WHERE status::text = ANY(${IN_TRANSIT_STATUSES})) AS in_transit,
       COUNT(*) FILTER (WHERE status::text = ANY(${DELIVERY_PENDING_STATUSES})) AS pending_deliveries,
-      COUNT(*) FILTER (WHERE status::text = ANY(ARRAY['delivered','partially_delivered'])) AS total_delivered,
-      COUNT(*) FILTER (WHERE status::text NOT IN ('pickup_ordered','rider_assigned','failed_pickup','cancelled')) AS total_picked_up,
-      COUNT(*) FILTER (WHERE order_type::text = 'return') AS total_returns,
+      COUNT(*) FILTER (WHERE status::text = ANY(${AWAITING_PICKUP_STATUSES})) AS awaiting_pickup,
+      COUNT(*) FILTER (WHERE status::text = ANY(${IN_DELIVERY_STATUSES})) AS in_delivery,
+      COUNT(*) FILTER (WHERE status::text = ANY(ARRAY['delivered','partially_delivered']) ${riderDeliveredSql}) AS total_delivered,
+      COUNT(*) FILTER (WHERE ${pickedUpFilterSql}) AS total_picked_up,
+      COUNT(*) FILTER (WHERE ${returnsFilterSql}) AS total_returns,
       COUNT(*) FILTER (WHERE status::text = 'returned_to_vendor') AS total_returned_to_vendor,
       COUNT(*) FILTER (WHERE created_at >= ${todayStart}) AS todays_orders,
-      COUNT(*) FILTER (WHERE status::text = ANY(ARRAY['delivered','partially_delivered']) AND delivered_at >= ${todayStart}) AS todays_delivered,
+      COUNT(*) FILTER (WHERE status::text = ANY(ARRAY['delivered','partially_delivered']) AND delivered_at >= ${todayStart} ${riderDeliveredSql}) AS todays_delivered,
       COUNT(*) FILTER (WHERE order_type::text = 'return' AND created_at >= ${todayStart}) AS todays_returns,
       COALESCE(SUM(cod_amount), 0) AS total_order_amount,
       COALESCE(SUM(cod_amount) FILTER (WHERE status::text = ANY(${PICKUP_PENDING_STATUSES})), 0) AS pending_pickups_amount,
       COALESCE(SUM(cod_amount) FILTER (WHERE status::text = ANY(${RETURN_PENDING_STATUSES})), 0) AS pending_returns_amount,
       COALESCE(SUM(cod_amount) FILTER (WHERE status::text = ANY(${IN_TRANSIT_STATUSES})), 0) AS in_transit_amount,
-      COALESCE(SUM(cod_amount) FILTER (WHERE status::text = ANY(ARRAY['delivered','partially_delivered'])), 0) AS total_delivered_amount,
-      COALESCE(SUM(cod_amount) FILTER (WHERE order_type::text = 'return'), 0) AS total_returns_amount,
+      COALESCE(SUM(cod_amount) FILTER (WHERE status::text = ANY(${DELIVERY_PENDING_STATUSES})), 0) AS pending_deliveries_amount,
+      COALESCE(SUM(cod_amount) FILTER (WHERE status::text = ANY(${AWAITING_PICKUP_STATUSES})), 0) AS awaiting_pickup_amount,
+      COALESCE(SUM(cod_amount) FILTER (WHERE status::text = ANY(${IN_DELIVERY_STATUSES})), 0) AS in_delivery_amount,
+      COALESCE(SUM(cod_amount) FILTER (WHERE status::text = ANY(ARRAY['delivered','partially_delivered']) AND delivered_at >= ${todayStart} ${riderDeliveredSql}), 0) AS todays_delivered_amount,
+      COALESCE(SUM(cod_amount) FILTER (WHERE status::text = ANY(ARRAY['delivered','partially_delivered']) ${riderDeliveredSql}), 0) AS total_delivered_amount,
+      COALESCE(SUM(cod_amount) FILTER (WHERE ${returnsFilterSql}), 0) AS total_returns_amount,
       COALESCE(SUM(cod_amount) FILTER (WHERE status::text = 'returned_to_vendor'), 0) AS total_returned_to_vendor_amount
     FROM parcels
     WHERE deleted_at IS NULL ${parcelScopeSql}
@@ -2856,6 +3119,8 @@ async function computeDashboardSummary(
   const pendingReturns = Number(overviewRow!.pending_returns);
   const inTransit = Number(overviewRow!.in_transit);
   const pendingDeliveries = Number(overviewRow!.pending_deliveries);
+  const awaitingPickup = Number(overviewRow!.awaiting_pickup);
+  const inDelivery = Number(overviewRow!.in_delivery);
   const totalDelivered = Number(overviewRow!.total_delivered);
   const totalPickedUp = Number(overviewRow!.total_picked_up);
   const totalReturns = Number(overviewRow!.total_returns);
@@ -2867,6 +3132,10 @@ async function computeDashboardSummary(
   const pendingPickupsAmount = Number(overviewRow!.pending_pickups_amount);
   const pendingReturnsAmount = Number(overviewRow!.pending_returns_amount);
   const inTransitAmount = Number(overviewRow!.in_transit_amount);
+  const pendingDeliveriesAmount = Number(overviewRow!.pending_deliveries_amount);
+  const awaitingPickupAmount = Number(overviewRow!.awaiting_pickup_amount);
+  const inDeliveryAmount = Number(overviewRow!.in_delivery_amount);
+  const todaysDeliveredAmount = Number(overviewRow!.todays_delivered_amount);
   const totalDeliveredAmount = Number(overviewRow!.total_delivered_amount);
   const totalReturnsAmount = Number(overviewRow!.total_returns_amount);
   const totalReturnedToVendorAmount = Number(overviewRow!.total_returned_to_vendor_amount);
@@ -2898,7 +3167,7 @@ async function computeDashboardSummary(
     : vendorIds
     ? Prisma.sql`AND p.vendor_id = ANY(${vendorIds}::uuid[])`
     : riderId
-    ? Prisma.sql`AND (p.pickup_rider_id = ${riderId}::uuid OR p.delivery_rider_id = ${riderId}::uuid)`
+    ? riderHandledSql(riderId, "p.")
     : Prisma.empty;
 
   const [todaysRemarks, unclosedComments, codRows, pendingCodCount, lastSettlement, returnedTodayRows] = await Promise.all([
@@ -2956,13 +3225,17 @@ async function computeDashboardSummary(
             SELECT 1 FROM parcel_remarks pr
             WHERE pr.parcel_id = p.id AND pr.remark LIKE ${NCM_HANDOFF_REMARK_PREFIX + '%'}
           )) OR r.carrier_code = 'ncm'), 0) AS cod_from_ncm,
-        -- Cash Upaya collected on our behalf. Upaya has no API integration
-        -- yet, so every Upaya parcel goes through the "PM Rider U" placeholder
-        -- rider (r.carrier_code = 'upaya') - there's no handoff-remark
-        -- equivalent to fall back on. Same "clears via the vendor leg"
-        -- reasoning as NCM above.
+        -- Cash Upaya collected on our behalf. Two signals, same shape as NCM
+        -- above: the durable API handoff remark upaya.service.ts writes for
+        -- real API-driven handoffs, and the "PM Rider U" placeholder rider
+        -- (r.carrier_code = 'upaya') for parcels routed to Upaya manually,
+        -- from before the API integration existed. Same "clears via the
+        -- vendor leg" reasoning as NCM above.
         COALESCE(SUM(c.collected_amount - LEAST(c.remitted_amount, c.collected_amount))
-          FILTER (WHERE r.carrier_code = 'upaya'), 0) AS cod_from_upaya,
+          FILTER (WHERE (c.rider_id IS NULL AND EXISTS (
+            SELECT 1 FROM parcel_remarks pr
+            WHERE pr.parcel_id = p.id AND pr.remark LIKE ${UPAYA_HANDOFF_REMARK_PREFIX + '%'}
+          )) OR r.carrier_code = 'upaya'), 0) AS cod_from_upaya,
         COALESCE(SUM(p.delivery_charge) FILTER (WHERE c.payment_status::text = 'pending'), 0) AS pending_delivery_charge,
         COALESCE(SUM(p.delivery_charge), 0) AS total_delivery_charge
       FROM cod_collections c
@@ -3112,6 +3385,11 @@ async function computeDashboardSummary(
       inTransit,
       inTransitAmount,
       pendingDeliveries,
+      pendingDeliveriesAmount,
+      awaitingPickup,
+      awaitingPickupAmount,
+      inDelivery,
+      inDeliveryAmount,
       totalDelivered,
       totalDeliveredAmount,
       totalPickedUp,
@@ -3123,6 +3401,7 @@ async function computeDashboardSummary(
     today: {
       totalOrders: todaysOrders,
       delivered: todaysDelivered,
+      deliveredAmount: todaysDeliveredAmount,
       inTransit,
       returns: todaysReturns,
       returnedToVendor: todaysReturnedToVendor,
@@ -3228,10 +3507,14 @@ export async function getCodSettlementDetail(
     ? Prisma.sql`AND c.rider_id = ${riderId}::uuid`
     : Prisma.empty;
 
-  // Same durable NCM signal as the dashboard summary above - see its comment.
+  // Same durable NCM/Upaya signals as the dashboard summary above - see its comment.
   const ncmHandoffExistsSql = Prisma.sql`EXISTS (
     SELECT 1 FROM parcel_remarks pr
     WHERE pr.parcel_id = p.id AND pr.remark LIKE ${NCM_HANDOFF_REMARK_PREFIX + "%"}
+  )`;
+  const upayaHandoffExistsSql = Prisma.sql`EXISTS (
+    SELECT 1 FROM parcel_remarks pr
+    WHERE pr.parcel_id = p.id AND pr.remark LIKE ${UPAYA_HANDOFF_REMARK_PREFIX + "%"}
   )`;
 
   // The "settled" leg is scope-dependent, exactly as in computeDashboardSummary:
@@ -3257,7 +3540,7 @@ export async function getCodSettlementDetail(
           : bucket === "ncm"
             ? Prisma.sql`AND ((c.rider_id IS NULL AND ${ncmHandoffExistsSql}) OR r.carrier_code = 'ncm') AND (c.collected_amount - LEAST(c.remitted_amount, c.collected_amount)) > 0`
             : bucket === "upaya"
-              ? Prisma.sql`AND r.carrier_code = 'upaya' AND (c.collected_amount - LEAST(c.remitted_amount, c.collected_amount)) > 0`
+              ? Prisma.sql`AND ((c.rider_id IS NULL AND ${upayaHandoffExistsSql}) OR r.carrier_code = 'upaya') AND (c.collected_amount - LEAST(c.remitted_amount, c.collected_amount)) > 0`
               : Prisma.empty; // 'total' and 'delivery-charge': every in-scope row
 
   // Each bucket's rows must add up to the exact figure on the card, so the
@@ -3441,6 +3724,48 @@ export async function notifyVendorOfParcel(
   }
 }
 
+// ── Undoing a delivery ───────────────────────────────────────────────────────
+// Only a super_admin can force a parcel back out of delivered/partially_
+// delivered. That has to reverse everything the delivery wrote, because the COD
+// ledger is what finance settles on: left alone, cod_collections keeps its
+// delivery-time collected_amount forever, and since a later COD edit only
+// re-syncs cod_amount (see updateOrder), the parcel ends up with COD 0 but a
+// non-zero collected amount - still listed as settleable, still counted in the
+// vendor's balance, for cash nobody is holding.
+
+/**
+ * Blocks the un-delivery when the COD has already been bundled into a statement
+ * or paid on either leg. Real money has moved at that point (and
+ * rider_remitted_amount / remitted_amount are frozen copies of the collected
+ * amount), so the statement has to be voided first - silently rewriting the
+ * ledger underneath a paid settlement would leave the books unbalanced.
+ */
+async function assertDeliveryReversible(parcelIds: string[]) {
+  const blocked = await prisma.cod_collections.findMany({
+    where: {
+      parcel_id: { in: parcelIds },
+      OR: [
+        { payment_status: "paid" },
+        { rider_payment_status: "paid" },
+        { settlement_items: { some: {} } },
+      ],
+    },
+    select: { parcels: { select: { tracking_id: true } } },
+  });
+  if (blocked.length > 0) {
+    const tags = blocked.map((c) => c.parcels.tracking_id).join(", ");
+    throw new AppError(
+      409,
+      `Cannot move ${tags} out of a delivered status: its COD is already in a settlement statement. Void or amend that statement first.`,
+    );
+  }
+}
+
+/** True when this transition takes the parcel out of a delivered state -
+ *  delivered → partially_delivered (and back) re-stamps rather than reverses. */
+const isUndelivering = (from: parcel_status, to: string) =>
+  DELIVERY_STATUSES.includes(from) && !DELIVERY_STATUSES.includes(to as parcel_status);
+
 export async function updateParcelStatus(
   actor: OrderActor,
   parcelId: string,
@@ -3471,6 +3796,33 @@ async function _updateParcelStatusImpl(
 
   const currentStatus = parcel.status as ParcelStatus;
   const newStatus = data.status;
+  // The parcel is leaving the delivery leg for something else - a super_admin
+  // force-status override back to ready_to_deliver, the already-legal
+  // partially_delivered → follow_up / ready_to_return, or a failed attempt
+  // released back into the pool. Either way it's no longer out with the
+  // delivery rider, so the rider's claim on it is released.
+  //
+  // failed_delivery must be in this set: without it a released parcel kept its
+  // old delivery_rider_id all the way through ready_to_deliver → hold → oov
+  // onto a 3PL leg, and applyExternalCarrierStatus then credited NCM's
+  // collected cash to that rider's COD settlement.
+  const leavingDelivery =
+    DELIVERY_RIDER_HELD_STATUSES.includes(currentStatus as parcel_status) &&
+    !DELIVERY_RIDER_HELD_STATUSES.includes(newStatus as parcel_status);
+  // ...but only retracting a COMPLETED delivery reverses the money, and that
+  // question is narrower than leavingDelivery above - a super_admin forcing
+  // delivered → sent_for_delivery keeps the parcel on the delivery leg (so the
+  // rider is not released) while still undoing a delivery that didn't happen.
+  // Kept on its own terms rather than derived, and matching reversalParcels in
+  // the bulk path exactly.
+  //
+  // On a partial the customer really did take goods and really did hand over
+  // cash: moving the remainder to follow_up/ready_to_return continues that
+  // workflow, it does not undo the payment. Zeroing the collection there would
+  // erase cash the rider is still holding and still owes the office.
+  const isDeliveryReversal =
+    currentStatus === "delivered" &&
+    !["delivered", "partially_delivered"].includes(newStatus);
 
   // Delivering an exchange order requires confirming the customer's exchange
   // (return) parcel was received to carry back. Riders cannot complete the
@@ -3534,6 +3886,16 @@ async function _updateParcelStatusImpl(
     );
   }
 
+  // Idempotent no-op: a parcel already at the requested status isn't a
+  // transition at all - STATUS_TRANSITIONS uniformly disallows self-
+  // transitions, so this can only mean the parcel got here between the
+  // client rendering it and this request landing (another actor's request,
+  // a reconcile sweep, or the caller's own resubmitted scan). Report success
+  // instead of 422ing on 'X → X'; there is nothing left to do.
+  if (!isSuperAdmin && currentStatus === newStatus) {
+    return parcel;
+  }
+
   // validate the transition is allowed
   if (!isSuperAdmin) {
     const allowed = STATUS_TRANSITIONS[
@@ -3558,6 +3920,13 @@ async function _updateParcelStatusImpl(
         throw new AppError(422, "Destination is outside the valley: this parcel must go to 'Transit' first.");
       }
     }
+  }
+
+  // Undoing a delivery (super_admin only, since the transition map has no exit
+  // from delivered) must not leave settled COD behind it.
+  const undelivering = isUndelivering(parcel.status, newStatus);
+  if (undelivering) {
+    await assertDeliveryReversible([parcelId]);
   }
 
   // Cancellation is allowed for admins and vendors (vendors may only cancel their own
@@ -3674,6 +4043,32 @@ async function _updateParcelStatusImpl(
     );
   }
 
+  // Reversing a delivery must not silently blow away a COD that's already been
+  // swept into a settlement - paid (rider or vendor leg) or still pending.
+  // A pending settlement already froze this collection's amount into its
+  // settlement_items row at creation time; reversing the collection out from
+  // under it would leave that statement showing stale, wrong figures with no
+  // record of why. Staff must remove it via the settlement edit flow first.
+  // Only the money-reversing case is gated: a partial delivery moving on to
+  // follow_up/ready_to_return leaves its collection untouched, so a settlement
+  // it already belongs to stays correct and must not be blocked.
+  if (isDeliveryReversal) {
+    const cod = await prisma.cod_collections.findFirst({
+      where: {
+        parcel_id: parcelId,
+        OR: [{ rider_payment_status: "paid" }, { payment_status: "paid" }, { settlement_items: { some: {} } }],
+      },
+      select: {
+        settlement_items: { select: { settlements: { select: { statement_id: true, payee_type: true } } }, take: 1 },
+      },
+    });
+    if (cod) {
+      const stmt = cod.settlement_items[0]?.settlements;
+      const reason = stmt ? `is part of ${stmt.payee_type} settlement ${stmt.statement_id}` : "has already been settled";
+      throw new AppError(409, `This order's COD ${reason} — resolve that before undelivering.`);
+    }
+  }
+
   const txOutcome = await prisma.$transaction(async (tx) => {
     let createdReturn: { id: string; trackingId: string } | null = null;
     const updateData: Prisma.parcelsUpdateInput = {
@@ -3703,6 +4098,41 @@ async function _updateParcelStatusImpl(
       (updateData as any).delivered_at = new Date();
       (updateData as any).partial_delivery_remarks = data.remarks || null;
       (updateData as any).partial_cod_collected = data.codCollected ?? 0;
+    }
+    // Side-effect: the parcel is back off the delivery leg, so it's no longer
+    // in that rider's hands. Applies to a partial moving on to follow_up too -
+    // that only releases the parcel, never the cash (see below).
+    if (leavingDelivery) {
+      (updateData as any).delivery_rider_id = null;
+    }
+    // Side-effect: the parcel is back in the unassigned pickup pool, so the
+    // rider who had it no longer has a claim on it (see releasesPickupRider).
+    if (releasesPickupRider(newStatus as parcel_status)) {
+      (updateData as any).pickup_rider_id = null;
+    }
+    // Side-effect: retract a completed delivery. It didn't happen, so the
+    // delivery timestamp and the COD ledger's "collected" state roll back with
+    // it - including cod_collections.rider_id, which is what drops the order
+    // off the rider's COD settlement. Guarded above against a collection
+    // already swept into a settlement. updateMany, not update: a row should
+    // always exist (created at order creation), but a legacy/drifted parcel
+    // missing one must not block the status change itself - same reasoning as
+    // the delivery upsert below.
+    if (isDeliveryReversal) {
+      (updateData as any).delivered_at = null;
+      (updateData as any).partial_delivery_remarks = null;
+      (updateData as any).partial_cod_collected = null;
+      // The reversal nulls cod_collections.rider_id, so the parcel must not
+      // keep pointing at a rider the money no longer does - delivered ->
+      // returned_to_vendor is leavingDelivery=false (both are held), and
+      // without this it would leave the rider owning a parcel they were never
+      // given. Lands before the assignment below, so a super_admin forcing
+      // delivered -> sent_for_delivery with a new rider still wins.
+      (updateData as any).delivery_rider_id = null;
+      await tx.cod_collections.updateMany({
+        where: { parcel_id: parcel.id },
+        data: { collected_amount: 0, collected_at: null, rider_id: null },
+      });
     }
     // Side-effect: update current_location_id
     if (data.locationId) {
@@ -3775,8 +4205,11 @@ async function _updateParcelStatusImpl(
         data: { collected_at: new Date() },
       });
     }
-    // Side-effect: update pickup_task status in sync
-    if (parcel.pickup_tasks && ["rider_assigned", "picked_up", "cancelled"].includes(newStatus)) {
+    // Side-effect: update pickup_task status in sync. pickup_ordered is here
+    // for the release case: without it a parcel handed back to the pool leaves
+    // its task stuck at rider_assigned/failed_pickup, disagreeing with the
+    // parcel it describes.
+    if (parcel.pickup_tasks && ["pickup_ordered", "rider_assigned", "picked_up", "cancelled"].includes(newStatus)) {
       await tx.pickup_tasks.update({
         where: { parcel_id: parcel.id },
         data: { status: newStatus as parcel_status },
@@ -3905,12 +4338,40 @@ async function _updateParcelStatusImpl(
         });
       }
     }
+    // Bring the books into line inside the same transaction that moved the
+    // money. Declarative, not event-driven: this one call covers a delivery
+    // posting its COD and charge, an un-delivery reversing both, and a partial
+    // amount being restated - see syncParcelPostings.
+    await syncParcelPostings(tx, [parcelId], {
+      actorId: actor.id,
+      reason: `parcel status ${parcel.status} -> ${newStatus}`,
+    });
+
     return { updatedParcel, createdReturn };
   });
 
   const { updatedParcel, createdReturn } = txOutcome;
 
   await invalidateOrderCaches();
+
+  // Reversing a delivery rewrites cod_collections, which the finance caches
+  // (pending COD, unsettled orders, per-rider statements) are built from -
+  // invalidateOrderCaches only covers the dashboard/orders-list namespaces, so
+  // without this the rider's settlement list keeps serving the undelivered
+  // order until the TTL lapses. Best-effort: a Redis hiccup must not fail an
+  // already-committed status change.
+  if (isDeliveryReversal) {
+    if (parcel.vendor_id) {
+      invalidateVendorFinanceCache(parcel.vendor_id).catch((err) =>
+        console.error("[Redis] cache invalidation failed:", err),
+      );
+    }
+    if (parcel.delivery_rider_id) {
+      invalidateRiderFinanceCache(parcel.delivery_rider_id).catch((err) =>
+        console.error("[Redis] cache invalidation failed:", err),
+      );
+    }
+  }
 
   // A delivery (or an un-delivery) is what moves a vendor's account balance, so
   // it's the moment to re-check whether they've crossed a credit threshold.
@@ -3970,6 +4431,9 @@ export interface BulkUpdateResult {
     dispatchNo: string;
     toLocationId: string;
   };
+  // Parcels in the request that were already at `status` and were dropped
+  // from the batch as a no-op rather than failing the whole request.
+  alreadyUpToDate?: number;
 }
 
 /**
@@ -4048,7 +4512,7 @@ async function _bulkUpdateParcelStatusImpl(
     throw new AppError(403, "Rider profile not found or inactive");
   }
 
-  const parcels = await prisma.parcels.findMany({
+  let parcels = await prisma.parcels.findMany({
     where: {
       id: { in: ids },
       deleted_at: null,
@@ -4060,6 +4524,25 @@ async function _bulkUpdateParcelStatusImpl(
 
   if (parcels.length !== ids.length) {
     throw new AppError(404, "One or more parcels were not found or do not belong to your account");
+  }
+
+  // Idempotent no-op: a parcel already at the target status isn't a
+  // transition at all - STATUS_TRANSITIONS uniformly disallows self-
+  // transitions - so it can only mean the parcel got here between the client
+  // rendering this batch and this request landing (another actor's request,
+  // a reconcile sweep, or the caller's own resubmitted scan). Drop it from
+  // the batch instead of 422ing the whole thing on 'X → X', same as if it
+  // had never been selected. Terminal statuses are excluded from this skip -
+  // those fall through to the terminal-state check below, unchanged, same as
+  // the single-parcel path.
+  const isNoOp = (p: (typeof parcels)[number]) =>
+    p.status === newStatus && !TERMINAL_STATUSES.includes(p.status as parcel_status);
+  const alreadyDoneCount = parcels.filter(isNoOp).length;
+  parcels = parcels.filter((p) => !isNoOp(p));
+  const idsToUpdate = parcels.map((p) => p.id);
+
+  if (parcels.length === 0) {
+    return { updatedCount: 0, status: newStatus, alreadyUpToDate: alreadyDoneCount };
   }
 
   for (const parcel of parcels) {
@@ -4100,11 +4583,58 @@ async function _bulkUpdateParcelStatusImpl(
     }
   }
 
+  // Parcels in this batch leaving a delivery state for something else.
+  // newStatus is shared across the whole batch, so this is just a filter over
+  // each parcel's current status. Split exactly as in the single-parcel path:
+  // leaving the delivery leg releases the rider, but only retracting a
+  // COMPLETED delivery reverses the money - a partial's collected cash is real
+  // and survives the move to follow_up/ready_to_return.
+  const leavingDeliveryIds = parcels
+    .filter(
+      (p) =>
+        DELIVERY_RIDER_HELD_STATUSES.includes(p.status as parcel_status) &&
+        !DELIVERY_RIDER_HELD_STATUSES.includes(newStatus as parcel_status),
+    )
+    .map((p) => p.id);
+  const reversalParcels = parcels.filter(
+    (p) => p.status === "delivered" && !["delivered", "partially_delivered"].includes(newStatus),
+  );
+  const undeliverIds = reversalParcels.map((p) => p.id);
+
+  // Same guard as the single-parcel path: don't blow away a COD that's
+  // already been swept into a settlement - paid, or still pending (whose
+  // settlement_items row already froze this collection's amount).
+  if (undeliverIds.length > 0) {
+    const blockingCod = await prisma.cod_collections.findFirst({
+      where: {
+        parcel_id: { in: undeliverIds },
+        OR: [{ rider_payment_status: "paid" }, { payment_status: "paid" }, { settlement_items: { some: {} } }],
+      },
+      include: {
+        parcels: { select: { tracking_id: true } },
+        settlement_items: { select: { settlements: { select: { statement_id: true, payee_type: true } } }, take: 1 },
+      },
+    });
+    if (blockingCod) {
+      const stmt = blockingCod.settlement_items[0]?.settlements;
+      const reason = stmt ? `is part of ${stmt.payee_type} settlement ${stmt.statement_id}` : "has already been settled";
+      throw new AppError(409, `Order ${blockingCod.parcels.tracking_id}'s COD ${reason} — resolve that before undelivering.`);
+    }
+  }
+
   let toLocationId: string | null = null;
   let originLocationId: string | null = null;
   let riderId: string | null = null;
+  let riderName: string | null = null;
 
   if (newStatus === "dispatched") {
+    // A manifest only exists when there's a destination to carry it to, so a
+    // rider named without one would be validated and then silently dropped
+    // along with the whole dispatch record. The ops UI already blocks this;
+    // this stops the API doing it quietly.
+    if (data.riderId && !data.toLocationId) {
+      throw new AppError(422, "A destination hub is required to dispatch a manifest to a rider");
+    }
     if (data.toLocationId) {
       const distinctOrigins = new Set(parcels.map((p) => p.current_location_id || ""));
       if (distinctOrigins.size !== 1 || distinctOrigins.has("")) {
@@ -4133,6 +4663,7 @@ async function _bulkUpdateParcelStatusImpl(
           throw new AppError(400, "Rider not found or inactive");
         }
         riderId = rider.id;
+        riderName = rider.name;
       }
     }
   }
@@ -4221,6 +4752,19 @@ async function _bulkUpdateParcelStatusImpl(
       });
     }
 
+    // The manifest number and its driver are otherwise write-only: nothing in
+    // the app has ever read dispatches.delivery_rider_id back, so ops picked a
+    // "Rider / vehicle" and the choice vanished. Folding it into the status
+    // history puts it on the order timeline, where ops already looks when a
+    // parcel goes missing in transit - and it needs no new endpoint or screen.
+    //
+    // Deliberately the timeline and not the rider app: a transfer driver is
+    // not the last-mile rider, holds no COD, and must not appear in anyone's
+    // custody list. This records who drove it, nothing more.
+    const dispatchRemark = dispatch
+      ? `Manifest ${dispatch.dispatch_no}${riderName ? ` · carried by ${riderName}` : ""}`
+      : null;
+
     const updateData: Prisma.parcelsUpdateInput = { status: newStatus as parcel_status };
     if (newStatus === "picked_up") {
       (updateData as any).picked_up_at = new Date();
@@ -4241,6 +4785,15 @@ async function _bulkUpdateParcelStatusImpl(
     if (riderAssignmentField && parcelRiderId) {
       (updateData as any)[riderAssignmentField] = parcelRiderId;
     }
+    // Side-effect: every parcel in the batch is going back into the unassigned
+    // pickup pool, so none of them keeps its old rider (see
+    // releasesPickupRider). Unlike the delivery release below this needs no
+    // per-parcel subset and no anti-clobber guard: the destination status is
+    // the same for the whole batch, and pickup_ordered is not in
+    // RIDER_ASSIGNMENT_FIELD, so nothing here is assigning a pickup rider.
+    if (releasesPickupRider(newStatus as parcel_status)) {
+      (updateData as any).pickup_rider_id = null;
+    }
     // Each hand-off to a delivery rider counts as one delivery attempt.
     if (newStatus === "sent_for_delivery") {
       (updateData as any).attempt_count = { increment: 1 };
@@ -4248,11 +4801,11 @@ async function _bulkUpdateParcelStatusImpl(
 
     // A batch hand-off to a delivery rider opens one run sheet for the batch.
     if (newStatus === "sent_for_delivery" && parcelRiderId) {
-      await createRunSheet(tx, parcelRiderId, ids, actor.id);
+      await createRunSheet(tx, parcelRiderId, idsToUpdate, actor.id);
     }
 
     await tx.parcels.updateMany({
-      where: { id: { in: ids } },
+      where: { id: { in: idsToUpdate } },
       data: updateData,
     });
 
@@ -4260,12 +4813,58 @@ async function _bulkUpdateParcelStatusImpl(
     // the real pickup transition, but a super_admin can force a batch straight
     // past it. Scoped to picked_up_at: null so it can never overwrite a genuine
     // pickup time - which also makes it a no-op on the normal flow. Separate
-    // from the updateMany above because that single blob applies to every id,
-    // while this must skip the parcels that already carry a timestamp.
+    // from the updateMany above because that single blob applies to the whole
+    // batch, while this must skip the parcels that already carry a timestamp.
+    //
+    // idsToUpdate, not ids: the no-op filter above drops parcels already at
+    // newStatus from the batch, and those are precisely the ones nothing is
+    // happening to - stamping them would invent a pickup time for a parcel
+    // this request never touched.
     if (newStatus !== "picked_up" && POST_PICKUP_STATUSES.includes(newStatus as parcel_status)) {
       await tx.parcels.updateMany({
-        where: { id: { in: ids }, picked_up_at: null },
+        where: { id: { in: idsToUpdate }, picked_up_at: null },
         data: { picked_up_at: new Date() },
+      });
+    }
+
+    // Side-effect: release the delivery rider on every parcel coming off the
+    // delivery leg, plus every parcel whose delivery is being retracted - the
+    // reversal nulls cod_collections.rider_id, so the parcel must not keep
+    // pointing at a rider the money no longer does (delivered →
+    // returned_to_vendor is not "leaving", since both are held). Mirrors the
+    // single-parcel path. Scoped, not applied to `ids`, since not every parcel
+    // in a mixed batch is necessarily leaving the delivery leg.
+    //
+    // Skipped when this same transition is assigning a delivery rider (a
+    // super_admin forcing delivered → sent_for_delivery/sent_to_vendor):
+    // unlike the single-parcel path, this runs AFTER updateData is applied, so
+    // releasing here would clobber the assignment instead of losing to it.
+    // Now that sent_to_vendor is itself held, only the undeliverIds half can
+    // still collide - leavingDeliveryIds is empty whenever the new status
+    // assigns a delivery rider - but the guard covers both and stays as is.
+    const releaseRiderIds = Array.from(new Set([...leavingDeliveryIds, ...undeliverIds]));
+    if (releaseRiderIds.length > 0 && !(riderAssignmentField === "delivery_rider_id" && parcelRiderId)) {
+      await tx.parcels.updateMany({
+        where: { id: { in: releaseRiderIds } },
+        data: { delivery_rider_id: null },
+      });
+    }
+
+    // Side-effect: retract the delivery itself, for the subset whose delivery
+    // was completed (not partial) - the money reversal, mirroring the
+    // single-parcel path.
+    if (undeliverIds.length > 0) {
+      await tx.parcels.updateMany({
+        where: { id: { in: undeliverIds } },
+        data: {
+          delivered_at: null,
+          partial_delivery_remarks: null,
+          partial_cod_collected: null,
+        },
+      });
+      await tx.cod_collections.updateMany({
+        where: { parcel_id: { in: undeliverIds } },
+        data: { collected_amount: 0, collected_at: null, rider_id: null },
       });
     }
 
@@ -4274,7 +4873,7 @@ async function _bulkUpdateParcelStatusImpl(
     // nothing else in the app ever sets cod_collections.rider_id otherwise.
     if (riderAssignmentField === "delivery_rider_id" && parcelRiderId) {
       await tx.cod_collections.updateMany({
-        where: { parcel_id: { in: ids } },
+        where: { parcel_id: { in: idsToUpdate } },
         data: { rider_id: parcelRiderId },
       });
     }
@@ -4337,7 +4936,7 @@ async function _bulkUpdateParcelStatusImpl(
     }
 
     const pickupSyncIds = parcels
-      .filter((p) => p.pickup_tasks && ["rider_assigned", "picked_up", "cancelled"].includes(newStatus))
+      .filter((p) => p.pickup_tasks && ["pickup_ordered", "rider_assigned", "picked_up", "cancelled"].includes(newStatus))
       .map((p) => p.id);
     if (pickupSyncIds.length) {
       await tx.pickup_tasks.updateMany({
@@ -4353,7 +4952,9 @@ async function _bulkUpdateParcelStatusImpl(
         new_status: newStatus as parcel_status,
         location_id: toLocationId || data.toLocationId || p.current_location_id,
         changed_by: actor.id,
-        remarks: data.remarks || null,
+        remarks: dispatchRemark
+          ? [dispatchRemark, data.remarks?.trim()].filter(Boolean).join(" — ")
+          : data.remarks || null,
       })),
     });
     // See the single-update path for why this also needs to land in
@@ -4408,7 +5009,7 @@ async function _bulkUpdateParcelStatusImpl(
     // the loop was issuing N sequential round trips while holding transaction locks.
     if (newStatus === "arrived_at_branch") {
       const links = await tx.dispatch_parcels.findMany({
-        where: { parcel_id: { in: ids } },
+        where: { parcel_id: { in: idsToUpdate } },
         select: { dispatch_id: true },
         distinct: ["dispatch_id"],
       });
@@ -4437,10 +5038,31 @@ async function _bulkUpdateParcelStatusImpl(
       ...(dispatch && toLocationId
         ? { dispatch: { id: dispatch.id, dispatchNo: dispatch.dispatch_no, toLocationId } }
         : {}),
+      ...(alreadyDoneCount > 0 ? { alreadyUpToDate: alreadyDoneCount } : {}),
     };
   });
 
   await invalidateOrderCaches();
+
+  // Same finance-cache invalidation as the single-update path (see its note):
+  // a reversal rewrites cod_collections, which invalidateOrderCaches does not
+  // cover. Deduped so a large batch costs one clear per affected vendor/rider.
+  if (reversalParcels.length > 0) {
+    const vendorIds = new Set(reversalParcels.map((p) => p.vendor_id).filter((id): id is string => !!id));
+    const riderIds = new Set(
+      reversalParcels.map((p) => p.delivery_rider_id).filter((id): id is string => !!id),
+    );
+    for (const id of vendorIds) {
+      invalidateVendorFinanceCache(id).catch((err) =>
+        console.error("[Redis] cache invalidation failed:", err),
+      );
+    }
+    for (const id of riderIds) {
+      invalidateRiderFinanceCache(id).catch((err) =>
+        console.error("[Redis] cache invalidation failed:", err),
+      );
+    }
+  }
 
   // Same balance re-check as the single-update path, deduped by vendor so a
   // 100-parcel batch costs one evaluation per affected vendor, not per parcel.
@@ -4451,6 +5073,24 @@ async function _bulkUpdateParcelStatusImpl(
       parcels.filter((p) => statusAffectsBalance(p.status)).map((p) => p.vendor_id),
     );
   }
+
+  // Ledger postings for the batch. Two deliberate differences from the
+  // single-update path:
+  //
+  // Only money-affecting parcels are considered at all. The overwhelming
+  // majority of bulk operations are dispatch and transit scans, where nothing
+  // has earned or collected anything - for those this resolves to an empty
+  // list and costs one comparison per parcel.
+  //
+  // And it runs after the transaction rather than inside it. A two-hundred
+  // parcel batch would otherwise add several hundred statements to a
+  // transaction that is already large, risking a timeout on the operational
+  // write itself. The trade is a brief window where the parcels are committed
+  // and the entries are not; reconcile-ledger.ts is what closes it.
+  const ledgerParcelIds = parcels
+    .filter((p) => statusAffectsBalance(newStatus) || statusAffectsBalance(p.status))
+    .map((p) => p.id);
+  syncParcelPostingsAsync(ledgerParcelIds, { actorId: actor.id, reason: `bulk status -> ${newStatus}` });
 
   // Bulk status changes no longer notify vendors or admins (see the single
   // update path) - a batch would otherwise fire a ping per parcel. Failed/
@@ -4530,6 +5170,21 @@ export async function applyExternalCarrierStatus(
       return { applied: false, reason: `Parcel is already '${parcel.status}'` };
     }
 
+    // A real employee still attached to a parcel the carrier is now moving is
+    // a stale claim (see the release below); a carrier placeholder rider is
+    // not. Resolved once, up front, so both the parcel write and the COD
+    // attribution below agree on which rider - if any - still owns this leg.
+    const attachedRider = parcel.delivery_rider_id
+      ? await prisma.riders.findUnique({
+          where: { id: parcel.delivery_rider_id },
+          select: { carrier_code: true },
+        })
+      : null;
+    const releasedRiderId = attachedRider && !attachedRider.carrier_code
+      ? parcel.delivery_rider_id
+      : null;
+    const effectiveRiderId = releasedRiderId ? null : parcel.delivery_rider_id;
+
     await prisma.$transaction(async (tx) => {
       const updateData: Prisma.parcelsUpdateInput = { status: targetStatus };
       // CARRIER_LEG_SEQUENCE starts at "oov", so targetStatus can never be
@@ -4543,23 +5198,52 @@ export async function applyExternalCarrierStatus(
       if (targetStatus === "delivered") {
         (updateData as any).delivered_at = new Date();
       }
+      // Side-effect: the internal release rule (leavingDelivery) never runs
+      // here, because this function deliberately bypasses the actor-driven
+      // machinery - so a real employee left on delivery_rider_id by an earlier
+      // internal attempt survives onto the carrier leg. That has to be cleared:
+      // the delivered upsert below writes cod_collections.rider_id from this
+      // very column, so leaving it hands the carrier's collected cash to a
+      // rider who never touched it.
+      //
+      // Only real employees, though. A placeholder rider standing in for the
+      // carrier itself ("PM Rider N"/"PM Rider U", carrier_code non-null) is a
+      // deliberate manual routing and is what the finance queries read to
+      // attribute the cash to that carrier - see cod_from_ncm/cod_from_upaya.
+      if (releasedRiderId) {
+        (updateData as any).delivery_rider_id = null;
+      }
       await tx.parcels.update({ where: { id: parcelId }, data: updateData });
-      // Side-effect: same as the internal delivery path (_updateParcelStatusImpl) -
-      // a 3PL-delivered parcel has no internal rider transition to trigger the
-      // cod_collections upsert, so without this the settlement ledger never
-      // sees the cash as collected.
-      if (targetStatus === "delivered") {
+      // A carrier delivery collects the COD just as an in-house rider does -
+      // without this the ledger stays at its order-creation default, and the
+      // parcel never becomes settleable to the vendor (both unsettled queries
+      // require collected_amount > 0).
+      //
+      // rider_id is whichever rider legitimately still owns this leg, which is
+      // null for a real employee (released above, so their COD settlement is
+      // not credited with cash they never carried) and the carrier placeholder
+      // where one is routing the parcel - that is what cod_from_ncm /
+      // cod_from_upaya read to attribute the cash to the carrier.
+      if (targetStatus === "delivered" && Number(parcel.cod_amount) > 0) {
         await tx.cod_collections.upsert({
-          where: { parcel_id: parcel.id },
+          where: { parcel_id: parcelId },
           create: {
-            parcel_id: parcel.id,
+            parcel_id: parcelId,
             vendor_id: parcel.vendor_id,
-            rider_id: parcel.delivery_rider_id,
+            rider_id: effectiveRiderId,
             cod_amount: parcel.cod_amount,
             collected_amount: parcel.cod_amount,
             collected_at: new Date(),
           },
           update: {
+            // rider_id is rewritten, not left alone: an earlier internal
+            // delivery attempt may have stamped a rider on this collection,
+            // and a 3PL carrier delivering it must not leave that rider owing
+            // cash they never touched. NULL here is what makes the finance
+            // queries read this as carrier-collected (see cod_from_ncm) - and
+            // effectiveRiderId, not the raw column, is what guarantees NULL
+            // even when a stale employee rider was still attached on arrival.
+            rider_id: effectiveRiderId,
             cod_amount: parcel.cod_amount,
             collected_amount: parcel.cod_amount,
             collected_at: new Date(),
@@ -4597,6 +5281,10 @@ export async function applyExternalCarrierStatus(
           changedAt: new Date().toISOString(),
         });
       }
+
+      // A carrier delivery collects COD and earns the charge exactly like an
+      // in-house one, so it posts exactly like one.
+      await syncParcelPostings(tx, [parcelId], { reason: `carrier status -> ${targetStatus}` });
     });
 
     await invalidateOrderCaches();
@@ -4643,7 +5331,16 @@ export async function applyExternalCarrierFollowUp(
     }
 
     await prisma.$transaction(async (tx) => {
-      await tx.parcels.update({ where: { id: parcelId }, data: { status: "follow_up" } });
+      // follow_up is not a delivery-held status, so the parcel is back with
+      // ops and no rider has a claim on it. This path bypasses the internal
+      // release (leavingDelivery) the same way applyExternalCarrierStatus
+      // does, and it is reachable straight from sent_for_delivery - without
+      // this, a rider whose delivery attempt the carrier took over keeps the
+      // parcel in their app forever, with no action available on it.
+      await tx.parcels.update({
+        where: { id: parcelId },
+        data: { status: "follow_up", delivery_rider_id: null },
+      });
       await tx.parcel_status_history.create({
         data: {
           parcel_id: parcelId,
@@ -4688,7 +5385,7 @@ export async function applyExternalCarrierFollowUp(
 export async function getStatusCounts(
   actor: OrderActor,
   statusGroups: Record<string, string[]>,
-  filters: { deliveryRiderId?: string; search?: string } = {},
+  filters: { deliveryRiderId?: string; vendorId?: string[]; search?: string } = {},
 ): Promise<Record<string, number>> {
   const scope = await getActorScope(actor);
   const allStatuses = [...new Set(Object.values(statusGroups).flat())];
@@ -4698,13 +5395,19 @@ export async function getStatusCounts(
     : scope.vendorIds
       ? Prisma.sql`AND vendor_id = ANY(${scope.vendorIds}::uuid[])`
       : scope.riderId
-        ? Prisma.sql`AND (pickup_rider_id = ${scope.riderId}::uuid OR delivery_rider_id = ${scope.riderId}::uuid)`
+        ? riderCustodySql(scope.riderId)
         : Prisma.empty;
 
   // Caller-supplied filters, applied on top of the actor's own scope so the tab
   // badges stay in step with the filtered list (see buildOrdersWhere).
   const riderSql: Prisma.Sql = filters.deliveryRiderId
     ? Prisma.sql`AND delivery_rider_id = ${filters.deliveryRiderId}::uuid`
+    : Prisma.empty;
+
+  // ANDed with scopeSql above rather than replacing it: a vendor-scoped actor
+  // filtering by vendor still only ever counts their own parcels.
+  const vendorSql: Prisma.Sql = filters.vendorId?.length
+    ? Prisma.sql`AND vendor_id = ANY(${filters.vendorId}::uuid[])`
     : Prisma.empty;
 
   // Mirrors buildOrdersWhere's search exactly, or a scan would show one row in
@@ -4746,6 +5449,7 @@ export async function getStatusCounts(
       AND status::text = ANY(${allStatuses})
       ${scopeSql}
       ${riderSql}
+      ${vendorSql}
       ${searchSql}
     GROUP BY status
   `);

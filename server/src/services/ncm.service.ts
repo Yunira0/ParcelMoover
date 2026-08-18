@@ -30,6 +30,15 @@ import {
 export const HANDOFF_REMARK_PREFIX = "Parcel dispatched to destination";
 const HANDOFF_REMARK_ORDER_RE = /Parcel dispatched to destination[^#]*#(\d+)/;
 
+// Which 3PL carries a parcel is our commercial arrangement, not the customer's
+// business - so every string that reaches a remark, a status-history entry or
+// any other rendered surface says "Courier partner", never the carrier's name.
+// (Internal identifiers, log prefixes and env vars keep the NCM name: they're
+// operator-facing and never rendered.) The handoff remark above is already
+// neutral and is load-bearing - it is the parcel → NCM order mapping, matched
+// by startsWith/regex in three queries, so its text must not change.
+const CARRIER_LABEL = "Courier partner";
+
 const ORDER_PARCEL_CACHE_PREFIX = "ncm:order-parcel:"; // ncm order id -> parcel id
 const MAPPING_TTL_SECONDS = 60 * 24 * 60 * 60; // 60 days, refreshed on access
 
@@ -61,7 +70,7 @@ const MAX_QUEUE_ATTEMPTS = 20; // ~ spans many sweep cycles before giving up for
 // on) so re-polling the same window is safe.
 const COMMENT_SEEN_KEY_PREFIX = "ncm:comment-seen:";
 const COMMENT_SEEN_TTL_SECONDS = 60 * 60 * 24 * 30;
-const INBOUND_COMMENT_PREFIX = "[NCM Staff]";
+const INBOUND_COMMENT_PREFIX = `[${CARRIER_LABEL}]`;
 
 export const NCM_DELIVERY_TYPES = [
   "Door2Door",
@@ -183,7 +192,7 @@ async function guardDailyCreateLimit(count: number): Promise<void> {
   try {
     const used = Number((await redis.get(key)) ?? 0);
     if (used + count > DAILY_CREATE_LIMIT) {
-      throw new AppError(429, `NCM daily order-creation limit reached (${used}/${DAILY_CREATE_LIMIT} used today)`);
+      throw new AppError(429, `${CARRIER_LABEL} daily order-creation limit reached (${used}/${DAILY_CREATE_LIMIT} used today)`);
     }
   } catch (error) {
     if (error instanceof AppError) throw error;
@@ -498,7 +507,7 @@ export async function processNcmWebhook(payload: NcmWebhookPayload): Promise<voi
         console.warn(`[NCM] webhook for unknown order ${orderId} — ignored`);
         continue;
       }
-      const result = await applyCarrierStatusWithRetry(parcelId, targetStatus, `NCM: ${status}`);
+      const result = await applyCarrierStatusWithRetry(parcelId, targetStatus, `${CARRIER_LABEL}: ${status}`);
       if (!result.applied) {
         console.log(`[NCM] webhook order ${orderId} → '${targetStatus}' skipped: ${result.reason}`);
       }
@@ -555,14 +564,14 @@ export async function reconcileNcmStatuses(): Promise<{ checked: number; applied
         // client vendor - that's our follow_up stage, not a further step
         // along the carrier-leg sequence, so it's applied separately.
         if (ncmStatus === "Sent to Vendor") {
-          const result = await applyExternalCarrierFollowUp(parcelId, `NCM: ${ncmStatus} (reconciled)`);
+          const result = await applyExternalCarrierFollowUp(parcelId, `${CARRIER_LABEL}: ${ncmStatus} (reconciled)`);
           if (result.applied) applied += 1;
           continue;
         }
 
         const targetStatus = NCM_STATUS_TO_PARCEL_STATUS[ncmStatus];
         if (!targetStatus) continue;
-        const result = await applyCarrierStatusWithRetry(parcelId, targetStatus, `NCM: ${ncmStatus} (reconciled)`);
+        const result = await applyCarrierStatusWithRetry(parcelId, targetStatus, `${CARRIER_LABEL}: ${ncmStatus} (reconciled)`);
         if (result.applied) applied += 1;
       } catch (error) {
         console.error(`[NCM] reconciliation failed for order ${orderId}:`, error);
@@ -845,7 +854,7 @@ export async function markNcmOrderForReturn(
 ): Promise<void> {
   const ncmOrderId = await findNcmOrderIdForParcel(parcelId);
   if (!ncmOrderId) {
-    throw new AppError(404, "This parcel was never handed off to NCM");
+    throw new AppError(404, `This parcel was never handed off to the ${CARRIER_LABEL.toLowerCase()}`);
   }
 
   await ncmFetch("/api/v2/vendor/order/return", {
@@ -858,13 +867,13 @@ export async function markNcmOrderForReturn(
     data: {
       parcel_id: parcelId,
       user_id: actor.id,
-      remark: `[NCM] Marked for return — order #${ncmOrderId}: ${comment}`,
+      remark: `[${CARRIER_LABEL}] Marked for return — order #${ncmOrderId}: ${comment}`,
     },
   });
 
   await updateParcelStatus(actor, parcelId, {
     status: "follow_up",
-    remarks: `NCM: marked for return — ${comment}`,
+    remarks: `${CARRIER_LABEL}: marked for return — ${comment}`,
   });
 }
 
