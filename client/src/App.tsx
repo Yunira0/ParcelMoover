@@ -62,12 +62,14 @@ const ReturnOperations = lazy(() => import('./pages/ReturnOperations'))
 const HoldOperations = lazy(() => import('./pages/HoldOperations'))
 const LossAndDamageOperations = lazy(() => import('./pages/LossAndDamageOperations'))
 const RiderRunSheet = lazy(() => import('./pages/RiderRunSheet'))
-const CXCenter = lazy(() => import('./pages/CXCenter'))
+const Tickets = lazy(() => import('./pages/Tickets'))
 const Remarks = lazy(() => import('./pages/Remarks'))
 const UnclosedRemarks = lazy(() => import('./pages/UnclosedRemarks'))
 const RemarkDetail = lazy(() => import('./pages/RemarkDetail'))
 const TicketDetail = lazy(() => import('./pages/TicketDetail'))
 const VendorSettlements = lazy(() => import('./pages/vendor/VendorSettlements'))
+const VendorCodSettlementRequests = lazy(() => import('./pages/vendor/VendorCodSettlementRequests'))
+const CodSettlementRequests = lazy(() => import('./pages/CodSettlementRequests'))
 const VendorPendingCod = lazy(() => import('./pages/vendor/VendorPendingCod'))
 const VendorOrderPayments = lazy(() => import('./pages/vendor/VendorOrderPayments'))
 const VendorBilling = lazy(() => import('./pages/vendor/VendorBilling'))
@@ -250,11 +252,26 @@ function App() {
           />
           <Route
             path="/tickets"
-            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'vendor', 'vendor_staff', 'sales']}><CXCenter /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'vendor', 'vendor_staff', 'sales']}><Tickets /></RoleGuard>}
           />
           <Route
             path="/tickets/:id"
             element={<RoleGuard allowedRoles={['super_admin', 'admin', 'vendor', 'vendor_staff', 'sales']}><TicketDetail /></RoleGuard>}
+          />
+          {/* COD settlement requests. Vendors raise and track their own; staff
+              action every one. Separate routes rather than one shared page,
+              because the two sides do genuinely different things. */}
+          <Route
+            path="/vendor/cod-settlement-requests"
+            element={<RoleGuard allowedRoles={['vendor', 'vendor_staff']}><VendorCodSettlementRequests /></RoleGuard>}
+          />
+          <Route
+            path="/cod-settlement-requests"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']}><CodSettlementRequests /></RoleGuard>}
+          />
+          <Route
+            path="/cod-settlement-requests/:id"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']}><CodSettlementRequests /></RoleGuard>}
           />
           <Route
             path="/remarks"

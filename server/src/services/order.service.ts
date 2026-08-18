@@ -1878,6 +1878,11 @@ const ORDERS_INCLUDE = {
     take: 1,
     include: { users: { include: { user_roles: { include: { roles: true } } } } },
   },
+  // One column, not the whole row. cod_collections.parcel_id is unique, so this
+  // is a single indexed join per parcel - but this include is already the
+  // expensive part of every list query (see the note above getOrderFilterOptions),
+  // so it takes only the figure the finance column actually renders.
+  cod_collections: { select: { collected_amount: true } },
 } satisfies Prisma.parcelsInclude;
 
 // Role tag appended to "last updated by" so staff can tell at a glance which
@@ -1998,6 +2003,11 @@ function mapOrder(
     codAmount: Number(parcel.cod_amount),
     itemValue: Number(parcel.item_value),
     deliveryCharge: Number(parcel.delivery_charge),
+    // Cash actually taken from the receiver, as opposed to cod_amount, which is
+    // what was meant to be taken. The two differ on a partial delivery, and
+    // collected stays 0 until someone marks the parcel delivered. This is the
+    // same figure finance settles on and the ledger posts from.
+    collectedAmount: Number(parcel.cod_collections?.collected_amount ?? 0),
     packageType: parcel.package_type || "",
     deliveryInstruction: parcel.delivery_instruction || "",
     vendorId: parcel.vendor_id,
@@ -2511,6 +2521,8 @@ const ORDER_DETAIL_INCLUDE = {
       to_location: true,
     },
   },
+  // Detail spreads mapOrder, so it needs everything mapOrder reads.
+  cod_collections: { select: { collected_amount: true } },
 } satisfies Prisma.parcelsInclude;
 
 // Internal staff whose real names must never surface to vendors/riders - their

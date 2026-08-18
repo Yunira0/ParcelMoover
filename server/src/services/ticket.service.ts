@@ -238,6 +238,19 @@ export async function createTicket(actor: Actor, input: CreateTicketInput) {
     throw new AppError(400, "Subject is required");
   }
 
+  // COD settlement left the ticket system: it has its own table, its own
+  // workflow and a one-live-request-per-vendor rule that a ticket could not
+  // express. Refused here and not only in the UI, because the whole point of
+  // the move is that a vendor cannot open unlimited requests for the same
+  // money - and a hidden form field is not a rule. Tickets already raised
+  // under this category stay readable; only new ones are turned away.
+  if (input.category?.trim() === "cod_settlement") {
+    throw new AppError(
+      400,
+      "COD settlement is no longer raised as a ticket. Use the COD Settlement section instead.",
+    );
+  }
+
   const ticket = await prisma.support_tickets.create({
     data: {
       ticket_no: generateTicketNo(),

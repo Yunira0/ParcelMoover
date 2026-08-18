@@ -537,6 +537,7 @@ model settlements {
   settlement_items                     settlement_items[]
   settlement_payments                  settlement_payments[]
   settlement_documents                 settlement_documents[]
+  cod_settlement_requests              cod_settlement_requests[]
   users_settlements_approved_byTousers users?             @relation("settlements_approved_byTousers", fields: [approved_by], references: [id], onUpdate: NoAction)
   riders                               riders?            @relation(fields: [rider_id], references: [id], onUpdate: NoAction)
   users_settlements_settled_byTousers  users?             @relation("settlements_settled_byTousers", fields: [settled_by], references: [id], onUpdate: NoAction)
@@ -624,6 +625,55 @@ model support_tickets {
   @@index([status, created_at(sort: Desc)], map: "idx_support_tickets_status")
 }
 
+/// A vendor asking to be paid out the COD we are holding for them.
+///
+/// Deliberately not a support ticket. This used to be raised as one (category
+/// "cod_settlement"), which meant a vendor could open unlimited simultaneous
+/// requests for the same money, and the bank details they sent were flattened
+/// into free-text ticket description. Here the fields are columns, and the
+/// partial unique index below is what actually enforces one live request at a
+/// time - a service-level check alone would race two concurrent submissions.
+///
+/// Distinct from `settlements`: this is the *ask*. The settlement is the money
+/// actually moving, created by an admin once they act on the request, and
+/// linked back through settlement_id.
+model cod_settlement_requests {
+  id             String                        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  request_no     String                        @unique
+  vendor_id      String                        @db.Uuid
+  /// Where the vendor wants the money sent. Captured per request rather than
+  /// read off the vendor record, because a payout account can differ from the
+  /// account registered at KYC and we need the one they asked for on the day.
+  bank_name      String
+  account_number String
+  account_name   String
+  note           String?
+  /// The vendor's unsettled COD when they asked, in paisa-accurate decimal.
+  /// A snapshot for the admin's context, not an authority - the payable figure
+  /// is recomputed at settlement time and will have moved on.
+  amount_snapshot Decimal?                     @db.Decimal(12, 2)
+  status         cod_settlement_request_status @default(open)
+  /// Set when an admin settles the request against a real payout.
+  settlement_id  String?                       @db.Uuid
+  /// Why a request was rejected - shown back to the vendor, so they know
+  /// whether to fix something and re-raise.
+  decision_note  String?
+  created_by     String?                       @db.Uuid
+  reviewed_by    String?                       @db.Uuid
+  reviewed_at    DateTime?                     @db.Timestamptz(6)
+  closed_at      DateTime?                     @db.Timestamptz(6)
+  created_at     DateTime                      @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime                      @default(now()) @updatedAt @db.Timestamptz(6)
+
+  vendors     vendors      @relation(fields: [vendor_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  settlements settlements? @relation(fields: [settlement_id], references: [id], onUpdate: NoAction)
+  created_by_user users?   @relation("cod_settlement_requests_created_byTousers", fields: [created_by], references: [id], onUpdate: NoAction)
+  reviewed_by_user users?  @relation("cod_settlement_requests_reviewed_byTousers", fields: [reviewed_by], references: [id], onUpdate: NoAction)
+
+  @@index([vendor_id, created_at(sort: Desc)], map: "idx_cod_settlement_requests_vendor")
+  @@index([status, created_at(sort: Desc)], map: "idx_cod_settlement_requests_status")
+}
+
 model user_roles {
   user_id    String   @db.Uuid
   role_id    String   @db.Uuid
@@ -668,6 +718,8 @@ model users {
   vendor_payments_reviewed_by                            vendor_payments[]       @relation("vendor_payments_reviewed_byTousers")
   support_tickets_support_tickets_assigned_toTousers     support_tickets[]       @relation("support_tickets_assigned_toTousers")
   support_tickets_support_tickets_created_byTousers      support_tickets[]       @relation("support_tickets_created_byTousers")
+  cod_settlement_requests_created_by                     cod_settlement_requests[] @relation("cod_settlement_requests_created_byTousers")
+  cod_settlement_requests_reviewed_by                    cod_settlement_requests[] @relation("cod_settlement_requests_reviewed_byTousers")
   journal_entries                                        journal_entries[]
   accounting_periods                                     accounting_periods[]
   expenses_created                                       expenses[]              @relation("expenses_created_by")
@@ -764,6 +816,7 @@ model vendors {
   api_keys              api_keys[]
   webhook_endpoints     webhook_endpoints[]
   vendor_payments       vendor_payments[]
+  cod_settlement_requests cod_settlement_requests[]
 
   @@index([location_id], map: "idx_vendors_location_id")
   @@index([sales_user_id], map: "idx_vendors_sales_user_id")
@@ -1022,6 +1075,20 @@ enum ticket_status {
   resolved
   closed
   pending
+}
+
+/// Lifecycle of a vendor's request to be paid out their collected COD.
+///
+/// `open` and `in_progress` are the *live* states - a vendor may hold only one
+/// request in either at a time (see the partial unique index on the model).
+/// `settled` and `rejected` are both terminal and both release that hold:
+/// rejection has to unblock, or one refused request would lock a vendor out of
+/// ever asking again.
+enum cod_settlement_request_status {
+  open
+  in_progress
+  settled
+  rejected
 }
 
 enum user_status {

@@ -91,6 +91,8 @@ export interface Order {
   codAmount: number;
   itemValue: number;
   deliveryCharge: number;
+  /** Cash actually collected from the receiver. 0 until delivered, and below codAmount on a partial. */
+  collectedAmount: number;
   packageType?: string;
   deliveryInstruction?: string;
   vendorId: string | null;

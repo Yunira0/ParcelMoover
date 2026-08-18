@@ -303,6 +303,11 @@ export async function approveKycApplication(id: string, reviewerId: string, note
         bank_account_holder: app.bank_account_holder,
         status: "active",
         joined_at: new Date(),
+        // Same default an admin-created vendor gets (see registerVendor in
+        // auth.service.ts). Without it this row fell to the schema default of
+        // "flat", so vendors who arrived through KYC were priced on a different
+        // model from vendors an admin added by hand.
+        rate_type: "per_destination",
       },
     });
 
