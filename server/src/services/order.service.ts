@@ -222,6 +222,51 @@ const DELIVERY_STATUSES: parcel_status[] = ["delivered", "partially_delivered"];
 // UI — the API must enforce the same restriction, not just hide the buttons.
 const OPS_RESTRICTED_STATUSES: parcel_status[] = ["hold", "loss_and_damage"];
 
+// Statuses a parcel can only be in once it has physically been picked up -
+// every status except the two pre-pickup ones (pickup_ordered, rider_assigned)
+// and the two that mean the pickup never happened (failed_pickup, cancelled).
+// Needed because "picked_up" is skippable: a super_admin may force any
+// transition from any status (see the isSuperAdmin bypasses below), so a parcel
+// can land on "delivered" having never passed through "picked_up". Without a
+// stamp on those the dashboard's "Picked Up" trend loses them permanently.
+const POST_PICKUP_STATUSES: parcel_status[] = [
+  "picked_up",
+  "arrived",
+  "ready_to_deliver",
+  "sent_for_delivery",
+  "oov",
+  "dispatched",
+  "arrived_at_branch",
+  "hold",
+  "loss_and_damage",
+  "delivered",
+  "partially_delivered",
+  "failed_delivery",
+  "follow_up",
+  "ready_to_return",
+  "sent_to_vendor",
+  "returned_to_vendor",
+];
+
+/**
+ * The picked_up_at value to write for a transition into `newStatus`, or null to
+ * leave the column alone.
+ *
+ * The real pickup transition always re-stamps, so a forced re-pickup records
+ * when the goods actually left the sender this time round. Every other
+ * post-pickup status stamps only while the column is still null - that is the
+ * skip path, and scoping it to null means it can neither overwrite a genuine
+ * pickup time nor fire at all on the normal flow.
+ */
+function pickupStampFor(
+  newStatus: parcel_status | ParcelStatus,
+  currentPickedUpAt: Date | null,
+): Date | null {
+  if (newStatus === "picked_up") return new Date();
+  if (currentPickedUpAt !== null) return null;
+  return POST_PICKUP_STATUSES.includes(newStatus as parcel_status) ? new Date() : null;
+}
+
 // Fringe areas that sit just outside the valley boundary in `locations.valley`
 // but are close enough to be delivered directly from origin without a Transit
 // (OOV) leg — routing them through Transit anyway would just add a redundant
@@ -2904,8 +2949,13 @@ async function computeDashboardSummary(
   riderId: string | undefined,
   cacheKey: string | null,
 ) {
-  const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
+  // Start of today in Nepal local time. setHours() would truncate to the *host*
+  // timezone, and the production container runs UTC - so every day bucket below
+  // (the trend graph included) started 5h45m late, filing anything that happened
+  // between midnight and 05:45 NPT under the previous day.
+  const todayStart = new Date(
+    Date.parse(`${formatDate(new Date())}T00:00:00Z`) - NEPAL_UTC_OFFSET_MS,
+  );
 
   const parcelWhere: Prisma.parcelsWhereInput = {
     deleted_at: null,
@@ -4029,6 +4079,16 @@ async function _updateParcelStatusImpl(
     if (rtoReturnCharge !== null) {
       (updateData as any).delivery_charge = rtoReturnCharge;
     }
+    // Side-effect: stamp the pickup time, mirroring delivered_at below. The
+    // dashboard's "Picked Up" trend counts parcels by picked_up_at per day, so
+    // while nothing set it here the series only ever showed the auto-created
+    // return orders, which get the column populated at creation. Routed through
+    // pickupStampFor so a forced jump past "picked_up" still leaves the parcel
+    // with a pickup time rather than a permanent hole in the trend.
+    const pickupStamp = pickupStampFor(newStatus, parcel.picked_up_at);
+    if (pickupStamp) {
+      (updateData as any).picked_up_at = pickupStamp;
+    }
     // Side-effect: set delivered_at timestamp
     if (newStatus === "delivered") {
       (updateData as any).delivered_at = new Date();
@@ -4706,6 +4766,9 @@ async function _bulkUpdateParcelStatusImpl(
       : null;
 
     const updateData: Prisma.parcelsUpdateInput = { status: newStatus as parcel_status };
+    if (newStatus === "picked_up") {
+      (updateData as any).picked_up_at = new Date();
+    }
     if (newStatus === "delivered") {
       (updateData as any).delivered_at = new Date();
     }
@@ -4745,6 +4808,24 @@ async function _bulkUpdateParcelStatusImpl(
       where: { id: { in: idsToUpdate } },
       data: updateData,
     });
+
+    // Skip path, batch flavour: updateData above only stamps picked_up_at on
+    // the real pickup transition, but a super_admin can force a batch straight
+    // past it. Scoped to picked_up_at: null so it can never overwrite a genuine
+    // pickup time - which also makes it a no-op on the normal flow. Separate
+    // from the updateMany above because that single blob applies to the whole
+    // batch, while this must skip the parcels that already carry a timestamp.
+    //
+    // idsToUpdate, not ids: the no-op filter above drops parcels already at
+    // newStatus from the batch, and those are precisely the ones nothing is
+    // happening to - stamping them would invent a pickup time for a parcel
+    // this request never touched.
+    if (newStatus !== "picked_up" && POST_PICKUP_STATUSES.includes(newStatus as parcel_status)) {
+      await tx.parcels.updateMany({
+        where: { id: { in: idsToUpdate }, picked_up_at: null },
+        data: { picked_up_at: new Date() },
+      });
+    }
 
     // Side-effect: release the delivery rider on every parcel coming off the
     // delivery leg, plus every parcel whose delivery is being retracted - the
@@ -5106,6 +5187,14 @@ export async function applyExternalCarrierStatus(
 
     await prisma.$transaction(async (tx) => {
       const updateData: Prisma.parcelsUpdateInput = { status: targetStatus };
+      // CARRIER_LEG_SEQUENCE starts at "oov", so targetStatus can never be
+      // "picked_up" here and the equality check this replaces was unreachable.
+      // A carrier leg still implies the parcel left the sender, so stamp it if
+      // nothing on the internal flow did.
+      const pickupStamp = pickupStampFor(targetStatus, parcel.picked_up_at);
+      if (pickupStamp) {
+        (updateData as any).picked_up_at = pickupStamp;
+      }
       if (targetStatus === "delivered") {
         (updateData as any).delivered_at = new Date();
       }

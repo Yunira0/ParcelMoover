@@ -687,8 +687,38 @@ export const getVendorsDropdownController = async (req: Request, res: Response) 
 
 export const getRidersController = async (req: Request, res: Response) => {
   try {
-    const where = { deleted_at: null };
     const { page, pageSize, skip } = paginationFromQuery(req);
+
+    const search = typeof req.query.search === "string" ? req.query.search.trim() : "";
+    const statusFilter = typeof req.query.status === "string" ? req.query.status.trim() : "";
+
+    // Same shape as getAdminsController above, with one difference: a rider's
+    // active/inactive state lives on riders.status, not users.status - the
+    // placeholder rows standing in for out-of-valley carriers (carrier_code)
+    // have no user row at all, so the filter can't hang off the relation.
+    // Allow-listed rather than passed through: riders.status is an enum, so an
+    // unrecognised value (?status=bogus) makes Prisma throw a validation error
+    // that the catch below turns into a 500 echoing the query internals.
+    // Anything not an enum member is ignored, same as "all".
+    const statusWhere =
+      statusFilter === "active" || statusFilter === "inactive" ? { status: statusFilter } : {};
+
+    const where: Record<string, unknown> = {
+      deleted_at: null,
+      ...statusWhere,
+    };
+
+    if (search) {
+      // Matches the input's "Search name, phone, email" placeholder. Email is
+      // the only one of the three on the users relation; name and phone are
+      // columns on riders itself. No mode on phone - it is digits either way,
+      // and case-insensitive matching on it just costs a lower() call.
+      where.OR = [
+        { name: { contains: search, mode: "insensitive" } },
+        { phone: { contains: search } },
+        { users: { is: { email: { contains: search, mode: "insensitive" } } } },
+      ];
+    }
 
     const [total, riders] = await Promise.all([
       prisma.riders.count({ where }),
