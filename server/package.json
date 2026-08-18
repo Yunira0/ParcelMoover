@@ -16,6 +16,7 @@
     "seed:roles": "ts-node --transpile-only prisma/seed-roles.ts",
     "seed:vendors-staff": "ts-node --transpile-only prisma/seed-vendors-staff.ts",
     "migrate:encrypt-uploads": "ts-node --transpile-only scripts/encrypt-existing-uploads.ts",
+    "backfill:picked-up-at": "ts-node --transpile-only scripts/backfill-picked-up-at.ts",
     "reconcile:settlement-status": "ts-node --transpile-only scripts/reconcile-settlement-payment-status.ts"
   },
   "keywords": [],
