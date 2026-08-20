@@ -150,6 +150,12 @@ export interface ListOrdersQuery {
   // dashboard card counts by delivered_at, so its drill-down needs the same
   // filter server-side to page and total consistently with the card.
   deliveredToday?: boolean;
+  // Which date the day range below is compared against. Defaults to the
+  // created date, matching the UI's own default.
+  dateField?: "createdAt" | "lastUpdatedAt";
+  // Inclusive Nepal-local day bounds, "YYYY-MM-DD".
+  dateFrom?: string;
+  dateTo?: string;
 }
 
 export interface BulkUpdateParcelStatusInput {

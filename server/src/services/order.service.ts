@@ -20,7 +20,11 @@ import {
 import { generateTrackingId } from "../utils/trackingId";
 import { generateDispatchNo } from "../utils/dispatchId";
 import { generateRunSheetNo } from "../utils/runSheetNo";
-import { NEPAL_UTC_OFFSET_MS, formatNepalDate as formatDate } from "../utils/nepalTime";
+import {
+  NEPAL_UTC_OFFSET_MS,
+  formatNepalDate as formatDate,
+  nepalDayRangeUtc,
+} from "../utils/nepalTime";
 import { resolveOwnVendorId, isStaffActor } from "./vendor-scope.service";
 import { hasAdminPermission } from "../middlewares/adminPermission.middleware";
 import { invalidateVendorFinanceCache, invalidateRiderFinanceCache } from "./finance.service";
@@ -1804,6 +1808,34 @@ function buildOrdersWhere(
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
     conditions.push({ delivered_at: { gte: todayStart } });
+  }
+
+  // Date range, bucketed by Nepal-local day so it agrees with the dates the
+  // list itself renders (mapOrder formats createdAt the same way).
+  const dayRange = nepalDayRangeUtc(query.dateFrom, query.dateTo);
+  if (dayRange.gte || dayRange.lt) {
+    if (query.dateField === "lastUpdatedAt") {
+      // "Status updated" is the newest parcel_status_history row, falling back
+      // to updated_at for a parcel that has none - the same value mapOrder
+      // reports as lastUpdatedAt. `some(>= from)` + `none(>= to)` pins the
+      // *latest* row into the window; `some` alone would also match an order
+      // that merely passed through it on the way to a later status.
+      const latestInRange: Prisma.parcelsWhereInput[] = [];
+      if (dayRange.gte) {
+        latestInRange.push({ parcel_status_history: { some: { created_at: { gte: dayRange.gte } } } });
+      }
+      if (dayRange.lt) {
+        latestInRange.push({ parcel_status_history: { none: { created_at: { gte: dayRange.lt } } } });
+      }
+      conditions.push({
+        OR: [
+          { AND: latestInRange },
+          { AND: [{ parcel_status_history: { none: {} } }, { updated_at: dayRange }] },
+        ],
+      });
+    } else {
+      conditions.push({ created_at: dayRange });
+    }
   }
 
   const search = query.search?.trim();

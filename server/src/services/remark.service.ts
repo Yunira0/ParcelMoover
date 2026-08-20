@@ -2,6 +2,7 @@ import prisma from "../lib/prisma";
 import { AppError } from "../utils/AppError";
 import { ListRemarksParams, RemarkAuthorGroup } from "../types/remark.type";
 import { displayAuthor, stripCarrierStaffTag } from "../utils/carrierRemark";
+import { nepalDayRangeUtc } from "../utils/nepalTime";
 
 type Actor = { id: string; roles: string[] };
 
@@ -178,10 +179,10 @@ export async function listRemarks(actor: Actor, params: ListRemarksParams = {}) 
   }
 
   if (params.fromDate || params.toDate) {
-    const createdAt: Record<string, Date> = {};
-    if (params.fromDate) createdAt.gte = new Date(params.fromDate);
-    if (params.toDate) createdAt.lte = new Date(params.toDate);
-    where.created_at = createdAt;
+    // created_at is a timestamptz: `lte: new Date("2026-08-20")` is that day's
+    // UTC midnight, so it excluded the whole of the requested end day and sat
+    // 5h45m off Nepal local midnight at both ends.
+    where.created_at = nepalDayRangeUtc(params.fromDate, params.toDate);
   }
 
   if (params.search) {
