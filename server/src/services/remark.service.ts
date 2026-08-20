@@ -1,7 +1,7 @@
 import prisma from "../lib/prisma";
 import { AppError } from "../utils/AppError";
 import { ListRemarksParams, RemarkAuthorGroup } from "../types/remark.type";
-import { stripCarrierStaffTag } from "../utils/carrierRemark";
+import { displayAuthor, stripCarrierStaffTag } from "../utils/carrierRemark";
 
 type Actor = { id: string; roles: string[] };
 
@@ -78,10 +78,10 @@ function mapRemark(
     customerPhone: remark.parcels.parties_parcels_sender_idToparties.phone,
     subject: subject.text,
     status: normalizeStatus(remark.workflow_status),
-    addedBy: subject.isCarrierStaff ? "Staff" : remark.users?.full_name || "Unknown",
+    addedBy: displayAuthor(remark.users?.full_name, subject.isCarrierStaff),
     createdAt: remark.created_at.toISOString().slice(0, 10),
     lastRemark: last.text,
-    lastRemarkBy: last.isCarrierStaff ? "Staff" : lastActivity?.addedBy ?? remark.users?.full_name ?? "Unknown",
+    lastRemarkBy: displayAuthor(lastActivity?.addedBy ?? remark.users?.full_name, last.isCarrierStaff),
     lastRemarkAt: (lastActivity?.created_at ?? remark.created_at).toISOString(),
   };
 }
@@ -107,7 +107,9 @@ async function resolveLastActivityByParcel(
     result.set(row.parcel_id, {
       remark: row.remark,
       created_at: row.created_at,
-      addedBy: row.users?.full_name || "Unknown",
+      // Left empty rather than resolved here - mapRemark decides the label,
+      // since only it knows whether the remark carries a carrier tag.
+      addedBy: row.users?.full_name || "",
     });
   });
 
@@ -133,6 +135,22 @@ const authorFilter = (group?: RemarkAuthorGroup) => ({
   user_roles: {
     some: { roles: { code: { in: group ? AUTHOR_ROLE_CODES[group] : ALL_AUTHOR_ROLE_CODES } } },
   },
+});
+
+/**
+ * What "an unclosed comment" means, in one place: a root remark (replies live
+ * inside the thread and are not their own item of work), raised by a vendor or
+ * a rider rather than by staff or by one of the sync jobs, and not yet closed.
+ *
+ * Exported because the dashboard counts the same thing from order.service - the
+ * nav badge, the Today's-activity row and the remarks SLA all have to agree, and
+ * they only did when each one stopped writing this filter out for itself. Omit
+ * `group` for both queues, or narrow to one.
+ */
+export const unclosedRemarksWhere = (group?: RemarkAuthorGroup) => ({
+  workflow_status: { not: "closed" },
+  parent_remark_id: null,
+  users: authorFilter(group),
 });
 
 export async function listRemarks(actor: Actor, params: ListRemarksParams = {}) {
@@ -274,7 +292,7 @@ export async function getRemarkById(actor: Actor, id: string) {
       return {
         id: entry.id,
         remark: stripped.text,
-        addedBy: stripped.isCarrierStaff ? "Staff" : entry.users?.full_name || "Unknown",
+        addedBy: displayAuthor(entry.users?.full_name, stripped.isCarrierStaff),
         createdAt: entry.created_at.toISOString(),
         parentRemarkId: entry.parent_remark_id,
         parentAuthor: parentStripped?.isCarrierStaff
@@ -306,11 +324,7 @@ export interface UnclosedRemarkCounts {
 export async function getUnclosedRemarksCounts(actor: Actor): Promise<UnclosedRemarkCounts> {
   const countFor = async (group?: RemarkAuthorGroup) =>
     prisma.parcel_remarks.count({
-      where: await scopeWhere(actor, {
-        workflow_status: { not: "closed" },
-        parent_remark_id: null,
-        users: authorFilter(group),
-      }),
+      where: await scopeWhere(actor, unclosedRemarksWhere(group)),
     });
 
   const [total, vendor, rider] = await Promise.all([countFor(), countFor("vendor"), countFor("rider")]);

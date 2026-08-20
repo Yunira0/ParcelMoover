@@ -195,6 +195,12 @@ export interface DashboardTrendDay {
   returned: number;
 }
 
+/** One status inside an SLA group, and how many orders are past it. */
+export interface SlaStatusBreach {
+  status: ParcelStatus;
+  count: number;
+}
+
 export interface DashboardSummary {
   overview: {
     totalOrders: number;
@@ -247,6 +253,11 @@ export interface DashboardSummary {
     transitHours: number | null;
     remarksHours: number | null;
     returnHours: number | null;
+    /** Which statuses make up each group's total. Breaching statuses only. */
+    pickupBreaches: SlaStatusBreach[];
+    deliveryBreaches: SlaStatusBreach[];
+    transitBreaches: SlaStatusBreach[];
+    returnBreaches: SlaStatusBreach[];
   };
   codSettlement: {
     totalCod: number;

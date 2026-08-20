@@ -1,7 +1,8 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { MessageSquare, RotateCcw, ClipboardList, Send, Route, ArrowRight, CheckCircle2 } from 'lucide-react';
-import type { DashboardSummary } from '../services/orders.service';
+import type { DashboardSummary, SlaStatusBreach } from '../services/orders.service';
+import { ORDER_STATUS_LABELS } from '../utils/orderStatus';
 import './NeedsAttention.css';
 
 interface NeedsAttentionProps {
@@ -19,6 +20,9 @@ interface Item {
   to: string;
   tone: Tone;
   icon: React.ReactNode;
+  /** Per-status split of `count`, shown under the hint. Empty for remarks,
+   *  which aren't a parcel status and so have nothing to break down. */
+  details?: SlaStatusBreach[];
 }
 
 // Surfaces only SLA breaches — orders that have sat in a status longer than the
@@ -38,6 +42,7 @@ const NeedsAttention: React.FC<NeedsAttentionProps> = ({ sla, loading = false })
       to: '/pickup',
       tone: 'warning',
       icon: <ClipboardList size={18} />,
+      details: sla.pickupBreaches,
     },
     {
       key: 'deliveries',
@@ -47,6 +52,7 @@ const NeedsAttention: React.FC<NeedsAttentionProps> = ({ sla, loading = false })
       to: '/dispatch',
       tone: 'danger',
       icon: <Send size={18} />,
+      details: sla.deliveryBreaches,
     },
     {
       key: 'transit',
@@ -74,6 +80,7 @@ const NeedsAttention: React.FC<NeedsAttentionProps> = ({ sla, loading = false })
       to: '/return',
       tone: 'danger',
       icon: <RotateCcw size={18} />,
+      details: sla.returnBreaches,
     },
   ];
   const items = allItems.filter((item) => item.count > 0);
@@ -101,6 +108,13 @@ const NeedsAttention: React.FC<NeedsAttentionProps> = ({ sla, loading = false })
                 <span className="needs-attention-label">
                   {item.label}
                   <span className="needs-attention-hint">{item.count.toLocaleString()} {item.hint}</span>
+                  {item.details && item.details.length > 0 && (
+                    <span className="needs-attention-detail">
+                      {item.details
+                        .map((d) => `${d.count.toLocaleString()} past ${ORDER_STATUS_LABELS[d.status] || d.status}`)
+                        .join(' · ')}
+                    </span>
+                  )}
                 </span>
                 <ArrowRight size={16} className="needs-attention-go" />
               </Link>

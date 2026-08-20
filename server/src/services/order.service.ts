@@ -3,6 +3,7 @@ import prisma from "../lib/prisma";
 import redis, { scanAndDelete } from "../lib/redis";
 import { AppError } from "../utils/AppError";
 import { getSlaSettings, SLA_GROUPS } from "./sla.service";
+import { unclosedRemarksWhere } from "./remark.service";
 import {
   BulkCreateOrderInput,
   BulkUpdateParcelStatusInput,
@@ -25,7 +26,7 @@ import { hasAdminPermission } from "../middlewares/adminPermission.middleware";
 import { invalidateVendorFinanceCache, invalidateRiderFinanceCache } from "./finance.service";
 import { emitWebhookEvent, emitWebhookEventsBatch } from "./webhookDispatch.service";
 import { getVendorStatusLabel } from "../utils/orderStatusLabel";
-import { stripCarrierStaffTag } from "../utils/carrierRemark";
+import { displayAuthor, displayRemarkText, stripCarrierStaffTag } from "../utils/carrierRemark";
 import {
   assertVendorCanCreateOrder,
   evaluateVendorBillingAsync,
@@ -2064,7 +2065,7 @@ function mapOrder(
     labelWidthMm: labelSize.widthMm,
     labelHeightMm: labelSize.heightMm,
     riderName: rider?.name || "",
-    remarks: parcel.parcel_remarks[0]?.remark || "",
+    remarks: stripCarrierStaffTag(parcel.parcel_remarks[0]?.remark || "").text,
     // Vendor-declared eligibility at creation, plus the actual outcome once a
     // rider/admin marks the parcel partially_delivered (both null/false until then).
     allowPartialDelivery: parcel.allow_partial_delivery,
@@ -2706,7 +2707,7 @@ export async function getOrderByTrackingId(actor: OrderActor, trackingId: string
       return {
         id: remark.id,
         remark: remarkText,
-        addedBy: isCarrierStaff || maskAuthor ? "Staff" : remark.users?.full_name || "Unknown",
+        addedBy: displayAuthor(remark.users?.full_name, isCarrierStaff || maskAuthor),
         createdAt: remark.created_at.toISOString(),
         parentRemarkId: remark.parent_remark_id,
         parentAuthor: remark.parent_remark?.users
@@ -2737,7 +2738,9 @@ export async function getOrderByTrackingId(actor: OrderActor, trackingId: string
         id: entry.id,
         oldStatus: entry.old_status,
         newStatus: entry.new_status,
-        remarks: entry.remarks || "",
+        // One wording for both carriers, and no carrier's own name - the
+        // handoff entry is stored branded on the Upaya side (see carrierRemark).
+        remarks: displayRemarkText(entry.remarks || ""),
         riderName: riderName || null,
         changedBy: isStaff ? entry.users?.full_name || "System" : nonStaffLabel,
         changedByType: isStaff ? ("user" as const) : ("branch" as const),
@@ -2920,7 +2923,7 @@ export async function addOrderRemark(
   return {
     id: remark.id,
     remark: remark.remark,
-    addedBy: remark.users?.full_name || "Unknown",
+    addedBy: displayAuthor(remark.users?.full_name),
     createdAt: remark.created_at.toISOString(),
     parentRemarkId: remark.parent_remark_id,
     parentAuthor: remark.parent_remark?.users
@@ -3187,22 +3190,11 @@ async function computeDashboardSummary(
     prisma.parcel_remarks.count({
       where: { created_at: { gte: todayStart }, parcels: parcelWhere },
     }),
+    // Same set as the nav's "Unclosed cmt" badge - this row links to the vendor
+    // queue, so it counts what that page lists. Rider-raised remarks are the
+    // separate "Rider cmt" queue.
     prisma.parcel_remarks.count({
-      where: {
-        workflow_status: { not: "closed" },
-        parent_remark_id: null,
-        // Same set as the nav's "Unclosed cmt" badge (remark.service
-        // getUnclosedRemarksCounts, vendor group): vendor-raised remarks only.
-        // Rider-raised ones are a separate queue behind the "Rider cmt" badge,
-        // so counting them here made this figure disagree with both the badge
-        // and the /unclosed-remarks page this row links to.
-        users: {
-          user_roles: {
-            some: { roles: { code: { in: ["vendor", "vendor_staff"] } } },
-          },
-        },
-        parcels: parcelWhere,
-      },
+      where: { ...unclosedRemarksWhere("vendor"), parcels: parcelWhere },
     }),
     prisma.$queryRaw<
       Array<{
@@ -3370,6 +3362,14 @@ async function computeDashboardSummary(
   const sumStatuses = (statuses: readonly string[]) =>
     statuses.reduce((n, s) => n + (slaCounts[s] ?? 0), 0);
 
+  // The statuses behind a group's total, so "Pickup SLA breached: 3" can say
+  // which stages those three are stuck in. Only the ones actually breaching -
+  // a list padded with zeroes tells the reader nothing and crowds the row.
+  const breachesByStatus = (statuses: readonly string[]) =>
+    statuses
+      .map((status) => ({ status, count: slaCounts[status] ?? 0 }))
+      .filter((entry) => entry.count > 0);
+
   // Representative SLA threshold to display for a group row: the tightest
   // (smallest) configured hours among its statuses, or null if none set.
   const groupHours = (statuses: readonly string[]): number | null => {
@@ -3383,10 +3383,22 @@ async function computeDashboardSummary(
   const remarksHours = slaSettings["remarks"];
   if (typeof remarksHours === "number") {
     const remarksCutoff = new Date(Date.now() - remarksHours * 3600 * 1000);
+    // Unclosed comments past their SLA - the same set the badge counts, aged.
+    // Counting raw parcel_remarks rows instead swept in every reply as its own
+    // breach, plus staff notes and the sync jobs' own bookkeeping rows, none of
+    // which anyone is waiting to reply to and none of which are ever closed.
+    // Both queues here, not just the vendor one: this row links to /remarks,
+    // which lists them together.
     overdueRemarks = await prisma.parcel_remarks.count({
       where: {
-        workflow_status: { not: "closed" },
+        ...unclosedRemarksWhere(),
+        // The clock runs from the last message in the thread, not from the one
+        // that opened it: the row means "nobody has answered this in N hours",
+        // so a reply is activity and restarts it. Root older than the cutoff
+        // AND no reply since is the same test as "newest message is older than
+        // the cutoff", without a correlated subquery.
         created_at: { lt: remarksCutoff },
+        replies: { none: { created_at: { gte: remarksCutoff } } },
         parcels: parcelWhere,
       },
     });
@@ -3457,6 +3469,10 @@ async function computeDashboardSummary(
       transitHours: groupHours(SLA_GROUPS.transit),
       remarksHours: typeof slaSettings["remarks"] === "number" ? slaSettings["remarks"] : null,
       returnHours: groupHours(SLA_GROUPS.return),
+      pickupBreaches: breachesByStatus(SLA_GROUPS.pickup),
+      deliveryBreaches: breachesByStatus(SLA_GROUPS.delivery),
+      transitBreaches: breachesByStatus(SLA_GROUPS.transit),
+      returnBreaches: breachesByStatus(SLA_GROUPS.return),
     },
     weeklyTrend,
     updatedAt: new Date().toISOString(),

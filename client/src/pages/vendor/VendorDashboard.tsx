@@ -58,6 +58,10 @@ const EMPTY_SUMMARY: DashboardSummary = {
     transitHours: null,
     remarksHours: null,
     returnHours: null,
+    pickupBreaches: [],
+    deliveryBreaches: [],
+    transitBreaches: [],
+    returnBreaches: [],
   },
   codSettlement: {
     totalCod: 0,

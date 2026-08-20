@@ -4,6 +4,7 @@ import prisma from "../lib/prisma";
 import redis from "../lib/redis";
 import { ncmFetch, isNcmConfigured } from "../lib/ncmClient";
 import { AppError } from "../utils/AppError";
+import { CARRIER_AUTHOR_LABEL, CARRIER_LABEL, HANDOFF_REMARK_PREFIX as NEUTRAL_HANDOFF_PREFIX } from "../utils/carrierRemark";
 import {
   applyExternalCarrierFollowUp,
   applyExternalCarrierStatus,
@@ -27,7 +28,7 @@ import {
 // order.service.ts) can identify NCM-handled parcels the same durable way
 // this file does - a real parcel_remarks row, not a Redis cache entry (which
 // has a TTL and is only a lookup accelerator, never the source of truth).
-export const HANDOFF_REMARK_PREFIX = "Parcel dispatched to destination";
+export const HANDOFF_REMARK_PREFIX = NEUTRAL_HANDOFF_PREFIX;
 const HANDOFF_REMARK_ORDER_RE = /Parcel dispatched to destination[^#]*#(\d+)/;
 
 // Which 3PL carries a parcel is our commercial arrangement, not the customer's
@@ -37,7 +38,8 @@ const HANDOFF_REMARK_ORDER_RE = /Parcel dispatched to destination[^#]*#(\d+)/;
 // operator-facing and never rendered.) The handoff remark above is already
 // neutral and is load-bearing - it is the parcel → NCM order mapping, matched
 // by startsWith/regex in three queries, so its text must not change.
-const CARRIER_LABEL = "Courier partner";
+// CARRIER_LABEL itself lives in utils/carrierRemark, shared with upaya.service
+// so the two carriers cannot drift apart in the same timeline again.
 
 const ORDER_PARCEL_CACHE_PREFIX = "ncm:order-parcel:"; // ncm order id -> parcel id
 const MAPPING_TTL_SECONDS = 60 * 24 * 60 * 60; // 60 days, refreshed on access
@@ -507,7 +509,7 @@ export async function processNcmWebhook(payload: NcmWebhookPayload): Promise<voi
         console.warn(`[NCM] webhook for unknown order ${orderId} — ignored`);
         continue;
       }
-      const result = await applyCarrierStatusWithRetry(parcelId, targetStatus, `${CARRIER_LABEL}: ${status}`);
+      const result = await applyCarrierStatusWithRetry(parcelId, targetStatus, `${CARRIER_AUTHOR_LABEL}: ${status}`);
       if (!result.applied) {
         console.log(`[NCM] webhook order ${orderId} → '${targetStatus}' skipped: ${result.reason}`);
       }
@@ -564,14 +566,14 @@ export async function reconcileNcmStatuses(): Promise<{ checked: number; applied
         // client vendor - that's our follow_up stage, not a further step
         // along the carrier-leg sequence, so it's applied separately.
         if (ncmStatus === "Sent to Vendor") {
-          const result = await applyExternalCarrierFollowUp(parcelId, `${CARRIER_LABEL}: ${ncmStatus} (reconciled)`);
+          const result = await applyExternalCarrierFollowUp(parcelId, `${CARRIER_AUTHOR_LABEL}: ${ncmStatus} (reconciled)`);
           if (result.applied) applied += 1;
           continue;
         }
 
         const targetStatus = NCM_STATUS_TO_PARCEL_STATUS[ncmStatus];
         if (!targetStatus) continue;
-        const result = await applyCarrierStatusWithRetry(parcelId, targetStatus, `${CARRIER_LABEL}: ${ncmStatus} (reconciled)`);
+        const result = await applyCarrierStatusWithRetry(parcelId, targetStatus, `${CARRIER_AUTHOR_LABEL}: ${ncmStatus} (reconciled)`);
         if (result.applied) applied += 1;
       } catch (error) {
         console.error(`[NCM] reconciliation failed for order ${orderId}:`, error);
@@ -873,7 +875,7 @@ export async function markNcmOrderForReturn(
 
   await updateParcelStatus(actor, parcelId, {
     status: "follow_up",
-    remarks: `${CARRIER_LABEL}: marked for return — ${comment}`,
+    remarks: `${CARRIER_AUTHOR_LABEL}: marked for return — ${comment}`,
   });
 }
 

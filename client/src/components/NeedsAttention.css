@@ -96,3 +96,14 @@
   font-size: var(--font-size-sm);
   margin: 0;
 }
+
+/* Per-status split under a group's hint ("2 past Pickup Ordered · 1 past Rider
+   Assigned"). Sits a step quieter than the hint so the row still reads
+   headline-first, and wraps rather than truncating - a group can breach on
+   three statuses at once. */
+.needs-attention-detail {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-placeholder);
+  margin-top: 2px;
+  line-height: var(--line-height-xs);
+}

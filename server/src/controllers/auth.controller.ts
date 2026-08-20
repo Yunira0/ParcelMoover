@@ -553,7 +553,7 @@ export const getVendorsController = async (req: Request, res: Response) => {
   }
 };
 
-const TOP_VENDORS_LIMIT = 4;
+const TOP_VENDORS_LIMIT = 5;
 
 // Ranks vendors by real order volume, scoped the same way getVendorsController
 // is - unlike that endpoint (which pages "newest first" and leaves ranking to
