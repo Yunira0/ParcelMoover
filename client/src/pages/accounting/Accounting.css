@@ -457,3 +457,19 @@ th.acc-num {
     align-items: stretch;
   }
 }
+
+/* Party filter on the settlement lists. SearchableSelectAsync is width:100%, so
+   the size lives on this wrapper, and the clear button sits beside it rather
+   than inside the trigger (which is a button already). */
+.acc-payee-filter {
+  align-items: center;
+  display: flex;
+  gap: var(--space-2);
+  width: 280px;
+  max-width: 100%;
+}
+
+.acc-payee-filter .searchable-select {
+  flex: 1;
+  min-width: 0;
+}

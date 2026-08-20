@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import {
   createCodSettlementRequest,
   getCodSettlementRequestById,
+  getRegisteredBankDetails,
   listCodSettlementRequests,
   updateCodSettlementRequestStatus,
 } from "../services/codSettlementRequest.service";
@@ -31,6 +32,19 @@ export async function listCodSettlementRequestsController(req: Request, res: Res
     return res.status(error.statusCode || 500).json({
       success: false,
       message: error.message || "Failed to load COD settlement requests",
+    });
+  }
+}
+
+export async function getRegisteredBankDetailsController(req: Request, res: Response) {
+  try {
+    if (!req.user) return res.status(401).json({ success: false, message: "Unauthorized" });
+    const data = await getRegisteredBankDetails({ id: req.user.id, roles: req.user.roles });
+    return res.status(200).json({ success: true, data });
+  } catch (error: any) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to load your registered bank details",
     });
   }
 }

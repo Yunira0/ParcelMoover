@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+import { CARRIER_AUTHOR_LABEL } from "../../utils/carrierRemark";
+
 // processUpayaWebhook's job is to classify Upaya's ~25 webhook status values
 // into one of three verbs (forward carrier-leg status, one-way follow_up
 // exit, or a logged/flagged parcel_remarks row) and never let an unreviewed
@@ -93,7 +95,7 @@ describe("processUpayaWebhook — forward carrier-leg statuses", () => {
     ["delivered", "delivered"],
   ])("maps '%s' -> applyExternalCarrierStatus(%s)", async (status, target) => {
     await processUpayaWebhook(payload({ status }));
-    expect(mockedApplyStatus).toHaveBeenCalledWith(PARCEL_ID, target, expect.stringContaining(`Upaya: ${status}`));
+    expect(mockedApplyStatus).toHaveBeenCalledWith(PARCEL_ID, target, expect.stringContaining(`${CARRIER_AUTHOR_LABEL}: ${status}`));
     expect(mockedApplyFollowUp).not.toHaveBeenCalled();
   });
 });
@@ -103,7 +105,7 @@ describe("processUpayaWebhook — one-way follow_up exit", () => {
     "'%s' calls applyExternalCarrierFollowUp, not applyExternalCarrierStatus",
     async (status) => {
       await processUpayaWebhook(payload({ status }));
-      expect(mockedApplyFollowUp).toHaveBeenCalledWith(PARCEL_ID, expect.stringContaining(`Upaya: ${status}`));
+      expect(mockedApplyFollowUp).toHaveBeenCalledWith(PARCEL_ID, expect.stringContaining(`${CARRIER_AUTHOR_LABEL}: ${status}`));
       expect(mockedApplyStatus).not.toHaveBeenCalled();
     },
   );

@@ -97,7 +97,7 @@ const STATUS_LABELS: Record<ParcelStatus, string> = {
 const STATUS_TRANSITIONS: Record<ParcelStatus, ParcelStatus[]> = {
   pickup_ordered: ['rider_assigned', 'cancelled'],
   rider_assigned: ['picked_up', 'failed_pickup', 'cancelled'],
-  picked_up: ['arrived'],
+  picked_up: ['arrived', 'failed_pickup'],
   arrived: ['ready_to_deliver', 'oov'],
   dispatched: ['arrived_at_branch'],
   arrived_at_branch: ['ready_to_deliver'],

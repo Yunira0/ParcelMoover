@@ -49,14 +49,26 @@ const getStatusTone = (status: ParcelStatus): StatusChipTone => {
 
 // Mirrors the server's dashboard-summary counters (order.service.ts) so each
 // metric page lists exactly the orders its dashboard number counted.
-// Matches IN_TRANSIT_STATUSES on the server exactly - do not add
-// picked_up/arrived here, those belong to PENDING_PICKUP_STATUSES below.
-const IN_DELIVERY_STATUSES: ParcelStatus[] = ['dispatched', 'oov'];
-// Matches PICKUP_PENDING_STATUSES on the server exactly.
-const PENDING_PICKUP_STATUSES: ParcelStatus[] = ['pickup_ordered', 'rider_assigned', 'picked_up', 'arrived'];
+// The vendor/sales cards split the pipeline in two: awaiting pickup until we
+// physically take the parcel, then one in-progress bucket all the way to the
+// door. These mirror AWAITING_PICKUP_STATUSES and IN_DELIVERY_STATUSES in
+// order.service.ts - NOT the admin dashboard's PICKUP_PENDING/IN_TRANSIT sets,
+// which split the same span by hub stage and are what these used to copy: the
+// card counted seven statuses while this page listed two, so opening it always
+// showed fewer orders than the number clicked.
+const IN_DELIVERY_STATUSES: ParcelStatus[] = [
+  'picked_up',
+  'arrived',
+  'oov',
+  'dispatched',
+  'arrived_at_branch',
+  'ready_to_deliver',
+  'sent_for_delivery',
+];
+const PENDING_PICKUP_STATUSES: ParcelStatus[] = ['pickup_ordered', 'rider_assigned'];
 // Return-workflow stages still in progress, i.e. not yet back with the
 // vendor (compare 'rtv-delivered', which is the terminal returned_to_vendor
-// status). Mirrors RETURN_IN_PROGRESS_STATUSES in order.service.ts.
+// status). Mirrors RETURN_PENDING_STATUSES in order.service.ts.
 const RETURN_IN_PROGRESS_STATUSES: ParcelStatus[] = ['follow_up', 'ready_to_return', 'sent_to_vendor'];
 
 interface MetricConfig {

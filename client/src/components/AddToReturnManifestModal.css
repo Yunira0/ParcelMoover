@@ -1,0 +1,62 @@
+/* Supporting blocks for AddToReturnManifestModal. The frame, heading, footer,
+   .modal-desc and .error-text all come from Modal.css - only the three lists
+   and the summary card below are specific to picking a manifest. */
+
+.manifest-vendor-breakdown,
+.manifest-rejected {
+  list-style: none;
+  margin: 0 0 var(--space-4);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  font-size: var(--font-size-sm);
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.manifest-vendor-breakdown li {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-default);
+  color: var(--color-text-default);
+}
+
+.manifest-rejected li {
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-warning-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-default);
+  color: var(--color-text-default);
+}
+
+.manifest-summary {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  margin-bottom: var(--space-4);
+  background: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-default);
+  font-size: var(--font-size-sm);
+}
+
+.manifest-summary-row {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-4);
+  color: var(--color-text-caption);
+}
+
+.manifest-summary-row strong {
+  color: var(--color-text-default);
+}
+
+.manifest-note {
+  margin-top: calc(-1 * var(--space-2));
+}

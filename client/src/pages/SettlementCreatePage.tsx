@@ -25,6 +25,34 @@ const SectionHeader: React.FC<{
   </div>
 );
 
+/**
+ * The declared COD and the cash that actually arrived, as a labelled pair.
+ * They match on most rows, so the two figures used to read as one repeated
+ * number; the rows that matter are the partial deliveries where collected
+ * falls short - netPayable is computed from collected, not from COD - so the
+ * shortfall is called out rather than left for the operator to spot.
+ */
+const CodCell: React.FC<{ codAmount: number; collectedAmount: number }> = ({
+  codAmount,
+  collectedAmount,
+}) => {
+  const shortfall = codAmount - collectedAmount;
+  const isShort = shortfall > 0;
+  return (
+    <div className="scp-cod">
+      <span className="scp-cod-label">COD</span>
+      <span className="scp-cod-value">Rs. {codAmount.toLocaleString()}</span>
+      <span className={`scp-cod-label${isShort ? ' scp-cod-short' : ''}`}>Collected</span>
+      <span
+        className={`scp-cod-value${isShort ? ' scp-cod-short' : ''}`}
+        title={isShort ? `Rs. ${shortfall.toLocaleString()} short of the declared COD` : undefined}
+      >
+        Rs. {collectedAmount.toLocaleString()}
+      </span>
+    </div>
+  );
+};
+
 const SettlementCreatePage: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -310,10 +338,17 @@ const SettlementCreatePage: React.FC = () => {
                       <th style={{ textAlign: 'left' }}>Receiver</th>
                       <th style={{ textAlign: 'left' }}>Number</th>
                       <th style={{ textAlign: 'left' }}>Order Type</th>
-                      <th style={{ textAlign: 'left' }}>{payeeType === 'vendor' ? 'Destination' : 'Location'}</th>
+                      {/* Vendor destinations are long municipality strings that wrap to
+                          four lines and wreck the row rhythm, and nothing settles on
+                          them - they stay in the Excel export only. A rider's location
+                          is a single place name, so it keeps its column. */}
+                      {payeeType === 'rider' && <th style={{ textAlign: 'left' }}>Location</th>}
                       {/* Rider rows have no delivery-charge deduction, so COD and
-                          collected are always the same figure - one column, not two. */}
-                      <th style={{ textAlign: 'right' }}>COD</th>
+                          collected are always the same figure - one column, not two.
+                          The cell holds a label/value block rather than a bare number,
+                          so the block is centred and the header centres over it - right
+                          alignment shoved both against the Delivery Charge column. */}
+                      <th className="scp-cod-head">COD</th>
                       {payeeType === 'vendor' && (
                         <>
                           <th style={{ textAlign: 'right' }}>Delivery Charge</th>
@@ -353,15 +388,16 @@ const SettlementCreatePage: React.FC = () => {
                             <span style={{ textTransform: 'capitalize' }}>{order.orderType}</span>
                           )}
                         </td>
-                        <td>{payeeType === 'vendor' ? order.destination || '-' : order.location || '-'}</td>
-                        <td style={{ textAlign: 'right', fontWeight: payeeType === 'rider' ? 600 : undefined }}>
-                          <div>COD: Rs. {order.codAmount.toLocaleString()}</div>
-                          <div className="scp-subtext">Collected: Rs. {order.collectedAmount.toLocaleString()}</div>
+                        {payeeType === 'rider' && <td>{order.location || '-'}</td>}
+                        <td className="scp-cod-head">
+                          <CodCell codAmount={order.codAmount} collectedAmount={order.collectedAmount} />
                         </td>
                         {payeeType === 'vendor' && (
                           <>
-                            <td style={{ textAlign: 'right' }}>Rs. {order.deliveryCharge.toLocaleString()}</td>
-                            <td style={{ textAlign: 'right', fontWeight: 600 }}>
+                            <td className="scp-num" style={{ textAlign: 'right' }}>
+                              Rs. {order.deliveryCharge.toLocaleString()}
+                            </td>
+                            <td className="scp-num scp-num-strong" style={{ textAlign: 'right' }}>
                               Rs. {order.netPayable.toLocaleString()}
                             </td>
                           </>

@@ -1,4 +1,4 @@
-import type { StatusChipTone } from '../components/StatusChip';
+   import type { StatusChipTone } from '../components/StatusChip';
 import type { ParcelStatus } from '../services/orders.service';
 
 // Canonical parcel-status display labels and chip tones for read-only surfaces

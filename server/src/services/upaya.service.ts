@@ -8,6 +8,11 @@ import {
   applyExternalCarrierStatus,
   invalidateOrderCaches,
 } from "./order.service";
+import {
+  CARRIER_AUTHOR_LABEL,
+  UPAYA_HANDOFF_REMARK_PREFIX,
+  UPAYA_STAFF_PREFIX,
+} from "../utils/carrierRemark";
 
 /**
  * Upaya — our second outside-valley 3PL, used alongside NCM (see
@@ -26,7 +31,10 @@ import {
  * response parsing below reflects what was actually confirmed, not the PDF.
  */
 
-export const HANDOFF_REMARK_PREFIX = "Parcel dispatched via Upaya";
+// Branded, and deliberately still so: this is the durable parcel -> Upaya
+// order mapping (see carrierRemark.ts). It is neutralised for display, not in
+// the database, because rewriting it would orphan in-flight parcels.
+export const HANDOFF_REMARK_PREFIX = UPAYA_HANDOFF_REMARK_PREFIX;
 const HANDOFF_REMARK_ORDER_RE = /Parcel dispatched via Upaya[^#]*#(\S+)/;
 
 const ORDER_PARCEL_CACHE_PREFIX = "upaya:order-parcel:"; // upaya order id -> parcel id
@@ -99,7 +107,7 @@ const UPAYA_LOGGED_ONLY_STATUSES = new Set([
   "dispose",
 ]);
 
-const INBOUND_COMMENT_PREFIX = "[Upaya Staff]";
+const INBOUND_COMMENT_PREFIX = UPAYA_STAFF_PREFIX;
 
 // The PDF documented { locationId, locationName, address } - the real
 // response is a completely different shape: an envelope { meta, data: [...] }
@@ -572,7 +580,9 @@ async function applyStatusWithRetry(
 }
 
 async function applyUpayaStatus(parcelId: string, status: string, suffix: string): Promise<boolean> {
-  const remark = `Upaya: ${status}${suffix}`;
+  // Neutral label, matching ncm.service - a vendor reading the timeline should
+  // not be told which 3PL we handed their parcel to.
+  const remark = `${CARRIER_AUTHOR_LABEL}: ${status}${suffix}`;
 
   if (UPAYA_FOLLOWUP_STATUSES.has(status)) {
     const result = await applyExternalCarrierFollowUp(parcelId, remark);

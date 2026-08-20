@@ -122,6 +122,32 @@ export async function getLiveRequestForVendor(vendorId: string) {
   return row ? mapRequest(row) : null;
 }
 
+/**
+ * The bank account this vendor registered with, to prefill the request form.
+ *
+ * Read-only and deliberately separate from the request itself: a payout may go
+ * somewhere else, so the vendor edits these before submitting and what they
+ * send is what gets stored. Nothing here writes back to the vendor record.
+ */
+export async function getRegisteredBankDetails(actor: Actor) {
+  const vendorId = await resolveActorVendorId(actor);
+  if (!vendorId) throw new AppError(403, "Only a vendor account has registered bank details");
+
+  const vendor = await prisma.vendors.findUnique({
+    where: { id: vendorId },
+    select: { bank_name: true, bank_account_no: true, bank_account_holder: true },
+  });
+  if (!vendor) throw new AppError(404, "Vendor not found");
+
+  // Bank fields are optional at registration, so empty strings (not an error)
+  // are the honest answer for a vendor who never supplied them.
+  return {
+    bankName: vendor.bank_name ?? "",
+    accountNumber: vendor.bank_account_no ?? "",
+    accountName: vendor.bank_account_holder ?? "",
+  };
+}
+
 export async function createCodSettlementRequest(actor: Actor, input: CreateCodSettlementRequestInput) {
   const vendorId = await resolveActorVendorId(actor);
   if (!vendorId) throw new AppError(403, "Only a vendor account can request a COD settlement");

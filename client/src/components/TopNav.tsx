@@ -12,6 +12,7 @@ import {
 } from '../services/notifications.service';
 import { getUnclosedRemarksCounts, subscribeToRemarkStatusChanged } from '../services/remarks.service';
 import { useMobileNav } from '../context/MobileNavContext';
+import { isVendorSide } from '../utils/auth';
 import { toBsDateLabel, toNptTime } from '../utils/nepaliDate';
 import './TopNav.css';
 
@@ -26,6 +27,8 @@ const POLL_INTERVAL_MS = 30_000;
 const TopNav: React.FC = () => {
   const navigate = useNavigate();
   const { toggleMobile } = useMobileNav();
+  // Rider remarks are an internal queue - vendors only work their own comments.
+  const showRiderCmt = !isVendorSide();
   const [query, setQuery] = useState('');
   // Below the breakpoint the search field is collapsed to an icon; this
   // expands it to take over the bar, same pattern as most mobile search UIs.
@@ -83,10 +86,21 @@ const TopNav: React.FC = () => {
       refreshUnclosedCount();
     }, POLL_INTERVAL_MS);
 
+    // Coming back to a backgrounded tab, refetch instead of waiting out the
+    // rest of the poll - the dashboard does the same, so the badge and
+    // Today's activity land on the same number at the same moment.
+    const handleVisibilityChange = () => {
+      if (document.hidden) return;
+      refreshUnreadCount();
+      refreshUnclosedCount();
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
     return () => {
       unsubscribe();
       unsubscribeRemarks();
       clearInterval(pollTimer);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [refreshUnreadCount, refreshUnclosedCount]);
 
@@ -262,20 +276,22 @@ const TopNav: React.FC = () => {
           )}
         </Button>
 
-        <Button
-          variant="outline"
-          className="cmt-button"
-          onClick={() => navigate('/rider-remarks')}
-          aria-label={`Rider comments${riderCmtCount > 0 ? `, ${riderCmtCount > 99 ? '99+' : riderCmtCount}` : ''}`}
-        >
-          <Bike size={16} />
-          <span className="cmt-label">Rider cmt</span>
-          {riderCmtCount > 0 && (
-            <span className="cmt-badge" aria-hidden="true">
-              {riderCmtCount > 99 ? '99+' : riderCmtCount}
-            </span>
-          )}
-        </Button>
+        {showRiderCmt && (
+          <Button
+            variant="outline"
+            className="cmt-button"
+            onClick={() => navigate('/rider-remarks')}
+            aria-label={`Rider comments${riderCmtCount > 0 ? `, ${riderCmtCount > 99 ? '99+' : riderCmtCount}` : ''}`}
+          >
+            <Bike size={16} />
+            <span className="cmt-label">Rider cmt</span>
+            {riderCmtCount > 0 && (
+              <span className="cmt-badge" aria-hidden="true">
+                {riderCmtCount > 99 ? '99+' : riderCmtCount}
+              </span>
+            )}
+          </Button>
+        )}
 
         <div className="notification-bell" ref={notificationsRef}>
           <button

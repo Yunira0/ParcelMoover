@@ -8,6 +8,7 @@ import OrdersTrendDonut from '../../components/vendor/OrdersTrendDonut';
 import VendorOrdersTrendChart from '../../components/vendor/VendorOrdersTrendChart';
 import VendorTodayPanel from '../../components/vendor/VendorTodayPanel';
 import { getDashboardSummary, type DashboardSummary } from '../../services/orders.service';
+import { subscribeToRemarkStatusChanged } from '../../services/remarks.service';
 import { getCurrentUser } from '../../utils/auth';
 import './SalesDashboard.css';
 
@@ -57,6 +58,10 @@ const EMPTY_SUMMARY: DashboardSummary = {
     transitHours: null,
     remarksHours: null,
     returnHours: null,
+    pickupBreaches: [],
+    deliveryBreaches: [],
+    transitBreaches: [],
+    returnBreaches: [],
   },
   codSettlement: {
     totalCod: 0,
@@ -108,9 +113,15 @@ const SalesDashboard: React.FC = () => {
     const handleVisibilityChange = () => {
       if (!document.hidden) loadSummary();
     };
+    // Closing/reopening a remark elsewhere in this tab has to land here at
+    // once - otherwise Today's activity keeps showing the stale count until
+    // the next poll while the nav badge (same event) has already dropped.
+    const unsubscribeRemarks = subscribeToRemarkStatusChanged(loadSummary);
+
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => {
       window.clearInterval(intervalId);
+      unsubscribeRemarks();
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [loadSummary]);

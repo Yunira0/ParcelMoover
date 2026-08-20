@@ -6,6 +6,7 @@ import {
   uuidSchema,
   optionalUuidSchema,
   paginationQuerySchema,
+  dayStringSchema,
 } from "./common";
 import { ORDER_SORT_FIELDS } from "../types/order.type";
 
@@ -253,6 +254,12 @@ export const listOrdersQuerySchema = paginationQuerySchema.extend({
   // Narrows to parcels delivered since local midnight, matching the
   // "Delivered today" dashboard card's own count (getDashboardSummary).
   deliveredToday: booleanFlagSchema,
+  // Inclusive Nepal-local day range, compared against whichever date
+  // `dateField` names. Server-side (not filtered over the fetched page) so a
+  // range and its pagination totals describe the same set of orders.
+  dateField: z.enum(["createdAt", "lastUpdatedAt"]).optional(),
+  dateFrom: dayStringSchema,
+  dateTo: dayStringSchema,
 });
 
 export type ListOrdersQuery = z.infer<typeof listOrdersQuerySchema>;

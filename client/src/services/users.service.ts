@@ -135,6 +135,18 @@ export interface UpdateUserProfileInput {
   vehicleNo?: string;
   salaryCommission?: string;
   carrierCode?: string;
+
+  // Documents (field names must match the server's multer config). Sent only
+  // to fill a slot the account was created without, or to replace an
+  // unreadable scan — omitting one leaves the stored document untouched.
+  idDocument?: File | null;
+  citizenshipDoc?: File | null;
+  panDoc?: File | null;
+  panVatDoc?: File | null;
+  experienceLetterDoc?: File | null;
+  licenceDoc?: File | null;
+  bluebookDoc?: File | null;
+  businessCertDoc?: File | null;
 }
 
 export const getManagedUser = async (type: 'admin' | 'vendor' | 'rider', id: string) => {
@@ -156,9 +168,14 @@ export const registerUser = async (data: RegisterUserInput) => {
   });
 
   const response = await api.post('/auth/users/register', form, {
+    // Header override required: the api instance defaults to Content-Type:
+    // application/json, which makes axios serialise FormData to JSON instead of
+    // multipart - the File would silently become {} and multer would never see
+    // it. See billing.service.ts's payment upload for the same fix.
+    headers: { 'Content-Type': 'multipart/form-data' },
     // Multipart uploads can be slow on production networks, especially with
-    // camera-shot KYC images. Let the browser set the boundary header and give
-    // this write a longer timeout than normal JSON requests.
+    // camera-shot KYC images. Give this write a longer timeout than normal
+    // JSON requests.
     timeout: 120000,
   });
   return response.data;
@@ -208,13 +225,55 @@ export const getRiders = async (params?: {
   return response.data;
 };
 
+export interface ManagedUserDocument {
+  key: string;
+  label: string;
+  /** Relative "uploads/..." path; the /uploads route decrypts and serves it. */
+  path: string;
+}
+
+/** Documents uploaded on the registration form for one admin/vendor/rider. */
+export const getUserDocuments = async (
+  type: UpdateUserProfileInput['type'],
+  id: string,
+): Promise<{
+  success: boolean;
+  data?: { type: string; id: string; name: string; documents: ManagedUserDocument[] };
+  message?: string;
+}> => {
+  const response = await api.get(`/auth/users/${type}/${id}/documents`);
+  return response.data;
+};
+
 export const getLocations = async () => {
   const response = await api.get('/auth/locations');
   return response.data;
 };
 
 export const updateUserProfile = async (id: string, data: UpdateUserProfileInput) => {
-  const response = await api.patch(`/auth/users/${data.type}/${id}`, data);
+  const files = Object.values(data).filter((value): value is File => value instanceof File);
+
+  // Plain edits stay JSON; only an edit carrying documents pays for multipart.
+  if (files.length === 0) {
+    const response = await api.patch(`/auth/users/${data.type}/${id}`, data);
+    return response.data;
+  }
+
+  const form = new FormData();
+  Object.entries(data).forEach(([key, value]) => {
+    if (value === undefined || value === null) return;
+    if (value instanceof File) form.append(key, value);
+    // Unlike registerUser, "" is kept: the update service reads a blank field
+    // as "clear this value", and dropping it would silently ignore the edit.
+    else form.append(key, String(value));
+  });
+
+  const response = await api.patch(`/auth/users/${data.type}/${id}`, form, {
+    // Same Content-Type override registerUser needs — the api instance
+    // defaults to JSON, which would serialise the File to {}.
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 120000,
+  });
   return response.data;
 };
 

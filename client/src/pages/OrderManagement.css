@@ -265,6 +265,13 @@
   text-decoration: underline;
 }
 
+/* BS dates are fixed-width strings; tabular figures keep them stacking down the
+   column instead of drifting with Inter's proportional numerals. */
+.created-cell {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .party-cell,
 .finance-cell,
 .updated-cell {

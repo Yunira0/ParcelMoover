@@ -179,29 +179,13 @@ const matchesKeyword = (order: Order, keyword: string) => {
 };
 
 // Filters the backend doesn't have a query param for (origin/rider/keyword/
-// destination/date range/department) - applied client-side on top of whatever
-// page the server already returned for the active tab + search. Status and
-// vendor are also re-checked here, but only as a no-op safety net: both are
-// pushed down to the query, so the rows are already narrowed server-side.
-// Nepal-local (UTC+5:45) AD date "YYYY-MM-DD" for an ISO timestamp - so the
-// status-updated date lines up with the same local-day bucketing createdAt uses.
-const toNepalDate = (iso?: string): string => {
-  if (!iso) return '';
-  const t = Date.parse(iso);
-  if (Number.isNaN(t)) return '';
-  return new Date(t + (5 * 60 + 45) * 60 * 1000).toISOString().slice(0, 10);
-};
+// destination/department) - applied client-side on top of whatever page the
+// server already returned for the active tab + search. Status, vendor and the
+// date range are also re-checked here, but only as a no-op safety net: all
+// three are pushed down to the query, so the rows are already narrowed
+// server-side.
 
 const matchesSecondaryFilters = (order: Order, filters: SecondaryFilters) => {
-  // createdAt is already a Nepal-local "YYYY-MM-DD" string; lastUpdatedAt is a
-  // raw ISO timestamp, so normalise it to the same local date. Either way the
-  // inclusive range check is a plain lexicographic comparison.
-  const compareDate = filters.dateField === 'lastUpdatedAt'
-    ? toNepalDate(order.lastUpdatedAt)
-    : order.createdAt;
-  const matchesDateSpan =
-    (!filters.dateFrom || (!!compareDate && compareDate >= filters.dateFrom)) &&
-    (!filters.dateTo || (!!compareDate && compareDate <= filters.dateTo));
   const matchesOperation =
     !filters.operationDept ||
     (filters.operationDept === 'pickup' && ['pickup_ordered', 'rider_assigned', 'picked_up'].includes(order.status)) ||
@@ -214,7 +198,6 @@ const matchesSecondaryFilters = (order: Order, filters: SecondaryFilters) => {
     (!filters.destinationHub || order.destination === filters.destinationHub) &&
     (filters.currentStatus.length === 0 || filters.currentStatus.includes(order.status)) &&
     (!filters.orderType || order.orderType === filters.orderType) &&
-    matchesDateSpan &&
     (filters.vendor.length === 0 || (!!order.vendorId && filters.vendor.includes(order.vendorId))) &&
     matchesOperation;
 };
@@ -376,6 +359,13 @@ const OrderManagement: React.FC = () => {
         : TAB_GROUPS[filter];
       const res = await getOrders({
         status: effectiveStatus,
+        // Pushed down for the same reason as `currentStatus` and `vendorId`:
+        // filtered client-side it only ever narrowed the page already fetched,
+        // so a range whose orders sat on a later page came back empty while the
+        // pager still counted the unfiltered total.
+        ...(dateFrom || dateTo ? { dateField } : {}),
+        ...(dateFrom ? { dateFrom } : {}),
+        ...(dateTo ? { dateTo } : {}),
         search: debouncedSearch || undefined,
         // Pushed down for the same reason as `currentStatus`: filtering vendors
         // client-side only ever narrowed the page already fetched, so picking a
@@ -399,7 +389,7 @@ const OrderManagement: React.FC = () => {
     } finally {
       if (requestId === loadRequestIdRef.current) setLoading(false);
     }
-  }, [filter, currentStatus, vendor, debouncedSearch, pager.request, sortBy, sortDir, pageSizeChoice]);
+  }, [filter, currentStatus, vendor, debouncedSearch, pager.request, sortBy, sortDir, pageSizeChoice, dateField, dateFrom, dateTo]);
 
   useEffect(() => { loadOrders(); }, [loadOrders]);
   useEffect(() => subscribeToOrderStatusChanged(loadOrders), [loadOrders]);
@@ -677,6 +667,14 @@ const OrderManagement: React.FC = () => {
       ),
       width: '180px',
       className: 'tracking-cell',
+    },
+    {
+      // createdAt is already a Nepal-local calendar day, so this is the same BS
+      // date the "Order Created Date" filter and the Excel export show.
+      header: sortableHeader('CREATED DATE', 'createdAt'),
+      accessor: (order: Order) => toBsDate(order.createdAt) || '-',
+      width: '120px',
+      className: 'created-cell',
     },
     { header: 'ORIGIN', accessor: (order: Order) => (order.origin ? hubNameOnly(order.origin) : '-'), width: '150px' },
     {

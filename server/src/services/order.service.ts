@@ -3,6 +3,7 @@ import prisma from "../lib/prisma";
 import redis, { scanAndDelete } from "../lib/redis";
 import { AppError } from "../utils/AppError";
 import { getSlaSettings, SLA_GROUPS } from "./sla.service";
+import { unclosedRemarksWhere } from "./remark.service";
 import {
   BulkCreateOrderInput,
   BulkUpdateParcelStatusInput,
@@ -19,12 +20,17 @@ import {
 import { generateTrackingId } from "../utils/trackingId";
 import { generateDispatchNo } from "../utils/dispatchId";
 import { generateRunSheetNo } from "../utils/runSheetNo";
-import { NEPAL_UTC_OFFSET_MS, formatNepalDate as formatDate } from "../utils/nepalTime";
+import {
+  NEPAL_UTC_OFFSET_MS,
+  formatNepalDate as formatDate,
+  nepalDayRangeUtc,
+} from "../utils/nepalTime";
 import { resolveOwnVendorId, isStaffActor } from "./vendor-scope.service";
 import { hasAdminPermission } from "../middlewares/adminPermission.middleware";
 import { invalidateVendorFinanceCache, invalidateRiderFinanceCache } from "./finance.service";
 import { emitWebhookEvent, emitWebhookEventsBatch } from "./webhookDispatch.service";
 import { getVendorStatusLabel } from "../utils/orderStatusLabel";
+import { displayAuthor, displayRemarkText, stripCarrierStaffTag } from "../utils/carrierRemark";
 import {
   assertVendorCanCreateOrder,
   evaluateVendorBillingAsync,
@@ -221,6 +227,51 @@ const DELIVERY_STATUSES: parcel_status[] = ["delivered", "partially_delivered"];
 // pages (HoldOperations / LossAndDamageOperations), both admin-gated in the
 // UI — the API must enforce the same restriction, not just hide the buttons.
 const OPS_RESTRICTED_STATUSES: parcel_status[] = ["hold", "loss_and_damage"];
+
+// Statuses a parcel can only be in once it has physically been picked up -
+// every status except the two pre-pickup ones (pickup_ordered, rider_assigned)
+// and the two that mean the pickup never happened (failed_pickup, cancelled).
+// Needed because "picked_up" is skippable: a super_admin may force any
+// transition from any status (see the isSuperAdmin bypasses below), so a parcel
+// can land on "delivered" having never passed through "picked_up". Without a
+// stamp on those the dashboard's "Picked Up" trend loses them permanently.
+const POST_PICKUP_STATUSES: parcel_status[] = [
+  "picked_up",
+  "arrived",
+  "ready_to_deliver",
+  "sent_for_delivery",
+  "oov",
+  "dispatched",
+  "arrived_at_branch",
+  "hold",
+  "loss_and_damage",
+  "delivered",
+  "partially_delivered",
+  "failed_delivery",
+  "follow_up",
+  "ready_to_return",
+  "sent_to_vendor",
+  "returned_to_vendor",
+];
+
+/**
+ * The picked_up_at value to write for a transition into `newStatus`, or null to
+ * leave the column alone.
+ *
+ * The real pickup transition always re-stamps, so a forced re-pickup records
+ * when the goods actually left the sender this time round. Every other
+ * post-pickup status stamps only while the column is still null - that is the
+ * skip path, and scoping it to null means it can neither overwrite a genuine
+ * pickup time nor fire at all on the normal flow.
+ */
+function pickupStampFor(
+  newStatus: parcel_status | ParcelStatus,
+  currentPickedUpAt: Date | null,
+): Date | null {
+  if (newStatus === "picked_up") return new Date();
+  if (currentPickedUpAt !== null) return null;
+  return POST_PICKUP_STATUSES.includes(newStatus as parcel_status) ? new Date() : null;
+}
 
 // Fringe areas that sit just outside the valley boundary in `locations.valley`
 // but are close enough to be delivered directly from origin without a Transit
@@ -1759,6 +1810,34 @@ function buildOrdersWhere(
     conditions.push({ delivered_at: { gte: todayStart } });
   }
 
+  // Date range, bucketed by Nepal-local day so it agrees with the dates the
+  // list itself renders (mapOrder formats createdAt the same way).
+  const dayRange = nepalDayRangeUtc(query.dateFrom, query.dateTo);
+  if (dayRange.gte || dayRange.lt) {
+    if (query.dateField === "lastUpdatedAt") {
+      // "Status updated" is the newest parcel_status_history row, falling back
+      // to updated_at for a parcel that has none - the same value mapOrder
+      // reports as lastUpdatedAt. `some(>= from)` + `none(>= to)` pins the
+      // *latest* row into the window; `some` alone would also match an order
+      // that merely passed through it on the way to a later status.
+      const latestInRange: Prisma.parcelsWhereInput[] = [];
+      if (dayRange.gte) {
+        latestInRange.push({ parcel_status_history: { some: { created_at: { gte: dayRange.gte } } } });
+      }
+      if (dayRange.lt) {
+        latestInRange.push({ parcel_status_history: { none: { created_at: { gte: dayRange.lt } } } });
+      }
+      conditions.push({
+        OR: [
+          { AND: latestInRange },
+          { AND: [{ parcel_status_history: { none: {} } }, { updated_at: dayRange }] },
+        ],
+      });
+    } else {
+      conditions.push({ created_at: dayRange });
+    }
+  }
+
   const search = query.search?.trim();
   if (search) {
     const terms = search.split(",").map((t) => t.trim()).filter(Boolean);
@@ -2018,7 +2097,7 @@ function mapOrder(
     labelWidthMm: labelSize.widthMm,
     labelHeightMm: labelSize.heightMm,
     riderName: rider?.name || "",
-    remarks: parcel.parcel_remarks[0]?.remark || "",
+    remarks: stripCarrierStaffTag(parcel.parcel_remarks[0]?.remark || "").text,
     // Vendor-declared eligibility at creation, plus the actual outcome once a
     // rider/admin marks the parcel partially_delivered (both null/false until then).
     allowPartialDelivery: parcel.allow_partial_delivery,
@@ -2366,15 +2445,26 @@ export async function listOrders(
 // batch of parcels sent out for delivery with a rider. This lists the sheets
 // for one Nepal-local day, with delivery progress read off the member parcels.
 
-const RUN_SHEET_PARCEL_INCLUDE = {
+// The parcel shape every hand-off document needs: who it goes to, where, how
+// heavy, how much cash. Shared by the run sheet (delivery leg) and the return
+// manifest (RTO leg) - both list the same columns for the same reason, so they
+// read the same rows rather than each growing their own near-copy.
+export const HANDOVER_PARCEL_INCLUDE = {
   parties_parcels_receiver_idToparties: true,
   locations_parcels_destination_location_idTolocations: true,
   vendors: true,
+  // Newest remark only. The hand-over sheet prints it in the Remarks column, so
+  // whoever signs for the parcel reads the same note the ops list shows - see
+  // mapOrder, which takes the latest the same way.
+  parcel_remarks: {
+    orderBy: { created_at: "desc" as const },
+    take: 1,
+  },
 } satisfies Prisma.parcelsInclude;
 
-type RunSheetParcel = Prisma.parcelsGetPayload<{ include: typeof RUN_SHEET_PARCEL_INCLUDE }>;
+type HandoverParcel = Prisma.parcelsGetPayload<{ include: typeof HANDOVER_PARCEL_INCLUDE }>;
 
-function mapRunSheetParcel(parcel: RunSheetParcel) {
+export function mapHandoverParcel(parcel: HandoverParcel) {
   const receiver = parcel.parties_parcels_receiver_idToparties;
   return {
     id: parcel.id,
@@ -2395,12 +2485,15 @@ function mapRunSheetParcel(parcel: RunSheetParcel) {
     weightKg: parcel.weight_kg === null ? undefined : Number(parcel.weight_kg),
     codAmount: Number(parcel.cod_amount),
     vendorName: parcel.vendors?.business_name || parcel.vendors?.client_name || "",
+    // The carrier-staff tag is internal bookkeeping (see utils/carrierRemark):
+    // it marks an inbound comment's origin and must never reach a printed sheet.
+    remarks: stripCarrierStaffTag(parcel.parcel_remarks[0]?.remark || "").text,
     deliveryInstruction: parcel.delivery_instruction || "",
     deliveredAt: parcel.delivered_at ? parcel.delivered_at.toISOString() : null,
   };
 }
 
-export type RunSheetParcelDto = ReturnType<typeof mapRunSheetParcel>;
+export type HandoverParcelDto = ReturnType<typeof mapHandoverParcel>;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -2432,7 +2525,7 @@ export async function getRiderRunSheet(
     include: {
       riders: { include: { locations: true } },
       run_sheet_parcels: {
-        include: { parcels: { include: RUN_SHEET_PARCEL_INCLUDE } },
+        include: { parcels: { include: HANDOVER_PARCEL_INCLUDE } },
         orderBy: { created_at: "asc" },
       },
     },
@@ -2442,7 +2535,7 @@ export async function getRiderRunSheet(
   });
 
   const mapped = sheets.map((sheet) => {
-    const parcels = sheet.run_sheet_parcels.map((link) => mapRunSheetParcel(link.parcels));
+    const parcels = sheet.run_sheet_parcels.map((link) => mapHandoverParcel(link.parcels));
     const delivered = parcels.filter((p) => p.status === "delivered" || p.status === "partially_delivered");
     // Latest movement on the sheet = the newest status change among its parcels.
     const lastParcelUpdate = sheet.run_sheet_parcels.reduce<Date | null>(
@@ -2531,10 +2624,11 @@ const STAFF_ROLE_CODES = new Set(["super_admin", "admin"]);
 
 // NCM 3PL bookkeeping remarks. The handoff remark is an internal audit/link
 // row (see ncm.service.ts) and must not show in the user-facing thread.
-// Inbound NCM-staff comments carry a "[NCM Staff]" tag we strip for display,
-// attributing them to a generic "Staff" (they have no local user).
+// Inbound carrier-staff comments carry a bracketed tag we strip for display,
+// attributing them to a generic "Staff" (they have no local user). See
+// utils/carrierRemark.ts - the tag spelling lives there so it cannot drift
+// away from what ncm.service.ts actually writes.
 const NCM_HANDOFF_PREFIX = "[NCM] Handed off";
-const NCM_STAFF_PREFIX = "[NCM Staff]";
 
 function isStaffAuthor(
   user: { user_roles?: { roles: { code: string } }[] } | null | undefined,
@@ -2639,16 +2733,13 @@ export async function getOrderByTrackingId(actor: OrderActor, trackingId: string
     remarks: parcel.parcel_remarks
       .filter((remark) => !remark.remark.startsWith(NCM_HANDOFF_PREFIX))
       .map((remark) => {
-      const isNcmStaff = remark.remark.startsWith(NCM_STAFF_PREFIX);
-      const remarkText = isNcmStaff
-        ? remark.remark.slice(NCM_STAFF_PREFIX.length).trim()
-        : remark.remark;
+      const { text: remarkText, isCarrierStaff } = stripCarrierStaffTag(remark.remark);
       const maskAuthor = !isStaff && isStaffAuthor(remark.users);
       const maskParent = !isStaff && isStaffAuthor(remark.parent_remark?.users);
       return {
         id: remark.id,
         remark: remarkText,
-        addedBy: isNcmStaff ? "Staff" : maskAuthor ? "Staff" : remark.users?.full_name || "Unknown",
+        addedBy: displayAuthor(remark.users?.full_name, isCarrierStaff || maskAuthor),
         createdAt: remark.created_at.toISOString(),
         parentRemarkId: remark.parent_remark_id,
         parentAuthor: remark.parent_remark?.users
@@ -2679,7 +2770,9 @@ export async function getOrderByTrackingId(actor: OrderActor, trackingId: string
         id: entry.id,
         oldStatus: entry.old_status,
         newStatus: entry.new_status,
-        remarks: entry.remarks || "",
+        // One wording for both carriers, and no carrier's own name - the
+        // handoff entry is stored branded on the Upaya side (see carrierRemark).
+        remarks: displayRemarkText(entry.remarks || ""),
         riderName: riderName || null,
         changedBy: isStaff ? entry.users?.full_name || "System" : nonStaffLabel,
         changedByType: isStaff ? ("user" as const) : ("branch" as const),
@@ -2862,7 +2955,7 @@ export async function addOrderRemark(
   return {
     id: remark.id,
     remark: remark.remark,
-    addedBy: remark.users?.full_name || "Unknown",
+    addedBy: displayAuthor(remark.users?.full_name),
     createdAt: remark.created_at.toISOString(),
     parentRemarkId: remark.parent_remark_id,
     parentAuthor: remark.parent_remark?.users
@@ -2904,8 +2997,13 @@ async function computeDashboardSummary(
   riderId: string | undefined,
   cacheKey: string | null,
 ) {
-  const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
+  // Start of today in Nepal local time. setHours() would truncate to the *host*
+  // timezone, and the production container runs UTC - so every day bucket below
+  // (the trend graph included) started 5h45m late, filing anything that happened
+  // between midnight and 05:45 NPT under the previous day.
+  const todayStart = new Date(
+    Date.parse(`${formatDate(new Date())}T00:00:00Z`) - NEPAL_UTC_OFFSET_MS,
+  );
 
   const parcelWhere: Prisma.parcelsWhereInput = {
     deleted_at: null,
@@ -3124,17 +3222,11 @@ async function computeDashboardSummary(
     prisma.parcel_remarks.count({
       where: { created_at: { gte: todayStart }, parcels: parcelWhere },
     }),
+    // Same set as the nav's "Unclosed cmt" badge - this row links to the vendor
+    // queue, so it counts what that page lists. Rider-raised remarks are the
+    // separate "Rider cmt" queue.
     prisma.parcel_remarks.count({
-      where: {
-        workflow_status: { not: "closed" },
-        parent_remark_id: null,
-        users: {
-          user_roles: {
-            some: { roles: { code: { in: ["vendor", "vendor_staff", "rider"] } } },
-          },
-        },
-        parcels: parcelWhere,
-      },
+      where: { ...unclosedRemarksWhere("vendor"), parcels: parcelWhere },
     }),
     prisma.$queryRaw<
       Array<{
@@ -3302,6 +3394,14 @@ async function computeDashboardSummary(
   const sumStatuses = (statuses: readonly string[]) =>
     statuses.reduce((n, s) => n + (slaCounts[s] ?? 0), 0);
 
+  // The statuses behind a group's total, so "Pickup SLA breached: 3" can say
+  // which stages those three are stuck in. Only the ones actually breaching -
+  // a list padded with zeroes tells the reader nothing and crowds the row.
+  const breachesByStatus = (statuses: readonly string[]) =>
+    statuses
+      .map((status) => ({ status, count: slaCounts[status] ?? 0 }))
+      .filter((entry) => entry.count > 0);
+
   // Representative SLA threshold to display for a group row: the tightest
   // (smallest) configured hours among its statuses, or null if none set.
   const groupHours = (statuses: readonly string[]): number | null => {
@@ -3315,10 +3415,22 @@ async function computeDashboardSummary(
   const remarksHours = slaSettings["remarks"];
   if (typeof remarksHours === "number") {
     const remarksCutoff = new Date(Date.now() - remarksHours * 3600 * 1000);
+    // Unclosed comments past their SLA - the same set the badge counts, aged.
+    // Counting raw parcel_remarks rows instead swept in every reply as its own
+    // breach, plus staff notes and the sync jobs' own bookkeeping rows, none of
+    // which anyone is waiting to reply to and none of which are ever closed.
+    // Both queues here, not just the vendor one: this row links to /remarks,
+    // which lists them together.
     overdueRemarks = await prisma.parcel_remarks.count({
       where: {
-        workflow_status: { not: "closed" },
+        ...unclosedRemarksWhere(),
+        // The clock runs from the last message in the thread, not from the one
+        // that opened it: the row means "nobody has answered this in N hours",
+        // so a reply is activity and restarts it. Root older than the cutoff
+        // AND no reply since is the same test as "newest message is older than
+        // the cutoff", without a correlated subquery.
         created_at: { lt: remarksCutoff },
+        replies: { none: { created_at: { gte: remarksCutoff } } },
         parcels: parcelWhere,
       },
     });
@@ -3389,6 +3501,10 @@ async function computeDashboardSummary(
       transitHours: groupHours(SLA_GROUPS.transit),
       remarksHours: typeof slaSettings["remarks"] === "number" ? slaSettings["remarks"] : null,
       returnHours: groupHours(SLA_GROUPS.return),
+      pickupBreaches: breachesByStatus(SLA_GROUPS.pickup),
+      deliveryBreaches: breachesByStatus(SLA_GROUPS.delivery),
+      transitBreaches: breachesByStatus(SLA_GROUPS.transit),
+      returnBreaches: breachesByStatus(SLA_GROUPS.return),
     },
     weeklyTrend,
     updatedAt: new Date().toISOString(),
@@ -4029,6 +4145,16 @@ async function _updateParcelStatusImpl(
     if (rtoReturnCharge !== null) {
       (updateData as any).delivery_charge = rtoReturnCharge;
     }
+    // Side-effect: stamp the pickup time, mirroring delivered_at below. The
+    // dashboard's "Picked Up" trend counts parcels by picked_up_at per day, so
+    // while nothing set it here the series only ever showed the auto-created
+    // return orders, which get the column populated at creation. Routed through
+    // pickupStampFor so a forced jump past "picked_up" still leaves the parcel
+    // with a pickup time rather than a permanent hole in the trend.
+    const pickupStamp = pickupStampFor(newStatus, parcel.picked_up_at);
+    if (pickupStamp) {
+      (updateData as any).picked_up_at = pickupStamp;
+    }
     // Side-effect: set delivered_at timestamp
     if (newStatus === "delivered") {
       (updateData as any).delivered_at = new Date();
@@ -4196,6 +4322,17 @@ async function _updateParcelStatusImpl(
         new_data: { status: newStatus },
       },
     });
+
+    // Mirror of the bulk path's manifest eviction (see its note): a parcel
+    // pulled off ready_to_return one at a time - which is exactly how a
+    // super_admin correction or a QuickActions change arrives - would otherwise
+    // stay a ghost member and deadlock its manifest's send. Manifest sends
+    // never come through here, so this needs no returnManifestId exception.
+    if (currentStatus === "ready_to_return") {
+      await tx.return_manifest_parcels.deleteMany({
+        where: { parcel_id: parcelId, return_manifests: { status: "open" } },
+      });
+    }
 
     if (parcel.vendor_id) {
       await emitWebhookEvent(tx, parcel.vendor_id, "order.status_changed", {
@@ -4673,6 +4810,16 @@ async function _bulkUpdateParcelStatusImpl(
     );
   }
 
+  // The return manifest driving this transition, if any. Read before the
+  // transaction purely for its number, which goes onto every member parcel's
+  // timeline - the manifest row itself is updated inside, next to the dispatch.
+  const returnManifest = data.returnManifestId
+    ? await prisma.return_manifests.findUnique({
+        where: { id: data.returnManifestId },
+        select: { id: true, manifest_no: true },
+      })
+    : null;
+
   const result = await prisma.$transaction(async (tx) => {
     let dispatch: { id: string; dispatch_no: string } | null = null;
 
@@ -4705,7 +4852,18 @@ async function _bulkUpdateParcelStatusImpl(
       ? `Manifest ${dispatch.dispatch_no}${riderName ? ` · carried by ${riderName}` : ""}`
       : null;
 
+    // Same reasoning for the return leg: the manifest number is the only handle
+    // anyone has on "which hand-over did this parcel go back on", so it belongs
+    // on the timeline rather than only in the manifests list. Composed the same
+    // way and folded into the same remarks field below.
+    const batchRemark = returnManifest
+      ? `Manifest ${returnManifest.manifest_no}${riderName ? ` · carried by ${riderName}` : ""}`
+      : dispatchRemark;
+
     const updateData: Prisma.parcelsUpdateInput = { status: newStatus as parcel_status };
+    if (newStatus === "picked_up") {
+      (updateData as any).picked_up_at = new Date();
+    }
     if (newStatus === "delivered") {
       (updateData as any).delivered_at = new Date();
     }
@@ -4745,6 +4903,24 @@ async function _bulkUpdateParcelStatusImpl(
       where: { id: { in: idsToUpdate } },
       data: updateData,
     });
+
+    // Skip path, batch flavour: updateData above only stamps picked_up_at on
+    // the real pickup transition, but a super_admin can force a batch straight
+    // past it. Scoped to picked_up_at: null so it can never overwrite a genuine
+    // pickup time - which also makes it a no-op on the normal flow. Separate
+    // from the updateMany above because that single blob applies to the whole
+    // batch, while this must skip the parcels that already carry a timestamp.
+    //
+    // idsToUpdate, not ids: the no-op filter above drops parcels already at
+    // newStatus from the batch, and those are precisely the ones nothing is
+    // happening to - stamping them would invent a pickup time for a parcel
+    // this request never touched.
+    if (newStatus !== "picked_up" && POST_PICKUP_STATUSES.includes(newStatus as parcel_status)) {
+      await tx.parcels.updateMany({
+        where: { id: { in: idsToUpdate }, picked_up_at: null },
+        data: { picked_up_at: new Date() },
+      });
+    }
 
     // Side-effect: release the delivery rider on every parcel coming off the
     // delivery leg, plus every parcel whose delivery is being retracted - the
@@ -4871,8 +5047,8 @@ async function _bulkUpdateParcelStatusImpl(
         new_status: newStatus as parcel_status,
         location_id: toLocationId || data.toLocationId || p.current_location_id,
         changed_by: actor.id,
-        remarks: dispatchRemark
-          ? [dispatchRemark, data.remarks?.trim()].filter(Boolean).join(" — ")
+        remarks: batchRemark
+          ? [batchRemark, data.remarks?.trim()].filter(Boolean).join(" — ")
           : data.remarks || null,
       })),
     });
@@ -4948,6 +5124,53 @@ async function _bulkUpdateParcelStatusImpl(
             data: { arrived_at: new Date() },
           });
         }
+      }
+    }
+
+    // The return manifest moves with its parcels, in this same transaction -
+    // the same rule the dispatch manifest and the run sheet already follow.
+    // Doing it as a second call after bulkUpdateParcelStatus returned would
+    // leave a window where the parcels are sent_to_vendor but the manifest
+    // still reads 'open', and the retry would then fail the transition check
+    // with no way back short of SQL.
+    if (returnManifest && newStatus === "sent_to_vendor") {
+      await tx.return_manifests.update({
+        where: { id: returnManifest.id },
+        data: {
+          status: "sent",
+          rider_id: parcelRiderId,
+          sent_at: new Date(),
+          sent_by: actor.id,
+        },
+      });
+    }
+    if (returnManifest && newStatus === "returned_to_vendor") {
+      await tx.return_manifests.update({
+        where: { id: returnManifest.id },
+        data: { status: "received", received_at: new Date(), received_by: actor.id },
+      });
+    }
+
+    // A parcel leaving ready_to_return by any route other than its own
+    // manifest's send is no longer part of that hand-over, so drop it.
+    //
+    // This is not tidiness. bulkUpdateParcelStatus rejects the *whole* batch if
+    // any member has an invalid transition, so a single parcel force-reverted
+    // out of ready_to_return (super_admin, order detail, QuickActions) would
+    // otherwise sit in the manifest as a ghost member and deadlock every later
+    // attempt to send it - and there is no remove action reachable once a
+    // manifest has left 'open'. Mirrored in _updateParcelStatusImpl.
+    if (newStatus !== "sent_to_vendor") {
+      const leavingReturnPool = parcels
+        .filter((p) => p.status === "ready_to_return")
+        .map((p) => p.id);
+      if (leavingReturnPool.length) {
+        await tx.return_manifest_parcels.deleteMany({
+          where: {
+            parcel_id: { in: leavingReturnPool },
+            return_manifests: { status: "open" },
+          },
+        });
       }
     }
 
@@ -5106,6 +5329,14 @@ export async function applyExternalCarrierStatus(
 
     await prisma.$transaction(async (tx) => {
       const updateData: Prisma.parcelsUpdateInput = { status: targetStatus };
+      // CARRIER_LEG_SEQUENCE starts at "oov", so targetStatus can never be
+      // "picked_up" here and the equality check this replaces was unreachable.
+      // A carrier leg still implies the parcel left the sender, so stamp it if
+      // nothing on the internal flow did.
+      const pickupStamp = pickupStampFor(targetStatus, parcel.picked_up_at);
+      if (pickupStamp) {
+        (updateData as any).picked_up_at = pickupStamp;
+      }
       if (targetStatus === "delivered") {
         (updateData as any).delivered_at = new Date();
       }

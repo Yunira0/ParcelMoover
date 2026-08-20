@@ -12,6 +12,7 @@ import {
 import {
   createCodSettlementRequestController,
   getCodSettlementRequestController,
+  getRegisteredBankDetailsController,
   listCodSettlementRequestsController,
   updateCodSettlementRequestStatusController,
 } from "../controllers/codSettlementRequest.controller";
@@ -70,6 +71,17 @@ codSettlementRequestRouter.get(
   readLimiter,
   validate(listCodSettlementRequestsQuerySchema, "query"),
   listCodSettlementRequestsController,
+);
+
+// GET /api/cod-settlement-requests/registered-bank — the account the vendor
+// registered with, to prefill the form. Declared above "/:id" so that route
+// does not capture it as an id.
+codSettlementRequestRouter.get(
+  "/registered-bank",
+  authMiddleware,
+  authorizeRoles(...CREATE_ROLES),
+  readLimiter,
+  getRegisteredBankDetailsController,
 );
 
 // GET /api/cod-settlement-requests/:id — one request

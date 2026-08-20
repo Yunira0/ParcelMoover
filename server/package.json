@@ -24,6 +24,7 @@
     "fix:vendorless-parcels": "ts-node --transpile-only scripts/attribute-vendorless-parcels.ts",
     "fix:unrouted-settlements": "ts-node --transpile-only scripts/repoint-unrouted-settlements.ts",
     "migrate:encrypt-uploads": "ts-node --transpile-only scripts/encrypt-existing-uploads.ts",
+    "backfill:picked-up-at": "ts-node --transpile-only scripts/backfill-picked-up-at.ts",
     "reconcile:settlement-status": "ts-node --transpile-only scripts/reconcile-settlement-payment-status.ts",
     "reconcile:undelivered-cod": "ts-node --transpile-only scripts/reconcile-undelivered-cod.ts",
     "debrand:carrier-remarks": "ts-node --transpile-only scripts/debrand-carrier-remarks.ts"
