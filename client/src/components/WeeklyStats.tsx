@@ -113,17 +113,18 @@ const WeeklyStats: React.FC<WeeklyStatsProps> = ({ data, loading, period, onPeri
   const slotW = n > 0 ? innerW / n : 0;
   const xAt = (i: number) => PAD.left + slotW / 2 + i * slotW;
 
-  const sortedData = useMemo(() => {
-    if (period !== 7) return data;
-    return [...data].sort((a, b) => new Date(a.date).getDay() - new Date(b.date).getDay());
-  }, [data, period]);
+  // Plot the server's order as-is: it builds the range oldest-first and ends on
+  // today, so today is always the rightmost point. The 7-day view used to
+  // re-sort by day-of-week index (Sun=0..Sat=6), which pinned the axis to a
+  // fixed Sun-to-Sat week - today landed mid-axis, and the line jumped backwards
+  // in time wherever the week wrapped (e.g. Tue 17th connected to Wed 11th).
 
   // Show every tick for 7 days; thin out to ~6 labels for 30 to avoid collisions.
   const labelStride = n <= 10 ? 1 : Math.ceil(n / 6);
 
   const gridLines = [0, 0.25, 0.5, 0.75, 1];
 
-  const hovered = hoverIndex !== null ? sortedData[hoverIndex] : null;
+  const hovered = hoverIndex !== null ? data[hoverIndex] : null;
   const tooltipLeftPct = hoverIndex !== null ? (xAt(hoverIndex) / CHART_W) * 100 : 0;
   const tooltipFlip = tooltipLeftPct > 65;
 
@@ -240,7 +241,7 @@ const WeeklyStats: React.FC<WeeklyStatsProps> = ({ data, loading, period, onPeri
                   />
                 )}
 
-                {sortedData.map((d, i) => {
+                {data.map((d, i) => {
                   const cx = xAt(i);
                   const nVis = visibleSeries.length;
                   const singleBarW = nVis > 0 ? slotW * 0.7 / nVis : 0;
@@ -303,7 +304,7 @@ const WeeklyStats: React.FC<WeeklyStatsProps> = ({ data, loading, period, onPeri
         </div>
 
         <div className="chart-labels">
-          {sortedData.map((d, i) => {
+          {data.map((d, i) => {
             const show = i % labelStride === 0 || i === n - 1;
             const { dow, md } = show ? formatDayLabel(d.date) : { dow: '', md: '' };
             return (

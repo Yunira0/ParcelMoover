@@ -8,8 +8,10 @@ import {
   COD_REQUEST_STATUS_LABELS,
   createCodSettlementRequest,
   getCodSettlementRequests,
+  getRegisteredBankDetails,
   isLiveCodRequest,
   type CodSettlementRequest,
+  type RegisteredBankDetails,
 } from '../../services/codSettlementRequests.service';
 import { apiErrorMessage } from '../../utils/serverValidation';
 import '../CodSettlementRequests.css';
@@ -24,6 +26,15 @@ import '../CodSettlementRequests.css';
 
 const emptyForm = { bankName: '', accountNumber: '', accountName: '', note: '' };
 
+// The form as it should start out: the account registered at signup, which is
+// where a payout goes unless the vendor says otherwise.
+const formWithRegisteredBank = (bank: RegisteredBankDetails | null) => ({
+  ...emptyForm,
+  ...(bank
+    ? { bankName: bank.bankName, accountNumber: bank.accountNumber, accountName: bank.accountName }
+    : {}),
+});
+
 const VendorCodSettlementRequests: React.FC = () => {
   const [requests, setRequests] = useState<CodSettlementRequest[]>([]);
   const [form, setForm] = useState(emptyForm);
@@ -31,6 +42,7 @@ const VendorCodSettlementRequests: React.FC = () => {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [registeredBank, setRegisteredBank] = useState<RegisteredBankDetails | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -48,6 +60,30 @@ const VendorCodSettlementRequests: React.FC = () => {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Prefill from the account registered at signup. Only blank fields are
+  // filled in, so a slow response can never overwrite something the vendor has
+  // already typed, and every field stays editable afterwards.
+  useEffect(() => {
+    let cancelled = false;
+    getRegisteredBankDetails()
+      .then((response) => {
+        if (cancelled || !response?.success) return;
+        setRegisteredBank(response.data);
+        setForm((prev) => ({
+          ...prev,
+          bankName: prev.bankName || response.data.bankName,
+          accountNumber: prev.accountNumber || response.data.accountNumber,
+          accountName: prev.accountName || response.data.accountName,
+        }));
+      })
+      // A prefill that fails is not worth an error banner - the vendor can
+      // still type the details in and raise the request.
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // The server is the authority here (a partial unique index, not a check), but
   // the list already tells us the answer, so the form can be replaced rather
@@ -70,7 +106,7 @@ const VendorCodSettlementRequests: React.FC = () => {
         accountName: form.accountName.trim(),
         ...(form.note.trim() ? { note: form.note.trim() } : {}),
       });
-      setForm(emptyForm);
+      setForm(formWithRegisteredBank(registeredBank));
       setNotice('Your COD settlement request has been raised.');
       await load();
     } catch (err) {
@@ -133,8 +169,9 @@ const VendorCodSettlementRequests: React.FC = () => {
         <section className="cod-request-card">
           <h2>Request a settlement</h2>
           <p className="cod-request-hint">
-            Tell us where to send the money. We use these details for this payout only, so they can
-            differ from the account registered at signup.
+            Prefilled with the account you registered with — edit any of it if this payout
+            should go elsewhere. We use these details for this payout only, so changing them
+            here does not change the account on your profile.
           </p>
           <div className="cod-request-form">
             <FormField

@@ -1,6 +1,7 @@
 import prisma from "../lib/prisma";
 import { AppError } from "../utils/AppError";
 import { ListRemarksParams, RemarkAuthorGroup } from "../types/remark.type";
+import { stripCarrierStaffTag } from "../utils/carrierRemark";
 
 type Actor = { id: string; roles: string[] };
 
@@ -10,18 +11,6 @@ const WORKFLOW_STATUSES: RemarkWorkflowStatus[] = ["open", "pending", "closed"];
 
 const isStaff = (actor: Actor) =>
   actor.roles.includes("admin") || actor.roles.includes("super_admin");
-
-// Inbound NCM-staff comments (synced in ncm.service.ts) carry a "[NCM Staff]"
-// tag so the ingestion path can tell them apart from vendor-posted ones. That
-// tag is internal bookkeeping and must never reach the UI raw — strip it and
-// attribute the remark to a generic "Staff", matching getOrderByTrackingId's
-// treatment of the same comments on the order-detail page.
-const NCM_STAFF_PREFIX = "[NCM Staff]";
-
-function stripNcmStaffTag(remark: string): { text: string; isNcmStaff: boolean } {
-  if (!remark.startsWith(NCM_STAFF_PREFIX)) return { text: remark, isNcmStaff: false };
-  return { text: remark.slice(NCM_STAFF_PREFIX.length).trim(), isNcmStaff: true };
-}
 
 // Un-opened remarks (null workflow_status, or a legacy "pending") read as
 // "pending" until a staff member opens the remark, which flips it to "open".
@@ -79,8 +68,8 @@ function mapRemark(
   },
   lastActivity?: { remark: string; created_at: Date; addedBy: string } | null,
 ) {
-  const subject = stripNcmStaffTag(remark.remark);
-  const last = lastActivity ? stripNcmStaffTag(lastActivity.remark) : subject;
+  const subject = stripCarrierStaffTag(remark.remark);
+  const last = lastActivity ? stripCarrierStaffTag(lastActivity.remark) : subject;
   return {
     id: remark.id,
     remarkId: `RMK-${remark.id.slice(0, 8).toUpperCase()}`,
@@ -89,10 +78,10 @@ function mapRemark(
     customerPhone: remark.parcels.parties_parcels_sender_idToparties.phone,
     subject: subject.text,
     status: normalizeStatus(remark.workflow_status),
-    addedBy: subject.isNcmStaff ? "Staff" : remark.users?.full_name || "Unknown",
+    addedBy: subject.isCarrierStaff ? "Staff" : remark.users?.full_name || "Unknown",
     createdAt: remark.created_at.toISOString().slice(0, 10),
     lastRemark: last.text,
-    lastRemarkBy: last.isNcmStaff ? "Staff" : lastActivity?.addedBy ?? remark.users?.full_name ?? "Unknown",
+    lastRemarkBy: last.isCarrierStaff ? "Staff" : lastActivity?.addedBy ?? remark.users?.full_name ?? "Unknown",
     lastRemarkAt: (lastActivity?.created_at ?? remark.created_at).toISOString(),
   };
 }
@@ -280,15 +269,15 @@ export async function getRemarkById(actor: Actor, id: string) {
     receiverName: remark.parcels.parties_parcels_receiver_idToparties.name,
     receiverPhone: remark.parcels.parties_parcels_receiver_idToparties.phone,
     thread: thread.map((entry) => {
-      const stripped = stripNcmStaffTag(entry.remark);
-      const parentStripped = entry.parent_remark ? stripNcmStaffTag(entry.parent_remark.remark) : null;
+      const stripped = stripCarrierStaffTag(entry.remark);
+      const parentStripped = entry.parent_remark ? stripCarrierStaffTag(entry.parent_remark.remark) : null;
       return {
         id: entry.id,
         remark: stripped.text,
-        addedBy: stripped.isNcmStaff ? "Staff" : entry.users?.full_name || "Unknown",
+        addedBy: stripped.isCarrierStaff ? "Staff" : entry.users?.full_name || "Unknown",
         createdAt: entry.created_at.toISOString(),
         parentRemarkId: entry.parent_remark_id,
-        parentAuthor: parentStripped?.isNcmStaff
+        parentAuthor: parentStripped?.isCarrierStaff
           ? "Staff"
           : entry.parent_remark?.users?.full_name || null,
         parentSnippet: parentStripped?.text ?? null,

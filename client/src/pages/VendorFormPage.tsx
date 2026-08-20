@@ -3,9 +3,18 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, CheckCircle, Upload, X, Building2, User, FileText, CreditCard, Lock, Tag, ExternalLink } from 'lucide-react';
 import Button from '../components/Button';
 import FormField from '../components/FormField';
-import { registerUser, getLocations, getAdmins, getManagedUser, updateUserProfile } from '../services/users.service';
+import {
+  registerUser,
+  getLocations,
+  getAdmins,
+  getManagedUser,
+  updateUserProfile,
+  getUserDocuments,
+  type ManagedUserDocument,
+} from '../services/users.service';
 import { getCurrentUser } from '../services/auth.service';
-import { getCurrentUser as getCachedUser, getCurrentUserRoles } from '../utils/auth';
+import { getCurrentUser as getCachedUser, getCurrentUserRoles, isAdminSide } from '../utils/auth';
+import { toDocumentUrl } from '../utils/documentUrl';
 import { getPricingSettings } from '../services/pricing.service';
 import { extractServerFieldErrors, isValidEmail, isValidName, isValidPhone, hasLetter, isDigits, normalizePhone } from '../utils/serverValidation';
 import { useHubLock } from '../hooks/useHubLock';
@@ -187,6 +196,29 @@ const FileInput: React.FC<{
   );
 };
 
+// On edit, each document slot says whether the vendor already has that file,
+// so an admin can tell a backfill from a replacement before picking one.
+const ExistingDoc: React.FC<{ docs: ManagedUserDocument[] | null; slot: string }> = ({
+  docs,
+  slot,
+}) => {
+  if (docs === null) return <span className="vfp-doc-status">Checking…</span>;
+  const doc = docs.find((d) => d.key === slot);
+  if (!doc) return <span className="vfp-doc-status vfp-doc-missing">Not uploaded</span>;
+  return (
+    <a
+      className="vfp-doc-status vfp-doc-onfile"
+      href={toDocumentUrl(doc.path)}
+      target="_blank"
+      rel="noopener noreferrer"
+    >
+      <FileText size={13} />
+      On file — view
+      <ExternalLink size={12} />
+    </a>
+  );
+};
+
 const SectionHeader: React.FC<{
   icon: React.ReactNode;
   title: string;
@@ -222,9 +254,15 @@ const VendorFormPage: React.FC = () => {
       ? { ...emptyForm, sales: salesName, salesUserId: ownSalesUserId }
       : emptyForm,
   );
+  // Registration documents are PII the /uploads route only serves to
+  // super_admin/admin, so sales edits a vendor without ever seeing them.
+  const canManageDocuments = isAdminSide();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [submitted, setSubmitted] = useState(false);
+  // Documents already on file, so an edit can show which slots are filled and
+  // fill the ones that are not. null while still loading.
+  const [existingDocs, setExistingDocs] = useState<ManagedUserDocument[] | null>(null);
   const [locations, setLocations] = useState<Array<{ value: string; label: string }>>([]);
   // Sales-department admins, kept unfiltered so the dropdown can be re-filtered
   // by hub whenever the selected pickup location changes.
@@ -378,6 +416,16 @@ const VendorFormPage: React.FC = () => {
       .catch(() => setError('Failed to load vendor details.'));
   }, [isEdit, editId]);
 
+  // Which document slots are already filled. Kept separate from the profile
+  // prefill above because the endpoint behind it is admin-only, and a sales
+  // user editing their own client must still get the rest of the form.
+  useEffect(() => {
+    if (!isEdit || !canManageDocuments) return;
+    getUserDocuments('vendor', editId!)
+      .then((res) => setExistingDocs(res?.success && res.data ? res.data.documents : []))
+      .catch(() => setExistingDocs([]));
+  }, [isEdit, editId, canManageDocuments]);
+
   const set = (field: keyof VendorFormInput) => (value: string) => {
     setForm((prev) => ({ ...prev, [field]: value }));
     if (fieldErrors[field]) {
@@ -434,23 +482,29 @@ const VendorFormPage: React.FC = () => {
       errors.bankAccountNo = 'Account number must be 6–20 digits';
     if (form.bankAccountHolder.trim() && !isValidName(form.bankAccountHolder))
       errors.bankAccountHolder = 'Enter a valid account holder name';
-    // Documents and password are only required when creating a new vendor.
-    if (!isEdit) {
-      if (!form.citizenshipDoc) errors.citizenshipDoc = 'Citizenship document is required';
-      const documents = [
-        ['citizenshipDoc', form.citizenshipDoc],
-        ['panVatDoc', form.panVatDoc],
-        ['businessCertDoc', form.businessCertDoc],
-      ] as const;
-      const totalUploadBytes = documents.reduce((sum, [, file]) => sum + (file?.size ?? 0), 0);
-      documents.forEach(([field, file]) => {
-        if (file && file.size > MAX_DOCUMENT_BYTES) {
-          errors[field] = `${DOCUMENT_LABELS[field]} must be 5 MB or smaller. Selected file is ${formatFileSize(file.size)}.`;
-        }
-      });
-      if (totalUploadBytes > MAX_REGISTRATION_UPLOAD_BYTES) {
-        errors.citizenshipDoc = `Uploaded documents are ${formatFileSize(totalUploadBytes)} total. Please keep all documents under 9 MB combined.`;
+    // A document is only *required* when creating - an edit uploads one to
+    // fill a slot the vendor was registered without, so 'none selected' is
+    // the normal case there.
+    if (!isEdit && !form.citizenshipDoc) {
+      errors.citizenshipDoc = 'Citizenship document is required';
+    }
+    // Size limits apply to anything actually being uploaded, either way.
+    const documents = [
+      ['citizenshipDoc', form.citizenshipDoc],
+      ['panVatDoc', form.panVatDoc],
+      ['businessCertDoc', form.businessCertDoc],
+    ] as const;
+    const totalUploadBytes = documents.reduce((sum, [, file]) => sum + (file?.size ?? 0), 0);
+    documents.forEach(([field, file]) => {
+      if (file && file.size > MAX_DOCUMENT_BYTES) {
+        errors[field] = `${DOCUMENT_LABELS[field]} must be 5 MB or smaller. Selected file is ${formatFileSize(file.size)}.`;
       }
+    });
+    if (totalUploadBytes > MAX_REGISTRATION_UPLOAD_BYTES) {
+      errors.citizenshipDoc = `Uploaded documents are ${formatFileSize(totalUploadBytes)} total. Please keep all documents under 9 MB combined.`;
+    }
+    // The password is set once, at creation.
+    if (!isEdit) {
       if (!form.password.trim()) errors.password = 'Password is required';
       else if (form.password.length < 8) errors.password = 'Min. 8 characters';
       if (!form.confirmPassword.trim()) errors.confirmPassword = 'Please confirm the password';
@@ -512,6 +566,15 @@ const VendorFormPage: React.FC = () => {
           bankName: form.bankName,
           bankAccountNo: form.bankAccountNo,
           bankAccountHolder: form.bankAccountHolder,
+          // Only slots the admin picked a file for; the rest keep whatever
+          // is already stored (the server never clears a document on edit).
+          ...(canManageDocuments
+            ? {
+                ...(form.citizenshipDoc ? { citizenshipDoc: form.citizenshipDoc } : {}),
+                ...(form.panVatDoc ? { panVatDoc: form.panVatDoc } : {}),
+                ...(form.businessCertDoc ? { businessCertDoc: form.businessCertDoc } : {}),
+              }
+            : {}),
         });
         navigate('/vendors');
         return;
@@ -833,45 +896,59 @@ const VendorFormPage: React.FC = () => {
 
           {/* Right Column - Documents, Bank & Delivery Rate */}
           <div className="vfp-right">
-            {/* Documents — only when creating; existing docs aren't re-uploaded on edit */}
-            {!isEdit && (
+            {/* Documents — on edit this is how a vendor registered without them
+                (or with an unreadable scan) gets one attached after the fact. */}
+            {(!isEdit || canManageDocuments) && (
             <section className="vfp-section">
               <SectionHeader
                 icon={<FileText size={18} />}
                 title="Documents"
-                description="Upload required documents"
+                description={
+                  isEdit ? 'Attach a missing document or replace one' : 'Upload required documents'
+                }
               />
               <div className="vfp-docs">
                 <div>
                   <FileInput
                     label="Citizenship"
-                    required
+                    required={!isEdit}
                     file={form.citizenshipDoc}
                     onChange={setFile('citizenshipDoc')}
                   />
+                  {isEdit && <ExistingDoc docs={existingDocs} slot="citizenshipDoc" />}
                   {fieldErrors.citizenshipDoc && (
                     <span className="vfp-field-error">{fieldErrors.citizenshipDoc}</span>
                   )}
                 </div>
-                <FileInput
-                  label="PAN / VAT Document"
-                  file={form.panVatDoc}
-                  onChange={setFile('panVatDoc')}
-                />
-                {fieldErrors.panVatDoc && (
-                  <span className="vfp-field-error">{fieldErrors.panVatDoc}</span>
-                )}
+                <div>
+                  <FileInput
+                    label="PAN / VAT Document"
+                    file={form.panVatDoc}
+                    onChange={setFile('panVatDoc')}
+                  />
+                  {isEdit && <ExistingDoc docs={existingDocs} slot="panVatDoc" />}
+                  {fieldErrors.panVatDoc && (
+                    <span className="vfp-field-error">{fieldErrors.panVatDoc}</span>
+                  )}
+                </div>
                 <div>
                   <FileInput
                     label="Business Certificate"
                     file={form.businessCertDoc}
                     onChange={setFile('businessCertDoc')}
                   />
+                  {isEdit && <ExistingDoc docs={existingDocs} slot="businessCertDoc" />}
                   {fieldErrors.businessCertDoc && (
                     <span className="vfp-field-error">{fieldErrors.businessCertDoc}</span>
                   )}
                 </div>
               </div>
+              {isEdit && (
+                <p className="vfp-hint">
+                  Choosing a file replaces what is stored for that slot. Leave a slot
+                  empty to keep the document already on file.
+                </p>
+              )}
             </section>
             )}
 

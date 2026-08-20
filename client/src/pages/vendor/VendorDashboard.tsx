@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import DashboardHeader from '../../components/DashboardHeader';
 import VendorQuickActions from '../../components/vendor/VendorQuickActions';
 import VendorOverviewCards from '../../components/vendor/VendorOverviewCards';
 import OrdersTrendDonut from '../../components/vendor/OrdersTrendDonut';
@@ -8,6 +9,7 @@ import VendorTodayPanel from '../../components/vendor/VendorTodayPanel';
 import VendorOrderDetails from '../../components/vendor/VendorOrderDetails';
 import { getDashboardSummary, type DashboardSummary } from '../../services/orders.service';
 import { subscribeToRemarkStatusChanged } from '../../services/remarks.service';
+import { getCurrentUser } from '../../utils/auth';
 import './VendorDashboard.css';
 
 const REFRESH_INTERVAL_MS = 15_000;
@@ -120,6 +122,8 @@ const VendorDashboard: React.FC = () => {
 
   return (
     <div className="vendor-dashboard">
+      <DashboardHeader user={getCurrentUser()?.fullName || ''} />
+
       <VendorQuickActions />
 
       {error && <p className="vendor-dashboard-error">{error}</p>}

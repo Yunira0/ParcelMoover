@@ -78,6 +78,21 @@ export const getCodSettlementRequests = async (
   return response.data;
 };
 
+/** The account the vendor registered with, used to prefill the request form. */
+export interface RegisteredBankDetails {
+  bankName: string;
+  accountNumber: string;
+  accountName: string;
+}
+
+export const getRegisteredBankDetails = async (): Promise<{
+  success: boolean;
+  data: RegisteredBankDetails;
+}> => {
+  const response = await api.get('/cod-settlement-requests/registered-bank');
+  return response.data;
+};
+
 export const getCodSettlementRequestById = async (
   id: string,
 ): Promise<{ success: boolean; data: CodSettlementRequest }> => {

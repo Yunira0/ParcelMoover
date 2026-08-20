@@ -5,6 +5,7 @@ import './DashboardHeader.css';
 
 type DashboardHeaderProps = {
   user: string;
+  subtitle?: string;
 }
 
 const formatTime = (date: Date) => {
@@ -21,7 +22,7 @@ const getGreeting = (hour: number) => {
   return 'Good Evening';
 };
 
-const DashboardHeader: React.FC<DashboardHeaderProps> = ({ user }) => {
+const DashboardHeader: React.FC<DashboardHeaderProps> = ({ user, subtitle }) => {
   const [userName, setUserName] = useState(user);
   const [now, setNow] = useState(new Date());
 
@@ -47,7 +48,7 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({ user }) => {
       <div className="welcome-section">
         <div className="welcome-text">
           <h1>{getGreeting(now.getHours())}, {userName}</h1>
-          <p>Operational overview for Parcel Moover across the Nepal network.</p>
+          {subtitle && <p>{subtitle}</p>}
         </div>
       </div>
       
