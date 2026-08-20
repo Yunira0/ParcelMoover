@@ -1,6 +1,8 @@
 import prisma from "../lib/prisma";
 import { AppError } from "../utils/AppError";
 import { ListRemarksParams, RemarkAuthorGroup } from "../types/remark.type";
+import { displayAuthor, stripCarrierStaffTag } from "../utils/carrierRemark";
+import { nepalDayRangeUtc } from "../utils/nepalTime";
 
 type Actor = { id: string; roles: string[] };
 
@@ -10,18 +12,6 @@ const WORKFLOW_STATUSES: RemarkWorkflowStatus[] = ["open", "pending", "closed"];
 
 const isStaff = (actor: Actor) =>
   actor.roles.includes("admin") || actor.roles.includes("super_admin");
-
-// Inbound NCM-staff comments (synced in ncm.service.ts) carry a "[NCM Staff]"
-// tag so the ingestion path can tell them apart from vendor-posted ones. That
-// tag is internal bookkeeping and must never reach the UI raw — strip it and
-// attribute the remark to a generic "Staff", matching getOrderByTrackingId's
-// treatment of the same comments on the order-detail page.
-const NCM_STAFF_PREFIX = "[NCM Staff]";
-
-function stripNcmStaffTag(remark: string): { text: string; isNcmStaff: boolean } {
-  if (!remark.startsWith(NCM_STAFF_PREFIX)) return { text: remark, isNcmStaff: false };
-  return { text: remark.slice(NCM_STAFF_PREFIX.length).trim(), isNcmStaff: true };
-}
 
 // Un-opened remarks (null workflow_status, or a legacy "pending") read as
 // "pending" until a staff member opens the remark, which flips it to "open".
@@ -79,8 +69,8 @@ function mapRemark(
   },
   lastActivity?: { remark: string; created_at: Date; addedBy: string } | null,
 ) {
-  const subject = stripNcmStaffTag(remark.remark);
-  const last = lastActivity ? stripNcmStaffTag(lastActivity.remark) : subject;
+  const subject = stripCarrierStaffTag(remark.remark);
+  const last = lastActivity ? stripCarrierStaffTag(lastActivity.remark) : subject;
   return {
     id: remark.id,
     remarkId: `RMK-${remark.id.slice(0, 8).toUpperCase()}`,
@@ -89,10 +79,10 @@ function mapRemark(
     customerPhone: remark.parcels.parties_parcels_sender_idToparties.phone,
     subject: subject.text,
     status: normalizeStatus(remark.workflow_status),
-    addedBy: subject.isNcmStaff ? "Staff" : remark.users?.full_name || "Unknown",
+    addedBy: displayAuthor(remark.users?.full_name, subject.isCarrierStaff),
     createdAt: remark.created_at.toISOString().slice(0, 10),
     lastRemark: last.text,
-    lastRemarkBy: last.isNcmStaff ? "Staff" : lastActivity?.addedBy ?? remark.users?.full_name ?? "Unknown",
+    lastRemarkBy: displayAuthor(lastActivity?.addedBy ?? remark.users?.full_name, last.isCarrierStaff),
     lastRemarkAt: (lastActivity?.created_at ?? remark.created_at).toISOString(),
   };
 }
@@ -118,7 +108,9 @@ async function resolveLastActivityByParcel(
     result.set(row.parcel_id, {
       remark: row.remark,
       created_at: row.created_at,
-      addedBy: row.users?.full_name || "Unknown",
+      // Left empty rather than resolved here - mapRemark decides the label,
+      // since only it knows whether the remark carries a carrier tag.
+      addedBy: row.users?.full_name || "",
     });
   });
 
@@ -146,6 +138,22 @@ const authorFilter = (group?: RemarkAuthorGroup) => ({
   },
 });
 
+/**
+ * What "an unclosed comment" means, in one place: a root remark (replies live
+ * inside the thread and are not their own item of work), raised by a vendor or
+ * a rider rather than by staff or by one of the sync jobs, and not yet closed.
+ *
+ * Exported because the dashboard counts the same thing from order.service - the
+ * nav badge, the Today's-activity row and the remarks SLA all have to agree, and
+ * they only did when each one stopped writing this filter out for itself. Omit
+ * `group` for both queues, or narrow to one.
+ */
+export const unclosedRemarksWhere = (group?: RemarkAuthorGroup) => ({
+  workflow_status: { not: "closed" },
+  parent_remark_id: null,
+  users: authorFilter(group),
+});
+
 export async function listRemarks(actor: Actor, params: ListRemarksParams = {}) {
   // Only root remarks are their own table row; replies live inside the thread
   // (see getRemarkById) so posting one doesn't spawn a new row with the reply
@@ -171,10 +179,10 @@ export async function listRemarks(actor: Actor, params: ListRemarksParams = {}) 
   }
 
   if (params.fromDate || params.toDate) {
-    const createdAt: Record<string, Date> = {};
-    if (params.fromDate) createdAt.gte = new Date(params.fromDate);
-    if (params.toDate) createdAt.lte = new Date(params.toDate);
-    where.created_at = createdAt;
+    // created_at is a timestamptz: `lte: new Date("2026-08-20")` is that day's
+    // UTC midnight, so it excluded the whole of the requested end day and sat
+    // 5h45m off Nepal local midnight at both ends.
+    where.created_at = nepalDayRangeUtc(params.fromDate, params.toDate);
   }
 
   if (params.search) {
@@ -280,15 +288,15 @@ export async function getRemarkById(actor: Actor, id: string) {
     receiverName: remark.parcels.parties_parcels_receiver_idToparties.name,
     receiverPhone: remark.parcels.parties_parcels_receiver_idToparties.phone,
     thread: thread.map((entry) => {
-      const stripped = stripNcmStaffTag(entry.remark);
-      const parentStripped = entry.parent_remark ? stripNcmStaffTag(entry.parent_remark.remark) : null;
+      const stripped = stripCarrierStaffTag(entry.remark);
+      const parentStripped = entry.parent_remark ? stripCarrierStaffTag(entry.parent_remark.remark) : null;
       return {
         id: entry.id,
         remark: stripped.text,
-        addedBy: stripped.isNcmStaff ? "Staff" : entry.users?.full_name || "Unknown",
+        addedBy: displayAuthor(entry.users?.full_name, stripped.isCarrierStaff),
         createdAt: entry.created_at.toISOString(),
         parentRemarkId: entry.parent_remark_id,
-        parentAuthor: parentStripped?.isNcmStaff
+        parentAuthor: parentStripped?.isCarrierStaff
           ? "Staff"
           : entry.parent_remark?.users?.full_name || null,
         parentSnippet: parentStripped?.text ?? null,
@@ -317,11 +325,7 @@ export interface UnclosedRemarkCounts {
 export async function getUnclosedRemarksCounts(actor: Actor): Promise<UnclosedRemarkCounts> {
   const countFor = async (group?: RemarkAuthorGroup) =>
     prisma.parcel_remarks.count({
-      where: await scopeWhere(actor, {
-        workflow_status: { not: "closed" },
-        parent_remark_id: null,
-        users: authorFilter(group),
-      }),
+      where: await scopeWhere(actor, unclosedRemarksWhere(group)),
     });
 
   const [total, vendor, rider] = await Promise.all([countFor(), countFor("vendor"), countFor("rider")]);

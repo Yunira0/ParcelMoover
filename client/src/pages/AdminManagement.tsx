@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Search, ShieldCheck } from 'lucide-react';
+import { Plus, Search, ShieldCheck, FolderOpen } from 'lucide-react';
 import Table, { TableRowActions } from '../components/Table';
 import { toBsDate } from '../utils/nepaliDate';
 import UserActionModal from '../components/UserActionModal';
@@ -10,6 +10,7 @@ import SegmentedTabs from '../components/SegmentedTabs';
 import StatusChip from '../components/StatusChip';
 import Button from '../components/Button';
 import ToggleSwitch from '../components/ToggleSwitch';
+import UserDocumentsModal from '../components/UserDocumentsModal';
 import { getAdmins, updateAdminPermissions, updateAdminRole, updateUserStatus, ADMIN_PERMISSIONS } from '../services/users.service';
 import { getCurrentUserRoles, hasAdminPermission } from '../utils/auth';
 import '../components/Modal.css';
@@ -47,6 +48,7 @@ const AdminManagement: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [actionMode, setActionMode] = useState<'edit' | 'password'>('edit');
   const [activeAdmin, setActiveAdmin] = useState<AdminUser | null>(null);
+  const [documentsAdmin, setDocumentsAdmin] = useState<AdminUser | null>(null);
   const [page, setPage] = useState(1);
   const [pageSizeChoice, setPageSizeChoice] = useState(PAGE_SIZE);
   const [totalPages, setTotalPages] = useState(1);
@@ -189,6 +191,18 @@ const AdminManagement: React.FC = () => {
       ),
       width: '150px'
     },
+    // Registration documents, in the same slot vendor management puts them:
+    // last read-only column before the row actions.
+    {
+      header: 'DOCUMENTS',
+      accessor: (item: AdminUser) => (
+        <Button variant="outline" size="sm" onClick={() => setDocumentsAdmin(item)}>
+          <FolderOpen size={14} />
+          View
+        </Button>
+      ),
+      width: '120px',
+    },
     ...(canManageAdmins
       ? [{
           header: 'ACTION',
@@ -274,6 +288,13 @@ const AdminManagement: React.FC = () => {
           />
         </>
       )}
+
+      <UserDocumentsModal
+        isOpen={Boolean(documentsAdmin)}
+        userType="admin"
+        target={documentsAdmin ? { id: documentsAdmin.id, name: documentsAdmin.name } : null}
+        onClose={() => setDocumentsAdmin(null)}
+      />
 
       <UserActionModal
         isOpen={Boolean(activeAdmin)}

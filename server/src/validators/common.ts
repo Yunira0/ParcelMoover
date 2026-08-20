@@ -111,6 +111,14 @@ export const flexibleDateStringSchema = z
   .refine((val) => !Number.isNaN(Date.parse(val)), { message: "Must be a valid date" })
   .optional();
 
+// A bare calendar day, the only form the date pickers emit. Kept strict (no
+// datetime) because the values are bucketed against Nepal-local days, and a
+// caller passing an instant would silently mean a different window.
+export const dayStringSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, { message: "Must be a YYYY-MM-DD date" })
+  .optional();
+
 export const uuidParamSchema = z.object({
   id: uuidSchema,
 });

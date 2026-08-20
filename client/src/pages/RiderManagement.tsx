@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Search } from 'lucide-react';
+import { Plus, Search, FolderOpen } from 'lucide-react';
 import Table, { TableRowActions } from '../components/Table';
 import { toBsDate } from '../utils/nepaliDate';
 import UserActionModal from '../components/UserActionModal';
@@ -9,6 +9,8 @@ import Pagination from '../components/Pagination';
 import SegmentedTabs from '../components/SegmentedTabs';
 import StatusChip from '../components/StatusChip';
 import ToggleSwitch from '../components/ToggleSwitch';
+import Button from '../components/Button';
+import UserDocumentsModal from '../components/UserDocumentsModal';
 import { getRiders, updateUserStatus } from '../services/users.service';
 import './RiderManagement.css';
 
@@ -44,6 +46,7 @@ const RiderManagement: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [actionMode, setActionMode] = useState<'edit' | 'password'>('edit');
   const [activeRider, setActiveRider] = useState<RiderUser | null>(null);
+  const [documentsRider, setDocumentsRider] = useState<RiderUser | null>(null);
   const [statusSavingIds, setStatusSavingIds] = useState<Set<string>>(new Set());
   const [statusError, setStatusError] = useState('');
   const [page, setPage] = useState(1);
@@ -152,6 +155,18 @@ const RiderManagement: React.FC = () => {
       width: '150px'
     },
     { header: 'JOINED', accessor: (r: RiderUser) => toBsDate(r.joined) || '—', width: '113px' },
+    // Registration documents, in the same slot vendor management puts them:
+    // last read-only column before the row actions.
+    {
+      header: 'DOCUMENTS',
+      accessor: (item: RiderUser) => (
+        <Button variant="outline" size="sm" onClick={() => setDocumentsRider(item)}>
+          <FolderOpen size={14} />
+          View
+        </Button>
+      ),
+      width: '120px',
+    },
     {
       header: 'ACTION',
       accessor: (item: RiderUser) => (
@@ -222,6 +237,13 @@ const RiderManagement: React.FC = () => {
           />
         </>
       )}
+
+      <UserDocumentsModal
+        isOpen={Boolean(documentsRider)}
+        userType="rider"
+        target={documentsRider ? { id: documentsRider.id, name: documentsRider.name } : null}
+        onClose={() => setDocumentsRider(null)}
+      />
 
       <UserActionModal
         isOpen={Boolean(activeRider)}

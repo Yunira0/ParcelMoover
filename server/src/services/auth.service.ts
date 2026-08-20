@@ -77,6 +77,52 @@ interface UpdateManagedUserInput {
   vehicleNo?: string;
   salaryCommission?: string;
   carrierCode?: string;
+  // Registration documents, as relative "uploads/..." paths the controller
+  // derives from the multipart upload. Undefined means "no new file for this
+  // slot" - never "clear the stored one".
+  idDocumentPath?: string;
+  citizenshipDocPath?: string;
+  panDocPath?: string;
+  panVatDocPath?: string;
+  experienceLetterDocPath?: string;
+  licenceDocPath?: string;
+  bluebookDocPath?: string;
+  businessCertDocPath?: string;
+}
+
+// The document columns each account type carries, keyed by the upload field
+// the path arrives on. Attaching is additive-only: a slot with no new file is
+// left alone, so an ordinary profile edit can never blank a document out.
+const DOCUMENT_COLUMNS: Record<ManagedUserType, Record<string, keyof UpdateManagedUserInput>> = {
+  admin: {
+    id_document: "idDocumentPath",
+    citizenship_doc: "citizenshipDocPath",
+    pan_doc: "panDocPath",
+    experience_letter_doc: "experienceLetterDocPath",
+  },
+  vendor: {
+    citizenship_doc: "citizenshipDocPath",
+    pan_vat_doc: "panVatDocPath",
+    business_cert_doc: "businessCertDocPath",
+  },
+  rider: {
+    citizenship_doc: "citizenshipDocPath",
+    pan_vat_doc: "panVatDocPath",
+    licence_doc: "licenceDocPath",
+    bluebook_doc: "bluebookDocPath",
+  },
+};
+
+// Replacing a document leaves the superseded file on disk rather than
+// unlinking it: the audit row below names what was swapped, and an edit that
+// fails after the delete would otherwise lose the only copy.
+function collectDocumentPaths(data: UpdateManagedUserInput): Record<string, string> {
+  const paths: Record<string, string> = {};
+  for (const [column, field] of Object.entries(DOCUMENT_COLUMNS[data.type])) {
+    const value = data[field];
+    if (typeof value === "string" && value.trim() !== "") paths[column] = value;
+  }
+  return paths;
 }
 
 // Sets a text field when provided; empty string clears it to null.
@@ -271,6 +317,12 @@ export async function updateManagedUserProfile(
 
   const isStaff = actorRoles.includes("super_admin") || actorRoles.includes("admin");
   const actorIsSales = !isStaff && actorRoles.includes("sales");
+  // Registration documents are PII the /uploads route only serves to
+  // super_admin/admin (see getManagedUserDocuments), so only they may attach
+  // or replace one. Files sent by anyone else are ignored, not an error - the
+  // rest of the edit still applies.
+  const documentPaths = isStaff ? collectDocumentPaths(data) : {};
+  const attachedDocuments = Object.keys(documentPaths);
   if (actorIsSales) {
     // A sales rep edits their client's details, but may not reassign it to
     // another sales rep or change its active status.
@@ -323,6 +375,18 @@ export async function updateManagedUserProfile(
       await tx.users.update({ where: { id: userId }, data: userUpdate });
     }
 
+    if (attachedDocuments.length > 0) {
+      await tx.audit_logs.create({
+        data: {
+          actor_id: actorUserId,
+          entity_type: data.type,
+          entity_id: userId,
+          action: "UPDATE_USER_DOCUMENTS",
+          new_data: { documentsAttached: attachedDocuments },
+        },
+      });
+    }
+
     const joinedAt = parseJoinedAt(data.joinedAt);
 
     if (data.type === "admin") {
@@ -350,6 +414,7 @@ export async function updateManagedUserProfile(
       // routine department edits grant/revoke the `admin`/`sales` role as a
       // side effect). Role changes go through the dedicated role/permissions
       // endpoints instead.
+      Object.assign(u, documentPaths);
       const updatedAdmin = await tx.admins.update({ where: { id }, data: u });
       return updatedAdmin;
     }
@@ -393,6 +458,7 @@ export async function updateManagedUserProfile(
       if (joinedAt) u.joined_at = joinedAt;
       if (data.status) u.status = data.status;
       if (isPureSalesActor) u.sales_edited_at = new Date();
+      Object.assign(u, documentPaths);
       return tx.vendors.update({ where: { id }, data: u });
     }
 
@@ -412,6 +478,7 @@ export async function updateManagedUserProfile(
     if (data.locationId !== undefined) u.location_id = data.locationId || null;
     if (joinedAt) u.joined_at = joinedAt;
     if (data.status) u.status = data.status;
+    Object.assign(u, documentPaths);
     return tx.riders.update({ where: { id }, data: u });
   });
 }
@@ -489,6 +556,91 @@ export async function getManagedUserDetail(actorUserId: string, type: ManagedUse
   };
 }
 
+export interface ManagedUserDocument {
+  key: string;
+  label: string;
+  /** Relative "uploads/..." path, served (and decrypted) by the /uploads route. */
+  path: string;
+}
+
+// Labels mirror the upload fields on each registration form, so what staff see
+// here reads the same as what the applicant filled in.
+const ADMIN_DOCUMENT_FIELDS: { key: string; label: string; column: "id_document" | "citizenship_doc" | "pan_doc" | "experience_letter_doc" }[] = [
+  { key: "idDocument", label: "ID document", column: "id_document" },
+  { key: "citizenshipDoc", label: "Citizenship", column: "citizenship_doc" },
+  { key: "panDoc", label: "PAN", column: "pan_doc" },
+  { key: "experienceLetterDoc", label: "Experience letter", column: "experience_letter_doc" },
+];
+
+const VENDOR_DOCUMENT_FIELDS: { key: string; label: string; column: "citizenship_doc" | "pan_vat_doc" | "business_cert_doc" }[] = [
+  { key: "citizenshipDoc", label: "Citizenship", column: "citizenship_doc" },
+  { key: "panVatDoc", label: "PAN / VAT", column: "pan_vat_doc" },
+  { key: "businessCertDoc", label: "Business certificate", column: "business_cert_doc" },
+];
+
+const RIDER_DOCUMENT_FIELDS: { key: string; label: string; column: "citizenship_doc" | "pan_vat_doc" | "licence_doc" | "bluebook_doc" }[] = [
+  { key: "citizenshipDoc", label: "Citizenship", column: "citizenship_doc" },
+  { key: "panVatDoc", label: "PAN / VAT", column: "pan_vat_doc" },
+  { key: "licenceDoc", label: "License", column: "licence_doc" },
+  { key: "bluebookDoc", label: "Blue book", column: "bluebook_doc" },
+];
+
+/**
+ * The registration documents held for one managed account, in form order.
+ * Slots the applicant never filled are omitted rather than returned as null -
+ * the caller renders whatever comes back.
+ */
+export async function getManagedUserDocuments(
+  actorUserId: string,
+  type: ManagedUserType,
+  id: string,
+): Promise<{ type: ManagedUserType; id: string; name: string; documents: ManagedUserDocument[] }> {
+  const { roles: actorRoles } = await assertCanManageUsers(actorUserId, type);
+
+  const collect = (
+    fields: { key: string; label: string; column: string }[],
+    row: Record<string, unknown>,
+  ): ManagedUserDocument[] =>
+    fields
+      .map(({ key, label, column }) => ({ key, label, path: (row[column] as string | null) ?? "" }))
+      .filter((doc) => doc.path !== "");
+
+  if (type === "vendor") {
+    await assertSalesOwnsVendor(actorRoles, actorUserId, id);
+    const v = await prisma.vendors.findUnique({ where: { id } });
+    if (!v) throw new AppError(404, "Vendor not found");
+    if (isPureSales(actorRoles) && v.sales_user_id !== actorUserId) {
+      throw new AppError(404, "Vendor not found");
+    }
+    return {
+      type,
+      id: v.id,
+      name: v.client_name,
+      documents: collect(VENDOR_DOCUMENT_FIELDS, v as unknown as Record<string, unknown>),
+    };
+  }
+
+  if (type === "admin") {
+    const a = await prisma.admins.findUnique({ where: { id }, include: { users: true } });
+    if (!a) throw new AppError(404, "Admin not found");
+    return {
+      type,
+      id: a.id,
+      name: a.users.full_name,
+      documents: collect(ADMIN_DOCUMENT_FIELDS, a as unknown as Record<string, unknown>),
+    };
+  }
+
+  const r = await prisma.riders.findUnique({ where: { id } });
+  if (!r) throw new AppError(404, "Rider not found");
+  return {
+    type,
+    id: r.id,
+    name: r.name,
+    documents: collect(RIDER_DOCUMENT_FIELDS, r as unknown as Record<string, unknown>),
+  };
+}
+
 export async function updateManagedUserPassword(
   actorUserId: string,
   type: ManagedUserType,
@@ -496,6 +648,11 @@ export async function updateManagedUserPassword(
   password: string,
 ) {
   const { roles: actorRoles } = await assertCanManageUsers(actorUserId, type);
+  // assertCanManageUsers lets a sales actor through for vendors and leaves
+  // ownership "to the callers" - updateManagedUserProfile does this check, and
+  // without it here any sales account could reset any vendor's password,
+  // revoking their sessions, including clients belonging to another rep.
+  if (type === "vendor") await assertSalesOwnsVendor(actorRoles, actorUserId, id);
 
   if (!password?.trim() || password.length < 8) {
     throw new AppError(400, "Password must be at least 8 characters long");
@@ -671,6 +828,16 @@ function validateRegisterInput(input: RegisterUserInput) {
 
     if (!input.pickupLandmark?.trim()) {
       throw new AppError(400, "Location is required for vendor");
+    }
+
+    // The registration form marks this required, but the rule has to hold here
+    // too: anything that skips the browser (an API client, a form submitted
+    // while the server was restarting) otherwise creates a vendor carrying no
+    // proof of identity, and nothing flags it afterwards - the account just
+    // shows an empty document list. Self-service KYC applications already
+    // enforce the same rule (see kyc.service.ts).
+    if (!input.citizenshipDocPath) {
+      throw new AppError(400, "Citizenship document is required for vendor");
     }
   }
 

@@ -119,6 +119,9 @@ const EMPTY_FILTERS: VendorOrderFilters = { fromDate: '', toDate: '', orderType:
 
 // Date range isn't a backend query param, so it's applied client-side on top
 // of whatever page the server already returned for the active status/type/search.
+// A no-op safety net over rows the server has already narrowed: the range is
+// sent as dateFrom/dateTo now, because filtering it here only ever trimmed the
+// page already fetched - a range whose orders sat on page 3 read as empty.
 const matchesDateRange = (order: Order, filters: VendorOrderFilters) => {
   const orderDay = toIsoDay(order.createdAt);
   return (!filters.fromDate || (orderDay && orderDay >= filters.fromDate)) &&
@@ -197,6 +200,8 @@ const VendorOrders: React.FC = () => {
         orderType: (applied.orderType as OrderType) || undefined,
         search: debouncedSearch || undefined,
         pageSize: pageSizeChoice,
+        ...(applied.fromDate ? { dateFrom: applied.fromDate } : {}),
+        ...(applied.toDate ? { dateTo: applied.toDate } : {}),
         cursor: pager.request.cursor,
         dir: pager.request.dir,
       });
@@ -210,7 +215,7 @@ const VendorOrders: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [applied.status, applied.orderType, debouncedSearch, pager.request, pageSizeChoice]);
+  }, [applied.status, applied.orderType, applied.fromDate, applied.toDate, debouncedSearch, pager.request, pageSizeChoice]);
 
   useEffect(() => { loadOrders(); }, [loadOrders]);
   useEffect(() => subscribeToOrderStatusChanged(loadOrders), [loadOrders]);

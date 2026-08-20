@@ -302,6 +302,12 @@ export async function listOrdersController(req: Request, res: Response) {
         // Both already coerced to real booleans by listOrdersQuerySchema.
         ...(req.query.withArrival ? { withArrival: true } : {}),
         ...(req.query.deliveredToday ? { deliveredToday: true } : {}),
+        // Shape already checked by listOrdersQuerySchema (enum + YYYY-MM-DD).
+        ...(req.query.dateField
+          ? { dateField: req.query.dateField as "createdAt" | "lastUpdatedAt" }
+          : {}),
+        ...(req.query.dateFrom ? { dateFrom: String(req.query.dateFrom) } : {}),
+        ...(req.query.dateTo ? { dateTo: String(req.query.dateTo) } : {}),
       },
     );
 

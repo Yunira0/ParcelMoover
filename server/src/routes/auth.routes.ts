@@ -8,6 +8,7 @@ import {
   getVendorsDropdownController,
   getTopVendorsController,
   getManagedUserController,
+  getManagedUserDocumentsController,
   login,
   logoutController,
   registerUserController,
@@ -146,12 +147,25 @@ authRouter.get(
   authReadLimiter,
   getRidersController,
 );
+// Registration documents contain PII, so this mirrors the /uploads gate the
+// links themselves sit behind - no point listing a file the viewer cannot open.
+authRouter.get(
+  "/users/:type/:id/documents",
+  authMiddleware,
+  authorizeRoles("super_admin", "admin"),
+  authReadLimiter,
+  getManagedUserDocumentsController,
+);
 authRouter.get("/users/:type/:id", authMiddleware, authReadLimiter, getManagedUserController);
+// Shares the registration upload handler so documents missing from an older
+// account can be attached after the fact. Non-multipart PATCHes (the common
+// case - a plain profile edit) pass straight through it untouched.
 authRouter.patch(
   "/users/:type/:id",
   authMiddleware,
   csrfProtection,
   authWriteLimiter,
+  registrationUpload,
   validate(updateManagedUserSchema),
   updateManagedUserController,
 );
