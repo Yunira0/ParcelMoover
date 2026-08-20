@@ -169,11 +169,16 @@ const VendorManagement: React.FC = () => {
           accessor: (item: VendorUser) => {
             const canEditRow =
               isAdmin || (isPureSales && item.salesUserId === currentUserId && !item.salesEditUsed);
+            // A rep resets their own client's password when that client is locked
+            // out - ownership only, not the one-time edit budget, which is about
+            // changing the vendor's details rather than helping them back in.
+            const canResetPassword =
+              isAdmin || (isPureSales && item.salesUserId === currentUserId);
             return (
               <TableRowActions
                 onEdit={canEditRow ? () => navigate(`/vendors/${item.id}/edit`) : undefined}
                 onUpdatePassword={
-                  isAdmin
+                  canResetPassword
                     ? () => {
                         setActiveVendor(item);
                         setActionMode('password');

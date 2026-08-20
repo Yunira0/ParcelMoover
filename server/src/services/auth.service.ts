@@ -648,6 +648,11 @@ export async function updateManagedUserPassword(
   password: string,
 ) {
   const { roles: actorRoles } = await assertCanManageUsers(actorUserId, type);
+  // assertCanManageUsers lets a sales actor through for vendors and leaves
+  // ownership "to the callers" - updateManagedUserProfile does this check, and
+  // without it here any sales account could reset any vendor's password,
+  // revoking their sessions, including clients belonging to another rep.
+  if (type === "vendor") await assertSalesOwnsVendor(actorRoles, actorUserId, id);
 
   if (!password?.trim() || password.length < 8) {
     throw new AppError(400, "Password must be at least 8 characters long");

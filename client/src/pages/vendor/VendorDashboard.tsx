@@ -126,7 +126,10 @@ const VendorDashboard: React.FC = () => {
 
   return (
     <div className="vendor-dashboard">
-      <DashboardHeader user={getCurrentUser()?.fullName || ''} />
+      <DashboardHeader
+        user={getCurrentUser()?.fullName || ''}
+        subtitle="Your orders, deliveries and payouts across the Parcel Moover network."
+      />
 
       <VendorQuickActions />
 
