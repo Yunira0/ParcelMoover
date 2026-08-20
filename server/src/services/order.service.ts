@@ -25,6 +25,7 @@ import { hasAdminPermission } from "../middlewares/adminPermission.middleware";
 import { invalidateVendorFinanceCache, invalidateRiderFinanceCache } from "./finance.service";
 import { emitWebhookEvent, emitWebhookEventsBatch } from "./webhookDispatch.service";
 import { getVendorStatusLabel } from "../utils/orderStatusLabel";
+import { stripCarrierStaffTag } from "../utils/carrierRemark";
 import {
   assertVendorCanCreateOrder,
   evaluateVendorBillingAsync,
@@ -2576,10 +2577,11 @@ const STAFF_ROLE_CODES = new Set(["super_admin", "admin"]);
 
 // NCM 3PL bookkeeping remarks. The handoff remark is an internal audit/link
 // row (see ncm.service.ts) and must not show in the user-facing thread.
-// Inbound NCM-staff comments carry a "[NCM Staff]" tag we strip for display,
-// attributing them to a generic "Staff" (they have no local user).
+// Inbound carrier-staff comments carry a bracketed tag we strip for display,
+// attributing them to a generic "Staff" (they have no local user). See
+// utils/carrierRemark.ts - the tag spelling lives there so it cannot drift
+// away from what ncm.service.ts actually writes.
 const NCM_HANDOFF_PREFIX = "[NCM] Handed off";
-const NCM_STAFF_PREFIX = "[NCM Staff]";
 
 function isStaffAuthor(
   user: { user_roles?: { roles: { code: string } }[] } | null | undefined,
@@ -2684,16 +2686,13 @@ export async function getOrderByTrackingId(actor: OrderActor, trackingId: string
     remarks: parcel.parcel_remarks
       .filter((remark) => !remark.remark.startsWith(NCM_HANDOFF_PREFIX))
       .map((remark) => {
-      const isNcmStaff = remark.remark.startsWith(NCM_STAFF_PREFIX);
-      const remarkText = isNcmStaff
-        ? remark.remark.slice(NCM_STAFF_PREFIX.length).trim()
-        : remark.remark;
+      const { text: remarkText, isCarrierStaff } = stripCarrierStaffTag(remark.remark);
       const maskAuthor = !isStaff && isStaffAuthor(remark.users);
       const maskParent = !isStaff && isStaffAuthor(remark.parent_remark?.users);
       return {
         id: remark.id,
         remark: remarkText,
-        addedBy: isNcmStaff ? "Staff" : maskAuthor ? "Staff" : remark.users?.full_name || "Unknown",
+        addedBy: isCarrierStaff || maskAuthor ? "Staff" : remark.users?.full_name || "Unknown",
         createdAt: remark.created_at.toISOString(),
         parentRemarkId: remark.parent_remark_id,
         parentAuthor: remark.parent_remark?.users

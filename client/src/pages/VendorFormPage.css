@@ -425,4 +425,24 @@
   .vfp-section {
     padding: var(--space-4);
   }
+}
+
+/* Document slot status (edit mode): what is already on file for this slot */
+.vfp-doc-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--color-text-caption);
+}
+
+.vfp-doc-onfile {
+  color: var(--color-primary, #4f46e5);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.vfp-doc-onfile:hover {
+  text-decoration: underline;
 }

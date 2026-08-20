@@ -194,6 +194,59 @@
   font-size: 12px;
 }
 
+/* Money columns line up digit-over-digit instead of drifting with the
+   proportional figures Inter ships by default. */
+.scp-num,
+.scp-cod-value {
+  font-variant-numeric: tabular-nums;
+}
+
+.scp-num-strong {
+  font-weight: var(--font-weight-semi-bold);
+}
+
+/* The COD column carries a label/value block, not a lone figure, so the block
+   sits centred in its column and the header centres over it. Right-aligning both
+   pushed them up against Delivery Charge and left a hole on the other side.
+   .scp-table th's own `text-align: left` needs overriding, hence the specificity. */
+.scp-table th.scp-cod-head,
+.scp-table td.scp-cod-head {
+  text-align: center;
+}
+
+/* COD pair: a two-column mini table inside the cell, so the label reads as a
+   label and the two amounts stack on a shared right edge. The whole block hugs
+   the right of the cell because it is an inline grid. */
+.scp-cod {
+  column-gap: var(--space-3);
+  display: inline-grid;
+  grid-template-columns: auto auto;
+  row-gap: var(--space-0-5);
+  text-align: right;
+}
+
+.scp-cod-label {
+  color: var(--color-text-caption);
+  font-size: 10px;
+  font-weight: var(--font-weight-semi-bold);
+  letter-spacing: 0.06em;
+  line-height: var(--line-height-xs);
+  text-align: left;
+  text-transform: uppercase;
+}
+
+.scp-cod-value {
+  color: var(--color-text-default);
+  font-size: 13px;
+  font-weight: var(--font-weight-medium);
+  line-height: var(--line-height-xs);
+}
+
+/* Partial delivery: less cash arrived than was declared. */
+.scp-cod-short {
+  color: var(--color-danger-text);
+}
+
 /* Secondary lines inside a cell, e.g. the receiver's phone and address under
    their name. */
 .scp-subtext {

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Plus, Search, ChevronDown } from 'lucide-react';
+import { Plus, Search, ChevronDown, FolderOpen } from 'lucide-react';
 import Table, { TableRowActions } from '../components/Table';
 import { toBsDate } from '../utils/nepaliDate';
 import UserActionModal from '../components/UserActionModal';
@@ -8,6 +8,8 @@ import PageHeader from '../components/PageHeader';
 import Pagination from '../components/Pagination';
 import SegmentedTabs from '../components/SegmentedTabs';
 import StatusChip from '../components/StatusChip';
+import Button from '../components/Button';
+import UserDocumentsModal from '../components/UserDocumentsModal';
 import KycManagement from './KycManagement';
 import { getVendors } from '../services/users.service';
 import { isAdminSide, isSalesUser, hasAnyRole, getCurrentUser, hasAdminPermission } from '../utils/auth';
@@ -46,6 +48,9 @@ const VendorManagement: React.FC = () => {
   const canManage = isAdmin || isPureSales;
   const canEdit = canManage;
   const canCreate = isAdminSide() || hasAnyRole(['sales']);
+  // Registration documents are PII; the /uploads route only serves them to
+  // super_admin/admin, so sales never sees the column.
+  const canViewDocuments = isAdmin;
   // KYC is the application a vendor account starts life as, so it lives here
   // as a second view rather than as a section of its own. Sales never sees it.
   const canReviewKyc = hasAdminPermission('KYC_ACCESS');
@@ -65,6 +70,7 @@ const VendorManagement: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [actionMode, setActionMode] = useState<'edit' | 'password'>('edit');
   const [activeVendor, setActiveVendor] = useState<VendorUser | null>(null);
+  const [documentsVendor, setDocumentsVendor] = useState<VendorUser | null>(null);
   const [page, setPage] = useState(1);
   const [pageSizeChoice, setPageSizeChoice] = useState(PAGE_SIZE);
   const [totalPages, setTotalPages] = useState(1);
@@ -141,6 +147,22 @@ const VendorManagement: React.FC = () => {
     // The API sends these as AD "YYYY-MM-DD"; every date shown in this app is BS.
     { header: 'JOINED', accessor: (v: VendorUser) => toBsDate(v.joined) || '—' },
     { header: 'LAST ORDERED DATE', accessor: (v: VendorUser) => toBsDate(v.lastOrderedDate) || '—' },
+    ...(canViewDocuments
+      ? [{
+          header: 'DOCUMENTS',
+          accessor: (item: VendorUser) => (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setDocumentsVendor(item)}
+            >
+              <FolderOpen size={14} />
+              View
+            </Button>
+          ),
+          width: '120px',
+        }]
+      : []),
     ...(canEdit
       ? [{
           header: 'ACTION',
@@ -254,6 +276,13 @@ const VendorManagement: React.FC = () => {
           />
         </>
       )}
+
+      <UserDocumentsModal
+        isOpen={Boolean(documentsVendor)}
+        userType="vendor"
+        target={documentsVendor ? { id: documentsVendor.id, name: documentsVendor.client } : null}
+        onClose={() => setDocumentsVendor(null)}
+      />
 
       <UserActionModal
         isOpen={Boolean(activeVendor)}

@@ -678,6 +678,14 @@ const OrderManagement: React.FC = () => {
       width: '180px',
       className: 'tracking-cell',
     },
+    {
+      // createdAt is already a Nepal-local calendar day, so this is the same BS
+      // date the "Order Created Date" filter and the Excel export show.
+      header: sortableHeader('CREATED DATE', 'createdAt'),
+      accessor: (order: Order) => toBsDate(order.createdAt) || '-',
+      width: '120px',
+      className: 'created-cell',
+    },
     { header: 'ORIGIN', accessor: (order: Order) => (order.origin ? hubNameOnly(order.origin) : '-'), width: '150px' },
     {
       header: 'SENDER',

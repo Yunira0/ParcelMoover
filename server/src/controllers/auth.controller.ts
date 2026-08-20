@@ -8,6 +8,7 @@ import {
   updateManagedUserPassword,
   updateManagedUserProfile,
   getManagedUserDetail,
+  getManagedUserDocuments,
   getRootSuperAdminUserId,
 } from "../services/auth.service";
 import { AppError } from "../utils/AppError";
@@ -122,6 +123,28 @@ export const getManagedUserController = async (req: Request, res: Response) => {
   }
 };
 
+export const getManagedUserDocumentsController = async (req: Request, res: Response) => {
+  try {
+    const actorUserId = req.user?.id;
+    const { type, id } = req.params;
+
+    if (!actorUserId) {
+      throw new AppError(401, "Unauthorized");
+    }
+
+    if (!isManagedUserType(type) || typeof id !== "string") {
+      throw new AppError(400, "Invalid user type");
+    }
+    const data = await getManagedUserDocuments(actorUserId, type, id);
+    return res.status(200).json({ success: true, data });
+  } catch (error: any) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to load documents",
+    });
+  }
+};
+
 export const updateManagedUserController = async (req: Request, res: Response) => {
   try {
     const actorUserId = req.user?.id;
@@ -135,9 +158,27 @@ export const updateManagedUserController = async (req: Request, res: Response) =
       throw new AppError(400, "Invalid user type");
     }
 
+    // Same multipart handling as registration: an edit may carry replacement
+    // documents for slots the account was created without. Fields with no file
+    // stay undefined, which the service reads as "leave this document alone".
+    const files = req.files as Record<string, Express.Multer.File[]> | undefined;
+    const uploads = flattenMulterFiles(files);
+    if (uploads.length > 0) await secureUploadedFiles(uploads);
+
+    const docPath = (f?: Express.Multer.File) =>
+      f?.filename ? `uploads/registration/${f.filename}` : undefined;
+
     await updateManagedUserProfile(actorUserId, id, {
       ...req.body,
       type,
+      idDocumentPath: docPath(files?.idDocument?.[0]),
+      citizenshipDocPath: docPath(files?.citizenshipDoc?.[0]),
+      panDocPath: docPath(files?.panDoc?.[0]),
+      panVatDocPath: docPath(files?.panVatDoc?.[0]),
+      experienceLetterDocPath: docPath(files?.experienceLetterDoc?.[0]),
+      licenceDocPath: docPath(files?.licenceDoc?.[0]),
+      bluebookDocPath: docPath(files?.bluebookDoc?.[0]),
+      businessCertDocPath: docPath(files?.businessCertDoc?.[0]),
     });
 
     return sendSuccess(res, 200, "User updated successfully");

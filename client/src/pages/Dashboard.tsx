@@ -149,6 +149,7 @@ const Dashboard: React.FC = () => {
 
       <DashboardHeader
         user={getCurrentUser()?.fullName || ''}
+        subtitle="Operational overview for Parcel Moover across the Nepal network."
       />
 
       <div className="overview-section">
