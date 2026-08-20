@@ -9,6 +9,7 @@ import RecentOrders from '../components/RecentOrders';
 import TopVendors from '../components/TopVendors';
 import NeedsAttention from '../components/NeedsAttention';
 import { getDashboardSummary, type DashboardSummary } from '../services/orders.service';
+import { subscribeToRemarkStatusChanged } from '../services/remarks.service';
 import { getCurrentUser } from '../utils/auth';
 import './Dashboard.css';
 
@@ -137,9 +138,15 @@ const Dashboard: React.FC = () => {
       if (!document.hidden) loadSummary();
     };
 
+    // Closing/reopening a remark elsewhere in this tab has to land here at
+    // once - otherwise Today's activity keeps showing the stale count until
+    // the next poll while the nav badge (same event) has already dropped.
+    const unsubscribeRemarks = subscribeToRemarkStatusChanged(loadSummary);
+
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => {
       window.clearInterval(intervalId);
+      unsubscribeRemarks();
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [loadSummary]);

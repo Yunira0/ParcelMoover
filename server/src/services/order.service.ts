@@ -2366,15 +2366,29 @@ export async function listOrders(
 // batch of parcels sent out for delivery with a rider. This lists the sheets
 // for one Nepal-local day, with delivery progress read off the member parcels.
 
-const RUN_SHEET_PARCEL_INCLUDE = {
+// The parcel shape every hand-off document needs: who it goes to, where, how
+// heavy, how much cash. Shared by the run sheet (delivery leg) and the return
+// manifest (RTO leg) - both list the same columns for the same reason, so they
+// read the same rows rather than each growing their own near-copy.
+export const HANDOVER_PARCEL_INCLUDE = {
   parties_parcels_receiver_idToparties: true,
   locations_parcels_destination_location_idTolocations: true,
   vendors: true,
+  // Newest remark only. The hand-over sheet prints it in the Remarks column, so
+  // whoever signs for the parcel reads the same note the ops list shows - see
+  // mapOrder, which takes the latest the same way.
+  parcel_remarks: {
+    orderBy: { created_at: "desc" as const },
+    take: 1,
+  },
 } satisfies Prisma.parcelsInclude;
 
-type RunSheetParcel = Prisma.parcelsGetPayload<{ include: typeof RUN_SHEET_PARCEL_INCLUDE }>;
+type HandoverParcel = Prisma.parcelsGetPayload<{ include: typeof HANDOVER_PARCEL_INCLUDE }>;
 
-function mapRunSheetParcel(parcel: RunSheetParcel) {
+const stripNcmStaffPrefix = (remark: string) =>
+  remark.startsWith(NCM_STAFF_PREFIX) ? remark.slice(NCM_STAFF_PREFIX.length).trim() : remark;
+
+export function mapHandoverParcel(parcel: HandoverParcel) {
   const receiver = parcel.parties_parcels_receiver_idToparties;
   return {
     id: parcel.id,
@@ -2395,12 +2409,15 @@ function mapRunSheetParcel(parcel: RunSheetParcel) {
     weightKg: parcel.weight_kg === null ? undefined : Number(parcel.weight_kg),
     codAmount: Number(parcel.cod_amount),
     vendorName: parcel.vendors?.business_name || parcel.vendors?.client_name || "",
+    // The "[NCM Staff]" tag is internal bookkeeping (see remark.service): it
+    // marks an inbound comment's origin and must never reach a printed sheet.
+    remarks: stripNcmStaffPrefix(parcel.parcel_remarks[0]?.remark || ""),
     deliveryInstruction: parcel.delivery_instruction || "",
     deliveredAt: parcel.delivered_at ? parcel.delivered_at.toISOString() : null,
   };
 }
 
-export type RunSheetParcelDto = ReturnType<typeof mapRunSheetParcel>;
+export type HandoverParcelDto = ReturnType<typeof mapHandoverParcel>;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -2432,7 +2449,7 @@ export async function getRiderRunSheet(
     include: {
       riders: { include: { locations: true } },
       run_sheet_parcels: {
-        include: { parcels: { include: RUN_SHEET_PARCEL_INCLUDE } },
+        include: { parcels: { include: HANDOVER_PARCEL_INCLUDE } },
         orderBy: { created_at: "asc" },
       },
     },
@@ -2442,7 +2459,7 @@ export async function getRiderRunSheet(
   });
 
   const mapped = sheets.map((sheet) => {
-    const parcels = sheet.run_sheet_parcels.map((link) => mapRunSheetParcel(link.parcels));
+    const parcels = sheet.run_sheet_parcels.map((link) => mapHandoverParcel(link.parcels));
     const delivered = parcels.filter((p) => p.status === "delivered" || p.status === "partially_delivered");
     // Latest movement on the sheet = the newest status change among its parcels.
     const lastParcelUpdate = sheet.run_sheet_parcels.reduce<Date | null>(
@@ -3128,9 +3145,14 @@ async function computeDashboardSummary(
       where: {
         workflow_status: { not: "closed" },
         parent_remark_id: null,
+        // Same set as the nav's "Unclosed cmt" badge (remark.service
+        // getUnclosedRemarksCounts, vendor group): vendor-raised remarks only.
+        // Rider-raised ones are a separate queue behind the "Rider cmt" badge,
+        // so counting them here made this figure disagree with both the badge
+        // and the /unclosed-remarks page this row links to.
         users: {
           user_roles: {
-            some: { roles: { code: { in: ["vendor", "vendor_staff", "rider"] } } },
+            some: { roles: { code: { in: ["vendor", "vendor_staff"] } } },
           },
         },
         parcels: parcelWhere,
@@ -4187,6 +4209,17 @@ async function _updateParcelStatusImpl(
       },
     });
 
+    // Mirror of the bulk path's manifest eviction (see its note): a parcel
+    // pulled off ready_to_return one at a time - which is exactly how a
+    // super_admin correction or a QuickActions change arrives - would otherwise
+    // stay a ghost member and deadlock its manifest's send. Manifest sends
+    // never come through here, so this needs no returnManifestId exception.
+    if (currentStatus === "ready_to_return") {
+      await tx.return_manifest_parcels.deleteMany({
+        where: { parcel_id: parcelId, return_manifests: { status: "open" } },
+      });
+    }
+
     if (parcel.vendor_id) {
       await emitWebhookEvent(tx, parcel.vendor_id, "order.status_changed", {
         trackingId: parcel.tracking_id,
@@ -4641,6 +4674,16 @@ async function _bulkUpdateParcelStatusImpl(
     );
   }
 
+  // The return manifest driving this transition, if any. Read before the
+  // transaction purely for its number, which goes onto every member parcel's
+  // timeline - the manifest row itself is updated inside, next to the dispatch.
+  const returnManifest = data.returnManifestId
+    ? await prisma.return_manifests.findUnique({
+        where: { id: data.returnManifestId },
+        select: { id: true, manifest_no: true },
+      })
+    : null;
+
   const result = await prisma.$transaction(async (tx) => {
     let dispatch: { id: string; dispatch_no: string } | null = null;
 
@@ -4672,6 +4715,14 @@ async function _bulkUpdateParcelStatusImpl(
     const dispatchRemark = dispatch
       ? `Manifest ${dispatch.dispatch_no}${riderName ? ` · carried by ${riderName}` : ""}`
       : null;
+
+    // Same reasoning for the return leg: the manifest number is the only handle
+    // anyone has on "which hand-over did this parcel go back on", so it belongs
+    // on the timeline rather than only in the manifests list. Composed the same
+    // way and folded into the same remarks field below.
+    const batchRemark = returnManifest
+      ? `Manifest ${returnManifest.manifest_no}${riderName ? ` · carried by ${riderName}` : ""}`
+      : dispatchRemark;
 
     const updateData: Prisma.parcelsUpdateInput = { status: newStatus as parcel_status };
     if (newStatus === "delivered") {
@@ -4839,8 +4890,8 @@ async function _bulkUpdateParcelStatusImpl(
         new_status: newStatus as parcel_status,
         location_id: toLocationId || data.toLocationId || p.current_location_id,
         changed_by: actor.id,
-        remarks: dispatchRemark
-          ? [dispatchRemark, data.remarks?.trim()].filter(Boolean).join(" — ")
+        remarks: batchRemark
+          ? [batchRemark, data.remarks?.trim()].filter(Boolean).join(" — ")
           : data.remarks || null,
       })),
     });
@@ -4916,6 +4967,53 @@ async function _bulkUpdateParcelStatusImpl(
             data: { arrived_at: new Date() },
           });
         }
+      }
+    }
+
+    // The return manifest moves with its parcels, in this same transaction -
+    // the same rule the dispatch manifest and the run sheet already follow.
+    // Doing it as a second call after bulkUpdateParcelStatus returned would
+    // leave a window where the parcels are sent_to_vendor but the manifest
+    // still reads 'open', and the retry would then fail the transition check
+    // with no way back short of SQL.
+    if (returnManifest && newStatus === "sent_to_vendor") {
+      await tx.return_manifests.update({
+        where: { id: returnManifest.id },
+        data: {
+          status: "sent",
+          rider_id: parcelRiderId,
+          sent_at: new Date(),
+          sent_by: actor.id,
+        },
+      });
+    }
+    if (returnManifest && newStatus === "returned_to_vendor") {
+      await tx.return_manifests.update({
+        where: { id: returnManifest.id },
+        data: { status: "received", received_at: new Date(), received_by: actor.id },
+      });
+    }
+
+    // A parcel leaving ready_to_return by any route other than its own
+    // manifest's send is no longer part of that hand-over, so drop it.
+    //
+    // This is not tidiness. bulkUpdateParcelStatus rejects the *whole* batch if
+    // any member has an invalid transition, so a single parcel force-reverted
+    // out of ready_to_return (super_admin, order detail, QuickActions) would
+    // otherwise sit in the manifest as a ghost member and deadlock every later
+    // attempt to send it - and there is no remove action reachable once a
+    // manifest has left 'open'. Mirrored in _updateParcelStatusImpl.
+    if (newStatus !== "sent_to_vendor") {
+      const leavingReturnPool = parcels
+        .filter((p) => p.status === "ready_to_return")
+        .map((p) => p.id);
+      if (leavingReturnPool.length) {
+        await tx.return_manifest_parcels.deleteMany({
+          where: {
+            parcel_id: { in: leavingReturnPool },
+            return_manifests: { status: "open" },
+          },
+        });
       }
     }
 

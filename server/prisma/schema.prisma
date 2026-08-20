@@ -354,6 +354,7 @@ model parcels {
   return_orders                                        parcels[]               @relation("parcel_source_return")
   pickup_tasks                                         pickup_tasks?
   run_sheet_parcels                                    run_sheet_parcels[]
+  return_manifest_parcels                              return_manifest_parcels[]
   support_tickets                                      support_tickets[]
   journal_lines                                        journal_lines[]
 
@@ -447,6 +448,7 @@ model riders {
   parcels_parcels_pickup_rider_idToriders   parcels[]         @relation("parcels_pickup_rider_idToriders")
   pickup_tasks                              pickup_tasks[]
   run_sheets                                run_sheets[]
+  return_manifests                          return_manifests[]
   locations                                 locations?        @relation(fields: [location_id], references: [id], onUpdate: NoAction)
   users                                     users?            @relation(fields: [user_id], references: [id], onUpdate: NoAction)
   settlements                               settlements[]
@@ -480,6 +482,59 @@ model run_sheet_parcels {
 
   @@id([run_sheet_id, parcel_id])
   @@index([parcel_id], map: "idx_run_sheet_parcels_parcel_id")
+}
+
+/// One return manifest = one vendor's hand-over batch on the RTO leg. The
+/// run-sheet counterpart for parcels going *back*.
+///
+/// Unlike a run sheet, which is created complete at the moment of hand-off, a
+/// manifest is opened first and filled over time: returns for a vendor pile up
+/// across days before anyone comes to collect them. It then moves as a unit -
+/// 'sent' takes every member to sent_to_vendor, 'received' to
+/// returned_to_vendor - which is why the parcel transitions run through
+/// bulkUpdateParcelStatus rather than being written here.
+///
+/// At most one manifest per vendor may be 'open' at a time; see the partial
+/// unique index in 20260819120000_add_return_manifests, which is also what stops
+/// a parcel sitting on two open manifests.
+model return_manifests {
+  id          String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  manifest_no String                  @unique
+  vendor_id   String                  @db.Uuid
+  status      return_manifest_status  @default(open)
+  /// Set at send time, not at creation - who carries the batch is only known
+  /// when it actually leaves.
+  rider_id    String?                 @db.Uuid
+  created_by  String?                 @db.Uuid
+  sent_by     String?                 @db.Uuid
+  received_by String?                 @db.Uuid
+  sent_at     DateTime?               @db.Timestamptz(6)
+  received_at DateTime?               @db.Timestamptz(6)
+  remarks     String?
+  created_at  DateTime                @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime                @default(now()) @updatedAt @db.Timestamptz(6)
+
+  return_manifest_parcels return_manifest_parcels[]
+  vendors                 vendors  @relation(fields: [vendor_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  riders                  riders?  @relation(fields: [rider_id], references: [id], onUpdate: NoAction)
+  created_by_user         users?   @relation("return_manifests_created_byTousers", fields: [created_by], references: [id], onUpdate: NoAction)
+  sent_by_user            users?   @relation("return_manifests_sent_byTousers", fields: [sent_by], references: [id], onUpdate: NoAction)
+  received_by_user        users?   @relation("return_manifests_received_byTousers", fields: [received_by], references: [id], onUpdate: NoAction)
+
+  @@index([vendor_id, created_at(sort: Desc)], map: "idx_return_manifests_vendor")
+  @@index([status, created_at(sort: Desc)], map: "idx_return_manifests_status")
+  @@index([rider_id], map: "idx_return_manifests_rider")
+}
+
+model return_manifest_parcels {
+  return_manifest_id String           @db.Uuid
+  parcel_id          String           @db.Uuid
+  created_at         DateTime         @default(now()) @db.Timestamptz(6)
+  return_manifests   return_manifests @relation(fields: [return_manifest_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  parcels            parcels          @relation(fields: [parcel_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([return_manifest_id, parcel_id])
+  @@index([parcel_id], map: "idx_return_manifest_parcels_parcel_id")
 }
 
 model roles {
@@ -720,6 +775,9 @@ model users {
   support_tickets_support_tickets_created_byTousers      support_tickets[]       @relation("support_tickets_created_byTousers")
   cod_settlement_requests_created_by                     cod_settlement_requests[] @relation("cod_settlement_requests_created_byTousers")
   cod_settlement_requests_reviewed_by                    cod_settlement_requests[] @relation("cod_settlement_requests_reviewed_byTousers")
+  return_manifests_created_by                            return_manifests[]      @relation("return_manifests_created_byTousers")
+  return_manifests_sent_by                               return_manifests[]      @relation("return_manifests_sent_byTousers")
+  return_manifests_received_by                           return_manifests[]      @relation("return_manifests_received_byTousers")
   journal_entries                                        journal_entries[]
   accounting_periods                                     accounting_periods[]
   expenses_created                                       expenses[]              @relation("expenses_created_by")
@@ -817,6 +875,7 @@ model vendors {
   webhook_endpoints     webhook_endpoints[]
   vendor_payments       vendor_payments[]
   cod_settlement_requests cod_settlement_requests[]
+  return_manifests      return_manifests[]
 
   @@index([location_id], map: "idx_vendors_location_id")
   @@index([sales_user_id], map: "idx_vendors_sales_user_id")
@@ -1089,6 +1148,15 @@ enum cod_settlement_request_status {
   in_progress
   settled
   rejected
+}
+
+/// 'open' is the only state that accepts new parcels, and the only one a vendor
+/// may hold more than zero of at a time (see the partial unique index). 'sent'
+/// and 'received' are both closed to additions; 'received' is terminal.
+enum return_manifest_status {
+  open
+  sent
+  received
 }
 
 enum user_status {

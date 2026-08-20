@@ -162,6 +162,16 @@ export interface BulkUpdateParcelStatusInput {
   riderId?: string;
   /** Required when status is "partially_delivered". Amount of COD collected per parcel. */
   codCollected?: number;
+  /**
+   * The return manifest driving this transition, set only by
+   * returnManifest.service - never accepted over HTTP.
+   *
+   * bulkUpdateOrderStatusSchema deliberately omits it, and validate() replaces
+   * req.body with the parsed result of a z.object (which strips unknown keys),
+   * so a client cannot inject it into PATCH /orders/bulk-status. Adding it to
+   * that schema would let anyone close someone else's manifest.
+   */
+  returnManifestId?: string;
 }
 
 export interface BulkCreateOrderInput {
@@ -183,14 +193,14 @@ export interface BulkCreateResult {
 export const STATUS_TRANSITIONS = {
   pickup_ordered:    ["rider_assigned", "cancelled"],
   rider_assigned:    ["picked_up", "failed_pickup", "cancelled"],
-  picked_up:         ["arrived"],
+  picked_up:         ["arrived", "failed_pickup"],
   arrived:           ["ready_to_deliver", "oov"],
   // "follow_up" on these four is the exit for an NCM-carried parcel NCM is
   // returning to us (their "Sent to Vendor") - not reachable by an internal
   // rider, only by the NCM return action/reconcile sweep (see ncm.service.ts).
   dispatched:        ["arrived_at_branch", "follow_up"],
   arrived_at_branch: ["ready_to_deliver", "follow_up"],
-  ready_to_deliver:  ["sent_for_delivery", "hold"],
+  ready_to_deliver:  ["sent_for_delivery", "hold", "cancelled"],
   sent_for_delivery: ["delivered", "partially_delivered", "failed_delivery", "follow_up"],
   oov:               ["dispatched","hold", "follow_up"],
   hold:              ["ready_to_deliver","oov","loss_and_damage"],

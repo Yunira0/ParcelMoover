@@ -8,6 +8,7 @@ import OrderRoutes from "./routes/order.routes"
 import DeliveryRateRoutes from "./routes/delivery-rate.routes"
 import TicketRoutes from "./routes/ticket.routes"
 import CodSettlementRequestRoutes from "./routes/codSettlementRequest.routes"
+import ReturnManifestRoutes from "./routes/returnManifest.routes"
 import RemarkRoutes from "./routes/remark.routes"
 import NotificationRoutes from "./routes/notification.routes"
 import FinanceRoutes from "./routes/finance.routes"
@@ -140,6 +141,7 @@ app.use("/api/delivery-rates", DeliveryRateRoutes)
 
 app.use("/api/tickets", TicketRoutes)
 app.use("/api/cod-settlement-requests", CodSettlementRequestRoutes)
+app.use("/api/return-manifests", ReturnManifestRoutes)
 
 app.use("/api/remarks", RemarkRoutes)
 

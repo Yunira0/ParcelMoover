@@ -7,6 +7,7 @@ import VendorCodCard from '../../components/vendor/VendorCodCard';
 import VendorTodayPanel from '../../components/vendor/VendorTodayPanel';
 import VendorOrderDetails from '../../components/vendor/VendorOrderDetails';
 import { getDashboardSummary, type DashboardSummary } from '../../services/orders.service';
+import { subscribeToRemarkStatusChanged } from '../../services/remarks.service';
 import './VendorDashboard.css';
 
 const REFRESH_INTERVAL_MS = 15_000;
@@ -102,9 +103,15 @@ const VendorDashboard: React.FC = () => {
     const handleVisibilityChange = () => {
       if (!document.hidden) loadSummary();
     };
+    // Closing/reopening a remark elsewhere in this tab has to land here at
+    // once - otherwise Today's activity keeps showing the stale count until
+    // the next poll while the nav badge (same event) has already dropped.
+    const unsubscribeRemarks = subscribeToRemarkStatusChanged(loadSummary);
+
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => {
       window.clearInterval(intervalId);
+      unsubscribeRemarks();
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [loadSummary]);
