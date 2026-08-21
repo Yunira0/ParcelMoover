@@ -74,7 +74,7 @@ model cod_collections {
   // Vendor leg (office -> vendor payout).
   collected_amount      Decimal            @default(0) @db.Decimal(12, 2)
   remitted_amount       Decimal            @default(0) @db.Decimal(12, 2)
-  pending_amount        Decimal?           @default(dbgenerated("(\"cod_amount\" - \"remitted_amount\")")) @db.Decimal(12, 2)
+  pending_amount        Decimal?           @default(dbgenerated("(cod_amount - remitted_amount)")) @db.Decimal(12, 2)
   payment_status        payment_status     @default(pending)
   collected_at          DateTime?          @db.Timestamptz(6)
   // Rider leg (rider -> office remittance), independent of the vendor leg above.
@@ -248,6 +248,7 @@ model parcel_remarks {
 
   @@index([location_id], map: "idx_parcel_remarks_location_id")
   @@index([parcel_id, created_at(sort: Desc)], map: "idx_parcel_remarks_parcel_id")
+  @@index([parent_remark_id], map: "idx_parcel_remarks_parent_remark_id")
   @@index([user_id], map: "idx_parcel_remarks_user_id")
 }
 
@@ -673,6 +674,7 @@ model support_tickets {
   users_support_tickets_assigned_toTousers users?        @relation("support_tickets_assigned_toTousers", fields: [assigned_to], references: [id], onUpdate: NoAction)
   users_support_tickets_created_byTousers  users?        @relation("support_tickets_created_byTousers", fields: [created_by], references: [id], onUpdate: NoAction)
   parcels                                  parcels?      @relation(fields: [parcel_id], references: [id], onUpdate: NoAction)
+  ticket_replies                           ticket_replies[]
 
   @@index([assigned_to], map: "idx_support_tickets_assigned_to")
   @@index([created_by], map: "idx_support_tickets_created_by")
@@ -876,6 +878,7 @@ model vendors {
   vendor_payments       vendor_payments[]
   cod_settlement_requests cod_settlement_requests[]
   return_manifests      return_manifests[]
+  vendor_staff          vendor_staff[]
 
   @@index([location_id], map: "idx_vendors_location_id")
   @@index([sales_user_id], map: "idx_vendors_sales_user_id")
@@ -1223,6 +1226,7 @@ model ticket_replies {
   author_name String
   message     String
   created_at  DateTime @default(now()) @db.Timestamptz(6)
+  ticket      support_tickets @relation(fields: [ticket_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([ticket_id, created_at], map: "idx_ticket_replies_ticket_id")
 }
@@ -1476,7 +1480,8 @@ model vendor_staff {
   name        String
   email       String
   phone       String?
-  permissions String[]
+  permissions String[]  @default([])
+  vendor      vendors   @relation(fields: [vendor_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   enabled     Boolean   @default(true)
   created_by  String?   @db.Uuid
   created_at  DateTime  @default(now()) @db.Timestamptz(6)
