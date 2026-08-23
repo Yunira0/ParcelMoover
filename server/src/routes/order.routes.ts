@@ -12,6 +12,9 @@ import {
   bulkUpdateOrderStatusSchema,
   listOrdersQuerySchema,
   orderFilterOptionsQuerySchema,
+  orderCountByStatusQuerySchema,
+  trashedOrdersQuerySchema,
+  restoreOrderSchema,
   addOrderRemarkSchema,
   runSheetQuerySchema,
   redirectOrderSchema,
@@ -25,6 +28,11 @@ import {
   dashboardSummaryController,
   getOrderByTrackingIdController,
   getOrderFilterOptionsController,
+  getOrderCountsByStatusController,
+  listTrashedOrdersController,
+  trashOrderController,
+  restoreOrderController,
+  deleteOrderPermanentlyController,
   getPublicOrderTrackingController,
   getSenderProfileController,
   getStatusCountsController,
@@ -200,6 +208,32 @@ orderRouter.get(
   getOrderFilterOptionsController,
 );
 
+// GET /orders/count-by-status — per-status totals for the list page's tab badges
+// (must come before "/" for the same reason as /filter-options above).
+orderRouter.get(
+  "/count-by-status",
+  authMiddleware,
+  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider", "sales"),
+  requireStaffPermission("ORDER_ACCESS"),
+  orderReadLimiter,
+  validate(orderCountByStatusQuerySchema, "query"),
+  getOrderCountsByStatusController,
+);
+
+// ── Trash ────────────────────────────────────────────────────────────────────
+// Admin-only: a vendor/sales/rider actor can't reach the trash at all, so the
+// soft-deleted rows they'd otherwise never see stay invisible to them.
+// "/trash" must be registered before "/" and before "/:id" so neither swallows it.
+orderRouter.get(
+  "/trash",
+  authMiddleware,
+  authorizeRoles("super_admin", "admin"),
+  requireStaffPermission("ORDER_ACCESS"),
+  orderReadLimiter,
+  validate(trashedOrdersQuerySchema, "query"),
+  listTrashedOrdersController,
+);
+
 orderRouter.get(
   "/",
   authMiddleware,
@@ -306,6 +340,45 @@ orderRouter.post(
   validate(uuidParamSchema, "params"),
   validate(addOrderRemarkSchema),
   addOrderRemarkController,
+);
+
+// POST /orders/:id/trash — soft-delete: drops the order out of every list and
+// into the trash. Admin-only, like the rest of the trash surface.
+orderRouter.post(
+  "/:id/trash",
+  authMiddleware,
+  csrfProtection,
+  authorizeRoles("super_admin", "admin"),
+  requireStaffPermission("ORDER_ACCESS"),
+  statusUpdateLimiter,
+  validate(uuidParamSchema, "params"),
+  trashOrderController,
+);
+
+// POST /orders/:id/restore — undo a trashing, manual or automatic.
+orderRouter.post(
+  "/:id/restore",
+  authMiddleware,
+  csrfProtection,
+  authorizeRoles("super_admin", "admin"),
+  requireStaffPermission("ORDER_ACCESS"),
+  statusUpdateLimiter,
+  validate(uuidParamSchema, "params"),
+  validate(restoreOrderSchema),
+  restoreOrderController,
+);
+
+// DELETE /orders/:id/permanent — unrecoverable, and refused outright for any
+// order carrying accounting or COD records. The client confirms before calling.
+orderRouter.delete(
+  "/:id/permanent",
+  authMiddleware,
+  csrfProtection,
+  authorizeRoles("super_admin", "admin"),
+  requireStaffPermission("ORDER_ACCESS"),
+  statusUpdateLimiter,
+  validate(uuidParamSchema, "params"),
+  deleteOrderPermanentlyController,
 );
 
 export default orderRouter;

@@ -54,6 +54,7 @@ async function startServer() {
     startKycDocumentPurge();
     startWebhookDelivery();
     startLedgerPostingSweep();
+    startCancelledOrderTrashSweep();
   });
 }
 
@@ -147,6 +148,54 @@ function startUpayaReconciliation() {
 // the sweep when multiple app processes share the same database.
 const KYC_PURGE_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const KYC_PURGE_LOCK_KEY = "kyc:document-purge-lock";
+
+// Cancelled orders drop into the trash once they've been cancelled for a week
+// (CANCELLED_TRASH_AFTER_DAYS) - see sweepCancelledOrdersToTrash. Hourly rather
+// than 6-hourly like the KYC purge only because "7 days" reads as a date the
+// user can predict; the sweep itself is idempotent either way. Same Redis NX
+// lock so multiple app processes don't trash the same batch concurrently.
+const CANCELLED_TRASH_INTERVAL_MS = 60 * 60 * 1000;
+const CANCELLED_TRASH_LOCK_KEY = "orders:cancelled-trash-lock";
+
+function startCancelledOrderTrashSweep() {
+  // Off unless explicitly enabled. On its first run against an existing
+  // database this sweep trashes *every* cancelled order older than
+  // CANCELLED_TRASH_AFTER_DAYS - potentially the whole back catalogue, 500 an
+  // hour - and reverses the COD postings of any that carry them. That is a
+  // one-way bulk mutation with only per-order restore to undo it, so it has to
+  // be a deliberate decision per environment rather than something that starts
+  // the moment this code ships.
+  if (process.env.CANCELLED_TRASH_SWEEP_ENABLED !== "true") {
+    console.log(
+      "[Orders] cancelled-order trash sweep disabled — set CANCELLED_TRASH_SWEEP_ENABLED=true to enable",
+    );
+    return;
+  }
+
+  setInterval(async () => {
+    try {
+      const acquired = await redis.set(
+        CANCELLED_TRASH_LOCK_KEY,
+        "1",
+        "EX",
+        Math.floor(CANCELLED_TRASH_INTERVAL_MS / 1000) - 60,
+        "NX",
+      );
+      if (!acquired) return;
+    } catch {
+      // Redis down — run anyway; the sweep is idempotent.
+    }
+    try {
+      const { sweepCancelledOrdersToTrash } = await import("./services/order.service");
+      const result = await sweepCancelledOrdersToTrash();
+      if (result.trashed > 0) {
+        console.log(`[Orders] cancelled-order trash sweep: trashed ${result.trashed} of ${result.checked}`);
+      }
+    } catch (error) {
+      console.error("[Orders] cancelled-order trash sweep failed:", error);
+    }
+  }, CANCELLED_TRASH_INTERVAL_MS).unref();
+}
 
 function startKycDocumentPurge() {
   setInterval(async () => {

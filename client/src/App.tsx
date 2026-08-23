@@ -83,6 +83,7 @@ const VendorDeveloper = lazy(() => import('./pages/vendor/VendorDeveloper'))
 const VendorPrintSettings = lazy(() => import('./pages/vendor/VendorPrintSettings'))
 const StaffFormPage = lazy(() => import('./pages/vendor/StaffFormPage'))
 const BulkOrderPage = lazy(() => import('./pages/vendor/BulkOrderPage'))
+const TrashOrdersPage = lazy(() => import('./pages/TrashOrdersPage'))
 const VendorDeliveryCharges = lazy(() => import('./pages/vendor/VendorDeliveryCharges'))
 const VendorMetricDetail = lazy(() => import('./pages/vendor/VendorMetricDetail'))
 const ForceChangePasswordPage = lazy(() => import('./pages/ForceChangePasswordPage'))
@@ -140,6 +141,13 @@ function App() {
           <Route
             path="/orders/bulk-create"
             element={<RoleGuard allowedRoles={['super_admin', 'admin', 'sales', 'vendor', 'vendor_staff']} requiredPermission="ORDER_ACCESS"><BulkOrderPage /></RoleGuard>}
+          />
+          {/* Soft-deleted orders, with restore and permanent delete. Admin-only,
+              matching the server's trash routes - a vendor/sales/rider can't
+              reach the trash or see a trashed order in any list. */}
+          <Route
+            path="/orders/trash"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']} requiredPermission="ORDER_ACCESS"><TrashOrdersPage /></RoleGuard>}
           />
           {/* Every known role can legitimately track some subset of orders - the
               backend (getOrderByTrackingId) already scopes which specific orders

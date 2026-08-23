@@ -66,7 +66,9 @@ const TAB_STATUSES: Record<PickupTab, ParcelStatus[]> = {
   pickup_ordered: ['pickup_ordered'],
   rider_assigned: ['rider_assigned'],
   picked_up: ['picked_up'],
-  arrived: ['arrived', 'arrived_at_branch'],
+  // 'arrived' only. arrived_at_branch is a destination-hub arrival near the end
+  // of delivery, not a pickup-stage one, and belongs to Dispatch Operations.
+  arrived: ['arrived'],
   failed: ['failed_pickup'],
   cancelled: ['cancelled'],
 };

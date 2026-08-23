@@ -332,6 +332,37 @@ export const getOrders = async (params?: ListOrdersParams, signal?: AbortSignal)
   return response.data;
 };
 
+/** Per-status totals behind the orders list page's tab badges. */
+export type OrderCountsByStatus = Record<ParcelStatus, number>;
+
+// Every filter the list pushes down except `status` — the counts describe the
+// same set of orders the table does, broken down per status rather than paged.
+export type OrderCountsByStatusParams = Pick<
+  ListOrdersParams,
+  'orderType' | 'vendorId' | 'search' | 'deliveryRiderId' | 'deliveredToday' | 'dateField' | 'dateFrom' | 'dateTo'
+>;
+
+// Deliberately not derived from getOrders: that endpoint returns one keyset
+// page and its meta.total only ever describes the active tab, so the other
+// tabs' badges can't be read off it.
+export const getOrderCountsByStatus = async (
+  params?: OrderCountsByStatusParams,
+  signal?: AbortSignal,
+): Promise<{ success: boolean; data: OrderCountsByStatus }> => {
+  const query: Record<string, string> = {};
+  if (params?.orderType) query.orderType = params.orderType;
+  if (params?.vendorId?.length) query.vendorId = params.vendorId.join(',');
+  if (params?.search) query.search = params.search;
+  if (params?.deliveryRiderId) query.deliveryRiderId = params.deliveryRiderId;
+  if (params?.deliveredToday) query.deliveredToday = 'true';
+  if (params?.dateField) query.dateField = params.dateField;
+  if (params?.dateFrom) query.dateFrom = params.dateFrom;
+  if (params?.dateTo) query.dateTo = params.dateTo;
+
+  const response = await api.get('/orders/count-by-status', { params: query, signal });
+  return response.data;
+};
+
 export interface OrderFilterOptions {
   origins: string[];
   destinations: string[];
@@ -752,5 +783,61 @@ export const bulkUpdateOrderStatus = async (
     { headers: { 'Idempotency-Key': idempotencyKey } },
   );
   notifyOrderStatusChanged();
+  return response.data;
+};
+
+// ── Trash (soft-deleted orders) ──────────────────────────────────────────────
+// Admin-only on the server. Trashed orders are excluded from every other list,
+// so the only way back to one is getTrashedOrders below.
+
+/** Admin-only: soft-delete an order — it leaves every list and lands in the trash. */
+export const trashOrder = async (orderId: string) => {
+  const response = await api.post(`/orders/${orderId}/trash`);
+  notifyOrderStatusChanged();
+  return response.data;
+};
+
+/** The stages a trashed order can be restored into (server: TRASH_RESTORE_STAGES). */
+export const TRASH_RESTORE_STAGES = ['pickup_ordered', 'ready_to_deliver'] as const;
+export type TrashRestoreStage = (typeof TRASH_RESTORE_STAGES)[number];
+
+/**
+ * Admin-only: put a trashed order back into the live lists at `restoreTo`.
+ *
+ * This is the only path allowed past the server's STATUS_TRANSITIONS, so it can
+ * un-cancel an order — which nothing else in the app can do.
+ */
+export const restoreOrder = async (orderId: string, restoreTo: TrashRestoreStage) => {
+  const response = await api.post(`/orders/${orderId}/restore`, { restoreTo });
+  notifyOrderStatusChanged();
+  return response.data;
+};
+
+/**
+ * Admin-only and unrecoverable. The server refuses with 409 for any order
+ * carrying accounting or COD records, so callers should surface the message
+ * rather than assuming success.
+ */
+export const deleteOrderPermanently = async (orderId: string) => {
+  const response = await api.delete(`/orders/${orderId}/permanent`);
+  notifyOrderStatusChanged();
+  return response.data;
+};
+
+/** Admin-only: the trash listing. Same row shape and paging as getOrders. */
+export const getTrashedOrders = async (
+  params?: ListOrdersParams,
+  signal?: AbortSignal,
+): Promise<OrdersListResponse> => {
+  const query: Record<string, string> = {};
+  if (params?.search) query.search = params.search;
+  if (params?.page !== undefined) query.page = String(params.page);
+  if (params?.pageSize !== undefined) query.pageSize = String(params.pageSize);
+  if (params?.cursor !== undefined) query.cursor = params.cursor;
+  if (params?.dir !== undefined) query.dir = params.dir;
+  if (params?.sortBy) query.sortBy = params.sortBy;
+  if (params?.sortDir) query.sortDir = params.sortDir;
+
+  const response = await api.get('/orders/trash', { params: query, signal });
   return response.data;
 };
