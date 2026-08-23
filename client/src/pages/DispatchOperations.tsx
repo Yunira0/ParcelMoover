@@ -57,7 +57,10 @@ const TAB_LABELS: Record<DispatchTab, string> = {
 };
 
 const TAB_STATUSES: Record<DispatchTab, ParcelStatus[]> = {
-  arrived_at_branch: ['arrived_at_branch', 'arrived'],
+  // 'arrived_at_branch' only. 'arrived' is the origin-hub arrival that Pickup
+  // Operations owns; listing it here put pickup-stage parcels under a tab
+  // labelled "Arrived at Destination".
+  arrived_at_branch: ['arrived_at_branch'],
   ready_to_deliver: ['ready_to_deliver'],
   sent_for_delivery: ['sent_for_delivery'],
   delivered: ['delivered'],

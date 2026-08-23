@@ -4,6 +4,7 @@ import { ChevronsLeft, ChevronsRight, Download, FileUp, Plus, Printer, Search, X
 import PageHeader from '../../components/PageHeader';
 import Table from '../../components/Table';
 import Button from '../../components/Button';
+import ConfirmDialog from '../../components/ConfirmDialog';
 import FilterDropdown from '../../components/FilterDropdown';
 import Pagination from '../../components/Pagination';
 import StatusChip, { type StatusChipTone } from '../../components/StatusChip';
@@ -169,6 +170,9 @@ const VendorOrders: React.FC = () => {
   const [debouncedSearch, setDebouncedSearch] = useState(() => searchParams.get('search') || '');
   const [printWorking, setPrintWorking] = useState(false);
   const [openActionId, setOpenActionId] = useState<string | null>(null);
+  // The order awaiting cancel confirmation; null when the dialog is closed.
+  const [cancelTarget, setCancelTarget] = useState<Order | null>(null);
+  const [cancelling, setCancelling] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   // Close the row-action menu on outside click or Escape.
@@ -331,15 +335,19 @@ const VendorOrders: React.FC = () => {
     navigate('/orders/create', { state: { initialData: orderToCreateInput(order), mode: 'copy' } });
   };
 
-  const cancelOrder = async (order: Order) => {
-    setOpenActionId(null);
-    const confirmed = window.confirm(`Cancel order ${order.trackingId}? This cannot be undone.`);
-    if (!confirmed) return;
+  const cancelOrder = async () => {
+    const order = cancelTarget;
+    if (!order) return;
+    setCancelling(true);
     try {
       await bulkUpdateOrderStatus([order.id], 'cancelled', { remarks: 'Cancelled by vendor' });
+      setCancelTarget(null);
       await loadOrders();
     } catch (err: any) {
+      setCancelTarget(null);
       setLoadError(err?.response?.data?.message || err?.message || 'Failed to cancel the order.');
+    } finally {
+      setCancelling(false);
     }
   };
 
@@ -482,7 +490,7 @@ const VendorOrders: React.FC = () => {
               <button type="button" role="menuitem" onClick={() => trackOrder(order)}>Track parcel</button>
               <button type="button" role="menuitem" onClick={() => duplicateOrder(order)}>Duplicate order</button>
               {CANCELLABLE_STATUSES.includes(order.status) && (
-                <button type="button" role="menuitem" className="vo-actions-item--danger" onClick={() => cancelOrder(order)}>Cancel order</button>
+                <button type="button" role="menuitem" className="vo-actions-item--danger" onClick={() => { setOpenActionId(null); setCancelTarget(order); }}>Cancel order</button>
               )}
             </div>
           )}
@@ -641,6 +649,18 @@ const VendorOrders: React.FC = () => {
           onClose={() => setRemarkPopupOrder(null)}
         />
       )}
+
+      <ConfirmDialog
+        isOpen={cancelTarget !== null}
+        danger
+        busy={cancelling}
+        title={cancelTarget ? `Cancel order ${cancelTarget.trackingId}?` : ''}
+        message="This cannot be undone."
+        confirmLabel="OK"
+        cancelLabel="Cancel"
+        onConfirm={cancelOrder}
+        onCancel={() => setCancelTarget(null)}
+      />
     </div>
   );
 };

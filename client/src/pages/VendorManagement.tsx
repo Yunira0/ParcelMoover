@@ -8,10 +8,11 @@ import PageHeader from '../components/PageHeader';
 import Pagination from '../components/Pagination';
 import SegmentedTabs from '../components/SegmentedTabs';
 import StatusChip from '../components/StatusChip';
+import ToggleSwitch from '../components/ToggleSwitch';
 import Button from '../components/Button';
 import UserDocumentsModal from '../components/UserDocumentsModal';
 import KycManagement from './KycManagement';
-import { getVendors } from '../services/users.service';
+import { getVendors, updateUserStatus } from '../services/users.service';
 import { isAdminSide, isSalesUser, hasAnyRole, getCurrentUser, hasAdminPermission } from '../utils/auth';
 import './VendorManagement.css';
 
@@ -75,6 +76,32 @@ const VendorManagement: React.FC = () => {
   const [pageSizeChoice, setPageSizeChoice] = useState(PAGE_SIZE);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
+  // Rows with a status write in flight, so a row's own toggle disables without
+  // freezing the rest of the table.
+  const [statusSavingIds, setStatusSavingIds] = useState<Set<string>>(new Set());
+  const [statusError, setStatusError] = useState('');
+
+  // Optimistic: the switch moves immediately and rolls back if the write fails,
+  // matching how Rider and Admin management handle the same toggle.
+  const toggleVendorStatus = async (vendor: VendorUser) => {
+    const nextStatus = vendor.status === 'active' ? 'inactive' : 'active';
+    setStatusError('');
+    setStatusSavingIds(prev => new Set(prev).add(vendor.id));
+    setVendors(prev => prev.map(v => (v.id === vendor.id ? { ...v, status: nextStatus } : v)));
+    try {
+      await updateUserStatus('vendor', vendor.id, nextStatus);
+    } catch (err) {
+      console.error('Failed to update vendor status:', err);
+      setVendors(prev => prev.map(v => (v.id === vendor.id ? { ...v, status: vendor.status } : v)));
+      setStatusError(`Failed to set ${vendor.client} ${nextStatus}. Please try again.`);
+    } finally {
+      setStatusSavingIds(prev => {
+        const next = new Set(prev);
+        next.delete(vendor.id);
+        return next;
+      });
+    }
+  };
 
   const loadVendors = useCallback(async () => {
     try {
@@ -138,11 +165,29 @@ const VendorManagement: React.FC = () => {
     },
     {
       header: 'STATUS',
-      accessor: (item: VendorUser) => (
-        <StatusChip variant="solid" tone={item.status === 'active' ? 'success' : 'danger'}>
-          {item.status}
-        </StatusChip>
-      )
+      accessor: (item: VendorUser) => {
+        // Admin-only, deliberately. updateManagedUser stamps sales_edited_at
+        // whenever a pure-sales actor writes to a vendor, and refuses outright
+        // once it is set - so giving sales this switch would either spend their
+        // one-time vendor edit on a status flip or 403 after they'd already
+        // used it. That budget is meant for changing a vendor's details.
+        const canToggle = isAdmin;
+        return (
+          <div className="vendor-status-cell">
+            {canToggle && (
+              <ToggleSwitch
+                checked={item.status === 'active'}
+                disabled={statusSavingIds.has(item.id)}
+                onChange={() => toggleVendorStatus(item)}
+                ariaLabel={`Set ${item.client} ${item.status === 'active' ? 'inactive' : 'active'}`}
+              />
+            )}
+            <StatusChip variant="solid" tone={item.status === 'active' ? 'success' : 'danger'}>
+              {item.status}
+            </StatusChip>
+          </div>
+        );
+      }
     },
     // The API sends these as AD "YYYY-MM-DD"; every date shown in this app is BS.
     { header: 'JOINED', accessor: (v: VendorUser) => toBsDate(v.joined) || '—' },
@@ -265,6 +310,7 @@ const VendorManagement: React.FC = () => {
         <div className="loading-state">Loading vendors...</div>
       ) : (
         <>
+          {statusError && <p className="vendor-status-error">{statusError}</p>}
           <Table columns={columns} data={displayVendors} selectable={false} />
           <Pagination
             page={page}

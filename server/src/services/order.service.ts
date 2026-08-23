@@ -1772,7 +1772,11 @@ function buildOrdersWhere(
   scope: { vendorId: string | undefined; vendorIds?: string[] | undefined; riderId: string | undefined },
   query: ListOrdersQuery,
 ): Prisma.parcelsWhereInput {
-  const conditions: Prisma.parcelsWhereInput[] = [{ deleted_at: null }];
+  // The trash view is the one place that wants soft-deleted rows; everywhere
+  // else `deleted_at: null` is what keeps them hidden.
+  const conditions: Prisma.parcelsWhereInput[] = [
+    query.trashed ? { deleted_at: { not: null } } : { deleted_at: null },
+  ];
 
   if (scope.vendorId) {
     conditions.push({ vendor_id: scope.vendorId });
@@ -1938,6 +1942,49 @@ export async function getOrderFilterOptions(
     destinations: Array.from(destinations),
     riders: Array.from(riders),
   };
+}
+
+/** Per-status totals for the orders list page's tab badges. */
+export type OrderCountsByStatus = Record<ParcelStatus, number>;
+
+// Every list filter except `status`, each also accepting an explicit
+// `undefined` — the controller forwards a parsed query object wholesale, and
+// under exactOptionalPropertyTypes a plain `Omit<ListOrdersQuery, "status">`
+// would reject the absent-but-present keys that produces.
+export type OrderCountsByStatusFilters = {
+  [K in keyof Omit<ListOrdersQuery, "status">]?: ListOrdersQuery[K] | undefined;
+};
+
+// Counts every status in one grouped query rather than one COUNT per tab.
+// The list page's tabs are overlapping status groups (failed_delivery is in
+// both Inprogress and Failed; Return process is a subset of RTV), so summing
+// per-status numbers on the caller's side is both cheaper and the only way to
+// get those overlaps right — a per-tab COUNT would double-count nothing but
+// would need one round trip per tab to say so.
+export async function getOrderCountsByStatus(
+  actor: OrderActor,
+  query: OrderCountsByStatusFilters = {},
+): Promise<OrderCountsByStatus> {
+  const { vendorId, vendorIds, riderId } = await getActorScope(actor);
+  // `status` is deliberately left out: the group-by supplies it per row.
+  const where = buildOrdersWhere({ vendorId, vendorIds, riderId }, query as ListOrdersQuery);
+
+  const rows = await prisma.parcels.groupBy({
+    by: ["status"],
+    where,
+    _count: { _all: true },
+  });
+
+  // Seed every status at 0 so a tab with no orders renders "0" instead of
+  // dropping its badge the moment the last order leaves that status. Seeded
+  // from the Prisma enum so a status added to the schema can't be missed here.
+  const counts = Object.fromEntries(
+    Object.values(parcel_status).map((status) => [status, 0]),
+  ) as OrderCountsByStatus;
+  for (const row of rows) {
+    counts[row.status as ParcelStatus] = row._count._all;
+  }
+  return counts;
 }
 
 const ORDERS_INCLUDE = {
@@ -2301,10 +2348,12 @@ export async function listOrders(
   // Sales scope (vendorIds) is per-account and would collide with the shared
   // global cache key, so those queries skip the cache. A custom sort isn't
   // encoded in the cache key either, so it also has to skip the cache.
+  // `trashed` is excluded too: it isn't part of the cache key, so without this
+  // a trash listing would both read and overwrite the live orders cache.
   const isDefaultUnfilteredQuery =
     !paginated && !query.status?.length && !query.orderType && !query.search &&
     !query.vendorId?.length && !query.deliveryRiderId && !query.sortBy &&
-    !query.deliveredToday && vendorIds === undefined;
+    !query.deliveredToday && !query.trashed && vendorIds === undefined;
   // Export requests (withArrival) skip the shared cache so the enriched rows
   // never pollute the lean list cache and vice-versa.
   const cacheKey =
@@ -5602,4 +5651,294 @@ export async function getStatusCounts(
     result[group] = statuses.reduce((sum, s) => sum + (statusMap.get(s) ?? 0), 0);
   }
   return result;
+}
+
+// ── Trash (soft-deleted orders) ──────────────────────────────────────────────
+// `deleted_at` has always been on parcels and filtered out of every read path;
+// these are the first writers of it. Nothing here is reachable by a vendor,
+// sales or rider actor - the routes are admin-only - so none of it re-checks
+// actor scope beyond what listOrders already applies.
+
+/** Cancelled orders older than this are swept into the trash automatically. */
+export const CANCELLED_TRASH_AFTER_DAYS = 7;
+
+async function loadParcelForTrash(parcelId: string, opts: { trashed: boolean }) {
+  const parcel = await prisma.parcels.findFirst({
+    where: { id: parcelId, deleted_at: opts.trashed ? { not: null } : null },
+    select: {
+      id: true, order_number: true, tracking_id: true, status: true, deleted_at: true,
+      vendor_id: true, delivery_rider_id: true,
+    },
+  });
+  if (!parcel) {
+    throw new AppError(
+      404,
+      opts.trashed ? "Order not found in trash" : "Order not found",
+    );
+  }
+  return parcel;
+}
+
+/**
+ * Soft-deletes one order: it leaves every list and lands in the trash.
+ *
+ * Cancelled only. An order still moving through the pipeline has riders, hubs
+ * and a vendor expecting it, and hiding it from every list mid-flight would
+ * strand all three - so the workflow has to be finished (or abandoned via
+ * cancel) before it can be filed away. That matches the automatic sweep, which
+ * also only ever picks up cancelled orders.
+ */
+export async function moveOrderToTrash(actor: OrderActor, parcelId: string) {
+  const parcel = await loadParcelForTrash(parcelId, { trashed: false });
+
+  if (parcel.status !== "cancelled") {
+    throw new AppError(
+      409,
+      "Only cancelled orders can be moved to the trash. Cancel this order first.",
+    );
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.parcels.update({
+      where: { id: parcel.id },
+      data: { deleted_at: new Date() },
+    });
+    await tx.audit_logs.create({
+      data: {
+        actor_id: actor.id,
+        entity_type: "parcel",
+        entity_id: parcel.id,
+        action: "TRASH_ORDER",
+        old_data: { deletedAt: null, status: parcel.status },
+        new_data: { deletedAt: new Date().toISOString(), trackingId: parcel.tracking_id },
+      },
+    });
+    // A soft-deleted parcel is out of the books (see syncParcelPostings, which
+    // reads deleted_at and reverses the COD and delivery-charge postings). It
+    // has to run inside the same transaction as the update, or the vendor
+    // balance disagrees with the list for as long as the gap lasts.
+    await syncParcelPostings(tx, [parcel.id], { actorId: actor.id, reason: "order moved to trash" });
+  });
+
+  await invalidateOrderCaches();
+  await invalidateTrashFinanceCaches(parcel);
+  return { id: parcel.id, trackingId: parcel.tracking_id };
+}
+
+// Trashing and restoring both change what a vendor owes and what a rider is
+// holding, so the finance views have to be re-read rather than served from the
+// cache the previous state populated.
+async function invalidateTrashFinanceCaches(parcel: { vendor_id: string | null; delivery_rider_id: string | null }) {
+  const jobs: Promise<unknown>[] = [];
+  if (parcel.vendor_id) jobs.push(invalidateVendorFinanceCache(parcel.vendor_id));
+  if (parcel.delivery_rider_id) jobs.push(invalidateRiderFinanceCache(parcel.delivery_rider_id));
+  await Promise.all(jobs).catch((err) => console.error("[Redis] cache invalidation failed:", err));
+}
+
+/**
+ * The stages a trashed order may be restored into.
+ *
+ * This is the one sanctioned way past STATUS_TRANSITIONS. A trashed order is
+ * usually cancelled, and `cancelled` is terminal - deliberately, so nothing in
+ * the normal workflow can un-cancel an order. Restoring from the trash is the
+ * exception: it is admin-only, one order at a time, and audited, so an operator
+ * putting a wrongly-cancelled parcel back into the pipeline doesn't need the
+ * rule relaxed for every screen in the app. It stays enforced everywhere else.
+ */
+export const TRASH_RESTORE_STAGES = ["pickup_ordered", "ready_to_deliver"] as const;
+export type TrashRestoreStage = (typeof TRASH_RESTORE_STAGES)[number];
+
+/**
+ * Puts a trashed order back into the live lists, at `restoreTo`.
+ *
+ * Writes the status change itself rather than delegating to updateParcelStatus:
+ * that function enforces STATUS_TRANSITIONS, which is exactly what this has to
+ * step around, and adding a bypass flag to it would put the escape hatch on
+ * every caller in the app instead of this one. The side effects that matter for
+ * a parcel re-entering at pickup or delivery are reproduced here - history row,
+ * audit row, vendor webhook, ledger sync, cache invalidation.
+ */
+export async function restoreOrderFromTrash(
+  actor: OrderActor,
+  parcelId: string,
+  restoreTo: TrashRestoreStage,
+) {
+  if (!TRASH_RESTORE_STAGES.includes(restoreTo)) {
+    throw new AppError(400, `restoreTo must be one of: ${TRASH_RESTORE_STAGES.join(", ")}`);
+  }
+  const parcel = await loadParcelForTrash(parcelId, { trashed: true });
+
+  await prisma.$transaction(async (tx) => {
+    await tx.parcels.update({
+      where: { id: parcel.id },
+      data: { deleted_at: null, status: restoreTo },
+    });
+    // The timeline has to show where the parcel went and that it was a restore,
+    // not a silent jump from "cancelled" to "pickup ordered".
+    await tx.parcel_status_history.create({
+      data: {
+        parcel_id: parcel.id,
+        old_status: parcel.status,
+        new_status: restoreTo,
+        changed_by: actor.id,
+        remarks: `Restored from trash — ${parcel.status} → ${restoreTo}`.slice(0, 500),
+      },
+    });
+    await tx.audit_logs.create({
+      data: {
+        actor_id: actor.id,
+        entity_type: "parcel",
+        entity_id: parcel.id,
+        action: "RESTORE_ORDER",
+        old_data: { deletedAt: parcel.deleted_at?.toISOString() ?? null, status: parcel.status },
+        new_data: { deletedAt: null, status: restoreTo, trackingId: parcel.tracking_id },
+      },
+    });
+    // Vendors track parcels through this event; a restore that skipped it would
+    // leave their systems believing the order was still cancelled.
+    if (parcel.vendor_id) {
+      await emitWebhookEvent(tx, parcel.vendor_id, "order.status_changed", {
+        trackingId: parcel.tracking_id,
+        orderId: parcel.id,
+        vendorId: parcel.vendor_id,
+        oldStatus: parcel.status,
+        newStatus: restoreTo,
+        changedAt: new Date().toISOString(),
+      });
+    }
+    // The mirror of the trash case: the parcel is back in the vendor balance,
+    // so its COD and delivery-charge postings have to be re-derived. Without
+    // this a restored order shows in every list but contributes nothing to
+    // finance, which is the harder half of the bug to notice.
+    await syncParcelPostings(tx, [parcel.id], { actorId: actor.id, reason: "order restored from trash" });
+  });
+
+  await invalidateOrderCaches();
+  await invalidateTrashFinanceCaches(parcel);
+  return { id: parcel.id, trackingId: parcel.tracking_id };
+}
+
+/**
+ * Reports why an order can't be hard-deleted, or null when it's safe to.
+ * A parcel with accounting postings can't be deleted at all - journal_lines
+ * references it ON DELETE NO ACTION, so Postgres rejects the delete outright -
+ * and one with COD records would have them silently cascaded away, taking
+ * money movement with it. Both are refused rather than surfaced as a database
+ * error or an accidental write-off.
+ */
+export async function getPermanentDeleteBlocker(parcelId: string): Promise<string | null> {
+  const [journalLines, codCollections] = await Promise.all([
+    prisma.journal_lines.count({ where: { parcel_id: parcelId } }),
+    prisma.cod_collections.count({ where: { parcel_id: parcelId } }),
+  ]);
+  if (journalLines > 0) {
+    return "This order has accounting entries and cannot be deleted. It can stay in the trash instead.";
+  }
+  if (codCollections > 0) {
+    return "This order has COD records and cannot be deleted. It can stay in the trash instead.";
+  }
+  return null;
+}
+
+/**
+ * Permanently removes a trashed order. Only ever called for parcels that carry
+ * no financial history (see getPermanentDeleteBlocker); the remaining children
+ * - remarks, status history, dispatch/run-sheet/manifest links, exceptions,
+ * redirects, pickup tasks - are all ON DELETE CASCADE and go with it.
+ */
+export async function deleteOrderPermanently(actor: OrderActor, parcelId: string) {
+  const parcel = await loadParcelForTrash(parcelId, { trashed: true });
+
+  const blocker = await getPermanentDeleteBlocker(parcel.id);
+  if (blocker) throw new AppError(409, blocker);
+
+  await prisma.$transaction(async (tx) => {
+    // Written before the delete: audit_logs.entity_id has no FK to parcels, but
+    // the row it describes must not outlive the record of its removal.
+    await tx.audit_logs.create({
+      data: {
+        actor_id: actor.id,
+        entity_type: "parcel",
+        entity_id: parcel.id,
+        action: "DELETE_ORDER_PERMANENTLY",
+        old_data: {
+          orderNumber: parcel.order_number,
+          trackingId: parcel.tracking_id,
+          status: parcel.status,
+          deletedAt: parcel.deleted_at?.toISOString() ?? null,
+        },
+        new_data: Prisma.JsonNull,
+      },
+    });
+    await tx.parcels.delete({ where: { id: parcel.id } });
+  });
+
+  await invalidateOrderCaches();
+  return { id: parcel.id, trackingId: parcel.tracking_id };
+}
+
+/**
+ * Moves cancelled orders into the trash once they've sat cancelled for
+ * CANCELLED_TRASH_AFTER_DAYS. "Cancelled at" is the newest parcel_status_history
+ * row that landed on `cancelled`, falling back to updated_at for a parcel with
+ * no history - the same shape buildOrdersWhere uses for lastUpdatedAt.
+ * Idempotent: already-trashed parcels are excluded by `deleted_at: null`.
+ */
+export async function sweepCancelledOrdersToTrash(): Promise<{ checked: number; trashed: number }> {
+  const cutoff = new Date(Date.now() - CANCELLED_TRASH_AFTER_DAYS * 24 * 60 * 60 * 1000);
+
+  const candidates = await prisma.parcels.findMany({
+    where: {
+      status: "cancelled",
+      deleted_at: null,
+      OR: [
+        {
+          parcel_status_history: {
+            some: { new_status: "cancelled", created_at: { lt: cutoff } },
+            none: { created_at: { gte: cutoff } },
+          },
+        },
+        {
+          parcel_status_history: { none: {} },
+          updated_at: { lt: cutoff },
+        },
+      ],
+    },
+    select: { id: true, vendor_id: true, delivery_rider_id: true },
+    take: 500,
+  });
+
+  if (candidates.length === 0) return { checked: 0, trashed: 0 };
+
+  const ids = candidates.map((c) => c.id);
+  const now = new Date();
+  const result = await prisma.$transaction(async (tx) => {
+    const updated = await tx.parcels.updateMany({
+      where: { id: { in: ids }, deleted_at: null },
+      data: { deleted_at: now },
+    });
+    await tx.audit_logs.createMany({
+      data: ids.map((id) => ({
+        entity_type: "parcel",
+        entity_id: id,
+        action: "TRASH_ORDER_AUTO",
+        new_data: {
+          reason: `cancelled for more than ${CANCELLED_TRASH_AFTER_DAYS} days`,
+          trashedAt: now.toISOString(),
+        },
+      })),
+    });
+    return updated.count;
+  });
+
+  if (result > 0) {
+    await invalidateOrderCaches();
+    // Async for the same reason bulk status changes are: posting a batch of up
+    // to 500 parcels inside the sweep's transaction would hold it far too long.
+    syncParcelPostingsAsync(ids, { reason: "cancelled orders swept to trash" });
+    await Promise.all(
+      candidates.map((c) => invalidateTrashFinanceCaches(c)),
+    );
+  }
+  return { checked: candidates.length, trashed: result };
 }
