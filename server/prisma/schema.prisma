@@ -1252,6 +1252,13 @@ model ledger_accounts {
   /// accounts, but stored so a contra account (natural side flipped against its
   /// type) can exist later without a schema change.
   normal_side    ledger_normal_side
+  /// What this account is - a fixed asset, a current liability, a direct
+  /// expense. The only classification anyone picks: `type` above is derived
+  /// from this one, because nobody decides "expense" first and then which
+  /// kind. A closed set rather than a named group account, because two
+  /// people naming their own groups spell the same section two ways. Null
+  /// only on rows that predate the column.
+  sub_type       ledger_account_sub_type?
   parent_id      String?             @db.Uuid
   /// A control account is only ever posted to with a party attached, so its
   /// balance decomposes into a per-party subledger (cash held by each rider,
@@ -1272,6 +1279,7 @@ model ledger_accounts {
 
   @@index([parent_id], map: "idx_ledger_accounts_parent_id")
   @@index([type, code], map: "idx_ledger_accounts_type_code")
+  @@index([type, sub_type, code], map: "idx_ledger_accounts_type_sub_type")
 }
 
 /// One balanced transaction: sum(debit) = sum(credit) across its lines,
@@ -1445,6 +1453,22 @@ enum ledger_account_type {
 enum ledger_normal_side {
   debit
   credit
+}
+
+/// What an account is. The only classification anyone picks; `type` is
+/// derived from it, and is what the reports group by.
+enum ledger_account_sub_type {
+  fixed_asset
+  intangible_asset
+  current_asset
+  long_term_liability
+  current_liability
+  capital
+  reserves
+  direct_income
+  indirect_income
+  direct_expense
+  indirect_expense
 }
 
 enum journal_entry_status {

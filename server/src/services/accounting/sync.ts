@@ -18,12 +18,10 @@
 //
 // Together those mean: try hard, never throw at the caller, always leave a
 // trail.
-import type { Prisma } from "../../generated/prisma/client";
+import { Prisma } from "../../generated/prisma/client";
 import prisma from "../../lib/prisma";
 import { AppError } from "../../utils/AppError";
 import {
-  describeCodCollected,
-  describeDeliveryChargeEarned,
   describeExpense,
   describeRiderRemittance,
   describeVendorPaymentVerified,
@@ -36,7 +34,9 @@ import {
 } from "./events";
 import { loadMethodAccounts } from "./accounts";
 import { syncPosting, type SyncResult } from "./posting.service";
-import { BALANCE_AFFECTING_STATUSES } from "../billing.service";
+import { isReturnLeg } from "../money-rules";
+
+const { Decimal } = Prisma;
 
 type Db = Prisma.TransactionClient | typeof prisma;
 
@@ -115,91 +115,6 @@ async function run(
   });
 }
 
-// ── Parcels ─────────────────────────────────────────────────────────────────
-
-const PARCEL_POSTING_SELECT = {
-  id: true,
-  vendor_id: true,
-  tracking_id: true,
-  delivery_charge: true,
-  status: true,
-  order_type: true,
-  delivered_at: true,
-  updated_at: true,
-  deleted_at: true,
-  destination_location_id: true,
-  vendors: { select: { client_name: true, business_name: true } },
-  // Names the customer on a parcel booked without a vendor.
-  parties_parcels_sender_idToparties: { select: { name: true } },
-  cod_collections: {
-    select: {
-      id: true,
-      parcel_id: true,
-      vendor_id: true,
-      rider_id: true,
-      collected_amount: true,
-      collected_at: true,
-      created_at: true,
-      // Joined so the entry memo can name the rider instead of saying
-      // "on delivery" over and over.
-      riders: { select: { name: true } },
-    },
-  },
-} as const;
-
-/**
- * Brings a parcel's two postings - the COD it collected and the charge it
- * earned - into line with what the parcel row now says.
- *
- * This is the function that makes the ledger survive the messy parts of
- * operations. Every one of these is handled by the same call, with no special
- * case at the call site:
- *
- *   - delivered                    both postings appear
- *   - un-delivered back to transit both are reversed
- *   - partial COD amount corrected the COD posting is restated at the new figure
- *   - parcel soft-deleted          both are reversed, matching billing.service,
- *                                  which scopes a vendor's balance to live parcels
- *   - status changed with no money nothing is written at all
- *
- * Callers just say "this parcel changed".
- */
-export async function syncParcelPostings(
-  db: Db,
-  parcelIds: string[],
-  options: SyncOptions = {},
-): Promise<SyncSummary> {
-  const summary = noChange();
-  const ids = Array.from(new Set(parcelIds.filter(Boolean)));
-  if (ids.length === 0) return summary;
-
-  const parcels = await db.parcels.findMany({ where: { id: { in: ids } }, select: PARCEL_POSTING_SELECT });
-
-  for (const parcel of parcels) {
-    // A soft-deleted parcel is out of the books entirely, because it is out of
-    // the vendor balance the books have to agree with.
-    const live = parcel.deleted_at === null;
-    const collection = parcel.cod_collections;
-
-    if (collection) {
-      const desired = live
-        ? resolve(() => describeCodCollected(collection), `COD on ${parcel.tracking_id}`)
-        : null;
-      record(summary, await run(db, "cod", SOURCE.codCollected(collection.id), EVENT_KEY.codCollected, desired, options));
-    }
-
-    const chargeDesired = live
-      ? resolve(() => describeDeliveryChargeEarned(parcel), `delivery charge on ${parcel.tracking_id}`)
-      : null;
-    record(
-      summary,
-      await run(db, "charge", SOURCE.deliveryCharge(parcel.id), EVENT_KEY.deliveryCharge, chargeDesired, options),
-    );
-  }
-
-  return summary;
-}
-
 // ── Settlements ─────────────────────────────────────────────────────────────
 
 const SETTLEMENT_POSTING_SELECT = {
@@ -212,20 +127,36 @@ const SETTLEMENT_POSTING_SELECT = {
   payable_amount: true,
   payment_method: true,
   payments: true,
+  paid_amount: true,
   settlement_date: true,
   updated_at: true,
   status: true,
   riders: { select: { name: true } },
   vendors: { select: { client_name: true, business_name: true } },
+  // The statement's parcels, purely to split the office's cut between delivery
+  // and return revenue. The *total* cut is taken from the statement itself
+  // (gross minus payable), so a missing or stale item here shifts which revenue
+  // account a rupee lands in - never whether the entry balances.
+  settlement_items: {
+    select: {
+      cod_collections: {
+        select: { parcels: { select: { status: true, order_type: true, delivery_charge: true } } },
+      },
+    },
+  },
 } as const;
 
 /**
  * Brings a settlement's posting into line.
  *
- * Only a `settled` statement posts anything. A pending statement has earmarked
- * some orders but moved no money, so posting it would claim a payment that has
- * not happened - and a statement edited back out of `settled`, or edited while
- * pending, reverses cleanly for the same reason.
+ * A statement is the money event in this ledger - the only one on the COD side.
+ * Creating it posts the whole cycle at once: COD comes off the float the rider
+ * remittances built up, the office's cut becomes revenue, the rest goes to the
+ * vendor. Nothing was posted while the parcels were being delivered, so there
+ * is nothing here to net against.
+ *
+ * Every status except `cancelled` posts. A cancelled statement moved no money
+ * and reverses cleanly, as does one deleted outright.
  */
 export async function syncSettlementPostings(
   db: Db,
@@ -244,13 +175,13 @@ export async function syncSettlementPostings(
   ]);
 
   for (const row of settlements) {
-    const settlement = { ...row, methodAccounts };
+    const settlement = { ...row, methodAccounts, return_charges: returnChargesOn(row) };
     const isRider = settlement.payee_type === "rider";
     const eventKey = isRider ? EVENT_KEY.riderRemittance : EVENT_KEY.vendorSettlement;
     const label = `settlement ${settlement.statement_id}`;
 
     const desired =
-      settlement.status === "settled"
+      settlement.status !== "cancelled"
         ? resolve(
             () => (isRider ? describeRiderRemittance(settlement) : describeVendorSettlement(settlement)),
             label,
@@ -261,6 +192,19 @@ export async function syncSettlementPostings(
   }
 
   return summary;
+}
+
+/** How much of a statement's withheld charges came from return legs. */
+function returnChargesOn(settlement: {
+  settlement_items: Array<{
+    cod_collections: { parcels: { status: string; order_type: string; delivery_charge: Prisma.Decimal } | null } | null;
+  }>;
+}): Prisma.Decimal {
+  return settlement.settlement_items.reduce((total, item) => {
+    const parcel = item.cod_collections?.parcels;
+    if (!parcel || !isReturnLeg(parcel)) return total;
+    return total.plus(parcel.delivery_charge ?? 0);
+  }, new Decimal(0));
 }
 
 // ── Vendor payments ─────────────────────────────────────────────────────────
@@ -381,58 +325,48 @@ export function syncInBackground(work: () => Promise<unknown>, label: string): v
   });
 }
 
-export function syncParcelPostingsAsync(parcelIds: string[], options: SyncOptions = {}): void {
-  if (parcelIds.length === 0) return;
-  syncInBackground(() => syncParcelPostings(prisma, parcelIds, options), `${parcelIds.length} parcel(s)`);
-}
 
 // ── The sweep that closes the window ────────────────────────────────────────
 
-/** Parcels per syncParcelPostings call. Small enough that one bad row costs little. */
+/** Statements per sync call. Small enough that one bad row costs little. */
 const SWEEP_CHUNK = 25;
 
 export interface SweepResult {
   considered: number;
   /** Entries written, reversed or restated - i.e. gaps the live path left. */
   repaired: number;
-  /** Parcels the sweep could not settle: an unreadable row, or a chunk that threw. */
+  /** Statements the sweep could not settle: an unreadable row, or a chunk that threw. */
   failed: number;
 }
 
 /**
- * Re-syncs recently-touched money parcels, catching anything the fire-and-forget
- * path dropped.
+ * Re-syncs recently-touched statements, catching anything a live path dropped.
  *
- * This is the other half of syncParcelPostingsAsync. That function is allowed to
- * fail because an operational write must never be held hostage to a journal
- * entry; what makes that acceptable rather than reckless is something coming
- * along afterwards to notice. Without this, a bulk scan whose posting threw is
- * lost until someone runs a script by hand - which is to say, lost.
+ * The failure this exists for is not a crashed transaction - it is a mutator
+ * that forgets to call syncSettlementPostings at all. revertSettlement did
+ * exactly that, and because the old sweep only looked at parcels, nothing ever
+ * noticed. So the candidates come from `updated_at` on the settlements table
+ * rather than from any list of call sites: a statement that changed gets
+ * re-synced whether or not the code that changed it remembered to ask.
  *
- * Deliberately not a drift *detector*. Working out in SQL which parcels ought to
- * have an entry would mean restating the rules that already live in events.ts,
- * and two copies of a money rule is how a ledger starts lying. Instead it simply
- * re-runs the authority over a bounded window: syncPosting compares what is
- * posted against what should be and answers "unchanged" for everything already
- * correct, so a sweep over healthy data writes nothing.
+ * Deliberately not a drift *detector*. Working out in SQL which statements
+ * ought to have an entry would mean restating the rules that already live in
+ * events.ts, and two copies of a money rule is how a ledger starts lying.
+ * Instead it re-runs the authority over a bounded window: syncPosting compares
+ * what is posted against what should be and answers "unchanged" for everything
+ * already correct, so a sweep over healthy data writes nothing.
+ *
+ * No status filter, deliberately. A statement moving *out* of settled needs its
+ * entry reversed, which means the sweep has to see it.
  *
  * Bounded twice over - by the window and by `limit` - because this runs on a
  * timer and an unbounded sweep is a self-inflicted outage waiting for a busy day.
  */
-export async function sweepParcelPostings(
+export async function sweepSettlementPostings(
   options: { since: Date; limit: number } = { since: new Date(Date.now() - 60 * 60 * 1000), limit: 500 },
 ): Promise<SweepResult> {
-  // Candidates are parcels whose money could have moved: one at a
-  // balance-affecting status, or one carrying collected COD (which covers a
-  // parcel just moved *out* of delivered, where the entry needs reversing).
-  const candidates = await prisma.parcels.findMany({
-    where: {
-      updated_at: { gte: options.since },
-      OR: [
-        { status: { in: [...BALANCE_AFFECTING_STATUSES] } },
-        { cod_collections: { collected_amount: { gt: 0 } } },
-      ],
-    },
+  const candidates = await prisma.settlements.findMany({
+    where: { updated_at: { gte: options.since } },
     select: { id: true },
     orderBy: { updated_at: "asc" },
     take: options.limit,
@@ -442,17 +376,26 @@ export async function sweepParcelPostings(
   let failed = 0;
 
   for (let index = 0; index < candidates.length; index += SWEEP_CHUNK) {
-    const chunk = candidates.slice(index, index + SWEEP_CHUNK).map((parcel) => parcel.id);
+    const chunk = candidates.slice(index, index + SWEEP_CHUNK).map((settlement) => settlement.id);
     try {
+      // In a transaction, and this is not optional. The balance trigger is
+      // DEFERRABLE INITIALLY DEFERRED, which defers it to the end of the
+      // enclosing transaction - and with no enclosing transaction that means
+      // the end of the INSERT's own implicit one, before a single line has been
+      // written. Every posting would fail with "0 lines".
+      //
       // The sync already knows what it changed, so the sweep asks it rather
       // than counting entries either side of the call - two queries per chunk
       // to rediscover a number that was in hand.
-      const summary = await syncParcelPostings(prisma, chunk, { reason: "ledger sweep" });
+      const summary = await prisma.$transaction(
+        (tx) => syncSettlementPostings(tx, chunk, { reason: "ledger sweep" }),
+        { timeout: 120_000, maxWait: 30_000 },
+      );
       repaired += summary.changed;
       failed += summary.unresolved;
     } catch (error) {
       failed += chunk.length;
-      console.error(`[Ledger] Sweep chunk failed (${chunk.length} parcel(s)):`, error);
+      console.error(`[Ledger] Sweep chunk failed (${chunk.length} statement(s)):`, error);
     }
   }
 

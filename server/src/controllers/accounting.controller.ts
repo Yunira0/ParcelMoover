@@ -24,6 +24,7 @@ import {
   type RangeQuery,
   type TransactionQuery,
 } from "../services/accounting/accounting.service";
+import { createAccount, listChart, updateAccount } from "../services/accounting/masters.service";
 
 function fail(res: Response, error: any, fallback: string) {
   return res.status(error?.statusCode || 500).json({
@@ -279,5 +280,31 @@ export async function reverseEntryController(req: Request, res: Response) {
     return ok(res, await reverseEntry(req.user!, req.params.id as string, req.body.reason ?? ""));
   } catch (error) {
     return fail(res, error, "Failed to reverse the journal entry");
+  }
+}
+
+// ── Masters ─────────────────────────────────────────────────────────────────
+
+export async function listChartController(_req: Request, res: Response) {
+  try {
+    return ok(res, await listChart());
+  } catch (error) {
+    return fail(res, error, "Failed to load the chart of accounts");
+  }
+}
+
+export async function createAccountController(req: Request, res: Response) {
+  try {
+    return res.status(201).json({ success: true, data: await createAccount(req.body) });
+  } catch (error) {
+    return fail(res, error, "Failed to create the account");
+  }
+}
+
+export async function updateAccountController(req: Request, res: Response) {
+  try {
+    return ok(res, await updateAccount(req.params.code as string, req.body));
+  } catch (error) {
+    return fail(res, error, "Failed to update the account");
   }
 }

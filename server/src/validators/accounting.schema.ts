@@ -139,3 +139,56 @@ export const createManualEntrySchema = z
 export const reverseEntrySchema = z.object({
   reason: z.string().trim().min(3, "Say why this entry is being reversed").max(500),
 });
+
+// ── Masters ─────────────────────────────────────────────────────────────────
+
+const ACCOUNT_TYPES = ["asset", "liability", "equity", "revenue", "expense"] as const;
+const NORMAL_SIDES = ["debit", "credit"] as const;
+const PARTY_TYPES = ["vendor", "rider", "payment_method", "location", "user"] as const;
+// What an account is - the only classification a caller picks. `type` and
+// `normalSide` are derived from it by masters.service, which is also where a
+// contradicting `type` is rejected: that check needs both values and an error
+// message worth reading.
+const ACCOUNT_CLASSES = [
+  "fixed_asset",
+  "intangible_asset",
+  "current_asset",
+  "long_term_liability",
+  "current_liability",
+  "capital",
+  "reserves",
+  "direct_income",
+  "indirect_income",
+  "direct_expense",
+  "indirect_expense",
+] as const;
+
+export const createAccountSchema = z.object({
+  // Digits only: the chart sorts by code everywhere, and a code that is not a
+  // number sorts somewhere nobody expects.
+  code: z.string().trim().regex(/^\d{3,6}$/, "An account code is 3 to 6 digits, e.g. 1200"),
+  name: z.string().trim().min(2, "Give the account a name").max(120),
+  subType: z.enum(ACCOUNT_CLASSES),
+  // Both derived from `subType`. Still accepted so an existing caller keeps
+  // working, and checked against the class rather than silently dropped.
+  type: z.enum(ACCOUNT_TYPES).optional(),
+  normalSide: z.enum(NORMAL_SIDES).optional(),
+  parentCode: z.string().trim().regex(/^\d{3,6}$/).nullish(),
+  description: z.string().trim().max(500).nullish(),
+  isControl: z.boolean().optional(),
+  subledgerType: z.enum(PARTY_TYPES).nullish(),
+});
+
+export const updateAccountSchema = z
+  .object({
+    name: z.string().trim().min(2).max(120).optional(),
+    description: z.string().trim().max(500).nullish(),
+    parentCode: z.string().trim().regex(/^\d{3,6}$/).nullish(),
+    isActive: z.boolean().optional(),
+    // Accepted, but the service refuses them once anything has been posted -
+    // changing either reinterprets every existing line. See masters.service.ts.
+    type: z.enum(ACCOUNT_TYPES).optional(),
+    normalSide: z.enum(NORMAL_SIDES).optional(),
+    subType: z.enum(ACCOUNT_CLASSES).optional(),
+  })
+  .refine((body) => Object.keys(body).length > 0, { message: "Nothing to change" });

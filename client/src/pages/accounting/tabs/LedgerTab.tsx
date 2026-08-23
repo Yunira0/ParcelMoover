@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import StatCard from '../../../components/StatCard';
 import Table from '../../../components/Table';
 import FilterDropdown from '../../../components/FilterDropdown';
@@ -14,6 +14,7 @@ import {
   type AccountLedger as Ledger,
 } from '../../../services/accounting.service';
 import { apiErrorMessage } from '../../../utils/serverValidation';
+import { bsToAdDay, toBsDate } from '../../../utils/nepaliDate';
 import '../Accounting.css';
 
 // One account, its movements, and a running balance down the page. The oldest
@@ -26,6 +27,18 @@ const TYPE_LABELS: Record<string, string> = {
   equity: 'Equity',
   revenue: 'Revenue',
   expense: 'Expenses',
+};
+
+/**
+ * A timestamp from the server as the AD day the sheet's filters take.
+ *
+ * The round trip through BS is the point: it is what makes the day Nepal-local
+ * rather than the viewer's, so a window picked in Kathmandu does not shift by
+ * one when the same link is opened from another timezone.
+ */
+const adDay = (value: string | Date) => {
+  const [year, month, day] = toBsDate(value).split('-').map(Number);
+  return bsToAdDay(year, month - 1, day);
 };
 
 const LedgerTab: React.FC = () => {
@@ -145,6 +158,18 @@ const LedgerTab: React.FC = () => {
                 <h2>{ledger.account.name}</h2>
                 <p>{ledger.range.label} · {ledger.rows.length} movements</p>
               </div>
+
+              {/* The same ledger as the ruled sheet that gets printed and
+                  filed. The resolved window travels with it because that sheet
+                  reads from/to only — a period key would silently widen it.
+                  `range.to` is the exclusive end, so it steps back a moment to
+                  land on the last day that is actually in the window. */}
+              <Link
+                className="acc-link"
+                to={`/finance/ledger/${ledger.account.code}?from=${adDay(ledger.range.from)}&to=${adDay(new Date(new Date(ledger.range.to).getTime() - 1))}`}
+              >
+                Printable sheet
+              </Link>
             </div>
 
             <Table

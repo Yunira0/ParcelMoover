@@ -49,8 +49,12 @@ const JournalPage = lazy(() => import('./pages/accounting/JournalPage'))
 const LedgerReportPage = lazy(() => import('./pages/accounting/LedgerReportPage'))
 const PartySearchPage = lazy(() => import('./pages/accounting/PartySearchPage'))
 const AccountingPersonPage = lazy(() => import('./pages/accounting/AccountingPersonPage'))
+// The Tally-style accounting screens: ruled documents rather than dashboard
+// cards, with the same action panel on every one.
+const JournalVoucherPage = lazy(() => import('./pages/finance/JournalVoucherPage'))
+const LedgerSheetPage = lazy(() => import('./pages/finance/LedgerSheetPage'))
+const MastersPage = lazy(() => import('./pages/finance/MastersPage'))
 const SettlementPayPage = lazy(() => import('./pages/SettlementPayPage'))
-const FinanceManagement = lazy(() => import('./pages/FinanceManagement'))
 const DeliveryRateSettings = lazy(() => import('./pages/DeliveryRateSettings'))
 const Settings = lazy(() => import('./pages/settings/Settings'))
 const SlaSettings = lazy(() => import('./pages/SlaSettings'))
@@ -195,13 +199,12 @@ function App() {
           {/* COD Management was this page's rider/vendor toggle; both halves now
               live on their own Finance entry. */}
           <Route path="/finance" element={<CodManagementRedirect />} />
-          {/* The pre-reorg Finance screen, kept reachable after the merge with
-              upstream rather than sitting dead: /finance itself belongs to the
-              redirect above, so this keeps its own path. */}
-          <Route
-            path="/finance/legacy"
-            element={<RoleGuard allowedRoles={['super_admin', 'admin']}><FinanceManagement /></RoleGuard>}
-          />
+          {/* The pre-reorg Finance screen is gone. It was a second copy of the
+              settlement list — same endpoint, same columns — kept reachable
+              after a merge, and it duplicated every change made to the real
+              one. Its status, date-range and page-size filters moved to
+              SettlementsTab, which is what these two now land on. */}
+          <Route path="/finance/legacy" element={<CodManagementRedirect />} />
           <Route
             path="/reports"
             element={<RoleGuard allowedRoles={['super_admin', 'admin']}><ReportsPage /></RoleGuard>}
@@ -380,6 +383,25 @@ function App() {
           <Route
             path="/accounting/ledgers/account"
             element={<RoleGuard allowedRoles={['super_admin', 'admin']} adminPermission="ACCOUNTING_ACCESS"><LedgerReportPage view="account" /></RoleGuard>}
+          />
+
+          {/* The Tally-style screens. A voucher and a ledger sheet are both
+              documents that get printed and filed, so they are laid out as the
+              forms they replace rather than as dashboard tables. */}
+          <Route
+            path="/finance/voucher/:id"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']} adminPermission="ACCOUNTING_ACCESS"><JournalVoucherPage /></RoleGuard>}
+          />
+          <Route
+            path="/finance/ledger/:code"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']} adminPermission="ACCOUNTING_ACCESS"><LedgerSheetPage /></RoleGuard>}
+          />
+          {/* Masters. Creating and editing accounts is a super-admin job: an
+              account's type and normal side reinterpret every entry ever posted
+              to it, so this is not a grant to hand out with the books. */}
+          <Route
+            path="/finance/masters"
+            element={<RoleGuard allowedRoles={['super_admin']}><MastersPage /></RoleGuard>}
           />
 
           {/* Reached by drilling from a ledger, never from the nav. */}

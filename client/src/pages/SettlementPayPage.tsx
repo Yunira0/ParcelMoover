@@ -122,7 +122,12 @@ const SettlementPayPage: React.FC = () => {
   const isOver = shortfall < 0;
   const isSubmittable =
     !isOver && (amountMode === 'full' ? clearsStatement : enteredAmount > 0 || outstanding === 0);
-  const hasBankDetails = Boolean(detail?.bankName || detail?.bankAccountNo || detail?.bankAccountHolder);
+  // Vendors only. Bank details are here so whoever makes the transfer can read
+  // off where to send it — on a rider statement the money is coming *in* over
+  // the counter, so the rider's account is not part of the transaction.
+  const hasBankDetails =
+    detail?.payeeType === 'vendor' &&
+    Boolean(detail.bankName || detail.bankAccountNo || detail.bankAccountHolder);
 
   useEffect(() => {
     let active = true;

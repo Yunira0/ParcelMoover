@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { ChevronDown, ChevronRight, Undo2, X } from 'lucide-react';
 import Button from '../../../components/Button';
 import Table from '../../../components/Table';
@@ -260,7 +260,13 @@ const JournalTab: React.FC<JournalTabProps> = ({ newEntryOpen, onNewEntryClose }
             width: '160px',
             accessor: (entry) => (
               <>
-                <span className="acc-entry-no">{entry.entryNo}</span>
+                {/* The voucher number is the way into the printable voucher:
+                    the expander opens the lines in place, which answers "what
+                    was this?"; the number opens the document that gets printed
+                    and signed. */}
+                <Link className="acc-entry-no" to={`/finance/voucher/${entry.id}`}>
+                  {entry.entryNo}
+                </Link>
                 {entry.reversalOfNo && <span className="acc-sub">reverses {entry.reversalOfNo}</span>}
                 {/* Only worth a chip when it is not the ordinary case. */}
                 {entry.status !== 'posted' && <EntryStatusChip status={entry.status} />}

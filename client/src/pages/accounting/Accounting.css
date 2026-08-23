@@ -143,6 +143,19 @@
 
 /* ── Ledger cells ────────────────────────────────────────────────────────── */
 
+/* Wider gutters than the shared table's 8px.
+ *
+ * These tables put a right-aligned figure directly beside a left-aligned date,
+ * so the two columns meet in the middle and 8px + 8px is not enough air to read
+ * them as separate values — "Rs. 1,000.00 2083-04-23" runs together. Everywhere
+ * else in the app the columns are all left-aligned and the tighter default is
+ * fine, so this is scoped to the accounting pages rather than changed globally. */
+.acc-page .custom-table th,
+.acc-page .custom-table td {
+  padding-right: var(--space-4);
+  padding-left: var(--space-4);
+}
+
 /* Every figure column: aligned right, tabular, so columns of numbers line up
    digit for digit - the entire point of a ledger. */
 .acc-num {
@@ -186,6 +199,9 @@ th.acc-num {
   font-size: var(--font-size-xs);
   line-height: var(--line-height-xs);
   color: var(--color-text-primary);
+  /* An identifier is one token. Wrapping "STM-R-260808-9ZG3QX" after the second
+     hyphen makes it read as two codes and pushes the row to two lines high. */
+  white-space: nowrap;
 }
 
 .acc-link {
@@ -210,6 +226,25 @@ th.acc-num {
   font-weight: var(--font-weight-regular);
   line-height: var(--line-height-xs);
   color: var(--color-text-caption);
+}
+
+/* Several lines in one cell that are all equally important — a payment split
+   across methods, a bank name over its account number.
+ *
+ * Deliberately not `acc-sub`, which drops to --font-size-xs in caption grey.
+ * That is right for a *subordinate* line (a party name under an account, a
+ * memo under an entry) and wrong here: these lines are the column's content,
+ * not a footnote to it, and rendering them smaller made Payment and Bank
+ * details read as a different class of information from every other column.
+ *
+ * So this sets no font-size and no colour: both inherit from the table cell,
+ * which is the whole point. */
+.acc-stack {
+  display: block;
+}
+
+.acc-stack + .acc-stack {
+  margin-top: var(--space-1);
 }
 
 /* ── Journal entry lines ─────────────────────────────────────────────────── */
@@ -472,4 +507,17 @@ th.acc-num {
 .acc-payee-filter .searchable-select {
   flex: 1;
   min-width: 0;
+}
+
+/* The voucher number doubles as the link to the printable voucher. It keeps the
+   mono token styling — `.acc-link` would reset `font` and turn the identifier
+   back into body text — so only the pointer and the hover rule say it is
+   clickable. */
+a.acc-entry-no {
+  cursor: pointer;
+  text-decoration: none;
+}
+
+a.acc-entry-no:hover {
+  text-decoration: underline;
 }

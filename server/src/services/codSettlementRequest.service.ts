@@ -163,6 +163,27 @@ export async function createCodSettlementRequest(actor: Actor, input: CreateCodS
     );
   }
 
+  // Where the money goes is read off the vendor record, never taken from the
+  // request body.
+  //
+  // It used to be per-request, so a vendor could name any account they liked.
+  // That is the exact shape of a payment-redirection fraud: anyone who gets
+  // into a vendor's account raises a request pointing at their own bank, and
+  // there is nothing on the vendor record to compare it against. The form is
+  // read-only now, but a form is a suggestion - this is what makes it true.
+  // Changing a payout destination is a profile change, which is reviewed.
+  const bank = await prisma.vendors.findUnique({
+    where: { id: vendorId },
+    select: { bank_name: true, bank_account_no: true, bank_account_holder: true },
+  });
+
+  if (!bank?.bank_name?.trim() || !bank.bank_account_no?.trim() || !bank.bank_account_holder?.trim()) {
+    throw new AppError(
+      400,
+      "There are no bank details on your profile to send a payout to. Contact us to have them added, then raise your request.",
+    );
+  }
+
   // Context for whoever reviews it. Best-effort: a request is still worth
   // raising if the balance service is briefly unavailable, so a failure here
   // must not cost the vendor their request.
@@ -179,9 +200,9 @@ export async function createCodSettlementRequest(actor: Actor, input: CreateCodS
       data: {
         request_no: generateRequestNo(),
         vendor_id: vendorId,
-        bank_name: input.bankName.trim(),
-        account_number: input.accountNumber.trim(),
-        account_name: input.accountName.trim(),
+        bank_name: bank.bank_name.trim(),
+        account_number: bank.bank_account_no.trim(),
+        account_name: bank.bank_account_holder.trim(),
         note: input.note?.trim() || null,
         ...(amountSnapshot !== null ? { amount_snapshot: amountSnapshot } : {}),
         status: "open",

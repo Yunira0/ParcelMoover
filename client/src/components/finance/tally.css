@@ -1,0 +1,460 @@
+/* Tally-style accounting surface.
+ *
+ * The rest of the app is a modern web dashboard: cards, generous whitespace,
+ * rounded corners. Accounting deliberately is not. People who do books all day
+ * are reading columns of figures and comparing them, and for that the paper
+ * conventions beat the dashboard ones - ruled lines so the eye can track across
+ * a row, tabular numerals so digits line up in a column, tight rows so a whole
+ * day fits on one screen, and a fixed right-hand panel of actions so the same
+ * key is in the same place on every screen.
+ *
+ * Everything here still comes from styles/tokens.css. This is a different
+ * density and a different set of conventions, not a different palette.
+ */
+
+/* ── The shell ─────────────────────────────────────────────────────────────── */
+
+.tly {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--space-4);
+  align-items: start;
+  width: 100%;
+  /* Figures are the content. Everything on this surface uses lining, tabular
+     numerals so that a column of amounts is a column, not a ragged edge. */
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+.tly-main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+/* The title strip. Tally puts the report name and its period at the top of the
+   work area, not in a page header, because the period is part of what you are
+   looking at rather than navigation.
+
+   It is a surface with a rule under it, not a filled bar. A solid dark strip is
+   not a shape this app uses anywhere else, and it made the one accent on the
+   screen - the brand-coloured action - compete with a black rectangle four
+   times its size. */
+.tly-titlebar {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-bottom-width: 2px;
+  border-bottom-color: var(--color-border-primary);
+  border-radius: var(--border-radius-sm) var(--border-radius-sm) 0 0;
+}
+
+.tly-title {
+  margin: 0;
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.02em;
+  /* Stated rather than inherited: a bare h1 elsewhere in the app picks up a
+     global colour, and on the old dark strip that rendered black on black. */
+  color: var(--color-text-default);
+}
+
+.tly-period {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-caption);
+}
+
+/* ── The right-hand action panel ───────────────────────────────────────────── */
+/*
+ * Tally's defining piece of interaction design: the actions live in a fixed
+ * column on the right, in the same order on every screen, each on a function
+ * key. You stop reading the panel within a day and just press the key - which
+ * only works if the position never moves, so this is deliberately not a
+ * context menu and deliberately not sorted by relevance.
+ */
+.tly-panel {
+  position: sticky;
+  top: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  width: 148px;
+  flex: none;
+  background: var(--color-border-default);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-sm);
+  overflow: hidden;
+}
+
+.tly-panel-heading {
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-background-canvas);
+  color: var(--color-text-caption);
+  font-size: var(--font-size-xxs);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.tly-key {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-background-surface);
+  border: 0;
+  font: inherit;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-default);
+  text-align: left;
+  cursor: pointer;
+  width: 100%;
+}
+
+.tly-key:hover:not(:disabled) { background: var(--color-primary-subtle); }
+.tly-key:disabled { color: var(--color-text-placeholder); cursor: not-allowed; }
+
+/* The screen's own action, in the brand colour it would carry as a <Button>
+   anywhere else in the app. Its key cap inverts so the cap stays legible. */
+.tly-key-primary {
+  background: var(--color-background-primary-default);
+  color: var(--color-text-base);
+  font-weight: var(--font-weight-semibold);
+}
+
+.tly-key-primary:hover:not(:disabled) { background: var(--color-primary-hover); }
+.tly-key-primary kbd { color: var(--color-text-base); }
+
+/* Disabled has to drop the brand fill too, or it still reads as the thing to
+   press. */
+.tly-key-primary:disabled {
+  background: var(--color-background-surface);
+  color: var(--color-text-placeholder);
+}
+
+.tly-key-primary:disabled kbd { color: var(--color-text-placeholder); }
+
+/* The key cap. Fixed width so the labels beside them align down the column. */
+.tly-key kbd {
+  flex: none;
+  min-width: 22px;
+  font-family: inherit;
+  font-size: var(--font-size-xxs);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-primary);
+}
+
+/* ── Ruled sheets ──────────────────────────────────────────────────────────── */
+/*
+ * The shared skeleton behind both the voucher and the ledger. Borders are on
+ * the cells rather than the table so that a scrolling body keeps its rules, and
+ * `border-collapse` keeps them hairline rather than doubling at every join.
+ */
+.tly-sheet {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  font-size: var(--font-size-xs);
+}
+
+.tly-sheet caption {
+  caption-side: top;
+  padding: var(--space-3);
+  text-align: center;
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  border: 1px solid var(--color-border-default);
+  border-bottom: 0;
+  background: var(--color-background-surface);
+}
+
+.tly-sheet th,
+.tly-sheet td {
+  border: 1px solid var(--color-border-default);
+  padding: var(--space-2) var(--space-3);
+  vertical-align: top;
+}
+
+/* The outer frame stays heavy while the inner rules stay light, which is what
+   makes a ruled form read as one object instead of a grid of boxes. */
+.tly-sheet thead th {
+  border-color: var(--color-border-default);
+  background: var(--color-background-elevated);
+  font-size: var(--font-size-xxs);
+  font-weight: var(--font-weight-bold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.tly-sheet tbody tr:hover td { background: var(--color-primary-subtle); }
+
+/* Amount columns. Right-aligned and never wrapped: a wrapped figure is a
+   misread figure.
+ *
+ * `.tly-sheet thead th` has to be named here rather than relying on `.tly-amt`
+ * alone - it is the more specific selector, so a bare `.tly-amt` loses to it
+ * and the column heading sits left while every figure under it sits right.
+ */
+.tly-amt,
+.tly-sheet thead th.tly-amt {
+  text-align: right;
+  white-space: nowrap;
+  width: 1%;
+  min-width: 110px;
+}
+
+.tly-neg { color: var(--color-danger-text); }
+.tly-muted { color: var(--color-text-caption); }
+
+/* Blank ruled rows, as on a paper ledger. They are not padding - they are what
+   tells you the page is a fixed-size form and you are looking at all of it. */
+.tly-sheet tbody tr.tly-blank td {
+  height: 26px;
+  color: transparent;
+}
+
+.tly-sheet tbody tr.tly-blank:hover td { background: transparent; }
+
+/* Totals and the closing balance. */
+.tly-sheet tfoot td {
+  border-color: var(--color-border-default);
+  background: var(--color-background-elevated);
+  font-weight: var(--font-weight-bold);
+}
+
+/* The closing figure - the one number the whole sheet is for. It gets the brand
+   colour rather than a black fill: it has to be the loudest row on the page,
+   and the app has a colour for "this is the thing", so this is that. Tinted
+   rather than solid, because a saturated bar under a column of figures is
+   harder to read than the figures. */
+.tly-sheet tfoot tr.tly-grand td {
+  background: var(--color-primary-subtle);
+  border-top: 2px solid var(--color-border-primary);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+}
+
+/* ── Voucher form ──────────────────────────────────────────────────────────── */
+
+.tly-voucher {
+  border: 1px solid var(--color-border-default);
+  background: var(--color-background-surface);
+}
+
+/* The J.V. No / Date block, ruled underneath like the printed form it copies. */
+.tly-voucher-meta {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-6);
+  padding: var(--space-3) var(--space-4);
+}
+
+.tly-field {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-size: var(--font-size-xs);
+}
+
+.tly-field > span {
+  font-weight: var(--font-weight-semibold);
+  white-space: nowrap;
+}
+
+/* The written-in value: underlined, as on the form. */
+.tly-field > strong {
+  min-width: 96px;
+  padding: 0 var(--space-2);
+  border-bottom: 1px solid var(--color-border-default);
+  font-weight: var(--font-weight-regular);
+}
+
+.tly-voucher .tly-sheet { border-left: 0; border-right: 0; border-bottom: 0; }
+
+/* The explanation column carries the narration and any sub-lines, so it gets
+   whatever width the fixed amount columns leave over. */
+.tly-explanation { width: auto; }
+
+/* A credit line is conventionally indented under the debit it answers, which is
+   how you read which side of the entry a row is on without checking a column. */
+.tly-credit-line td:first-child { padding-left: var(--space-8); }
+
+/* Signature blocks. */
+.tly-signatures {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border-top: 1px solid var(--color-border-default);
+}
+
+.tly-signature {
+  padding: var(--space-6) var(--space-4) var(--space-3);
+  font-size: var(--font-size-xxs);
+  text-align: center;
+  color: var(--color-text-caption);
+}
+
+.tly-signature + .tly-signature { border-left: 1px solid var(--color-border-default); }
+
+.tly-signature-rule {
+  margin-bottom: var(--space-1);
+  border-top: 1px solid var(--color-border-default);
+}
+
+.tly-signature-name {
+  display: block;
+  margin-bottom: var(--space-1);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-default);
+}
+
+/* ── Filter strip ──────────────────────────────────────────────────────────── */
+
+.tly-filters {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  padding: var(--space-3);
+  background: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-sm);
+}
+
+.tly-filters label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.tly-filters label > span {
+  font-size: var(--font-size-xxs);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-caption);
+}
+
+.tly-filters input,
+.tly-filters select {
+  padding: var(--space-2);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-sm);
+  background: var(--color-background-surface);
+  color: var(--color-text-default);
+  font: inherit;
+  font-size: var(--font-size-xs);
+}
+
+/* ── Messages ──────────────────────────────────────────────────────────────── */
+
+.tly-note {
+  padding: var(--space-3);
+  border: 1px solid var(--color-border-default);
+  border-left: 3px solid var(--color-primary);
+  background: var(--color-background-surface);
+  font-size: var(--font-size-xs);
+}
+
+.tly-note-danger {
+  border-left-color: var(--color-danger-default);
+  background: var(--color-danger-surface);
+  color: var(--color-danger-text);
+}
+
+/* ── Responsive ────────────────────────────────────────────────────────────── */
+
+/* Sheets scroll inside their own frame rather than pushing the page sideways. */
+.tly-scroll { overflow-x: auto; }
+
+@media (max-width: 900px) {
+  .tly { grid-template-columns: 1fr; }
+
+  /* Below the work area rather than beside it, and laid out as a wrapping row -
+     a 148px column of keys down a phone screen would be most of the viewport. */
+  .tly-panel {
+    position: static;
+    width: 100%;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    background: transparent;
+    border: 0;
+  }
+
+  .tly-panel-heading { display: none; }
+
+  .tly-key {
+    width: auto;
+    border: 1px solid var(--color-border-default);
+    border-radius: var(--border-radius-sm);
+  }
+}
+
+/* ── Print ─────────────────────────────────────────────────────────────────── */
+/*
+ * A voucher and a ledger are both documents that get printed and filed, so the
+ * screen version is the print version with the furniture removed. Nothing here
+ * restyles the sheet itself - if the two could drift they would.
+ */
+@media print {
+  .tly { display: block; }
+  .tly-panel,
+  .tly-filters { display: none; }
+
+  .tly-titlebar {
+    color: var(--color-text-default);
+    background: transparent;
+    border-bottom: 1px solid var(--color-border-default);
+  }
+
+  .tly-sheet tbody tr:hover td { background: transparent; }
+}
+
+/* ── Buttons inside a sheet ────────────────────────────────────────────────── */
+/*
+ * The key panel's flat rows are right for a list of shortcuts and wrong for a
+ * form's commit or a row's actions — those are the design system's <Button>,
+ * so they look like every other action in the app. These rules only lay them
+ * out; the buttons bring their own appearance.
+ */
+.tly-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--color-border-default);
+}
+
+.tly-row-actions {
+  display: flex;
+  gap: var(--space-1);
+}
+
+/* ── Forms inside a sheet ──────────────────────────────────────────────────── */
+/*
+ * <FormField> brings its own control styling, so this only places the fields:
+ * a responsive grid that keeps the short ones (code, type, side) side by side
+ * and lets a long one span the row with `gridColumn`.
+ */
+.tly-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+
+/* The filter strip holds the app's own filter controls, which size themselves.
+   Left alone they collapse to their content, so each one gets a floor wide
+   enough to read a selected account or a date in. */
+.tly-filters > label,
+.tly-filters > .form-group { min-width: 190px; }

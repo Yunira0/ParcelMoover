@@ -10,6 +10,76 @@ import api from '../utils/api';
 // what the account is for — cash held, money owed to a vendor, revenue earned.
 
 export type AccountType = 'asset' | 'liability' | 'equity' | 'revenue' | 'expense';
+
+/**
+ * What an account is - the one classification anyone picks.
+ *
+ * Mirrors the server's `ledger_account_sub_type`. `type` is derived from this
+ * on the server, so a screen only has to ask for the class; the API rejects a
+ * `type` that contradicts one rather than quietly dropping it.
+ */
+export type AccountClass =
+  | 'fixed_asset'
+  | 'intangible_asset'
+  | 'current_asset'
+  | 'long_term_liability'
+  | 'current_liability'
+  | 'capital'
+  | 'reserves'
+  | 'direct_income'
+  | 'indirect_income'
+  | 'direct_expense'
+  | 'indirect_expense';
+
+/** In the order a chart of accounts is read: assets down to expenses. */
+export const ACCOUNT_CLASSES: readonly AccountClass[] = [
+  'fixed_asset',
+  'intangible_asset',
+  'current_asset',
+  'long_term_liability',
+  'current_liability',
+  'capital',
+  'reserves',
+  'direct_income',
+  'indirect_income',
+  'direct_expense',
+  'indirect_expense',
+];
+
+export const ACCOUNT_CLASS_LABELS: Record<AccountClass, string> = {
+  fixed_asset: 'Fixed Assets',
+  intangible_asset: 'Intangible Assets',
+  current_asset: 'Current Assets',
+  long_term_liability: 'Long-term Liability',
+  current_liability: 'Current Liability',
+  capital: 'Capital',
+  reserves: 'Reserves & Surplus',
+  direct_income: 'Direct Income',
+  indirect_income: 'Indirect Income',
+  direct_expense: 'Direct Expense',
+  indirect_expense: 'Indirect Expense',
+};
+
+/**
+ * The side that increases each class, offered as the default when adding.
+ *
+ * The server applies the same defaults, so this only saves the form from
+ * showing a blank; sending a different side is still how a contra account
+ * (accumulated depreciation against fixed assets) gets made.
+ */
+export const CLASS_NORMAL_SIDE: Record<AccountClass, 'debit' | 'credit'> = {
+  fixed_asset: 'debit',
+  intangible_asset: 'debit',
+  current_asset: 'debit',
+  long_term_liability: 'credit',
+  current_liability: 'credit',
+  capital: 'credit',
+  reserves: 'credit',
+  direct_income: 'credit',
+  indirect_income: 'credit',
+  direct_expense: 'debit',
+  indirect_expense: 'debit',
+};
 export type PartyType = 'vendor' | 'rider' | 'payment_method' | 'location' | 'user';
 
 /** The three ways of asking "when". The server reads them in this priority order. */
@@ -28,6 +98,7 @@ export interface Account {
   name: string;
   type: AccountType;
   normalSide: 'debit' | 'credit';
+  subType: AccountClass | null;
   isControl: boolean;
   subledgerType: PartyType | null;
   description: string | null;
@@ -338,5 +409,67 @@ export const createManualEntry = async (input: {
 
 export const reverseEntry = async (id: string, reason: string): Promise<JournalEntry> => {
   const response = await api.post(`/accounting/journal/${id}/reverse`, { reason });
+  return response.data.data;
+};
+
+// ── Masters ──────────────────────────────────────────────────────────────────
+//
+// The chart of accounts, editable. `lineCount` is what the UI keys off: an
+// account with posted lines can be renamed and regrouped but never redefined,
+// because its type and normal side decide how those lines are read.
+
+export interface AccountNode {
+  id: string;
+  code: string;
+  name: string;
+  type: AccountType;
+  normalSide: 'debit' | 'credit';
+  subType: AccountClass | null;
+  parentId: string | null;
+  parentCode: string | null;
+  isControl: boolean;
+  subledgerType: PartyType | null;
+  description: string | null;
+  isActive: boolean;
+  lineCount: number;
+  depth: number;
+  children: AccountNode[];
+}
+
+export const getChart = async (): Promise<AccountNode[]> => {
+  const response = await api.get('/accounting/chart');
+  return response.data.data;
+};
+
+export const createAccount = async (input: {
+  code: string;
+  name: string;
+  /** What the account is. The server derives the two below from it. */
+  subType: AccountClass;
+  /** Sent only to override the class default - that is, for a contra account. */
+  type?: AccountType;
+  normalSide?: 'debit' | 'credit';
+  parentCode?: string | null;
+  description?: string | null;
+  isControl?: boolean;
+  subledgerType?: PartyType | null;
+}): Promise<AccountNode> => {
+  const response = await api.post('/accounting/chart', input);
+  return response.data.data;
+};
+
+export const updateAccount = async (
+  code: string,
+  update: {
+    name?: string;
+    description?: string | null;
+    parentCode?: string | null;
+    isActive?: boolean;
+    type?: AccountType;
+    normalSide?: 'debit' | 'credit';
+    subType?: AccountClass;
+  },
+): Promise<AccountNode> => {
+  const response = await api.patch(`/accounting/chart/${code}`, update);
   return response.data.data;
 };

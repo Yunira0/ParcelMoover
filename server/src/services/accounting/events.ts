@@ -4,17 +4,24 @@
 // re-querying, so the same mapping serves both the live posting path (called
 // inside the event's own transaction) and the historical backfill.
 //
-// The five events below are the whole of the current money flow:
+// The four events below are the whole of the current money flow:
 //
-//   1. A rider collects COD          cash moves from the receiver to the rider
-//   2. A parcel earns its charge     the office earns revenue from the vendor
-//   3. A rider remits to the office  cash moves from the rider to the office
-//   4. A vendor settlement is paid   cash moves between the office and vendor
-//   5. A vendor payment is verified  cash moves from the vendor to the office
+//   1. A rider remits to the office  COD comes in and is owed on to vendors
+//   2. A vendor settlement           COD goes out, the office keeps its cut
+//   3. A vendor payment is verified  cash moves from the vendor to the office
+//   4. An expense is recorded        cash leaves the office
 //
-// Read together they say: COD is never the office's money. It arrives as an
-// asset (cash held by a rider) matched by an equal liability (owed to the
-// vendor), and the only part the office ever keeps is the delivery charge.
+// Note what is absent: individual parcels. Nothing is posted when a rider
+// collects COD or when a parcel is delivered - only a statement moves the
+// books. Delivering ten thousand parcels writes no journal entries; settling
+// them writes one per statement. The operational tables (cod_collections,
+// parcels.delivery_charge) remain the record of what is owed in the meantime,
+// and billing.service derives every vendor balance from them.
+//
+// Read together the entries say: COD is never the office's money. It arrives
+// as cash matched by an equal liability (2005 COD Held for Vendors), and the
+// only part the office ever keeps - recognised on the statement that settles
+// it - is the delivery charge.
 import { Prisma } from "../../generated/prisma/client";
 import type { ledger_party_type } from "../../generated/prisma/enums";
 import prisma from "../../lib/prisma";
@@ -89,6 +96,12 @@ export interface SettlementForPosting {
   vendor_id: string | null;
   amount: Prisma.Decimal | number | string;
   payable_amount: Prisma.Decimal | number | string | null;
+  /**
+   * Cash actually recorded against the statement so far. Drives which side of
+   * the payout is real money and which is still owed - see
+   * describeVendorSettlement. Absent is read as nothing paid.
+   */
+  paid_amount?: Prisma.Decimal | number | string | null;
   payment_method: string | null;
   payments: Prisma.JsonValue | null;
   settlement_date: Date | null;
@@ -97,6 +110,13 @@ export interface SettlementForPosting {
   vendors?: VendorName | null;
   /** Method name -> account code, so each method books to its own account. */
   methodAccounts?: MethodAccounts | undefined;
+  /**
+   * How much of this statement's withheld charges came from return legs, so the
+   * office's cut can be split between delivery and return revenue. Advisory:
+   * sync derives it from the statement's parcels, and describeVendorSettlement
+   * clamps it to the authoritative total. Absent means "all delivery revenue".
+   */
+  return_charges?: Prisma.Decimal | number | string | null;
 }
 
 export interface VendorPaymentForPosting {
@@ -188,166 +208,6 @@ async function write(
   });
 }
 
-// ── 1. COD collected ────────────────────────────────────────────────────────
-
-/**
- * Cash the receiver handed to the rider.
- *
- *   Dr  1010 Cash with Rider   (rider)     the office's asset, in the rider's pocket
- *   Cr  2000 Vendor    (vendor)    and immediately owed to the vendor
- *
- * Deliberately not revenue: none of this money is the office's. The office's
- * share is taken out separately by postDeliveryChargeEarned.
- *
- * Soft deletion is the caller's problem, not this function's. billing.service
- * scopes a vendor's balance to `deleted_at IS NULL`, so soft-deleting a parcel
- * silently removes its COD and charge from that balance - which means the code
- * that soft-deletes a parcel must reverse this entry (and the charge entry) or
- * the ledger will drift from it. The backfill handles this by never posting
- * deleted parcels in the first place; the live path will need the reversal.
- */
-export function describeCodCollected(collection: CodCollectionForPosting): Described {
-  const amount = decimal(collection.collected_amount);
-  if (amount.isZero()) {
-    return { skip: "no cash collected" };
-  }
-  if (!collection.rider_id) {
-    // Cash with Rider is a control account, so a missing rider would leave the
-    // amount in the account total but in nobody's subledger - and "somebody is
-    // holding this money, we just don't know who" is not something the books
-    // can usefully say.
-    throw new AppError(500, `COD collection ${collection.id} cannot be posted: it has no rider`);
-  }
-
-  // Same reasoning as the rider check above: 2000 is a control account, so the
-  // credit side has to name the vendor it is owed to. A collection with no
-  // vendor has nowhere to put the money that the books can make sense of.
-  if (!collection.vendor_id) {
-    throw new AppError(500, `COD collection ${collection.id} cannot be posted: it has no vendor`);
-  }
-
-  const owed = {
-    accountCode: ACCOUNT.VENDOR_CONTROL,
-    party: { type: "vendor" as const, id: collection.vendor_id },
-  };
-
-  return {
-    entryDate: collection.collected_at ?? collection.created_at,
-    memo: collection.riders?.name ? `COD collected from ${collection.riders.name}` : "COD collected on delivery",
-    lines: [
-      {
-        accountCode: ACCOUNT.CASH_WITH_RIDER,
-        debit: amount,
-        party: { type: "rider", id: collection.rider_id },
-        parcelId: collection.parcel_id,
-      },
-      { ...owed, credit: amount, parcelId: collection.parcel_id },
-    ],
-  };
-}
-
-export async function postCodCollected(
-  db: Db,
-  collection: CodCollectionForPosting,
-  options: PostOptions = {},
-): Promise<PostOutcome> {
-  return write(db, describeCodCollected(collection), SOURCE.codCollected(collection.id), EVENT_KEY.codCollected, options);
-}
-
-// ── 2. Delivery charge earned ───────────────────────────────────────────────
-
-// The TypeScript mirror of EARNED_CHARGE_SQL in billing.service.ts - the two
-// must say the same thing, or the ledger and the vendor balance will disagree
-// about which parcels have earned their charge. (BALANCE_AFFECTING_STATUSES in
-// that file is the same mirroring pattern.)
-//
-// Note what is absent: a parcel that fails delivery and goes RTO keeps its
-// original outbound charge on the row, so counting every returned_to_vendor
-// parcel would bill the vendor a full delivery for a parcel never delivered.
-// Only parcels whose order_type is already `return` carry a correctly priced
-// return charge. Plain RTO handling is therefore free here, exactly as it is
-// in the balance - changing that is a pricing decision, not a ledger one.
-export function hasEarnedDeliveryCharge(parcel: { status: string; order_type: string }): boolean {
-  if (parcel.status === "delivered" || parcel.status === "partially_delivered") return true;
-  return parcel.order_type === "return" && parcel.status === "returned_to_vendor";
-}
-
-/**
- * The office's cut, earned the moment the service is performed.
- *
- *   Dr  2000 Vendor  (vendor)   reduces what we owe them
- *   Cr  4000 Delivery Revenue           and books it as income
- *
- * For a vendor shipping zero-COD parcels there is no COD credit to net against,
- * so this drives their control balance debit-side - which is the ledger saying
- * the vendor owes the office. That is the normal, expected direction, and it is
- * the same sign convention the credit-control thresholds already use.
- */
-/**
- * Who the charge is billed to, named in the order we can name them.
- *
- * The tracking id stays on the line itself in every case, so leading with a
- * person or a business costs nothing and reads as what happened.
- */
-function chargeMemo(parcel: ParcelForPosting): string {
-  const vendor = vendorLabel(parcel.vendors);
-  if (vendor) return `Delivery charge from ${vendor}`;
-
-  // Every posted parcel has a vendor, so reaching here means the vendor row
-  // simply was not loaded with the parcel. The sender is the next best name.
-  const sender = parcel.parties_parcels_sender_idToparties?.name;
-  if (sender) return `Delivery charge from ${sender}`;
-
-  return `Delivery charge earned on ${parcel.tracking_id}`;
-}
-
-export function describeDeliveryChargeEarned(parcel: ParcelForPosting): Described {
-  const amount = decimal(parcel.delivery_charge);
-  if (amount.isZero()) {
-    return { skip: "no delivery charge" };
-  }
-  if (!hasEarnedDeliveryCharge(parcel)) {
-    return { skip: `status ${parcel.status} has not earned its charge` };
-  }
-  // As in describeCodCollected: no vendor means no account to charge it to.
-  if (!parcel.vendor_id) {
-    throw new AppError(500, `Parcel ${parcel.id} cannot be posted: it has no vendor`);
-  }
-
-  const charged = {
-    accountCode: ACCOUNT.VENDOR_CONTROL,
-    party: { type: "vendor" as const, id: parcel.vendor_id },
-  };
-
-  // Redirect charges are folded into parcels.delivery_charge by order.service
-  // and are not separable here, so they land in delivery revenue rather than
-  // in 4010. Splitting them is a change to the charge calculation, not
-  // something this mapping can infer after the fact.
-  const revenueAccount = parcel.order_type === "return" ? ACCOUNT.RETURN_REVENUE : ACCOUNT.DELIVERY_REVENUE;
-
-  return {
-    entryDate: parcel.delivered_at ?? parcel.updated_at,
-    memo: chargeMemo(parcel),
-    lines: [
-      { ...charged, debit: amount, parcelId: parcel.id },
-      {
-        accountCode: revenueAccount,
-        credit: amount,
-        parcelId: parcel.id,
-        locationId: parcel.destination_location_id ?? null,
-      },
-    ],
-  };
-}
-
-export async function postDeliveryChargeEarned(
-  db: Db,
-  parcel: ParcelForPosting,
-  options: PostOptions = {},
-): Promise<PostOutcome> {
-  return write(db, describeDeliveryChargeEarned(parcel), SOURCE.deliveryCharge(parcel.id), EVENT_KEY.deliveryCharge, options);
-}
-
 // ── Payment splits ──────────────────────────────────────────────────────────
 
 interface PaymentSplit {
@@ -418,12 +278,17 @@ function cashLines(
 /**
  * The rider hands over the cash they were carrying.
  *
- *   Dr  1000/1020/1030 Cash, Bank or Wallet   the office now holds it
- *   Cr  1010 Cash with Rider   (rider)        the rider no longer does
+ *   Dr  1000/1100/... Cash, Bank or Wallet    the office now holds it
+ *   Cr  2005 COD Held for Vendors             and owes it on to the vendors
  *
- * Both sides are assets - this moves money between the office's own pockets and
- * touches neither revenue nor the vendor's position. A rider's remaining 1010
- * balance is the cash still in their hands.
+ * This is where COD enters the books. Nothing is posted while a rider is out
+ * collecting - the statement that brings the cash in is the event, not each
+ * individual parcel. The credit sits in COD Held until a vendor statement
+ * hands it on, so 2005's balance is the float the office is sitting on.
+ *
+ * The rider is tagged on the liability line so their remittance history still
+ * reads as theirs, even though 2005 is a pooled account rather than a per-rider
+ * control: a rider hands over one sum, not one sum per vendor.
  */
 export function describeRiderRemittance(settlement: SettlementForPosting): Described {
   if (settlement.payee_type !== "rider" || !settlement.rider_id) {
@@ -440,19 +305,31 @@ export function describeRiderRemittance(settlement: SettlementForPosting): Descr
     throw new AppError(500, `Rider statement ${settlement.statement_id} has a negative amount`);
   }
 
+  const label = `Remittance ${settlement.statement_id}`;
+  const rider = { type: "rider" as const, id: settlement.rider_id };
+
+  // As on the vendor side, split by cash actually handed over. What the
+  // statement says the rider owes but has not yet paid stays in 1010 Cash with
+  // Rider - which is precisely what that account is for: the office's money,
+  // still in the rider's pocket.
+  const paid = clampShare(decimal(settlement.paid_amount ?? 0), amount);
+  const stillWithRider = amount.minus(paid);
+
+  const lines: JournalLineInput[] = [];
+  if (!paid.isZero()) {
+    lines.push(...cashLines(paymentSplits(settlement, paid), "debit", label, settlement.methodAccounts));
+  }
+  if (!stillWithRider.isZero()) {
+    lines.push({ accountCode: ACCOUNT.CASH_WITH_RIDER, debit: stillWithRider, party: rider, memo: `Outstanding on ${label}` });
+  }
+  lines.push({ accountCode: ACCOUNT.COD_HELD, credit: amount, party: rider });
+
   return {
     entryDate: settlement.settlement_date ?? settlement.updated_at,
     memo: settlement.riders?.name
       ? `Rider remittance from ${settlement.riders.name}`
       : `Rider remittance ${settlement.statement_id}`,
-    lines: [
-      ...cashLines(paymentSplits(settlement, amount), "debit", `Remittance ${settlement.statement_id}`, settlement.methodAccounts),
-      {
-        accountCode: ACCOUNT.CASH_WITH_RIDER,
-        credit: amount,
-        party: { type: "rider", id: settlement.rider_id },
-      },
-    ],
+    lines,
   };
 }
 
@@ -476,7 +353,7 @@ export async function postRiderRemittance(
  *       Dr 2000 Vendor (vendor)  /  Cr cash
  *
  *   payable < 0   delivery charges exceeded the COD, so the vendor pays us
- *       Dr cash  /  Cr 2000 Vendor (vendor)
+ *       Dr cash  /  Cr 2005 COD Held (the shortfall comes back to us)
  *
  * payForSettlement already models both directions; this mirrors it rather than
  * inventing a rule of its own.
@@ -486,19 +363,83 @@ export function describeVendorSettlement(settlement: SettlementForPosting): Desc
     throw new AppError(500, `Settlement ${settlement.statement_id} is not a vendor statement`);
   }
 
+  const gross = decimal(settlement.amount);
   const payable = decimal(settlement.payable_amount ?? settlement.amount);
-  if (payable.isZero()) {
-    // A statement whose COD exactly covered its charges. Nothing moved, so
-    // there is nothing to post - and an entry of two zero lines would be a
-    // lie about an event that had no monetary effect.
-    return { skip: "payable nets to zero" };
+  // What the office kept: the delivery charges on this statement's parcels.
+  // Taken as gross minus payable rather than re-summed from the items, so the
+  // entry can never disagree with the statement it is posting.
+  const charges = gross.minus(payable);
+
+  if (gross.isZero() && charges.isZero()) {
+    // Nothing was collected and nothing was charged. An entry of zero lines
+    // would be a lie about an event that had no monetary effect.
+    return { skip: "statement moves no money" };
   }
 
-  const magnitude = payable.abs();
-  const officePaysVendor = payable.isPositive();
-  const splits = paymentSplits(settlement, magnitude);
   const label = `Settlement ${settlement.statement_id}`;
+  const vendor = { type: "vendor" as const, id: settlement.vendor_id };
 
+  // The whole cycle in one entry, which is the point: COD comes off the float
+  // the rider remittance built up, the office's cut becomes revenue, and the
+  // remainder goes out to the vendor.
+  const lines: JournalLineInput[] = [];
+
+  if (!gross.isZero()) {
+    lines.push({
+      accountCode: ACCOUNT.COD_HELD,
+      debit: gross,
+      party: vendor,
+      memo: `COD released on ${label}`,
+    });
+  }
+
+  // Split the office's cut between delivery and return revenue. The split is
+  // advisory (sync supplies it from the statement's parcels); the total is
+  // not, so any remainder lands in delivery revenue and the entry stays
+  // balanced whatever the item data says.
+  if (!charges.isZero()) {
+    const returnShare = clampShare(decimal(settlement.return_charges ?? 0), charges);
+    const deliveryShare = charges.minus(returnShare);
+    if (!deliveryShare.isZero()) {
+      lines.push({ accountCode: ACCOUNT.DELIVERY_REVENUE, credit: deliveryShare, memo: `Delivery charges on ${label}` });
+    }
+    if (!returnShare.isZero()) {
+      lines.push({ accountCode: ACCOUNT.RETURN_REVENUE, credit: returnShare, memo: `Return charges on ${label}` });
+    }
+  }
+
+  // payable > 0: the office pays the vendor out. payable < 0: charges exceeded
+  // the COD, so the vendor pays the shortfall in.
+  //
+  // Split by what has actually been paid. A statement is posted the moment it
+  // is created, and at that point no cash has moved - it has no payment method
+  // yet, so there is not even an account to credit. The unpaid part is a debt,
+  // not a payment, and 2000 Vendor is exactly the account for a debt. As
+  // instalments land, syncPosting restates the entry and the balance walks
+  // across from 2000 into the real cash accounts.
+  //
+  // This is also why a part-paid statement can no longer hide: the books move
+  // when the money does, not when the status changes.
+  if (!payable.isZero()) {
+    const magnitude = payable.abs();
+    const paid = clampShare(decimal(settlement.paid_amount ?? 0), magnitude);
+    const owed = magnitude.minus(paid);
+    const side = payable.isPositive() ? "credit" : "debit";
+
+    if (!paid.isZero()) {
+      lines.push(...cashLines(paymentSplits(settlement, paid), side, label, settlement.methodAccounts));
+    }
+    if (!owed.isZero()) {
+      lines.push({
+        accountCode: ACCOUNT.VENDOR_CONTROL,
+        ...(side === "credit" ? { credit: owed } : { debit: owed }),
+        party: vendor,
+        memo: `Payable on ${label}`,
+      });
+    }
+  }
+
+  const officePaysVendor = payable.isPositive();
   return {
     entryDate: settlement.settlement_date ?? settlement.updated_at,
     // The statement id stays on the cash lines (see cashLines), so leading
@@ -506,24 +447,14 @@ export function describeVendorSettlement(settlement: SettlementForPosting): Desc
     memo: vendorLabel(settlement.vendors)
       ? `${officePaysVendor ? "Vendor payout" : "Vendor recovery"} - ${vendorLabel(settlement.vendors)}`
       : `${officePaysVendor ? "Vendor payout" : "Vendor recovery"} ${settlement.statement_id}`,
-    lines: officePaysVendor
-      ? [
-          {
-            accountCode: ACCOUNT.VENDOR_CONTROL,
-            debit: magnitude,
-            party: { type: "vendor", id: settlement.vendor_id },
-          },
-          ...cashLines(splits, "credit", label, settlement.methodAccounts),
-        ]
-      : [
-          ...cashLines(splits, "debit", label, settlement.methodAccounts),
-          {
-            accountCode: ACCOUNT.VENDOR_CONTROL,
-            credit: magnitude,
-            party: { type: "vendor", id: settlement.vendor_id },
-          },
-        ],
+    lines,
   };
+}
+
+/** A share of a total, never negative and never more than the total itself. */
+function clampShare(share: Prisma.Decimal, total: Prisma.Decimal): Prisma.Decimal {
+  if (share.isNegative()) return new Prisma.Decimal(0);
+  return share.greaterThan(total) ? total : share;
 }
 
 export async function postVendorSettlement(

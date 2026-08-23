@@ -81,6 +81,17 @@ export interface SettlementListItem {
   status: SettlementStatus;
   /** Total recorded against the statement so far — non-zero and below `amount` while partially_paid. */
   paidAmount: number;
+  /**
+   * What was actually paid, per method, totalled across every instalment —
+   * `[{ method: "Cash", amount: 1000 }, { method: "Bank", amount: 1000 }]`.
+   *
+   * Totalled here rather than handed over raw because `settlements.payments`
+   * accumulates one line per instalment, so a statement part-paid in cash twice
+   * arrives as two Cash lines. The list wants "Cash 2,000", not the history.
+   *
+   * Empty until something is paid.
+   */
+  paymentBreakdown: Array<{ method: string; amount: number }>;
   remark: string | null;
 }
 

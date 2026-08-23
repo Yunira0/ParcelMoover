@@ -18,6 +18,7 @@ type Db = Prisma.TransactionClient | typeof prisma;
 export const ACCOUNT = {
   CASH_IN_HAND: "1000",
   CASH_WITH_RIDER: "1010",
+  COD_HELD: "2005",
   VENDOR_CONTROL: "2000",
   OPENING_BALANCE_EQUITY: "3000",
   RETAINED_EARNINGS: "3900",
@@ -71,6 +72,14 @@ export const CHART_OF_ACCOUNTS: AccountDefinition[] = [
 
   // ── Liabilities ───────────────────────────────────────────────────────────
   {
+    code: ACCOUNT.COD_HELD,
+    name: "COD Held for Vendors",
+    type: "liability",
+    normalSide: "credit",
+    description:
+      "COD taken in from riders but not yet passed on to vendors. Credited when a rider settles their collections to the office, debited when a vendor statement hands that money on. The balance is the float the office is sitting on: cash in our hands that is not ours. Deliberately not a control account - a rider remits one pooled sum that no single vendor can be named against.",
+  },
+  {
     code: ACCOUNT.VENDOR_CONTROL,
     name: "Vendor",
     type: "liability",
@@ -78,7 +87,7 @@ export const CHART_OF_ACCOUNTS: AccountDefinition[] = [
     isControl: true,
     subledgerType: "vendor",
     description:
-      "Net position with each vendor. Credited with COD collected on their behalf and payments they send us, debited with delivery charges earned and payouts made. A credit balance is money we owe them; a debit balance is money they owe us.",
+      "Direct position with each vendor, outside the COD cycle: credited with payments they send the office. A credit balance is money we owe them; a debit balance is money they owe us. Note that day-to-day COD and delivery charges do not pass through here - they are recognised on the statement that settles them, against COD Held for Vendors.",
   },
 
   // ── Equity ────────────────────────────────────────────────────────────────

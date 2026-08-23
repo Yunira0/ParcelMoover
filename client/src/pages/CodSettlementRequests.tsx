@@ -61,7 +61,7 @@ const CodSettlementRequests: React.FC = () => {
 
   const act = async (
     request: CodSettlementRequest,
-    next: 'in_progress' | 'settled' | 'rejected',
+    next: 'settled' | 'rejected',
     decisionNote?: string,
   ) => {
     setBusyId(request.id);
@@ -112,12 +112,15 @@ const CodSettlementRequests: React.FC = () => {
       accessor: (r: CodSettlementRequest) =>
         isLiveCodRequest(r.status) ? (
           <div className="cod-request-actions">
-            {r.status === 'open' && (
-              <Button variant="outline" disabled={busyId === r.id} onClick={() => act(r, 'in_progress')}>
-                Start
-              </Button>
-            )}
-            <Button disabled={busyId === r.id} onClick={() => act(r, 'settled')}>
+            {/* The action this queue exists for, so it takes the brand
+                colour and Reject stays outlined beside it. Without a variant
+                it fell back to `secondary` and the two read as equal choices.
+
+                There is no "Start" any more: marking a request in_progress
+                changed nothing the vendor or the books could see, and it left
+                a queue of half-actioned rows nobody closed. Requests already
+                started still show, and settle or reject the same way. */}
+            <Button variant="primary" disabled={busyId === r.id} onClick={() => act(r, 'settled')}>
               Settle
             </Button>
             <Button variant="outline" disabled={busyId === r.id} onClick={() => setRejecting(r)}>
@@ -170,7 +173,11 @@ const CodSettlementRequests: React.FC = () => {
             onChange={setRejectReason}
           />
           <div className="cod-request-actions">
+            {/* Rejecting is destructive from the vendor's side — the vendor is
+                told no and has to raise another. `danger`, not the brand
+                colour: primary would invite the click. */}
             <Button
+              variant="danger"
               disabled={!rejectReason.trim() || busyId === rejecting.id}
               onClick={() => act(rejecting, 'rejected', rejectReason.trim())}
             >

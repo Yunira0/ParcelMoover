@@ -217,16 +217,17 @@ function startWebhookDelivery() {
   }, WEBHOOK_DELIVERY_INTERVAL_MS).unref();
 }
 
-// Most journal entries are posted inside the transaction that moved the money,
-// so they cannot be lost. The one exception is the bulk parcel status path,
-// which posts fire-and-forget rather than adding several hundred statements to
-// an already-large transaction (see syncParcelPostingsAsync). That trade is only
-// honest if something notices what it drops - this is that something.
+// Journal entries are posted inside the transaction that moved the money, so
+// they cannot be lost to a crash. What they can be lost to is a mutator that
+// never asks for them: revertSettlement did exactly that for months, and
+// nothing noticed. This sweep re-syncs statements by `updated_at` rather than
+// by any list of call sites, so a statement that changed is brought into line
+// whether or not the code that changed it remembered to say so.
 //
 // The window is deliberately wider than the interval so a sweep that dies
 // mid-run is covered by the next one, and the Redis NX lock keeps one process
-// doing it. Re-syncing is idempotent: parcels whose books already agree cost two
-// reads and write nothing.
+// doing it. Re-syncing is idempotent: statements whose books already agree cost
+// two reads and write nothing.
 const LEDGER_SWEEP_INTERVAL_MS = 15 * 60 * 1000;
 const LEDGER_SWEEP_WINDOW_MS = 60 * 60 * 1000;
 const LEDGER_SWEEP_LIMIT = 500;
@@ -247,8 +248,8 @@ function startLedgerPostingSweep() {
       // Redis down — run anyway; the sweep converges rather than accumulating.
     }
     try {
-      const { sweepParcelPostings } = await import("./services/accounting/sync");
-      const result = await sweepParcelPostings({
+      const { sweepSettlementPostings } = await import("./services/accounting/sync");
+      const result = await sweepSettlementPostings({
         since: new Date(Date.now() - LEDGER_SWEEP_WINDOW_MS),
         limit: LEDGER_SWEEP_LIMIT,
       });

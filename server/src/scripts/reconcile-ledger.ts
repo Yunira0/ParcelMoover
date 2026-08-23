@@ -1,21 +1,28 @@
 // Proves the ledger agrees with the system it was built from.
 //
-// This is the acceptance test for the whole shadow-mode phase. The ledger is
-// only worth switching on if it reproduces, exactly, the numbers the business
-// already runs on:
+// Settlements are the only money event in these books, so every check here is
+// a statement about statements:
 //
 //   1. Every entry balances, and every account total balances against the rest
 //      (the trial balance). A failure here means the invariant leaked.
-//   2. Each vendor's Vendor account balance equals getVendorAccountBalance()
-//      for that vendor - the derived figure from billing.service that drives
-//      credit control today.
-//   3. Each rider's Cash with Rider balance equals COD they collected minus
-//      COD they have remitted, computed straight from cod_collections.
+//   2. Every live statement has exactly one live entry, and every cancelled one
+//      has none.
+//   3. The COD float in 2005 equals what riders remitted in minus what vendor
+//      statements released out - and is never negative.
+//   4. Revenue equals what those statements withheld.
 //
-// (2) is the important one. Both sides are lifetime figures built from the same
-// source rows by completely different routes - one a running sum of journal
-// lines, the other a four-part aggregate query - so agreement to the paisa
-// across every vendor is strong evidence the mapping is right.
+// (2) is the important one, and it is the check this script used to lack.
+// revertSettlement never called syncSettlementPostings; the sweep only looked
+// at parcels; and the old vendor/rider checks compared the ledger against
+// balances that a stale payout entry happened not to disturb. So a statement
+// could carry a posted payout for money that had been un-paid, and nothing in
+// here would say a word. Coverage is checked directly now rather than inferred
+// from a total agreeing.
+//
+// Note what is deliberately *not* checked: what each entry contains. Recomputing
+// that would mean restating events.ts in SQL, and a second copy of a money rule
+// is how a ledger starts lying - which is the same reason the per-parcel
+// postings were retired in the first place.
 //
 // Read-only. Safe to run against production, and worth running on a schedule
 // once posting goes live: drift appearing later means a money path was added
@@ -32,7 +39,6 @@ import "dotenv/config";
 import { Prisma } from "../generated/prisma/client";
 import prisma from "../lib/prisma";
 import redis from "../lib/redis";
-import { getVendorAccountBalance } from "../services/billing.service";
 import { ACCOUNT } from "../services/accounting/accounts";
 
 const ZERO = new Prisma.Decimal(0);
@@ -99,130 +105,139 @@ async function checkTrialBalance(): Promise<boolean> {
   return balanced;
 }
 
-// ── 2. Vendor control vs the derived balance ────────────────────────────────
-
-async function checkVendors(limit: number, verbose: boolean): Promise<Drift[]> {
-  // Credit-normal account, so the vendor's position is credits minus debits:
-  // positive means the office owes them. That is the same sign convention
-  // getVendorAccountBalance uses, which is what makes the two comparable.
-  const ledgerRows = await prisma.$queryRaw<Array<{ party_id: string; balance: string }>>(Prisma.sql`
-    SELECT l.party_id, COALESCE(SUM(l.credit - l.debit), 0) AS balance
-      FROM journal_lines l
-      JOIN journal_entries e ON e.id = l.entry_id AND TRUE /* see ALL_ENTRIES in accounting.service.ts */
-      JOIN ledger_accounts a ON a.id = l.account_id
-     WHERE a.code = ${ACCOUNT.VENDOR_CONTROL}
-       AND l.party_type = 'vendor'
-     GROUP BY l.party_id
+// ── 2. Every statement has the entry it should, and no other ────────────────
+//
+// The check that matters most, because it is the one whose absence let a real
+// bug live for months. revertSettlement never called syncSettlementPostings and
+// the old sweep only looked at parcels, so a reverted statement kept a posted
+// payout forever and nothing anywhere would say so.
+//
+// Deliberately a *coverage* check rather than an amount check. Recomputing what
+// each entry should contain would mean restating events.ts in SQL, and two
+// copies of a money rule is how a ledger starts lying. Asking "is there a live
+// entry exactly where there should be one" needs no second copy of anything.
+async function checkSettlementCoverage(limit: number): Promise<string[]> {
+  const rows = await prisma.$queryRaw<Array<{ statement_id: string; status: string; entries: bigint }>>(Prisma.sql`
+    SELECT s.statement_id, s.status::text AS status,
+           COUNT(e.id) FILTER (WHERE e.status = 'posted') AS entries
+      FROM settlements s
+      LEFT JOIN journal_entries e
+        ON e.source_type = 'settlement' AND e.source_id = s.id
+     GROUP BY s.statement_id, s.status
   `);
-  const ledgerByVendor = new Map(ledgerRows.map((row) => [row.party_id, new Prisma.Decimal(row.balance)]));
 
-  const vendors = await prisma.vendors.findMany({
-    where: { deleted_at: null },
-    select: { id: true, client_name: true, business_name: true },
-  });
-
-  const drifts: Drift[] = [];
-  let checked = 0;
-
-  for (const vendor of vendors) {
-    // skipCache, or a stale 30s cache entry could make a real drift invisible
-    // (or invent one that is not there).
-    const derived = await getVendorAccountBalance(vendor.id, { skipCache: true });
-    const expected = new Prisma.Decimal(derived.balance);
-    const ledger = ledgerByVendor.get(vendor.id) ?? ZERO;
-    checked += 1;
-
-    if (!ledger.equals(expected)) {
-      drifts.push({
-        label: `${vendor.business_name || vendor.client_name} (${vendor.id})`,
-        ledger,
-        expected,
-        difference: ledger.minus(expected),
-      });
-    } else if (verbose && !expected.isZero()) {
-      console.log(`  ✓ ${(vendor.business_name || vendor.client_name).slice(0, 40).padEnd(40)} ${money(expected).padStart(14)}`);
+  const problems: string[] = [];
+  for (const row of rows) {
+    const posted = Number(row.entries);
+    // A cancelled statement moved no money, so it must carry nothing live.
+    // Everything else was created, and creating it is the money event.
+    if (row.status === "cancelled" && posted > 0) {
+      problems.push(`${row.statement_id} is cancelled but still has ${posted} live entr${posted === 1 ? "y" : "ies"}`);
+    } else if (row.status !== "cancelled" && posted === 0) {
+      // Zero is legitimate for a statement that moves nothing at all - see
+      // describeVendorSettlement's skip - so this is a lead, not a verdict.
+      problems.push(`${row.statement_id} (${row.status}) has no live entry`);
+    } else if (posted > 1) {
+      problems.push(`${row.statement_id} has ${posted} live entries; a statement posts exactly one`);
     }
   }
 
-  console.log(`Vendor control: ${checked} vendor(s) checked, ${drifts.length} drifting`);
-  for (const drift of drifts.slice(0, limit)) {
-    console.log(`  ✗ ${drift.label}`);
-    console.log(`      ledger ${money(drift.ledger)}   derived ${money(drift.expected)}   out by ${money(drift.difference)}`);
-  }
-  if (drifts.length > limit) console.log(`  ... and ${drifts.length - limit} more`);
-  if (drifts.length === 0) console.log("  ✓ every vendor agrees to the paisa");
+  console.log(`Statement coverage: ${rows.length} statement(s) checked, ${problems.length} problem(s)`);
+  for (const problem of problems.slice(0, limit)) console.log(`  ✗ ${problem}`);
+  if (problems.length > limit) console.log(`  ... and ${problems.length - limit} more`);
+  if (problems.length === 0) console.log("  ✓ every statement has exactly the entry it should");
   console.log("");
 
-  return drifts;
+  return problems;
 }
 
-// ── 3. Cash with rider vs the collections ───────────────────────────────────
-
-async function checkRiders(limit: number): Promise<Drift[]> {
-  const ledgerRows = await prisma.$queryRaw<Array<{ party_id: string; balance: string }>>(Prisma.sql`
-    SELECT l.party_id, COALESCE(SUM(l.debit - l.credit), 0) AS balance
+// ── 3. The COD float ────────────────────────────────────────────────────────
+//
+// 2005 holds COD taken in from riders and not yet passed on. Two things must be
+// true of it, and neither can be got at by re-deriving the entries:
+//
+//   - It is never a debit balance. The office cannot hand on more COD than it
+//     ever took in; if it appears to have, a statement has been settled twice
+//     or a remittance was reversed out from under one.
+//   - It equals remittances in minus gross released out, taken from the
+//     settlements table rather than from the entries posted off it.
+async function checkCodFloat(): Promise<string[]> {
+  const [ledger] = await prisma.$queryRaw<Array<{ balance: string }>>(Prisma.sql`
+    SELECT COALESCE(SUM(l.credit - l.debit), 0) AS balance
       FROM journal_lines l
       JOIN journal_entries e ON e.id = l.entry_id AND TRUE /* see ALL_ENTRIES in accounting.service.ts */
       JOIN ledger_accounts a ON a.id = l.account_id
-     WHERE a.code = ${ACCOUNT.CASH_WITH_RIDER}
-       AND l.party_type = 'rider'
-     GROUP BY l.party_id
-  `);
-  const ledgerByRider = new Map(ledgerRows.map((row) => [row.party_id, new Prisma.Decimal(row.balance)]));
-
-  // The operational truth: cash collected, less what has been remitted through
-  // a settled rider statement. rider_remitted_amount is only written when a
-  // statement is actually paid, so this is genuinely "still in their pocket".
-  //
-  // Soft-deleted parcels are excluded for the same reason the vendor side
-  // excludes them: billing.service scopes the whole balance to live parcels, so
-  // a voided order must not appear on either side of this comparison.
-  const derivedRows = await prisma.$queryRaw<Array<{ rider_id: string; name: string; balance: string }>>(Prisma.sql`
-    SELECT c.rider_id,
-           r.name,
-           COALESCE(SUM(c.collected_amount - c.rider_remitted_amount), 0) AS balance
-      FROM cod_collections c
-      JOIN riders r ON r.id = c.rider_id
-      JOIN parcels p ON p.id = c.parcel_id AND p.deleted_at IS NULL
-     WHERE c.rider_id IS NOT NULL
-     GROUP BY c.rider_id, r.name
+     WHERE a.code = ${ACCOUNT.COD_HELD}
   `);
 
-  const drifts: Drift[] = [];
-  const seen = new Set<string>();
+  const [derived] = await prisma.$queryRaw<Array<{ taken_in: string; released: string }>>(Prisma.sql`
+    SELECT
+      COALESCE(SUM(COALESCE(s.payable_amount, s.amount)) FILTER (WHERE s.payee_type = 'rider'), 0) AS taken_in,
+      COALESCE(SUM(s.amount) FILTER (WHERE s.payee_type = 'vendor'), 0) AS released
+      FROM settlements s
+     WHERE s.status::text <> 'cancelled'
+  `);
 
-  for (const row of derivedRows) {
-    seen.add(row.rider_id);
-    const expected = new Prisma.Decimal(row.balance);
-    const ledger = ledgerByRider.get(row.rider_id) ?? ZERO;
-    if (!ledger.equals(expected)) {
-      drifts.push({
-        label: `${row.name} (${row.rider_id})`,
-        ledger,
-        expected,
-        difference: ledger.minus(expected),
-      });
-    }
-  }
+  const held = new Prisma.Decimal(ledger?.balance ?? 0);
+  const expected = new Prisma.Decimal(derived?.taken_in ?? 0).minus(derived?.released ?? 0);
 
-  // A rider with ledger lines but no collections at all would otherwise slip
-  // through the loop above entirely.
-  for (const [riderId, ledger] of ledgerByRider) {
-    if (!seen.has(riderId) && !ledger.isZero()) {
-      drifts.push({ label: `rider ${riderId} (no collections)`, ledger, expected: ZERO, difference: ledger });
-    }
-  }
+  const problems: string[] = [];
+  console.log("COD float (2005 COD Held for Vendors)");
+  console.log(`  taken in from riders   ${money(new Prisma.Decimal(derived?.taken_in ?? 0)).padStart(14)}`);
+  console.log(`  released to vendors    ${money(new Prisma.Decimal(derived?.released ?? 0)).padStart(14)}`);
+  console.log(`  ledger balance         ${money(held).padStart(14)}`);
 
-  console.log(`Cash with rider: ${derivedRows.length} rider(s) checked, ${drifts.length} drifting`);
-  for (const drift of drifts.slice(0, limit)) {
-    console.log(`  ✗ ${drift.label}`);
-    console.log(`      ledger ${money(drift.ledger)}   derived ${money(drift.expected)}   out by ${money(drift.difference)}`);
+  if (!held.equals(expected)) {
+    problems.push(`COD float is ${money(held)} but the statements say ${money(expected)}`);
+    console.log(`  ✗ out by ${money(held.minus(expected))}`);
   }
-  if (drifts.length > limit) console.log(`  ... and ${drifts.length - limit} more`);
-  if (drifts.length === 0) console.log("  ✓ every rider agrees to the paisa");
+  if (held.isNegative()) {
+    problems.push(`COD float is negative (${money(held)}) - more COD released than was ever taken in`);
+    console.log("  ✗ negative float: more COD has been released than was taken in");
+  }
+  if (problems.length === 0) console.log("  ✓ the float agrees with the statements");
   console.log("");
 
-  return drifts;
+  return problems;
+}
+
+// ── 4. Revenue equals what the statements withheld ──────────────────────────
+//
+// The office's cut is recognised on the statement that withholds it, so the sum
+// of the revenue accounts must equal gross minus payable across every live
+// statement. This is what catches a revenue split gone wrong, or an entry that
+// posted its cash legs and lost its revenue line.
+async function checkRevenue(): Promise<string[]> {
+  const [posted] = await prisma.$queryRaw<Array<{ revenue: string }>>(Prisma.sql`
+    SELECT COALESCE(SUM(l.credit - l.debit), 0) AS revenue
+      FROM journal_lines l
+      JOIN journal_entries e ON e.id = l.entry_id AND TRUE /* see ALL_ENTRIES */
+      JOIN ledger_accounts a ON a.id = l.account_id
+     WHERE a.code IN (${ACCOUNT.DELIVERY_REVENUE}, ${ACCOUNT.RETURN_REVENUE})
+       AND e.source_type = 'settlement'
+  `);
+
+  const [withheld] = await prisma.$queryRaw<Array<{ charges: string }>>(Prisma.sql`
+    SELECT COALESCE(SUM(s.amount - COALESCE(s.payable_amount, s.amount)), 0) AS charges
+      FROM settlements s
+     WHERE s.status::text <> 'cancelled' AND s.payee_type = 'vendor'
+  `);
+
+  const booked = new Prisma.Decimal(posted?.revenue ?? 0);
+  const expected = new Prisma.Decimal(withheld?.charges ?? 0);
+
+  console.log("Revenue vs charges withheld");
+  console.log(`  withheld on statements ${money(expected).padStart(14)}`);
+  console.log(`  booked to 4000 / 4020  ${money(booked).padStart(14)}`);
+
+  if (!booked.equals(expected)) {
+    console.log(`  ✗ out by ${money(booked.minus(expected))}`);
+    console.log("");
+    return [`revenue is ${money(booked)} but the statements withheld ${money(expected)}`];
+  }
+  console.log("  ✓ every rupee withheld reached the books");
+  console.log("");
+  return [];
 }
 
 // ── Entry point ─────────────────────────────────────────────────────────────
@@ -231,16 +246,17 @@ async function main() {
   const argv = process.argv.slice(2);
   const limitArg = argv.find((arg) => arg.startsWith("--limit="));
   const limit = limitArg ? Number(limitArg.slice("--limit=".length)) : 20;
-  const verbose = argv.includes("--verbose");
+  // --verbose is accepted for compatibility; the checks below are already terse.
 
   const entryCount = await prisma.journal_entries.count();
   console.log(`Ledger holds ${entryCount} journal entr${entryCount === 1 ? "y" : "ies"}.\n`);
 
   const balanced = await checkTrialBalance();
-  const vendorDrifts = await checkVendors(limit, verbose);
-  const riderDrifts = await checkRiders(limit);
+  const coverage = await checkSettlementCoverage(limit);
+  const float = await checkCodFloat();
+  const revenue = await checkRevenue();
 
-  const failed = !balanced || vendorDrifts.length > 0 || riderDrifts.length > 0;
+  const failed = !balanced || coverage.length > 0 || float.length > 0 || revenue.length > 0;
   if (failed) {
     console.error("✗ Reconciliation FAILED - the ledger does not yet agree with the source data.");
     process.exitCode = 1;

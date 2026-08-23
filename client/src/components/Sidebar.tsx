@@ -32,7 +32,6 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  ArrowLeftRight,
   Landmark,
   CreditCard,
   Coins,
@@ -398,64 +397,58 @@ const AdminSidebar: React.FC<{ isSuperAdmin: boolean }> = ({ isSuperAdmin }) => 
         {/* Accounting. Gated on the same permission the routes and the API
             check, so the section simply isn't there for staff who weren't
             granted it — rather than being visible and then refusing. */}
-        {/* Organised by what kind of record you are looking at, not by which
-            screen holds it. Overview needs `end` because it is the parent path
-            of everything below it.
+        {/* The books, named the way a Tally user already expects: the two COD
+            registers, the day book, the ledger, and the cash and bank sides of
+            the cash book.
 
-            Rider COD and Vendor COD are the exception to the ACCOUNTING_ACCESS
-            gate: they are the settlement lists that used to be COD Management,
-            which every admin could reach. Hiding them behind a grant would take
-            a daily screen away from the people who use it, so an admin without
-            the grant sees those two and nothing else here. */}
+            One level shallower than it was. Rider COD and Vendor COD used to
+            sit inside a "Transactions" group, which put a daily screen behind
+            two disclosures; they are top-level here, with Vendor COD keeping
+            its own three screens beneath it.
+
+            Rider COD and Vendor COD are also the exception to the
+            ACCOUNTING_ACCESS gate: they are the settlement lists that used to
+            be COD Management, which every admin could reach. Hiding them behind
+            a grant would take a daily screen away from the people who use it,
+            so an admin without the grant sees those and nothing else here. */}
         <SidebarSection label="Finance" />
         <div className="sidebar-subnav">
-          {canReadBooks && <SubItem to="/accounting" icon={BookOpen} label="Overview" end />}
+          <SubItem to="/accounting/transactions/rider-cod" icon={Bike} label="Rider COD" />
 
+          {/* Vendor COD keeps its three screens together: the settlements
+              themselves, what the vendor has asked to be paid before any of it
+              becomes a settlement, and the invoice side of the same
+              relationship. One vendor conversation, three views of it. */}
           <SidebarGroup
-            label="Transactions"
-            icon={ArrowLeftRight}
-            match={['/accounting/transactions', '/billing']}
+            label="Vendor COD"
+            icon={Store}
+            match={['/accounting/transactions/vendor-cod', '/cod-settlement-requests', '/billing']}
           >
-            <SubItem to="/accounting/transactions/rider-cod" icon={Bike} label="Rider COD" />
-
-            {/* Billing & Credit is the invoice side of the same vendor
-                relationship the COD screen settles, so the two sit together. */}
-            <SidebarGroup
-              label="Vendor COD"
-              icon={Store}
-              match={['/accounting/transactions/vendor-cod', '/billing']}
-            >
-              <SubItem to="/accounting/transactions/vendor-cod" icon={Store} label="COD & Settlements" />
-              {/* The vendor's side of the same relationship: what they have
-                  asked to be paid, before any of it becomes a settlement. */}
-              <SubItem to="/cod-settlement-requests" icon={Banknote} label="Settlement Requests" />
-              <SubItem to="/billing" icon={Receipt} label="Billing & Credit" />
-            </SidebarGroup>
-
-            {canReadBooks && (
-              <>
-                <SubItem to="/accounting/transactions/journal" icon={NotebookPen} label="Journal Entries" />
-
-                <SidebarGroup label="Cash" icon={Coins} match="/accounting/transactions/cash">
-                  <SubItem to="/accounting/transactions/cash/payments" icon={Banknote} label="Payment" />
-                  <SubItem to="/accounting/transactions/cash/receipts" icon={Receipt} label="Receipt" />
-                </SidebarGroup>
-
-                <SidebarGroup label="Bank" icon={Landmark} match="/accounting/transactions/bank">
-                  <SubItem to="/accounting/transactions/bank/payments" icon={CreditCard} label="Payment" />
-                  <SubItem to="/accounting/transactions/bank/receipts" icon={Receipt} label="Receipt" />
-                </SidebarGroup>
-              </>
-            )}
+            <SubItem to="/accounting/transactions/vendor-cod" icon={Store} label="COD & Settlements" />
+            <SubItem to="/cod-settlement-requests" icon={Banknote} label="Settlement Requests" />
+            <SubItem to="/billing" icon={Receipt} label="Billing & Credit" />
           </SidebarGroup>
 
           {canReadBooks && (
-            <SidebarGroup label="Ledger Report" icon={FileText} match="/accounting/ledgers">
-              <SubItem to="/accounting/ledgers/vendor" icon={Store} label="Vendor ledger" />
-              <SubItem to="/accounting/ledgers/rider" icon={Bike} label="Rider ledger" />
-              <SubItem to="/accounting/ledgers/account" icon={BookOpen} label="Account ledger" />
-            </SidebarGroup>
+            <>
+              <SubItem to="/accounting/transactions/journal" icon={NotebookPen} label="Journal" />
+              <SubItem to="/accounting/ledgers/account" icon={BookOpen} label="Ledger" />
+
+              <SidebarGroup label="Cash" icon={Coins} match="/accounting/transactions/cash">
+                <SubItem to="/accounting/transactions/cash/receipts" icon={Receipt} label="Receipt" />
+                <SubItem to="/accounting/transactions/cash/payments" icon={Banknote} label="Payment" />
+              </SidebarGroup>
+
+              <SidebarGroup label="Bank" icon={Landmark} match="/accounting/transactions/bank">
+                <SubItem to="/accounting/transactions/bank/receipts" icon={Receipt} label="Receipt" />
+                <SubItem to="/accounting/transactions/bank/payments" icon={CreditCard} label="Payment" />
+              </SidebarGroup>
+            </>
           )}
+
+          {/* Editing the chart reinterprets posted history, so it is a
+              super_admin job rather than part of the books grant. */}
+          {isSuperAdmin && <SubItem to="/finance/masters" icon={FileText} label="Masters" />}
         </div>
 
         <SidebarSection label="Operations" />

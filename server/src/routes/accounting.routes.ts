@@ -16,6 +16,8 @@ import {
   rangeQuerySchema,
   reverseEntrySchema,
   setPeriodStatusSchema,
+  createAccountSchema,
+  updateAccountSchema,
   transactionsQuerySchema,
   voidExpenseSchema,
 } from "../validators/accounting.schema";
@@ -30,6 +32,9 @@ import {
   getProfitAndLossController,
   getTrialBalanceController,
   listAccountsController,
+  listChartController,
+  createAccountController,
+  updateAccountController,
   listExpensesController,
   listJournalController,
   listPartyBalancesController,
@@ -178,5 +183,28 @@ accountingRouter.post("/journal/:id/reverse", ...write, validate(reverseEntrySch
 
 // PATCH /api/accounting/periods/:periodKey — close or reopen a BS month
 accountingRouter.patch("/periods/:periodKey", ...write, validate(setPeriodStatusSchema), setPeriodStatusController);
+
+// ── Masters ─────────────────────────────────────────────────────────────────
+//
+// Reading the chart follows the section's own grant. Editing it does not: an
+// account's type and normal side decide how every line ever posted to it is
+// read, so this is a super_admin job rather than something that comes with
+// ACCOUNTING_ACCESS. masters.service refuses the dangerous edits outright once
+// an account has been posted to; this just keeps the door narrower.
+const masters = [
+  authMiddleware,
+  csrfProtection,
+  authorizeRoles("super_admin"),
+  writeLimiter,
+] as const;
+
+// GET /api/accounting/chart — the chart as a tree, with posted-line counts
+accountingRouter.get("/chart", ...read, listChartController);
+
+// POST /api/accounting/chart — add an account or a group
+accountingRouter.post("/chart", ...masters, validate(createAccountSchema), createAccountController);
+
+// PATCH /api/accounting/chart/:code — rename, regroup, deactivate
+accountingRouter.patch("/chart/:code", ...masters, validate(updateAccountSchema), updateAccountController);
 
 export default accountingRouter;

@@ -11,7 +11,13 @@ import SearchableSelectAsync, {
 } from '../../../components/SearchableSelectAsync';
 import { Banner } from '../ui';
 import { money } from '../format';
-import { getSettlements, type SettlementListItem } from '../../../services/finance.service';
+import FormField from '../../../components/FormField';
+import NepaliDatePicker from '../../../components/NepaliDatePicker';
+import {
+  getSettlements,
+  type SettlementListItem,
+  type SettlementStatusFilter,
+} from '../../../services/finance.service';
 import { getRiders, searchVendors } from '../../../services/users.service';
 import { toBsDate } from '../../../utils/nepaliDate';
 import '../Accounting.css';
@@ -26,6 +32,9 @@ import '../Accounting.css';
 const PAGE_SIZE = 20;
 // One page of picker options per fetch; it loads more as the list is scrolled.
 const PICKER_PAGE_SIZE = 50;
+
+/** A row as the table sees it: the statement plus its serial number on the page. */
+type SettlementRow = SettlementListItem & { sn: number };
 
 const SettlementsTab: React.FC<{ payeeType: 'rider' | 'vendor' }> = ({ payeeType }) => {
   const navigate = useNavigate();
@@ -43,6 +52,15 @@ const SettlementsTab: React.FC<{ payeeType: 'rider' | 'vendor' }> = ({ payeeType
   const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
+  // Status, settlement date and page size, carried over from the COD Management
+  // screen this replaced. All three are applied server-side, so they narrow the
+  // whole list rather than the page already fetched.
+  const [status, setStatus] = useState<SettlementStatusFilter | ''>('');
+  // One date, not a range: settlement_date is a date column, so the same value
+  // goes in as both bounds and matches that day exactly.
+  const [settlementDate, setSettlementDate] = useState('');
+  const [pageSize, setPageSize] = useState(PAGE_SIZE);
 
   // Back to page 1 when the other tab's party type arrives, or you land past
   // the end of a shorter list. The selected party goes with it - a rider id
@@ -105,7 +123,15 @@ const SettlementsTab: React.FC<{ payeeType: 'rider' | 'vendor' }> = ({ payeeType
     setLoading(true);
     setError('');
 
-    getSettlements(payeeType, payeeId || undefined, page, PAGE_SIZE)
+    getSettlements(
+      payeeType,
+      payeeId || undefined,
+      page,
+      pageSize,
+      settlementDate || undefined,
+      settlementDate || undefined,
+      status || undefined,
+    )
       .then((res) => {
         if (!active) return;
         setItems(res.data);
@@ -121,41 +147,84 @@ const SettlementsTab: React.FC<{ payeeType: 'rider' | 'vendor' }> = ({ payeeType
     return () => {
       active = false;
     };
-  }, [payeeType, page, payeeId]);
+  }, [payeeType, page, payeeId, pageSize, settlementDate, status]);
 
-  const rows = useMemo(
-    () => items.map((item, index) => ({ ...item, sn: (page - 1) * PAGE_SIZE + index + 1 })),
-    [items, page],
+  const rows: SettlementRow[] = useMemo(
+    () => items.map((item, index) => ({ ...item, sn: (page - 1) * pageSize + index + 1 })),
+    [items, page, pageSize],
   );
+
+  /** Any filter change puts you back on page 1 — page 4 of the old result is meaningless. */
+  const applyFilter = (change: () => void) => {
+    change();
+    setPage(1);
+  };
 
   return (
     <>
+      {/* The drill-down and its date on the left, status on the right.
+          `acc-toolbar` is space-between, so the two left-hand filters have to
+          be one child to stay together — three loose children would spread
+          evenly across the bar and put the date nowhere near the picker it
+          belongs with. */}
       <div className="acc-toolbar">
-        <label className="acc-filter-wide">
-          <span>{payeeType === 'rider' ? 'RIDER' : 'VENDOR'}</span>
-          <div className="acc-payee-filter">
-            <SearchableSelectAsync
-              asyncSearch={searchPayees}
-              value={payeeId}
-              onChange={selectPayee}
-              initialLabel={payeeLabel}
-              placeholder={payeeType === 'rider' ? 'All riders' : 'All vendors'}
-              searchPlaceholder={`Search ${payeeType} by name...`}
-              emptyMessage={`No ${payeeType}s found.`}
+        <div className="acc-filters">
+          <label className="acc-filter-wide">
+            <span>{payeeType === 'rider' ? 'RIDER' : 'VENDOR'}</span>
+            <div className="acc-payee-filter">
+              <SearchableSelectAsync
+                asyncSearch={searchPayees}
+                value={payeeId}
+                onChange={selectPayee}
+                initialLabel={payeeLabel}
+                placeholder={payeeType === 'rider' ? 'All riders' : 'All vendors'}
+                searchPlaceholder={`Search ${payeeType} by name...`}
+                emptyMessage={`No ${payeeType}s found.`}
+              />
+              {/* The picker has no way back to "all" once a party is chosen, and
+                  the filter is server-side, so an empty result is a dead end. */}
+              {payeeId && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => selectPayee('')}
+                  aria-label={`Clear ${payeeType} filter`}
+                >
+                  <X size={14} />
+                </Button>
+              )}
+            </div>
+          </label>
+
+          <label>
+            <span>SETTLEMENT DATE</span>
+            <NepaliDatePicker
+              value={settlementDate}
+              onChange={(value) => applyFilter(() => setSettlementDate(value))}
             />
-            {/* The picker has no way back to "all" once a party is chosen, and
-                the filter is server-side, so an empty result is a dead end. */}
-            {payeeId && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => selectPayee('')}
-                aria-label={`Clear ${payeeType} filter`}
-              >
-                <X size={14} />
-              </Button>
-            )}
-          </div>
+          </label>
+        </div>
+
+        <label>
+          <span>STATUS</span>
+          {/* Empty `label` on purpose: the CAPS caption is the wrapping
+              <label><span>, the shape every filter panel in the app uses.
+
+              Settled and Pending only. `cancelled` is accepted by the API but
+              left out on purpose — a cancelled statement is withdrawn, not a
+              state anyone browses the list for. `partially_paid` is not in the
+              API's accepted set at all, so offering it would 400. */}
+          <FormField
+            label=""
+            type="select"
+            value={status}
+            onChange={(value) => applyFilter(() => setStatus(value as SettlementStatusFilter | ''))}
+            options={[
+              { value: '', label: 'All statuses' },
+              { value: 'settled', label: 'Settled' },
+              { value: 'pending', label: 'Pending' },
+            ]}
+          />
         </label>
       </div>
 
@@ -170,7 +239,7 @@ const SettlementsTab: React.FC<{ payeeType: 'rider' | 'vendor' }> = ({ payeeType
           { header: 'SN', accessor: 'sn', width: '60px' },
           {
             header: 'Statement ID',
-            width: '150px',
+            width: '185px',
             accessor: (item) => (
               <button
                 type="button"
@@ -181,43 +250,95 @@ const SettlementsTab: React.FC<{ payeeType: 'rider' | 'vendor' }> = ({ payeeType
               </button>
             ),
           },
-          { header: payeeType === 'rider' ? 'Rider' : 'Vendor', accessor: 'payeeName' },
+          { header: payeeType === 'rider' ? 'Rider' : 'Vendor', width: '200px', accessor: 'payeeName' },
           {
             header: 'Amount',
-            width: '140px',
+            width: '130px',
             className: 'acc-num',
             accessor: (item) => <span className="acc-num">{money(item.amount)}</span>,
           },
           {
             header: 'Settlement date',
-            width: '140px',
+            width: '125px',
             accessor: (item) => (item.transferDate ? toBsDate(item.transferDate) : '—'),
           },
+          // Vendors only, and this is the one place it earns its width: a payout
+          // is money the office has to *send* somewhere, so whoever makes the
+          // transfer reads the account off this row. A rider settlement is cash
+          // handed over a counter — there is nothing to send, and the column was
+          // three lines of em dashes.
+          //
+          // Comes straight from the vendor record (bank_name / bank_account_no /
+          // bank_account_holder), captured when the vendor was created.
+          ...(payeeType === 'vendor'
+            ? [
+                {
+                  header: 'Bank details',
+                  width: '185px',
+                  accessor: (item: SettlementRow) => {
+                    // Only the parts that are filled in. Rendering an em dash
+                    // for a missing account holder cost a whole extra line of
+                    // row height to say nothing — and because most vendors have
+                    // a bank and an account but no holder recorded, it made
+                    // every other row three lines tall.
+                    const lines = [
+                      item.bankName,
+                      item.bankAccountNo && `A/C ${item.bankAccountNo}`,
+                      item.bankAccountHolder,
+                    ].filter(Boolean) as string[];
+
+                    if (lines.length === 0) return <span className="acc-muted">Not on file</span>;
+                    return lines.map((line) => (
+                      <span key={line} className="acc-stack">
+                        {line}
+                      </span>
+                    ));
+                  },
+                },
+              ]
+            : []),
+          // Where the money actually went, which the bank details cannot say:
+          // the account on file is the same on every row, while the split across
+          // methods is what differs statement to statement and what anyone
+          // reconciling against a bank statement is looking for.
           {
-            header: 'Bank details',
-            width: '210px',
+            header: 'Payment',
+            width: '185px',
             accessor: (item) =>
-              item.bankName || item.bankAccountNo || item.bankAccountHolder ? (
+              item.paymentBreakdown.length > 0 ? (
                 <>
-                  {item.bankName || '—'}
-                  <span className="acc-sub">A/C {item.bankAccountNo || '—'}</span>
-                  <span className="acc-sub">{item.bankAccountHolder || '—'}</span>
+                  {item.paymentBreakdown.map((line) => (
+                    // `acc-stack`, not `acc-sub`: these lines are the column's
+                    // content, so they take the table's own font size and
+                    // colour rather than the smaller grey of a footnote.
+                    <span key={line.method} className="acc-stack">
+                      {line.method} - {money(line.amount)}
+                    </span>
+                  ))}
                 </>
               ) : (
-                <span className="acc-muted">—</span>
+                <span className="acc-muted">Not paid</span>
               ),
           },
-          { header: 'Remark', accessor: (item) => item.remark || '—' },
+          // Status then Remark, last two. The remark is free text of any length,
+          // so it goes at the end where it can run on without pushing a fixed
+          // column off the edge — and status sits beside it, where the eye
+          // finishes the row.
           {
             header: 'Status',
-            width: '120px',
+            width: '110px',
             accessor: (item) => (
               <StatusChip variant="solid" tone={item.status === 'settled' ? 'success' : 'warning'}>
                 {item.status === 'settled' ? 'Settled' : 'Pending'}
               </StatusChip>
             ),
           },
+          { header: 'Remark', width: '190px', accessor: (item) => item.remark || '—' },
         ]}
+        // Every column is sized, so the table opts into fixed layout and scrolls
+        // inside its own box rather than squeezing the payment figures. Vendor
+        // carries the extra bank column, hence the wider floor.
+        minWidth={payeeType === 'vendor' ? '1370px' : '1185px'}
         emptyMessage={
           payeeId
             ? `No settlements recorded for that ${payeeType} yet.`
@@ -231,6 +352,8 @@ const SettlementsTab: React.FC<{ payeeType: 'rider' | 'vendor' }> = ({ payeeType
           page={page}
           totalPages={totalPages}
           onPageChange={setPage}
+          pageSize={pageSize}
+          onPageSizeChange={(size) => applyFilter(() => setPageSize(size))}
         />
       )}
     </>

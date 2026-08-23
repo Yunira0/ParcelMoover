@@ -33,8 +33,6 @@ import prisma from "../lib/prisma";
 import { AppError } from "../utils/AppError";
 import { ACCOUNT, loadMethodAccounts, type MethodAccounts } from "../services/accounting/accounts";
 import {
-  postCodCollected,
-  postDeliveryChargeEarned,
   postOpeningBalance,
   postRiderRemittance,
   postVendorPaymentVerified,
@@ -42,7 +40,7 @@ import {
   type PostOutcome,
 } from "../services/accounting/events";
 
-type EventKind = "cod_collected" | "delivery_charge" | "rider_remittance" | "vendor_settlement" | "vendor_payment";
+type EventKind = "rider_remittance" | "vendor_settlement" | "vendor_payment";
 
 interface EventRef {
   kind: EventKind;
@@ -104,36 +102,15 @@ async function collectEvents(options: Options): Promise<EventRef[]> {
         }
       : {};
 
-  const [collections, parcels, settlements, payments] = await Promise.all([
-    // Only collections where cash actually changed hands. A row with
-    // collected_amount = 0 describes an order that has not been delivered yet.
+  const [settlements, payments] = await Promise.all([
+    // Statements are the money events on the COD side - the only ones. Nothing
+    // is posted per parcel, so there are no collections or deliveries to
+    // replay here: a statement carries its whole cycle in one entry.
     //
-    // Soft-deleted parcels are excluded to match billing.service, whose balance
-    // query scopes both COD and charges with `p.deleted_at IS NULL`. Without
-    // this the ledger credits a vendor for COD on a voided order that their
-    // derived balance never counted, and the two stop agreeing.
-    prisma.cod_collections.findMany({
-      where: { collected_amount: { gt: 0 }, parcels: { deleted_at: null }, ...window("collected_at") },
-      select: { id: true, collected_at: true, created_at: true },
-    }),
-    // The earned-charge rule lives in hasEarnedDeliveryCharge; this where
-    // clause is its SQL twin, kept narrow so the scan stays cheap.
-    prisma.parcels.findMany({
-      where: {
-        deleted_at: null,
-        delivery_charge: { gt: 0 },
-        OR: [
-          { status: { in: ["delivered", "partially_delivered"] } },
-          { order_type: "return", status: "returned_to_vendor" },
-        ],
-        ...window("delivered_at"),
-      },
-      select: { id: true, delivered_at: true, updated_at: true },
-    }),
-    // Only settled statements. A pending one has earmarked orders but moved no
-    // money, and posting it would claim a payment that has not happened.
+    // Everything but a cancelled statement posts, cancelled having moved no
+    // money at all.
     prisma.settlements.findMany({
-      where: { status: "settled", ...window("settlement_date") },
+      where: { status: { not: "cancelled" }, ...window("settlement_date") },
       select: { id: true, payee_type: true, settlement_date: true, updated_at: true },
     }),
     // Only verified payments, for the same reason payForSettlement will not
@@ -145,8 +122,6 @@ async function collectEvents(options: Options): Promise<EventRef[]> {
   ]);
 
   const events: EventRef[] = [
-    ...collections.map((row) => ({ kind: "cod_collected" as const, id: row.id, at: row.collected_at ?? row.created_at })),
-    ...parcels.map((row) => ({ kind: "delivery_charge" as const, id: row.id, at: row.delivered_at ?? row.updated_at })),
     ...settlements.map((row) => ({
       kind: (row.payee_type === "rider" ? "rider_remittance" : "vendor_settlement") as EventKind,
       id: row.id,
@@ -220,32 +195,24 @@ async function postChunk(
   const idsOf = (kind: EventKind) => chunk.filter((event) => event.kind === kind).map((event) => event.id);
 
   // One read per source table per chunk, then one transaction to post them all.
-  const [collections, parcels, settlements, payments] = await Promise.all([
-    prisma.cod_collections.findMany({
-      where: { id: { in: idsOf("cod_collected") } },
-      select: {
-        id: true, parcel_id: true, vendor_id: true, rider_id: true,
-        collected_amount: true, collected_at: true, created_at: true,
-        riders: { select: { name: true } },
-      },
-    }),
-    prisma.parcels.findMany({
-      where: { id: { in: idsOf("delivery_charge") } },
-      select: {
-        id: true, vendor_id: true, tracking_id: true, delivery_charge: true, status: true,
-        order_type: true, delivered_at: true, updated_at: true, destination_location_id: true,
-        vendors: { select: { client_name: true, business_name: true } },
-        parties_parcels_sender_idToparties: { select: { name: true } },
-      },
-    }),
+  const [settlements, payments] = await Promise.all([
     prisma.settlements.findMany({
       where: { id: { in: [...idsOf("rider_remittance"), ...idsOf("vendor_settlement")] } },
       select: {
         id: true, statement_id: true, payee_type: true, rider_id: true, vendor_id: true,
-        amount: true, payable_amount: true, payment_method: true, payments: true,
+        amount: true, payable_amount: true, paid_amount: true, payment_method: true, payments: true,
         settlement_date: true, updated_at: true,
         riders: { select: { name: true } },
         vendors: { select: { client_name: true, business_name: true } },
+        // Only to split the office's cut between delivery and return revenue;
+        // the total comes from the statement itself. See syncSettlementPostings.
+        settlement_items: {
+          select: {
+            cod_collections: {
+              select: { parcels: { select: { status: true, order_type: true, delivery_charge: true } } },
+            },
+          },
+        },
       },
     }),
     prisma.vendor_payments.findMany({
@@ -258,8 +225,6 @@ async function postChunk(
   ]);
 
   const byId = <T extends { id: string }>(rows: T[]) => new Map(rows.map((row) => [row.id, row]));
-  const collectionById = byId(collections);
-  const parcelById = byId(parcels);
   const settlementById = byId(settlements);
   const paymentById = byId(payments);
 
@@ -267,16 +232,6 @@ async function postChunk(
     async (tx) => {
       for (const event of chunk) {
         switch (event.kind) {
-          case "cod_collected": {
-            const row = collectionById.get(event.id);
-            if (row) await attempt(tally, event.kind, row.id, () => postCodCollected(tx, row));
-            break;
-          }
-          case "delivery_charge": {
-            const row = parcelById.get(event.id);
-            if (row) await attempt(tally, event.kind, row.tracking_id, () => postDeliveryChargeEarned(tx, row));
-            break;
-          }
           case "rider_remittance": {
             const row = settlementById.get(event.id);
             if (row) await attempt(tally, event.kind, row.statement_id, () => postRiderRemittance(tx, { ...row, methodAccounts }));
@@ -356,8 +311,6 @@ async function main() {
   const events = await collectEvents(options);
 
   const tally: Record<EventKind, Tally> = {
-    cod_collected: { posted: 0, alreadyPosted: 0, skipped: 0, failed: 0 },
-    delivery_charge: { posted: 0, alreadyPosted: 0, skipped: 0, failed: 0 },
     rider_remittance: { posted: 0, alreadyPosted: 0, skipped: 0, failed: 0 },
     vendor_settlement: { posted: 0, alreadyPosted: 0, skipped: 0, failed: 0 },
     vendor_payment: { posted: 0, alreadyPosted: 0, skipped: 0, failed: 0 },
