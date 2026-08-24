@@ -53,7 +53,6 @@ const PartySearchTab: React.FC = () => {
   // The typed name rides along so the person page can send you back to the same
   // list you picked from.
   const open = (result: PartySearchResult) => {
-    const q = query.trim();
     navigate(
       `/finance/ledger/${result.partyType}/${result.partyId}`,
     );
