@@ -1,10 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import TallyPage, { type TallyAction } from '../../components/finance/TallyPage';
 import Button from '../../components/Button';
+import ToggleSwitch from '../../components/ToggleSwitch';
 import FormField from '../../components/FormField';
+import NepaliDatePicker from '../../components/NepaliDatePicker';
+import PartyPicker, { type PickedParty } from '../accounting/PartyPicker';
 import {
   createAccount,
   getChart,
+  setOpeningBalance,
   updateAccount,
   ACCOUNT_CLASSES,
   ACCOUNT_CLASS_LABELS,
@@ -60,6 +64,11 @@ const MastersPage: React.FC = () => {
   const [error, setError] = useState<unknown>(null);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState('');
+
+  /** null = closed, otherwise the account code the opening balance is for. */
+  const [opening, setOpening] = useState<string | null>(null);
+  const [openingForm, setOpeningForm] = useState({ amount: '', asOf: '', reference: '' });
+  const [openingParty, setOpeningParty] = useState<PickedParty | null>(null);
 
   /** null = closed, '' = adding a new account, otherwise the code being edited. */
   const [editing, setEditing] = useState<string | null>(null);
@@ -152,6 +161,45 @@ const MastersPage: React.FC = () => {
     }
   };
 
+  const openOpening = (node: AccountNode) => {
+    setOpening(node.code);
+    setOpeningForm({ amount: '', asOf: '', reference: '' });
+    setOpeningParty(null);
+    setEditing(null);
+    setNotice('');
+  };
+
+  const openingAccount = useMemo(() => rows.find((row) => row.code === opening) ?? null, [rows, opening]);
+
+  const saveOpening = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!openingAccount) return;
+    setSaving(true);
+    setError(null);
+    setNotice('');
+    try {
+      const result = await setOpeningBalance({
+        accountCode: openingAccount.code,
+        amount: Number(openingForm.amount),
+        asOf: openingForm.asOf,
+        partyType: openingParty ? (openingParty.partyType as 'rider' | 'vendor') : null,
+        partyId: openingParty?.partyId ?? null,
+        reference: openingForm.reference,
+      });
+      setNotice(
+        result.created
+          ? `Opening balance posted as ${result.entryNo}.`
+          : `That opening balance was already recorded as ${result.entryNo ?? 'an earlier entry'}.`,
+      );
+      setOpening(null);
+      await load();
+    } catch (err) {
+      setError(err);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   // One action, because this screen does one thing. Refresh repeated the
   // browser's own, and Day book and Back repeated the nav and the back button:
   // three keys to memorise for things the app already does, sitting beside the
@@ -168,10 +216,90 @@ const MastersPage: React.FC = () => {
     >
       {notice && <p className="tly-note">{notice}</p>}
 
+      {opening !== null && openingAccount && (
+        <form className="tly-voucher" onSubmit={saveOpening}>
+          <div className="tly-titlebar">
+            <h2 className="tly-title">Opening balance — {openingAccount.code} {openingAccount.name}</h2>
+          </div>
+
+          <p className="tly-note">
+            A starting position nothing in the system can produce — cash a rider was already holding when
+            the books began, or a bank account opened with money in it. It posts against Opening Balance
+            Equity, so the books stay balanced. The reference is its identity: recording the same one
+            twice changes nothing rather than doubling the figure.
+          </p>
+
+          <div className="tly-form-grid">
+            <FormField
+              label="Amount"
+              required
+              type="number"
+              value={openingForm.amount}
+              onChange={(amount) => setOpeningForm({ ...openingForm, amount })}
+              placeholder="5000"
+              hint={
+                openingAccount.normalSide === 'debit'
+                  ? 'Positive is what this account holds. Negative reverses it.'
+                  : 'Positive is what this account owes. Negative reverses it.'
+              }
+            />
+            <label className="tly-form-date" aria-label="As of">
+              <span>As of</span>
+              <NepaliDatePicker
+                value={openingForm.asOf}
+                onChange={(asOf) => setOpeningForm({ ...openingForm, asOf })}
+                placeholder="Date the position is stated as of"
+              />
+            </label>
+            <FormField
+              label="Reference"
+              required
+              value={openingForm.reference}
+              onChange={(reference) => setOpeningForm({ ...openingForm, reference })}
+              placeholder="Migration from spreadsheet, Shrawan 2083"
+              gridColumn="1 / -1"
+            />
+          </div>
+
+          {openingAccount.isControl && (
+            <div className="tly-form-party">
+              {/* A control account's balance is the sum of its subledger, so an
+                  opening with nobody named would sit in the total and in none of
+                  the per-party ledgers that are meant to add up to it. */}
+              <PartyPicker
+                types={openingAccount.subledgerType === 'vendor' ? ['vendor'] : ['rider']}
+                value={openingParty}
+                onChange={setOpeningParty}
+                prompt={`Which ${openingAccount.subledgerType ?? 'party'} is this opening balance for?`}
+              />
+            </div>
+          )}
+
+          <div className="tly-form-actions">
+            <Button type="button" variant="outline" onClick={() => setOpening(null)}>
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              variant="primary"
+              disabled={
+                saving ||
+                !openingForm.amount ||
+                !openingForm.asOf ||
+                openingForm.reference.trim().length < 2 ||
+                (openingAccount.isControl && !openingParty)
+              }
+            >
+              {saving ? 'Posting…' : 'Accept'}
+            </Button>
+          </div>
+        </form>
+      )}
+
       {editing !== null && (
         <form className="tly-voucher" onSubmit={save}>
           <div className="tly-titlebar">
-            <h2 className="tly-title">{editing === '' ? 'Create account' : `Alter ${current?.code}`}</h2>
+            <h2 className="tly-title">{editing === '' ? 'Create account' : `Edit ${current?.code}`}</h2>
           </div>
 
           {locked && (
@@ -266,7 +394,7 @@ const MastersPage: React.FC = () => {
               <th>Name</th>
               <th style={{ width: '18%' }}>Type</th>
               <th style={{ width: '10%' }}>Normal side</th>
-              <th style={{ width: '16%' }}>&nbsp;</th>
+              <th style={{ width: '24%' }}>&nbsp;</th>
             </tr>
           </thead>
           <tbody>
@@ -278,7 +406,6 @@ const MastersPage: React.FC = () => {
                   {node.isControl && (
                     <span className="tly-muted"> · control ({node.subledgerType})</span>
                   )}
-                  {!node.isActive && <span className="tly-muted"> · inactive</span>}
                 </td>
                 <td>
                   {node.subType ? ACCOUNT_CLASS_LABELS[node.subType] : <span className="tly-muted">—</span>}
@@ -287,11 +414,19 @@ const MastersPage: React.FC = () => {
                 <td>
                   <div className="tly-row-actions">
                     <Button size="sm" variant="outline" onClick={() => openEdit(node)}>
-                      Alter
+                      Edit
                     </Button>
-                    <Button size="sm" variant="ghost" onClick={() => void toggleActive(node)}>
-                      {node.isActive ? 'Deactivate' : 'Activate'}
+                    <Button size="sm" variant="outline" onClick={() => openOpening(node)}>
+                      Opening
                     </Button>
+                    <span className="tly-toggle">
+                      <ToggleSwitch
+                        checked={node.isActive}
+                        onChange={() => void toggleActive(node)}
+                        ariaLabel={`${node.isActive ? 'Deactivate' : 'Activate'} ${node.code} ${node.name}`}
+                      />
+                      <span>{node.isActive ? 'Active' : 'Inactive'}</span>
+                    </span>
                   </div>
                 </td>
               </tr>

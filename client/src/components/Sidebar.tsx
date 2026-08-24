@@ -32,9 +32,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  Landmark,
   CreditCard,
-  Coins,
   FileText,
   Wrench,
 } from 'lucide-react';
@@ -110,11 +108,11 @@ const SidebarSection: React.FC<{ label: string }> = ({ label }) => (
 /**
  * A section that folds away.
  *
- * Finance has eleven leaves across three levels, which is too many to leave
- * permanently open beside every other section. `match` is the path prefix the
- * group owns: the group holding the current route starts open, so arriving by
- * URL or by refresh shows you where you are rather than making you hunt for it.
- * Toggling afterwards is the user's business.
+ * Finance has more than a dozen leaves across three levels, which is too many
+ * to leave permanently open beside every other section. `match` is the path
+ * prefix the group owns: the group holding the current route starts open, so
+ * arriving by URL or by refresh shows you where you are rather than making you
+ * hunt for it. Toggling afterwards is the user's business.
  *
  * Collapsed to icons, the children render unconditionally — labels are hidden at
  * that width anyway, so a closed group would just be a row of missing icons.
@@ -432,16 +430,37 @@ const AdminSidebar: React.FC<{ isSuperAdmin: boolean }> = ({ isSuperAdmin }) => 
           {canReadBooks && (
             <>
               <SubItem to="/accounting/transactions/journal" icon={NotebookPen} label="Journal" />
-              <SubItem to="/accounting/ledgers/account" icon={BookOpen} label="Ledger" />
-
-              <SidebarGroup label="Cash" icon={Coins} match="/accounting/transactions/cash">
-                <SubItem to="/accounting/transactions/cash/receipts" icon={Receipt} label="Receipt" />
-                <SubItem to="/accounting/transactions/cash/payments" icon={Banknote} label="Payment" />
+              {/* Every cash and bank concern in one disclosure instead of
+                  three: the group summary (opening/movement/closing per
+                  ledger, with Payment/Receipt one key away) and the four
+                  scope registers that used to sit in their own separate
+                  Cash and Bank groups beside it. */}
+              <SidebarGroup
+                label="Cash & Bank"
+                icon={Wallet}
+                match={['/finance/cash-bank', '/accounting/transactions/cash', '/accounting/transactions/bank']}
+              >
+                <SubItem to="/finance/cash-bank" icon={Wallet} label="Overview" end />
+                <SubItem to="/accounting/transactions/cash/receipts" icon={Receipt} label="Cash Receipts" />
+                <SubItem to="/accounting/transactions/cash/payments" icon={Banknote} label="Cash Payments" />
+                <SubItem to="/accounting/transactions/bank/receipts" icon={Receipt} label="Bank Receipts" />
+                <SubItem to="/accounting/transactions/bank/payments" icon={CreditCard} label="Bank Payments" />
               </SidebarGroup>
 
-              <SidebarGroup label="Bank" icon={Landmark} match="/accounting/transactions/bank">
-                <SubItem to="/accounting/transactions/bank/receipts" icon={Receipt} label="Receipt" />
-                <SubItem to="/accounting/transactions/bank/payments" icon={CreditCard} label="Payment" />
+              {/* One ledger, three groupings of it: any account from the
+                  chart, and the two control accounts broken down per party.
+                  The children are unqualified because the group already says
+                  Ledger - "Ledger > Vendor Ledger" reads as two of them.
+                  /finance/ledger is in the match so the printable sheets these
+                  drill into keep the group open. */}
+              <SidebarGroup
+                label="Ledger"
+                icon={BookOpen}
+                match={['/accounting/ledgers', '/finance/ledger']}
+              >
+                <SubItem to="/accounting/ledgers/account" icon={BookOpen} label="Account" />
+                <SubItem to="/accounting/ledgers/vendor" icon={Store} label="Vendor" />
+                <SubItem to="/accounting/ledgers/rider" icon={Bike} label="Rider" />
               </SidebarGroup>
             </>
           )}

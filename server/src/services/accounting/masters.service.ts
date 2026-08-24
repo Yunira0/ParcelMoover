@@ -7,6 +7,8 @@ import type {
 } from "../../generated/prisma/enums";
 import { AppError } from "../../utils/AppError";
 import { clearAccountCache } from "./accounts";
+import { postOpeningBalance } from "./events";
+import { wasPosted } from "./posting.service";
 
 // ── Masters: the chart of accounts as something people can edit ─────────────
 //
@@ -388,4 +390,61 @@ export async function updateAccount(code: string, update: AccountUpdate): Promis
     depth: 0,
     children: [],
   };
+}
+
+// ── Opening balances ────────────────────────────────────────────────────────
+
+export interface OpeningBalanceInput {
+  accountCode: string;
+  /** Signed from the account's own side: positive debits it, negative credits it. */
+  amount: number;
+  /** BS-derived AD instant the position is stated as of. */
+  asOf: Date;
+  party?: { type: "vendor" | "rider"; id: string } | undefined;
+  /** What this opening stands for. Also its identity - the same reference twice is one balance, not two. */
+  reference: string;
+}
+
+/**
+ * Records a starting position that no source row can produce.
+ *
+ * A rider who was already holding cash when the books started, a bank account
+ * opened with a balance: nothing in the system says so, and without this the
+ * ledger reads as though the money appeared out of a settlement.
+ *
+ * A control account needs a party. Its balance is the sum of its subledger, so
+ * an opening posted to it with nobody named would sit in the total and in none
+ * of the per-party ledgers that are supposed to add up to it.
+ */
+export async function setOpeningBalance(
+  input: OpeningBalanceInput,
+  actorId?: string | null,
+): Promise<{ entryNo: string | null; skipped: boolean; created: boolean }> {
+  const account = await prisma.ledger_accounts.findUnique({ where: { code: input.accountCode } });
+  if (!account) throw new AppError(404, `No account with code ${input.accountCode}`);
+  if (!account.is_active) throw new AppError(400, `${account.code} ${account.name} is not active`);
+
+  if (account.is_control && !input.party) {
+    throw new AppError(400, `${account.code} ${account.name} is a control account, so an opening balance has to name a ${account.subledger_type ?? "party"}`);
+  }
+  if (input.party && account.subledger_type && input.party.type !== account.subledger_type) {
+    throw new AppError(400, `${account.code} ${account.name} keeps a ${account.subledger_type} subledger, not a ${input.party.type} one`);
+  }
+  if (input.party && !account.is_control) {
+    throw new AppError(400, `${account.code} ${account.name} has no subledger, so an opening balance cannot name a party`);
+  }
+
+  const outcome = await prisma.$transaction((tx) =>
+    postOpeningBalance(tx, {
+      accountCode: account.code,
+      amount: input.amount,
+      asOf: input.asOf,
+      ...(input.party ? { party: input.party } : {}),
+      reference: input.reference,
+      actorId: actorId ?? null,
+    }),
+  );
+
+  if (!wasPosted(outcome)) return { entryNo: null, skipped: true, created: false };
+  return { entryNo: outcome.entryNo, skipped: false, created: outcome.created };
 }

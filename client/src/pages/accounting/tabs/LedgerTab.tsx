@@ -1,11 +1,10 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import StatCard from '../../../components/StatCard';
 import Table from '../../../components/Table';
 import FilterDropdown from '../../../components/FilterDropdown';
 import PeriodPicker from '../PeriodPicker';
 import { Banner } from '../ui';
-import { cardTone, money, numClass } from '../format';
+import { money, numClass } from '../format';
 import { defaultRange, rangeParams, type RangeSelection } from '../range';
 import {
   getAccountLedger,
@@ -134,23 +133,6 @@ const LedgerTab: React.FC = () => {
       {ledger && (
         <>
           {ledger.account.description && <Banner tone="info">{ledger.account.description}</Banner>}
-
-          <div className="acc-cards">
-            <StatCard
-              label="Opening balance"
-              value={money(ledger.openingBalance)}
-              tone={cardTone(ledger.openingBalance)}
-              hint={`Everything before ${ledger.range.label}`}
-            />
-            <StatCard label="Debits" value={money(ledger.totalDebit)} />
-            <StatCard label="Credits" value={money(ledger.totalCredit)} />
-            <StatCard
-              label="Closing balance"
-              value={money(ledger.closingBalance)}
-              tone={cardTone(ledger.closingBalance)}
-              hint={`${ledger.account.normalSide === 'debit' ? 'Debit' : 'Credit'} balance is normal here`}
-            />
-          </div>
 
           <div className="acc-panel">
             <div className="acc-panel-head">

@@ -55,7 +55,7 @@ const PartySearchTab: React.FC = () => {
   const open = (result: PartySearchResult) => {
     const q = query.trim();
     navigate(
-      `/accounting/people/${result.partyType}/${result.partyId}${q ? `?q=${encodeURIComponent(q)}` : ''}`,
+      `/finance/ledger/${result.partyType}/${result.partyId}`,
     );
   };
 

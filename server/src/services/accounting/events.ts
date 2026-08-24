@@ -19,7 +19,7 @@
 // and billing.service derives every vendor balance from them.
 //
 // Read together the entries say: COD is never the office's money. It arrives
-// as cash matched by an equal liability (2005 COD Held for Vendors), and the
+// as cash matched by an equal liability (2005 COD in Transit), and the
 // only part the office ever keeps - recognised on the statement that settles
 // it - is the delivery charge.
 import { Prisma } from "../../generated/prisma/client";
@@ -279,7 +279,7 @@ function cashLines(
  * The rider hands over the cash they were carrying.
  *
  *   Dr  1000/1100/... Cash, Bank or Wallet    the office now holds it
- *   Cr  2005 COD Held for Vendors             and owes it on to the vendors
+ *   Cr  2005 COD in Transit                   and owes it on to the vendors
  *
  * This is where COD enters the books. Nothing is posted while a rider is out
  * collecting - the statement that brings the cash in is the event, not each
@@ -305,7 +305,6 @@ export function describeRiderRemittance(settlement: SettlementForPosting): Descr
     throw new AppError(500, `Rider statement ${settlement.statement_id} has a negative amount`);
   }
 
-  const label = `Remittance ${settlement.statement_id}`;
   const rider = { type: "rider" as const, id: settlement.rider_id };
 
   // As on the vendor side, split by cash actually handed over. What the
@@ -317,18 +316,18 @@ export function describeRiderRemittance(settlement: SettlementForPosting): Descr
 
   const lines: JournalLineInput[] = [];
   if (!paid.isZero()) {
-    lines.push(...cashLines(paymentSplits(settlement, paid), "debit", label, settlement.methodAccounts));
+    lines.push(...cashLines(paymentSplits(settlement, paid), "debit", "COD received", settlement.methodAccounts));
   }
   if (!stillWithRider.isZero()) {
-    lines.push({ accountCode: ACCOUNT.CASH_WITH_RIDER, debit: stillWithRider, party: rider, memo: `Outstanding on ${label}` });
+    lines.push({ accountCode: ACCOUNT.CASH_WITH_RIDER, debit: stillWithRider, party: rider, memo: "Still with rider" });
   }
   lines.push({ accountCode: ACCOUNT.COD_HELD, credit: amount, party: rider });
 
   return {
     entryDate: settlement.settlement_date ?? settlement.updated_at,
     memo: settlement.riders?.name
-      ? `Rider remittance from ${settlement.riders.name}`
-      : `Rider remittance ${settlement.statement_id}`,
+      ? `COD collected from rider ${settlement.riders.name}`
+      : `COD collected from rider, ${settlement.statement_id}`,
     lines,
   };
 }
@@ -376,7 +375,6 @@ export function describeVendorSettlement(settlement: SettlementForPosting): Desc
     return { skip: "statement moves no money" };
   }
 
-  const label = `Settlement ${settlement.statement_id}`;
   const vendor = { type: "vendor" as const, id: settlement.vendor_id };
 
   // The whole cycle in one entry, which is the point: COD comes off the float
@@ -389,7 +387,7 @@ export function describeVendorSettlement(settlement: SettlementForPosting): Desc
       accountCode: ACCOUNT.COD_HELD,
       debit: gross,
       party: vendor,
-      memo: `COD released on ${label}`,
+      memo: "COD collected",
     });
   }
 
@@ -401,10 +399,10 @@ export function describeVendorSettlement(settlement: SettlementForPosting): Desc
     const returnShare = clampShare(decimal(settlement.return_charges ?? 0), charges);
     const deliveryShare = charges.minus(returnShare);
     if (!deliveryShare.isZero()) {
-      lines.push({ accountCode: ACCOUNT.DELIVERY_REVENUE, credit: deliveryShare, memo: `Delivery charges on ${label}` });
+      lines.push({ accountCode: ACCOUNT.DELIVERY_REVENUE, credit: deliveryShare, memo: "Delivery charge" });
     }
     if (!returnShare.isZero()) {
-      lines.push({ accountCode: ACCOUNT.RETURN_REVENUE, credit: returnShare, memo: `Return charges on ${label}` });
+      lines.push({ accountCode: ACCOUNT.RETURN_REVENUE, credit: returnShare, memo: "Return charge" });
     }
   }
 
@@ -426,15 +424,25 @@ export function describeVendorSettlement(settlement: SettlementForPosting): Desc
     const owed = magnitude.minus(paid);
     const side = payable.isPositive() ? "credit" : "debit";
 
+    // Money moves opposite ways depending on which side of the payable this
+    // is: the office paying the vendor out, or the vendor paying a shortfall
+    // in.
     if (!paid.isZero()) {
-      lines.push(...cashLines(paymentSplits(settlement, paid), side, label, settlement.methodAccounts));
+      lines.push(
+        ...cashLines(
+          paymentSplits(settlement, paid),
+          side,
+          side === "credit" ? "COD paid" : "COD received",
+          settlement.methodAccounts,
+        ),
+      );
     }
     if (!owed.isZero()) {
       lines.push({
         accountCode: ACCOUNT.VENDOR_CONTROL,
         ...(side === "credit" ? { credit: owed } : { debit: owed }),
         party: vendor,
-        memo: `Payable on ${label}`,
+        memo: "Still payable",
       });
     }
   }
@@ -442,11 +450,9 @@ export function describeVendorSettlement(settlement: SettlementForPosting): Desc
   const officePaysVendor = payable.isPositive();
   return {
     entryDate: settlement.settlement_date ?? settlement.updated_at,
-    // The statement id stays on the cash lines (see cashLines), so leading
-    // with the vendor costs nothing and reads as what happened.
     memo: vendorLabel(settlement.vendors)
-      ? `${officePaysVendor ? "Vendor payout" : "Vendor recovery"} - ${vendorLabel(settlement.vendors)}`
-      : `${officePaysVendor ? "Vendor payout" : "Vendor recovery"} ${settlement.statement_id}`,
+      ? `${officePaysVendor ? "COD paid to vendor" : "COD recovered from vendor"} ${vendorLabel(settlement.vendors)}`
+      : `${officePaysVendor ? "COD paid to vendor" : "COD recovered from vendor"}, ${settlement.statement_id}`,
     lines,
   };
 }

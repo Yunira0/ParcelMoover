@@ -47,3 +47,16 @@ export function formatDate(value?: string | null): string {
   const bs = toBsDate(value);
   return bs || '-';
 }
+
+/**
+ * A ledger balance: the figure, then the side it sits on.
+ *
+ * `debitNormal` says which sign is a debit for that account — a rider's balance
+ * is a debit when positive, a vendor's when negative — so the suffix follows
+ * the account rather than the arithmetic.
+ */
+export function drCr(value: number, debitNormal: boolean): string {
+  if (value === 0) return formatMoney(0);
+  const isDebit = debitNormal ? value > 0 : value < 0;
+  return `${formatMoney(Math.abs(value))} ${isDebit ? 'Dr' : 'Cr'}`;
+}

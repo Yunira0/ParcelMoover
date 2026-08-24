@@ -9,18 +9,20 @@ import {
   type Account,
   type AccountLedger,
 } from '../../services/accounting.service';
-import { formatMoney } from '../../utils/format';
+import { drCr, formatMoney } from '../../utils/format';
 import { downloadExcel } from '../../utils/excel';
+import LedgerSummary from '../../components/finance/LedgerSummary';
 import { toBsDate } from '../../utils/nepaliDate';
 
 /**
  * One account's ledger, as the ruled sheet it is on paper.
  *
- * Debit and credit rather than income and expense, because those are the two
- * sides every account has - calling them income and expense reads naturally on
- * a cash book and becomes nonsense on a liability. The running balance is the
- * column people actually scan, so it is the one on the right where the eye ends
- * up after crossing the row.
+ * Receipt and payment for the two sides, which is what the people reading this
+ * sheet call them. They are the debit and credit columns underneath and are
+ * still ordered that way, so the sheet reconciles against the journal line for
+ * line - only the headings speak the vocabulary of the office rather than of
+ * the ledger. The running balance is the column people actually scan, so it is
+ * the one on the right where the eye ends up after crossing the row.
  */
 const MIN_ROWS = 20;
 
@@ -55,7 +57,9 @@ const LedgerSheetPage: React.FC = () => {
   }, [load]);
 
   useEffect(() => {
-    listAccounts().then(setAccounts).catch(() => {
+    // Cash and bank only: this sheet is the cash book, and the control and
+    // revenue accounts are read from their own screens.
+    listAccounts('cash_bank').then(setAccounts).catch(() => {
       // The picker is a convenience; a ledger that loaded is still readable
       // without it, so this must not take the screen down with it.
     });
@@ -73,14 +77,14 @@ const LedgerSheetPage: React.FC = () => {
     downloadExcel(
       `ledger-${ledger.account.code}`,
       ledger.account.name,
-      ['Date', 'Voucher', 'Particulars', 'Debit', 'Credit', 'Balance'],
+      ['Date', 'Particulars / Description', 'Reference', 'Receipt', 'Payment', 'Balance'],
       ledger.rows.map((row) => [
         row.bsDate,
-        row.entryNo,
         row.contraAccounts || row.memo || '',
+        row.entryNo,
         row.debit || '',
         row.credit || '',
-        row.runningBalance,
+        drCr(row.runningBalance, debitNormal),
       ]),
     );
   };
@@ -91,6 +95,8 @@ const LedgerSheetPage: React.FC = () => {
     { key: 'F12', label: 'Day book', onSelect: () => navigate('/accounting/transactions/journal') },
     { key: 'Escape', label: 'Back', onSelect: () => navigate(-1) },
   ];
+
+  const debitNormal = ledger?.account.normalSide !== 'credit';
 
   const rows = ledger?.rows ?? [];
   const blanks = Math.max(0, MIN_ROWS - rows.length);
@@ -127,6 +133,7 @@ const LedgerSheetPage: React.FC = () => {
     <TallyPage
       title={ledger ? `${ledger.account.code} — ${ledger.account.name}` : 'Ledger'}
       period={ledger?.range.label}
+      periodLabel="Time Period"
       actions={actions}
       filters={filters}
       error={error}
@@ -134,16 +141,15 @@ const LedgerSheetPage: React.FC = () => {
     >
       {ledger && (
         <div className="tly-scroll">
-          <table className="tly-sheet">
-            <caption>Accounting Ledger</caption>
+          <table className="tly-sheet tly-sheet-form">
             <thead>
               <tr>
                 <th style={{ width: '4%' }}>No</th>
                 <th style={{ width: '12%' }}>Date</th>
-                <th style={{ width: '14%' }}>Voucher</th>
-                <th>Particulars</th>
-                <th className="tly-amt">Debit</th>
-                <th className="tly-amt">Credit</th>
+                <th>Particulars / Description</th>
+                <th style={{ width: '15%' }}>Reference</th>
+                <th className="tly-amt">Receipt</th>
+                <th className="tly-amt">Payment</th>
                 <th className="tly-amt">Balance</th>
               </tr>
             </thead>
@@ -157,13 +163,11 @@ const LedgerSheetPage: React.FC = () => {
                     date in this column is BS, so it is converted rather than
                     printed — one column, one calendar. */}
                 <td>{toBsDate(ledger.range.from)}</td>
-                <td className="tly-muted">Opening</td>
-                <td className="tly-muted">Balance brought forward</td>
-                <td className="tly-amt" />
-                <td className="tly-amt" />
-                <td className={`tly-amt${ledger.openingBalance < 0 ? ' tly-neg' : ''}`}>
-                  {formatMoney(ledger.openingBalance)}
-                </td>
+                <td className="tly-muted">Opening balance carried forward</td>
+                <td className="tly-muted">OPENING</td>
+                <td className="tly-amt">–</td>
+                <td className="tly-amt">–</td>
+                <td className="tly-amt">{drCr(ledger.openingBalance, debitNormal)}</td>
               </tr>
 
               {rows.map((row, index) => (
@@ -174,7 +178,6 @@ const LedgerSheetPage: React.FC = () => {
                 >
                   <td>{index + 1}</td>
                   <td>{row.bsDate}</td>
-                  <td>{row.entryNo}</td>
                   <td>
                     {row.contraAccounts}
                     {row.memo && (
@@ -184,11 +187,10 @@ const LedgerSheetPage: React.FC = () => {
                       </>
                     )}
                   </td>
-                  <td className="tly-amt">{row.debit > 0 ? formatMoney(row.debit) : ''}</td>
-                  <td className="tly-amt">{row.credit > 0 ? formatMoney(row.credit) : ''}</td>
-                  <td className={`tly-amt${row.runningBalance < 0 ? ' tly-neg' : ''}`}>
-                    {formatMoney(row.runningBalance)}
-                  </td>
+                  <td>{row.entryNo}</td>
+                  <td className="tly-amt">{row.debit > 0 ? formatMoney(row.debit) : '–'}</td>
+                  <td className="tly-amt">{row.credit > 0 ? formatMoney(row.credit) : '–'}</td>
+                  <td className="tly-amt">{drCr(row.runningBalance, debitNormal)}</td>
                 </tr>
               ))}
 
@@ -217,11 +219,23 @@ const LedgerSheetPage: React.FC = () => {
                 <td colSpan={6} style={{ textAlign: 'right' }}>
                   Closing balance
                 </td>
-                <td className="tly-amt">{formatMoney(ledger.closingBalance)}</td>
+                <td className="tly-amt">{drCr(ledger.closingBalance, debitNormal)}</td>
               </tr>
             </tfoot>
           </table>
         </div>
+      )}
+
+      {ledger && (
+        <LedgerSummary
+          title="Account Summary"
+          lines={[
+            { label: 'Opening balance', value: drCr(ledger.openingBalance, debitNormal) },
+            { label: 'Total receipts', value: formatMoney(ledger.totalDebit) },
+            { label: 'Total payments', value: formatMoney(ledger.totalCredit) },
+            { label: 'Closing balance', value: drCr(ledger.closingBalance, debitNormal) },
+          ]}
+        />
       )}
     </TallyPage>
   );

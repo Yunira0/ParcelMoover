@@ -182,7 +182,7 @@ async function checkCodFloat(): Promise<string[]> {
   const expected = new Prisma.Decimal(derived?.taken_in ?? 0).minus(derived?.released ?? 0);
 
   const problems: string[] = [];
-  console.log("COD float (2005 COD Held for Vendors)");
+  console.log("COD float (2005 COD in Transit)");
   console.log(`  taken in from riders   ${money(new Prisma.Decimal(derived?.taken_in ?? 0)).padStart(14)}`);
   console.log(`  released to vendors    ${money(new Prisma.Decimal(derived?.released ?? 0)).padStart(14)}`);
   console.log(`  ledger balance         ${money(held).padStart(14)}`);

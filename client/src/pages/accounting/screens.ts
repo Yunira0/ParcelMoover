@@ -21,10 +21,10 @@ export interface ScreenConfig {
 const CONFIG: Record<string, ScreenConfig> = {
   'rider-cod:all': {
     title: 'Rider COD',
-    subtitle: 'COD collected on delivery, and cash remitted back to the office',
+    subtitle: 'COD collected on delivery, and cash received by the office',
     partyLabel: 'Rider',
     debitLabel: 'Collected',
-    creditLabel: 'Remitted',
+    creditLabel: 'Received',
   },
   'vendor-cod:all': {
     title: 'Vendor COD',

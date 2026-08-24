@@ -25,6 +25,9 @@ interface TallyPageProps {
   title: string;
   /** The period or scope this screen is showing, e.g. "1 Shrawan – 31 Shrawan 2083". */
   period?: string;
+  /** Caption above the period. Omitted when `period` is not a window - the
+   *  vouchers pass a date and Masters a count. */
+  periodLabel?: string;
   actions?: TallyAction[];
   /** Filter controls, rendered in a strip above the sheet. */
   filters?: React.ReactNode;
@@ -53,6 +56,7 @@ function errorText(error: unknown): string | null {
 const TallyPage: React.FC<TallyPageProps> = ({
   title,
   period,
+  periodLabel,
   actions = [],
   filters,
   error,
@@ -85,7 +89,15 @@ const TallyPage: React.FC<TallyPageProps> = ({
       <div className="tly-main">
         <div className="tly-titlebar">
           <h1 className="tly-title">{title}</h1>
-          {period && <span className="tly-period">{period}</span>}
+          {period &&
+            (periodLabel ? (
+              <div className="tly-period-box">
+                <span className="tly-period-label">{periodLabel}</span>
+                <strong className="tly-period-value">{period}</strong>
+              </div>
+            ) : (
+              <span className="tly-period">{period}</span>
+            ))}
         </div>
 
         {filters && <div className="tly-filters">{filters}</div>}

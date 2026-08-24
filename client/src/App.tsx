@@ -19,7 +19,6 @@ import {
   PartyLedgerRedirect,
   PeopleRedirect,
   PeriodsRedirect,
-  PersonDetailRedirect,
   ReportsRedirect,
   SearchRedirect,
 } from './pages/accounting/legacyRedirects'
@@ -48,11 +47,13 @@ const CodPage = lazy(() => import('./pages/accounting/CodPage'))
 const JournalPage = lazy(() => import('./pages/accounting/JournalPage'))
 const LedgerReportPage = lazy(() => import('./pages/accounting/LedgerReportPage'))
 const PartySearchPage = lazy(() => import('./pages/accounting/PartySearchPage'))
-const AccountingPersonPage = lazy(() => import('./pages/accounting/AccountingPersonPage'))
 // The Tally-style accounting screens: ruled documents rather than dashboard
 // cards, with the same action panel on every one.
 const JournalVoucherPage = lazy(() => import('./pages/finance/JournalVoucherPage'))
 const LedgerSheetPage = lazy(() => import('./pages/finance/LedgerSheetPage'))
+const SettlementLedgerPage = lazy(() => import('./pages/finance/SettlementLedgerPage'))
+const CashBankPage = lazy(() => import('./pages/finance/CashBankPage'))
+const CashBankVoucherPage = lazy(() => import('./pages/finance/CashBankVoucherPage'))
 const MastersPage = lazy(() => import('./pages/finance/MastersPage'))
 const SettlementPayPage = lazy(() => import('./pages/SettlementPayPage'))
 const DeliveryRateSettings = lazy(() => import('./pages/DeliveryRateSettings'))
@@ -396,6 +397,17 @@ function App() {
           {/* The Tally-style screens. A voucher and a ledger sheet are both
               documents that get printed and filed, so they are laid out as the
               forms they replace rather than as dashboard tables. */}
+          {/* Cash & Bank — the group summary, and the Payment/Receipt/Contra
+              voucher that posts to it. Must precede /finance/voucher/:id or
+              "new" would be read as an id. */}
+          <Route
+            path="/finance/cash-bank"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']} adminPermission="ACCOUNTING_ACCESS"><CashBankPage /></RoleGuard>}
+          />
+          <Route
+            path="/finance/voucher/new"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']} adminPermission="ACCOUNTING_ACCESS"><CashBankVoucherPage /></RoleGuard>}
+          />
           <Route
             path="/finance/voucher/:id"
             element={<RoleGuard allowedRoles={['super_admin', 'admin']} adminPermission="ACCOUNTING_ACCESS"><JournalVoucherPage /></RoleGuard>}
@@ -403,6 +415,12 @@ function App() {
           <Route
             path="/finance/ledger/:code"
             element={<RoleGuard allowedRoles={['super_admin', 'admin']} adminPermission="ACCOUNTING_ACCESS"><LedgerSheetPage /></RoleGuard>}
+          />
+          {/* One rider or vendor, as a ledger of their statements. Three
+              segments, so it never competes with the account sheet above. */}
+          <Route
+            path="/finance/ledger/:partyType/:partyId"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']} adminPermission="ACCOUNTING_ACCESS"><SettlementLedgerPage /></RoleGuard>}
           />
           {/* Masters. Creating and editing accounts is a super-admin job: an
               account's type and normal side reinterpret every entry ever posted
@@ -417,10 +435,7 @@ function App() {
             path="/accounting/people/search"
             element={<RoleGuard allowedRoles={['super_admin', 'admin']} adminPermission="ACCOUNTING_ACCESS"><PartySearchPage /></RoleGuard>}
           />
-          <Route
-            path="/accounting/people/:partyType/:partyId"
-            element={<RoleGuard allowedRoles={['super_admin', 'admin']} adminPermission="ACCOUNTING_ACCESS"><AccountingPersonPage /></RoleGuard>}
-          />
+
           {/* The expense screen is gone: an expense was only ever cash leaving
               against a 5xxx account, which the Cash Payments voucher records.
               Entries posted by the old screen are still in the journal. */}
@@ -438,7 +453,6 @@ function App() {
           <Route path="/accounting/parties" element={<PartiesRedirect />} />
           <Route path="/accounting/parties/:partyType/:id" element={<PartyLedgerRedirect />} />
           <Route path="/accounting/search" element={<SearchRedirect />} />
-          <Route path="/accounting/search/:partyType/:partyId" element={<PersonDetailRedirect />} />
           <Route
             path="/user-management"
             element={<RoleGuard allowedRoles={['vendor']}><VendorUserManagement /></RoleGuard>}

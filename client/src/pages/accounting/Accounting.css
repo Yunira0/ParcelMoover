@@ -521,3 +521,21 @@ a.acc-entry-no {
 a.acc-entry-no:hover {
   text-decoration: underline;
 }
+
+.acc-methods {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-0-5);
+}
+
+.acc-method {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  font-size: var(--font-size-xs);
+  max-width: 220px;
+}
+
+.acc-method-name {
+  color: var(--color-text-caption);
+}

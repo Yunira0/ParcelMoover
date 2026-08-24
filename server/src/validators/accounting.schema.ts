@@ -192,3 +192,22 @@ export const updateAccountSchema = z
     subType: z.enum(ACCOUNT_CLASSES).optional(),
   })
   .refine((body) => Object.keys(body).length > 0, { message: "Nothing to change" });
+
+/**
+ * An opening balance. `amount` is signed from the account's own side, so a rider
+ * already holding cash is positive and a vendor already owed is negative.
+ *
+ * `reference` doubles as the identity: posting the same reference to the same
+ * account twice is one opening balance, not two.
+ */
+export const openingBalanceSchema = z.object({
+  accountCode: z.string().trim().regex(/^\d{3,6}$/, "An account code is 3 to 6 digits"),
+  amount: z.coerce.number().refine((value) => value !== 0, "An opening balance of zero is nothing to record"),
+  asOf: z.coerce.date(),
+  partyType: z.enum(["vendor", "rider"]).nullish(),
+  partyId: z.string().uuid().nullish(),
+  reference: z.string().trim().min(2, "Say what this opening balance stands for").max(120),
+}).refine((body) => Boolean(body.partyType) === Boolean(body.partyId), {
+  message: "Name both the party type and the party, or neither",
+  path: ["partyId"],
+});

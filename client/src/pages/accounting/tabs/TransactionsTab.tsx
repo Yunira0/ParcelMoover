@@ -1,7 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import Table from '../../../components/Table';
-import StatCard from '../../../components/StatCard';
 import Pagination from '../../../components/Pagination';
 import FilterDropdown from '../../../components/FilterDropdown';
 import SearchField from '../../../components/SearchField';
@@ -17,6 +15,7 @@ import {
   type TransactionScope,
 } from '../../../services/accounting.service';
 import { apiErrorMessage } from '../../../utils/serverValidation';
+import '../../../components/finance/tally.css';
 import '../Accounting.css';
 
 // The four Transactions screens, which are one screen asked four ways.
@@ -30,6 +29,11 @@ import '../Accounting.css';
 // Line-level, not entry-level, and that distinction is the point: an entry that
 // pays four expense categories out of cash is ONE cash payment. The journal
 // screen next door is the entry-level view of the same data.
+//
+// Ruled as the register it is — the day book's own shape (JournalTab), not the
+// dashboard table this used to borrow. Cash and bank are read a row at a time
+// against a column of figures, and that reads better on paper rules than on
+// card shadows.
 
 const ALL_ACCOUNTS = 'all';
 
@@ -137,6 +141,10 @@ const TransactionsTab: React.FC<TransactionsTabProps> = ({ scope, direction = 'a
 
   const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / pageSize));
 
+  const baseCols = showAccount ? 6 : 5;
+  const totalCols = baseCols + (bothSides ? 2 : 1);
+  const rows = data?.rows ?? [];
+
   return (
     <>
       <div className="acc-toolbar">
@@ -168,146 +176,106 @@ const TransactionsTab: React.FC<TransactionsTabProps> = ({ scope, direction = 'a
 
       {error && <Banner tone="danger">{error}</Banner>}
 
-      {data && (
-        <div className="acc-cards">
-          {bothSides ? (
-            <>
-              <StatCard
-                label={config.debitLabel}
-                value={money(data.totals.debit)}
-                hint={data.range.label}
-              />
-              <StatCard
-                label={config.creditLabel}
-                value={money(data.totals.credit)}
-                hint={data.range.label}
-              />
-            </>
-          ) : (
-            <StatCard
-              label={direction === 'out' ? 'Paid out' : 'Received'}
-              value={money(direction === 'out' ? data.totals.credit : data.totals.debit)}
-              tone={direction === 'out' ? 'negative' : 'positive'}
-              hint={data.range.label}
-            />
-          )}
-          <StatCard
-            label="Transactions"
-            value={data.total}
-            tone="muted"
-            hint={`Across ${data.accounts.length} account${data.accounts.length === 1 ? '' : 's'}`}
-          />
-        </div>
-      )}
-
-      <Table
-        selectable={false}
-        loading={loading}
-        loadingMessage="Loading transactions…"
-        data={data?.rows ?? []}
-        onRowClick={(row) =>
-          navigate(`/accounting/transactions/journal?search=${encodeURIComponent(row.entryNo)}`)
-        }
-        columns={[
-          { header: 'Date (BS)', width: '110px', accessor: 'bsDate' },
-          {
-            header: 'Entry',
-            width: '140px',
-            accessor: (row) => <span className="acc-entry-no">{row.entryNo}</span>,
-          },
-          {
-            header: 'Description',
-            accessor: (row) => (
-              <>
-                {row.memo || '—'}
-                {row.trackingId && <span className="acc-sub">{row.trackingId}</span>}
-              </>
-            ),
-          },
-          // Which bank account this landed in only matters when several are
-          // being shown at once.
-          ...(showAccount ? [{ header: 'Account', width: '160px', accessor: 'accountName' as const }] : []),
-          {
-            header: direction === 'out' ? 'Paid to' : direction === 'in' ? 'Received from' : 'Contra account',
-            width: '190px',
-            accessor: (row) => <span className="acc-muted">{row.contraAccounts || '—'}</span>,
-          },
-          {
-            header: config.partyLabel,
-            width: '180px',
-            accessor: (row) =>
-              row.partyName ? (
-                <>
-                  {row.partyName}
-                  {row.partyType && (
-                    <div style={{ marginTop: 4 }}>
-                      <PartyChip>{row.partyType}</PartyChip>
-                    </div>
-                  )}
-                </>
-              ) : (
-                <span className="acc-muted">—</span>
-              ),
-          },
-          ...(bothSides
-            ? [
-                {
-                  header: config.debitLabel,
-                  width: '130px',
-                  className: 'acc-num',
-                  accessor: (row: TransactionList['rows'][number]) => (
-                    <span className="acc-num">{row.debit ? money(row.debit) : ''}</span>
-                  ),
-                },
-                {
-                  header: config.creditLabel,
-                  width: '130px',
-                  className: 'acc-num',
-                  accessor: (row: TransactionList['rows'][number]) => (
-                    <span className="acc-num">{row.credit ? money(row.credit) : ''}</span>
-                  ),
-                },
-              ]
-            : [
-                {
-                  header: 'Amount',
-                  width: '150px',
-                  className: 'acc-num',
-                  accessor: (row: TransactionList['rows'][number]) => (
-                    <span className={`acc-num ${direction === 'out' ? 'acc-neg' : 'acc-pos'}`}>
-                      {money(direction === 'out' ? row.credit : row.debit)}
-                    </span>
-                  ),
-                },
-              ]),
-        ]}
-        emptyMessage={
-          search
-            ? 'Nothing matches that search in this period.'
-            : `Nothing moved here during ${data?.range.label ?? 'this period'}.`
-        }
-        footer={
-          data ? (
+      <div className="tly-scroll">
+        <table className="tly-sheet">
+          <thead>
             <tr>
-              {/* Date, Entry, Description, [Account], Contra, Party — the
-                  columns before the figures. */}
-              <td colSpan={showAccount ? 6 : 5}>
-                {data.total} transaction{data.total === 1 ? '' : 's'}
-              </td>
+              <th style={{ width: '9%' }}>Date (BS)</th>
+              <th style={{ width: '11%' }}>Entry</th>
+              <th>Description</th>
+              {showAccount && <th style={{ width: '13%' }}>Account</th>}
+              <th style={{ width: '17%' }}>
+                {direction === 'out' ? 'Paid to' : direction === 'in' ? 'Received from' : 'Contra account'}
+              </th>
+              <th style={{ width: '15%' }}>{config.partyLabel}</th>
               {bothSides ? (
                 <>
-                  <td className="acc-num">{money(data.totals.debit)}</td>
-                  <td className="acc-num">{money(data.totals.credit)}</td>
+                  <th className="tly-amt">{config.debitLabel}</th>
+                  <th className="tly-amt">{config.creditLabel}</th>
                 </>
               ) : (
-                <td className={`acc-num ${direction === 'out' ? 'acc-neg' : 'acc-pos'}`}>
-                  {money(direction === 'out' ? data.totals.credit : data.totals.debit)}
-                </td>
+                <th className="tly-amt">Amount</th>
               )}
             </tr>
-          ) : undefined
-        }
-      />
+          </thead>
+          <tbody>
+            {loading && (
+              <tr>
+                <td colSpan={totalCols} className="tly-muted">Loading transactions…</td>
+              </tr>
+            )}
+            {!loading && rows.length === 0 && (
+              <tr>
+                <td colSpan={totalCols} className="tly-muted">
+                  {search
+                    ? 'Nothing matches that search in this period.'
+                    : `Nothing moved here during ${data?.range.label ?? 'this period'}.`}
+                </td>
+              </tr>
+            )}
+            {!loading && rows.map((row) => (
+              <tr
+                key={row.id}
+                onClick={() => navigate(`/accounting/transactions/journal?search=${encodeURIComponent(row.entryNo)}`)}
+                style={{ cursor: 'pointer' }}
+              >
+                <td>{row.bsDate}</td>
+                <td className="tly-muted">{row.entryNo}</td>
+                <td>
+                  {row.memo || '—'}
+                  {row.trackingId && (
+                    <>
+                      <br />
+                      <span className="tly-muted">{row.trackingId}</span>
+                    </>
+                  )}
+                </td>
+                {showAccount && <td className="tly-muted">{row.accountName}</td>}
+                <td className="tly-muted">{row.contraAccounts || '—'}</td>
+                <td>
+                  {row.partyName ? (
+                    <>
+                      {row.partyName}
+                      {row.partyType && (
+                        <div style={{ marginTop: 4 }}>
+                          <PartyChip>{row.partyType}</PartyChip>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <span className="tly-muted">—</span>
+                  )}
+                </td>
+                {bothSides ? (
+                  <>
+                    <td className="tly-amt">{row.debit ? money(row.debit) : ''}</td>
+                    <td className="tly-amt">{row.credit ? money(row.credit) : ''}</td>
+                  </>
+                ) : (
+                  <td className="tly-amt">{money(direction === 'out' ? row.credit : row.debit)}</td>
+                )}
+              </tr>
+            ))}
+          </tbody>
+          {data && rows.length > 0 && (
+            <tfoot>
+              <tr className="tly-grand">
+                <td colSpan={baseCols}>
+                  {data.total} transaction{data.total === 1 ? '' : 's'}
+                </td>
+                {bothSides ? (
+                  <>
+                    <td className="tly-amt">{money(data.totals.debit)}</td>
+                    <td className="tly-amt">{money(data.totals.credit)}</td>
+                  </>
+                ) : (
+                  <td className="tly-amt">{money(direction === 'out' ? data.totals.credit : data.totals.debit)}</td>
+                )}
+              </tr>
+            </tfoot>
+          )}
+        </table>
+      </div>
 
       {totalPages > 1 && (
         <Pagination

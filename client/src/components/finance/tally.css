@@ -32,17 +32,11 @@
   min-width: 0;
 }
 
-/* The title strip. Tally puts the report name and its period at the top of the
-   work area, not in a page header, because the period is part of what you are
-   looking at rather than navigation.
-
-   It is a surface with a rule under it, not a filled bar. A solid dark strip is
-   not a shape this app uses anywhere else, and it made the one accent on the
-   screen - the brand-coloured action - compete with a black rectangle four
-   times its size. */
+/* The masthead of the printed form: the report name in a filled brand band on
+   the left, its period boxed off on the right. */
 .tly-titlebar {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: var(--space-4);
   flex-wrap: wrap;
@@ -56,17 +50,62 @@
 
 .tly-title {
   margin: 0;
+  padding: var(--space-2) var(--space-4);
+  background: var(--color-background-primary-default);
+  color: var(--color-text-base);
+  border-radius: var(--border-radius-sm);
   font-size: var(--font-size-md);
-  font-weight: var(--font-weight-semibold);
-  letter-spacing: 0.02em;
-  /* Stated rather than inherited: a bare h1 elsewhere in the app picks up a
-     global colour, and on the old dark strip that rendered black on black. */
-  color: var(--color-text-default);
+  font-weight: var(--font-weight-bold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .tly-period {
   font-size: var(--font-size-xs);
   color: var(--color-text-caption);
+}
+
+/* A form nested in the page gets a heading, not a second masthead - two filled
+   brand bands stacked is one too many focal points. */
+.tly-voucher .tly-titlebar {
+  border: 0;
+  border-bottom: 1px solid var(--color-border-default);
+  border-radius: 0;
+  padding: var(--space-3) var(--space-4);
+}
+
+.tly-voucher .tly-title {
+  padding: 0;
+  background: transparent;
+  color: var(--color-text-default);
+  font-size: var(--font-size-sm);
+  letter-spacing: 0.06em;
+  border-left: 3px solid var(--color-border-primary);
+  padding-left: var(--space-3);
+}
+
+.tly-period-box {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--border-radius-sm);
+  min-width: 160px;
+}
+
+.tly-period-label {
+  font-size: var(--font-size-xxs);
+  font-weight: var(--font-weight-bold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-caption);
+}
+
+.tly-period-value {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-default);
 }
 
 /* ── The right-hand action panel ───────────────────────────────────────────── */
@@ -183,8 +222,6 @@
   vertical-align: top;
 }
 
-/* The outer frame stays heavy while the inner rules stay light, which is what
-   makes a ruled form read as one object instead of a grid of boxes. */
 .tly-sheet thead th {
   border-color: var(--color-border-default);
   background: var(--color-background-elevated);
@@ -194,6 +231,29 @@
   text-transform: uppercase;
   text-align: left;
   white-space: nowrap;
+}
+
+/* The ledger sheets take the printed form's banded header. The voucher keeps
+   the plain one - it is a document, not a register. */
+.tly-sheet-form thead th {
+  background: var(--color-background-primary-invert-default);
+  color: var(--color-text-default);
+  border-color: var(--color-border-primary);
+  font-size: var(--font-size-xs);
+}
+
+.tly-sheet-form tbody td {
+  border-color: var(--color-border-default);
+}
+
+.tly-sheet-form caption {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-regular);
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--color-text-caption);
+  text-align: left;
+  padding: var(--space-2) var(--space-3);
 }
 
 .tly-sheet tbody tr:hover td { background: var(--color-primary-subtle); }
@@ -288,6 +348,48 @@
 /* A credit line is conventionally indented under the debit it answers, which is
    how you read which side of the entry a row is on without checking a column. */
 .tly-credit-line td:first-child { padding-left: var(--space-8); }
+
+/* ── The day book's Dr./Cr. columns ───────────────────────────────────────── */
+/*
+ * One journal entry can carry several debit or credit lines (a settlement
+ * splits across revenue and payout), so each side stacks its own lines
+ * independently within the row rather than pairing line-for-line.
+ */
+.je-line {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  white-space: nowrap;
+}
+.je-line + .je-line { margin-top: var(--space-1); }
+
+.je-acct { font-weight: var(--font-weight-medium); }
+
+.je-side {
+  margin-left: auto;
+  padding-left: var(--space-2);
+  font-size: var(--font-size-xxs);
+  font-weight: var(--font-weight-bold);
+  letter-spacing: 0.04em;
+  color: var(--color-text-caption);
+}
+
+.je-line-cr .je-to {
+  color: var(--color-text-caption);
+  font-size: var(--font-size-xs);
+}
+
+.je-inline-amt {
+  margin-left: var(--space-2);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.je-meta a { color: inherit; text-decoration: underline; text-decoration-color: var(--color-border-default); }
+.je-meta a:hover { color: var(--color-text-primary); text-decoration-color: currentColor; }
+
+.sno { color: var(--color-text-caption); font-variant-numeric: tabular-nums; }
 
 /* Signature blocks. */
 .tly-signatures {
@@ -398,6 +500,37 @@
     border: 1px solid var(--color-border-default);
     border-radius: var(--border-radius-sm);
   }
+
+  /* The masthead stacks: a filled band and a boxed period side by side need
+     more width than a phone has, and the band wrapping mid-title reads as two. */
+  .tly-titlebar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-2);
+  }
+
+  .tly-title { font-size: var(--font-size-sm); }
+
+  .tly-period-box { min-width: 0; }
+
+  .tly-filters > label,
+  .tly-filters > .form-group { min-width: 0; flex: 1 1 100%; }
+}
+
+@media (max-width: 560px) {
+  /* One field per row. Two 240px columns on a 360px screen is one column with
+     the second cut off. */
+  .tly-form-grid { grid-template-columns: 1fr; padding: var(--space-3); }
+
+  .tly-form-actions { padding: var(--space-3); }
+
+  .tly-partybar { gap: var(--space-3); }
+
+  .tly-summary dl { max-width: none; }
+
+  /* Actions are the widest thing in a chart row; stacked they stop forcing the
+     table into a horizontal scroll on every screen. */
+  .tly-row-actions { flex-direction: column; align-items: flex-start; }
 }
 
 /* ── Print ─────────────────────────────────────────────────────────────────── */
@@ -417,7 +550,32 @@
     border-bottom: 1px solid var(--color-border-default);
   }
 
+  /* The band is dropped rather than forced: a printer told not to render
+     backgrounds would leave the white title on white paper. */
+  .tly-title {
+    padding: 0;
+    background: transparent;
+    color: var(--color-text-default);
+  }
+
+  /* The header tint survives, because its text is dark either way. */
+  .tly-sheet-form thead th {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
   .tly-sheet tbody tr:hover td { background: transparent; }
+
+  /* The blank ruled rows are a screen convention - they say the form is a
+     fixed size and you are seeing all of it. On paper they only push the
+     totals onto a second sheet, so a printed ledger is the rows that have
+     something on them. */
+  .tly-sheet tbody tr.tly-blank { display: none; }
+
+  /* Keep the figures the sheet is read for off a page break of their own. */
+  .tly-sheet tfoot,
+  .tly-summary,
+  .tly-signatures { break-inside: avoid; }
 }
 
 /* ── Buttons inside a sheet ────────────────────────────────────────────────── */
@@ -437,7 +595,22 @@
 
 .tly-row-actions {
   display: flex;
-  gap: var(--space-1);
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.tly-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  white-space: nowrap;
+}
+
+.tly-toggle > span {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-caption);
+  min-width: 52px;
 }
 
 /* ── Forms inside a sheet ──────────────────────────────────────────────────── */
@@ -448,9 +621,10 @@
  */
 .tly-form-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: var(--space-3);
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--space-4);
   padding: var(--space-4);
+  align-items: start;
 }
 
 /* The filter strip holds the app's own filter controls, which size themselves.
@@ -458,3 +632,79 @@
    enough to read a selected account or a date in. */
 .tly-filters > label,
 .tly-filters > .form-group { min-width: 190px; }
+
+/* ── Party header and summary ──────────────────────────────────────────────── */
+
+.tly-partybar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-6);
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-top: 0;
+}
+
+.tly-summary {
+  padding: var(--space-4);
+  background: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-sm);
+}
+
+.tly-summary h2 {
+  margin: 0 0 var(--space-3);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-bold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-default);
+}
+
+.tly-summary dl {
+  margin: 0;
+  display: grid;
+  gap: var(--space-2);
+  max-width: 380px;
+}
+
+.tly-summary dl > div {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-4);
+  font-size: var(--font-size-xs);
+}
+
+.tly-summary dt {
+  color: var(--color-text-caption);
+}
+
+.tly-summary dd {
+  margin: 0;
+  font-weight: var(--font-weight-bold);
+  white-space: nowrap;
+}
+
+/* The line the ledger is read for. */
+.tly-summary dl > div:last-child dd {
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+}
+
+/* A bare label beside FormFields. Matches .form-group exactly, or the two sit
+   on different baselines with different label type. */
+.tly-form-date {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.tly-form-date > span {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-caption);
+}
+
+.tly-form-party {
+  padding: 0 var(--space-4) var(--space-3);
+}

@@ -174,6 +174,48 @@ export interface AccountLedger {
 
 export type PartyLedger = AccountLedger & { partyName: string };
 
+/** One movement on a party ledger: a delivery run or a statement. */
+export interface PartyLedgerEntry {
+  id: string;
+  kind: 'statement' | 'instalment';
+  reference: string;
+  entryId: string | null;
+  date: string;
+  bsDate: string;
+  description: string;
+  debit: number;
+  credit: number;
+  runningBalance: number;
+}
+
+export interface PartyLedgerSummaryLine {
+  label: string;
+  amount: number;
+}
+
+/**
+ * A rider's or vendor's ledger. A rider's runs debit-normal - the balance is
+ * COD still in their pocket - and a vendor's credit-normal.
+ */
+export interface PartySettlementLedger {
+  partyType: 'rider' | 'vendor';
+  partyId: string;
+  partyName: string;
+  partySubtitle: string | null;
+  range: { from: string; to: string; label: string };
+  openingBalance: number;
+  closingBalance: number;
+  totalDebit: number;
+  totalCredit: number;
+  summary: PartyLedgerSummaryLine[];
+  rows: PartyLedgerEntry[];
+}
+
+export interface PartyMethodTotal {
+  method: string;
+  amount: number;
+}
+
 export interface PartyBalance {
   partyId: string;
   name: string;
@@ -181,6 +223,8 @@ export interface PartyBalance {
   debit: number;
   credit: number;
   balance: number;
+  /** What has actually been paid, split by method, largest first. */
+  methods: PartyMethodTotal[];
 }
 
 export interface PartySearchResult {
@@ -264,8 +308,8 @@ export const getOverview = async (params: RangeParams = {}): Promise<AccountingO
   return response.data.data;
 };
 
-export const listAccounts = async (): Promise<Account[]> => {
-  const response = await api.get('/accounting/accounts');
+export const listAccounts = async (scope?: 'cash_bank'): Promise<Account[]> => {
+  const response = await api.get('/accounting/accounts', { params: scope ? { scope } : undefined });
   return response.data.data;
 };
 
@@ -363,6 +407,15 @@ export const getPartyLedger = async (
   params: RangeParams = {},
 ): Promise<PartyLedger> => {
   const response = await api.get(`/accounting/parties/${partyType}/${partyId}`, { params });
+  return response.data.data;
+};
+
+export const getPartySettlementLedger = async (
+  partyType: 'vendor' | 'rider',
+  partyId: string,
+  params: RangeParams = {},
+): Promise<PartySettlementLedger> => {
+  const response = await api.get(`/accounting/parties/${partyType}/${partyId}/settlements`, { params });
   return response.data.data;
 };
 
@@ -471,5 +524,18 @@ export const updateAccount = async (
   },
 ): Promise<AccountNode> => {
   const response = await api.patch(`/accounting/chart/${code}`, update);
+  return response.data.data;
+};
+
+export const setOpeningBalance = async (input: {
+  accountCode: string;
+  /** Signed from the account's own side: positive debits it, negative credits it. */
+  amount: number;
+  asOf: string;
+  partyType?: 'vendor' | 'rider' | null;
+  partyId?: string | null;
+  reference: string;
+}): Promise<{ entryNo: string | null; skipped: boolean; created: boolean }> => {
+  const response = await api.post('/accounting/opening-balance', input);
   return response.data.data;
 };

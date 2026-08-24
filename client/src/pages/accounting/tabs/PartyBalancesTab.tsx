@@ -90,8 +90,8 @@ const PartyBalancesTab: React.FC<{ partyType: 'vendor' | 'rider' }> = ({ partyTy
 
       <Banner tone="info">
         {isRider
-          ? 'A positive balance is cash that rider collected on delivery and has not yet remitted to the office.'
-          : 'A positive balance is money the office owes the vendor. A negative one is money the vendor owes the office.'}
+          ? 'Read from the statements: what they have been statemented for, less what they have settled. A positive balance is COD still with the rider.'
+          : 'Read from the statements: what has been raised as payable, less what has been paid out. A positive balance is money the office owes the vendor.'}
       </Banner>
 
       {error && <Banner tone="danger">{error}</Banner>}
@@ -101,7 +101,7 @@ const PartyBalancesTab: React.FC<{ partyType: 'vendor' | 'rider' }> = ({ partyTy
         loading={loading}
         loadingMessage="Loading balances…"
         data={visible.map((row) => ({ ...row, id: row.partyId }))}
-        onRowClick={(row) => navigate(`/accounting/people/${partyType}/${row.partyId}?tab=ledger`)}
+        onRowClick={(row) => navigate(`/finance/ledger/${partyType}/${row.partyId}`)}
         columns={[
           {
             header: isRider ? 'Rider' : 'Vendor',
@@ -113,13 +113,29 @@ const PartyBalancesTab: React.FC<{ partyType: 'vendor' | 'rider' }> = ({ partyTy
             ),
           },
           {
-            header: 'Debits',
+            header: 'Description',
+            accessor: (row) =>
+              row.methods.length === 0 ? (
+                <span className="acc-muted">Nothing paid yet</span>
+              ) : (
+                <span className="acc-methods">
+                  {row.methods.map((entry) => (
+                    <span key={entry.method} className="acc-method">
+                      <span className="acc-method-name">{entry.method}</span>
+                      <span className="acc-num">{money(entry.amount)}</span>
+                    </span>
+                  ))}
+                </span>
+              ),
+          },
+          {
+            header: isRider ? 'COD collected' : 'COD paid',
             width: '150px',
             className: 'acc-num',
             accessor: (row) => <span className="acc-num acc-muted">{money(row.debit)}</span>,
           },
           {
-            header: 'Credits',
+            header: isRider ? 'COD paid' : 'COD collected',
             width: '150px',
             className: 'acc-num',
             accessor: (row) => <span className="acc-num acc-muted">{money(row.credit)}</span>,
@@ -135,6 +151,7 @@ const PartyBalancesTab: React.FC<{ partyType: 'vendor' | 'rider' }> = ({ partyTy
         footer={
           <tr>
             <td>{visible.length} {isRider ? 'riders' : 'vendors'}</td>
+            <td />
             <td />
             <td />
             <td className={numClass(total)}>{money(total)}</td>

@@ -17,6 +17,7 @@ import {
   reverseEntrySchema,
   setPeriodStatusSchema,
   createAccountSchema,
+  openingBalanceSchema,
   updateAccountSchema,
   transactionsQuerySchema,
   voidExpenseSchema,
@@ -29,11 +30,13 @@ import {
   getJournalEntryController,
   getOverviewController,
   getPartyLedgerController,
+  getPartySettlementLedgerController,
   getProfitAndLossController,
   getTrialBalanceController,
   listAccountsController,
   listChartController,
   createAccountController,
+  setOpeningBalanceController,
   updateAccountController,
   listExpensesController,
   listJournalController,
@@ -140,6 +143,16 @@ accountingRouter.get(
   getPartyLedgerController,
 );
 
+// GET /api/accounting/parties/:partyType/:id/settlements — the same party as a
+// ledger of their statements, which is what a settled statement is missing from
+// the subledger above (its posting nets to zero there once it is paid)
+accountingRouter.get(
+  "/parties/:partyType/:id/settlements",
+  ...read,
+  validate(rangeQuerySchema, "query"),
+  getPartySettlementLedgerController,
+);
+
 // GET /api/accounting/party-search — riders, vendors and staff in one lookup
 accountingRouter.get("/party-search", ...read, validate(partySearchQuerySchema, "query"), searchPartiesController);
 
@@ -206,5 +219,14 @@ accountingRouter.post("/chart", ...masters, validate(createAccountSchema), creat
 
 // PATCH /api/accounting/chart/:code — rename, regroup, deactivate
 accountingRouter.patch("/chart/:code", ...masters, validate(updateAccountSchema), updateAccountController);
+
+// POST /api/accounting/opening-balance — a starting position no source row can
+// produce: cash a rider was already holding, a bank account opened with money
+accountingRouter.post(
+  "/opening-balance",
+  ...masters,
+  validate(openingBalanceSchema),
+  setOpeningBalanceController,
+);
 
 export default accountingRouter;
