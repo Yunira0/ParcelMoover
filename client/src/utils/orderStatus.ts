@@ -80,3 +80,48 @@ export const statusTimelineCells = (
   timestamps?: Partial<Record<ParcelStatus, string>>,
 ): string[] =>
   STATUS_TIMELINE_ORDER.map(status => (timestamps?.[status] ? toBsDateTimeCell(timestamps[status]) : ''));
+
+// ── Allowed status transitions ───────────────────────────────────────────────
+
+/**
+ * Mirrors the server's STATUS_TRANSITIONS (server/src/types/order.type.ts).
+ * The server rejects anything not listed here, so offering an option outside
+ * this map guarantees a failed request.
+ *
+ * Dispatch, OOV and Pickup Operations each still carry their own private copy;
+ * this is the shared home for new callers, and the place to consolidate them.
+ */
+export const PARCEL_STATUS_TRANSITIONS: Record<ParcelStatus, ParcelStatus[]> = {
+  pickup_ordered: ['rider_assigned', 'cancelled'],
+  rider_assigned: ['picked_up', 'failed_pickup', 'cancelled'],
+  picked_up: ['arrived', 'failed_pickup'],
+  arrived: ['ready_to_deliver', 'oov'],
+  dispatched: ['arrived_at_branch', 'follow_up'],
+  arrived_at_branch: ['ready_to_deliver', 'follow_up'],
+  ready_to_deliver: ['sent_for_delivery', 'hold', 'cancelled'],
+  sent_for_delivery: ['delivered', 'partially_delivered', 'failed_delivery', 'follow_up'],
+  oov: ['dispatched', 'hold', 'follow_up'],
+  hold: ['ready_to_deliver', 'oov', 'loss_and_damage'],
+  delivered: [],
+  partially_delivered: ['ready_to_deliver', 'follow_up', 'ready_to_return'],
+  failed_pickup: ['pickup_ordered', 'cancelled'],
+  failed_delivery: ['ready_to_deliver', 'follow_up', 'ready_to_return'],
+  cancelled: [],
+  loss_and_damage: ['ready_to_deliver', 'arrived_at_branch'],
+  follow_up: ['ready_to_deliver', 'ready_to_return'],
+  ready_to_return: ['sent_to_vendor'],
+  sent_to_vendor: ['returned_to_vendor'],
+  returned_to_vendor: [],
+};
+
+/**
+ * The statuses every one of `statuses` can legally move to - the intersection,
+ * so a mixed selection only ever offers an action valid for all of it.
+ */
+export const sharedNextStatuses = (statuses: ParcelStatus[]): ParcelStatus[] => {
+  if (statuses.length === 0) return [];
+  const [first, ...rest] = statuses;
+  return PARCEL_STATUS_TRANSITIONS[first].filter(target =>
+    rest.every(status => PARCEL_STATUS_TRANSITIONS[status].includes(target)),
+  );
+};

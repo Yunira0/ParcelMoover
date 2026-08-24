@@ -269,3 +269,111 @@
   color: var(--color-text-primary) !important;
   font-weight: var(--font-weight-semi-bold);
 }
+
+/* ── "Action" popover (Sent to vendor tab) ─────────────────────────────────── */
+/* Mirrors the pickup-status popover on Pickup Operations so the same gesture -
+   select rows, pick the next status, Submit - looks identical on both screens. */
+
+.return-action-anchor {
+  position: relative;
+}
+
+.return-status-popover {
+  background: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-modal);
+  box-shadow: var(--app-shadow);
+  padding: var(--space-3);
+  position: absolute;
+  right: 0;
+  top: calc(100% + var(--space-2));
+  width: 280px;
+  z-index: 40;
+}
+
+.return-status-popover-header {
+  align-items: center;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.return-status-popover-header button {
+  background: transparent;
+  border: 0;
+  color: var(--color-text-caption);
+  cursor: pointer;
+  font-size: 20px;
+  height: 24px;
+  line-height: 1;
+  padding: 0;
+  width: 24px;
+}
+
+.return-status-current {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.return-status-current > span {
+  color: var(--color-text-caption);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+}
+
+.return-status-options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.return-status-option {
+  align-items: center;
+  background: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-default);
+  color: var(--color-text-default);
+  cursor: pointer;
+  display: flex;
+  font-family: var(--typography-font-family-default);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  justify-content: flex-start;
+  min-height: 36px;
+  padding: var(--space-2);
+  text-align: left;
+  width: 100%;
+}
+
+.return-status-option:hover {
+  background: var(--color-background-primary-invert-default);
+  border-color: var(--color-border-primary);
+  color: var(--color-text-primary);
+}
+
+.return-status-option:focus-visible {
+  border-color: var(--color-border-primary);
+  box-shadow: 0 0 0 2px rgb(226 76 0 / 18%);
+  outline: none;
+}
+
+.return-status-option.selected {
+  background: var(--color-background-primary-invert-default);
+  border-color: var(--color-border-primary);
+  box-shadow: inset 3px 0 0 var(--color-border-primary);
+  color: var(--color-text-primary);
+}
+
+.return-status-empty {
+  color: var(--color-text-caption);
+  font-size: var(--font-size-sm);
+  margin: 0;
+}
+
+.return-status-submit-row {
+  display: flex;
+  gap: var(--space-2);
+  justify-content: flex-end;
+  margin-top: var(--space-3);
+}
