@@ -477,6 +477,7 @@ export async function listSettlements(
       amount: Number(s.payable_amount ?? s.amount),
       status: s.status,
       paidAmount: Number(s.paid_amount),
+      paymentBreakdown: sumByMethod(s.payments),
       remark: s.remark,
     };
   });
@@ -844,6 +845,28 @@ const round2 = (value: number): number => Math.round(value * 100) / 100;
 // including nulls from rows written before the column existed.
 function toPaymentLines(value: Prisma.JsonValue | null): SettlementPaymentInput[] {
   return Array.isArray(value) ? (value as unknown as SettlementPaymentInput[]) : [];
+}
+
+/**
+ * The payment lines totalled per method, in the order the methods first appear.
+ *
+ * `settlements.payments` accumulates a line per instalment, so a statement
+ * part-paid in cash twice holds two Cash lines. Showing them separately would
+ * read as two different things rather than one running total, so they are
+ * summed - "Cash 2,000", not "Cash 1,000, Cash 1,000".
+ *
+ * Defensive about the shape for the same reason toPaymentLines is: these are
+ * Json columns, and rows predate the current writer.
+ */
+function sumByMethod(value: Prisma.JsonValue | null): Array<{ method: string; amount: number }> {
+  const totals = new Map<string, number>();
+  for (const line of toPaymentLines(value)) {
+    const method = typeof line?.method === "string" && line.method.trim() ? line.method.trim() : "Unspecified";
+    const amount = Number(line?.amount);
+    if (!Number.isFinite(amount) || amount === 0) continue;
+    totals.set(method, round2((totals.get(method) ?? 0) + amount));
+  }
+  return Array.from(totals, ([method, amount]) => ({ method, amount }));
 }
 
 // Serialises the state transitions on one statement. Every writer below reads
@@ -1613,6 +1636,16 @@ export async function revertSettlement(
       },
     });
 
+    // Reverting does not un-create the statement, so its entry stands and this
+    // is a no-op in the ordinary case. It is here anyway: this function was the
+    // one settlement mutator that never spoke to the ledger at all, and a
+    // reverted statement is usually on its way to being edited or cancelled.
+    // Restating from the authority beats assuming nothing moved.
+    await syncSettlementPostings(tx, [settlementId], {
+      actorId: actor.id,
+      reason: "settlement reverted",
+    });
+
     return { settlement: result, wasSettled, riderId: settlement.rider_id, vendorId: settlement.vendor_id };
   }, SETTLEMENT_TX_OPTIONS);
 
@@ -1788,6 +1821,17 @@ export async function cancelSettlement(
         old_data: { status: settlement.status, codCollectionIds: collectionIds, remark: settlement.remark },
         new_data: { status: "cancelled", remark: remark.trim() },
       },
+    });
+
+    // A cancelled statement moved no money, so its entry has to come back out.
+    // This is the one settlement path where the ledger genuinely changes -
+    // every other status posts - and it was missing here for the same reason
+    // it was missing from revertSettlement: nothing forced the call. The sweep
+    // in sync.ts now catches an omission here, but posting in the same
+    // transaction that cancelled it is still the honest place to do it.
+    await syncSettlementPostings(tx, [settlementId], {
+      actorId: actor.id,
+      reason: "settlement cancelled",
     });
 
     return { settlement: result, riderId: settlement.rider_id, vendorId: settlement.vendor_id };

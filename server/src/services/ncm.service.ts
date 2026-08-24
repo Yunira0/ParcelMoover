@@ -444,8 +444,11 @@ export async function resolveParcelIdByNcmOrder(ncmOrderId: number | string): Pr
   }
   if (!vrefId) return null;
 
+  // deleted_at guard: a trashed parcel is out of the system, so an inbound
+  // carrier webhook must not resolve to one and move its status. Every other
+  // parcel lookup in this file already filters the same way.
   const parcel = await prisma.parcels.findFirst({
-    where: { tracking_id: { endsWith: vrefId } },
+    where: { tracking_id: { endsWith: vrefId }, deleted_at: null },
     select: { id: true },
   });
   if (!parcel) return null;

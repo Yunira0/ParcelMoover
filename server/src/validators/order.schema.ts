@@ -271,6 +271,39 @@ export const orderFilterOptionsQuerySchema = z.object({
   status: listOrdersQuerySchema.shape.status,
 });
 
+// GET /orders/status-counts — the per-status totals behind the orders list
+// page's tab badges. Takes every non-status filter listOrdersQuerySchema
+// declares, so the counts describe the same set of orders the list does; it
+// deliberately omits `status` (it counts every status in one pass) and the
+// pagination/sort fields (it returns totals, not rows).
+export const orderCountByStatusQuerySchema = z.object({
+  orderType: listOrdersQuerySchema.shape.orderType,
+  vendorId: listOrdersQuerySchema.shape.vendorId,
+  search: listOrdersQuerySchema.shape.search,
+  deliveryRiderId: listOrdersQuerySchema.shape.deliveryRiderId,
+  deliveredToday: listOrdersQuerySchema.shape.deliveredToday,
+  dateField: listOrdersQuerySchema.shape.dateField,
+  dateFrom: listOrdersQuerySchema.shape.dateFrom,
+  dateTo: listOrdersQuerySchema.shape.dateTo,
+});
+
+export type OrderCountsByStatusQuery = z.infer<typeof orderCountByStatusQuerySchema>;
+
+// GET /orders/trash — the same shape as the live list (so the trash table gets
+// search, sorting and paging for free). `trashed` is set by the controller, not
+// accepted from the client: listOrdersQuerySchema deliberately doesn't declare
+// it, which is what stops ?trashed=true reaching the service on GET /orders.
+export const trashedOrdersQuerySchema = listOrdersQuerySchema;
+
+// POST /orders/:id/restore — the stage the order re-enters the workflow at.
+// Only these two: restoring is the one path allowed past STATUS_TRANSITIONS
+// (see TRASH_RESTORE_STAGES), so the set it can reach stays deliberately tiny.
+export const restoreOrderSchema = z.object({
+  restoreTo: z.enum(["pickup_ordered", "ready_to_deliver"], {
+    error: "restoreTo must be pickup_ordered or ready_to_deliver",
+  }),
+});
+
 // ── Rider run sheet (query params) ───────────────────────────────────────────
 
 export const runSheetQuerySchema = z.object({

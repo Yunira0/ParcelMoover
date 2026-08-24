@@ -1,0 +1,54 @@
+/* Narrower than the form modals: a question and two buttons, nothing else. */
+.confirm-dialog {
+  width: 420px;
+}
+
+.confirm-dialog-body {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3, 12px);
+}
+
+.confirm-dialog-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--color-background-danger-subtle, #fdeaea);
+  color: var(--color-text-danger, #b42318);
+}
+
+.confirm-dialog-title {
+  margin: 0;
+  font-size: var(--font-size-md, 16px);
+  font-weight: var(--font-weight-semi-bold);
+  line-height: 1.4;
+  color: var(--color-text-heading);
+}
+
+.confirm-dialog-message {
+  margin: 6px 0 0;
+  font-size: var(--font-size-sm, 13px);
+  line-height: 1.5;
+  color: var(--color-text-caption);
+}
+
+.confirm-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2, 8px);
+  margin-top: var(--space-6, 24px);
+}
+
+@media (max-width: 480px) {
+  .confirm-dialog-actions {
+    flex-direction: column-reverse;
+  }
+
+  .confirm-dialog-actions .btn {
+    width: 100%;
+  }
+}

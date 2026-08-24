@@ -19,7 +19,6 @@ import {
   PartyLedgerRedirect,
   PeopleRedirect,
   PeriodsRedirect,
-  PersonDetailRedirect,
   ReportsRedirect,
   SearchRedirect,
 } from './pages/accounting/legacyRedirects'
@@ -48,9 +47,15 @@ const CodPage = lazy(() => import('./pages/accounting/CodPage'))
 const JournalPage = lazy(() => import('./pages/accounting/JournalPage'))
 const LedgerReportPage = lazy(() => import('./pages/accounting/LedgerReportPage'))
 const PartySearchPage = lazy(() => import('./pages/accounting/PartySearchPage'))
-const AccountingPersonPage = lazy(() => import('./pages/accounting/AccountingPersonPage'))
+// The Tally-style accounting screens: ruled documents rather than dashboard
+// cards, with the same action panel on every one.
+const JournalVoucherPage = lazy(() => import('./pages/finance/JournalVoucherPage'))
+const LedgerSheetPage = lazy(() => import('./pages/finance/LedgerSheetPage'))
+const SettlementLedgerPage = lazy(() => import('./pages/finance/SettlementLedgerPage'))
+const CashBankPage = lazy(() => import('./pages/finance/CashBankPage'))
+const CashBankVoucherPage = lazy(() => import('./pages/finance/CashBankVoucherPage'))
+const MastersPage = lazy(() => import('./pages/finance/MastersPage'))
 const SettlementPayPage = lazy(() => import('./pages/SettlementPayPage'))
-const FinanceManagement = lazy(() => import('./pages/FinanceManagement'))
 const DeliveryRateSettings = lazy(() => import('./pages/DeliveryRateSettings'))
 const Settings = lazy(() => import('./pages/settings/Settings'))
 const SlaSettings = lazy(() => import('./pages/SlaSettings'))
@@ -79,6 +84,7 @@ const VendorDeveloper = lazy(() => import('./pages/vendor/VendorDeveloper'))
 const VendorPrintSettings = lazy(() => import('./pages/vendor/VendorPrintSettings'))
 const StaffFormPage = lazy(() => import('./pages/vendor/StaffFormPage'))
 const BulkOrderPage = lazy(() => import('./pages/vendor/BulkOrderPage'))
+const TrashOrdersPage = lazy(() => import('./pages/TrashOrdersPage'))
 const VendorDeliveryCharges = lazy(() => import('./pages/vendor/VendorDeliveryCharges'))
 const VendorMetricDetail = lazy(() => import('./pages/vendor/VendorMetricDetail'))
 const ForceChangePasswordPage = lazy(() => import('./pages/ForceChangePasswordPage'))
@@ -136,6 +142,13 @@ function App() {
           <Route
             path="/orders/bulk-create"
             element={<RoleGuard allowedRoles={['super_admin', 'admin', 'sales', 'vendor', 'vendor_staff']} requiredPermission="ORDER_ACCESS"><BulkOrderPage /></RoleGuard>}
+          />
+          {/* Soft-deleted orders, with restore and permanent delete. Admin-only,
+              matching the server's trash routes - a vendor/sales/rider can't
+              reach the trash or see a trashed order in any list. */}
+          <Route
+            path="/orders/trash"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']} requiredPermission="ORDER_ACCESS"><TrashOrdersPage /></RoleGuard>}
           />
           {/* Every known role can legitimately track some subset of orders - the
               backend (getOrderByTrackingId) already scopes which specific orders
@@ -195,13 +208,12 @@ function App() {
           {/* COD Management was this page's rider/vendor toggle; both halves now
               live on their own Finance entry. */}
           <Route path="/finance" element={<CodManagementRedirect />} />
-          {/* The pre-reorg Finance screen, kept reachable after the merge with
-              upstream rather than sitting dead: /finance itself belongs to the
-              redirect above, so this keeps its own path. */}
-          <Route
-            path="/finance/legacy"
-            element={<RoleGuard allowedRoles={['super_admin', 'admin']}><FinanceManagement /></RoleGuard>}
-          />
+          {/* The pre-reorg Finance screen is gone. It was a second copy of the
+              settlement list — same endpoint, same columns — kept reachable
+              after a merge, and it duplicated every change made to the real
+              one. Its status, date-range and page-size filters moved to
+              SettlementsTab, which is what these two now land on. */}
+          <Route path="/finance/legacy" element={<CodManagementRedirect />} />
           <Route
             path="/reports"
             element={<RoleGuard allowedRoles={['super_admin', 'admin']}><ReportsPage /></RoleGuard>}
@@ -382,15 +394,48 @@ function App() {
             element={<RoleGuard allowedRoles={['super_admin', 'admin']} adminPermission="ACCOUNTING_ACCESS"><LedgerReportPage view="account" /></RoleGuard>}
           />
 
+          {/* The Tally-style screens. A voucher and a ledger sheet are both
+              documents that get printed and filed, so they are laid out as the
+              forms they replace rather than as dashboard tables. */}
+          {/* Cash & Bank — the group summary, and the Payment/Receipt/Contra
+              voucher that posts to it. Must precede /finance/voucher/:id or
+              "new" would be read as an id. */}
+          <Route
+            path="/finance/cash-bank"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']} adminPermission="ACCOUNTING_ACCESS"><CashBankPage /></RoleGuard>}
+          />
+          <Route
+            path="/finance/voucher/new"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']} adminPermission="ACCOUNTING_ACCESS"><CashBankVoucherPage /></RoleGuard>}
+          />
+          <Route
+            path="/finance/voucher/:id"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']} adminPermission="ACCOUNTING_ACCESS"><JournalVoucherPage /></RoleGuard>}
+          />
+          <Route
+            path="/finance/ledger/:code"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']} adminPermission="ACCOUNTING_ACCESS"><LedgerSheetPage /></RoleGuard>}
+          />
+          {/* One rider or vendor, as a ledger of their statements. Three
+              segments, so it never competes with the account sheet above. */}
+          <Route
+            path="/finance/ledger/:partyType/:partyId"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']} adminPermission="ACCOUNTING_ACCESS"><SettlementLedgerPage /></RoleGuard>}
+          />
+          {/* Masters. Creating and editing accounts is a super-admin job: an
+              account's type and normal side reinterpret every entry ever posted
+              to it, so this is not a grant to hand out with the books. */}
+          <Route
+            path="/finance/masters"
+            element={<RoleGuard allowedRoles={['super_admin']}><MastersPage /></RoleGuard>}
+          />
+
           {/* Reached by drilling from a ledger, never from the nav. */}
           <Route
             path="/accounting/people/search"
             element={<RoleGuard allowedRoles={['super_admin', 'admin']} adminPermission="ACCOUNTING_ACCESS"><PartySearchPage /></RoleGuard>}
           />
-          <Route
-            path="/accounting/people/:partyType/:partyId"
-            element={<RoleGuard allowedRoles={['super_admin', 'admin']} adminPermission="ACCOUNTING_ACCESS"><AccountingPersonPage /></RoleGuard>}
-          />
+
           {/* The expense screen is gone: an expense was only ever cash leaving
               against a 5xxx account, which the Cash Payments voucher records.
               Entries posted by the old screen are still in the journal. */}
@@ -408,7 +453,6 @@ function App() {
           <Route path="/accounting/parties" element={<PartiesRedirect />} />
           <Route path="/accounting/parties/:partyType/:id" element={<PartyLedgerRedirect />} />
           <Route path="/accounting/search" element={<SearchRedirect />} />
-          <Route path="/accounting/search/:partyType/:partyId" element={<PersonDetailRedirect />} />
           <Route
             path="/user-management"
             element={<RoleGuard allowedRoles={['vendor']}><VendorUserManagement /></RoleGuard>}

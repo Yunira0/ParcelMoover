@@ -1,5 +1,5 @@
 import React from 'react';
-import { AlertTriangle, CheckCircle2, Info, Lock, LockOpen } from 'lucide-react';
+import { Lock, LockOpen } from 'lucide-react';
 import StatusChip, { type StatusChipTone } from '../../components/StatusChip';
 import './Accounting.css';
 
@@ -32,23 +32,12 @@ export const PartyChip: React.FC<{ children: React.ReactNode }> = ({ children })
   <StatusChip tone="info">{children}</StatusChip>
 );
 
-const BANNER_ICON = {
-  info: Info,
-  warning: AlertTriangle,
-  danger: AlertTriangle,
-  success: CheckCircle2,
-} as const;
-
-/** An explanatory or error note above the figures it applies to. */
-export const Banner: React.FC<{
-  tone: 'info' | 'warning' | 'danger' | 'success';
-  children: React.ReactNode;
-}> = ({ tone, children }) => {
-  const Icon = BANNER_ICON[tone];
-  return (
-    <div className={`acc-banner acc-banner-${tone}`} role={tone === 'danger' ? 'alert' : undefined}>
-      <Icon size={16} />
-      <span>{children}</span>
-    </div>
-  );
-};
+/**
+ * Re-exported from components/Banner, where it now lives.
+ *
+ * It was defined here and then imported by the vendor COD screens, which made a
+ * page-local helper into a cross-section primitive without ever moving it. The
+ * accounting tabs import it from this file in a dozen places, so the name stays
+ * put rather than churning them all.
+ */
+export { default as Banner, type BannerTone } from '../../components/Banner';

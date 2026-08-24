@@ -477,10 +477,17 @@ const VendorFormPage: React.FC = () => {
     if (form.registrationNo.trim() && !/^[\p{L}\d\s/-]+$/u.test(form.registrationNo.trim()))
       errors.registrationNo = 'Enter a valid registration number';
     if (form.panVatNo.trim() && !isDigits(form.panVatNo, 9, 9)) errors.panVatNo = 'PAN/VAT must be 9 digits';
-    if (form.bankName.trim() && !hasLetter(form.bankName)) errors.bankName = 'Enter a valid bank name';
-    if (form.bankAccountNo.trim() && !isDigits(form.bankAccountNo, 6, 20))
+    // Bank details are required, not optional like the identity fields above.
+    // Every COD payout is a transfer to this account, and the vendor's own
+    // settlement request quotes it back to them rather than taking one per
+    // request — so a vendor registered without it cannot be paid at all.
+    if (!form.bankName.trim()) errors.bankName = 'Bank name is required';
+    else if (!hasLetter(form.bankName)) errors.bankName = 'Enter a valid bank name';
+    if (!form.bankAccountNo.trim()) errors.bankAccountNo = 'Account number is required';
+    else if (!isDigits(form.bankAccountNo, 6, 20))
       errors.bankAccountNo = 'Account number must be 6–20 digits';
-    if (form.bankAccountHolder.trim() && !isValidName(form.bankAccountHolder))
+    if (!form.bankAccountHolder.trim()) errors.bankAccountHolder = 'Account holder name is required';
+    else if (!isValidName(form.bankAccountHolder))
       errors.bankAccountHolder = 'Enter a valid account holder name';
     // A document is only *required* when creating - an edit uploads one to
     // fill a slot the vendor was registered without, so 'none selected' is
@@ -957,11 +964,12 @@ const VendorFormPage: React.FC = () => {
               <SectionHeader
                 icon={<CreditCard size={18} />}
                 title="Bank Details"
-                description="Payment account information"
+                description="Where COD payouts are transferred. Required — the vendor cannot be settled without it."
               />
               <div className="vfp-fields">
                 <FormField
                   label="Name of Bank"
+                  required
                   value={form.bankName}
                   onChange={set('bankName')}
                   placeholder="e.g. Nabil Bank"
@@ -971,6 +979,7 @@ const VendorFormPage: React.FC = () => {
                 )}
                 <FormField
                   label="Account No."
+                  required
                   value={form.bankAccountNo}
                   onChange={set('bankAccountNo')}
                   placeholder="Bank account number"
@@ -980,6 +989,7 @@ const VendorFormPage: React.FC = () => {
                 )}
                 <FormField
                   label="Name of Account Holder"
+                  required
                   value={form.bankAccountHolder}
                   onChange={set('bankAccountHolder')}
                   placeholder="Name as on bank account"

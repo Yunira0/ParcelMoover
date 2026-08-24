@@ -10,6 +10,10 @@ import {
   getDashboardSummary,
   getOrderByTrackingId,
   getOrderFilterOptions,
+  getOrderCountsByStatus,
+  moveOrderToTrash,
+  restoreOrderFromTrash,
+  deleteOrderPermanently,
   getPublicOrderTracking,
   getRiderRunSheet,
   getSenderProfile,
@@ -19,9 +23,10 @@ import {
   updateOrderDetails,
   updateParcelStatus,
 } from "../services/order.service";
+import { OrderCountsByStatusQuery } from "../validators/order.schema";
 import { syncRemarkToNcm } from "../services/ncm.service";
 import { withIdempotency } from "../services/idempotency.service";
-import { ORDER_SORT_FIELDS, OrderSortField, OrderType, ParcelStatus, STATUS_TRANSITIONS } from "../types/order.type";
+import { ListOrdersQuery, ORDER_SORT_FIELDS, OrderSortField, OrderType, ParcelStatus, STATUS_TRANSITIONS } from "../types/order.type";
 import { isValidTrackingId } from "../utils/trackingId";
 
 // General UUID shape (8-4-4-4-12 hex). Intentionally not strict about the
@@ -351,6 +356,107 @@ export async function getOrderFilterOptionsController(req: Request, res: Respons
     return res.status(error.statusCode || 500).json({
       success: false,
       message: error.message || "Failed to load filter options",
+    });
+  }
+}
+
+// GET /orders/status-counts — per-status totals for the orders list page's tab
+// badges. Separate from listOrdersController because that endpoint returns one
+// keyset page (10 rows) and its meta.total only ever describes the active tab,
+// so the other tabs' numbers can't be derived from it.
+export async function getOrderCountsByStatusController(req: Request, res: Response) {
+  try {
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized",
+      });
+    }
+
+    const data = await getOrderCountsByStatus(
+      { id: req.user.id, roles: req.user.roles },
+      req.query as OrderCountsByStatusQuery,
+    );
+    return res.status(200).json({ success: true, data });
+  } catch (error: any) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to load order counts",
+    });
+  }
+}
+
+// ── Trash ────────────────────────────────────────────────────────────────────
+// All four are admin-only at the route layer. They pass the already-validated
+// query straight through rather than re-parsing it by hand like
+// listOrdersController does, since `validate(..., "query")` has replaced
+// req.query with the parsed object by the time they run.
+
+// GET /orders/trash — soft-deleted orders, same shape as the live list.
+export async function listTrashedOrdersController(req: Request, res: Response) {
+  try {
+    if (!req.user) return res.status(401).json({ success: false, message: "Unauthorized" });
+
+    // `trashed` is forced here, never read from the client.
+    const result = await listOrders(
+      { id: req.user.id, roles: req.user.roles },
+      { ...(req.query as ListOrdersQuery), trashed: true },
+    );
+    return res.status(200).json({ success: true, data: result.data, meta: result.meta });
+  } catch (error: any) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to load trash",
+    });
+  }
+}
+
+// POST /orders/:id/trash — soft-delete one order.
+export async function trashOrderController(req: Request, res: Response) {
+  try {
+    if (!req.user) return res.status(401).json({ success: false, message: "Unauthorized" });
+
+    const data = await moveOrderToTrash({ id: req.user.id, roles: req.user.roles }, req.params.id as string);
+    return res.status(200).json({ success: true, message: "Order moved to trash", data });
+  } catch (error: any) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to move order to trash",
+    });
+  }
+}
+
+// POST /orders/:id/restore — put a trashed order back into the live lists.
+export async function restoreOrderController(req: Request, res: Response) {
+  try {
+    if (!req.user) return res.status(401).json({ success: false, message: "Unauthorized" });
+
+    const data = await restoreOrderFromTrash(
+      { id: req.user.id, roles: req.user.roles },
+      req.params.id as string,
+      req.body.restoreTo,
+    );
+    return res.status(200).json({ success: true, message: "Order restored", data });
+  } catch (error: any) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to restore order",
+    });
+  }
+}
+
+// DELETE /orders/:id/permanent — unrecoverable. Refused with 409 for any order
+// carrying accounting or COD records (see getPermanentDeleteBlocker).
+export async function deleteOrderPermanentlyController(req: Request, res: Response) {
+  try {
+    if (!req.user) return res.status(401).json({ success: false, message: "Unauthorized" });
+
+    const data = await deleteOrderPermanently({ id: req.user.id, roles: req.user.roles }, req.params.id as string);
+    return res.status(200).json({ success: true, message: "Order permanently deleted", data });
+  } catch (error: any) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to delete order",
     });
   }
 }

@@ -3,6 +3,7 @@ import { vendor_billing_state } from "../generated/prisma/enums";
 import prisma from "../lib/prisma";
 import redis from "../lib/redis";
 import { AppError } from "../utils/AppError";
+import { earnedChargeSql } from "./money-rules";
 import { createNotification } from "./notification.service";
 
 // ── Vendor credit control ────────────────────────────────────────────────────
@@ -30,34 +31,15 @@ const SETTINGS_CACHE_TTL_SECONDS = 300;
 
 const balanceCacheKey = (vendorId: string) => `finance:${vendorId}:balance`;
 
-// When a delivery charge becomes the vendor's to pay.
+// When a delivery charge becomes the vendor's to pay. The rule and its SQL
+// both come from money-rules.ts, which generates the fragment below from the
+// same constant the TypeScript predicate reads - so there is no second copy to
+// drift. There used to be, and it did.
 //
-// `delivered` / `partially_delivered` are the plain case: the service was
-// performed, the charge is earned.
-//
-// `returned_to_vendor` also earns it — both for a genuine return leg
-// (order_type "return", priced at the vendor's return percent, see
-// getReturnDeliveryQuote) and for a plain RTO (a delivery that failed and
-// went follow_up -> ready_to_return -> sent_to_vendor -> returned_to_vendor):
-// the outbound leg was still run, so the vendor is billed its
-// delivery_charge same as a normal delivery.
-const EARNED_CHARGE_SQL = Prisma.sql`
-  p.status::text IN ('delivered', 'partially_delivered', 'returned_to_vendor')
-`;
+// Re-exported here because this is where callers have always looked for it.
+const EARNED_CHARGE_SQL = earnedChargeSql();
 
-// Statuses whose entry or exit changes what a vendor owes — the TypeScript
-// mirror of EARNED_CHARGE_SQL, used to decide when a status change is worth
-// re-evaluating the balance for. Exit matters too: partially_delivered can
-// transition back to ready_to_deliver, un-earning the charge.
-export const BALANCE_AFFECTING_STATUSES = [
-  "delivered",
-  "partially_delivered",
-  "returned_to_vendor",
-] as const;
-
-export function statusAffectsBalance(status: string | null | undefined): boolean {
-  return Boolean(status) && (BALANCE_AFFECTING_STATUSES as readonly string[]).includes(status as string);
-}
+export { BALANCE_AFFECTING_STATUSES, statusAffectsBalance } from "./money-rules";
 
 export interface VendorAccountBalance {
   /** Lifetime COD actually collected from receivers on this vendor's parcels. */

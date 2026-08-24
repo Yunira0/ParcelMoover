@@ -156,6 +156,11 @@ export interface ListOrdersQuery {
   // Inclusive Nepal-local day bounds, "YYYY-MM-DD".
   dateFrom?: string;
   dateTo?: string;
+  // Lists trashed (soft-deleted) parcels instead of live ones. Deliberately
+  // absent from listOrdersQuerySchema so ?trashed=true on the public list
+  // endpoint is stripped before it reaches the service — only the admin-only
+  // trash route sets it.
+  trashed?: boolean;
 }
 
 export interface BulkUpdateParcelStatusInput {

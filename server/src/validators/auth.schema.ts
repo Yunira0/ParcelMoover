@@ -125,12 +125,34 @@ export const registerUserSchema = z
     carrierCode: carrierCodeSchema,
   })
   .superRefine((data, ctx) => {
-    if (data.type === "vendor" && !data.clientName) {
+    if (data.type !== "vendor") return;
+
+    if (!data.clientName) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["clientName"],
         message: "clientName is required for vendor registration",
       });
+    }
+
+    // Bank details are required for a vendor, and only for a vendor.
+    //
+    // Every COD payout is a transfer to this account, and the vendor's own
+    // settlement request now quotes it back to them rather than letting them
+    // type one in per request - so a vendor registered without it cannot be
+    // paid and cannot ask to be. Riders hand cash over a counter and admins are
+    // not paid through this system at all, which is why the fields stay
+    // optional for them.
+    const required = [
+      ["bankName", data.bankName, "Bank name is required for a vendor"],
+      ["bankAccountNo", data.bankAccountNo, "Bank account number is required for a vendor"],
+      ["bankAccountHolder", data.bankAccountHolder, "Account holder name is required for a vendor"],
+    ] as const;
+
+    for (const [path, value, message] of required) {
+      if (!value?.trim()) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: [path], message });
+      }
     }
   });
 

@@ -41,12 +41,17 @@ const CodPage: React.FC<{ payeeType: 'rider' | 'vendor' }> = ({ payeeType }) => 
         actionIcon={<Plus size={16} />}
         onAction={() => navigate(`/finance/settlements/new?type=${payeeType}`)}
       >
-        <TicketCategoryButton
-          category="cod_settlement"
-          notificationType="cod_settlement"
-          to="/cod-settlement-requests"
-          label="Settlement Requests"
-        />
+        {/* Vendors only. A settlement request is a vendor asking to be paid out
+            — cod_settlement_requests has no rider column and never did — so on
+            the rider page this was a button to someone else's queue. */}
+        {payeeType === 'vendor' && (
+          <TicketCategoryButton
+            category="cod_settlement"
+            notificationType="cod_settlement"
+            to="/cod-settlement-requests"
+            label="Settlement Requests"
+          />
+        )}
       </PageHeader>
 
       <SettlementsTab payeeType={payeeType} />

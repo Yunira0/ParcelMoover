@@ -83,6 +83,9 @@
 .cod-bill {
   background-color: var(--color-background-surface);
   border: 1px solid var(--color-border-default);
+  /* A rule across the top marks this as the document rather than another panel
+     on the page — the same job a letterhead does. */
+  border-top: 3px solid var(--color-primary);
   border-radius: var(--border-radius-default);
   padding: var(--space-6);
   display: flex;
@@ -107,6 +110,15 @@
 .cod-bill-vendor-name {
   font-size: var(--font-size-lg);
   font-weight: var(--font-weight-semibold);
+}
+
+/* The label beside the payable figure stays readable body text — the accent is
+   on the number, and colouring both would make the pair shout without saying
+   which half is the answer. */
+.cod-bill-totals-payable > span:first-child {
+  color: var(--color-text-default);
+  font-size: var(--font-size-sm);
+  align-self: center;
 }
 
 .cod-bill-meta {
@@ -164,11 +176,21 @@
   color: var(--color-text-default);
 }
 
-.cod-bill-totals-payable {
-  font-weight: var(--font-weight-semibold);
-  font-size: var(--font-size-md);
+/* The one figure on the page the vendor actually came for: what they will be
+   paid, after charges. It read as body text in a stack of body text, so it took
+   reading the label to find it. The brand colour is reserved for exactly this
+   kind of thing — the row's real answer, not decoration. */
+/* Written as `.cod-bill-totals > div.…` rather than the bare class: the rule
+   above it is two classes plus an element and would otherwise win, leaving this
+   figure the same size and colour as the two lines it is meant to stand out
+   from. */
+.cod-bill-totals > div.cod-bill-totals-payable {
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-lg);
+  color: var(--color-text-primary);
   border-top: 1px solid var(--color-border-default);
-  padding-top: var(--space-2);
+  padding-top: var(--space-3);
+  margin-top: var(--space-1);
 }
 
 /* How much of a part-paid settlement has actually landed — the status chip

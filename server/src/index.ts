@@ -54,6 +54,7 @@ async function startServer() {
     startKycDocumentPurge();
     startWebhookDelivery();
     startLedgerPostingSweep();
+    startCancelledOrderTrashSweep();
   });
 }
 
@@ -148,6 +149,54 @@ function startUpayaReconciliation() {
 const KYC_PURGE_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const KYC_PURGE_LOCK_KEY = "kyc:document-purge-lock";
 
+// Cancelled orders drop into the trash once they've been cancelled for a week
+// (CANCELLED_TRASH_AFTER_DAYS) - see sweepCancelledOrdersToTrash. Hourly rather
+// than 6-hourly like the KYC purge only because "7 days" reads as a date the
+// user can predict; the sweep itself is idempotent either way. Same Redis NX
+// lock so multiple app processes don't trash the same batch concurrently.
+const CANCELLED_TRASH_INTERVAL_MS = 60 * 60 * 1000;
+const CANCELLED_TRASH_LOCK_KEY = "orders:cancelled-trash-lock";
+
+function startCancelledOrderTrashSweep() {
+  // Off unless explicitly enabled. On its first run against an existing
+  // database this sweep trashes *every* cancelled order older than
+  // CANCELLED_TRASH_AFTER_DAYS - potentially the whole back catalogue, 500 an
+  // hour - and reverses the COD postings of any that carry them. That is a
+  // one-way bulk mutation with only per-order restore to undo it, so it has to
+  // be a deliberate decision per environment rather than something that starts
+  // the moment this code ships.
+  if (process.env.CANCELLED_TRASH_SWEEP_ENABLED !== "true") {
+    console.log(
+      "[Orders] cancelled-order trash sweep disabled — set CANCELLED_TRASH_SWEEP_ENABLED=true to enable",
+    );
+    return;
+  }
+
+  setInterval(async () => {
+    try {
+      const acquired = await redis.set(
+        CANCELLED_TRASH_LOCK_KEY,
+        "1",
+        "EX",
+        Math.floor(CANCELLED_TRASH_INTERVAL_MS / 1000) - 60,
+        "NX",
+      );
+      if (!acquired) return;
+    } catch {
+      // Redis down — run anyway; the sweep is idempotent.
+    }
+    try {
+      const { sweepCancelledOrdersToTrash } = await import("./services/order.service");
+      const result = await sweepCancelledOrdersToTrash();
+      if (result.trashed > 0) {
+        console.log(`[Orders] cancelled-order trash sweep: trashed ${result.trashed} of ${result.checked}`);
+      }
+    } catch (error) {
+      console.error("[Orders] cancelled-order trash sweep failed:", error);
+    }
+  }, CANCELLED_TRASH_INTERVAL_MS).unref();
+}
+
 function startKycDocumentPurge() {
   setInterval(async () => {
     try {
@@ -217,16 +266,17 @@ function startWebhookDelivery() {
   }, WEBHOOK_DELIVERY_INTERVAL_MS).unref();
 }
 
-// Most journal entries are posted inside the transaction that moved the money,
-// so they cannot be lost. The one exception is the bulk parcel status path,
-// which posts fire-and-forget rather than adding several hundred statements to
-// an already-large transaction (see syncParcelPostingsAsync). That trade is only
-// honest if something notices what it drops - this is that something.
+// Journal entries are posted inside the transaction that moved the money, so
+// they cannot be lost to a crash. What they can be lost to is a mutator that
+// never asks for them: revertSettlement did exactly that for months, and
+// nothing noticed. This sweep re-syncs statements by `updated_at` rather than
+// by any list of call sites, so a statement that changed is brought into line
+// whether or not the code that changed it remembered to say so.
 //
 // The window is deliberately wider than the interval so a sweep that dies
 // mid-run is covered by the next one, and the Redis NX lock keeps one process
-// doing it. Re-syncing is idempotent: parcels whose books already agree cost two
-// reads and write nothing.
+// doing it. Re-syncing is idempotent: statements whose books already agree cost
+// two reads and write nothing.
 const LEDGER_SWEEP_INTERVAL_MS = 15 * 60 * 1000;
 const LEDGER_SWEEP_WINDOW_MS = 60 * 60 * 1000;
 const LEDGER_SWEEP_LIMIT = 500;
@@ -247,8 +297,8 @@ function startLedgerPostingSweep() {
       // Redis down — run anyway; the sweep converges rather than accumulating.
     }
     try {
-      const { sweepParcelPostings } = await import("./services/accounting/sync");
-      const result = await sweepParcelPostings({
+      const { sweepSettlementPostings } = await import("./services/accounting/sync");
+      const result = await sweepSettlementPostings({
         since: new Date(Date.now() - LEDGER_SWEEP_WINDOW_MS),
         limit: LEDGER_SWEEP_LIMIT,
       });

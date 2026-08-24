@@ -14,6 +14,7 @@ export const SLA_GROUPS: { title: string; keys: { key: string; label: string }[]
       { key: 'rider_assigned', label: 'Rider Assigned' },
       { key: 'picked_up', label: 'Picked Up' },
       { key: 'arrived', label: 'Arrived at Origin' },
+      { key: 'failed_pickup', label: 'Failed Pickup' },
     ],
   },
   {
@@ -21,6 +22,7 @@ export const SLA_GROUPS: { title: string; keys: { key: string; label: string }[]
     keys: [
       { key: 'ready_to_deliver', label: 'Ready to Deliver' },
       { key: 'sent_for_delivery', label: 'Sent for Delivery' },
+      { key: 'failed_delivery', label: 'Failed Delivery' },
     ],
   },
   {

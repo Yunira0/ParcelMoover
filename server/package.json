@@ -18,6 +18,8 @@
     "seed:accounting": "ts-node --transpile-only prisma/seed-accounting.ts",
     "backfill:ledger": "ts-node --transpile-only src/scripts/backfill-ledger.ts",
     "reconcile:ledger": "ts-node --transpile-only src/scripts/reconcile-ledger.ts",
+    "resync:postings": "ts-node --transpile-only src/scripts/resync-postings.ts",
+    "resync:postings:prod": "node dist/scripts/resync-postings.js",
     "backfill:ledger:prod": "node dist/scripts/backfill-ledger.js",
     "reconcile:ledger:prod": "node dist/scripts/reconcile-ledger.js",
     "check:vendorless": "ts-node --transpile-only scripts/check-vendorless-postings.ts",
@@ -27,7 +29,9 @@
     "backfill:picked-up-at": "ts-node --transpile-only scripts/backfill-picked-up-at.ts",
     "reconcile:settlement-status": "ts-node --transpile-only scripts/reconcile-settlement-payment-status.ts",
     "reconcile:undelivered-cod": "ts-node --transpile-only scripts/reconcile-undelivered-cod.ts",
-    "debrand:carrier-remarks": "ts-node --transpile-only scripts/debrand-carrier-remarks.ts"
+    "debrand:carrier-remarks": "ts-node --transpile-only scripts/debrand-carrier-remarks.ts",
+    "restate:memos": "ts-node --transpile-only src/scripts/restate-memos.ts",
+    "restate:memos:prod": "node dist/scripts/restate-memos.js"
   },
   "keywords": [],
   "author": "",

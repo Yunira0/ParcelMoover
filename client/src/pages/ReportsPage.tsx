@@ -7,8 +7,8 @@ import Table from '../components/Table';
 import StatusChip from '../components/StatusChip';
 import Button from '../components/Button';
 import { getOrders, getAllOrders, type Order, type ParcelStatus } from '../services/orders.service';
-import { ORDER_STATUS_LABELS, getOrderStatusTone } from '../utils/orderStatus';
-import { toBsDate, toBsDateTime } from '../utils/nepaliDate';
+import { ORDER_STATUS_LABELS, getOrderStatusTone, STATUS_TIMELINE_HEADERS, statusTimelineCells } from '../utils/orderStatus';
+import { toBsDate, toBsDateTimeCell } from '../utils/nepaliDate';
 import { downloadExcel } from '../utils/excel';
 import './ReportsPage.css';
 
@@ -122,7 +122,8 @@ const ReportsPage: React.FC = () => {
     setError('');
     try {
       // Export the full result set, not just the capped page shown in the table.
-      // withArrival populates arrivedAtOrigin. Columns mirror the order table.
+      // withArrival populates statusTimestamps, which backs the per-stage
+      // columns. Columns mirror the order table.
       const allOrders = await getAllOrders({ status: statuses, withArrival: true });
       const headers = [
         '#',
@@ -141,9 +142,8 @@ const ReportsPage: React.FC = () => {
         'Remarks',
         'Last Updated By',
         'Last Updated At',
-        'Arrived At Origin',
-        'Delivered At',
         'Created',
+        ...STATUS_TIMELINE_HEADERS,
       ];
       const rows = allOrders.map((o) => [
         `#${o.orderNumber}`,
@@ -161,10 +161,9 @@ const ReportsPage: React.FC = () => {
         o.riderName || '',
         o.remarks || '',
         o.lastUpdatedBy || '',
-        toBsDateTime(o.lastUpdatedAt) || '',
-        o.arrivedAtOrigin ? toBsDate(o.arrivedAtOrigin) : '',
-        o.deliveredAt ? toBsDate(o.deliveredAt) : '',
-        toBsDate(o.createdAt) || '',
+        toBsDateTimeCell(o.lastUpdatedAt) || '',
+        toBsDateTimeCell(o.createdAtRaw || o.createdAt) || '',
+        ...statusTimelineCells(o.statusTimestamps),
       ]);
       downloadExcel(
         `${report}-${bucket}-report.xlsx`,

@@ -8,6 +8,7 @@ import {
   getJournalEntry,
   getOverview,
   getPartyLedger,
+  getPartySettlementLedger,
   getProfitAndLoss,
   getTrialBalance,
   listAccounts,
@@ -24,6 +25,7 @@ import {
   type RangeQuery,
   type TransactionQuery,
 } from "../services/accounting/accounting.service";
+import { createAccount, listChart, setOpeningBalance, updateAccount } from "../services/accounting/masters.service";
 
 function fail(res: Response, error: any, fallback: string) {
   return res.status(error?.statusCode || 500).json({
@@ -88,9 +90,9 @@ export async function getOverviewController(req: Request, res: Response) {
   }
 }
 
-export async function listAccountsController(_req: Request, res: Response) {
+export async function listAccountsController(req: Request, res: Response) {
   try {
-    return ok(res, await listAccounts());
+    return ok(res, await listAccounts(req.query.scope === "cash_bank" ? "cash_bank" : undefined));
   } catch (error) {
     return fail(res, error, "Failed to load the chart of accounts");
   }
@@ -171,6 +173,14 @@ export async function getPartyLedgerController(req: Request, res: Response) {
     return ok(res, await getPartyLedger(partyTypeOf(req), partyIdOf(req), rangeOf(req)));
   } catch (error) {
     return fail(res, error, "Failed to load the party ledger");
+  }
+}
+
+export async function getPartySettlementLedgerController(req: Request, res: Response) {
+  try {
+    return ok(res, await getPartySettlementLedger(partyTypeOf(req), partyIdOf(req), rangeOf(req)));
+  } catch (error) {
+    return fail(res, error, "Failed to load the settlement ledger");
   }
 }
 
@@ -279,5 +289,52 @@ export async function reverseEntryController(req: Request, res: Response) {
     return ok(res, await reverseEntry(req.user!, req.params.id as string, req.body.reason ?? ""));
   } catch (error) {
     return fail(res, error, "Failed to reverse the journal entry");
+  }
+}
+
+// ── Masters ─────────────────────────────────────────────────────────────────
+
+export async function listChartController(_req: Request, res: Response) {
+  try {
+    return ok(res, await listChart());
+  } catch (error) {
+    return fail(res, error, "Failed to load the chart of accounts");
+  }
+}
+
+export async function createAccountController(req: Request, res: Response) {
+  try {
+    return res.status(201).json({ success: true, data: await createAccount(req.body) });
+  } catch (error) {
+    return fail(res, error, "Failed to create the account");
+  }
+}
+
+export async function setOpeningBalanceController(req: Request, res: Response) {
+  try {
+    const { accountCode, amount, asOf, partyType, partyId, reference } = req.body;
+    return res.status(201).json({
+      success: true,
+      data: await setOpeningBalance(
+        {
+          accountCode,
+          amount,
+          asOf: new Date(asOf),
+          ...(partyType && partyId ? { party: { type: partyType, id: partyId } } : {}),
+          reference,
+        },
+        req.user?.id ?? null,
+      ),
+    });
+  } catch (error) {
+    return fail(res, error, "Failed to record the opening balance");
+  }
+}
+
+export async function updateAccountController(req: Request, res: Response) {
+  try {
+    return ok(res, await updateAccount(req.params.code as string, req.body));
+  } catch (error) {
+    return fail(res, error, "Failed to update the account");
   }
 }

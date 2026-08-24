@@ -1,8 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
-import { ChevronDown, ChevronRight, Undo2, X } from 'lucide-react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { Undo2, X } from 'lucide-react';
 import Button from '../../../components/Button';
-import Table from '../../../components/Table';
 import Pagination from '../../../components/Pagination';
 import FilterDropdown from '../../../components/FilterDropdown';
 import FormField from '../../../components/FormField';
@@ -20,11 +19,15 @@ import {
 import { hasAdminPermission } from '../../../utils/auth';
 import { apiErrorMessage } from '../../../utils/serverValidation';
 import '../../../components/Modal.css';
+import '../../../components/finance/tally.css';
 import '../Accounting.css';
 
-// The full day book. Every entry the system has ever posted, newest first, with
-// its lines readable in place — a journal you have to click through twice to
-// see the debits and credits is not a journal.
+// The full day book, ruled as the journal it is: S.No, the transaction in
+// plain words, the entry's debit and credit lines side by side, and the
+// amount — the same shape as a bound journal page, not a dashboard table.
+// Every line is printed here rather than behind an expander, because a
+// journal you have to click through to see the debits and credits is not a
+// journal.
 //
 // The "New entry" button lives on the shell's PageHeader, so the modal is opened
 // from outside; the modal itself stays here because saving has to reload this
@@ -91,7 +94,6 @@ const JournalTab: React.FC<JournalTabProps> = ({ newEntryOpen, onNewEntryClose }
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [expanded, setExpanded] = useState<Set<string | number>>(new Set());
   const [reversing, setReversing] = useState<JournalEntry | null>(null);
   const [reverseReason, setReverseReason] = useState('');
   const [reverseError, setReverseError] = useState<string | null>(null);
@@ -132,14 +134,6 @@ const JournalTab: React.FC<JournalTabProps> = ({ newEntryOpen, onNewEntryClose }
     else next.delete('search');
     setSearchParams(next, { replace: true });
   };
-
-  const toggle = (id: string) =>
-    setExpanded((current) => {
-      const next = new Set(current);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
 
   const submitReversal = async () => {
     if (!reversing) return;
@@ -203,144 +197,112 @@ const JournalTab: React.FC<JournalTabProps> = ({ newEntryOpen, onNewEntryClose }
 
       {error && <Banner tone="danger">{error}</Banner>}
 
-      <Table
-        selectable={false}
-        loading={loading}
-        loadingMessage="Loading entries…"
-        data={data}
-        expandedIds={expanded}
-        columns={[
-          {
-            header: '',
-            width: '44px',
-            accessor: (entry) => (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => toggle(entry.id)}
-                aria-label={expanded.has(entry.id) ? 'Hide lines' : 'Show lines'}
-                aria-expanded={expanded.has(entry.id)}
-              >
-                {expanded.has(entry.id) ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
-              </Button>
-            ),
-          },
-          { header: 'Date (BS)', width: '110px', accessor: 'bsDate' },
-          {
-            header: 'Particulars',
-            // The ledger the voucher is against, the way a day book names it —
-            // the debit side, since that is what the money became. The
-            // narration sits under it, as it does on the voucher itself.
-            accessor: (entry) => {
-              const debits = entry.lines.filter((line) => line.debit > 0);
-              const lead = debits[0]?.accountName ?? entry.lines[0]?.accountName ?? '—';
+      <div className="tly-scroll">
+        <table className="tly-sheet">
+          <thead>
+            <tr>
+              <th rowSpan={2} style={{ width: '4%' }}>S.No</th>
+              <th rowSpan={2} style={{ width: '27%' }}>Transactions</th>
+              <th colSpan={2}>Journal Entries</th>
+              <th rowSpan={2} className="tly-amt" style={{ width: '14%' }}>Amount</th>
+              {canWrite && <th rowSpan={2} style={{ width: '48px' }}>&nbsp;</th>}
+            </tr>
+            <tr>
+              <th style={{ width: '27%' }}>Dr. (Debit)</th>
+              <th style={{ width: '27%' }}>Cr. (Credit)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading && (
+              <tr><td colSpan={canWrite ? 6 : 5} className="tly-muted">Loading entries…</td></tr>
+            )}
+            {!loading && data.length === 0 && (
+              <tr>
+                <td colSpan={canWrite ? 6 : 5} className="tly-muted">
+                  No entries match. Entries are posted automatically as parcels are delivered and
+                  settlements paid.
+                </td>
+              </tr>
+            )}
+            {!loading && data.map((entry, index) => {
+              const debitLines = entry.lines.filter((line) => line.debit > 0);
+              const creditLines = entry.lines.filter((line) => line.credit > 0);
               return (
-                <>
-                  <span className="acc-line-account">
-                    {lead}
-                    {debits.length > 1 && <span className="acc-sub">and {debits.length - 1} more</span>}
-                  </span>
-                  {entry.memo && <span className="acc-sub">{entry.memo}</span>}
-                  {entry.postedByName && <span className="acc-sub">by {entry.postedByName}</span>}
-                </>
-              );
-            },
-          },
-          {
-            header: 'Vch Type',
-            width: '120px',
-            accessor: (entry) => (
-              <span title={SOURCE_LABELS[entry.sourceType] ?? entry.sourceType}>
-                {VOUCHER_TYPES[entry.sourceType] ?? 'Journal'}
-              </span>
-            ),
-          },
-          {
-            header: 'Vch No.',
-            width: '160px',
-            accessor: (entry) => (
-              <>
-                <span className="acc-entry-no">{entry.entryNo}</span>
-                {entry.reversalOfNo && <span className="acc-sub">reverses {entry.reversalOfNo}</span>}
-                {/* Only worth a chip when it is not the ordinary case. */}
-                {entry.status !== 'posted' && <EntryStatusChip status={entry.status} />}
-              </>
-            ),
-          },
-          {
-            header: 'Debit',
-            width: '130px',
-            className: 'acc-num',
-            accessor: (entry) => <span className="acc-num">{money(entry.totalAmount)}</span>,
-          },
-          {
-            header: 'Credit',
-            width: '130px',
-            className: 'acc-num',
-            // Equal to the debit by construction — a day book prints both
-            // columns anyway, because the pair is the proof it balanced.
-            accessor: (entry) => <span className="acc-num">{money(entry.totalAmount)}</span>,
-          },
-          ...(canWrite
-            ? [{
-                header: '',
-                width: '60px',
-                // Only manual entries can be reversed by hand. An automated one
-                // would simply be re-posted the next time its source record is
-                // touched.
-                accessor: (entry: JournalEntry) =>
-                  entry.status === 'posted' && entry.sourceType === 'manual' ? (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      title="Reverse this entry"
-                      aria-label={`Reverse ${entry.entryNo}`}
-                      onClick={() => {
-                        setReversing(entry);
-                        setReverseReason('');
-                        setReverseError(null);
-                      }}
-                    >
-                      <Undo2 size={15} />
-                    </Button>
-                  ) : null,
-              }]
-            : []),
-        ]}
-        renderExpandedRow={(entry) => (
-          <ul className="acc-lines">
-            {entry.lines.map((line, index) => {
-              const isCredit = line.credit > 0;
-              return (
-                <li key={index} className={`acc-line ${isCredit ? 'acc-line-credit' : ''}`}>
-                  {/* By what was debited, To what was credited. */}
-                  <span className="acc-line-prefix">{isCredit ? 'To' : 'By'}</span>
-                  <span className="acc-line-account">
-                    {line.accountName}
-                    {line.partyName && <span className="acc-sub">{line.partyName}</span>}
-                    {line.trackingId && <span className="acc-sub">{line.trackingId}</span>}
-                    {line.memo && <span className="acc-sub">{line.memo}</span>}
-                  </span>
-                  <span className="acc-line-amount">{isCredit ? '' : money(line.debit)}</span>
-                  <span className="acc-line-amount">{isCredit ? money(line.credit) : ''}</span>
-                </li>
+                <tr key={entry.id} className={entry.status !== 'posted' ? 'tly-muted' : undefined}>
+                  <td className="sno">{(page - 1) * pageSize + index + 1}</td>
+                  <td>
+                    <div>{entry.memo || VOUCHER_TYPES[entry.sourceType] || 'Journal entry'}</div>
+                    <div className="tly-muted je-meta">
+                      {/* The voucher number is the way into the printable
+                          voucher, which carries the full lines and a place to
+                          sign — this row already shows the breakdown, so
+                          following the link is only for the document itself. */}
+                      <Link to={`/finance/voucher/${entry.id}`}>{entry.entryNo}</Link>
+                      {' · '}
+                      {VOUCHER_TYPES[entry.sourceType] ?? 'Journal'}
+                      {entry.postedByName && <> · by {entry.postedByName}</>}
+                    </div>
+                    {entry.reversalOfNo && <div className="tly-muted je-meta">reverses {entry.reversalOfNo}</div>}
+                    {entry.status !== 'posted' && <EntryStatusChip status={entry.status} />}
+                  </td>
+                  <td>
+                    {debitLines.map((line, i) => (
+                      <div key={i} className="je-line">
+                        <span className="je-acct">{line.accountName}</span>
+                        {line.partyName && <span className="tly-muted"> — {line.partyName}</span>}
+                        <span className="je-side">Dr.</span>
+                        <span className="je-inline-amt">{money(line.debit)}</span>
+                      </div>
+                    ))}
+                  </td>
+                  <td>
+                    {creditLines.map((line, i) => (
+                      <div key={i} className="je-line je-line-cr">
+                        <span className="je-to">To</span>
+                        <span className="je-acct">{line.accountName}</span>
+                        {line.partyName && <span className="tly-muted"> — {line.partyName}</span>}
+                        <span className="je-inline-amt">{money(line.credit)}</span>
+                      </div>
+                    ))}
+                  </td>
+                  <td className="tly-amt">{money(entry.totalAmount)}</td>
+                  {canWrite && (
+                    <td>
+                      {/* Only manual entries can be reversed by hand. An
+                          automated one would simply be re-posted the next
+                          time its source record is touched. */}
+                      {entry.status === 'posted' && entry.sourceType === 'manual' && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          title="Reverse this entry"
+                          aria-label={`Reverse ${entry.entryNo}`}
+                          onClick={() => {
+                            setReversing(entry);
+                            setReverseReason('');
+                            setReverseError(null);
+                          }}
+                        >
+                          <Undo2 size={15} />
+                        </Button>
+                      )}
+                    </td>
+                  )}
+                </tr>
               );
             })}
-          </ul>
-        )}
-        emptyMessage="No entries match. Entries are posted automatically as parcels are delivered and settlements paid."
-      />
-
-      {/* What a day book carries at the foot of the page: this page's columns
-          added up. Page, not the whole filtered set — it totals what is printed
-          above it, which is the only figure the reader can check by eye. */}
-      {!loading && data.length > 0 && (
-        <div className="acc-daybook-total">
-          <span>Total for this page</span>
-          <span className="acc-num">{money(pageTotal)}</span>
-          <span className="acc-num">{money(pageTotal)}</span>
-        </div>
-      )}
+          </tbody>
+          {!loading && data.length > 0 && (
+            <tfoot>
+              <tr className="tly-grand">
+                <td colSpan={4} style={{ textAlign: 'right' }}>Total for this page</td>
+                <td className="tly-amt">{money(pageTotal)}</td>
+                {canWrite && <td />}
+              </tr>
+            </tfoot>
+          )}
+        </table>
+      </div>
 
       {totalPages > 1 && (
         <Pagination

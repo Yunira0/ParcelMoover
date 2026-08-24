@@ -27,7 +27,9 @@ import {
 } from '../services/orders.service';
 import { getRiders } from '../services/users.service';
 import { printLabels } from '../utils/printLabels';
-import { toBsDate, toNptTime } from '../utils/nepaliDate';
+import { toBsDate, toBsDateTimeCell, toNptTime } from '../utils/nepaliDate';
+import { STATUS_TIMELINE_HEADERS, statusTimelineCells } from '../utils/orderStatus';
+import { downloadExcel } from '../utils/excel';
 import { formatCurrency } from '../utils/format';
 import { commitScannedTerm, handleScannerPaste } from '../utils/scannerInput';
 import './PickupOperations.css';
@@ -66,7 +68,9 @@ const TAB_STATUSES: Record<PickupTab, ParcelStatus[]> = {
   pickup_ordered: ['pickup_ordered'],
   rider_assigned: ['rider_assigned'],
   picked_up: ['picked_up'],
-  arrived: ['arrived', 'arrived_at_branch'],
+  // 'arrived' only. arrived_at_branch is a destination-hub arrival near the end
+  // of delivery, not a pickup-stage one, and belongs to Dispatch Operations.
+  arrived: ['arrived'],
   failed: ['failed_pickup'],
   cancelled: ['cancelled'],
 };
@@ -447,6 +451,7 @@ const PickupOperations: React.FC = () => {
         const res = await getOrders({
           status: TAB_STATUSES[activeTab],
           search: debouncedSearch || undefined,
+          withArrival: true,
           pageSize: SERVER_FETCH_PAGE_SIZE,
           cursor,
           dir: 'next',
@@ -663,6 +668,42 @@ const PickupOperations: React.FC = () => {
   const handlePrintLabels = () => {
     const labelOrders = selectedOrders.length > 0 ? selectedOrders : visibleOrders;
     void printLabels(labelOrders);
+  };
+
+  // Same rows Print All uses - the selection when there is one, the visible tab
+  // otherwise - so the sheet always matches what the button beside it prints.
+  const downloadCsv = () => {
+    const rows = selectedOrders.length > 0 ? selectedOrders : visibleOrders;
+
+    // Same columns, in the same order, as the group detail table on screen.
+    // COD and delivery charge stay numbers so the columns total in the sheet.
+    const headers = [
+      'Order ID', 'Date & Time', 'Sender', 'Sender Phone', 'Receiver', 'Receiver Phone',
+      'Receiver Address', 'Pickup Rider', 'Tracking Code', 'Weight (kg)', 'Origin',
+      'Destination', 'Delivery Charge', 'COD Amount', 'Last Handle By', 'Order Type', 'Remarks',
+      ...STATUS_TIMELINE_HEADERS,
+    ];
+    const csvRows = rows.map(order => [
+      `#${order.orderNumber}`,
+      toBsDateTimeCell(order.createdAtRaw || order.createdAt) || '',
+      order.senderName,
+      order.senderPhone || '',
+      order.receiverName,
+      order.receiverPhone || '',
+      order.receiverAddress || '',
+      order.riderName || '',
+      order.trackingId,
+      order.weightKg ?? '',
+      order.origin || '',
+      order.destination || '',
+      order.deliveryCharge,
+      order.codAmount,
+      order.lastUpdatedBy || '',
+      ORDER_TYPE_LABELS[order.orderType],
+      order.remarks || '',
+      ...statusTimelineCells(order.statusTimestamps),
+    ]);
+    downloadExcel('pickup-orders.xlsx', 'Pickup Orders', headers, csvRows);
   };
 
   const moveSelectedStatus = (direction: 1 | -1) => {
@@ -893,7 +934,12 @@ const PickupOperations: React.FC = () => {
               </div>
             )}
           </div>
-          <Button variant="secondary" className="pickup-outline-btn">
+          <Button
+            variant="secondary"
+            className="pickup-outline-btn"
+            onClick={downloadCsv}
+            disabled={visibleOrders.length === 0}
+          >
             <Download size={14} /> Download
           </Button>
           <Button variant="secondary" className="pickup-outline-btn" onClick={handlePrintLabels} disabled={visibleOrders.length === 0}>

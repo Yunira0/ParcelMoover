@@ -1,0 +1,43 @@
+/* Moved from Accounting.css, unchanged in appearance — every value still comes
+   from styles/tokens.css. The class prefix is `banner`, not `acc-banner`,
+   because this is no longer an accounting component. */
+
+.banner {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid transparent;
+  border-radius: var(--border-radius-modal);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-sm);
+}
+
+/* The icon keeps its size while the message wraps beside it. */
+.banner svg {
+  flex-shrink: 0;
+}
+
+.banner-info {
+  background: var(--color-info-surface);
+  border-color: var(--color-info-text);
+  color: var(--color-info-text);
+}
+
+.banner-warning {
+  background: var(--color-warning-surface);
+  border-color: var(--color-background-warning-default);
+  color: var(--color-background-warning-default);
+}
+
+.banner-danger {
+  background: var(--color-danger-surface);
+  border-color: var(--color-danger-border);
+  color: var(--color-danger-text);
+}
+
+.banner-success {
+  background: var(--color-success-surface);
+  border-color: var(--color-background-success-default);
+  color: var(--color-background-success-default);
+}

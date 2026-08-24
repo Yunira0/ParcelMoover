@@ -1,9 +1,11 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Banknote } from 'lucide-react';
+import { Send } from 'lucide-react';
+import PageHeader from '../../components/PageHeader';
 import Button from '../../components/Button';
 import FormField from '../../components/FormField';
 import Table from '../../components/Table';
-import { Banner } from '../accounting/ui';
+import Banner from '../../components/Banner';
+import StatusChip, { type StatusChipTone } from '../../components/StatusChip';
 import {
   COD_REQUEST_STATUS_LABELS,
   createCodSettlementRequest,
@@ -11,29 +13,29 @@ import {
   getRegisteredBankDetails,
   isLiveCodRequest,
   type CodSettlementRequest,
+  type CodSettlementRequestStatus,
   type RegisteredBankDetails,
 } from '../../services/codSettlementRequests.service';
 import { apiErrorMessage } from '../../utils/serverValidation';
-import '../CodSettlementRequests.css';
+import { formatDate } from '../../utils/format';
+import './VendorCodSettlementRequests.css';
 
 // Asking to be paid out the COD we're holding.
 //
 // This used to be a support ticket. The reason it is its own page is the rule
 // at the centre of it: one live request at a time. A vendor with a request
 // already open sees that request instead of a form, so the constraint is
-// visible up front rather than arriving as an error after they have typed
-// their bank details out.
+// visible up front rather than arriving as an error after they have asked.
 
-const emptyForm = { bankName: '', accountNumber: '', accountName: '', note: '' };
+/** Only the note is the vendor's to fill in — the account comes from their profile. */
+const emptyForm = { note: '' };
 
-// The form as it should start out: the account registered at signup, which is
-// where a payout goes unless the vendor says otherwise.
-const formWithRegisteredBank = (bank: RegisteredBankDetails | null) => ({
-  ...emptyForm,
-  ...(bank
-    ? { bankName: bank.bankName, accountNumber: bank.accountNumber, accountName: bank.accountName }
-    : {}),
-});
+const STATUS_TONE: Record<CodSettlementRequestStatus, StatusChipTone> = {
+  open: 'info',
+  in_progress: 'warning',
+  settled: 'success',
+  rejected: 'danger',
+};
 
 const VendorCodSettlementRequests: React.FC = () => {
   const [requests, setRequests] = useState<CodSettlementRequest[]>([]);
@@ -61,25 +63,19 @@ const VendorCodSettlementRequests: React.FC = () => {
     void load();
   }, [load]);
 
-  // Prefill from the account registered at signup. Only blank fields are
-  // filled in, so a slow response can never overwrite something the vendor has
-  // already typed, and every field stays editable afterwards.
+  // The account on the vendor's profile — the only account a payout can go to.
+  // Not a prefill: it is what gets submitted, and the vendor cannot type over
+  // it, so a failure here has to surface rather than be swallowed.
   useEffect(() => {
     let cancelled = false;
     getRegisteredBankDetails()
       .then((response) => {
         if (cancelled || !response?.success) return;
         setRegisteredBank(response.data);
-        setForm((prev) => ({
-          ...prev,
-          bankName: prev.bankName || response.data.bankName,
-          accountNumber: prev.accountNumber || response.data.accountNumber,
-          accountName: prev.accountName || response.data.accountName,
-        }));
       })
-      // A prefill that fails is not worth an error banner - the vendor can
-      // still type the details in and raise the request.
-      .catch(() => undefined);
+      .catch((err) => {
+        if (!cancelled) setError(apiErrorMessage(err, 'Could not load your registered bank details'));
+      });
     return () => {
       cancelled = true;
     };
@@ -90,23 +86,29 @@ const VendorCodSettlementRequests: React.FC = () => {
   // than shown and then refused.
   const liveRequest = requests.find((request) => isLiveCodRequest(request.status)) ?? null;
 
-  const update = (patch: Partial<typeof form>) => setForm((prev) => ({ ...prev, ...patch }));
+  /** Whether there is an account to pay into at all. */
+  const hasRegisteredBank = Boolean(
+    registeredBank?.bankName && registeredBank.accountNumber && registeredBank.accountName,
+  );
 
   const submit = async () => {
-    if (!form.bankName.trim() || !form.accountNumber.trim() || !form.accountName.trim()) {
-      setError('Bank name, account number and account holder name are all required.');
+    // The details come from the profile, not the form, so there is nothing for
+    // the vendor to get wrong — only the case where the profile itself is
+    // incomplete, which the card already explains.
+    if (!registeredBank || !hasRegisteredBank) {
+      setError('There are no bank details on your profile to send a payout to.');
       return;
     }
     setSubmitting(true);
     setError(null);
     try {
       await createCodSettlementRequest({
-        bankName: form.bankName.trim(),
-        accountNumber: form.accountNumber.trim(),
-        accountName: form.accountName.trim(),
+        bankName: registeredBank.bankName,
+        accountNumber: registeredBank.accountNumber,
+        accountName: registeredBank.accountName,
         ...(form.note.trim() ? { note: form.note.trim() } : {}),
       });
-      setForm(formWithRegisteredBank(registeredBank));
+      setForm(emptyForm);
       setNotice('Your COD settlement request has been raised.');
       await load();
     } catch (err) {
@@ -117,28 +119,33 @@ const VendorCodSettlementRequests: React.FC = () => {
   };
 
   const columns = [
-    { header: 'REQUEST', accessor: (r: CodSettlementRequest) => r.requestNo, width: '170px' },
+    { header: 'Request', accessor: (r: CodSettlementRequest) => r.requestNo, width: '170px' },
     {
-      header: 'STATUS',
-      accessor: (r: CodSettlementRequest) => COD_REQUEST_STATUS_LABELS[r.status],
-      width: '120px',
-    },
-    {
-      header: 'ACCOUNT',
+      header: 'Status',
+      width: '130px',
       accessor: (r: CodSettlementRequest) => (
-        <div className="cod-request-account">
-          <span>{r.bankName}</span>
-          <span>{r.accountNumber}</span>
-        </div>
+        <StatusChip variant="solid" tone={STATUS_TONE[r.status]}>
+          {COD_REQUEST_STATUS_LABELS[r.status]}
+        </StatusChip>
       ),
     },
     {
-      header: 'RAISED',
-      accessor: (r: CodSettlementRequest) => r.createdAt.slice(0, 10),
-      width: '120px',
+      header: 'Account',
+      width: '220px',
+      accessor: (r: CodSettlementRequest) => (
+        <>
+          <span className="vcr-line">{r.bankName}</span>
+          <span className="vcr-line">{r.accountNumber}</span>
+        </>
+      ),
     },
     {
-      header: 'OUTCOME',
+      header: 'Raised',
+      width: '130px',
+      accessor: (r: CodSettlementRequest) => formatDate(r.createdAt),
+    },
+    {
+      header: 'Outcome',
       accessor: (r: CodSettlementRequest) =>
         r.status === 'rejected'
           ? r.decisionNote || 'Rejected'
@@ -149,65 +156,100 @@ const VendorCodSettlementRequests: React.FC = () => {
   ];
 
   return (
-    <div className="cod-request-page">
-      <header className="cod-request-header">
-        <h1>
-          <Banknote size={20} /> COD Settlement
-        </h1>
-        <p>Request a payout of the COD we are holding for you, and track what happened to it.</p>
-      </header>
+    <div className="vcr-page">
+      <PageHeader
+        title="COD Settlement"
+        subtitle="Request a payout of the COD we are holding for you, and track what happened to it."
+      />
 
       {error && <Banner tone="danger">{error}</Banner>}
       {notice && !error && <Banner tone="success">{notice}</Banner>}
 
       {liveRequest ? (
         <Banner tone="info">
-          Request <strong>{liveRequest.requestNo}</strong> is {COD_REQUEST_STATUS_LABELS[liveRequest.status].toLowerCase()}.
-          You can raise another once this one has been settled or rejected.
+          Request <strong>{liveRequest.requestNo}</strong> is{' '}
+          {COD_REQUEST_STATUS_LABELS[liveRequest.status].toLowerCase()}. You can raise another once
+          this one has been settled or rejected.
         </Banner>
       ) : (
-        <section className="cod-request-card">
-          <h2>Request a settlement</h2>
-          <p className="cod-request-hint">
-            Prefilled with the account you registered with — edit any of it if this payout
-            should go elsewhere. We use these details for this payout only, so changing them
-            here does not change the account on your profile.
-          </p>
-          <div className="cod-request-form">
-            <FormField
-              label="Bank Name"
-              required
-              value={form.bankName}
-              onChange={(value) => update({ bankName: value })}
-            />
-            <FormField
-              label="Account Number"
-              required
-              value={form.accountNumber}
-              onChange={(value) => update({ accountNumber: value })}
-            />
-            <FormField
-              label="Account Holder Name"
-              required
-              value={form.accountName}
-              onChange={(value) => update({ accountName: value })}
-            />
-            <FormField
-              label="Note (optional)"
-              type="textarea"
-              value={form.note}
-              onChange={(value) => update({ note: value })}
-            />
+        <section className="vcr-card">
+          <div className="vcr-card-head">
+            <h2>Request a settlement</h2>
+            <p>
+              Your payout goes to the account registered on your profile. To change it, contact us
+              and we will update your profile.
+            </p>
           </div>
-          <Button onClick={submit} disabled={submitting}>
-            {submitting ? 'Sending…' : 'Raise request'}
-          </Button>
+
+          {hasRegisteredBank ? (
+            <>
+              {/* Read-only on purpose, and enforced on the server too: the
+                  service reads the destination off the vendor record and
+                  ignores whatever the request body says. Letting a payout be
+                  redirected to an account typed in here is the shape of a
+                  payment-redirection fraud.
+
+                  A definition list rather than disabled inputs — these are
+                  facts being quoted back, and a row of greyed-out boxes reads
+                  as "editable later" when it never is. */}
+              <dl className="vcr-bank">
+                <div>
+                  <dt>Bank</dt>
+                  <dd>{registeredBank?.bankName}</dd>
+                </div>
+                <div>
+                  <dt>Account number</dt>
+                  <dd>{registeredBank?.accountNumber}</dd>
+                </div>
+                <div>
+                  <dt>Account holder</dt>
+                  <dd>{registeredBank?.accountName}</dd>
+                </div>
+              </dl>
+
+              <FormField
+                label="Note"
+                type="textarea"
+                value={form.note}
+                onChange={(value) => setForm({ note: value })}
+                placeholder="Anything we should know about this payout"
+                hint="Optional"
+              />
+
+              <div className="vcr-actions">
+                {/* Button defaults to `secondary`, which rendered the page's
+                    one real action in grey. This is the primary action on the
+                    screen, so it takes the brand colour. */}
+                <Button variant="primary" onClick={submit} disabled={submitting}>
+                  <Send size={16} />
+                  {submitting ? 'Sending…' : 'Raise request'}
+                </Button>
+              </div>
+            </>
+          ) : (
+            // Bank details are required at vendor creation now, so this is only
+            // reachable by an account registered before that rule. It has to say
+            // what to do rather than showing a form that cannot be submitted.
+            <Banner tone="warning">
+              We do not have bank details on your profile, so there is nowhere to send a payout.
+              Contact us to have them added, then raise your request.
+            </Banner>
+          )}
         </section>
       )}
 
-      <section className="cod-request-card">
-        <h2>Your requests</h2>
-        <Table columns={columns} data={requests} loading={loading} />
+      <section className="vcr-card">
+        <div className="vcr-card-head">
+          <h2>Your requests</h2>
+        </div>
+        <Table
+          columns={columns}
+          data={requests}
+          loading={loading}
+          loadingMessage="Loading your requests…"
+          emptyMessage="You have not raised a settlement request yet."
+          minWidth="880px"
+        />
       </section>
     </div>
   );

@@ -8,11 +8,14 @@ import {
   MoreVertical,
   Plus,
   Printer,
+  RotateCcw,
   Search,
   Shuffle,
+  Trash2,
   X,
 } from 'lucide-react';
 import RedirectOrderModal from '../components/RedirectOrderModal';
+import ConfirmDialog from '../components/ConfirmDialog';
 import Table from '../components/Table';
 import PageHeader from '../components/PageHeader';
 import Button from '../components/Button';
@@ -23,14 +26,19 @@ import FilterDropdown from '../components/FilterDropdown';
 import MultiFilterDropdown from '../components/MultiFilterDropdown';
 import MultiFilterDropdownAsync from '../components/MultiFilterDropdownAsync';
 import QuickRemarkPopup from '../components/QuickRemarkPopup';
-import { toBsDate, toBsDateTime } from '../utils/nepaliDate';
+import { toBsDate, toBsDateTime, toBsDateTimeCell } from '../utils/nepaliDate';
+import { STATUS_TIMELINE_HEADERS, statusTimelineCells } from '../utils/orderStatus';
 import { downloadExcel } from '../utils/excel';
 import NepaliDatePicker from '../components/NepaliDatePicker';
 import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react';
 import {
   getOrders,
   getOrderFilterOptions,
+  getOrderCountsByStatus,
+  type OrderCountsByStatus,
   redirectOrder,
+  trashOrder,
+  updateOrderStatus,
   subscribeToOrderStatusChanged,
   ORDER_SORT_FIELDS,
   MAX_ORDER_PAGE_SIZE,
@@ -44,6 +52,8 @@ import {
 import { searchVendors } from '../services/users.service';
 import { printLabels } from '../utils/printLabels';
 import { getCurrentUserRoles } from '../utils/auth';
+import { apiErrorMessage } from '../utils/serverValidation';
+import { FAILED_RECOVERY_LABEL, isRecoverableFailure, recoveryTargetFor } from '../utils/failedRecovery';
 import { commitScannedTerm, handleScannerPaste } from '../utils/scannerInput';
 import { useCursorPagination } from '../hooks/useCursorPagination';
 import './OrderManagement.css';
@@ -237,6 +247,15 @@ const OrderManagement: React.FC = () => {
   const [orders, setOrders] = useState<Order[]>([]);
   const [meta, setMeta] = useState<OrdersPageMeta | null>(null);
   const [filterOptionsData, setFilterOptionsData] = useState<OrderFilterOptions>({ origins: [], destinations: [], riders: [] });
+  // Per-status totals for the tab badges. Null until the first fetch lands, so
+  // the tabs render without badges rather than flashing a misleading 0.
+  const [statusCounts, setStatusCounts] = useState<OrderCountsByStatus | null>(null);
+  // The failed order awaiting recovery confirmation; null when closed.
+  const [recoverOrder, setRecoverOrder] = useState<Order | null>(null);
+  const [recovering, setRecovering] = useState(false);
+  // The order awaiting trash confirmation; null when the dialog is closed.
+  const [trashTarget, setTrashTarget] = useState<Order | null>(null);
+  const [trashing, setTrashing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [filter, setFilter] = useState<FilterTab>(() => {
@@ -446,6 +465,53 @@ const OrderManagement: React.FC = () => {
     return () => { cancelled = true; };
   }, [filter]);
 
+  // Tab badge totals. Deliberately not scoped to the active tab (it feeds every
+  // tab at once) and deliberately not read off `meta.total`, which only ever
+  // describes the tab currently open. Carries the same non-status filters the
+  // list pushes to the server, so a search or date range narrows the badges and
+  // the table together instead of leaving them contradicting each other.
+  const loadStatusCounts = useCallback(async (signal?: AbortSignal) => {
+    try {
+      const res = await getOrderCountsByStatus({
+        search: debouncedSearch || undefined,
+        vendorId: vendor.length ? vendor : undefined,
+        ...(dateFrom || dateTo ? { dateField } : {}),
+        ...(dateFrom ? { dateFrom } : {}),
+        ...(dateTo ? { dateTo } : {}),
+      }, signal);
+      if (!signal?.aborted && res?.success && res.data) setStatusCounts(res.data);
+    } catch {
+      // Badges keep their previous numbers; the table below is the source of
+      // truth either way, so a failed count fetch shouldn't surface an error.
+    }
+  }, [debouncedSearch, vendor, dateField, dateFrom, dateTo]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    loadStatusCounts(controller.signal);
+    return () => controller.abort();
+  }, [loadStatusCounts]);
+
+  // Keep the badges in step with status changes made from this page (bulk
+  // updates, scans) the same way the table refreshes itself.
+  useEffect(() => subscribeToOrderStatusChanged(() => loadStatusCounts()), [loadStatusCounts]);
+
+  // Tabs are overlapping status groups (failed_delivery sits in both Inprogress
+  // and Failed; Return process is a subset of RTV), so each badge sums its own
+  // group's statuses rather than partitioning one total between them. "All" has
+  // an empty group by convention and counts every status instead.
+  const tabCounts = useMemo(() => {
+    if (!statusCounts) return null;
+    const total = Object.values(statusCounts).reduce((sum, n) => sum + n, 0);
+    return (Object.keys(TAB_GROUPS) as FilterTab[]).reduce((acc, tab) => {
+      const group = TAB_GROUPS[tab];
+      acc[tab] = group.length
+        ? group.reduce((sum, status) => sum + (statusCounts[status] ?? 0), 0)
+        : total;
+      return acc;
+    }, {} as Record<FilterTab, number>);
+  }, [statusCounts]);
+
   // Options are keyed by vendor id (not name) because the selection is sent to
   // the server as ?vendorId=. The picker keeps its own id->label cache, so the
   // trigger still shows vendor names once they've been loaded once.
@@ -523,6 +589,58 @@ const OrderManagement: React.FC = () => {
     ['super_admin', 'admin', 'sales', 'vendor', 'vendor_staff'].includes(r),
   );
 
+  // Trash is admin-only, matching the server routes. A vendor/sales/rider never
+  // sees the button, the row action, or a trashed order in any list.
+  const canUseTrash = getCurrentUserRoles().some((r) => ['super_admin', 'admin'].includes(r));
+
+  // Putting a failed order back into the workflow is a status change, so it is
+  // gated like the other ones on this page rather than like the trash actions.
+  const canRecoverFailed = getCurrentUserRoles().some((r) =>
+    ['super_admin', 'admin'].includes(r),
+  );
+
+  const handleRecoverFailed = async () => {
+    const order = recoverOrder;
+    if (!order) return;
+    const target = recoveryTargetFor(order.status);
+    if (!target) return;
+
+    setRecovering(true);
+    try {
+      await updateOrderStatus(order.id, target);
+      setRecoverOrder(null);
+      setNotice(`Order ${order.trackingId} moved to ${STATUS_LABELS[target]}`);
+      loadOrders();
+      loadStatusCounts();
+    } catch (err) {
+      setRecoverOrder(null);
+      setLoadError(apiErrorMessage(err, 'Failed to move the order back into the workflow'));
+    } finally {
+      setRecovering(false);
+    }
+  };
+
+  // Soft-delete, so this asks less insistently than the permanent delete inside
+  // the trash modal does — it's undoable from there.
+  const handleTrashOrder = async () => {
+    const order = trashTarget;
+    if (!order) return;
+
+    setTrashing(true);
+    try {
+      await trashOrder(order.id);
+      setTrashTarget(null);
+      setNotice(`Order ${order.trackingId} moved to trash`);
+      loadOrders();
+      loadStatusCounts();
+    } catch (err) {
+      setTrashTarget(null);
+      setLoadError(apiErrorMessage(err, 'Failed to move the order to trash'));
+    } finally {
+      setTrashing(false);
+    }
+  };
+
   const openCreateModal = () => {
     navigate('/orders/create');
   };
@@ -594,7 +712,7 @@ const OrderManagement: React.FC = () => {
 
   const downloadExcelExport = async () => {
     let exportOrders = selectedExportOrders;
-    // The "arrived at origin" date is only fetched for exports (withArrival), so
+    // The per-stage timestamps are only fetched for exports (withArrival), so
     // pull the tab+search-scoped set fresh with that flag on.
     try {
       const res = await getOrders({ status: TAB_GROUPS[filter], search: debouncedSearch || undefined, withArrival: true });
@@ -604,11 +722,13 @@ const OrderManagement: React.FC = () => {
           // same client-side filters as the table.
           exportOrders = res.data.filter(order => matchesSecondaryFilters(order, secondaryFilters));
         } else {
-          // Keep the exact selection, but enrich each row with its arrival date.
-          const arrivalById = new Map(res.data.map(order => [order.id, order.arrivedAtOrigin]));
+          // Keep the exact selection, but enrich each row with its per-stage
+          // timestamps - the rows already on screen came from a plain list
+          // query, which doesn't carry them.
+          const timestampsById = new Map(res.data.map(order => [order.id, order.statusTimestamps]));
           exportOrders = selectedExportOrders.map(order => ({
             ...order,
-            arrivedAtOrigin: arrivalById.get(order.id) ?? order.arrivedAtOrigin,
+            statusTimestamps: timestampsById.get(order.id) ?? order.statusTimestamps,
           }));
         }
       }
@@ -616,7 +736,7 @@ const OrderManagement: React.FC = () => {
       // fall back to the currently loaded page / selection
     }
 
-    const headers = ['Order ID', 'Tracking ID', 'Origin', 'Sender', 'Receiver', 'Receiver Phone', 'Receiver Address', 'Destination', 'COD', 'Delivery Charge', 'Weight', 'Status', 'Rider', 'Remarks', 'Order Created Date', 'Arrived at Origin Date', 'Delivered At', 'Last Updated By', 'Last Updated At'];
+    const headers = ['Order ID', 'Tracking ID', 'Origin', 'Sender', 'Receiver', 'Receiver Phone', 'Receiver Address', 'Destination', 'COD', 'Delivery Charge', 'Weight', 'Status', 'Rider', 'Remarks', 'Order Created Date', 'Last Updated By', 'Last Updated At', ...STATUS_TIMELINE_HEADERS];
     const rows = exportOrders.map(order => [
       `#${order.orderNumber}`,
       order.trackingId,
@@ -632,11 +752,10 @@ const OrderManagement: React.FC = () => {
       STATUS_LABELS[order.status],
       order.riderName || '',
       order.remarks || '',
-      toBsDate(order.createdAt) || '',
-      toBsDate(order.arrivedAtOrigin) || '',
-      toBsDate(order.deliveredAt) || '',
+      toBsDateTimeCell(order.createdAtRaw || order.createdAt) || '',
       order.lastUpdatedBy || '',
-      toBsDate(order.lastUpdatedAt) || '',
+      toBsDateTimeCell(order.lastUpdatedAt) || '',
+      ...statusTimelineCells(order.statusTimestamps),
     ]);
     downloadExcel('orders.xlsx', 'Orders', headers, rows);
   };
@@ -774,6 +893,22 @@ const OrderManagement: React.FC = () => {
                   <Shuffle size={14} /> Redirect
                 </button>
               )}
+              {canRecoverFailed && isRecoverableFailure(order.status) && (
+                <button type="button" onClick={() => setRecoverOrder(order)}>
+                  <RotateCcw size={14} /> {FAILED_RECOVERY_LABEL[order.status]}
+                </button>
+              )}
+              {/* Cancelled only — mirrors the server, which refuses anything
+                  still moving through the pipeline (see moveOrderToTrash). */}
+              {canUseTrash && order.status === 'cancelled' && (
+                <button
+                  type="button"
+                  className="row-action-danger"
+                  onClick={() => { setOpenActionId(null); setTrashTarget(order); }}
+                >
+                  <Trash2 size={14} /> Move to trash
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -791,7 +926,11 @@ const OrderManagement: React.FC = () => {
         ariaLabel="Order status filters"
         value={filter}
         onChange={setFilter}
-        options={(Object.keys(TAB_GROUPS) as FilterTab[]).map(tab => ({ value: tab, label: TAB_LABELS[tab] }))}
+        options={(Object.keys(TAB_GROUPS) as FilterTab[]).map(tab => ({
+          value: tab,
+          label: TAB_LABELS[tab],
+          ...(tabCounts ? { count: tabCounts[tab] } : {}),
+        }))}
       />
 
       {loadError && <p className="order-load-error">{loadError}</p>}
@@ -925,6 +1064,11 @@ const OrderManagement: React.FC = () => {
             </Button>
           )}
           <Button variant="secondary" onClick={() => navigate('/orders/bulk-create')}>Bulk Order</Button>
+          {canUseTrash && (
+            <Button variant="outline" onClick={() => navigate('/orders/trash')}>
+              <Trash2 size={16} /> Trash
+            </Button>
+          )}
         </div>
         <div className="order-toolbar-right">
           <Button variant="primary" onClick={downloadExcelExport}>
@@ -1033,6 +1177,33 @@ const OrderManagement: React.FC = () => {
           onConfirm={handleRedirect}
         />
       )}
+
+      <ConfirmDialog
+        isOpen={recoverOrder !== null}
+        busy={recovering}
+        title={
+          recoverOrder
+            ? `Move ${recoverOrder.trackingId} back to ${STATUS_LABELS[recoveryTargetFor(recoverOrder.status)!]}?`
+            : ''
+        }
+        message="The order rejoins the workflow at that stage and the change is recorded in its history."
+        confirmLabel="OK"
+        cancelLabel="Cancel"
+        onConfirm={handleRecoverFailed}
+        onCancel={() => setRecoverOrder(null)}
+      />
+
+      <ConfirmDialog
+        isOpen={trashTarget !== null}
+        danger
+        busy={trashing}
+        title={trashTarget ? `Move order ${trashTarget.trackingId} to the trash?` : ''}
+        message="It leaves every order list. You can restore it from Trash."
+        confirmLabel="OK"
+        cancelLabel="Cancel"
+        onConfirm={handleTrashOrder}
+        onCancel={() => setTrashTarget(null)}
+      />
     </div>
   );
 };

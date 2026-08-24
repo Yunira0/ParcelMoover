@@ -78,6 +78,12 @@ export interface SettlementListItem {
   status: SettlementStatus;
   /** Recorded so far — between 0 and `amount` while partially paid. */
   paidAmount: number;
+  /**
+   * What was actually paid, per method, already totalled across instalments —
+   * `[{ method: 'Cash', amount: 1000 }, { method: 'Bank', amount: 1000 }]`.
+   * Empty until something is paid.
+   */
+  paymentBreakdown: Array<{ method: string; amount: number }>;
   remark: string | null;
 }
 

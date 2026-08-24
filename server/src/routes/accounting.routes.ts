@@ -16,6 +16,9 @@ import {
   rangeQuerySchema,
   reverseEntrySchema,
   setPeriodStatusSchema,
+  createAccountSchema,
+  openingBalanceSchema,
+  updateAccountSchema,
   transactionsQuerySchema,
   voidExpenseSchema,
 } from "../validators/accounting.schema";
@@ -27,9 +30,14 @@ import {
   getJournalEntryController,
   getOverviewController,
   getPartyLedgerController,
+  getPartySettlementLedgerController,
   getProfitAndLossController,
   getTrialBalanceController,
   listAccountsController,
+  listChartController,
+  createAccountController,
+  setOpeningBalanceController,
+  updateAccountController,
   listExpensesController,
   listJournalController,
   listPartyBalancesController,
@@ -135,6 +143,16 @@ accountingRouter.get(
   getPartyLedgerController,
 );
 
+// GET /api/accounting/parties/:partyType/:id/settlements — the same party as a
+// ledger of their statements, which is what a settled statement is missing from
+// the subledger above (its posting nets to zero there once it is paid)
+accountingRouter.get(
+  "/parties/:partyType/:id/settlements",
+  ...read,
+  validate(rangeQuerySchema, "query"),
+  getPartySettlementLedgerController,
+);
+
 // GET /api/accounting/party-search — riders, vendors and staff in one lookup
 accountingRouter.get("/party-search", ...read, validate(partySearchQuerySchema, "query"), searchPartiesController);
 
@@ -178,5 +196,37 @@ accountingRouter.post("/journal/:id/reverse", ...write, validate(reverseEntrySch
 
 // PATCH /api/accounting/periods/:periodKey — close or reopen a BS month
 accountingRouter.patch("/periods/:periodKey", ...write, validate(setPeriodStatusSchema), setPeriodStatusController);
+
+// ── Masters ─────────────────────────────────────────────────────────────────
+//
+// Reading the chart follows the section's own grant. Editing it does not: an
+// account's type and normal side decide how every line ever posted to it is
+// read, so this is a super_admin job rather than something that comes with
+// ACCOUNTING_ACCESS. masters.service refuses the dangerous edits outright once
+// an account has been posted to; this just keeps the door narrower.
+const masters = [
+  authMiddleware,
+  csrfProtection,
+  authorizeRoles("super_admin"),
+  writeLimiter,
+] as const;
+
+// GET /api/accounting/chart — the chart as a tree, with posted-line counts
+accountingRouter.get("/chart", ...read, listChartController);
+
+// POST /api/accounting/chart — add an account or a group
+accountingRouter.post("/chart", ...masters, validate(createAccountSchema), createAccountController);
+
+// PATCH /api/accounting/chart/:code — rename, regroup, deactivate
+accountingRouter.patch("/chart/:code", ...masters, validate(updateAccountSchema), updateAccountController);
+
+// POST /api/accounting/opening-balance — a starting position no source row can
+// produce: cash a rider was already holding, a bank account opened with money
+accountingRouter.post(
+  "/opening-balance",
+  ...masters,
+  validate(openingBalanceSchema),
+  setOpeningBalanceController,
+);
 
 export default accountingRouter;
