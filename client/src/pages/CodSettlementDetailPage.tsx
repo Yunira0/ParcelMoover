@@ -14,6 +14,7 @@ import {
 import { COD_BUCKET_META } from '../utils/codBuckets';
 import { downloadExcel } from '../utils/excel';
 import { formatCurrency, formatDate } from '../utils/format';
+import { toBsDateTimeCell } from '../utils/nepaliDate';
 import './CodSettlementDetailPage.css';
 
 const PAGE_SIZE = 10;
@@ -155,7 +156,7 @@ const CodSettlementDetailPage: React.FC = () => {
       r.vendorName,
       r.receiverName,
       r.riderName ?? '',
-      formatDate(r.deliveredAt),
+      toBsDateTimeCell(r.deliveredAt) || '',
       r.collectedAmount,
       r.remittedAmount,
       r.riderRemittedAmount,

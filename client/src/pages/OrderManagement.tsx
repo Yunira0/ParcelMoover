@@ -26,7 +26,8 @@ import FilterDropdown from '../components/FilterDropdown';
 import MultiFilterDropdown from '../components/MultiFilterDropdown';
 import MultiFilterDropdownAsync from '../components/MultiFilterDropdownAsync';
 import QuickRemarkPopup from '../components/QuickRemarkPopup';
-import { toBsDate, toBsDateTime } from '../utils/nepaliDate';
+import { toBsDate, toBsDateTime, toBsDateTimeCell } from '../utils/nepaliDate';
+import { STATUS_TIMELINE_HEADERS, statusTimelineCells } from '../utils/orderStatus';
 import { downloadExcel } from '../utils/excel';
 import NepaliDatePicker from '../components/NepaliDatePicker';
 import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react';
@@ -711,7 +712,7 @@ const OrderManagement: React.FC = () => {
 
   const downloadExcelExport = async () => {
     let exportOrders = selectedExportOrders;
-    // The "arrived at origin" date is only fetched for exports (withArrival), so
+    // The per-stage timestamps are only fetched for exports (withArrival), so
     // pull the tab+search-scoped set fresh with that flag on.
     try {
       const res = await getOrders({ status: TAB_GROUPS[filter], search: debouncedSearch || undefined, withArrival: true });
@@ -721,11 +722,13 @@ const OrderManagement: React.FC = () => {
           // same client-side filters as the table.
           exportOrders = res.data.filter(order => matchesSecondaryFilters(order, secondaryFilters));
         } else {
-          // Keep the exact selection, but enrich each row with its arrival date.
-          const arrivalById = new Map(res.data.map(order => [order.id, order.arrivedAtOrigin]));
+          // Keep the exact selection, but enrich each row with its per-stage
+          // timestamps - the rows already on screen came from a plain list
+          // query, which doesn't carry them.
+          const timestampsById = new Map(res.data.map(order => [order.id, order.statusTimestamps]));
           exportOrders = selectedExportOrders.map(order => ({
             ...order,
-            arrivedAtOrigin: arrivalById.get(order.id) ?? order.arrivedAtOrigin,
+            statusTimestamps: timestampsById.get(order.id) ?? order.statusTimestamps,
           }));
         }
       }
@@ -733,7 +736,7 @@ const OrderManagement: React.FC = () => {
       // fall back to the currently loaded page / selection
     }
 
-    const headers = ['Order ID', 'Tracking ID', 'Origin', 'Sender', 'Receiver', 'Receiver Phone', 'Receiver Address', 'Destination', 'COD', 'Delivery Charge', 'Weight', 'Status', 'Rider', 'Remarks', 'Order Created Date', 'Arrived at Origin Date', 'Delivered At', 'Last Updated By', 'Last Updated At'];
+    const headers = ['Order ID', 'Tracking ID', 'Origin', 'Sender', 'Receiver', 'Receiver Phone', 'Receiver Address', 'Destination', 'COD', 'Delivery Charge', 'Weight', 'Status', 'Rider', 'Remarks', 'Order Created Date', 'Last Updated By', 'Last Updated At', ...STATUS_TIMELINE_HEADERS];
     const rows = exportOrders.map(order => [
       `#${order.orderNumber}`,
       order.trackingId,
@@ -749,11 +752,10 @@ const OrderManagement: React.FC = () => {
       STATUS_LABELS[order.status],
       order.riderName || '',
       order.remarks || '',
-      toBsDate(order.createdAt) || '',
-      toBsDate(order.arrivedAtOrigin) || '',
-      toBsDate(order.deliveredAt) || '',
+      toBsDateTimeCell(order.createdAtRaw || order.createdAt) || '',
       order.lastUpdatedBy || '',
-      toBsDate(order.lastUpdatedAt) || '',
+      toBsDateTimeCell(order.lastUpdatedAt) || '',
+      ...statusTimelineCells(order.statusTimestamps),
     ]);
     downloadExcel('orders.xlsx', 'Orders', headers, rows);
   };

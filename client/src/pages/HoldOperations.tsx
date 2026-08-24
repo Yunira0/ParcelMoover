@@ -18,7 +18,8 @@ import {
 } from '../services/orders.service';
 import { downloadExcel } from '../utils/excel';
 import { useCursorPagination } from '../hooks/useCursorPagination';
-import { toBsDate, toBsDateTime } from '../utils/nepaliDate';
+import { toBsDate, toBsDateTime, toBsDateTimeCell } from '../utils/nepaliDate';
+import { STATUS_TIMELINE_HEADERS, statusTimelineCells } from '../utils/orderStatus';
 import { printLabels } from '../utils/printLabels';
 import './HoldOperations.css';
 
@@ -175,7 +176,7 @@ const HoldOperations: React.FC = () => {
   const downloadCsv = async () => {
     let rows: Order[] = visibleOrders;
     try {
-      const res = await getOrders({ status: ['hold'], search: debouncedSearch || undefined });
+      const res = await getOrders({ status: ['hold'], search: debouncedSearch || undefined, withArrival: true });
       if (res?.success && Array.isArray(res.data)) {
         rows = res.data;
       }
@@ -185,10 +186,10 @@ const HoldOperations: React.FC = () => {
 
     // Same columns, in the same order, as the table on screen. COD stays a
     // number so the column totals in the sheet.
-    const headers = ['Order ID', 'Date', 'Tracking ID', 'Sender', 'Receiver', 'Weight', 'COD', 'Age', 'Previous Status', 'Last Updated By', 'Last Updated', 'Last Remarks'];
+    const headers = ['Order ID', 'Date', 'Tracking ID', 'Sender', 'Receiver', 'Weight', 'COD', 'Age', 'Previous Status', 'Last Updated By', 'Last Updated', 'Last Remarks', ...STATUS_TIMELINE_HEADERS];
     const csvRows = rows.map((order) => [
       `#${order.orderNumber}`,
-      toBsDate(order.createdAt),
+      toBsDateTimeCell(order.createdAtRaw || order.createdAt),
       order.trackingId,
       order.senderName,
       order.receiverName,
@@ -197,8 +198,9 @@ const HoldOperations: React.FC = () => {
       ageInDays(order.createdAt),
       REVERT_STATUS_LABEL,
       order.lastUpdatedBy || '',
-      toBsDateTime(order.lastUpdatedAt) || '',
+      toBsDateTimeCell(order.lastUpdatedAt) || '',
       order.remarks || '',
+      ...statusTimelineCells(order.statusTimestamps),
     ]);
     downloadExcel('hold-orders.xlsx', 'Hold Orders', headers, csvRows);
   };

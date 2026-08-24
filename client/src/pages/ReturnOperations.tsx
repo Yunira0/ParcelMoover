@@ -22,7 +22,8 @@ import {
 import { downloadExcel } from '../utils/excel';
 import RiderAssignModal from '../components/RiderAssignModal';
 import AddToReturnManifestModal from '../components/AddToReturnManifestModal';
-import { toBsDate, toBsDateTime } from '../utils/nepaliDate';
+import { toBsDate, toBsDateTime, toBsDateTimeCell } from '../utils/nepaliDate';
+import { STATUS_TIMELINE_HEADERS, statusTimelineCells } from '../utils/orderStatus';
 import { printLabels } from '../utils/printLabels';
 import {
   getReturnManifest,
@@ -113,7 +114,7 @@ const fetchAllPages = async (params: { status?: ParcelStatus[]; orderType?: 'ret
   let cursor: string | undefined;
   let truncated = false;
   for (let i = 0; i < MAX_FETCH_PAGES; i++) {
-    const res = await getOrders({ ...params, pageSize: SERVER_FETCH_PAGE_SIZE, cursor, dir: 'next' });
+    const res = await getOrders({ ...params, pageSize: SERVER_FETCH_PAGE_SIZE, cursor, dir: 'next', withArrival: true });
     if (!res?.success || !Array.isArray(res.data)) throw new Error('Unexpected orders response');
     all.push(...res.data);
     const hasMore = !!res.meta?.hasNextPage && !!res.meta?.nextCursor;
@@ -672,10 +673,10 @@ const ReturnOperations: React.FC = () => {
   const downloadCsv = () => {
     // Mirrors the table on screen, where the Last Updated cell shows who and
     // when - two things, so two columns here rather than one.
-    const headers = ['Order ID', 'Date', 'Tracking ID', 'Type', 'Vendor', 'Manifest', 'Sender', 'Receiver', 'Location', 'Address', 'Weight', 'COD', 'Status', 'Last Updated By', 'Last Updated', 'Remarks'];
+    const headers = ['Order ID', 'Date', 'Tracking ID', 'Type', 'Vendor', 'Manifest', 'Sender', 'Receiver', 'Location', 'Address', 'Weight', 'COD', 'Status', 'Last Updated By', 'Last Updated', 'Remarks', ...STATUS_TIMELINE_HEADERS];
     const rows = filteredOrders.map((order) => [
       `#${order.orderNumber}`,
-      toBsDate(order.createdAt) || '',
+      toBsDateTimeCell(order.createdAtRaw || order.createdAt) || '',
       order.trackingId,
       order.orderType === 'return' ? 'Return order' : 'RTV',
       order.vendorName || '',
@@ -688,8 +689,9 @@ const ReturnOperations: React.FC = () => {
       order.codAmount,
       STATUS_LABELS[order.status] || order.status,
       order.lastUpdatedBy || '',
-      toBsDateTime(order.lastUpdatedAt) || '',
+      toBsDateTimeCell(order.lastUpdatedAt) || '',
       order.remarks || '',
+      ...statusTimelineCells(order.statusTimestamps),
     ]);
     downloadExcel('return-orders.xlsx', 'Return Orders', headers, rows);
   };

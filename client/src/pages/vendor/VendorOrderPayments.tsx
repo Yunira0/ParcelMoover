@@ -9,6 +9,7 @@ import Button from '../../components/Button';
 import type { OrderCodItem, CodPaymentFilter } from '../../services/finance.service';
 import { getOrderCod } from '../../services/finance.service';
 import { formatCurrency as formatCurrencyBase, formatDate } from '../../utils/format';
+import { toBsDateTimeCell } from '../../utils/nepaliDate';
 import { downloadExcel } from '../../utils/excel';
 import './VendorFinance.css';
 
@@ -76,8 +77,8 @@ const VendorOrderPayments: React.FC = () => {
         item.trackingId,
         item.receiverName,
         item.receiverPhone,
-        formatDate(item.createdAt),
-        formatDate(item.deliveredAt),
+        toBsDateTimeCell(item.createdAt) || '',
+        toBsDateTimeCell(item.deliveredAt) || '',
         item.status === 'settled' ? 'Settled' : 'Not Settled',
         // Left numeric so the column totals in the sheet.
         item.netPayable,

@@ -30,7 +30,8 @@ import { downloadExcel } from '../utils/excel';
 import { getRiders, searchVendors } from '../services/users.service';
 import { printLabels } from '../utils/printLabels';
 import { useCursorPagination } from '../hooks/useCursorPagination';
-import { toBsDate, toBsDateTime } from '../utils/nepaliDate';
+import { toBsDate, toBsDateTime, toBsDateTimeCell } from '../utils/nepaliDate';
+import { STATUS_TIMELINE_HEADERS, statusTimelineCells } from '../utils/orderStatus';
 import { commitScannedTerm, handleScannerPaste } from '../utils/scannerInput';
 import './DispatchOperations.css';
 
@@ -505,6 +506,7 @@ const DispatchOperations: React.FC = () => {
         search: debouncedSearch || undefined,
         deliveryRiderId: riderFilter || undefined,
         vendorId: vendorFilter ? [vendorFilter] : undefined,
+        withArrival: true,
       });
       if (res?.success && Array.isArray(res.data)) {
         rows = res.data;
@@ -514,10 +516,10 @@ const DispatchOperations: React.FC = () => {
     }
 
     // Same columns, in the same order, as the table on screen.
-    const headers = ['Order ID', 'Date', 'Tracking ID', 'Order Type', 'Sender', 'Receiver', 'Location', 'Address', 'Weight', 'COD', 'Attempt', 'Delivery Rider', 'Last Updated', 'Remarks'];
+    const headers = ['Order ID', 'Date', 'Tracking ID', 'Order Type', 'Sender', 'Receiver', 'Location', 'Address', 'Weight', 'COD', 'Attempt', 'Delivery Rider', 'Last Updated', 'Remarks', ...STATUS_TIMELINE_HEADERS];
     const csvRows = rows.map(order => [
       `#${order.orderNumber}`,
-      toBsDate(order.createdAt) || '',
+      toBsDateTimeCell(order.createdAtRaw || order.createdAt) || '',
       order.trackingId,
       order.orderType,
       order.senderName,
@@ -530,8 +532,9 @@ const DispatchOperations: React.FC = () => {
       order.codAmount,
       order.attemptCount,
       order.riderName || '',
-      toBsDateTime(order.lastUpdatedAt) || '',
+      toBsDateTimeCell(order.lastUpdatedAt) || '',
       order.remarks || '',
+      ...statusTimelineCells(order.statusTimestamps),
     ]);
     downloadExcel('dispatch-orders.xlsx', 'Dispatch Orders', headers, csvRows);
   };

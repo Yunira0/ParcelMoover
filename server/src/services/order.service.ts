@@ -2039,9 +2039,9 @@ function mapOrder(
   // True only when the caller *is* the vendor that owns these parcels (vendor
   // or vendor_staff) - i.e. getActorScope resolved an own-vendor id.
   isOwnVendorViewer: boolean,
-  // Only populated for exports, where the caller batch-fetches the first
-  // "arrived at origin" timestamp per parcel (see fetchArrivedAtOriginMap).
-  arrivedByParcelId?: Map<string, string>,
+  // Only populated for exports, where the caller batch-fetches the moment each
+  // parcel first entered every status it has held (see fetchStatusTimestampMap).
+  statusTimestampsByParcelId?: StatusTimestampMap,
 ) {
   const latestHistory = parcel.parcel_status_history[0];
   // The delivery rider is who this column is about; the pickup rider only
@@ -2150,25 +2150,50 @@ function mapOrder(
     lastUpdatedAt: (latestHistory?.created_at || parcel.updated_at).toISOString(),
     createdAt: formatDate(parcel.created_at),
     createdAtRaw: parcel.created_at.toISOString(),
-    arrivedAtOrigin: arrivedByParcelId?.get(parcel.id) ?? "",
+    // Kept as its own field: the export column predates statusTimestamps and
+    // several sheets reference it directly.
+    arrivedAtOrigin: statusTimestampsByParcelId?.get(parcel.id)?.arrived ?? "",
+    // Every stage this parcel has reached, keyed by status. Empty object rather
+    // than undefined for export callers so a column lookup never has to guard.
+    ...(statusTimestampsByParcelId
+      ? { statusTimestamps: statusTimestampsByParcelId.get(parcel.id) ?? {} }
+      : {}),
     deliveredAt: parcel.delivered_at ? formatDate(parcel.delivered_at) : "",
   };
 }
 
-// Batch-fetches the first "arrived at origin" date (Nepal-local "YYYY-MM-DD")
-// for each parcel id, in one indexed query. Used only by the export path so the
-// regular list/table queries stay lean.
-async function fetchArrivedAtOriginMap(parcelIds: string[]): Promise<Map<string, string>> {
-  const map = new Map<string, string>();
+/** parcel id → { status: ISO timestamp it first entered that status }. */
+export type StatusTimestampMap = Map<string, Record<string, string>>;
+
+// Batch-fetches, for each parcel, the moment it entered every status it has
+// ever held - one indexed query for the whole page. Used only by the export
+// path so the regular list/table queries stay lean.
+//
+// Timestamps are full ISO, not formatDate's Nepal-local day: the export renders
+// them through toBsDateTime, which can only show a time if one survives the
+// trip. Read solely by export columns, so no date-only consumer breaks.
+//
+// A status can repeat (a redelivery re-enters sent_for_delivery, a second
+// attempt re-enters failed_delivery). The *first* entry is recorded, matching
+// how the arrival column has always behaved - "when did this parcel reach that
+// stage", not "when did it last bounce off it".
+async function fetchStatusTimestampMap(parcelIds: string[]): Promise<StatusTimestampMap> {
+  const map: StatusTimestampMap = new Map();
   if (parcelIds.length === 0) return map;
   const rows = await prisma.parcel_status_history.findMany({
-    where: { parcel_id: { in: parcelIds }, new_status: "arrived" },
-    select: { parcel_id: true, created_at: true },
+    where: { parcel_id: { in: parcelIds } },
+    select: { parcel_id: true, new_status: true, created_at: true },
     orderBy: { created_at: "asc" },
   });
-  // asc order → the first row seen for a parcel is its earliest arrival.
+  // asc order → the first row seen for a (parcel, status) pair is its earliest.
   for (const row of rows) {
-    if (!map.has(row.parcel_id)) map.set(row.parcel_id, formatDate(row.created_at));
+    if (!row.new_status) continue;
+    let byStatus = map.get(row.parcel_id);
+    if (!byStatus) {
+      byStatus = {};
+      map.set(row.parcel_id, byStatus);
+    }
+    if (!byStatus[row.new_status]) byStatus[row.new_status] = row.created_at.toISOString();
   }
   return map;
 }
@@ -2371,11 +2396,11 @@ export async function listOrders(
         take: DEFAULT_LIST_CAP,
       }),
     ]);
-    const arrivedMap = query.withArrival
-      ? await fetchArrivedAtOriginMap(parcels.map((p) => p.id))
+    const statusTimestamps = query.withArrival
+      ? await fetchStatusTimestampMap(parcels.map((p) => p.id))
       : undefined;
     const result: ListOrdersResult = {
-      data: parcels.map((p) => mapOrder(p, isStaff, isOwnVendorViewer, arrivedMap)),
+      data: parcels.map((p) => mapOrder(p, isStaff, isOwnVendorViewer, statusTimestamps)),
       meta: {
         page: 1,
         pageSize: DEFAULT_LIST_CAP,
@@ -2458,8 +2483,16 @@ export async function listOrders(
       ? totalPages
       : Math.min(totalPages, Math.max(1, query.page || 1));
 
+  // Same enrichment the unpaginated branch does. Without it `withArrival` was
+  // silently ignored on every paginated request - which is all of them from
+  // the overview export - and "Arrived at Origin" came back empty for rows
+  // that had plainly arrived.
+  const keysetStatusTimestamps = query.withArrival
+    ? await fetchStatusTimestampMap(parcels.map((p) => p.id))
+    : undefined;
+
   return {
-    data: parcels.map((p) => mapOrder(p, isStaff, isOwnVendorViewer)),
+    data: parcels.map((p) => mapOrder(p, isStaff, isOwnVendorViewer, keysetStatusTimestamps)),
     meta: {
       page: pageHint,
       pageSize,

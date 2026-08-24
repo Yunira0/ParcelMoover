@@ -21,7 +21,8 @@ import {
 } from '../../services/orders.service';
 import { downloadExcel } from '../../utils/excel';
 import { printLabels } from '../../utils/printLabels';
-import { toBsDate, toBsDateTime } from '../../utils/nepaliDate';
+import { toBsDate, toBsDateTime, toBsDateTimeCell } from '../../utils/nepaliDate';
+import { STATUS_TIMELINE_HEADERS, statusTimelineCells } from '../../utils/orderStatus';
 import NepaliDatePicker from '../../components/NepaliDatePicker';
 import { useCursorPagination } from '../../hooks/useCursorPagination';
 import './VendorOrders.css';
@@ -353,24 +354,39 @@ const VendorOrders: React.FC = () => {
 
   const downloadCsv = async () => {
     let rows: Order[] = exportOrders;
-    // No explicit selection: export the full status/type/search-scoped set
-    // (not just the currently loaded page), then narrow by date range/hub.
-    if (selectedOrders.length === 0) {
-      try {
-        const res = await getOrders({
-          status: applied.status ? [applied.status as ParcelStatus] : undefined,
-          orderType: (applied.orderType as OrderType) || undefined,
-          search: debouncedSearch || undefined,
-        });
-        if (res?.success && Array.isArray(res.data)) {
+    // The per-stage timestamps are only fetched for exports (withArrival), so
+    // the scoped set is pulled fresh with that flag on either way - a selection
+    // still needs enriching, since the rows on screen came from a plain list
+    // query that doesn't carry them.
+    try {
+      const res = await getOrders({
+        status: applied.status ? [applied.status as ParcelStatus] : undefined,
+        orderType: (applied.orderType as OrderType) || undefined,
+        search: debouncedSearch || undefined,
+        withArrival: true,
+      });
+      if (res?.success && Array.isArray(res.data)) {
+        if (selectedOrders.length === 0) {
+          // No explicit selection: export the full status/type/search-scoped
+          // set (not just the loaded page), then narrow by date range/hub.
           rows = res.data.filter(order => matchesDateRange(order, applied) && matchesHub(order, applied));
+        } else {
+          const timestampsById = new Map(res.data.map(order => [order.id, order.statusTimestamps]));
+          rows = exportOrders.map(order => ({
+            ...order,
+            statusTimestamps: timestampsById.get(order.id) ?? order.statusTimestamps,
+          }));
         }
-      } catch {
-        // fall back to the currently loaded page
       }
+    } catch {
+      // fall back to the currently loaded page / selection
     }
 
-    const headers = ['#', 'Tracking ID', 'Status', 'Customer', 'Phone', 'Order Type', 'Destination Branch', 'COD Amount', 'Service Charge', 'Last Comment'];
+    const headers = [
+      '#', 'Tracking ID', 'Status', 'Customer', 'Phone', 'Order Type', 'Destination Branch',
+      'COD Amount', 'Service Charge', 'Last Comment', 'Order Created Date',
+      ...STATUS_TIMELINE_HEADERS,
+    ];
     const csvRows = rows.map(order => [
       `#${order.orderNumber}`,
       order.trackingId,
@@ -382,6 +398,8 @@ const VendorOrders: React.FC = () => {
       order.codAmount,
       order.deliveryCharge,
       order.remarks || '',
+      toBsDateTimeCell(order.createdAtRaw || order.createdAt) || '',
+      ...statusTimelineCells(order.statusTimestamps),
     ]);
     downloadExcel('orders.xlsx', 'Orders', headers, csvRows);
   };

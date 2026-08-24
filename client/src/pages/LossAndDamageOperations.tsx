@@ -15,7 +15,8 @@ import {
   type ParcelStatus,
 } from '../services/orders.service';
 import { downloadExcel } from '../utils/excel';
-import { toBsDate, toBsDateTime } from '../utils/nepaliDate';
+import { toBsDate, toBsDateTime, toBsDateTimeCell } from '../utils/nepaliDate';
+import { STATUS_TIMELINE_HEADERS, statusTimelineCells } from '../utils/orderStatus';
 import { printLabels } from '../utils/printLabels';
 import { useCursorPagination } from '../hooks/useCursorPagination';
 import './LossAndDamageOperations.css';
@@ -138,7 +139,7 @@ const LossAndDamageOperations: React.FC = () => {
   const downloadCsv = async () => {
     let rows: Order[] = visibleOrders;
     try {
-      const res = await getOrders({ status: ['loss_and_damage'], search: debouncedSearch || undefined });
+      const res = await getOrders({ status: ['loss_and_damage'], search: debouncedSearch || undefined, withArrival: true });
       if (res?.success && Array.isArray(res.data)) {
         rows = res.data;
       }
@@ -148,10 +149,10 @@ const LossAndDamageOperations: React.FC = () => {
 
     // Same columns, in the same order, as the table on screen. COD stays a
     // number so the column totals in the sheet.
-    const headers = ['Order ID', 'Date', 'Tracking ID', 'Sender', 'Receiver', 'Weight', 'COD', 'Package', 'Previous Status', 'Last Updated By', 'Last Updated'];
+    const headers = ['Order ID', 'Date', 'Tracking ID', 'Sender', 'Receiver', 'Weight', 'COD', 'Package', 'Previous Status', 'Last Updated By', 'Last Updated', ...STATUS_TIMELINE_HEADERS];
     const csvRows = rows.map((order) => [
       `#${order.orderNumber}`,
-      toBsDate(order.createdAt),
+      toBsDateTimeCell(order.createdAtRaw || order.createdAt),
       order.trackingId,
       order.senderName,
       order.receiverName,
@@ -160,7 +161,8 @@ const LossAndDamageOperations: React.FC = () => {
       `${order.pieces} pcs`,
       REVERT_STATUS_LABEL,
       order.lastUpdatedBy || '',
-      toBsDateTime(order.lastUpdatedAt) || '',
+      toBsDateTimeCell(order.lastUpdatedAt) || '',
+      ...statusTimelineCells(order.statusTimestamps),
     ]);
     downloadExcel('loss-and-damage-orders.xlsx', 'Loss and Damage', headers, csvRows);
   };
