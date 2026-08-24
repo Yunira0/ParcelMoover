@@ -27,7 +27,8 @@ import { downloadExcel } from '../utils/excel';
 import { getLocations, getRiders } from '../services/users.service';
 import { handoffToNcm } from '../services/ncm.service';
 import { handoffParcelsToUpaya } from '../services/upaya.service';
-import { toBsDate, toBsDateTime } from '../utils/nepaliDate';
+import { toBsDate, toBsDateTimeCell } from '../utils/nepaliDate';
+import { STATUS_TIMELINE_HEADERS, statusTimelineCells } from '../utils/orderStatus';
 import { printLabels } from '../utils/printLabels';
 import { commitScannedTerm, handleScannerPaste } from '../utils/scannerInput';
 import { useCursorPagination } from '../hooks/useCursorPagination';
@@ -435,10 +436,10 @@ const OOVOperations: React.FC = () => {
   const buildExportRows = (rows: Order[]) => {
     // Mirrors the table on screen, where the Last Updated cell shows who and
     // when - two things, so two columns here rather than one.
-    const headers = ['Order ID', 'Date', 'Tracking ID', 'Order Type', 'Sender', 'Receiver', 'Location', 'Address', 'Weight', 'COD', 'Last Updated By', 'Last Updated', 'Remarks'];
+    const headers = ['Order ID', 'Date', 'Tracking ID', 'Order Type', 'Sender', 'Receiver', 'Location', 'Address', 'Weight', 'COD', 'Last Updated By', 'Last Updated', 'Remarks', ...STATUS_TIMELINE_HEADERS];
     const dataRows = rows.map(order => [
       `#${order.orderNumber}`,
-      toBsDate(order.createdAt),
+      toBsDateTimeCell(order.createdAtRaw || order.createdAt),
       order.trackingId,
       order.orderType,
       order.senderName,
@@ -448,8 +449,9 @@ const OOVOperations: React.FC = () => {
       order.weightKg ? `${order.weightKg} Kg` : '',
       order.codAmount,
       order.lastUpdatedBy || '',
-      toBsDateTime(order.lastUpdatedAt) || '',
+      toBsDateTimeCell(order.lastUpdatedAt) || '',
       order.remarks || '',
+      ...statusTimelineCells(order.statusTimestamps),
     ]);
     return { headers, rows: dataRows };
   };
@@ -458,7 +460,7 @@ const OOVOperations: React.FC = () => {
     let rows: Order[] = visibleOrders;
 
     try {
-      const res = await getOrders({ status: TAB_STATUSES[activeTab], search: debouncedSearch || undefined });
+      const res = await getOrders({ status: TAB_STATUSES[activeTab], search: debouncedSearch || undefined, withArrival: true });
       if (res?.success && Array.isArray(res.data)) {
         rows = res.data;
       }
@@ -535,7 +537,7 @@ const OOVOperations: React.FC = () => {
       accessor: (order: Order) => (
         <div className="oov-updated-cell">
           <span>{order.lastUpdatedBy || '-'}</span>
-          <span>{toBsDateTime(order.lastUpdatedAt) || '-'}</span>
+          <span>{toBsDateTimeCell(order.lastUpdatedAt) || '-'}</span>
         </div>
       ),
       width: '155px',

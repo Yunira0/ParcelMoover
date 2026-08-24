@@ -108,8 +108,14 @@ export interface Order {
   lastUpdatedAt?: string;
   createdAt: string;
   createdAtRaw: string;
-  /** AD "YYYY-MM-DD" of the first "arrived at origin" status change, or '' if never. */
+  /** ISO timestamp of the first "arrived at origin" status change, or '' if never. */
   arrivedAtOrigin?: string;
+  /**
+   * ISO timestamp of the moment the parcel first entered each status it has
+   * held, keyed by status. Only sent for export requests (withArrival); a
+   * status the parcel never reached is simply absent.
+   */
+  statusTimestamps?: Partial<Record<ParcelStatus, string>>;
   /** AD "YYYY-MM-DD" the parcel was delivered, or '' if not delivered. */
   deliveredAt?: string;
   /** Vendor-declared at creation: this shipment may be accepted in part. */

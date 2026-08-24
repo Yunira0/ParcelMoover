@@ -153,3 +153,22 @@ export function toNptTime(value?: string | Date | null, withSeconds = false): st
     ...(withSeconds ? { second: '2-digit' as const } : {}),
   });
 }
+
+/**
+ * Spreadsheet variant of toBsDateTime: same value, but a wider gap between the
+ * date and the clock time so the two read as separate fields in a narrow Excel
+ * column instead of running together.
+ *
+ * Kept apart from toBsDateTime because that value is also rendered into HTML,
+ * where runs of whitespace collapse to one - widening it there would be
+ * invisible on screen while still padding every exported cell.
+ */
+export function toBsDateTimeCell(value?: string | Date | null): string {
+  const date = toBsDate(value);
+  const full = toBsDateTime(value);
+  // Widen only the join toBsDateTime added, never a space inside the date
+  // itself - out of the converter's range toBsDate falls back to the raw input,
+  // which can contain spaces of its own. Date-only values are returned as-is.
+  if (!date || !full.startsWith(`${date} `)) return full;
+  return `${date}   ${full.slice(date.length + 1)}`;
+}
