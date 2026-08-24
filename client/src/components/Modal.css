@@ -17,6 +17,12 @@
   border-radius: var(--border-radius-modal);
   width: 500px;
   max-width: 90%;
+  /* The overlay centres its child, so a modal taller than the viewport is
+     clipped at both ends with no way to reach the rest of it - the permissions
+     list on Admin Management is long enough to hit this. Cap the height and
+     scroll the overflow instead. Same 88vh the run sheet modal already uses. */
+  max-height: 88vh;
+  overflow-y: auto;
   padding: var(--space-6);
   box-shadow: var(--app-shadow);
   animation: modal-content-in 150ms ease;

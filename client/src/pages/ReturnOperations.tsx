@@ -23,7 +23,7 @@ import { downloadExcel } from '../utils/excel';
 import RiderAssignModal from '../components/RiderAssignModal';
 import AddToReturnManifestModal from '../components/AddToReturnManifestModal';
 import { toBsDate, toBsDateTime, toBsDateTimeCell } from '../utils/nepaliDate';
-import { STATUS_TIMELINE_HEADERS, statusTimelineCells } from '../utils/orderStatus';
+import { STATUS_TIMELINE_HEADERS, statusTimelineCells, sharedNextStatuses } from '../utils/orderStatus';
 import { printLabels } from '../utils/printLabels';
 import {
   getReturnManifest,
@@ -84,6 +84,14 @@ const STATUS_LABELS: Partial<Record<ParcelStatus, string>> = {
 // Maps any return-relevant parcel into one of the four return stages.
 // Type 2 (RTO of a failed delivery) maps by its real status; Type 1 (an
 // order_type='return' reverse shipment) maps by where it is in its lifecycle.
+//
+// "Sent to vendor" is deliberately status-pure: only parcels actually at
+// sent_to_vendor appear there, so the tab's action can offer the one move that
+// status allows (-> returned_to_vendor) and have it apply to every row. A
+// Type 1 order mid-delivery is NOT at that status - it never reaches it, since
+// sent_to_vendor belongs to the RTO manifest flow - so it stays out of the tab
+// until it completes and lands under "Returned to vendor". While in flight it
+// is an ordinary delivery parcel, visible on Dispatch and Order Management.
 const returnStage = (o: Order): ParcelReturnTab | null => {
   if (o.status === 'failed_delivery' || o.status === 'follow_up') return 'follow_up';
   if (o.status === 'ready_to_return') return 'ready_to_return';
@@ -92,7 +100,7 @@ const returnStage = (o: Order): ParcelReturnTab | null => {
   if (o.orderType === 'return') {
     if (o.status === 'delivered') return 'returned_to_vendor';
     if (['pickup_ordered', 'rider_assigned'].includes(o.status)) return 'ready_to_return';
-    return 'sent_to_vendor';
+    return null;
   }
   return null;
 };
@@ -192,6 +200,11 @@ const ReturnOperations: React.FC = () => {
   const [selectedIds, setSelectedIds] = useState<Set<string | number>>(new Set());
   const [actionMsg, setActionMsg] = useState('');
   const [acting, setActing] = useState(false);
+  // "Action" popover on the Sent to vendor tab - same shape as the one on
+  // Pickup Operations: pick the next status, then Submit.
+  const [isActionOpen, setIsActionOpen] = useState(false);
+  const [selectedNextStatus, setSelectedNextStatus] = useState<ParcelStatus | ''>('');
+  const actionPopoverRef = useRef<HTMLDivElement | null>(null);
   // Rider-assignment popup, opened when a manifest is handed over.
   const [riderModalOpen, setRiderModalOpen] = useState(false);
   const [remarkPopupOrder, setRemarkPopupOrder] = useState<Order | null>(null);
@@ -423,6 +436,72 @@ const ReturnOperations: React.FC = () => {
     } finally {
       setActing(false);
     }
+  };
+
+  // Options come from what the SELECTED rows can actually do, not from the tab.
+  // The Sent to vendor tab holds two different things (see returnStage): true
+  // RTO parcels at sent_to_vendor, whose next step is returned_to_vendor, and
+  // order_type='return' parcels still working through delivery - for those the
+  // delivery *is* the trip back, so they finish via delivered instead. Deriving
+  // the intersection means a selection is only ever offered a move the server
+  // will accept, and a mixed selection correctly offers nothing.
+  const selectedForAction = useMemo(
+    () => filteredOrders.filter(o => selectedIds.has(o.id)),
+    [filteredOrders, selectedIds],
+  );
+  const actionStatusOptions = useMemo(
+    () => sharedNextStatuses(selectedForAction.map(o => o.status)),
+    [selectedForAction],
+  );
+
+  const closeAction = () => {
+    setIsActionOpen(false);
+    setSelectedNextStatus('');
+  };
+
+  const openStatusAction = () => {
+    const nextOpen = !isActionOpen;
+    setIsActionOpen(nextOpen);
+    if (!nextOpen) return;
+    if (selectedIds.size === 0) {
+      setActionMsg('Select one or more orders first.');
+      return;
+    }
+    setActionMsg(
+      actionStatusOptions.length > 0
+        ? ''
+        : 'No status change is valid for every selected order. Try selecting orders that are at the same stage.',
+    );
+    setSelectedNextStatus(actionStatusOptions[0] || '');
+  };
+
+  // Escape closes, matching the pickup popover.
+  useEffect(() => {
+    if (!isActionOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') closeAction(); };
+    const onClick = (e: MouseEvent) => {
+      if (!actionPopoverRef.current?.parentElement?.contains(e.target as Node)) closeAction();
+    };
+    document.addEventListener('keydown', onKey);
+    document.addEventListener('mousedown', onClick);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('mousedown', onClick);
+    };
+  }, [isActionOpen]);
+
+  // Leaving the tab (or clearing the selection) must not leave a popover open
+  // over rows it no longer applies to.
+  useEffect(() => { closeAction(); }, [activeTab]);
+
+  const submitStatusAction = async () => {
+    if (!selectedNextStatus) return;
+    // Eligible sources are whichever selected statuses can reach the target -
+    // by construction of actionStatusOptions that is all of them, but advance()
+    // wants them named explicitly.
+    const sources = Array.from(new Set(selectedForAction.map(o => o.status)));
+    await advance(selectedNextStatus, sources);
+    closeAction();
   };
 
   // Parcels reach the vendor only by way of a manifest, so this is the single
@@ -1000,6 +1079,61 @@ const ReturnOperations: React.FC = () => {
             <Button variant="primary" disabled={noSelection} onClick={openAddToManifest}>
               Add to manifest
             </Button>
+          )}
+          {/* Closes the RTO loop per-order. The manifest tab's "Mark received"
+              does the same thing a whole manifest at a time; this is the way to
+              finish parcels the vendor confirmed individually. advance() filters
+              to rows genuinely at sent_to_vendor, which matters here because the
+              tab also lists order_type='return' parcels sitting at other
+              statuses (see returnStage) that the server would reject. */}
+          {activeTab === 'sent_to_vendor' && (
+            <div className="return-action-anchor">
+              <Button variant="secondary" onClick={openStatusAction}>
+                Action{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
+              </Button>
+              {isActionOpen && (
+                <div
+                  ref={actionPopoverRef}
+                  className="return-status-popover"
+                  role="listbox"
+                  aria-label="Next status"
+                >
+                  <div className="return-status-popover-header">
+                    <button type="button" onClick={closeAction} aria-label="Close status action">
+                      &times;
+                    </button>
+                  </div>
+                  <div className="return-status-current">
+                    <span>Next status</span>
+                    <div className="return-status-options">
+                      {actionStatusOptions.length === 0 ? (
+                        <p className="return-status-empty">No valid transitions</p>
+                      ) : actionStatusOptions.map(status => (
+                        <button
+                          key={status}
+                          type="button"
+                          className={`return-status-option ${selectedNextStatus === status ? 'selected' : ''}`}
+                          onClick={() => setSelectedNextStatus(status)}
+                          disabled={acting}
+                        >
+                          {STATUS_LABELS[status] ?? status}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="return-status-submit-row">
+                    <Button variant="secondary" onClick={closeAction}>Cancel</Button>
+                    <Button
+                      variant="primary"
+                      onClick={submitStatusAction}
+                      disabled={acting || noSelection || !selectedNextStatus}
+                    >
+                      {acting ? 'Applying...' : 'Submit'}
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
           )}
           {showingManifests && (
             <>
