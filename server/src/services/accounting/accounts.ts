@@ -73,7 +73,7 @@ export const CHART_OF_ACCOUNTS: AccountDefinition[] = [
   // ── Liabilities ───────────────────────────────────────────────────────────
   {
     code: ACCOUNT.COD_HELD,
-    name: "COD in Transit",
+    name: "COD to Pay to Vendor",
     type: "liability",
     normalSide: "credit",
     description:
@@ -87,7 +87,7 @@ export const CHART_OF_ACCOUNTS: AccountDefinition[] = [
     isControl: true,
     subledgerType: "vendor",
     description:
-      "Direct position with each vendor, outside the COD cycle: credited with payments they send the office. A credit balance is money we owe them; a debit balance is money they owe us. Note that day-to-day COD and delivery charges do not pass through here - they are recognised on the statement that settles them, against COD in Transit.",
+      "Direct position with each vendor, outside the COD cycle: credited with payments they send the office. A credit balance is money we owe them; a debit balance is money they owe us. Note that day-to-day COD and delivery charges do not pass through here - they are recognised on the statement that settles them, against COD to Pay to Vendor.",
   },
 
   // ── Equity ────────────────────────────────────────────────────────────────

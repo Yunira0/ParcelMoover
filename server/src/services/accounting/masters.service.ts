@@ -14,7 +14,7 @@ import { wasPosted } from "./posting.service";
 //
 // Until now the chart was code: a constant in accounts.ts installed by a
 // migration. That is right for the accounts the software itself posts to - if
-// 2005 COD Held stopped existing, syncSettlementPostings would simply fail -
+// 2005 COD to Pay to Vendor stopped existing, syncSettlementPostings would simply fail -
 // but it left no way to add the accounts a particular business needs, which is
 // most of them.
 //
