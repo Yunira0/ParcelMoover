@@ -9,7 +9,10 @@
 //      has none.
 //   3. The COD float in 2005 equals what riders remitted in minus what vendor
 //      statements released out - and is never negative.
-//   4. Revenue equals what those statements withheld.
+//   4. The float in 1010 equals what riders' own statements say they are still
+//      holding - amount minus paid, summed over every live rider statement -
+//      and is never negative.
+//   5. Revenue equals what those statements withheld.
 //
 // (2) is the important one, and it is the check this script used to lack.
 // revertSettlement never called syncSettlementPostings; the sweep only looked
@@ -182,7 +185,7 @@ async function checkCodFloat(): Promise<string[]> {
   const expected = new Prisma.Decimal(derived?.taken_in ?? 0).minus(derived?.released ?? 0);
 
   const problems: string[] = [];
-  console.log("COD float (2005 COD in Transit)");
+  console.log("COD float (2005 COD to Pay to Vendor)");
   console.log(`  taken in from riders   ${money(new Prisma.Decimal(derived?.taken_in ?? 0)).padStart(14)}`);
   console.log(`  released to vendors    ${money(new Prisma.Decimal(derived?.released ?? 0)).padStart(14)}`);
   console.log(`  ledger balance         ${money(held).padStart(14)}`);
@@ -201,7 +204,57 @@ async function checkCodFloat(): Promise<string[]> {
   return problems;
 }
 
-// ── 4. Revenue equals what the statements withheld ──────────────────────────
+// ── 4. The rider float ───────────────────────────────────────────────────────
+//
+// 1010 holds COD a rider has collected but not yet remitted. Unlike 2005 it
+// cannot be derived from a running total of postings - a settlement's own
+// "still with rider" split (amount minus paid, see describeRiderRemittance)
+// already says what should be outstanding right now, so that is what the
+// ledger is checked against, the same way the COD float is checked against
+// the settlements table rather than re-summed from entries.
+//
+//   - It is never a debit balance beyond what statements actually say is
+//     outstanding, and never negative - a rider cannot have remitted more
+//     than the ledger ever credited them with collecting.
+//   - It equals SUM(amount - paid) over every live rider statement.
+async function checkRiderFloat(): Promise<string[]> {
+  const [ledger] = await prisma.$queryRaw<Array<{ balance: string }>>(Prisma.sql`
+    SELECT COALESCE(SUM(l.debit - l.credit), 0) AS balance
+      FROM journal_lines l
+      JOIN journal_entries e ON e.id = l.entry_id AND TRUE /* see ALL_ENTRIES in accounting.service.ts */
+      JOIN ledger_accounts a ON a.id = l.account_id
+     WHERE a.code = ${ACCOUNT.CASH_WITH_RIDER}
+  `);
+
+  const [derived] = await prisma.$queryRaw<Array<{ outstanding: string }>>(Prisma.sql`
+    SELECT COALESCE(SUM(COALESCE(s.payable_amount, s.amount) - s.paid_amount), 0) AS outstanding
+      FROM settlements s
+     WHERE s.status::text <> 'cancelled' AND s.payee_type = 'rider'
+  `);
+
+  const held = new Prisma.Decimal(ledger?.balance ?? 0);
+  const expected = new Prisma.Decimal(derived?.outstanding ?? 0);
+
+  const problems: string[] = [];
+  console.log("Rider float (1010 Cash with Rider)");
+  console.log(`  statements say outstanding ${money(expected).padStart(10)}`);
+  console.log(`  ledger balance             ${money(held).padStart(10)}`);
+
+  if (!held.equals(expected)) {
+    problems.push(`Rider float is ${money(held)} but statements say ${money(expected)} is still outstanding`);
+    console.log(`  ✗ out by ${money(held.minus(expected))}`);
+  }
+  if (held.isNegative()) {
+    problems.push(`Rider float is negative (${money(held)}) - riders have "remitted" more than was ever collected`);
+    console.log("  ✗ negative float: more has cleared than statements ever put here");
+  }
+  if (problems.length === 0) console.log("  ✓ the float agrees with the statements");
+  console.log("");
+
+  return problems;
+}
+
+// ── 5. Revenue equals what the statements withheld ──────────────────────────
 //
 // The office's cut is recognised on the statement that withholds it, so the sum
 // of the revenue accounts must equal gross minus payable across every live
@@ -254,9 +307,11 @@ async function main() {
   const balanced = await checkTrialBalance();
   const coverage = await checkSettlementCoverage(limit);
   const float = await checkCodFloat();
+  const riderFloat = await checkRiderFloat();
   const revenue = await checkRevenue();
 
-  const failed = !balanced || coverage.length > 0 || float.length > 0 || revenue.length > 0;
+  const failed =
+    !balanced || coverage.length > 0 || float.length > 0 || riderFloat.length > 0 || revenue.length > 0;
   if (failed) {
     console.error("✗ Reconciliation FAILED - the ledger does not yet agree with the source data.");
     process.exitCode = 1;
