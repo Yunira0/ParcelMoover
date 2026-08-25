@@ -189,7 +189,7 @@ function toBillingProfile(vendor: {
 
 function formatLocation(location?: { name: string; city: string | null; district: string | null } | null) {
   if (!location) return "";
-  return [location.name, location.city || location.district].filter(Boolean).join(", ");
+  return location.city || location.district || "";
 }
 
 export async function getPendingCodBill(actor: Actor, vendorIdParam?: string): Promise<PendingCodBill> {
