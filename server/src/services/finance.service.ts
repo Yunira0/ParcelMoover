@@ -187,9 +187,15 @@ function toBillingProfile(vendor: {
   };
 }
 
-function formatLocation(location?: { name: string; city: string | null; district: string | null } | null) {
+function formatLocation(
+  location?: { name: string; district: string | null; valley: string | null } | null,
+) {
   if (!location) return "";
-  return location.city || location.district || "";
+  // Inside-valley destinations read better as "Inside Valley" than by district
+  // - the valley grouping is what pricing and dispatch actually treat them by.
+  // Everything else (outside valley, or no valley set) shows its district.
+  if (location.valley === "inside") return "Inside Valley";
+  return location.district || "";
 }
 
 export async function getPendingCodBill(actor: Actor, vendorIdParam?: string): Promise<PendingCodBill> {
@@ -222,7 +228,7 @@ export async function getPendingCodBill(actor: Actor, vendorIdParam?: string): P
           delivery_charge: true,
           parties_parcels_receiver_idToparties: { select: { name: true, phone: true } },
           locations_parcels_destination_location_idTolocations: {
-            select: { name: true, city: true, district: true },
+            select: { name: true, district: true, valley: true },
           },
         },
       },
@@ -610,7 +616,7 @@ export async function getUnsettledOrders(
           delivery_rider_id: true,
           parties_parcels_receiver_idToparties: { select: { name: true, phone: true, address: true } },
           locations_parcels_destination_location_idTolocations: {
-            select: { name: true, city: true, district: true },
+            select: { name: true, district: true, valley: true },
           },
           // Only needed for the rider leg - see location resolution below.
           locations_parcels_origin_location_idTolocations: { select: { name: true } },
