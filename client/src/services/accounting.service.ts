@@ -166,10 +166,15 @@ export interface AccountLedger {
   account: Account;
   range: { from: string; to: string; label: string };
   openingBalance: number;
+  /** Across the whole range, not just the returned page. */
   closingBalance: number;
   totalDebit: number;
   totalCredit: number;
   rows: LedgerRow[];
+  totalRows: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
 }
 
 export type PartyLedger = AccountLedger & { partyName: string };
@@ -204,11 +209,16 @@ export interface PartySettlementLedger {
   partySubtitle: string | null;
   range: { from: string; to: string; label: string };
   openingBalance: number;
+  /** Across the whole range, not just the returned page. */
   closingBalance: number;
   totalDebit: number;
   totalCredit: number;
   summary: PartyLedgerSummaryLine[];
   rows: PartyLedgerEntry[];
+  totalRows: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
 }
 
 export interface PartyMethodTotal {
@@ -386,7 +396,10 @@ export const getJournalEntry = async (id: string): Promise<JournalEntry> => {
   return response.data.data;
 };
 
-export const getAccountLedger = async (code: string, params: RangeParams = {}): Promise<AccountLedger> => {
+export const getAccountLedger = async (
+  code: string,
+  params: RangeParams & { page?: number; pageSize?: number } = {},
+): Promise<AccountLedger> => {
   const response = await api.get(`/accounting/ledger/${code}`, { params });
   return response.data.data;
 };
@@ -413,7 +426,7 @@ export const getPartyLedger = async (
 export const getPartySettlementLedger = async (
   partyType: 'vendor' | 'rider',
   partyId: string,
-  params: RangeParams = {},
+  params: RangeParams & { page?: number; pageSize?: number } = {},
 ): Promise<PartySettlementLedger> => {
   const response = await api.get(`/accounting/parties/${partyType}/${partyId}/settlements`, { params });
   return response.data.data;

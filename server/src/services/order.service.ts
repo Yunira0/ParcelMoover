@@ -2135,6 +2135,14 @@ function mapOrder(
     labelHeightMm: labelSize.heightMm,
     riderName: rider?.name || "",
     remarks: stripCarrierStaffTag(parcel.parcel_remarks[0]?.remark || "").text,
+    // The stage the parcel was in right before it was cancelled - only
+    // meaningful when that's what the latest history row actually records
+    // (a still-cancelled parcel's newest entry is always its cancellation,
+    // since restoring or advancing it would write a newer one over it).
+    cancelledFromStatus:
+      parcel.status === "cancelled" && latestHistory?.new_status === "cancelled"
+        ? latestHistory.old_status
+        : undefined,
     // Vendor-declared eligibility at creation, plus the actual outcome once a
     // rider/admin marks the parcel partially_delivered (both null/false until then).
     allowPartialDelivery: parcel.allow_partial_delivery,
@@ -5745,8 +5753,12 @@ async function invalidateTrashFinanceCaches(parcel: { vendor_id: string | null; 
  * exception: it is admin-only, one order at a time, and audited, so an operator
  * putting a wrongly-cancelled parcel back into the pipeline doesn't need the
  * rule relaxed for every screen in the app. It stays enforced everywhere else.
+ *
+ * pickup_ordered only - a restored order always re-enters at pickup rather
+ * than being dropped back in mid-pipeline at whatever stage it was cancelled
+ * from.
  */
-export const TRASH_RESTORE_STAGES = ["pickup_ordered", "ready_to_deliver"] as const;
+export const TRASH_RESTORE_STAGES = ["pickup_ordered"] as const;
 export type TrashRestoreStage = (typeof TRASH_RESTORE_STAGES)[number];
 
 /**
@@ -5756,8 +5768,8 @@ export type TrashRestoreStage = (typeof TRASH_RESTORE_STAGES)[number];
  * that function enforces STATUS_TRANSITIONS, which is exactly what this has to
  * step around, and adding a bypass flag to it would put the escape hatch on
  * every caller in the app instead of this one. The side effects that matter for
- * a parcel re-entering at pickup or delivery are reproduced here - history row,
- * audit row, vendor webhook, ledger sync, cache invalidation.
+ * a parcel re-entering at pickup are reproduced here - history row, audit
+ * row, vendor webhook, ledger sync, cache invalidation.
  */
 export async function restoreOrderFromTrash(
   actor: OrderActor,
