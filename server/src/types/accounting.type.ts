@@ -90,10 +90,17 @@ export interface AccountLedger {
   account: AccountSummary;
   range: { from: string; to: string; label: string };
   openingBalance: number;
+  /** Closing balance as of the end of the whole range, not just the returned page. */
   closingBalance: number;
+  /** Debit/credit totals across the whole range, not just the returned page. */
   totalDebit: number;
   totalCredit: number;
   rows: LedgerRow[];
+  /** How many movements the range holds in total, across every page. */
+  totalRows: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
 }
 
 /** One movement on a party ledger: a delivery run, a statement, or the opening figure. */
@@ -133,11 +140,18 @@ export interface PartySettlementLedger {
   partySubtitle: string | null;
   range: { from: string; to: string; label: string };
   openingBalance: number;
+  /** Across the whole range, not just the returned page. */
   closingBalance: number;
   totalDebit: number;
   totalCredit: number;
   summary: PartyLedgerSummaryLine[];
+  /** One page of movements. Running balances are correct from the very first
+   *  movement in the range - they don't reset at the page boundary. */
   rows: PartyLedgerEntry[];
+  totalRows: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
 }
 
 /**

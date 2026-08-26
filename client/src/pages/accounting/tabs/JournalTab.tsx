@@ -89,6 +89,7 @@ const JournalTab: React.FC<JournalTabProps> = ({ newEntryOpen, onNewEntryClose }
   const [sourceType, setSourceType] = useState('all');
   const [status, setStatus] = useState('posted');
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
 
   const [data, setData] = useState<JournalEntry[]>([]);
   const [total, setTotal] = useState(0);
@@ -98,8 +99,6 @@ const JournalTab: React.FC<JournalTabProps> = ({ newEntryOpen, onNewEntryClose }
   const [reverseReason, setReverseReason] = useState('');
   const [reverseError, setReverseError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-
-  const pageSize = 25;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -120,7 +119,7 @@ const JournalTab: React.FC<JournalTabProps> = ({ newEntryOpen, onNewEntryClose }
     } finally {
       setLoading(false);
     }
-  }, [range, page, search, sourceType, status]);
+  }, [range, page, pageSize, search, sourceType, status]);
 
   useEffect(() => {
     void load();
@@ -151,7 +150,7 @@ const JournalTab: React.FC<JournalTabProps> = ({ newEntryOpen, onNewEntryClose }
     }
   };
 
-  const totalPages = useMemo(() => Math.max(1, Math.ceil(total / pageSize)), [total]);
+  const totalPages = useMemo(() => Math.max(1, Math.ceil(total / pageSize)), [total, pageSize]);
 
   const pageTotal = useMemo(
     () => data.reduce((sum, entry) => sum + entry.totalAmount, 0),
@@ -304,15 +303,18 @@ const JournalTab: React.FC<JournalTabProps> = ({ newEntryOpen, onNewEntryClose }
         </table>
       </div>
 
-      {totalPages > 1 && (
-        <Pagination
-          page={page}
-          totalPages={totalPages}
-          onPageChange={setPage}
-          ariaLabel="Journal pages"
-          summary={`${total} entr${total === 1 ? 'y' : 'ies'}`}
-        />
-      )}
+      <Pagination
+        page={page}
+        totalPages={totalPages}
+        onPageChange={setPage}
+        pageSize={pageSize}
+        onPageSizeChange={(size) => {
+          setPageSize(size);
+          setPage(1);
+        }}
+        ariaLabel="Journal pages"
+        summary={`${total} entr${total === 1 ? 'y' : 'ies'}`}
+      />
 
       {newEntryOpen && (
         <ManualEntryModal

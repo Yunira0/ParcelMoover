@@ -7,6 +7,7 @@ import { csrfProtection } from "../middlewares/csrf.middleware";
 import { validate } from "../middlewares/validate.middleware";
 import { createRedisRateLimitStore } from "../lib/rateLimitStore";
 import {
+  accountLedgerQuerySchema,
   createExpenseSchema,
   createManualEntrySchema,
   expensesQuerySchema,
@@ -116,7 +117,7 @@ accountingRouter.get("/journal", ...read, validate(journalQuerySchema, "query"),
 accountingRouter.get("/journal/:id", ...read, getJournalEntryController);
 
 // GET /api/accounting/ledger/:code — one account's movements + running balance
-accountingRouter.get("/ledger/:code", ...read, validate(rangeQuerySchema, "query"), getAccountLedgerController);
+accountingRouter.get("/ledger/:code", ...read, validate(accountLedgerQuerySchema, "query"), getAccountLedgerController);
 
 // GET /api/accounting/transactions — movements on one set of accounts, newest
 // first. Line-level, so a scope + direction gives a cash book directly.
@@ -149,7 +150,7 @@ accountingRouter.get(
 accountingRouter.get(
   "/parties/:partyType/:id/settlements",
   ...read,
-  validate(rangeQuerySchema, "query"),
+  validate(accountLedgerQuerySchema, "query"),
   getPartySettlementLedgerController,
 );
 

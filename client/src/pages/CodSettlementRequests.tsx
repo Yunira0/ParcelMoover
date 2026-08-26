@@ -4,6 +4,7 @@ import Button from '../components/Button';
 import FormField from '../components/FormField';
 import Table from '../components/Table';
 import FilterDropdown from '../components/FilterDropdown';
+import Pagination from '../components/Pagination';
 import { Banner } from './accounting/ui';
 import {
   COD_REQUEST_STATUS_LABELS,
@@ -30,6 +31,8 @@ const STATUS_FILTER_OPTIONS = [
   })),
 ];
 
+const PAGE_SIZE = 20;
+
 const CodSettlementRequests: React.FC = () => {
   const [requests, setRequests] = useState<CodSettlementRequest[]>([]);
   const [status, setStatus] = useState('');
@@ -38,26 +41,45 @@ const CodSettlementRequests: React.FC = () => {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [rejecting, setRejecting] = useState<CodSettlementRequest | null>(null);
   const [rejectReason, setRejectReason] = useState('');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(PAGE_SIZE);
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const response = await getCodSettlementRequests({
-        pageSize: 100,
+        page,
+        pageSize,
         ...(status ? { status: status as CodSettlementRequestStatus } : {}),
       });
       setRequests(response.data);
+      setTotal(response.meta.total);
+      setTotalPages(response.meta.totalPages);
       setError(null);
     } catch (err) {
       setError(apiErrorMessage(err, 'Could not load COD settlement requests'));
     } finally {
       setLoading(false);
     }
-  }, [status]);
+  }, [status, page, pageSize]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Changing the status filter resets to the first page of the new result set.
+  useEffect(() => {
+    setPage(1);
+  }, [status]);
+
+  // Settling/rejecting the last request on a page (other than the first)
+  // leaves `page` pointing past the end of the now-shorter list, which reads
+  // as a blank table with a working "prev" button.
+  useEffect(() => {
+    if (!loading && requests.length === 0 && page > 1) setPage(1);
+  }, [loading, requests.length, page]);
 
   const act = async (
     request: CodSettlementRequest,
@@ -191,6 +213,20 @@ const CodSettlementRequests: React.FC = () => {
       )}
 
       <Table columns={columns} data={requests} loading={loading} />
+
+      <Pagination
+        ariaLabel="COD settlement requests pagination"
+        page={page}
+        totalPages={totalPages}
+        onPageChange={setPage}
+        pageSize={pageSize}
+        pageSizeLabel="requests"
+        onPageSizeChange={(size) => {
+          setPageSize(size);
+          setPage(1);
+        }}
+        summary={`${total} request${total === 1 ? '' : 's'}`}
+      />
     </div>
   );
 };

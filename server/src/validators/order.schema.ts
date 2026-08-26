@@ -296,11 +296,11 @@ export type OrderCountsByStatusQuery = z.infer<typeof orderCountByStatusQuerySch
 export const trashedOrdersQuerySchema = listOrdersQuerySchema;
 
 // POST /orders/:id/restore — the stage the order re-enters the workflow at.
-// Only these two: restoring is the one path allowed past STATUS_TRANSITIONS
+// Only pickup_ordered: restoring is the one path allowed past STATUS_TRANSITIONS
 // (see TRASH_RESTORE_STAGES), so the set it can reach stays deliberately tiny.
 export const restoreOrderSchema = z.object({
-  restoreTo: z.enum(["pickup_ordered", "ready_to_deliver"], {
-    error: "restoreTo must be pickup_ordered or ready_to_deliver",
+  restoreTo: z.enum(["pickup_ordered"], {
+    error: "restoreTo must be pickup_ordered",
   }),
 });
 

@@ -4,6 +4,7 @@ import TallyPage, { type TallyAction } from '../../components/finance/TallyPage'
 import LedgerSummary from '../../components/finance/LedgerSummary';
 import FilterDropdown from '../../components/FilterDropdown';
 import NepaliDatePicker from '../../components/NepaliDatePicker';
+import Pagination from '../../components/Pagination';
 import {
   getPartySettlementLedger,
   listPartyBalances,
@@ -38,6 +39,8 @@ const SettlementLedgerPage: React.FC = () => {
   const [ledger, setLedger] = useState<PartySettlementLedger | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(MIN_ROWS);
 
   const type: PartyType = partyType === 'vendor' ? 'vendor' : 'rider';
   const from = params.get('from') ?? '';
@@ -52,6 +55,8 @@ const SettlementLedgerPage: React.FC = () => {
         await getPartySettlementLedger(type, partyId, {
           ...(from ? { from } : {}),
           ...(to ? { to } : {}),
+          page,
+          pageSize,
         }),
       );
     } catch (err) {
@@ -59,11 +64,16 @@ const SettlementLedgerPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [type, partyId, from, to]);
+  }, [type, partyId, from, to, page, pageSize]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Switching party, or narrowing the date range, starts back at page 1.
+  useEffect(() => {
+    setPage(1);
+  }, [type, partyId, from, to]);
 
   useEffect(() => {
     listPartyBalances(type)
@@ -113,7 +123,13 @@ const SettlementLedgerPage: React.FC = () => {
   ];
 
   const rows = ledger?.rows ?? [];
-  const blanks = Math.max(0, MIN_ROWS - rows.length);
+  const blanks = Math.max(0, pageSize - rows.length);
+  // Numbering continues across pages rather than restarting at 1, and the
+  // "Opening balance carried forward" row only makes sense once, at the very
+  // start of the range - every later page's first row already carries the
+  // running balance forward from the page before it.
+  const rowOffset = ((ledger?.page ?? page) - 1) * (ledger?.pageSize ?? pageSize);
+  const isFirstPage = (ledger?.page ?? page) === 1;
 
   const filters = (
     <>
@@ -179,15 +195,17 @@ const SettlementLedgerPage: React.FC = () => {
                 </tr>
               </thead>
               <tbody>
-                <tr>
-                  <td />
-                  <td />
-                  <td className="tly-muted">Opening balance carried forward</td>
-                  <td className="tly-muted">OPENING</td>
-                  <td className="tly-amt">–</td>
-                  <td className="tly-amt">–</td>
-                  <td className="tly-amt">{drCr(ledger.openingBalance, debitNormal)}</td>
-                </tr>
+                {isFirstPage && (
+                  <tr>
+                    <td />
+                    <td />
+                    <td className="tly-muted">Opening balance carried forward</td>
+                    <td className="tly-muted">OPENING</td>
+                    <td className="tly-amt">–</td>
+                    <td className="tly-amt">–</td>
+                    <td className="tly-amt">{drCr(ledger.openingBalance, debitNormal)}</td>
+                  </tr>
+                )}
 
                 {rows.map((row, index) => (
                   <tr
@@ -195,7 +213,7 @@ const SettlementLedgerPage: React.FC = () => {
                     onClick={row.entryId ? () => navigate(`/finance/voucher/${row.entryId}`) : undefined}
                     style={row.entryId ? { cursor: 'pointer' } : undefined}
                   >
-                    <td>{index + 1}</td>
+                    <td>{rowOffset + index + 1}</td>
                     <td>{row.bsDate}</td>
                     <td>{row.description}</td>
                     <td>{row.reference}</td>
@@ -207,7 +225,7 @@ const SettlementLedgerPage: React.FC = () => {
 
                 {Array.from({ length: blanks }, (_, index) => (
                   <tr key={`blank-${index}`} className="tly-blank">
-                    <td>{rows.length + index + 1}</td>
+                    <td>{rowOffset + rows.length + index + 1}</td>
                     <td />
                     <td />
                     <td />
@@ -235,6 +253,20 @@ const SettlementLedgerPage: React.FC = () => {
               </tfoot>
             </table>
           </div>
+
+          <Pagination
+            ariaLabel="Settlement ledger pagination"
+            page={ledger.page}
+            totalPages={ledger.totalPages}
+            onPageChange={setPage}
+            pageSize={pageSize}
+            pageSizeLabel="rows"
+            onPageSizeChange={(size) => {
+              setPageSize(size);
+              setPage(1);
+            }}
+            summary={`${ledger.totalRows} movement${ledger.totalRows === 1 ? '' : 's'}`}
+          />
 
           <LedgerSummary
             title={type === 'rider' ? 'Rider Summary' : 'Vendor Summary'}

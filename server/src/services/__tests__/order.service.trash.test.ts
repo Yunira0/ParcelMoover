@@ -220,9 +220,9 @@ describe("restoreOrderFromTrash", () => {
     );
     const tx = wireTransaction();
 
-    await restoreOrderFromTrash(ACTOR, "parcel-1", "ready_to_deliver");
+    await restoreOrderFromTrash(ACTOR, "parcel-1", "pickup_ordered");
 
-    expect(tx.parcels.update.mock.calls[0]![0].data.status).toBe("ready_to_deliver");
+    expect(tx.parcels.update.mock.calls[0]![0].data.status).toBe("pickup_ordered");
   });
 
   it("rejects a stage outside the allow-list", async () => {
@@ -256,14 +256,14 @@ describe("restoreOrderFromTrash", () => {
     );
     const tx = wireTransaction();
 
-    await restoreOrderFromTrash(ACTOR, "parcel-1", "ready_to_deliver");
+    await restoreOrderFromTrash(ACTOR, "parcel-1", "pickup_ordered");
 
     expect(mockedEmitWebhook).toHaveBeenCalledTimes(1);
     const [txArg, vendorId, event, payload] = mockedEmitWebhook.mock.calls[0]!;
     expect(txArg).toBe(tx);
     expect(vendorId).toBe("vendor-1");
     expect(event).toBe("order.status_changed");
-    expect(payload).toMatchObject({ oldStatus: "cancelled", newStatus: "ready_to_deliver" });
+    expect(payload).toMatchObject({ oldStatus: "cancelled", newStatus: "pickup_ordered" });
   });
 
   it("skips the webhook for a vendorless parcel", async () => {

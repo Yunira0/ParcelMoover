@@ -61,6 +61,12 @@ type Actor = { id: string; roles: string[] };
 
 const MAX_PAGE_SIZE = 200;
 const DEFAULT_PAGE_SIZE = 50;
+// The account and party settlement ledgers alone: a printable ledger sheet
+// asks for its whole (usually short, deliberately chosen) date range in one
+// request. 2000 matches the row cap these endpoints used to hard-code before
+// they had real pagination - see accountLedgerQuerySchema's matching cap.
+const LEDGER_MAX_PAGE_SIZE = 2000;
+const LEDGER_DEFAULT_PAGE_SIZE = 100;
 
 const num = (value: unknown) => Math.round(Number(value ?? 0) * 100) / 100;
 const iso = (date: Date) => date.toISOString();
@@ -467,27 +473,60 @@ export async function getJournalEntry(entryId: string): Promise<JournalEntryView
 
 // ── Account ledger ──────────────────────────────────────────────────────────
 
+export interface AccountLedgerQuery extends RangeQuery {
+  page?: number | undefined;
+  pageSize?: number | undefined;
+}
+
 /**
  * One account's movements over a window, with a running balance.
  *
  * The opening balance is everything before the window, so the closing figure is
  * a real position rather than a period subtotal - otherwise a ledger opened on
  * the second month of the year would appear to start from nothing.
+ *
+ * totalDebit/totalCredit/closingBalance are computed from a full-range
+ * aggregate query, not from the returned page of rows - an account with more
+ * movements than fit on one page must still report a correct closing balance,
+ * not one silently short by whatever fell off the page. The running balance on
+ * each row is a window function over the same full-range ordering, for the
+ * same reason: page 2's opening figure has to pick up exactly where page 1 left
+ * off.
  */
-export async function getAccountLedger(accountCode: string, query: RangeQuery): Promise<AccountLedger> {
+export async function getAccountLedger(accountCode: string, query: AccountLedgerQuery): Promise<AccountLedger> {
   const range = resolveRange(query);
   const account = await prisma.ledger_accounts.findUnique({ where: { code: accountCode } });
   if (!account) throw new AppError(404, `Account ${accountCode} not found`);
 
   const debitNormal = account.normal_side === "debit";
+  const page = Math.max(1, Number(query.page ?? 1));
+  const pageSize = Math.min(LEDGER_MAX_PAGE_SIZE, Math.max(1, Number(query.pageSize ?? LEDGER_DEFAULT_PAGE_SIZE)));
+  const offset = (page - 1) * pageSize;
 
-  const [openingRows, rows] = await Promise.all([
+  // Signed so a running SUM() OVER(...) is just an accumulation - positive
+  // deltas grow the balance on this account's normal side, negative shrink it.
+  const balanceDelta = debitNormal ? Prisma.sql`l.debit - l.credit` : Prisma.sql`l.credit - l.debit`;
+
+  const [openingRows, summaryRows, rows] = await Promise.all([
     prisma.$queryRaw<Array<{ debit: string; credit: string }>>(Prisma.sql`
       SELECT COALESCE(SUM(l.debit), 0) AS debit, COALESCE(SUM(l.credit), 0) AS credit
         FROM journal_lines l
         JOIN journal_entries e ON e.id = l.entry_id AND ${ALL_ENTRIES}
        WHERE l.account_id = ${account.id}::uuid
          AND e.entry_date < ${range.from}
+    `),
+    // Totals span the whole range, not the page: a footer that only adds up the
+    // rows currently on screen answers a different question than "what is the
+    // closing balance of this account".
+    prisma.$queryRaw<Array<{ total: bigint; debit: string; credit: string }>>(Prisma.sql`
+      SELECT COUNT(*)::bigint AS total,
+             COALESCE(SUM(l.debit), 0)  AS debit,
+             COALESCE(SUM(l.credit), 0) AS credit
+        FROM journal_lines l
+        JOIN journal_entries e ON e.id = l.entry_id AND ${ALL_ENTRIES}
+       WHERE l.account_id = ${account.id}::uuid
+         AND e.entry_date >= ${range.from}
+         AND e.entry_date <  ${range.to}
     `),
     prisma.$queryRaw<
       Array<{
@@ -499,6 +538,7 @@ export async function getAccountLedger(accountCode: string, query: RangeQuery): 
         debit: string;
         credit: string;
         contra: string | null;
+        running_balance: string;
       }>
     >(Prisma.sql`
       SELECT e.id AS entry_id, e.entry_no, e.entry_date, e.bs_date, e.memo,
@@ -511,14 +551,23 @@ export async function getAccountLedger(accountCode: string, query: RangeQuery): 
                  FROM journal_lines l2
                  JOIN ledger_accounts a2 ON a2.id = l2.account_id
                 WHERE l2.entry_id = e.id AND l2.account_id <> l.account_id
-             ) AS contra
+             ) AS contra,
+             -- The cumulative delta since the range's start (opening balance
+             -- added back in JS below) - computed over every row the WHERE
+             -- clause matches, before the LIMIT/OFFSET below clips it to one
+             -- page, so this keeps accumulating correctly across page
+             -- boundaries.
+             SUM(${balanceDelta}) OVER (
+               ORDER BY e.entry_date ASC, e.entry_no ASC, l.line_no ASC
+               ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+             ) AS running_balance
         FROM journal_lines l
         JOIN journal_entries e ON e.id = l.entry_id AND ${ALL_ENTRIES}
        WHERE l.account_id = ${account.id}::uuid
          AND e.entry_date >= ${range.from}
          AND e.entry_date <  ${range.to}
        ORDER BY e.entry_date ASC, e.entry_no ASC, l.line_no ASC
-       LIMIT 2000
+       LIMIT ${pageSize} OFFSET ${offset}
     `),
   ]);
 
@@ -526,28 +575,24 @@ export async function getAccountLedger(accountCode: string, query: RangeQuery): 
   const openingCredit = num(openingRows[0]?.credit);
   const openingBalance = num(debitNormal ? openingDebit - openingCredit : openingCredit - openingDebit);
 
-  let running = openingBalance;
-  let totalDebit = 0;
-  let totalCredit = 0;
+  const totalDebit = num(summaryRows[0]?.debit);
+  const totalCredit = num(summaryRows[0]?.credit);
+  const closingBalance = num(openingBalance + (debitNormal ? totalDebit - totalCredit : totalCredit - totalDebit));
+  const totalRows = Number(summaryRows[0]?.total ?? 0);
 
-  const ledgerRows: LedgerRow[] = rows.map((row) => {
-    const debit = num(row.debit);
-    const credit = num(row.credit);
-    totalDebit += debit;
-    totalCredit += credit;
-    running = num(running + (debitNormal ? debit - credit : credit - debit));
-    return {
-      entryId: row.entry_id,
-      entryNo: row.entry_no,
-      entryDate: iso(row.entry_date),
-      bsDate: row.bs_date,
-      memo: row.memo,
-      contraAccounts: row.contra ?? "",
-      debit,
-      credit,
-      runningBalance: running,
-    };
-  });
+  const ledgerRows: LedgerRow[] = rows.map((row) => ({
+    entryId: row.entry_id,
+    entryNo: row.entry_no,
+    entryDate: iso(row.entry_date),
+    bsDate: row.bs_date,
+    memo: row.memo,
+    contraAccounts: row.contra ?? "",
+    debit: num(row.debit),
+    credit: num(row.credit),
+    // The window function only accumulates deltas from the range's start, so
+    // the opening balance is added back in here rather than inside the SQL.
+    runningBalance: num(openingBalance + num(row.running_balance)),
+  }));
 
   return {
     account: {
@@ -563,10 +608,14 @@ export async function getAccountLedger(accountCode: string, query: RangeQuery): 
     },
     range: rangeView(range),
     openingBalance,
-    closingBalance: running,
-    totalDebit: num(totalDebit),
-    totalCredit: num(totalCredit),
+    closingBalance,
+    totalDebit,
+    totalCredit,
     rows: ledgerRows,
+    totalRows,
+    page,
+    pageSize,
+    totalPages: Math.max(1, Math.ceil(totalRows / pageSize)),
   };
 }
 
@@ -989,6 +1038,13 @@ export async function getPartyLedger(
     totalDebit: num(totalDebit),
     totalCredit: num(totalCredit),
     rows: ledgerRows,
+    // This endpoint is unreached by the app (only a legacy URL redirect points
+    // at its route) and keeps its own un-paginated 2000-row cap rather than
+    // getAccountLedger's - so there's no real page/total to report here.
+    totalRows: ledgerRows.length,
+    page: 1,
+    pageSize: Math.max(1, ledgerRows.length),
+    totalPages: 1,
   };
 }
 
@@ -1009,13 +1065,22 @@ export async function getPartyLedger(
  * Read from settlements and settlement_payments rather than journal_lines: a
  * statement's posting nets to zero on the control account once it is fully
  * paid, so the journal can only show what is still outstanding.
+ *
+ * Paginated by slicing the assembled, already-ordered movement list rather
+ * than pushing LIMIT/OFFSET into the two source queries: a statement and its
+ * instalments come from different tables and have to be interleaved by date
+ * before "page 2" means anything, so the merge has to happen before any
+ * slicing can. totalDebit/totalCredit/closingBalance are still summed over
+ * every movement in the range, not just the returned page.
  */
 export async function getPartySettlementLedger(
   partyType: "rider" | "vendor",
   partyId: string,
-  query: RangeQuery,
+  query: RangeQuery & { page?: number | undefined; pageSize?: number | undefined },
 ): Promise<PartySettlementLedger> {
   const range = resolveRange(query);
+  const page = Math.max(1, Number(query.page ?? 1));
+  const pageSize = Math.min(LEDGER_MAX_PAGE_SIZE, Math.max(1, Number(query.pageSize ?? LEDGER_DEFAULT_PAGE_SIZE)));
   const isRider = partyType === "rider";
   const partyColumn = isRider ? Prisma.sql`s.rider_id` : Prisma.sql`s.vendor_id`;
 
@@ -1175,6 +1240,10 @@ export async function getPartySettlementLedger(
         { label: "Still to pay", amount: running },
       ];
 
+  const totalRows = rows.length;
+  const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
+  const pageRows = rows.slice((page - 1) * pageSize, page * pageSize);
+
   return {
     partyType,
     partyId,
@@ -1186,7 +1255,11 @@ export async function getPartySettlementLedger(
     totalDebit: num(totalDebit),
     totalCredit: num(totalCredit),
     summary,
-    rows,
+    rows: pageRows,
+    totalRows,
+    page,
+    pageSize,
+    totalPages,
   };
 }
 

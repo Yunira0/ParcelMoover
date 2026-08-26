@@ -125,6 +125,8 @@ export interface Order {
   partialCodCollected?: number | null;
   /** Set only on an auto-created return leg — points back at its source exchange order. */
   sourceOrderId?: string | null;
+  /** The stage the parcel was in right before it was cancelled. Only set while status is still 'cancelled'. */
+  cancelledFromStatus?: ParcelStatus;
 }
 
 export const ORDER_SORT_FIELDS = ['createdAt', 'codAmount', 'deliveryCharge', 'trackingId', 'status'] as const;
@@ -804,7 +806,7 @@ export const trashOrder = async (orderId: string) => {
 };
 
 /** The stages a trashed order can be restored into (server: TRASH_RESTORE_STAGES). */
-export const TRASH_RESTORE_STAGES = ['pickup_ordered', 'ready_to_deliver'] as const;
+export const TRASH_RESTORE_STAGES = ['pickup_ordered'] as const;
 export type TrashRestoreStage = (typeof TRASH_RESTORE_STAGES)[number];
 
 /**

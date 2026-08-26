@@ -50,6 +50,7 @@ const SettlementsTab: React.FC<{ payeeType: 'rider' | 'vendor' }> = ({ payeeType
   const [items, setItems] = useState<SettlementListItem[]>([]);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -136,6 +137,7 @@ const SettlementsTab: React.FC<{ payeeType: 'rider' | 'vendor' }> = ({ payeeType
         if (!active) return;
         setItems(res.data);
         setTotalPages(res.meta.totalPages);
+        setTotal(res.meta.total);
       })
       .catch((err) => {
         if (active) setError(err?.response?.data?.message || 'Failed to load settlements.');
@@ -346,16 +348,15 @@ const SettlementsTab: React.FC<{ payeeType: 'rider' | 'vendor' }> = ({ payeeType
         }
       />
 
-      {totalPages > 1 && (
-        <Pagination
-          ariaLabel="Settlements pagination"
-          page={page}
-          totalPages={totalPages}
-          onPageChange={setPage}
-          pageSize={pageSize}
-          onPageSizeChange={(size) => applyFilter(() => setPageSize(size))}
-        />
-      )}
+      <Pagination
+        ariaLabel="Settlements pagination"
+        page={page}
+        totalPages={totalPages}
+        onPageChange={setPage}
+        pageSize={pageSize}
+        onPageSizeChange={(size) => applyFilter(() => setPageSize(size))}
+        summary={`${total} settlement${total === 1 ? '' : 's'}`}
+      />
     </>
   );
 };
