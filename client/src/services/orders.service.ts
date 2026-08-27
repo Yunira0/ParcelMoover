@@ -598,16 +598,14 @@ export interface OrderStatusHistoryEntry {
   oldStatus: ParcelStatus | null;
   newStatus: ParcelStatus;
   remarks: string;
-  /** Rider assigned at this milestone - set only for rider_assigned (pickup) / sent_for_delivery (delivery). */
-  riderName: string | null;
-  changedBy: string;
-  /** 'user' for staff-visible attribution, 'branch' when the viewer only gets a branch/company name, 'rider' for rider-driven milestones. */
-  changedByType: 'user' | 'branch' | 'rider';
   /**
    * The rider tied to this milestone: the pickup rider for "rider_assigned",
    * the delivery rider for "sent_for_delivery". null for every other entry.
    */
   riderName: string | null;
+  changedBy: string;
+  /** 'user' for staff-visible attribution, 'branch' when the viewer only gets a branch/company name, 'rider' for rider-driven milestones. */
+  changedByType: 'user' | 'branch' | 'rider';
   createdAt: string;
 }
 
