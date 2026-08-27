@@ -19,6 +19,7 @@ import {
   type SettlementStatusFilter,
 } from '../../../services/finance.service';
 import { getRiders, searchVendors } from '../../../services/users.service';
+import { settlementStatusLabel, settlementStatusTone } from '../../../utils/settlementStatus';
 import { toBsDate } from '../../../utils/nepaliDate';
 import '../Accounting.css';
 
@@ -328,8 +329,8 @@ const SettlementsTab: React.FC<{ payeeType: 'rider' | 'vendor' }> = ({ payeeType
             header: 'Status',
             width: '110px',
             accessor: (item) => (
-              <StatusChip variant="solid" tone={item.status === 'settled' ? 'success' : 'warning'}>
-                {item.status === 'settled' ? 'Settled' : 'Pending'}
+              <StatusChip variant="solid" tone={settlementStatusTone(item.status)}>
+                {settlementStatusLabel(item.status)}
               </StatusChip>
             ),
           },
