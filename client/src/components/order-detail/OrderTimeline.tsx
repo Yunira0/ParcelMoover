@@ -1,5 +1,5 @@
 import React from 'react';
-import { Package, CheckCircle, XCircle, AlertTriangle, Clock, Truck, MapPin, ArrowRight, Pencil } from 'lucide-react';
+import { Package, CheckCircle, XCircle, AlertTriangle, Clock, Truck, MapPin, ArrowRight, Pencil, User } from 'lucide-react';
 import type { OrderStatusHistoryEntry, ParcelStatus } from '../../services/orders.service';
 import { toBsDateLabel, toNptTime } from '../../utils/nepaliDate';
 
@@ -126,6 +126,12 @@ const OrderTimeline: React.FC<OrderTimelineProps> = ({ statusHistory }) => {
             <div className="od-timeline-content">
               <div className="od-timeline-header">
                 <span className="od-timeline-status">{isInfoEdit ? 'Order Updated' : STATUS_LABEL[entry.newStatus]}</span>
+                {entry.riderName && (
+                  <span className="od-timeline-rider">
+                    <User size={12} />
+                    {entry.riderName}
+                  </span>
+                )}
               </div>
               {entry.oldStatus && !isInfoEdit && (
                 <p className="od-timeline-from">from {STATUS_LABEL[entry.oldStatus]}</p>

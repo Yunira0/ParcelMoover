@@ -586,6 +586,11 @@ export interface OrderStatusHistoryEntry {
   changedBy: string;
   /** 'user' for staff-visible attribution, 'branch' when the viewer only gets a branch/company name, 'rider' for rider-driven milestones. */
   changedByType: 'user' | 'branch' | 'rider';
+  /**
+   * The rider tied to this milestone: the pickup rider for "rider_assigned",
+   * the delivery rider for "sent_for_delivery". null for every other entry.
+   */
+  riderName: string | null;
   createdAt: string;
 }
 
