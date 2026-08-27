@@ -1,11 +1,11 @@
 import type { ClipboardEvent, KeyboardEvent } from 'react';
 
-// Scanned terms are joined into one comma-separated `search` string sent to
-// the server, which caps that param at 3000 chars (~27 chars per tracking id
-// incl. separator) - see order.schema.ts. Capping the batch here keeps every
-// scan under that ceiling instead of silently failing the whole search once
-// it's exceeded.
-export const MAX_SCANNED_TERMS = 100;
+// Scanned terms are joined into one comma-separated `search` string. A batch
+// this size (~26 chars per tracking id incl. separator, ~13000 chars at 500)
+// would blow past a GET request's practical URL-length ceiling, so orders.service
+// posts the batch as a request body instead of a query string once it gets
+// long - see getOrders/getStatusCounts and order.schema.ts's search field.
+export const MAX_SCANNED_TERMS = 500;
 
 // A handheld barcode scanner types each tracking id then sends Enter, with
 // virtually no gap before the next scan's characters start arriving.

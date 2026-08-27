@@ -219,7 +219,10 @@ const TopNav: React.FC = () => {
       </button>
 
       <div className="top-nav-logo">
-        {/* Logo removed as requested */}
+        <img src="/brand/logo-icon.png" alt="" className="top-nav-logo-mark" />
+        <span className="top-nav-logo-text">
+          Parcel<span className="top-nav-logo-accent">Moover</span>
+        </span>
       </div>
 
       <form

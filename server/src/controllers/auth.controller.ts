@@ -391,6 +391,7 @@ export const getAdminsController = async (req: Request, res: Response) => {
         id: admin.id,
         userId: admin.user_id,
         sn: skip + index + 1,
+        employeeId: admin.employee_number ? `PM-${admin.employee_number}` : "",
         name: admin.users.full_name,
         email: admin.users.email || "",
         phone: admin.users.phone || "",
@@ -827,6 +828,7 @@ export const getRidersController = async (req: Request, res: Response) => {
         id: rider.id,
         userId: rider.user_id,
         sn: skip + index + 1,
+        employeeId: rider.employee_number ? `PM-${rider.employee_number}` : "",
         name: rider.name,
         email: rider.users?.email || "",
         phone: rider.phone,
@@ -902,7 +904,14 @@ export const changePasswordController = async (req: Request, res: Response) => {
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
-    return sendSuccess(res, 200, "Password changed successfully");
+    // Mirrors login's response shape (top-level accessToken) so Bearer-only
+    // clients (no cookies) can pick up the freshly-reissued token instead of
+    // being left holding one that revokeAllUserTokens just invalidated.
+    return res.status(200).json({
+      success: true,
+      message: "Password changed successfully",
+      accessToken: token,
+    });
   } catch (error: any) {
     return res.status(error.statusCode || 400).json({
       success: false,

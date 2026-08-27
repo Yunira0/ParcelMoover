@@ -1,11 +1,12 @@
 import React from 'react';
-import { Package, CheckCircle, XCircle, AlertTriangle, Clock, Truck, MapPin, ArrowRight, Pencil, User } from 'lucide-react';
+import { Package, CheckCircle, XCircle, AlertTriangle, Clock, Truck, MapPin, ArrowRight, Pencil, User, Milestone } from 'lucide-react';
 import type { OrderStatusHistoryEntry, ParcelStatus } from '../../services/orders.service';
 import { toBsDateLabel, toNptTime } from '../../utils/nepaliDate';
 
 interface OrderTimelineProps {
   statusHistory: OrderStatusHistoryEntry[];
   currentStatus: ParcelStatus;
+  showCarrierBadge?: boolean;
 }
 
 const TERMINAL_STATUSES: Set<ParcelStatus> = new Set([
@@ -16,18 +17,20 @@ const DANGER_STATUSES: Set<ParcelStatus> = new Set([
   'cancelled', 'loss_and_damage', 'failed_pickup', 'failed_delivery',
 ]);
 
+// oov is a routine milestone (parcel left the valley for out-of-valley
+// delivery), not an issue - it shouldn't read as a warning next to it.
 const WARNING_STATUSES: Set<ParcelStatus> = new Set([
-  'hold', 'oov', 'follow_up', 'ready_to_return',
+  'hold', 'follow_up', 'ready_to_return',
 ]);
 
-const STATUS_ICON: Record<string, React.FC<{ size?: number }>> = {
+const STATUS_ICON: Record<string, React.FC<{ size?: number; strokeWidth?: number }>> = {
   pickup_ordered: Package,
   rider_assigned: Truck,
   picked_up: Package,
   arrived: MapPin,
   ready_to_deliver: CheckCircle,
   sent_for_delivery: Truck,
-  oov: AlertTriangle,
+  oov: Milestone,
   dispatched: ArrowRight,
   arrived_at_branch: MapPin,
   hold: Clock,
@@ -82,6 +85,15 @@ function getTimelineClass(entry: OrderStatusHistoryEntry): string {
   return 'timeline-active';
 }
 
+// Carrier handoff isn't a first-class field on the status history entry - it's
+// only recoverable from the remark text the handoff wrote alongside it.
+function detectCarrier(remarks?: string): 'NCM' | 'Upaya' | null {
+  if (!remarks) return null;
+  if (remarks.startsWith('Parcel dispatched to destination')) return 'NCM';
+  if (remarks.startsWith('Parcel dispatched via Upaya')) return 'Upaya';
+  return null;
+}
+
 function formatTimelineTime(dateStr: string): string {
   if (!dateStr) return '';
   // Server sends date-only strings like "2024-01-15" (no time component)
@@ -91,7 +103,7 @@ function formatTimelineTime(dateStr: string): string {
   return `${toBsDateLabel(dateStr)}, ${toNptTime(dateStr)}`;
 }
 
-const OrderTimeline: React.FC<OrderTimelineProps> = ({ statusHistory }) => {
+const OrderTimeline: React.FC<OrderTimelineProps> = ({ statusHistory, showCarrierBadge }) => {
   if (!statusHistory.length) {
     return (
       <div className="od-empty">
@@ -111,6 +123,8 @@ const OrderTimeline: React.FC<OrderTimelineProps> = ({ statusHistory }) => {
         const isTerminal = !isInfoEdit && TERMINAL_STATUSES.has(entry.newStatus);
         const isCurrent = idx === 0;
         const IconComponent = isInfoEdit ? Pencil : (STATUS_ICON[entry.newStatus] || Package);
+        const carrier = showCarrierBadge ? detectCarrier(entry.remarks) : null;
+        const isFilledDot = !isInfoEdit && (isTerminal || isCurrent);
 
         return (
           <div
@@ -118,8 +132,9 @@ const OrderTimeline: React.FC<OrderTimelineProps> = ({ statusHistory }) => {
             className={`od-timeline-item ${getTimelineClass(entry)}${isCurrent ? ' od-timeline-current' : ''}`}
           >
             <div className="od-timeline-connector">
-              <div className={`od-timeline-dot${!isInfoEdit && (isTerminal || isCurrent) ? ' od-timeline-dot-terminal' : ''}`}>
-                <IconComponent size={14} />
+              <div className={`od-timeline-dot${isFilledDot ? ' od-timeline-dot-terminal' : ''}`}>
+                {/* Filled dots need a bolder stroke - a thin white glyph gets lost against the solid color fill. */}
+                <IconComponent size={isFilledDot ? 15 : 14} strokeWidth={isFilledDot ? 2.5 : 2} />
               </div>
               {idx < statusHistory.length - 1 && <div className="od-timeline-line" />}
             </div>
@@ -132,6 +147,7 @@ const OrderTimeline: React.FC<OrderTimelineProps> = ({ statusHistory }) => {
                     {entry.riderName}
                   </span>
                 )}
+                {carrier && <span className="od-timeline-carrier-badge">{carrier}</span>}
               </div>
               {entry.oldStatus && !isInfoEdit && (
                 <p className="od-timeline-from">from {STATUS_LABEL[entry.oldStatus]}</p>
@@ -141,6 +157,7 @@ const OrderTimeline: React.FC<OrderTimelineProps> = ({ statusHistory }) => {
               )}
               <div className="od-timeline-meta">
                 <span className="od-timeline-by">{entry.changedBy}</span>
+                {entry.changedByType === 'rider' && <span className="od-timeline-rider-badge">Rider</span>}
                 <span className="od-timeline-dot-sep" />
                 <span className="od-timeline-time">{formatTimelineTime(entry.createdAt)}</span>
               </div>

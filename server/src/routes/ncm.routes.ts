@@ -67,7 +67,7 @@ ncmRouter.get(
   listNcmBranchesController,
 );
 
-// POST /api/ncm/handoff — create NCM orders for oov parcels (OOV page "Via 3PL").
+// POST /api/ncm/handoff — create NCM orders for oov parcels (OOV page "Via 3PL (NCM)").
 ncmRouter.post(
   "/handoff",
   authMiddleware,

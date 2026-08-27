@@ -17,6 +17,7 @@ import './RiderManagement.css';
 interface RiderUser {
   id: string;
   sn: number;
+  employeeId: string;
   name: string;
   email: string;
   phone: string;
@@ -108,6 +109,9 @@ const RiderManagement: React.FC = () => {
 
   const columns = [
     { header: 'SN', accessor: 'sn' as keyof RiderUser, width: '34px' },
+    // A carrier placeholder (NCM/Upaya) isn't a real employee, so it never
+    // shows one even though the row itself still gets a DB-assigned number.
+    { header: 'EMPLOYEE ID', accessor: (r: RiderUser) => (r.carrierCode ? '—' : r.employeeId || '—'), width: '110px' },
     {
       header: 'NAME',
       accessor: (item: RiderUser) => (

@@ -14,6 +14,8 @@ model admins {
   id                    String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   user_id               String     @unique @db.Uuid
   location_id           String?    @db.Uuid
+  /// Shared sequence with riders.employee_number (employee_number_seq) - shown as "PM-<n>".
+  employee_number       Int?       @unique @default(dbgenerated("nextval('employee_number_seq'::regclass)"))
   position              String?
   /// Extra privileges granted by a super_admin (see ADMIN_PERMISSIONS).
   permissions           String[]   @default([])
@@ -421,6 +423,8 @@ model riders {
   name                                      String
   phone                                     String            @unique
   location_id                               String?           @db.Uuid
+  /// Shared sequence with admins.employee_number (employee_number_seq) - shown as "PM-<n>".
+  employee_number                           Int?              @unique @default(dbgenerated("nextval('employee_number_seq'::regclass)"))
   rider_location                            String?
   citizenship_no                            String?
   licence_no                                String?
@@ -755,7 +759,9 @@ model users {
   updated_at                                             DateTime                @default(now()) @updatedAt @db.Timestamptz(6)
   deleted_at                                             DateTime?               @db.Timestamptz(6)
   admins                                                 admins?
+  announcements                                          announcements[]
   audit_logs                                             audit_logs[]
+  banners                                                banners[]
   delivery_rates                                         delivery_rates[]
   dispatches                                             dispatches[]
   notifications                                          notifications[]
@@ -1042,6 +1048,64 @@ model pickup_time_slots {
   sort_order    Int      @default(0)
   created_at    DateTime @default(now()) @db.Timestamptz(6)
   updated_at    DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+}
+
+// Vendor-facing notice banners shown on the Vendor Dashboard. `modal` pops up
+// once per browser until dismissed (dismissal is tracked client-side, not
+// here — there is no vendor-scoped "seen" row to keep this table simple);
+// `permanent` stays visible inline for as long as it's enabled and inside its
+// active window. Purely presentational: no order/workflow state ever reads
+// this table, so a banner going missing can never block a vendor.
+//
+// Live/scheduled/expired is derived from is_enabled + starts_at/ends_at at
+// read time rather than stored, so a stale status column can never drift from
+// the dates that actually govern it.
+model banners {
+  id           String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// Admin-facing label only — never shown to vendors. The image is the copy.
+  name         String
+  /// Relative path under /uploads, encrypted at rest like every other upload.
+  image_path   String
+  link_url     String?
+  display_type banner_display_type @default(permanent)
+  is_enabled   Boolean             @default(true)
+  starts_at    DateTime?           @db.Timestamptz(6)
+  ends_at      DateTime?           @db.Timestamptz(6)
+  /// Lower shows first. Breaks a tie among several banners active at once.
+  sort_order   Int                 @default(0)
+  created_by   String?             @db.Uuid
+  created_at   DateTime            @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime            @default(now()) @updatedAt @db.Timestamptz(6)
+  users        users?              @relation(fields: [created_by], references: [id], onUpdate: NoAction)
+
+  @@index([display_type, is_enabled], map: "idx_banners_display_enabled")
+}
+
+enum banner_display_type {
+  modal
+  permanent
+}
+
+// Text notices shown in the vendor dashboard's Announcements card (and the
+// vendor's full announcements list) — operational updates like payment
+// notices, service disruptions, or new branches, not the image-only banners
+// above. Same live/scheduled/expired-at-read-time shape as `banners`, for the
+// same reason: no stored status that can drift from is_enabled/starts_at/ends_at.
+model announcements {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  title      String
+  body       String
+  is_enabled Boolean   @default(true)
+  starts_at  DateTime? @db.Timestamptz(6)
+  ends_at    DateTime? @db.Timestamptz(6)
+  /// Lower shows first. Breaks a tie among several announcements live at once.
+  sort_order Int       @default(0)
+  created_by String?   @db.Uuid
+  created_at DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+  users      users?    @relation(fields: [created_by], references: [id], onUpdate: NoAction)
+
+  @@index([is_enabled, sort_order], map: "idx_announcements_enabled_sort")
 }
 
 // Configurable settlement payment methods (Cash, Online, eSewa, Bank, ...).

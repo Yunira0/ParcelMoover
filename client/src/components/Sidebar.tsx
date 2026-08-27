@@ -35,6 +35,8 @@ import {
   CreditCard,
   FileText,
   Wrench,
+  Image,
+  Megaphone,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { getCurrentUserRoles, hasAdminPermission, isAdminSide } from '../utils/auth';
@@ -353,7 +355,8 @@ const SalesSidebar: React.FC = () => {
 const AdminSidebar: React.FC<{ isSuperAdmin: boolean }> = ({ isSuperAdmin }) => {
   const { collapsed, mobileOpen } = useSidebarCollapse();
   const canReadBooks = isSuperAdmin || hasAdminPermission('ACCOUNTING_ACCESS');
-  const canOpenSystem = isSuperAdmin || hasAdminPermission('SYSTEM_LOGS_ACCESS');
+  const canOpenSystem =
+    isSuperAdmin || hasAdminPermission('SYSTEM_LOGS_ACCESS') || hasAdminPermission('SETTINGS_ACCESS');
   return (
     <aside className={asideClassName(collapsed, mobileOpen)}>
       <SidebarToggleBtn />
@@ -382,13 +385,19 @@ const AdminSidebar: React.FC<{ isSuperAdmin: boolean }> = ({ isSuperAdmin }) => 
           <SidebarGroup
             label="System Management"
             icon={Wrench}
-            match={['/pickup-time-slots', '/system-logs', '/sla']}
+            match={['/pickup-time-slots', '/system-logs', '/sla', '/banners', '/announcements']}
           >
             {isSuperAdmin && <SubItem to="/pickup-time-slots" icon={Clock} label="Pickup Time Slots" />}
             {(isSuperAdmin || hasAdminPermission('SYSTEM_LOGS_ACCESS')) && (
               <SubItem to="/system-logs" icon={ScrollText} label="System Logs" />
             )}
             {isSuperAdmin && <SubItem to="/sla" icon={Timer} label="SLA" />}
+            {(isSuperAdmin || hasAdminPermission('SETTINGS_ACCESS')) && (
+              <SubItem to="/banners" icon={Image} label="Banner" />
+            )}
+            {(isSuperAdmin || hasAdminPermission('SETTINGS_ACCESS')) && (
+              <SubItem to="/announcements" icon={Megaphone} label="Announcements" />
+            )}
           </SidebarGroup>
         )}
 

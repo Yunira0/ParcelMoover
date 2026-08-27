@@ -1112,7 +1112,8 @@ const VendorFormPage: React.FC = () => {
                   falls back to the Settings branch defaults. */}
               {form.rateType === 'flat' && (
                 <div className="vfp-rate-fields">
-                  <p className="vfp-rate-note">Branch delivery rates (parcel dropped at a branch). Blank uses Settings.</p>
+                  <h4 className="vfp-rate-subhead">Branch delivery rate</h4>
+                  <p className="vfp-rate-note">For parcels dropped at a branch. Blank uses the Settings default.</p>
                   <div className="vfp-fields">
                     <FormField label="Branch — inside valley (Rs.)" type="number" min={0}
                       value={form.branchFlatInsideValley} onChange={set('branchFlatInsideValley')} placeholder="e.g. 80" />
@@ -1125,7 +1126,8 @@ const VendorFormPage: React.FC = () => {
               )}
               {form.rateType === 'zone' && (
                 <div className="vfp-rate-fields">
-                  <p className="vfp-rate-note">Branch delivery rates (parcel dropped at a branch). Blank uses Settings.</p>
+                  <h4 className="vfp-rate-subhead">Branch delivery rate</h4>
+                  <p className="vfp-rate-note">For parcels dropped at a branch. Blank uses the Settings default.</p>
                   <div className="vfp-fields">
                     <FormField label="Branch — major cities (Rs.)" type="number" min={0}
                       value={form.branchZoneMajorCities} onChange={set('branchZoneMajorCities')} placeholder="e.g. 200" />
@@ -1142,6 +1144,7 @@ const VendorFormPage: React.FC = () => {
               {/* Return rate: a return parcel has no COD but is billed this
                   percent of the normal delivery rate, by valley side. */}
               <div className="vfp-rate-fields">
+                <h4 className="vfp-rate-subhead">Return rate</h4>
                 <p className="vfp-rate-note">
                   Return parcels carry no COD but are charged this percent of the normal delivery
                   rate. Leave blank to use the Settings default (e.g. 0% inside, 50% outside).

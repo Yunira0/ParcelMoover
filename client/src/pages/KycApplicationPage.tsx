@@ -158,7 +158,10 @@ const KycApplicationPage: React.FC = () => {
     <div className="kyc-page">
       <div className="kyc-container">
         <div className="kyc-header">
-          <Link to="/" className="kyc-logo">ParcelMoover</Link>
+          <Link to="/" className="kyc-logo">
+            <img src="/brand/logo-icon.png" alt="" className="kyc-logo-mark" />
+            ParcelMoover
+          </Link>
           <h1>Vendor KYC Application</h1>
           <p>Fill in your details to apply as a delivery vendor partner.</p>
         </div>

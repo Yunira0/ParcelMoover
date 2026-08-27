@@ -205,89 +205,95 @@ export async function listOrdersController(req: Request, res: Response) {
       });
     }
 
+    // GET /orders reads filters off the query string; POST /orders/search
+    // (used once a scan batch's `search` term list gets too long for a URL)
+    // reads the identical shape off the body instead - see order.routes.ts.
+    // Both are validated by the same listOrdersQuerySchema before this runs.
+    const source: Record<string, unknown> = req.method === "POST" ? req.body : req.query;
+
     let status: ParcelStatus[] | undefined;
     try {
-      status = parseStatusQuery(req.query.status);
+      status = parseStatusQuery(source.status);
     } catch (e: any) {
       return res.status(400).json({ success: false, message: e.message });
     }
 
     let vendorIdFilter: string[] | undefined;
     try {
-      vendorIdFilter = parseVendorIdQuery(req.query.vendorId);
+      vendorIdFilter = parseVendorIdQuery(source.vendorId);
     } catch (e: any) {
       return res.status(400).json({ success: false, message: e.message });
     }
 
-    const search = typeof req.query.search === "string" ? req.query.search : undefined;
+    const search = typeof source.search === "string" ? source.search : undefined;
 
     let orderType: OrderType | undefined;
-    if (req.query.orderType !== undefined) {
-      if (typeof req.query.orderType !== "string" || !VALID_ORDER_TYPES.includes(req.query.orderType as OrderType)) {
+    if (source.orderType !== undefined) {
+      if (typeof source.orderType !== "string" || !VALID_ORDER_TYPES.includes(source.orderType as OrderType)) {
         return res.status(400).json({
           success: false,
           message: `orderType must be one of: ${VALID_ORDER_TYPES.join(", ")}`,
         });
       }
-      orderType = req.query.orderType as OrderType;
+      orderType = source.orderType as OrderType;
     }
 
     let deliveryRiderId: string | undefined;
-    if (req.query.deliveryRiderId !== undefined) {
-      if (typeof req.query.deliveryRiderId !== "string" || !UUID_REGEX.test(req.query.deliveryRiderId)) {
+    if (source.deliveryRiderId !== undefined) {
+      if (typeof source.deliveryRiderId !== "string" || !UUID_REGEX.test(source.deliveryRiderId)) {
         return res.status(400).json({ success: false, message: "deliveryRiderId must be a valid uuid" });
       }
-      deliveryRiderId = req.query.deliveryRiderId;
+      deliveryRiderId = source.deliveryRiderId;
     }
 
     let page: number | undefined;
     let pageSize: number | undefined;
-    if (req.query.page !== undefined) {
-      page = Number(req.query.page);
+    if (source.page !== undefined) {
+      page = Number(source.page);
       if (!Number.isInteger(page) || page < 1) {
         return res.status(400).json({ success: false, message: "page must be a positive integer" });
       }
     }
-    if (req.query.pageSize !== undefined) {
-      pageSize = Number(req.query.pageSize);
+    if (source.pageSize !== undefined) {
+      pageSize = Number(source.pageSize);
       if (!Number.isInteger(pageSize) || pageSize < 1) {
         return res.status(400).json({ success: false, message: "pageSize must be a positive integer" });
       }
     }
 
     let cursor: string | undefined;
-    if (req.query.cursor !== undefined) {
-      if (typeof req.query.cursor !== "string" || req.query.cursor.length > 400) {
+    if (source.cursor !== undefined) {
+      if (typeof source.cursor !== "string" || source.cursor.length > 400) {
         return res.status(400).json({ success: false, message: "cursor must be a string of at most 400 characters" });
       }
-      cursor = req.query.cursor;
+      cursor = source.cursor;
     }
 
     let dir: "next" | "prev" | undefined;
-    if (req.query.dir !== undefined) {
-      if (req.query.dir !== "next" && req.query.dir !== "prev") {
+    if (source.dir !== undefined) {
+      if (source.dir !== "next" && source.dir !== "prev") {
         return res.status(400).json({ success: false, message: "dir must be 'next' or 'prev'" });
       }
-      dir = req.query.dir;
+      dir = source.dir as "next" | "prev";
     }
 
     let sortBy: OrderSortField | undefined;
-    if (req.query.sortBy !== undefined) {
-      if (typeof req.query.sortBy !== "string" || !ORDER_SORT_FIELDS.includes(req.query.sortBy as OrderSortField)) {
+    if (source.sortBy !== undefined) {
+      if (typeof source.sortBy !== "string" || !ORDER_SORT_FIELDS.includes(source.sortBy as OrderSortField)) {
         return res.status(400).json({
           success: false,
           message: `sortBy must be one of: ${ORDER_SORT_FIELDS.join(", ")}`,
         });
       }
-      sortBy = req.query.sortBy as OrderSortField;
+      sortBy = source.sortBy as OrderSortField;
     }
 
     let sortDir: "asc" | "desc" | undefined;
-    if (req.query.sortDir !== undefined) {
-      if (req.query.sortDir !== "asc" && req.query.sortDir !== "desc") {
+    if (source.sortDir !== undefined) {
+      if (source.sortDir !== "asc" && source.sortDir !== "desc") {
         return res.status(400).json({ success: false, message: "sortDir must be 'asc' or 'desc'" });
       }
-      sortDir = req.query.sortDir;
+      sortDir = source.sortDir as "asc" | "desc";
     }
 
     const result = await listOrders(
@@ -305,14 +311,14 @@ export async function listOrdersController(req: Request, res: Response) {
         ...(sortBy ? { sortBy } : {}),
         ...(sortDir ? { sortDir } : {}),
         // Both already coerced to real booleans by listOrdersQuerySchema.
-        ...(req.query.withArrival ? { withArrival: true } : {}),
-        ...(req.query.deliveredToday ? { deliveredToday: true } : {}),
+        ...(source.withArrival ? { withArrival: true } : {}),
+        ...(source.deliveredToday ? { deliveredToday: true } : {}),
         // Shape already checked by listOrdersQuerySchema (enum + YYYY-MM-DD).
-        ...(req.query.dateField
-          ? { dateField: req.query.dateField as "createdAt" | "lastUpdatedAt" }
+        ...(source.dateField
+          ? { dateField: source.dateField as "createdAt" | "lastUpdatedAt" }
           : {}),
-        ...(req.query.dateFrom ? { dateFrom: String(req.query.dateFrom) } : {}),
-        ...(req.query.dateTo ? { dateTo: String(req.query.dateTo) } : {}),
+        ...(source.dateFrom ? { dateFrom: String(source.dateFrom) } : {}),
+        ...(source.dateTo ? { dateTo: String(source.dateTo) } : {}),
       },
     );
 
@@ -972,9 +978,14 @@ export async function getStatusCountsController(req: Request, res: Response) {
   try {
     if (!req.user) return res.status(401).json({ success: false, message: "Unauthorized" });
 
-    const groupsRaw = req.query.groups;
+    // GET /orders/status-counts?groups={…}, or POST /orders/status-counts with
+    // the same fields in the body once a scan batch's `search` gets too long
+    // for a URL - see order.routes.ts.
+    const source: Record<string, unknown> = req.method === "POST" ? req.body : req.query;
+
+    const groupsRaw = source.groups;
     if (typeof groupsRaw !== "string") {
-      return res.status(400).json({ success: false, message: "groups query param is required" });
+      return res.status(400).json({ success: false, message: "groups param is required" });
     }
     const groups = JSON.parse(groupsRaw) as Record<string, string[]>;
     if (typeof groups !== "object" || groups === null || Array.isArray(groups)) {
@@ -982,19 +993,19 @@ export async function getStatusCountsController(req: Request, res: Response) {
     }
 
     let deliveryRiderId: string | undefined;
-    if (req.query.deliveryRiderId !== undefined) {
-      if (typeof req.query.deliveryRiderId !== "string" || !UUID_REGEX.test(req.query.deliveryRiderId)) {
+    if (source.deliveryRiderId !== undefined) {
+      if (typeof source.deliveryRiderId !== "string" || !UUID_REGEX.test(source.deliveryRiderId)) {
         return res.status(400).json({ success: false, message: "deliveryRiderId must be a valid uuid" });
       }
-      deliveryRiderId = req.query.deliveryRiderId;
+      deliveryRiderId = source.deliveryRiderId;
     }
 
     // Comma-separated (or repeated) vendor ids, matching the list endpoint's
     // vendorId filter so the tab badges agree with the table beneath them.
     // Capped at 100 like listOrdersSchema, for the same reason.
     let vendorId: string[] | undefined;
-    if (req.query.vendorId !== undefined) {
-      const raw = Array.isArray(req.query.vendorId) ? req.query.vendorId : String(req.query.vendorId).split(",");
+    if (source.vendorId !== undefined) {
+      const raw = Array.isArray(source.vendorId) ? source.vendorId : String(source.vendorId).split(",");
       const ids = raw.map((s) => String(s).trim()).filter(Boolean);
       if (ids.length > 100) {
         return res.status(400).json({ success: false, message: "vendorId accepts at most 100 ids" });
@@ -1005,14 +1016,15 @@ export async function getStatusCountsController(req: Request, res: Response) {
       if (ids.length) vendorId = ids;
     }
 
-    // Same 3000-char ceiling the list endpoint's schema applies, since a
-    // scanner batches comma-separated tracking ids into this too.
+    // Same ceiling the list endpoint's schema applies (order.schema.ts
+    // listOrdersQuerySchema.search), since a scanner batches comma-separated
+    // tracking ids into this too.
     let search: string | undefined;
-    if (req.query.search !== undefined) {
-      if (typeof req.query.search !== "string" || req.query.search.length > 3000) {
-        return res.status(400).json({ success: false, message: "search must be a string of at most 3000 characters" });
+    if (source.search !== undefined) {
+      if (typeof source.search !== "string" || source.search.length > 15000) {
+        return res.status(400).json({ success: false, message: "search must be a string of at most 15000 characters" });
       }
-      search = req.query.search;
+      search = source.search;
     }
 
     const counts = await getStatusCounts(

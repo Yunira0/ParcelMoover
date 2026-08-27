@@ -101,12 +101,39 @@ const NCM_STATUS_TO_PARCEL_STATUS: Record<string, parcel_status> = {
 
 export type NcmBranch = {
   name: string;
-  code?: string;
-  district?: string;
-  region?: string;
-  phone?: string;
-  covered_areas?: string;
+  code?: string | undefined;
+  district?: string | undefined;
+  region?: string | undefined;
+  phone?: string | undefined;
+  covered_areas?: string | undefined;
 };
+
+// GET /api/v2/branches' actual field names — district_name/province_name/
+// areas_covered, not the district/region/covered_areas this file matches
+// and serializes on. Left unmapped, every branch's `.district` read as
+// undefined, so matchNcmBranch's district-first pass never matched anything
+// and silently fell through to the much weaker name-substring pass —
+// destinations NCM does serve (their branch just isn't a substring of our
+// hub name) got skipped as "no matching NCM branch".
+type NcmBranchRaw = {
+  name: string;
+  code?: string;
+  district_name?: string;
+  province_name?: string;
+  phone?: string;
+  areas_covered?: string;
+};
+
+function mapNcmBranch(raw: NcmBranchRaw): NcmBranch {
+  return {
+    name: raw.name,
+    code: raw.code,
+    district: raw.district_name,
+    region: raw.province_name,
+    phone: raw.phone,
+    covered_areas: raw.areas_covered,
+  };
+}
 
 // ── Branches ─────────────────────────────────────────────────────────────────
 
@@ -118,7 +145,8 @@ export async function listNcmBranches(): Promise<NcmBranch[]> {
     console.error("[NCM] branches cache read failed:", error);
   }
 
-  const branches = await ncmFetch<NcmBranch[]>("/api/v2/branches");
+  const raw = await ncmFetch<NcmBranchRaw[]>("/api/v2/branches");
+  const branches = raw.map(mapNcmBranch);
   try {
     await redis.set(BRANCHES_CACHE_KEY, JSON.stringify(branches), "EX", BRANCHES_TTL_SECONDS);
   } catch (error) {

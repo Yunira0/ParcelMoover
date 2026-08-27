@@ -103,6 +103,9 @@ export interface Order {
   labelWidthMm: number;
   labelHeightMm: number;
   riderName?: string;
+  /** Which 3PL (if any) this order was API-handed-off to — null once carried by our own rider or not yet handed off. */
+  carrierCode?: 'ncm' | 'upaya' | null;
+  carrierLabel?: string | null;
   remarks?: string;
   lastUpdatedBy?: string;
   lastUpdatedAt?: string;
@@ -317,6 +320,13 @@ export const subscribeToOrderStatusChanged = (handler: () => void) => {
   return () => window.removeEventListener(ORDER_STATUS_CHANGED_EVENT, handler);
 };
 
+// Past this, a `search` batch (comma-joined tracking ids from a scanner) risks
+// tripping a GET request's URL-length ceiling (browsers, proxies, load
+// balancers) - route it through POST /orders/search instead, which carries
+// the identical filters in the body with no such limit. Small typed searches
+// stay on GET so normal listing keeps behaving exactly as before.
+const SEARCH_POST_THRESHOLD = 1500;
+
 export const getOrders = async (params?: ListOrdersParams, signal?: AbortSignal): Promise<OrdersListResponse> => {
   const query: Record<string, string> = {};
   if (params?.status?.length) query.status = params.status.join(',');
@@ -336,7 +346,9 @@ export const getOrders = async (params?: ListOrdersParams, signal?: AbortSignal)
   if (params?.dateFrom) query.dateFrom = params.dateFrom;
   if (params?.dateTo) query.dateTo = params.dateTo;
 
-  const response = await api.get('/orders', { params: query, signal });
+  const response = (params?.search?.length ?? 0) > SEARCH_POST_THRESHOLD
+    ? await api.post('/orders/search', query, { signal })
+    : await api.get('/orders', { params: query, signal });
   return response.data;
 };
 
@@ -475,14 +487,17 @@ export const getStatusCounts = async (
   groups: Record<string, string[]>,
   filters?: { deliveryRiderId?: string; vendorId?: string[]; search?: string },
 ): Promise<Record<string, number>> => {
-  const response = await api.get('/orders/status-counts', {
-    params: {
-      groups: JSON.stringify(groups),
-      ...(filters?.deliveryRiderId ? { deliveryRiderId: filters.deliveryRiderId } : {}),
-      ...(filters?.vendorId?.length ? { vendorId: filters.vendorId.join(',') } : {}),
-      ...(filters?.search ? { search: filters.search } : {}),
-    },
-  });
+  const params = {
+    groups: JSON.stringify(groups),
+    ...(filters?.deliveryRiderId ? { deliveryRiderId: filters.deliveryRiderId } : {}),
+    ...(filters?.vendorId?.length ? { vendorId: filters.vendorId.join(',') } : {}),
+    ...(filters?.search ? { search: filters.search } : {}),
+  };
+  // Same URL-length concern as getOrders - a long scan-batch search goes via
+  // POST so the tab badges can keep up with a big batch instead of erroring.
+  const response = (filters?.search?.length ?? 0) > SEARCH_POST_THRESHOLD
+    ? await api.post('/orders/status-counts', params)
+    : await api.get('/orders/status-counts', { params });
   return response.data.data;
 };
 
@@ -583,6 +598,8 @@ export interface OrderStatusHistoryEntry {
   oldStatus: ParcelStatus | null;
   newStatus: ParcelStatus;
   remarks: string;
+  /** Rider assigned at this milestone - set only for rider_assigned (pickup) / sent_for_delivery (delivery). */
+  riderName: string | null;
   changedBy: string;
   /** 'user' for staff-visible attribution, 'branch' when the viewer only gets a branch/company name, 'rider' for rider-driven milestones. */
   changedByType: 'user' | 'branch' | 'rider';

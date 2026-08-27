@@ -234,10 +234,9 @@ export const listOrdersQuerySchema = paginationQuerySchema.extend({
     }, z.array(uuidSchema).max(100).optional())
     .optional(),
   // A barcode scanner builds this up as a comma-separated list of full
-  // tracking ids (~27 chars each incl. separator) - 100 chars only fit ~3
-  // scans before every further scan gets rejected outright. Sized for the
-  // client's 100-term scan batch cap (scannerInput.ts MAX_SCANNED_TERMS).
-  search: z.string().max(3000).optional(),
+  // tracking ids (~26 chars each incl. separator). Sized for the client's
+  // 500-term scan batch cap (scannerInput.ts MAX_SCANNED_TERMS) with margin.
+  search: z.string().max(15000).optional(),
   // Narrows the list to parcels carried by one delivery rider.
   deliveryRiderId: optionalUuidSchema,
   // Keyset pagination: opaque cursor + walk direction. A malformed cursor is

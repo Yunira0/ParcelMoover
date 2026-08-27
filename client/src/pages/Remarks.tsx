@@ -213,7 +213,14 @@ const Remarks: React.FC = () => {
       width: '50px',
       className: 'remarks-sn-cell',
     },
-    { header: 'REMARK ID', accessor: (remark: Remark) => remark.remarkId, width: '110px', className: 'remarks-id-cell' },
+    {
+      header: 'REMARK ID',
+      accessor: (remark: Remark) => (
+        <Link to={`/remarks/${remark.id}`} className="tracking-id-link">{remark.remarkId}</Link>
+      ),
+      width: '110px',
+      className: 'remarks-id-cell',
+    },
     {
       header: 'TRACKING ID',
       accessor: (remark: Remark) => (
