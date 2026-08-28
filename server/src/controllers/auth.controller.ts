@@ -15,6 +15,7 @@ import { AppError } from "../utils/AppError";
 import { sendSuccess } from "../utils/ApiResponse";
 import jwt from "jsonwebtoken";
 import prisma from "../lib/prisma";
+import { Prisma } from "../generated/prisma/client";
 import { revokeToken } from "../lib/tokenRevocation";
 import { ACCESS_TOKEN_AUDIENCE, CSRF_TOKEN_AUDIENCE, JWT_ALGORITHM, JWT_ISSUER } from "../utils/jwtConfig";
 import { flattenMulterFiles, secureUploadedFiles } from "../lib/secureUploadedFiles";
@@ -466,34 +467,52 @@ export const getVendorsController = async (req: Request, res: Response) => {
     // them), so pagination below counts and pages the filtered set correctly
     // instead of re-filtering one already-paginated page client-side.
     const highVolumeFilter = req.query.highVolume === "true";
+    // Busiest vendor first when this filter is on - ranked by the same
+    // count that qualified them, so the id order here becomes the page
+    // order below rather than falling back to newest-registered-first.
+    let highVolumeRank: string[] | null = null;
     if (highVolumeFilter) {
       const candidates = await prisma.vendors.findMany({ where, select: { id: true } });
       const candidateIds = candidates.map((v) => v.id);
-      const highVolumeIds = candidateIds.length
-        ? (
-            await prisma.parcels.groupBy({
-              by: ["vendor_id"],
-              where: { vendor_id: { in: candidateIds }, deleted_at: null },
-              _count: { _all: true },
-              having: { id: { _count: { gt: HIGH_VOLUME_ORDER_THRESHOLD } } },
-            })
-          ).map((row) => row.vendor_id as string)
+      const ranked = candidateIds.length
+        ? await prisma.parcels.groupBy({
+            by: ["vendor_id"],
+            where: { vendor_id: { in: candidateIds }, deleted_at: null },
+            _count: { _all: true },
+            having: { id: { _count: { gt: HIGH_VOLUME_ORDER_THRESHOLD } } },
+            orderBy: { _count: { id: "desc" } },
+          })
         : [];
-      where.id = { in: highVolumeIds };
+      highVolumeRank = ranked.map((row) => row.vendor_id as string);
+      where.id = { in: highVolumeRank };
     }
 
     const { page, pageSize, skip } = paginationFromQuery(req);
 
-    const [total, vendors] = await Promise.all([
-      prisma.vendors.count({ where }),
-      prisma.vendors.findMany({
-        where,
+    type VendorWithLocation = Prisma.vendorsGetPayload<{ include: { locations: true } }>;
+    let total: number;
+    let vendors: VendorWithLocation[];
+    if (highVolumeRank) {
+      total = highVolumeRank.length;
+      const pageIds = highVolumeRank.slice(skip, skip + pageSize);
+      const rows = await prisma.vendors.findMany({
+        where: { id: { in: pageIds } },
         include: { locations: true },
-        orderBy: { created_at: "desc" },
-        skip,
-        take: pageSize,
-      }),
-    ]);
+      });
+      const byId = new Map(rows.map((v) => [v.id, v]));
+      vendors = pageIds.map((id) => byId.get(id)).filter((v): v is NonNullable<typeof v> => !!v);
+    } else {
+      [total, vendors] = await Promise.all([
+        prisma.vendors.count({ where }),
+        prisma.vendors.findMany({
+          where,
+          include: { locations: true },
+          orderBy: { created_at: "desc" },
+          skip,
+          take: pageSize,
+        }),
+      ]);
+    }
 
     const vendorIds = vendors.map(v => v.id);
 
