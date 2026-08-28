@@ -244,7 +244,7 @@ const ProfilePage: React.FC = () => {
               </div>
               {isVendorAccount && (
                 <div className="profile-detail-item">
-                  <span className="profile-detail-label"><Briefcase size={13} /> Company</span>
+                  <span className="profile-detail-label"><Briefcase size={13} /> Vendor Name</span>
                   <span className="profile-detail-value">{businessName || '—'}</span>
                 </div>
               )}

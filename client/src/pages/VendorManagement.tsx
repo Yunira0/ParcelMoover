@@ -150,18 +150,11 @@ const VendorManagement: React.FC = () => {
 
   const columns = [
     { header: 'SN', accessor: 'sn' as keyof VendorUser, width: '50px' },
-    {
-      header: 'VENDOR',
-      accessor: (item: VendorUser) => (
-        <div className="vendor-name-cell">
-          <span>{vendorDisplayName(item)}</span>
-          {/* The owner's own name, secondary now that the company is the
-              row's headline - still worth showing since staff often know a
-              vendor by whoever they actually deal with. */}
-          {item.company && item.client && <span className="vendor-name-sub">{item.client}</span>}
-        </div>
-      ),
-    },
+    // Vendor name leads - it's the company staff actually deal with day to
+    // day. Owner name stays alongside it rather than folded into a subtext,
+    // since it's still a real column vendors are searched and sorted by.
+    { header: 'VENDOR NAME', accessor: (item: VendorUser) => vendorDisplayName(item) },
+    { header: 'OWNER NAME', accessor: 'client' as keyof VendorUser },
     { header: 'EMAIL', accessor: 'email' as keyof VendorUser },
     { header: 'PHONE', accessor: 'phone' as keyof VendorUser },
     { header: 'LOCATION', accessor: 'location' as keyof VendorUser },
@@ -305,7 +298,7 @@ const VendorManagement: React.FC = () => {
             <Search size={16} style={{ color: 'var(--color-text-caption)' }} />
             <input
               type="text"
-              placeholder="Search company, client, phone, email..."
+              placeholder="Search vendor name, owner name, phone, email..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />

@@ -46,8 +46,8 @@ const SalesTopVendors: React.FC = () => {
   }, []);
 
   const columns = [
-    { header: 'CLIENT', accessor: 'client' as const },
-    { header: 'COMPANY', accessor: 'company' as const },
+    { header: 'VENDOR NAME', accessor: (v: VendorRow) => v.company || v.client },
+    { header: 'OWNER NAME', accessor: 'client' as const },
     { header: 'TOTAL ORDERS', accessor: (v: VendorRow) => v.orders.total.toLocaleString() },
     { header: 'DELIVERED', accessor: (v: VendorRow) => v.orders.delivered.toLocaleString() },
     { header: 'COD DUE', accessor: (v: VendorRow) => formatMoney(v.codDue) },
