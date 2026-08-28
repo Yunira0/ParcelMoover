@@ -19,7 +19,7 @@
 // and billing.service derives every vendor balance from them.
 //
 // Read together the entries say: COD is never the office's money. It arrives
-// as cash matched by an equal liability (2005 COD in Transit), and the
+// as cash matched by an equal liability (2005 COD to Pay to Vendor), and the
 // only part the office ever keeps - recognised on the statement that settles
 // it - is the delivery charge.
 import { Prisma } from "../../generated/prisma/client";
@@ -279,11 +279,11 @@ function cashLines(
  * The rider hands over the cash they were carrying.
  *
  *   Dr  1000/1100/... Cash, Bank or Wallet    the office now holds it
- *   Cr  2005 COD in Transit                   and owes it on to the vendors
+ *   Cr  2005 COD to Pay to Vendor              and owes it on to the vendors
  *
  * This is where COD enters the books. Nothing is posted while a rider is out
  * collecting - the statement that brings the cash in is the event, not each
- * individual parcel. The credit sits in COD Held until a vendor statement
+ * individual parcel. The credit sits in COD to Pay to Vendor until a vendor statement
  * hands it on, so 2005's balance is the float the office is sitting on.
  *
  * The rider is tagged on the liability line so their remittance history still
@@ -352,7 +352,7 @@ export async function postRiderRemittance(
  *       Dr 2000 Vendor (vendor)  /  Cr cash
  *
  *   payable < 0   delivery charges exceeded the COD, so the vendor pays us
- *       Dr cash  /  Cr 2005 COD Held (the shortfall comes back to us)
+ *       Dr cash  /  Cr 2005 COD to Pay to Vendor (the shortfall comes back to us)
  *
  * payForSettlement already models both directions; this mirrors it rather than
  * inventing a rule of its own.
