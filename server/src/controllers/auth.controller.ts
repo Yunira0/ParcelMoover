@@ -20,6 +20,9 @@ import { ACCESS_TOKEN_AUDIENCE, CSRF_TOKEN_AUDIENCE, JWT_ALGORITHM, JWT_ISSUER }
 import { flattenMulterFiles, secureUploadedFiles } from "../lib/secureUploadedFiles";
 
 const formatDate = (date?: Date | null) => date ? date.toISOString().slice(0, 10) : "";
+// What "High volume vendor" on the Vendor Management page means - more total
+// orders (any status, matching the ORDERS column) than this.
+const HIGH_VOLUME_ORDER_THRESHOLD = 100;
 const managedUserTypes = ["admin", "vendor", "rider"] as const;
 type ManagedUserType = typeof managedUserTypes[number];
 
@@ -454,6 +457,29 @@ export const getVendorsController = async (req: Request, res: Response) => {
     }
     if (locationFilter) {
       where.locations = { name: locationFilter };
+    }
+
+    // "High volume" isn't a column on vendors - it's derived from a count
+    // over parcels - so it can't join the where clause above like the other
+    // filters. Resolve it to a concrete set of vendor ids first, against
+    // every vendor the filters above already allow (not just one page of
+    // them), so pagination below counts and pages the filtered set correctly
+    // instead of re-filtering one already-paginated page client-side.
+    const highVolumeFilter = req.query.highVolume === "true";
+    if (highVolumeFilter) {
+      const candidates = await prisma.vendors.findMany({ where, select: { id: true } });
+      const candidateIds = candidates.map((v) => v.id);
+      const highVolumeIds = candidateIds.length
+        ? (
+            await prisma.parcels.groupBy({
+              by: ["vendor_id"],
+              where: { vendor_id: { in: candidateIds }, deleted_at: null },
+              _count: { _all: true },
+              having: { id: { _count: { gt: HIGH_VOLUME_ORDER_THRESHOLD } } },
+            })
+          ).map((row) => row.vendor_id as string)
+        : [];
+      where.id = { in: highVolumeIds };
     }
 
     const { page, pageSize, skip } = paginationFromQuery(req);

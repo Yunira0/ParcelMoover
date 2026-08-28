@@ -70,7 +70,7 @@ const VendorManagement: React.FC = () => {
     else params.delete('tab');
     setSearchParams(params, { replace: true });
   };
-  const [filter, setFilter] = useState<'all' | 'high-volume' | 'active'>('all');
+  const [filter, setFilter] = useState<'all' | 'high-volume'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [activeStatus, setActiveStatus] = useState('all');
   const [vendors, setVendors] = useState<VendorUser[]>([]);
@@ -115,6 +115,10 @@ const VendorManagement: React.FC = () => {
       const params: Record<string, string | number> = { page, pageSize: pageSizeChoice };
       if (searchQuery) params.search = searchQuery;
       if (activeStatus !== 'all') params.status = activeStatus;
+      // Order count lives on parcels, not vendors, so "high volume" can't be
+      // filtered on the page of vendors already fetched - the server resolves
+      // it against every matching vendor before paging.
+      if (filter === 'high-volume') params.highVolume = 'true';
 
       const res = await getVendors(params);
       if (res && res.success && Array.isArray(res.data)) {
@@ -132,7 +136,7 @@ const VendorManagement: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [page, pageSizeChoice, searchQuery, activeStatus]);
+  }, [page, pageSizeChoice, searchQuery, activeStatus, filter]);
 
   useEffect(() => {
     loadVendors();
@@ -142,11 +146,6 @@ const VendorManagement: React.FC = () => {
   useEffect(() => {
     setPage(1);
   }, [searchQuery, activeStatus, filter]);
-
-  // Client-side filter for tab (high-volume requires order count which comes from server)
-  const displayVendors = filter === 'high-volume'
-    ? vendors.filter(v => v.orders.total > 100)
-    : vendors;
 
   const columns = [
     { header: 'SN', accessor: 'sn' as keyof VendorUser, width: '50px' },
@@ -288,8 +287,7 @@ const VendorManagement: React.FC = () => {
           onChange={setFilter}
           options={[
             { value: 'all', label: 'All' },
-            { value: 'high-volume', label: 'High volume client' },
-            { value: 'active', label: 'Active client' },
+            { value: 'high-volume', label: 'High volume vendor' },
           ]}
         />
 
@@ -320,7 +318,7 @@ const VendorManagement: React.FC = () => {
       ) : (
         <>
           {statusError && <p className="vendor-status-error">{statusError}</p>}
-          <Table columns={columns} data={displayVendors} selectable={false} />
+          <Table columns={columns} data={vendors} selectable={false} />
           <Pagination
             page={page}
             totalPages={totalPages}
