@@ -72,6 +72,16 @@
   cursor: pointer;
 }
 
+.vendor-name-cell {
+  display: flex;
+  flex-direction: column;
+}
+
+.vendor-name-sub {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-caption);
+}
+
 .orders-info {
   font-size: var(--font-size-sm);
   color: var(--color-text-caption);

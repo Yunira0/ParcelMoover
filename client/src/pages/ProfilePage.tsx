@@ -52,6 +52,12 @@ const ProfilePage: React.FC = () => {
 
   // Profile fields
   const [fullName, setFullName] = useState(cached?.fullName ?? '');
+  // Vendor/vendor-staff only - the company's registered name, shown as this
+  // page's display name instead of the owner's personal fullName. Kept
+  // separate from fullName itself: that field is still the account's login
+  // identity, and it's what the dashboard/topnav "welcome" greeting reads,
+  // which this page deliberately leaves alone.
+  const [businessName, setBusinessName] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState(cached?.email ?? '');
   const [hubName, setHubName] = useState('');
@@ -80,6 +86,7 @@ const ProfilePage: React.FC = () => {
     fetchMe()
       .then((data) => {
         setFullName(data.fullName ?? '');
+        setBusinessName(data.businessName ?? '');
         setPhone(data.phone ?? '');
         setEmail(data.email ?? '');
         setHubName(data.hubName ?? '');
@@ -162,6 +169,10 @@ const ProfilePage: React.FC = () => {
   }
 
   const statusTone = accountStatus === 'active' ? 'success' : 'warning';
+  // The vendor's company is who this account represents day to day; the
+  // owner's personal name still lives in fullName and the form below.
+  const isVendorAccount = roles.includes('vendor') || roles.includes('vendor_staff');
+  const displayName = (isVendorAccount && businessName) || fullName || cached?.fullName || '';
 
   return (
     <div className="profile-page">
@@ -172,10 +183,10 @@ const ProfilePage: React.FC = () => {
 
       <div className="profile-overview">
         <div className="profile-avatar">
-          {getInitials(fullName || cached?.fullName || 'U')}
+          {getInitials(displayName || 'U')}
         </div>
         <div className="profile-overview-info">
-          <h2>{fullName || cached?.fullName}</h2>
+          <h2>{displayName}</h2>
           <p className="profile-overview-email">{email}</p>
           <div className="profile-overview-meta">
             <div className="profile-roles">
@@ -231,6 +242,12 @@ const ProfilePage: React.FC = () => {
                 <span className="profile-detail-label"><MapPin size={13} /> Hub</span>
                 <span className="profile-detail-value">{hubName || '—'}</span>
               </div>
+              {isVendorAccount && (
+                <div className="profile-detail-item">
+                  <span className="profile-detail-label"><Briefcase size={13} /> Company</span>
+                  <span className="profile-detail-value">{businessName || '—'}</span>
+                </div>
+              )}
               {isStaff && (
                 <div className="profile-detail-item">
                   <span className="profile-detail-label"><Briefcase size={13} /> Department</span>

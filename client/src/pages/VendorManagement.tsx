@@ -41,6 +41,12 @@ interface VendorUser {
 // server caps any value at 100 (auth.controller LIST_MAX_PAGE_SIZE).
 const PAGE_SIZE = 20;
 
+// The vendor's registered company - what identifies them everywhere on this
+// page now, in place of the owner's personal client name. Falls back to the
+// client name for the rare vendor registered before a company name was
+// required.
+const vendorDisplayName = (v: { company: string; client: string }): string => v.company || v.client;
+
 const VendorManagement: React.FC = () => {
   const navigate = useNavigate();
   const isAdmin = isAdminSide();
@@ -93,7 +99,7 @@ const VendorManagement: React.FC = () => {
     } catch (err) {
       console.error('Failed to update vendor status:', err);
       setVendors(prev => prev.map(v => (v.id === vendor.id ? { ...v, status: vendor.status } : v)));
-      setStatusError(`Failed to set ${vendor.client} ${nextStatus}. Please try again.`);
+      setStatusError(`Failed to set ${vendorDisplayName(vendor)} ${nextStatus}. Please try again.`);
     } finally {
       setStatusSavingIds(prev => {
         const next = new Set(prev);
@@ -144,8 +150,18 @@ const VendorManagement: React.FC = () => {
 
   const columns = [
     { header: 'SN', accessor: 'sn' as keyof VendorUser, width: '50px' },
-    { header: 'CLIENT', accessor: 'client' as keyof VendorUser },
-    { header: 'COMPANY', accessor: 'company' as keyof VendorUser },
+    {
+      header: 'VENDOR',
+      accessor: (item: VendorUser) => (
+        <div className="vendor-name-cell">
+          <span>{vendorDisplayName(item)}</span>
+          {/* The owner's own name, secondary now that the company is the
+              row's headline - still worth showing since staff often know a
+              vendor by whoever they actually deal with. */}
+          {item.company && item.client && <span className="vendor-name-sub">{item.client}</span>}
+        </div>
+      ),
+    },
     { header: 'EMAIL', accessor: 'email' as keyof VendorUser },
     { header: 'PHONE', accessor: 'phone' as keyof VendorUser },
     { header: 'LOCATION', accessor: 'location' as keyof VendorUser },
@@ -179,7 +195,7 @@ const VendorManagement: React.FC = () => {
                 checked={item.status === 'active'}
                 disabled={statusSavingIds.has(item.id)}
                 onChange={() => toggleVendorStatus(item)}
-                ariaLabel={`Set ${item.client} ${item.status === 'active' ? 'inactive' : 'active'}`}
+                ariaLabel={`Set ${vendorDisplayName(item)} ${item.status === 'active' ? 'inactive' : 'active'}`}
               />
             )}
             <StatusChip variant="solid" tone={item.status === 'active' ? 'success' : 'danger'}>
@@ -289,7 +305,7 @@ const VendorManagement: React.FC = () => {
             <Search size={16} style={{ color: 'var(--color-text-caption)' }} />
             <input
               type="text"
-              placeholder="Search client, phone, email, company..."
+              placeholder="Search company, client, phone, email..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
@@ -331,7 +347,7 @@ const VendorManagement: React.FC = () => {
       <UserDocumentsModal
         isOpen={Boolean(documentsVendor)}
         userType="vendor"
-        target={documentsVendor ? { id: documentsVendor.id, name: documentsVendor.client } : null}
+        target={documentsVendor ? { id: documentsVendor.id, name: vendorDisplayName(documentsVendor) } : null}
         onClose={() => setDocumentsVendor(null)}
       />
 
