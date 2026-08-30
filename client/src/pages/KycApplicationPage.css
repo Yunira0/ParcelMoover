@@ -18,13 +18,21 @@
 }
 
 .kyc-logo {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   font-size: 1.1rem;
   font-weight: 700;
   color: var(--color-primary, #4f46e5);
   text-decoration: none;
   margin-bottom: 16px;
   letter-spacing: -0.3px;
+}
+
+.kyc-logo-mark {
+  height: 28px;
+  width: auto;
+  object-fit: contain;
 }
 
 .kyc-header h1 {

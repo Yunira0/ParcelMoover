@@ -89,23 +89,34 @@ function mapRemark(
 
 // The most recent message in each thread (root or reply) - a thread's row in
 // the list stays anchored to its root remark, so this is the only way to
-// surface newer replies without opening the detail page.
-async function resolveLastActivityByParcel(
-  parcelIds: string[],
+// surface newer replies without opening the detail page. Scoped to each
+// thread's own root + replies (not the whole parcel), so two separate
+// threads on the same parcel don't bleed their "last activity" into each
+// other's row.
+async function resolveLastActivityByRemark(
+  rootIds: string[],
 ): Promise<Map<string, { remark: string; created_at: Date; addedBy: string }>> {
   const result = new Map<string, { remark: string; created_at: Date; addedBy: string }>();
-  const ids = [...new Set(parcelIds)];
+  const ids = [...new Set(rootIds)];
   if (ids.length === 0) return result;
 
-  const latest = await prisma.parcel_remarks.findMany({
-    where: { parcel_id: { in: ids } },
-    orderBy: [{ parcel_id: "asc" }, { created_at: "desc" }],
-    distinct: ["parcel_id"],
-    select: { parcel_id: true, remark: true, created_at: true, users: { select: { full_name: true } } },
+  const activity = await prisma.parcel_remarks.findMany({
+    where: { OR: [{ id: { in: ids } }, { parent_remark_id: { in: ids } }] },
+    orderBy: { created_at: "desc" },
+    select: {
+      id: true,
+      parent_remark_id: true,
+      remark: true,
+      created_at: true,
+      users: { select: { full_name: true } },
+    },
   });
 
-  latest.forEach((row) => {
-    result.set(row.parcel_id, {
+  // Rows arrive newest-first, so the first hit per thread root is the latest.
+  activity.forEach((row) => {
+    const rootId = row.parent_remark_id ?? row.id;
+    if (result.has(rootId)) return;
+    result.set(rootId, {
       remark: row.remark,
       created_at: row.created_at,
       // Left empty rather than resolved here - mapRemark decides the label,
@@ -226,7 +237,7 @@ export async function listRemarks(actor: Actor, params: ListRemarksParams = {}) 
     }),
   ]);
 
-  const lastActivityByParcel = await resolveLastActivityByParcel(remarks.map((r) => r.parcel_id));
+  const lastActivityByRemark = await resolveLastActivityByRemark(remarks.map((r) => r.id));
 
   const statusCounts: Record<RemarkWorkflowStatus, number> = { open: 0, pending: 0, closed: 0 };
   statusGroups.forEach((group) => {
@@ -234,7 +245,7 @@ export async function listRemarks(actor: Actor, params: ListRemarksParams = {}) 
   });
 
   return {
-    data: remarks.map((remark) => mapRemark(remark, lastActivityByParcel.get(remark.parcel_id))),
+    data: remarks.map((remark) => mapRemark(remark, lastActivityByRemark.get(remark.id))),
     meta: {
       page,
       pageSize: take,

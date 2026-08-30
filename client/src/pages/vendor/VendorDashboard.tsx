@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import DashboardHeader from '../../components/DashboardHeader';
+import VendorNoticeBanner from '../../components/vendor/VendorNoticeBanner';
 import VendorQuickActions from '../../components/vendor/VendorQuickActions';
+import VendorAnnouncements from '../../components/vendor/VendorAnnouncements';
 import VendorOverviewCards from '../../components/vendor/VendorOverviewCards';
 import OrdersTrendDonut from '../../components/vendor/OrdersTrendDonut';
 import VendorOrdersTrendChart from '../../components/vendor/VendorOrdersTrendChart';
@@ -131,6 +133,7 @@ const VendorDashboard: React.FC = () => {
         subtitle="Your orders, deliveries and payouts across the Parcel Moover network."
       />
 
+      <VendorNoticeBanner />
       <VendorQuickActions />
 
       {error && <p className="vendor-dashboard-error">{error}</p>}
@@ -163,6 +166,7 @@ const VendorDashboard: React.FC = () => {
               loading={loading}
             />
             <VendorOrdersTrendChart data={weeklyTrend} loading={loading} />
+            <VendorAnnouncements />
           </div>
 
           <div className="vendor-dashboard-side-col">

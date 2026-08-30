@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, CheckCircle, Upload, X, User, Building2, FileText, CreditCard, Lock } from 'lucide-react';
 import Button from '../components/Button';
 import FormField from '../components/FormField';
+import DocLink from '../components/DocLink';
 import { registerUser, getManagedUser, updateUserProfile, getLocations } from '../services/users.service';
 import { extractServerFieldErrors, isValidEmail, isValidName, isValidPhone, normalizePhone } from '../utils/serverValidation';
 import { useHubLock } from '../hooks/useHubLock';
@@ -12,11 +13,12 @@ import './AdminFormPage.css';
 // Fields not listed here share the same name on both sides.
 const API_FIELD_MAP: Record<string, string> = {
   position: 'designation',
-  idDocumentType: 'documentType',
-  idDocumentNumber: 'documentNumber',
+  idDocumentNumber: 'nationalIdNumber',
 };
 
 interface AdminFormInput {
+  // Server-assigned, display-only - never sent back on submit.
+  employeeId: string;
   // Employee Info
   fullName: string;
   address: string;
@@ -35,9 +37,10 @@ interface AdminFormInput {
   department: string;
   designation: string;
   // Documents
-  documentType: string;
-  documentNumber: string;
-  idDocument: File | null;
+  citizenshipDoc: File | null;
+  nationalIdNumber: string;
+  nationalIdDoc: File | null;
+  panDoc: File | null;
   // Bank Details
   bankName: string;
   bankAccountNo: string;
@@ -55,13 +58,8 @@ const DEPARTMENT_OPTIONS = [
   { value: 'Sales', label: 'Sales' },
 ];
 
-const DOCUMENT_TYPE_OPTIONS = [
-  { value: 'Citizenship', label: 'Citizenship' },
-  { value: 'National ID', label: 'National ID' },
-  { value: 'PAN', label: 'PAN' },
-];
-
 const emptyForm: AdminFormInput = {
+  employeeId: '',
   fullName: '',
   address: '',
   phone: '',
@@ -77,9 +75,10 @@ const emptyForm: AdminFormInput = {
   locationId: '',
   department: '',
   designation: '',
-  documentType: '',
-  documentNumber: '',
-  idDocument: null,
+  citizenshipDoc: null,
+  nationalIdNumber: '',
+  nationalIdDoc: null,
+  panDoc: null,
   bankName: '',
   bankAccountNo: '',
   bankAccountHolder: '',
@@ -150,6 +149,12 @@ const AdminFormPage: React.FC = () => {
   const [submitted, setSubmitted] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [hubs, setHubs] = useState<Array<{ value: string; label: string }>>([]);
+  // Already-uploaded document paths, shown as view links in edit mode.
+  const [existingDocs, setExistingDocs] = useState<{
+    citizenshipDoc: string | null;
+    idDocument: string | null;
+    panDoc: string | null;
+  }>({ citizenshipDoc: null, idDocument: null, panDoc: null });
   // Accounts created by a plain admin inherit that admin's hub; only a
   // super_admin may choose a different one (server enforces the same rule).
   const { myHubId, hubLocked, isPlainAdmin } = useHubLock();
@@ -186,6 +191,7 @@ const AdminFormPage: React.FC = () => {
         const s = (v: unknown) => (v == null ? '' : String(v));
         setForm((prev) => ({
           ...prev,
+          employeeId: s(d.employeeId),
           fullName: s(d.fullName),
           email: s(d.email),
           phone: s(d.phone),
@@ -202,12 +208,16 @@ const AdminFormPage: React.FC = () => {
           locationId: s(d.locationId),
           department: s(d.department),
           designation: s(d.position),
-          documentType: s(d.idDocumentType),
-          documentNumber: s(d.idDocumentNumber),
+          nationalIdNumber: s(d.idDocumentNumber),
           bankName: s(d.bankName),
           bankAccountNo: s(d.bankAccountNo),
           bankAccountHolder: s(d.bankAccountHolder),
         }));
+        setExistingDocs({
+          citizenshipDoc: d.citizenshipDoc ?? null,
+          idDocument: d.idDocument ?? null,
+          panDoc: d.panDoc ?? null,
+        });
       })
       .catch(() => setError('Failed to load admin details.'));
   }, [isEdit, editId]);
@@ -249,9 +259,9 @@ const AdminFormPage: React.FC = () => {
     else if (!isValidEmail(form.email)) errors.email = 'Enter a valid email address';
     // Document and password only required when creating a new admin.
     if (!isEdit) {
-      if (!form.documentType.trim()) errors.documentType = 'Document type is required';
-      if (!form.documentNumber.trim()) errors.documentNumber = 'Document number is required';
-      if (!form.idDocument) errors.idDocument = 'Document is required';
+      if (!form.citizenshipDoc) errors.citizenshipDoc = 'Citizenship document is required';
+      if (!form.nationalIdNumber.trim()) errors.nationalIdNumber = 'National ID number is required';
+      if (!form.nationalIdDoc) errors.nationalIdDoc = 'National ID document is required';
       if (!form.password.trim()) errors.password = 'Password is required';
       else if (form.password.length < 8) errors.password = 'Min. 8 characters';
       if (!form.confirmPassword.trim()) errors.confirmPassword = 'Please confirm the password';
@@ -297,8 +307,8 @@ const AdminFormPage: React.FC = () => {
           bankName: form.bankName,
           bankAccountNo: form.bankAccountNo,
           bankAccountHolder: form.bankAccountHolder,
-          idDocumentType: form.documentType,
-          idDocumentNumber: form.documentNumber,
+          idDocumentType: 'National ID',
+          idDocumentNumber: form.nationalIdNumber,
         });
         navigate('/admin');
         return;
@@ -325,9 +335,11 @@ const AdminFormPage: React.FC = () => {
         bankName: form.bankName,
         bankAccountNo: form.bankAccountNo,
         bankAccountHolder: form.bankAccountHolder,
-        idDocumentType: form.documentType,
-        idDocumentNumber: form.documentNumber,
-        idDocument: form.idDocument,
+        idDocumentType: 'National ID',
+        idDocumentNumber: form.nationalIdNumber,
+        idDocument: form.nationalIdDoc,
+        citizenshipDoc: form.citizenshipDoc,
+        panDoc: form.panDoc,
       });
       setSubmitted(true);
     } catch (err: any) {
@@ -383,7 +395,10 @@ const AdminFormPage: React.FC = () => {
       </button>
 
       <div className="afp-header">
-        <h1>{isEdit ? 'Edit Admin' : 'Add New Admin'}</h1>
+        <div className="afp-header-title-row">
+          <h1>{isEdit ? 'Edit Admin' : 'Add New Admin'}</h1>
+          {isEdit && form.employeeId && <span className="afp-employee-id">{form.employeeId}</span>}
+        </div>
         <p>Complete the registration form below to create a new admin account.</p>
       </div>
 
@@ -534,35 +549,43 @@ const AdminFormPage: React.FC = () => {
               />
               <div className="afp-fields">
                 <FormField
-                  label="Document"
-                  type="select"
+                  label="National ID Number"
                   required
-                  value={form.documentType}
-                  onChange={set('documentType')}
-                  placeholder="Select document type"
-                  options={DOCUMENT_TYPE_OPTIONS}
+                  value={form.nationalIdNumber}
+                  onChange={set('nationalIdNumber')}
+                  placeholder="National ID number"
                 />
-                {fieldErrors.documentType && <span className="afp-field-error">{fieldErrors.documentType}</span>}
-                <FormField
-                  label="Document Number"
-                  required
-                  value={form.documentNumber}
-                  onChange={set('documentNumber')}
-                  placeholder="Number of the selected document"
-                />
-                {fieldErrors.documentNumber && <span className="afp-field-error">{fieldErrors.documentNumber}</span>}
-                {!isEdit && (
-                  <>
-                    <FileInput
-                      label="Upload Document"
-                      required
-                      file={form.idDocument}
-                      onChange={setFile('idDocument')}
-                    />
-                    {fieldErrors.idDocument && <span className="afp-field-error">{fieldErrors.idDocument}</span>}
-                  </>
-                )}
+                {fieldErrors.nationalIdNumber && <span className="afp-field-error">{fieldErrors.nationalIdNumber}</span>}
               </div>
+              {isEdit ? (
+                <div className="afp-docs">
+                  <DocLink path={existingDocs.citizenshipDoc} label="Citizenship" />
+                  <DocLink path={existingDocs.idDocument} label="National ID" />
+                  <DocLink path={existingDocs.panDoc} label="PAN" />
+                </div>
+              ) : (
+                <div className="afp-docs">
+                  <FileInput
+                    label="Citizenship"
+                    required
+                    file={form.citizenshipDoc}
+                    onChange={setFile('citizenshipDoc')}
+                  />
+                  {fieldErrors.citizenshipDoc && <span className="afp-field-error">{fieldErrors.citizenshipDoc}</span>}
+                  <FileInput
+                    label="National ID"
+                    required
+                    file={form.nationalIdDoc}
+                    onChange={setFile('nationalIdDoc')}
+                  />
+                  {fieldErrors.nationalIdDoc && <span className="afp-field-error">{fieldErrors.nationalIdDoc}</span>}
+                  <FileInput
+                    label="PAN"
+                    file={form.panDoc}
+                    onChange={setFile('panDoc')}
+                  />
+                </div>
+              )}
             </section>
 
             {/* Bank Details */}

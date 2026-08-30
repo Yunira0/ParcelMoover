@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import Table from '../components/Table';
 import Button from '../components/Button';
-import SearchableSelect from '../components/SearchableSelect';
+import StatusChip from '../components/StatusChip';
 import SegmentedTabs from '../components/SegmentedTabs';
 import PageHeader from '../components/PageHeader';
 import Pagination from '../components/Pagination';
@@ -24,7 +24,6 @@ import {
   type ParcelStatus,
 } from '../services/orders.service';
 import { downloadExcel } from '../utils/excel';
-import { getLocations, getRiders } from '../services/users.service';
 import { handoffToNcm } from '../services/ncm.service';
 import { handoffParcelsToUpaya } from '../services/upaya.service';
 import { toBsDate, toBsDateTimeCell } from '../utils/nepaliDate';
@@ -134,10 +133,6 @@ const OOVOperations: React.FC = () => {
   const [actionError, setActionError] = useState('');
   const [remarkPopupOrder, setRemarkPopupOrder] = useState<Order | null>(null);
   const [dispatchMethod, setDispatchMethod] = useState<'manifest' | 'tpl' | 'upaya'>('manifest');
-  const [locations, setLocations] = useState<{ id: string; name: string }[]>([]);
-  const [riders, setRiders] = useState<{ id: string; name: string }[]>([]);
-  const [toLocationId, setToLocationId] = useState('');
-  const [riderId, setRiderId] = useState('');
   const [reasonRemarks, setReasonRemarks] = useState('');
   const [tabCounts, setTabCounts] = useState<Record<string, number>>({});
 
@@ -181,22 +176,6 @@ const OOVOperations: React.FC = () => {
     if (debouncedSearch) next.set('search', debouncedSearch);
     setSearchParams(next, { replace: true });
   }, [activeTab, debouncedSearch, setSearchParams]);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const [locRes, riderRes] = await Promise.all([getLocations(), getRiders({ pageSize: 100 })]);
-        if (locRes?.success && Array.isArray(locRes.data)) {
-          setLocations(locRes.data.filter((loc: any) => loc.is_hub));
-        }
-        if (riderRes?.success && Array.isArray(riderRes.data)) {
-          setRiders(riderRes.data.filter((r: { status: string }) => r.status === 'active'));
-        }
-      } catch {
-        // dropdowns will just be empty; not fatal
-      }
-    })();
-  }, []);
 
   // Scanning several parcels in a row fires one debounced search per scan -
   // without this, a slower-to-resolve earlier request can land after a later
@@ -330,11 +309,6 @@ const OOVOperations: React.FC = () => {
       return;
     }
 
-    if (isDispatchAction && dispatchMethod === 'manifest' && !toLocationId) {
-      setActionError('Select a destination hub to dispatch this manifest.');
-      return;
-    }
-
     if (isReasonRequiredAction && !reasonRemarks.trim()) {
       setActionError('A reason remark is required to cancel or fail an order.');
       return;
@@ -345,7 +319,7 @@ const OOVOperations: React.FC = () => {
       const ids = selectedOrders.map(order => String(order.id));
 
       if (isDispatchAction && dispatchMethod === 'tpl') {
-        // Hand off to the courier partner: creates their orders; parcels stay
+        // Hand off to NCM: creates their orders; parcels stay
         // in Transit until the partner's pickup webhook moves them to In Transit.
         const res = await handoffToNcm(ids);
         const failed = (res.data ?? []).filter(item => !item.success);
@@ -372,8 +346,6 @@ const OOVOperations: React.FC = () => {
         }
       } else {
         await bulkUpdateOrderStatus(ids, effectiveNextStatus, {
-          toLocationId: isDispatchAction && dispatchMethod === 'manifest' ? toLocationId : undefined,
-          riderId: isDispatchAction && dispatchMethod === 'manifest' ? riderId || undefined : undefined,
           remarks: isReasonRequiredAction ? reasonRemarks.trim() : undefined,
         });
       }
@@ -382,8 +354,6 @@ const OOVOperations: React.FC = () => {
       setSelectionByTab(prev => ({ ...prev, [activeTab]: new Map() }));
       setIsActionOpen(false);
       setSelectedNextStatus('');
-      setToLocationId('');
-      setRiderId('');
       setDispatchMethod('manifest');
       setReasonRemarks('');
     } catch (err: unknown) {
@@ -436,7 +406,7 @@ const OOVOperations: React.FC = () => {
   const buildExportRows = (rows: Order[]) => {
     // Mirrors the table on screen, where the Last Updated cell shows who and
     // when - two things, so two columns here rather than one.
-    const headers = ['Order ID', 'Date', 'Tracking ID', 'Order Type', 'Sender', 'Receiver', 'Location', 'Address', 'Weight', 'COD', 'Last Updated By', 'Last Updated', 'Remarks', ...STATUS_TIMELINE_HEADERS];
+    const headers = ['Order ID', 'Date', 'Tracking ID', 'Order Type', 'Sender', 'Receiver', 'Location', 'Address', 'Carrier', 'Weight', 'COD', 'Last Updated By', 'Last Updated', 'Remarks', ...STATUS_TIMELINE_HEADERS];
     const dataRows = rows.map(order => [
       `#${order.orderNumber}`,
       toBsDateTimeCell(order.createdAtRaw || order.createdAt),
@@ -446,6 +416,7 @@ const OOVOperations: React.FC = () => {
       order.receiverName,
       order.destination,
       order.receiverAddress || '',
+      order.carrierLabel || '',
       order.weightKg ? `${order.weightKg} Kg` : '',
       order.codAmount,
       order.lastUpdatedBy || '',
@@ -529,6 +500,12 @@ const OOVOperations: React.FC = () => {
         </div>
       ),
       width: '180px',
+    },
+    {
+      header: 'CARRIER',
+      accessor: (order: Order) =>
+        order.carrierLabel ? <StatusChip tone="info">{order.carrierLabel}</StatusChip> : '-',
+      width: '96px',
     },
     { header: 'WEIGHT', accessor: (order: Order) => (order.weightKg ? `${order.weightKg} Kg` : '-'), width: '80px' },
     { header: 'COD', accessor: (order: Order) => formatMoney(order.codAmount), width: '113px' },
@@ -631,7 +608,7 @@ const OOVOperations: React.FC = () => {
                         onChange={() => setDispatchMethod('tpl')}
                         disabled={statusUpdating}
                       />
-                      <span>Via Courier Partner</span>
+                      <span>Via 3PL (NCM)</span>
                     </label>
                     <label className="oov-dispatch-radio">
                       <input
@@ -649,9 +626,9 @@ const OOVOperations: React.FC = () => {
                 {isDispatchAction && dispatchMethod === 'tpl' && (
                   <div className="oov-manifest-fields">
                     <p className="oov-status-empty">
-                      The courier partner's destination branch is matched automatically from each order's destination
+                      NCM's destination branch is matched automatically from each order's destination
                       hub. Orders whose destination has no matching branch are skipped, and orders stay in Transit
-                      until the partner confirms pickup, then follow their tracking automatically.
+                      until NCM confirms pickup, then follow their tracking automatically.
                     </p>
                   </div>
                 )}
@@ -662,37 +639,6 @@ const OOVOperations: React.FC = () => {
                       destination hub. Orders whose destination has no confident match are skipped, and orders move
                       straight to dispatched, then follow Upaya's tracking automatically.
                     </p>
-                  </div>
-                )}
-                {isDispatchAction && dispatchMethod === 'manifest' && (
-                  <div className="oov-manifest-fields">
-                    <div className="oov-manifest-field">
-                      <span>Destination hub</span>
-                      <SearchableSelect
-                        options={locations.map(loc => ({ id: loc.id, label: loc.name }))}
-                        value={toLocationId}
-                        onChange={setToLocationId}
-                        placeholder="Select destination hub"
-                        searchPlaceholder="Search hub..."
-                        emptyMessage="No hubs found."
-                        disabled={statusUpdating}
-                      />
-                    </div>
-                    <div className="oov-manifest-field">
-                      <span>Rider / vehicle (optional)</span>
-                      <SearchableSelect
-                        options={[
-                          { id: '', label: 'Unassigned' },
-                          ...riders.map(rider => ({ id: rider.id, label: rider.name })),
-                        ]}
-                        value={riderId}
-                        onChange={setRiderId}
-                        placeholder="Unassigned"
-                        searchPlaceholder="Search rider by name..."
-                        emptyMessage="No active riders found."
-                        disabled={statusUpdating}
-                      />
-                    </div>
                   </div>
                 )}
                 {isReasonRequiredAction && (

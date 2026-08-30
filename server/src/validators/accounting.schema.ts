@@ -37,6 +37,18 @@ const accountCodeSchema = z
   .regex(/^\d{3,6}$/, "accountCode must be a numeric account code")
   .optional();
 
+// The account and party settlement ledgers allow a bigger page than other
+// lists: a printable ledger sheet asks for everything in its (usually short,
+// deliberately chosen) date range in one request rather than paging through a
+// document meant to be printed whole. 2000 matches the row cap the endpoint
+// used to hard-code before it had real pagination.
+const ledgerPageSizeSchema = z.coerce.number().int().positive().max(2000).optional();
+
+export const accountLedgerQuerySchema = rangeQuerySchema.extend({
+  page: pageSchema,
+  pageSize: ledgerPageSizeSchema,
+});
+
 export const journalQuerySchema = rangeQuerySchema.extend({
   page: pageSchema,
   pageSize: pageSizeSchema,

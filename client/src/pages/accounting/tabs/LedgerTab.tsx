@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import Table from '../../../components/Table';
 import FilterDropdown from '../../../components/FilterDropdown';
+import Pagination from '../../../components/Pagination';
 import PeriodPicker from '../PeriodPicker';
 import { Banner } from '../ui';
 import { money, numClass } from '../format';
@@ -48,6 +49,8 @@ const LedgerTab: React.FC = () => {
   const [ledger, setLedger] = useState<Ledger | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(100);
 
   useEffect(() => {
     listAccounts()
@@ -59,14 +62,14 @@ const LedgerTab: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      setLedger(await getAccountLedger(code, rangeParams(range)));
+      setLedger(await getAccountLedger(code, { ...rangeParams(range), page, pageSize }));
     } catch (err) {
       setError(apiErrorMessage(err, 'Could not load this ledger'));
       setLedger(null);
     } finally {
       setLoading(false);
     }
-  }, [code, range]);
+  }, [code, range, page, pageSize]);
 
   useEffect(() => {
     void load();
@@ -74,10 +77,17 @@ const LedgerTab: React.FC = () => {
 
   const pickAccount = (next: string) => {
     setCode(next);
+    setPage(1);
     const params = new URLSearchParams(searchParams);
     params.set('account', next);
     setSearchParams(params, { replace: true });
   };
+
+  // A new account or a new date range starts back at page 1 - the old page
+  // number almost never lines up with the new result set.
+  useEffect(() => {
+    setPage(1);
+  }, [range]);
 
   // The chart of accounts is long enough that it needs searching, so the
   // account type leads each label in place of the <optgroup> a plain select had.
@@ -89,21 +99,29 @@ const LedgerTab: React.FC = () => {
 
   // The opening balance leads the movements rather than sitting only in the card
   // above: a running-balance column has to start from something for the figures
-  // under it to mean anything. Skipped when there are no movements, so an empty
-  // ledger still shows its empty state instead of a lone opening row.
+  // under it to mean anything. Only on page 1 - every later page's first row
+  // already carries the running balance forward from the page before it, so a
+  // second "Opening balance" row there would restate a figure that belongs to
+  // the whole range, not to that page. Skipped entirely when there are no
+  // movements, so an empty ledger still shows its empty state instead of a
+  // lone opening row.
   const rows = ledger?.rows.length
     ? [
-        {
-          id: '__opening',
-          isOpening: true,
-          bsDate: '',
-          entryNo: '',
-          memo: 'Opening balance',
-          contraAccounts: '',
-          debit: 0,
-          credit: 0,
-          runningBalance: ledger.openingBalance,
-        },
+        ...(ledger.page === 1
+          ? [
+              {
+                id: '__opening',
+                isOpening: true,
+                bsDate: '',
+                entryNo: '',
+                memo: 'Opening balance',
+                contraAccounts: '',
+                debit: 0,
+                credit: 0,
+                runningBalance: ledger.openingBalance,
+              },
+            ]
+          : []),
         ...ledger.rows.map((row, index) => ({ ...row, id: `${row.entryId}-${index}`, isOpening: false })),
       ]
     : [];
@@ -138,7 +156,7 @@ const LedgerTab: React.FC = () => {
             <div className="acc-panel-head">
               <div>
                 <h2>{ledger.account.name}</h2>
-                <p>{ledger.range.label} · {ledger.rows.length} movements</p>
+                <p>{ledger.range.label} · {ledger.totalRows} movement{ledger.totalRows === 1 ? '' : 's'}</p>
               </div>
 
               {/* The same ledger as the ruled sheet that gets printed and
@@ -203,6 +221,20 @@ const LedgerTab: React.FC = () => {
                   <td className={numClass(ledger.closingBalance)}>{money(ledger.closingBalance)}</td>
                 </tr>
               }
+            />
+
+            <Pagination
+              ariaLabel="Account ledger pagination"
+              page={ledger.page}
+              totalPages={ledger.totalPages}
+              onPageChange={setPage}
+              pageSize={pageSize}
+              pageSizeLabel="movements"
+              onPageSizeChange={(size) => {
+                setPageSize(size);
+                setPage(1);
+              }}
+              summary={`${ledger.totalRows} movement${ledger.totalRows === 1 ? '' : 's'}`}
             />
           </div>
         </>

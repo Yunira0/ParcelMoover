@@ -44,7 +44,18 @@ const LedgerSheetPage: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      setLedger(await getAccountLedger(code, { ...(from ? { from } : {}), ...(to ? { to } : {}) }));
+      // This is a single printable document for the chosen range, not a
+      // browsed list - so it asks for the server's largest page in one call
+      // rather than adding page controls to something meant to be printed
+      // whole. (getAccountLedger otherwise defaults to a much smaller page,
+      // now that the interactive Ledger tab paginates it.)
+      setLedger(
+        await getAccountLedger(code, {
+          ...(from ? { from } : {}),
+          ...(to ? { to } : {}),
+          pageSize: 2000,
+        }),
+      );
     } catch (err) {
       setError(err);
     } finally {

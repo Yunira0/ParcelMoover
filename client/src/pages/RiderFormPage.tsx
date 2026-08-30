@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, CheckCircle, Upload, X, User, Truck, Building2, FileText, CreditCard, Lock } from 'lucide-react';
 import Button from '../components/Button';
 import FormField from '../components/FormField';
+import DocLink from '../components/DocLink';
 import { registerUser, getLocations, getManagedUser, updateUserProfile } from '../services/users.service';
 import { getCurrentUser } from '../services/auth.service';
 import { extractServerFieldErrors, isValidEmail, isValidName, isValidPhone, normalizePhone } from '../utils/serverValidation';
@@ -17,6 +18,8 @@ const API_FIELD_MAP: Record<string, string> = {
 };
 
 interface RiderFormInput {
+  // Server-assigned, display-only - never sent back on submit.
+  employeeId: string;
   // Rider Info
   fullName: string;
   riderLocation: string;
@@ -49,6 +52,7 @@ interface RiderFormInput {
 }
 
 const emptyForm: RiderFormInput = {
+  employeeId: '',
   fullName: '',
   riderLocation: '',
   contactNo: '',
@@ -134,6 +138,13 @@ const RiderFormPage: React.FC = () => {
   const [submitted, setSubmitted] = useState(false);
   const [hubs, setHubs] = useState<Array<{ value: string; label: string }>>([]);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  // Already-uploaded document paths, shown as view links in edit mode.
+  const [existingDocs, setExistingDocs] = useState<{
+    citizenshipDoc: string | null;
+    panVatDoc: string | null;
+    licenceDoc: string | null;
+    bluebookDoc: string | null;
+  }>({ citizenshipDoc: null, panVatDoc: null, licenceDoc: null, bluebookDoc: null });
   // A plain admin's riders always land in that admin's own hub; only a
   // super_admin may pick another service branch (server enforces the same).
   const { hubLocked, isPlainAdmin, isSuperAdmin } = useHubLock();
@@ -177,6 +188,7 @@ const RiderFormPage: React.FC = () => {
         const s = (v: unknown) => (v == null ? '' : String(v));
         setForm((prev) => ({
           ...prev,
+          employeeId: s(d.employeeId),
           fullName: s(d.fullName),
           email: s(d.email),
           contactNo: s(d.phone),
@@ -193,6 +205,12 @@ const RiderFormPage: React.FC = () => {
           bankAccountHolder: s(d.bankAccountHolder),
           carrierCode: s(d.carrierCode),
         }));
+        setExistingDocs({
+          citizenshipDoc: d.citizenshipDoc ?? null,
+          panVatDoc: d.panVatDoc ?? null,
+          licenceDoc: d.licenceDoc ?? null,
+          bluebookDoc: d.bluebookDoc ?? null,
+        });
       })
       .catch(() => setError('Failed to load rider details.'));
   }, [isEdit, editId]);
@@ -356,7 +374,14 @@ const RiderFormPage: React.FC = () => {
       </button>
 
       <div className="rfp-header">
-        <h1>{isEdit ? 'Edit Rider' : 'Add New Rider'}</h1>
+        <div className="rfp-header-title-row">
+          <h1>{isEdit ? 'Edit Rider' : 'Add New Rider'}</h1>
+          {/* A carrier placeholder (NCM/Upaya) isn't a real employee, so it
+              never shows one even though the row gets a DB-assigned number. */}
+          {isEdit && !form.carrierCode && form.employeeId && (
+            <span className="rfp-employee-id">{form.employeeId}</span>
+          )}
+        </div>
         <p>Complete the registration form below to create a new rider account.</p>
       </div>
 
@@ -486,42 +511,49 @@ const RiderFormPage: React.FC = () => {
 
           {/* Right Column */}
           <div className="rfp-right">
-            {/* Documents — only when creating */}
-            {!isEdit && (
+            {/* Documents */}
             <section className="rfp-section">
               <SectionHeader
                 icon={<FileText size={18} />}
                 title="Documents"
                 description="Upload required documents"
               />
-              <div className="rfp-docs">
-                <FileInput
-                  label="Citizenship"
-                  required
-                  file={form.citizenshipDoc}
-                  onChange={setFile('citizenshipDoc')}
-                />
-                {fieldErrors.citizenshipDoc && <span className="rfp-field-error">{fieldErrors.citizenshipDoc}</span>}
-                <FileInput
-                  label="PAN / VAT"
-                  file={form.panVatDoc}
-                  onChange={setFile('panVatDoc')}
-                />
-                <FileInput
-                  label="License"
-                  required
-                  file={form.licenceDoc}
-                  onChange={setFile('licenceDoc')}
-                />
-                {fieldErrors.licenceDoc && <span className="rfp-field-error">{fieldErrors.licenceDoc}</span>}
-                <FileInput
-                  label="Blue Book"
-                  file={form.blueBookDoc}
-                  onChange={setFile('blueBookDoc')}
-                />
-              </div>
+              {isEdit ? (
+                <div className="rfp-docs">
+                  <DocLink path={existingDocs.citizenshipDoc} label="Citizenship" />
+                  <DocLink path={existingDocs.panVatDoc} label="PAN / VAT" />
+                  <DocLink path={existingDocs.licenceDoc} label="License" />
+                  <DocLink path={existingDocs.bluebookDoc} label="Blue Book" />
+                </div>
+              ) : (
+                <div className="rfp-docs">
+                  <FileInput
+                    label="Citizenship"
+                    required
+                    file={form.citizenshipDoc}
+                    onChange={setFile('citizenshipDoc')}
+                  />
+                  {fieldErrors.citizenshipDoc && <span className="rfp-field-error">{fieldErrors.citizenshipDoc}</span>}
+                  <FileInput
+                    label="PAN / VAT"
+                    file={form.panVatDoc}
+                    onChange={setFile('panVatDoc')}
+                  />
+                  <FileInput
+                    label="License"
+                    required
+                    file={form.licenceDoc}
+                    onChange={setFile('licenceDoc')}
+                  />
+                  {fieldErrors.licenceDoc && <span className="rfp-field-error">{fieldErrors.licenceDoc}</span>}
+                  <FileInput
+                    label="Blue Book"
+                    file={form.blueBookDoc}
+                    onChange={setFile('blueBookDoc')}
+                  />
+                </div>
+              )}
             </section>
-            )}
 
             {/* Bank Details */}
             <section className="rfp-section">

@@ -4,6 +4,7 @@ import Button from '../../components/Button';
 import ToggleSwitch from '../../components/ToggleSwitch';
 import FormField from '../../components/FormField';
 import NepaliDatePicker from '../../components/NepaliDatePicker';
+import Pagination from '../../components/Pagination';
 import PartyPicker, { type PickedParty } from '../accounting/PartyPicker';
 import {
   createAccount,
@@ -93,6 +94,18 @@ const MastersPage: React.FC = () => {
   const rows = useMemo(() => flatten(chart), [chart]);
   const current = useMemo(() => rows.find((row) => row.code === editing) ?? null, [rows, editing]);
   const locked = Boolean(current && current.lineCount > 0);
+
+  // The whole chart loads in one call (getChart), so pagination here just
+  // slices what's already in memory rather than re-fetching - a page boundary
+  // can still land between a group and one of its children, since the tree is
+  // flattened depth-first into one continuous list first.
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(100);
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+  const pagedRows = useMemo(
+    () => rows.slice((page - 1) * pageSize, page * pageSize),
+    [rows, page, pageSize],
+  );
 
   const openAdd = () => {
     setForm(blankForm());
@@ -398,7 +411,7 @@ const MastersPage: React.FC = () => {
             </tr>
           </thead>
           <tbody>
-            {rows.map((node) => (
+            {pagedRows.map((node) => (
               <tr key={node.code} className={node.isActive ? undefined : 'tly-muted'}>
                 <td>{node.code}</td>
                 <td style={{ paddingLeft: `calc(var(--space-3) + ${node.depth} * var(--space-5))` }}>
@@ -434,6 +447,20 @@ const MastersPage: React.FC = () => {
           </tbody>
         </table>
       </div>
+
+      <Pagination
+        ariaLabel="Chart of accounts pagination"
+        page={page}
+        totalPages={totalPages}
+        onPageChange={setPage}
+        pageSize={pageSize}
+        pageSizeLabel="accounts"
+        onPageSizeChange={(size) => {
+          setPageSize(size);
+          setPage(1);
+        }}
+        summary={`${rows.length} account${rows.length === 1 ? '' : 's'}`}
+      />
     </TallyPage>
   );
 };

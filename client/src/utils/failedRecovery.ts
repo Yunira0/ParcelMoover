@@ -1,4 +1,4 @@
-import type { ParcelStatus, TrashRestoreStage } from '../services/orders.service';
+import type { ParcelStatus } from '../services/orders.service';
 
 /**
  * Where a failed order goes when it is put back into the workflow.
@@ -9,14 +9,11 @@ import type { ParcelStatus, TrashRestoreStage } from '../services/orders.service
  * STATUS_TRANSITIONS (failed_pickup -> pickup_ordered, failed_delivery ->
  * ready_to_deliver), so nothing here can request a transition the API refuses.
  *
- * Kept in one place because two screens offer this - the Orders page's Failed
- * tab and the Trash page's restore - and they must not drift apart.
+ * This is a plain status update (updateOrderStatus), not a trash restore - it
+ * operates on orders still live in the workflow, not trashed ones - so it isn't
+ * constrained to TrashRestoreStage the way the Trash page's restore is.
  */
-// Typed as TrashRestoreStage, not ParcelStatus: the two targets below are
-// exactly the stages the trash restore accepts, and saying so lets the restore
-// screen use this result directly instead of widening to "any status" and then
-// having to narrow it back.
-export const FAILED_RECOVERY_TARGET: Partial<Record<ParcelStatus, TrashRestoreStage>> = {
+export const FAILED_RECOVERY_TARGET: Partial<Record<ParcelStatus, ParcelStatus>> = {
   failed_pickup: 'pickup_ordered',
   failed_delivery: 'ready_to_deliver',
 };
@@ -27,7 +24,7 @@ export const FAILED_RECOVERY_LABEL: Partial<Record<ParcelStatus, string>> = {
   failed_delivery: 'Back to Ready to Deliver',
 };
 
-export const recoveryTargetFor = (status: ParcelStatus): TrashRestoreStage | undefined =>
+export const recoveryTargetFor = (status: ParcelStatus): ParcelStatus | undefined =>
   FAILED_RECOVERY_TARGET[status];
 
 export const isRecoverableFailure = (status: ParcelStatus): boolean =>

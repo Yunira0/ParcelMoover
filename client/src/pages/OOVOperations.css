@@ -346,15 +346,6 @@
   margin: 0;
 }
 
-.oov-manifest-field {
-  color: var(--color-text-caption);
-  display: flex;
-  flex-direction: column;
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-medium);
-  gap: var(--space-1);
-}
-
 .oov-action-error {
   color: var(--color-danger-text);
   font-size: var(--font-size-sm);

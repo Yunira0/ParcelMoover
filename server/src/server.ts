@@ -30,6 +30,8 @@ import AuditLogRoutes from "./routes/auditLog.routes"
 import BillingRoutes from "./routes/billing.routes"
 import AccountingRoutes from "./routes/accounting.routes"
 import VendorPrintSettingsRoutes from "./routes/vendorPrintSettings.routes"
+import BannerRoutes from "./routes/banner.routes"
+import AnnouncementRoutes from "./routes/announcement.routes"
 import prisma, { pool } from "./lib/prisma";
 import cookiesParser from "cookie-parser";
 import {authMiddleware} from "./middlewares/auth.middleware";
@@ -151,6 +153,8 @@ app.use("/api/notifications", NotificationRoutes)
 app.use("/api/finance", FinanceRoutes)
 
 app.use("/api/billing", BillingRoutes)
+app.use("/api/banners", BannerRoutes)
+app.use("/api/announcements", AnnouncementRoutes)
 
 app.use("/api/accounting", AccountingRoutes)
 app.use("/api/vendor-settings", VendorPrintSettingsRoutes)

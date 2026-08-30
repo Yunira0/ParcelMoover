@@ -338,10 +338,7 @@ const SettlementCreatePage: React.FC = () => {
                       <th style={{ textAlign: 'left' }}>Receiver</th>
                       <th style={{ textAlign: 'left' }}>Number</th>
                       <th style={{ textAlign: 'left' }}>Order Type</th>
-                      {/* Vendor destinations are long municipality strings that wrap to
-                          four lines and wreck the row rhythm, and nothing settles on
-                          them - they stay in the Excel export only. A rider's location
-                          is a single place name, so it keeps its column. */}
+                      {payeeType === 'vendor' && <th style={{ textAlign: 'left' }}>Destination</th>}
                       {payeeType === 'rider' && <th style={{ textAlign: 'left' }}>Location</th>}
                       {/* Rider rows have no delivery-charge deduction, so COD and
                           collected are always the same figure - one column, not two.
@@ -388,6 +385,7 @@ const SettlementCreatePage: React.FC = () => {
                             <span style={{ textTransform: 'capitalize' }}>{order.orderType}</span>
                           )}
                         </td>
+                        {payeeType === 'vendor' && <td>{order.destination || '-'}</td>}
                         {payeeType === 'rider' && <td>{order.location || '-'}</td>}
                         <td className="scp-cod-head">
                           <CodCell codAmount={order.codAmount} collectedAmount={order.collectedAmount} />

@@ -53,12 +53,11 @@ const TransactionsTab: React.FC<TransactionsTabProps> = ({ scope, direction = 'a
   const [search, setSearch] = useState(searchParams.get('search') ?? '');
   const [accountCode, setAccountCode] = useState(searchParams.get('account') ?? ALL_ACCOUNTS);
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
 
   const [data, setData] = useState<TransactionList | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  const pageSize = 25;
 
   // All six screens are this one component in the same slot of the route tree,
   // so React keeps the instance alive when you move between them and the
@@ -102,7 +101,7 @@ const TransactionsTab: React.FC<TransactionsTabProps> = ({ scope, direction = 'a
     } finally {
       setLoading(false);
     }
-  }, [range, scope, direction, accountCode, search, page]);
+  }, [range, scope, direction, accountCode, search, page, pageSize]);
 
   useEffect(() => {
     void load();
@@ -140,6 +139,8 @@ const TransactionsTab: React.FC<TransactionsTabProps> = ({ scope, direction = 'a
   };
 
   const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / pageSize));
+
+  const onPageSizeChange = (size: number) => changeFilter(() => setPageSize(size));
 
   const baseCols = showAccount ? 6 : 5;
   const totalCols = baseCols + (bothSides ? 2 : 1);
@@ -277,15 +278,15 @@ const TransactionsTab: React.FC<TransactionsTabProps> = ({ scope, direction = 'a
         </table>
       </div>
 
-      {totalPages > 1 && (
-        <Pagination
-          page={page}
-          totalPages={totalPages}
-          onPageChange={setPage}
-          ariaLabel={`${config.title} pages`}
-          summary={`${data?.total ?? 0} transaction${data?.total === 1 ? '' : 's'}`}
-        />
-      )}
+      <Pagination
+        page={page}
+        totalPages={totalPages}
+        onPageChange={setPage}
+        pageSize={pageSize}
+        onPageSizeChange={onPageSizeChange}
+        ariaLabel={`${config.title} pages`}
+        summary={`${data?.total ?? 0} transaction${data?.total === 1 ? '' : 's'}`}
+      />
     </>
   );
 };
