@@ -198,6 +198,7 @@ export const getVendors = async (params?: {
   status?: string;
   company?: string;
   location?: string;
+  highVolume?: string;
 }) => {
   const response = await api.get('/auth/users/vendors', { params });
   return response.data;

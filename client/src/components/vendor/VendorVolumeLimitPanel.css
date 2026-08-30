@@ -1,0 +1,36 @@
+.vendor-volume-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  max-width: 360px;
+}
+
+.vendor-volume-panel-hint {
+  color: var(--color-text-caption);
+  font-size: 0.9rem;
+  margin: 0;
+}
+
+.vendor-volume-panel-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.vendor-volume-panel-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-3);
+}
+
+.vendor-volume-panel-saved {
+  color: var(--color-text-success, #16a34a);
+  font-size: 0.85rem;
+}
+
+.vendor-volume-panel-error {
+  color: var(--color-text-danger, #dc2626);
+  font-size: 0.85rem;
+  margin: 0;
+}

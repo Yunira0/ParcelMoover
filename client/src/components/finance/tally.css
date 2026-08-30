@@ -199,7 +199,9 @@
   border-collapse: collapse;
   background: var(--color-background-surface);
   border: 1px solid var(--color-border-default);
+  font-family: var(--typography-font-family-default);
   font-size: var(--font-size-xs);
+  line-height: var(--line-height-xs);
 }
 
 .tly-sheet caption {
@@ -222,14 +224,20 @@
   vertical-align: top;
 }
 
+.tly-sheet td {
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-sm);
+}
+
 .tly-sheet thead th {
   border-color: var(--color-border-default);
   background: var(--color-background-elevated);
-  font-size: var(--font-size-xxs);
-  font-weight: var(--font-weight-bold);
+  font-family: var(--typography-font-family-default);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semi-bold);
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  text-align: left;
+  text-align: center;
   white-space: nowrap;
 }
 
@@ -369,7 +377,7 @@
 .je-side {
   margin-left: auto;
   padding-left: var(--space-2);
-  font-size: var(--font-size-xxs);
+  font-size: var(--font-size-xs);
   font-weight: var(--font-weight-bold);
   letter-spacing: 0.04em;
   color: var(--color-text-caption);

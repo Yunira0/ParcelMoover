@@ -26,6 +26,7 @@ import './App.css'
 
 const DashboardRouter = lazy(() => import('./pages/DashboardRouter'))
 const OverviewOrdersPage = lazy(() => import('./pages/OverviewOrdersPage'))
+const MerchantOverview = lazy(() => import('./pages/MerchantOverview'))
 const CodSettlementDetailPage = lazy(() => import('./pages/CodSettlementDetailPage'))
 const OrdersRouter = lazy(() => import('./pages/OrdersRouter'))
 const CreateOrderPage = lazy(() => import('./pages/CreateOrderPage'))
@@ -129,6 +130,12 @@ function App() {
           <Route
             path="/overview/:metric"
             element={<RoleGuard allowedRoles={['super_admin', 'admin']}><OverviewOrdersPage /></RoleGuard>}
+          />
+          {/* Per-merchant read of the orders list: the ten roll-up figures plus
+              the waybill table, scoped by a merchant picker and date range. */}
+          <Route
+            path="/merchant-overview"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']}><MerchantOverview /></RoleGuard>}
           />
           {/* Drill-down behind a line of the COD Settlement card. Same audience
               as the card itself (Dashboard.tsx), which DashboardRouter shows to

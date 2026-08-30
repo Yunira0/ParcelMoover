@@ -17,6 +17,7 @@ import KycRoutes from "./routes/kyc.routes"
 import LocationRoutes from "./routes/location.routes"
 import PricingRoutes from "./routes/pricing.routes"
 import SlaRoutes from "./routes/sla.routes"
+import VendorVolumeRoutes from "./routes/vendorVolume.routes"
 import PickupTimeSlotsRoutes from "./routes/pickupTimeSlots.routes"
 import PaymentMethodRoutes from "./routes/payment-method.routes"
 import NcmRoutes from "./routes/ncm.routes"
@@ -167,6 +168,8 @@ app.use("/api/locations", LocationRoutes)
 app.use("/api/pricing", PricingRoutes)
 
 app.use("/api/sla", SlaRoutes)
+
+app.use("/api/vendor-volume", VendorVolumeRoutes)
 
 app.use("/api/pickup-time-slots", PickupTimeSlotsRoutes)
 app.use("/api/payment-methods", PaymentMethodRoutes)

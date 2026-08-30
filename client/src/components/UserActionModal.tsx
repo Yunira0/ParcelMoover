@@ -169,14 +169,14 @@ const UserActionModal: React.FC<UserActionModalProps> = ({
               {userType === 'vendor' ? (
                 <>
                   <FormField
-                    label="Client Name"
+                    label="Owner Name"
                     required
                     value={profileForm.clientName}
                     onChange={(value) => setProfileForm({ ...profileForm, clientName: value })}
                     error={fieldErrors.clientName}
                   />
                   <FormField
-                    label="Business Name"
+                    label="Vendor Name"
                     required
                     value={profileForm.businessName}
                     onChange={(value) => setProfileForm({ ...profileForm, businessName: value })}

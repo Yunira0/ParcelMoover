@@ -5,9 +5,9 @@ import {
   Copy,
   Download,
   Edit,
-  MoreVertical,
   Plus,
   Printer,
+  Repeat,
   RotateCcw,
   Search,
   Shuffle,
@@ -16,6 +16,8 @@ import {
 } from 'lucide-react';
 import RedirectOrderModal from '../components/RedirectOrderModal';
 import ConfirmDialog from '../components/ConfirmDialog';
+import '../components/Modal.css';
+import '../components/FormField.css';
 import Table from '../components/Table';
 import PageHeader from '../components/PageHeader';
 import Button from '../components/Button';
@@ -73,6 +75,16 @@ const REDIRECTABLE_STATUSES: ParcelStatus[] = [
   'hold',
   'failed_delivery',
   'follow_up',
+];
+
+// Mirrors OVERRIDE_EXCLUDED in OrderDetailPage.tsx — statuses whose transition
+// needs structured extra data (a rider pick, COD amounts, a destination hub)
+// keep their dedicated ops flows and are left out of the raw super_admin
+// override dropdown.
+const OVERRIDE_EXCLUDED: ParcelStatus[] = [
+  'rider_assigned',
+  'sent_for_delivery',
+  'partially_delivered',
 ];
 
 const STATUS_LABELS: Record<ParcelStatus, string> = {
@@ -298,7 +310,6 @@ const OrderManagement: React.FC = () => {
   });
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>(() => (searchParams.get('sortDir') === 'asc' ? 'asc' : 'desc'));
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [openActionId, setOpenActionId] = useState<string | null>(null);
   const [remarkPopupOrder, setRemarkPopupOrder] = useState<Order | null>(null);
   const [printWorking, setPrintWorking] = useState(false);
   const [filtersCollapsed, setFiltersCollapsed] = useState(
@@ -651,6 +662,42 @@ const OrderManagement: React.FC = () => {
   const [redirectSaving, setRedirectSaving] = useState(false);
   const [redirectError, setRedirectError] = useState('');
 
+  // super_admin only: force a parcel into any status from the list, ignoring
+  // the transition map (the server grants the same bypass to super_admin
+  // actors) — mirrors the override control on OrderDetailPage.tsx, just
+  // reachable from the row menu instead of a per-order visit.
+  const isSuperAdmin = getCurrentUserRoles().includes('super_admin');
+  const [statusEditOrder, setStatusEditOrder] = useState<Order | null>(null);
+  const [statusEditNewStatus, setStatusEditNewStatus] = useState<ParcelStatus | ''>('');
+  const [statusEditRemarks, setStatusEditRemarks] = useState('');
+  const [statusEditSaving, setStatusEditSaving] = useState(false);
+  const [statusEditError, setStatusEditError] = useState('');
+
+  const closeStatusEdit = () => {
+    if (statusEditSaving) return;
+    setStatusEditOrder(null);
+    setStatusEditNewStatus('');
+    setStatusEditRemarks('');
+    setStatusEditError('');
+  };
+
+  const handleStatusEditApply = async () => {
+    if (!statusEditOrder || !statusEditNewStatus || statusEditNewStatus === statusEditOrder.status) return;
+    setStatusEditSaving(true);
+    setStatusEditError('');
+    try {
+      await updateOrderStatus(statusEditOrder.id, statusEditNewStatus, statusEditRemarks.trim() || undefined);
+      setNotice(`Order ${statusEditOrder.trackingId} forced to ${STATUS_LABELS[statusEditNewStatus]}`);
+      closeStatusEdit();
+      loadOrders();
+      loadStatusCounts();
+    } catch (err) {
+      setStatusEditError(apiErrorMessage(err, 'Failed to update status'));
+    } finally {
+      setStatusEditSaving(false);
+    }
+  };
+
   const handleRedirect = async (data: {
     destinationLocationId: string;
     address: string;
@@ -795,7 +842,13 @@ const OrderManagement: React.FC = () => {
       width: '120px',
       className: 'created-cell',
     },
-    { header: 'ORIGIN', accessor: (order: Order) => (order.origin ? hubNameOnly(order.origin) : '-'), width: '150px' },
+    { header: 'ORIGIN', accessor: (order: Order) => (order.origin ? hubNameOnly(order.origin) : '-'), width: '100px' },
+    {
+      header: 'DESTINATION',
+      accessor: (order: Order) => <span title={order.destination || '-'}>{order.destination || '-'}</span>,
+      width: '130px',
+      className: 'destination-cell',
+    },
     {
       header: 'SENDER',
       accessor: (order: Order) => (
@@ -804,7 +857,7 @@ const OrderManagement: React.FC = () => {
           <small>{order.senderPhone}</small>
         </div>
       ),
-      width: '210px',
+      width: '180px',
     },
     {
       header: 'RECEIVER',
@@ -814,9 +867,8 @@ const OrderManagement: React.FC = () => {
           <small>{order.receiverPhone}</small>
         </div>
       ),
-      width: '210px',
+      width: '140px',
     },
-    { header: 'DESTINATION', accessor: (order: Order) => order.destination || '-', width: '150px' },
     {
       header: sortableHeader('FINANCE', 'codAmount'),
       accessor: (order: Order) => (
@@ -826,7 +878,7 @@ const OrderManagement: React.FC = () => {
           <span>Collected: {formatMoney(order.collectedAmount)}</span>
         </div>
       ),
-      width: '160px',
+      width: '130px',
     },
     { header: 'WEIGHT', accessor: (order: Order) => (order.weightKg ? `${order.weightKg} Kg` : '-'), width: '120px' },
     {
@@ -862,54 +914,78 @@ const OrderManagement: React.FC = () => {
     {
       header: 'ACTION',
       accessor: (order: Order) => (
-        <div className="actions-cell">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="row-action-btn"
-            onClick={() => setOpenActionId(value => value === order.id ? null : order.id)}
-            aria-label={`Open actions for ${order.trackingId}`}
-            aria-expanded={openActionId === order.id}
+        <div className="actions-cell row-action-menu-icons">
+          <button
+            type="button"
+            className="row-action-icon-only"
+            title="Edit"
+            aria-label="Edit"
+            onClick={() => openPrefilledModal(order, 'edit')}
           >
-            <MoreVertical size={16} />
-          </Button>
-          {openActionId === order.id && (
-            <div className="row-action-menu">
-              <button type="button" onClick={() => openPrefilledModal(order, 'edit')}>
-                <Edit size={14} /> Edit
-              </button>
-              <button type="button" onClick={() => openPrefilledModal(order, 'copy')}>
-                <Copy size={14} /> Copy Order
-              </button>
-              {canRedirect && REDIRECTABLE_STATUSES.includes(order.status) && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setOpenActionId(null);
-                    setRedirectError('');
-                    setRedirectOrderRow(order);
-                  }}
-                >
-                  <Shuffle size={14} /> Redirect
-                </button>
-              )}
-              {canRecoverFailed && isRecoverableFailure(order.status) && (
-                <button type="button" onClick={() => setRecoverOrder(order)}>
-                  <RotateCcw size={14} /> {FAILED_RECOVERY_LABEL[order.status]}
-                </button>
-              )}
-              {/* Cancelled only — mirrors the server, which refuses anything
-                  still moving through the pipeline (see moveOrderToTrash). */}
-              {canUseTrash && order.status === 'cancelled' && (
-                <button
-                  type="button"
-                  className="row-action-danger"
-                  onClick={() => { setOpenActionId(null); setTrashTarget(order); }}
-                >
-                  <Trash2 size={14} /> Move to trash
-                </button>
-              )}
-            </div>
+            <Edit size={14} />
+          </button>
+          <button
+            type="button"
+            className="row-action-icon-only"
+            title="Copy Order"
+            aria-label="Copy Order"
+            onClick={() => openPrefilledModal(order, 'copy')}
+          >
+            <Copy size={14} />
+          </button>
+          {canRedirect && REDIRECTABLE_STATUSES.includes(order.status) && (
+            <button
+              type="button"
+              className="row-action-icon-only"
+              title="Redirect"
+              aria-label="Redirect"
+              onClick={() => {
+                setRedirectError('');
+                setRedirectOrderRow(order);
+              }}
+            >
+              <Shuffle size={14} />
+            </button>
+          )}
+          {canRecoverFailed && isRecoverableFailure(order.status) && (
+            <button
+              type="button"
+              className="row-action-icon-only"
+              title={FAILED_RECOVERY_LABEL[order.status]}
+              aria-label={FAILED_RECOVERY_LABEL[order.status]}
+              onClick={() => setRecoverOrder(order)}
+            >
+              <RotateCcw size={14} />
+            </button>
+          )}
+          {isSuperAdmin && (
+            <button
+              type="button"
+              className="row-action-icon-only"
+              title="Status Edit"
+              aria-label="Status Edit"
+              onClick={() => {
+                setStatusEditNewStatus('');
+                setStatusEditRemarks('');
+                setStatusEditError('');
+                setStatusEditOrder(order);
+              }}
+            >
+              <Repeat size={14} />
+            </button>
+          )}
+          {/* Cancelled only — mirrors the server, which refuses anything
+              still moving through the pipeline (see moveOrderToTrash). */}
+          {canUseTrash && order.status === 'cancelled' && (
+            <button
+              type="button"
+              className="row-action-icon-only row-action-danger"
+              title="Move to trash"
+              aria-label="Move to trash"
+              onClick={() => setTrashTarget(order)}
+            >
+              <Trash2 size={14} />
+            </button>
           )}
         </div>
       ),
@@ -1176,6 +1252,63 @@ const OrderManagement: React.FC = () => {
           onClose={() => setRedirectOrderRow(null)}
           onConfirm={handleRedirect}
         />
+      )}
+
+      {statusEditOrder && (
+        <div className="modal-overlay" onClick={closeStatusEdit}>
+          <div
+            className="modal-content status-edit-modal"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+          >
+            <div className="modal-header">
+              <h2>Status Edit — {statusEditOrder.trackingId}</h2>
+              <Button variant="ghost" size="icon" className="modal-close-btn" onClick={closeStatusEdit} type="button">
+                <X size={16} />
+              </Button>
+            </div>
+            <div className="form-group">
+              <label htmlFor="status-edit-select">New status</label>
+              <select
+                id="status-edit-select"
+                value={statusEditNewStatus}
+                onChange={(e) => setStatusEditNewStatus(e.target.value as ParcelStatus | '')}
+                disabled={statusEditSaving}
+              >
+                <option value="">Select new status...</option>
+                {(Object.keys(STATUS_LABELS) as ParcelStatus[])
+                  .filter((s) => s !== statusEditOrder.status && !OVERRIDE_EXCLUDED.includes(s))
+                  .map((s) => (
+                    <option key={s} value={s}>{STATUS_LABELS[s]}</option>
+                  ))}
+              </select>
+            </div>
+            <div className="form-group" style={{ marginTop: 'var(--space-3)' }}>
+              <label htmlFor="status-edit-remarks">Remarks (optional)</label>
+              <input
+                id="status-edit-remarks"
+                type="text"
+                value={statusEditRemarks}
+                onChange={(e) => setStatusEditRemarks(e.target.value)}
+                disabled={statusEditSaving}
+              />
+            </div>
+            {statusEditError && <p className="error-text">{statusEditError}</p>}
+            <div className="modal-footer">
+              <Button variant="secondary" onClick={closeStatusEdit} disabled={statusEditSaving}>
+                Cancel
+              </Button>
+              <Button
+                variant="danger"
+                onClick={handleStatusEditApply}
+                disabled={statusEditSaving || !statusEditNewStatus}
+              >
+                {statusEditSaving ? 'Applying...' : 'Apply'}
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
 
       <ConfirmDialog

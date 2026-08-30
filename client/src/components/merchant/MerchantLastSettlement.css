@@ -1,0 +1,60 @@
+.merchant-settlement-card {
+  background-color: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-modal);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  width: 100%;
+  max-width: 320px;
+  box-sizing: border-box;
+}
+
+.merchant-settlement-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+}
+
+.merchant-settlement-header h3 {
+  color: var(--color-text-default);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-bold);
+  margin: 0;
+}
+
+.merchant-settlement-body {
+  display: flex;
+  flex-direction: column;
+}
+
+.merchant-settlement-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: var(--space-2) 0;
+}
+
+.merchant-settlement-label {
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-regular);
+  color: var(--color-text-default);
+}
+
+.merchant-settlement-value-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.merchant-settlement-value {
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-default);
+}
+
+.merchant-settlement-date {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-caption);
+}

@@ -1,0 +1,255 @@
+/* Merchant Overview — same design system as Orders page (.order-management-container + .orders-table) */
+
+.merchant-overview-page {
+  min-width: 0;
+  gap: var(--space-6);
+}
+
+.vendor-overview-count {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-caption);
+  font-weight: var(--font-weight-medium);
+}
+
+/* ── Toolbar — minimal, like Order page, download pinned to far right ─ */
+.merchant-overview-page .order-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  width: 100%;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  box-shadow: none;
+}
+
+.merchant-overview-page .order-toolbar-right {
+  margin-left: auto;
+}
+
+.merchant-overview-page .order-toolbar-right .btn {
+  min-width: 148px;
+  justify-content: center;
+}
+
+/* ── Scroll shell — same contract as Table.css / OrderManagement ───── */
+.merchant-overview-page .table-container {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: visible;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border-default) transparent;
+}
+
+.merchant-overview-page .table-container::-webkit-scrollbar {
+  height: 6px;
+}
+
+.merchant-overview-page .table-container::-webkit-scrollbar-thumb {
+  background: var(--color-border-default);
+  border-radius: var(--border-radius-full);
+}
+
+.merchant-overview-page .table-container::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ── Table — do NOT force fixed layout here; Table.tsx sets tableLayout:fixed when minWidth is passed, identical to Orders. ── */
+.merchant-overview-table {
+  border-collapse: collapse;
+}
+
+/* Mirror Orders page header/cell metrics so the two tables read as one. */
+.merchant-overview-table th {
+  height: 40px;
+  padding: 0 var(--space-1);
+}
+
+.merchant-overview-table td {
+  min-height: 44px;
+  padding: var(--space-2) var(--space-1);
+}
+
+/* Checkbox column — compact, centered, never stretched */
+.merchant-overview-table th.checkbox-column,
+.merchant-overview-table td.checkbox-column {
+  width: 52px;
+  min-width: 52px;
+  max-width: 52px;
+  padding-left: var(--space-2);
+  padding-right: var(--space-2);
+  text-align: center;
+  white-space: nowrap;
+}
+
+/* ── Per-cell layout — same patterns as OrderManagement.css ─────────── */
+
+/* ORDER ID */
+.merchant-overview-table .merchant-order-id-cell,
+.merchant-overview-table .merchant-order-id {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--font-weight-semi-bold);
+}
+
+/* TRACKING — link truncates, never collides with date column. */
+.merchant-overview-table .tracking-cell {
+  color: var(--color-text-primary);
+}
+
+.merchant-overview-table .tracking-cell .tracking-id-link {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+  font-weight: var(--font-weight-semi-bold);
+  color: inherit;
+  text-decoration: none;
+}
+
+.merchant-overview-table .tracking-cell .tracking-id-link:hover {
+  text-decoration: underline;
+}
+
+/* CREATED DATE — tabular figures, never wraps mid-date */
+.merchant-overview-table .merchant-created-cell,
+.merchant-overview-table .created-cell {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ORIGIN / DESTINATION — single-line ellipsis, full text on hover via title */
+.merchant-overview-table .merchant-origin-text,
+.merchant-overview-table .merchant-destination-text {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.merchant-overview-table .destination-cell {
+  padding-right: var(--space-4);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* SENDER / RECEIVER — same stacked pattern as Orders .party-cell */
+.merchant-overview-table .merchant-party-cell {
+  vertical-align: middle;
+}
+
+.merchant-overview-table .merchant-party-cell .party-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  width: 100%;
+  overflow: hidden;
+}
+
+.merchant-overview-table .merchant-party-cell .party-cell span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+  font-weight: var(--font-weight-medium);
+  line-height: var(--line-height-sm);
+  min-width: 0;
+}
+
+.merchant-overview-table .merchant-party-cell .party-cell small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+  color: var(--color-text-caption);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semi-bold);
+  line-height: var(--line-height-xs);
+  min-width: 0;
+}
+
+/* FINANCE — 3-row vertical stack, same as Orders .finance-cell */
+.merchant-overview-table .merchant-finance-cell {
+  vertical-align: middle;
+}
+
+.merchant-overview-table .merchant-finance-cell .finance-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  width: 100%;
+  overflow: hidden;
+}
+
+.merchant-overview-table .merchant-finance-cell .finance-cell span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  line-height: var(--line-height-xs);
+  min-width: 0;
+  color: var(--color-text-default);
+}
+
+.merchant-overview-table .merchant-finance-cell .finance-cell span:nth-child(2) {
+  color: var(--color-text-caption);
+}
+
+/* WEIGHT — single line, tabular */
+.merchant-overview-table .merchant-weight-cell,
+.merchant-overview-table .merchant-weight-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
+}
+
+/* STATUS — chip never wraps, cell truncates safely */
+.merchant-overview-table .merchant-status-cell {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.merchant-overview-table .merchant-status-cell .status-chip {
+  display: inline-flex;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+/* Row states — matches Orders */
+.merchant-overview-table tbody tr:hover td {
+  background-color: var(--color-background-canvas);
+}
+
+.merchant-overview-table tbody tr.selected-row td {
+  background: var(--color-background-primary-invert-default);
+}
+
+/* Empty state */
+.merchant-overview-table .table-empty-cell {
+  white-space: normal;
+  word-break: break-word;
+  text-align: center;
+}

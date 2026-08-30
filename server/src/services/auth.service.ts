@@ -1286,18 +1286,28 @@ export async function getCurrentUserProfile(userId: string) {
   // vendor they belong to (no direct relation, so look it up).
   let hubId = user.admins?.location_id ?? user.vendors?.location_id ?? null;
   let hubName = user.admins?.locations?.name ?? user.vendors?.locations?.name ?? null;
-  if (!hubId && user.vendor_staff?.vendor_id) {
+  // The vendor's registered company name - shown as the account's display
+  // name on the vendor's own profile in place of the owner's personal
+  // full_name (which stays untouched, since it's what the rest of the app's
+  // "welcome" greeting still reads). Staff have no `vendors` row of their
+  // own, so it's looked up the same way as their hub.
+  let businessName: string | null = user.vendors?.business_name ?? null;
+  if (user.vendor_staff?.vendor_id && (!hubId || !businessName)) {
     const staffVendor = await prisma.vendors.findUnique({
       where: { id: user.vendor_staff.vendor_id },
       include: { locations: true },
     });
-    hubId = staffVendor?.location_id ?? null;
-    hubName = staffVendor?.locations?.name ?? null;
+    if (!hubId) {
+      hubId = staffVendor?.location_id ?? null;
+      hubName = staffVendor?.locations?.name ?? null;
+    }
+    businessName = businessName ?? staffVendor?.business_name ?? null;
   }
 
   return {
     id: user.id,
     fullName: user.full_name,
+    businessName,
     email: user.email,
     phone: user.phone,
     status: user.status,
