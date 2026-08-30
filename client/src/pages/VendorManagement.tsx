@@ -6,7 +6,7 @@ import { toBsDate } from '../utils/nepaliDate';
 import UserActionModal from '../components/UserActionModal';
 import PageHeader from '../components/PageHeader';
 import Pagination from '../components/Pagination';
-import SegmentedTabs from '../components/SegmentedTabs';
+import SegmentedTabs, { type SegmentedTabOption } from '../components/SegmentedTabs';
 import StatusChip from '../components/StatusChip';
 import ToggleSwitch from '../components/ToggleSwitch';
 import Button from '../components/Button';
@@ -41,6 +41,7 @@ interface VendorUser {
 // Starting rows-per-page. The selector below the table can change it; the
 // server caps any value at 100 (auth.controller LIST_MAX_PAGE_SIZE).
 const PAGE_SIZE = 20;
+type VendorManagementView = 'vendors' | 'kyc' | 'volume-limit';
 
 // The vendor's registered company - what identifies them everywhere on this
 // page now, in place of the owner's personal client name. Falls back to the
@@ -66,18 +67,21 @@ const VendorManagement: React.FC = () => {
   // knob, not a day-to-day vendor-management action.
   const isSuperAdmin = hasAnyRole(['super_admin']);
   const [searchParams, setSearchParams] = useSearchParams();
-  const view: 'vendors' | 'kyc' | 'volume-limit' =
+  const view: VendorManagementView =
     canReviewKyc && searchParams.get('tab') === 'kyc'
       ? 'kyc'
       : isSuperAdmin && searchParams.get('tab') === 'volume-limit'
         ? 'volume-limit'
         : 'vendors';
-  const selectView = (next: 'vendors' | 'kyc' | 'volume-limit') => {
+  const selectView = (next: VendorManagementView) => {
     const params = new URLSearchParams(searchParams);
     if (next === 'vendors') params.delete('tab');
     else params.set('tab', next);
     setSearchParams(params, { replace: true });
   };
+  const viewOptions: SegmentedTabOption<VendorManagementView>[] = [{ value: 'vendors', label: 'Vendors' }];
+  if (canReviewKyc) viewOptions.push({ value: 'kyc', label: 'KYC Applications' });
+  if (isSuperAdmin) viewOptions.push({ value: 'volume-limit', label: 'Volume Limit' });
   const [filter, setFilter] = useState<'all' | 'high-volume'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [activeStatus, setActiveStatus] = useState('all');
@@ -277,11 +281,7 @@ const VendorManagement: React.FC = () => {
             fullWidth={false}
             value={view}
             onChange={selectView}
-            options={[
-              { value: 'vendors', label: 'Vendors' },
-              ...(canReviewKyc ? [{ value: 'kyc', label: 'KYC Applications' }] : []),
-              ...(isSuperAdmin ? [{ value: 'volume-limit', label: 'Volume Limit' }] : []),
-            ]}
+            options={viewOptions}
           />
         </div>
       )}

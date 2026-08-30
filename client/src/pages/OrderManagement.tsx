@@ -720,7 +720,6 @@ const OrderManagement: React.FC = () => {
   };
 
   const openPrefilledModal = (order: Order, mode: 'copy' | 'edit') => {
-    setOpenActionId(null);
     navigate('/orders/create', {
       state: {
         initialData: orderToCreateInput(order),
