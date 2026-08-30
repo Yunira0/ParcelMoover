@@ -11,6 +11,7 @@ import StatusChip from '../components/StatusChip';
 import ToggleSwitch from '../components/ToggleSwitch';
 import Button from '../components/Button';
 import UserDocumentsModal from '../components/UserDocumentsModal';
+import VendorVolumeLimitPanel from '../components/vendor/VendorVolumeLimitPanel';
 import KycManagement from './KycManagement';
 import { getVendors, updateUserStatus } from '../services/users.service';
 import { isAdminSide, isSalesUser, hasAnyRole, getCurrentUser, hasAdminPermission } from '../utils/auth';
@@ -61,13 +62,20 @@ const VendorManagement: React.FC = () => {
   // KYC is the application a vendor account starts life as, so it lives here
   // as a second view rather than as a section of its own. Sales never sees it.
   const canReviewKyc = hasAdminPermission('KYC_ACCESS');
+  // Only super admin sets the "High volume vendor" threshold - it's a policy
+  // knob, not a day-to-day vendor-management action.
+  const isSuperAdmin = hasAnyRole(['super_admin']);
   const [searchParams, setSearchParams] = useSearchParams();
-  const view: 'vendors' | 'kyc' =
-    canReviewKyc && searchParams.get('tab') === 'kyc' ? 'kyc' : 'vendors';
-  const selectView = (next: 'vendors' | 'kyc') => {
+  const view: 'vendors' | 'kyc' | 'volume-limit' =
+    canReviewKyc && searchParams.get('tab') === 'kyc'
+      ? 'kyc'
+      : isSuperAdmin && searchParams.get('tab') === 'volume-limit'
+        ? 'volume-limit'
+        : 'vendors';
+  const selectView = (next: 'vendors' | 'kyc' | 'volume-limit') => {
     const params = new URLSearchParams(searchParams);
-    if (next === 'kyc') params.set('tab', 'kyc');
-    else params.delete('tab');
+    if (next === 'vendors') params.delete('tab');
+    else params.set('tab', next);
     setSearchParams(params, { replace: true });
   };
   const [filter, setFilter] = useState<'all' | 'high-volume'>('all');
@@ -253,14 +261,16 @@ const VendorManagement: React.FC = () => {
         subtitle={
           view === 'kyc'
             ? 'Review and approve vendor onboarding applications.'
-            : 'Oversee client accounts, delivery statistics, and financial tracking.'
+            : view === 'volume-limit'
+              ? 'Set the daily parcel threshold that flags a vendor as high volume.'
+              : 'Oversee client accounts, delivery statistics, and financial tracking.'
         }
         actionLabel={canCreate && view === 'vendors' ? 'Add new' : undefined}
         actionIcon={canCreate && view === 'vendors' ? <Plus size={16} /> : undefined}
         onAction={canCreate && view === 'vendors' ? () => navigate('/vendors/new') : undefined}
       />
 
-      {canReviewKyc && (
+      {(canReviewKyc || isSuperAdmin) && (
         <div className="vendor-views">
           <SegmentedTabs
             ariaLabel="Vendor management view"
@@ -269,13 +279,16 @@ const VendorManagement: React.FC = () => {
             onChange={selectView}
             options={[
               { value: 'vendors', label: 'Vendors' },
-              { value: 'kyc', label: 'KYC Applications' },
+              ...(canReviewKyc ? [{ value: 'kyc', label: 'KYC Applications' }] : []),
+              ...(isSuperAdmin ? [{ value: 'volume-limit', label: 'Volume Limit' }] : []),
             ]}
           />
         </div>
       )}
 
-      {view === 'kyc' ? (
+      {view === 'volume-limit' ? (
+        <VendorVolumeLimitPanel />
+      ) : view === 'kyc' ? (
         <KycManagement embedded />
       ) : (
       <>

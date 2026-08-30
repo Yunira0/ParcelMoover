@@ -1,0 +1,137 @@
+.vendor-cards-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.vendor-cards {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  background-color: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-modal);
+  padding: var(--space-5) var(--space-3);
+  row-gap: var(--space-4);
+  column-gap: 0;
+}
+
+/* ── Card — matches dashboard OverviewMetrics / Order page neutral card ─ */
+.vendor-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: 0 var(--space-5);
+  border-left: 1px solid var(--color-border-default);
+  min-width: 0;
+  background: none;
+  border-top: none;
+  border-bottom: none;
+  border-right: none;
+  border-radius: 0;
+  box-sizing: border-box;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  transition: background-color 0.15s ease-out;
+}
+
+.vendor-card:first-child {
+  border-left: none;
+}
+
+.vendor-card:hover {
+  background-color: var(--color-primary-subtle);
+}
+
+.vendor-card:hover .vendor-card-top {
+  color: var(--color-primary);
+}
+
+.vendor-card:hover .vendor-card-value {
+  color: var(--color-primary);
+}
+
+.vendor-card:hover .vendor-card-hint {
+  color: var(--color-primary);
+  opacity: 0.75;
+}
+
+.vendor-card:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+  border-radius: var(--border-radius-default);
+}
+
+/* ── Active state — primary accent ───── */
+.vendor-card-active {
+  background-color: var(--color-primary-subtle);
+}
+
+.vendor-card-active:hover {
+  background-color: var(--color-primary-subtle);
+}
+
+.vendor-card-active .vendor-card-label,
+.vendor-card-active .vendor-card-value,
+.vendor-card-active .vendor-card-hint,
+.vendor-card-active .vendor-card-top {
+  color: var(--color-primary);
+}
+
+/* ── Top row: icon + label ─────────────────────────────────────────── */
+.vendor-card-top {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  color: var(--color-text-caption);
+  font-size: var(--font-size-xs);
+}
+
+.vendor-card-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Value (large, matches dashboard) ──────────────────────────────── */
+.vendor-card-value {
+  font-size: var(--font-size-3xl);
+  font-weight: var(--font-weight-bold);
+  letter-spacing: -0.02em;
+  color: var(--color-text-default);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+/* ── Hint (rupee amount) ───────────────────────────────────────────── */
+.vendor-card-hint {
+  color: var(--color-text-caption);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-regular);
+  line-height: var(--line-height-xs);
+}
+
+/* ── Motion ────────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .vendor-card {
+    transition: none;
+  }
+}
+
+/* ── Responsive — drop dividers on wrapped rows ────────────────────── */
+@media (max-width: 1100px) {
+  .vendor-cards {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--space-5) 0;
+  }
+  .vendor-card {
+    border-left: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .vendor-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

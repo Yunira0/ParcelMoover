@@ -35,6 +35,7 @@ import {
   CreditCard,
   FileText,
   Wrench,
+  Gauge,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { getCurrentUserRoles, hasAdminPermission, isAdminSide } from '../utils/auth';
@@ -360,6 +361,7 @@ const AdminSidebar: React.FC<{ isSuperAdmin: boolean }> = ({ isSuperAdmin }) => 
       <div className="sidebar-nav">
         <SidebarItem to="/dashboard" icon={LayoutDashboard} label="Dashboard" />
         <SidebarItem to="/orders" icon={Package} label="Orders" />
+        <SidebarItem to="/merchant-overview" icon={Gauge} label="Vendor Overview" />
 
         <SidebarSection label="Management" />
         {/* Three peers in one column. KYC used to be a fourth entry here; it is

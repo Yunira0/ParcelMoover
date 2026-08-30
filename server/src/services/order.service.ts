@@ -1870,6 +1870,37 @@ function buildOrdersWhere(
     }
   }
 
+  // Merchant overview settlement filter — authentic: only parcels that are
+  // linked via settlement_items to a settled vendor settlement count as
+  // deposited. Pending = delivered not in any settled settlement.
+  // This filters out empty settlements (e.g. STL-2024-001 with 0 items).
+  if ((query as any).settlement === "settled") {
+    conditions.push({
+      cod_collections: {
+        settlement_items: {
+          some: {
+            settlements: { status: "settled", payee_type: "vendor" },
+          },
+        },
+      },
+    });
+  } else if ((query as any).settlement === "pending") {
+    conditions.push({
+      OR: [
+        { cod_collections: null },
+        {
+          cod_collections: {
+            settlement_items: {
+              none: {
+                settlements: { status: "settled", payee_type: "vendor" },
+              },
+            },
+          },
+        },
+      ],
+    });
+  }
+
   return { AND: conditions };
 }
 
@@ -5937,4 +5968,247 @@ export async function sweepCancelledOrdersToTrash(): Promise<{ checked: number; 
     );
   }
   return { checked: candidates.length, trashed: result };
+}
+
+// ─── Merchant Overview ──────────────────────────────────────────────────────
+// Server-side aggregation for the Merchant Overview stats cards. Replaces the
+// client-side 5 000-order walk with a single SQL query that joins parcels,
+// cod_collections, and settlements so every figure is exact and up-to-date.
+
+export interface MerchantOverviewMetric {
+  count: number;
+  amount: number;
+}
+
+export interface MerchantOverviewResult {
+  metrics: {
+    totalOrders: MerchantOverviewMetric;
+    pendingOrders: MerchantOverviewMetric;
+    totalDelivered: MerchantOverviewMetric;
+    returnProcessing: MerchantOverviewMetric;
+    returnDelivered: MerchantOverviewMetric;
+    holdOrder: MerchantOverviewMetric;
+    cancelledOrders: MerchantOverviewMetric;
+    deliveryCharge: MerchantOverviewMetric;
+    deposited: MerchantOverviewMetric;
+    pendingDeposit: MerchantOverviewMetric;
+  };
+  codSettlement: {
+    lastAmount: number;
+    lastSettledAt: string | null;
+  };
+}
+
+export async function getMerchantOverview(
+  vendorId?: string,
+  dateFrom?: string,
+  dateTo?: string,
+): Promise<MerchantOverviewResult> {
+  const vendorCondition = vendorId
+    ? Prisma.sql`AND p.vendor_id = ${vendorId}::uuid`
+    : Prisma.empty;
+
+  const dateConditions: Prisma.Sql[] = [];
+  if (dateFrom) {
+    const from = new Date(`${dateFrom}T00:00:00+05:45`);
+    dateConditions.push(Prisma.sql`p.created_at >= ${from}`);
+  }
+  if (dateTo) {
+    const toDate = new Date(`${dateTo}T00:00:00+05:45`);
+    toDate.setDate(toDate.getDate() + 1);
+    dateConditions.push(Prisma.sql`p.created_at < ${toDate}`);
+  }
+  const dateFilter = dateConditions.length
+    ? Prisma.sql`AND ${Prisma.join(dateConditions, ' AND ')}`
+    : Prisma.empty;
+
+  const rows = await prisma.$queryRaw<
+    {
+      total_count: bigint;
+      total_cod: string;
+      pending_count: bigint;
+      pending_cod: string;
+      delivered_count: bigint;
+      delivered_collected: string;
+      return_processing_count: bigint;
+      return_processing_cod: string;
+      return_delivered_count: bigint;
+      return_delivered_cod: string;
+      hold_count: bigint;
+      hold_cod: string;
+      cancelled_count: bigint;
+      cancelled_cod: string;
+      delivery_charge_sum: string;
+    }[]
+  >`
+    SELECT
+      COUNT(*)::bigint                                                        AS total_count,
+      COALESCE(SUM(p.cod_amount), 0)::text                                   AS total_cod,
+
+      COUNT(*) FILTER (
+        WHERE p.status IN (
+          'pickup_ordered','rider_assigned','picked_up','arrived',
+          'oov','dispatched','arrived_at_branch','ready_to_deliver',
+          'sent_for_delivery','failed_pickup','failed_delivery','loss_and_damage'
+        )
+      )::bigint                                                               AS pending_count,
+      COALESCE(SUM(p.cod_amount) FILTER (
+        WHERE p.status IN (
+          'pickup_ordered','rider_assigned','picked_up','arrived',
+          'oov','dispatched','arrived_at_branch','ready_to_deliver',
+          'sent_for_delivery','failed_pickup','failed_delivery','loss_and_damage'
+        )
+      ), 0)::text                                                             AS pending_cod,
+
+      COUNT(*) FILTER (
+        WHERE p.status IN ('delivered','partially_delivered')
+      )::bigint                                                               AS delivered_count,
+      COALESCE(SUM(COALESCE(cc.collected_amount, 0)) FILTER (
+        WHERE p.status IN ('delivered','partially_delivered')
+      ), 0)::text                                                             AS delivered_collected,
+
+      COUNT(*) FILTER (
+        WHERE p.status IN ('follow_up','ready_to_return','sent_to_vendor')
+      )::bigint                                                               AS return_processing_count,
+      COALESCE(SUM(p.cod_amount) FILTER (
+        WHERE p.status IN ('follow_up','ready_to_return','sent_to_vendor')
+      ), 0)::text                                                             AS return_processing_cod,
+
+      COUNT(*) FILTER (
+        WHERE p.status = 'returned_to_vendor'
+      )::bigint                                                               AS return_delivered_count,
+      COALESCE(SUM(p.cod_amount) FILTER (
+        WHERE p.status = 'returned_to_vendor'
+      ), 0)::text                                                             AS return_delivered_cod,
+
+      COUNT(*) FILTER (
+        WHERE p.status = 'hold'
+      )::bigint                                                               AS hold_count,
+      COALESCE(SUM(p.cod_amount) FILTER (
+        WHERE p.status = 'hold'
+      ), 0)::text                                                             AS hold_cod,
+
+      COUNT(*) FILTER (
+        WHERE p.status = 'cancelled'
+      )::bigint                                                               AS cancelled_count,
+      COALESCE(SUM(p.cod_amount) FILTER (
+        WHERE p.status = 'cancelled'
+      ), 0)::text                                                             AS cancelled_cod,
+
+      COALESCE(SUM(p.delivery_charge) FILTER (
+        WHERE p.status IN ('delivered','partially_delivered')
+      ), 0)::text                                                             AS delivery_charge_sum
+
+    FROM parcels p
+    LEFT JOIN cod_collections cc ON cc.parcel_id = p.id
+    WHERE p.deleted_at IS NULL
+      ${vendorCondition}
+      ${dateFilter}
+  `;
+
+  // Authentic settlement aggregation — only settlements with at least one
+  // settlement_items (i.e. an order attached) count. Deposited = delivered
+  // parcels that are linked to a settled vendor settlement via
+  // parcels → cod_collections → settlement_items → settlements.
+  // Pending = delivered parcels not yet linked to a settled settlement.
+  // This filters out the empty STL-2024-001 style settlements and ensures
+  // money is from real COD collections.
+  const depositedVendorCondition = vendorId
+    ? Prisma.sql`AND p.vendor_id = ${vendorId}::uuid`
+    : Prisma.empty;
+  // Use same date window as parcels (created_at) for both deposited/pending
+  const depositedDateFilter = dateFilter;
+
+  const [lastSettlement, depositedRows, pendingRows] = await Promise.all([
+    // Last settled with at least one item (authentic)
+    prisma.$queryRaw<{ payable_amount: string | null; amount: string; created_at: Date }[]>`
+      SELECT s.payable_amount::text, s.amount::text, s.created_at
+      FROM settlements s
+      WHERE s.payee_type = 'vendor' AND s.status = 'settled'
+        ${vendorId ? Prisma.sql`AND s.vendor_id = ${vendorId}::uuid` : Prisma.empty}
+        AND EXISTS (SELECT 1 FROM settlement_items si WHERE si.settlement_id = s.id)
+      ORDER BY s.settlement_date DESC, s.created_at DESC
+      LIMIT 1
+    `.then(r => r[0] as any ?? null),
+    // Deposited: delivered parcels that ARE in a settled settlement
+    prisma.$queryRaw<{ cnt: bigint; total: string }[]>`
+      SELECT
+        COUNT(DISTINCT p.id)::bigint AS cnt,
+        COALESCE(SUM(si.amount), 0)::text AS total
+      FROM parcels p
+      JOIN cod_collections cc ON cc.parcel_id = p.id
+      JOIN settlement_items si ON si.cod_collection_id = cc.id
+      JOIN settlements s ON s.id = si.settlement_id AND s.status = 'settled' AND s.payee_type = 'vendor'
+      WHERE p.deleted_at IS NULL
+        AND p.status IN ('delivered','partially_delivered')
+        ${depositedVendorCondition}
+        ${depositedDateFilter}
+    `,
+    // Pending: delivered parcels that are NOT in any settled settlement
+    prisma.$queryRaw<{ cnt: bigint; total: string }[]>`
+      SELECT
+        COUNT(*)::bigint AS cnt,
+        COALESCE(SUM(COALESCE(cc.collected_amount,0)), 0)::text AS total
+      FROM parcels p
+      LEFT JOIN cod_collections cc ON cc.parcel_id = p.id
+      WHERE p.deleted_at IS NULL
+        AND p.status IN ('delivered','partially_delivered')
+        ${depositedVendorCondition}
+        ${depositedDateFilter}
+        AND NOT EXISTS (
+          SELECT 1 FROM settlement_items si
+          JOIN settlements s ON s.id = si.settlement_id AND s.status='settled' AND s.payee_type='vendor'
+          WHERE si.cod_collection_id = cc.id
+        )
+    `,
+  ]);
+
+  const depositedCount = depositedRows[0] ? Number(depositedRows[0].cnt) : 0;
+  const depositedAmount = depositedRows[0] ? Number(depositedRows[0].total) : 0;
+  let pendingDepositCount = pendingRows[0] ? Number(pendingRows[0].cnt) : 0;
+  let pendingDepositAmount = pendingRows[0] ? Number(pendingRows[0].total) : 0;
+
+  const row = rows[0];
+  if (!row) {
+    return {
+      metrics: {
+        totalOrders: { count: 0, amount: 0 },
+        pendingOrders: { count: 0, amount: 0 },
+        totalDelivered: { count: 0, amount: 0 },
+        returnProcessing: { count: 0, amount: 0 },
+        returnDelivered: { count: 0, amount: 0 },
+        holdOrder: { count: 0, amount: 0 },
+        cancelledOrders: { count: 0, amount: 0 },
+        deliveryCharge: { count: 0, amount: 0 },
+        deposited: { count: depositedCount, amount: depositedAmount },
+        pendingDeposit: { count: pendingDepositCount, amount: pendingDepositAmount },
+      },
+      codSettlement: {
+        lastAmount: lastSettlement ? Number(lastSettlement.payable_amount ?? lastSettlement.amount) : 0,
+        lastSettledAt: lastSettlement ? lastSettlement.created_at.toISOString() : null,
+      },
+    };
+  }
+
+  const deliveredCount = Number(row.delivered_count);
+  const deliveredCollected = Number(row.delivered_collected);
+
+  return {
+    metrics: {
+      totalOrders: { count: Number(row.total_count), amount: Number(row.total_cod) },
+      pendingOrders: { count: Number(row.pending_count), amount: Number(row.pending_cod) },
+      totalDelivered: { count: deliveredCount, amount: deliveredCollected },
+      returnProcessing: { count: Number(row.return_processing_count), amount: Number(row.return_processing_cod) },
+      returnDelivered: { count: Number(row.return_delivered_count), amount: Number(row.return_delivered_cod) },
+      holdOrder: { count: Number(row.hold_count), amount: Number(row.hold_cod) },
+      cancelledOrders: { count: Number(row.cancelled_count), amount: Number(row.cancelled_cod) },
+      deliveryCharge: { count: deliveredCount, amount: Number(row.delivery_charge_sum) },
+      deposited: { count: depositedCount, amount: depositedAmount },
+      pendingDeposit: { count: pendingDepositCount, amount: pendingDepositAmount },
+    },
+    codSettlement: {
+      lastAmount: lastSettlement ? Number(lastSettlement.payable_amount ?? lastSettlement.amount) : 0,
+      lastSettledAt: lastSettlement ? lastSettlement.created_at.toISOString() : null,
+    },
+  };
 }

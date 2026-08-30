@@ -156,6 +156,8 @@ export interface ListOrdersParams {
   /** Inclusive Nepal-local day bounds, "YYYY-MM-DD". */
   dateFrom?: string;
   dateTo?: string;
+  /** Merchant overview settlement filter — settled = delivered parcels in a settled settlement, pending = delivered not yet settled */
+  settlement?: 'settled' | 'pending';
 }
 
 export interface OrdersPageMeta {
@@ -333,6 +335,7 @@ export const getOrders = async (params?: ListOrdersParams, signal?: AbortSignal)
   if (params?.dateField) query.dateField = params.dateField;
   if (params?.dateFrom) query.dateFrom = params.dateFrom;
   if (params?.dateTo) query.dateTo = params.dateTo;
+  if (params?.settlement) query.settlement = params.settlement;
 
   const response = await api.get('/orders', { params: query, signal });
   return response.data;

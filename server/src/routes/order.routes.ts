@@ -41,6 +41,7 @@ import {
   riderRunSheetController,
   updateOrderDetailsController,
   updateOrderStatusController,
+  merchantOverviewController,
 } from "../controllers/order.controller";
 import { csrfProtection } from "../middlewares/csrf.middleware";
 import { createRedisRateLimitStore } from "../lib/rateLimitStore";
@@ -232,6 +233,17 @@ orderRouter.get(
   orderReadLimiter,
   validate(trashedOrdersQuerySchema, "query"),
   listTrashedOrdersController,
+);
+
+// GET /orders/merchant-overview — server-side aggregated stats for the Merchant
+// Overview page. Scoped the same way as dashboard-summary.
+orderRouter.get(
+  "/merchant-overview",
+  authMiddleware,
+  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider", "sales"),
+  requireStaffPermission("DASHBOARD_ACCESS"),
+  orderReadLimiter,
+  merchantOverviewController,
 );
 
 orderRouter.get(

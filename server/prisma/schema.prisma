@@ -1031,6 +1031,16 @@ model sla_settings {
   updated_at DateTime @default(now()) @updatedAt @db.Timestamptz(6)
 }
 
+// Single row (enforced in code, not the DB) holding the daily-parcel
+// threshold behind the Vendor Management "High volume vendor" filter: a
+// vendor qualifies once any single calendar day's parcel count exceeds this.
+// Super admin only - see vendorVolume.service.ts.
+model vendor_volume_settings {
+  id                        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  high_volume_daily_parcels Int      @default(100)
+  updated_at                DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+}
+
 // Pickup windows vendors can choose from when raising a "pickup" support
 // ticket. start_minutes/end_minutes are minutes-since-midnight; the booking
 // cutoff (1hr before end) is derived, not stored.

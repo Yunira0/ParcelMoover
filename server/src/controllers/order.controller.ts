@@ -8,6 +8,7 @@ import {
   createOrder,
   getCodSettlementDetail,
   getDashboardSummary,
+  getMerchantOverview,
   getOrderByTrackingId,
   getOrderFilterOptions,
   getOrderCountsByStatus,
@@ -313,6 +314,9 @@ export async function listOrdersController(req: Request, res: Response) {
           : {}),
         ...(req.query.dateFrom ? { dateFrom: String(req.query.dateFrom) } : {}),
         ...(req.query.dateTo ? { dateTo: String(req.query.dateTo) } : {}),
+        ...(req.query.settlement
+          ? { settlement: String(req.query.settlement) as "settled" | "pending" }
+          : {}),
       },
     );
 
@@ -1029,6 +1033,29 @@ export async function getStatusCountsController(req: Request, res: Response) {
     return res.status(error.statusCode || 500).json({
       success: false,
       message: error.message || "Failed to load status counts",
+    });
+  }
+}
+
+// GET /orders/merchant-overview — server-side aggregated stats for the Merchant
+// Overview page. Accepts optional vendorId, dateFrom, dateTo query params.
+export async function merchantOverviewController(req: Request, res: Response) {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const vendorId = typeof req.query.vendorId === "string" ? req.query.vendorId : undefined;
+    const dateFrom = typeof req.query.dateFrom === "string" ? req.query.dateFrom : undefined;
+    const dateTo = typeof req.query.dateTo === "string" ? req.query.dateTo : undefined;
+
+    const summary = await getMerchantOverview(vendorId, dateFrom, dateTo);
+
+    return res.status(200).json({ success: true, data: summary });
+  } catch (error: any) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to load merchant overview",
     });
   }
 }

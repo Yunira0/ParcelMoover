@@ -260,6 +260,11 @@ export const listOrdersQuerySchema = paginationQuerySchema.extend({
   dateField: z.enum(["createdAt", "lastUpdatedAt"]).optional(),
   dateFrom: dayStringSchema,
   dateTo: dayStringSchema,
+  // Merchant overview settlement filter: deposited = delivered parcels that are
+  // in a settled vendor settlement (via settlement_items), pending = delivered
+  // parcels not yet in a settled settlement. Authentic — excludes settlements
+  // with no items (e.g. STL-2024-001).
+  settlement: z.enum(["settled", "pending"]).optional(),
 });
 
 export type ListOrdersQuery = z.infer<typeof listOrdersQuerySchema>;

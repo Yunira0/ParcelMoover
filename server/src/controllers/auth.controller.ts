@@ -11,6 +11,7 @@ import {
   getManagedUserDocuments,
   getRootSuperAdminUserId,
 } from "../services/auth.service";
+import { rankHighVolumeVendors } from "../services/vendorVolume.service";
 import { AppError } from "../utils/AppError";
 import { sendSuccess } from "../utils/ApiResponse";
 import jwt from "jsonwebtoken";
@@ -21,9 +22,6 @@ import { ACCESS_TOKEN_AUDIENCE, CSRF_TOKEN_AUDIENCE, JWT_ALGORITHM, JWT_ISSUER }
 import { flattenMulterFiles, secureUploadedFiles } from "../lib/secureUploadedFiles";
 
 const formatDate = (date?: Date | null) => date ? date.toISOString().slice(0, 10) : "";
-// What "High volume vendor" on the Vendor Management page means - more total
-// orders (any status, matching the ORDERS column) than this.
-const HIGH_VOLUME_ORDER_THRESHOLD = 100;
 const managedUserTypes = ["admin", "vendor", "rider"] as const;
 type ManagedUserType = typeof managedUserTypes[number];
 
@@ -461,29 +459,17 @@ export const getVendorsController = async (req: Request, res: Response) => {
     }
 
     // "High volume" isn't a column on vendors - it's derived from a count
-    // over parcels - so it can't join the where clause above like the other
-    // filters. Resolve it to a concrete set of vendor ids first, against
-    // every vendor the filters above already allow (not just one page of
-    // them), so pagination below counts and pages the filtered set correctly
-    // instead of re-filtering one already-paginated page client-side.
+    // over parcels, against a super-admin-configured threshold - so it can't
+    // join the where clause above like the other filters. Resolve it to a
+    // concrete, already-ranked set of vendor ids first, against every vendor
+    // the filters above already allow (not just one page of them), so
+    // pagination below counts and pages the filtered set correctly instead of
+    // re-filtering one already-paginated page client-side.
     const highVolumeFilter = req.query.highVolume === "true";
-    // Busiest vendor first when this filter is on - ranked by the same
-    // count that qualified them, so the id order here becomes the page
-    // order below rather than falling back to newest-registered-first.
     let highVolumeRank: string[] | null = null;
     if (highVolumeFilter) {
       const candidates = await prisma.vendors.findMany({ where, select: { id: true } });
-      const candidateIds = candidates.map((v) => v.id);
-      const ranked = candidateIds.length
-        ? await prisma.parcels.groupBy({
-            by: ["vendor_id"],
-            where: { vendor_id: { in: candidateIds }, deleted_at: null },
-            _count: { _all: true },
-            having: { id: { _count: { gt: HIGH_VOLUME_ORDER_THRESHOLD } } },
-            orderBy: { _count: { id: "desc" } },
-          })
-        : [];
-      highVolumeRank = ranked.map((row) => row.vendor_id as string);
+      highVolumeRank = await rankHighVolumeVendors(candidates.map((v) => v.id));
       where.id = { in: highVolumeRank };
     }
 
