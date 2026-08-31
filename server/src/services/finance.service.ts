@@ -196,8 +196,8 @@ function formatLocation(location?: { name: string } | null) {
 }
 
 function hubNameOnly(value: string): string {
-  // Billing details shows hub only before " - " (e.g. "KTM - Inside Valley" -> "KTM")
-  return (value.split(" - ")[0] ?? "").trim();
+  // Billing details destination: hub before " - " and without trailing " Branch" (e.g. "Pokhara Branch" -> "Pokhara", "KTM - Inside Valley" -> "KTM")
+  return (value.split(" - ")[0] ?? "").replace(/\s*Branch\s*$/i, "").trim();
 }
 
 export async function getPendingCodBill(actor: Actor, vendorIdParam?: string): Promise<PendingCodBill> {

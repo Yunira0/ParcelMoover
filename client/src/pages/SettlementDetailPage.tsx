@@ -27,7 +27,7 @@ import './vendor/VendorFinance.css';
 import './SettlementDetailPage.css';
 
 const money = (value: number) => `Rs. ${value.toLocaleString()}`;
-const hubNameOnly = (value: string) => ((value || '').split(' - ')[0] ?? '').trim();
+const hubNameOnly = (value: string) => ((value || '').split(' - ')[0] ?? '').replace(/\s*Branch\s*$/i, '').trim();
 
 function initials(name: string): string {
   return name
