@@ -26,6 +26,7 @@ const bannerReadLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   passOnStoreError: true,
+  validate: false,
   store: createRedisRateLimitStore("banner-read"),
   keyGenerator: actorOrIpKey,
 });
@@ -37,6 +38,7 @@ const bannerWriteLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   passOnStoreError: true,
+  validate: false,
   store: createRedisRateLimitStore("banner-write"),
   keyGenerator: actorOrIpKey,
 });

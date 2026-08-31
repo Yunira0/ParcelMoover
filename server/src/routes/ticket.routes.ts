@@ -26,6 +26,7 @@ const ticketsReadLimiter = rateLimit({
   legacyHeaders: false,
   // Fail open (skip limiting), not 500, if Redis is unreachable mid-request.
   passOnStoreError: true,
+  validate: false,
   store: createRedisRateLimitStore("tickets-read"),
   keyGenerator: actorOrIpKey,
 });
@@ -37,6 +38,7 @@ const createTicketLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   passOnStoreError: true,
+  validate: false,
   store: createRedisRateLimitStore("tickets-create"),
   keyGenerator: actorOrIpKey,
 });
@@ -48,6 +50,7 @@ const ticketsWriteLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   passOnStoreError: true,
+  validate: false,
   store: createRedisRateLimitStore("tickets-write"),
   keyGenerator: actorOrIpKey,
 });

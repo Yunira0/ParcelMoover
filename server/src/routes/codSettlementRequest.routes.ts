@@ -29,6 +29,7 @@ const readLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   passOnStoreError: true,
+  validate: false,
   store: createRedisRateLimitStore("cod-settlement-requests-read"),
   keyGenerator: actorOrIpKey,
 });
@@ -43,6 +44,7 @@ const createLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   passOnStoreError: true,
+  validate: false,
   store: createRedisRateLimitStore("cod-settlement-requests-create"),
   keyGenerator: actorOrIpKey,
 });
@@ -54,6 +56,7 @@ const writeLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   passOnStoreError: true,
+  validate: false,
   store: createRedisRateLimitStore("cod-settlement-requests-write"),
   keyGenerator: actorOrIpKey,
 });

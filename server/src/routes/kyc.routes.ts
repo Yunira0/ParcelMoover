@@ -24,6 +24,7 @@ const kycSubmitLimiter = rateLimit({
   legacyHeaders: false,
   // Fail open (skip limiting), not 500, if Redis is unreachable mid-request.
   passOnStoreError: true,
+  validate: false,
   store: createRedisRateLimitStore("kyc_submit"),
   keyGenerator: (req) => ipKeyGenerator(req.ip ?? "unknown"),
 });
@@ -38,6 +39,7 @@ const kycReviewLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   passOnStoreError: true,
+  validate: false,
   store: createRedisRateLimitStore("kyc-review"),
   keyGenerator: actorOrIpKey,
 });

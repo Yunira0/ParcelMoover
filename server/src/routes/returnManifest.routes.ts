@@ -35,6 +35,7 @@ const readLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   passOnStoreError: true,
+  validate: false,
   store: createRedisRateLimitStore("return-manifests-read"),
   keyGenerator: actorOrIpKey,
 });
@@ -46,6 +47,7 @@ const writeLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   passOnStoreError: true,
+  validate: false,
   store: createRedisRateLimitStore("return-manifests-write"),
   keyGenerator: actorOrIpKey,
 });
@@ -59,6 +61,7 @@ const actionLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   passOnStoreError: true,
+  validate: false,
   store: createRedisRateLimitStore("return-manifests-action"),
   keyGenerator: actorOrIpKey,
 });

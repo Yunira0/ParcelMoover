@@ -315,7 +315,6 @@ const OrderManagement: React.FC = () => {
   const [filtersCollapsed, setFiltersCollapsed] = useState(
     () => localStorage.getItem('order-filters-collapsed') === 'true',
   );
-  const [, setOpenActionId] = useState<string | null>(null);
 
   const toggleFiltersCollapsed = () => {
     setFiltersCollapsed(prev => {
