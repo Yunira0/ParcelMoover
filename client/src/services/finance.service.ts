@@ -324,6 +324,7 @@ export interface SettlementDetailItem {
   receiverName: string;
   receiverPhone: string;
   receiverAddress: string | null;
+  destination: string;
   vendorName: string | null;
   vendorPhone: string | null;
   orderType: string | null;

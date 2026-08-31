@@ -225,6 +225,7 @@ export interface SettlementDetailItem {
   receiverName: string;
   receiverPhone: string;
   receiverAddress: string | null;
+  destination: string;
   // Whose money this line is. Null for parcels booked without a vendor
   // (walk-in / direct orders). Mainly useful on rider statements, where
   // every line can belong to a different vendor.

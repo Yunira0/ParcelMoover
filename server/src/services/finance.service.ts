@@ -195,6 +195,11 @@ function formatLocation(location?: { name: string } | null) {
   return location?.name ?? "";
 }
 
+function hubNameOnly(value: string): string {
+  // Billing details shows hub only before " - " (e.g. "KTM - Inside Valley" -> "KTM")
+  return (value.split(" - ")[0] ?? "").trim();
+}
+
 export async function getPendingCodBill(actor: Actor, vendorIdParam?: string): Promise<PendingCodBill> {
   const vendor = await resolveVendor(actor, vendorIdParam);
 
@@ -1976,6 +1981,7 @@ export async function getSettlementDetail(actor: Actor, settlementId: string): P
       receiverName: parcel.parties_parcels_receiver_idToparties.name,
       receiverPhone: parcel.parties_parcels_receiver_idToparties.phone,
       receiverAddress: parcel.parties_parcels_receiver_idToparties.address,
+      destination: hubNameOnly(formatLocation(parcel.locations_parcels_destination_location_idTolocations)),
       // Same business_name-then-client_name fallback used for payeeName above.
       vendorName: parcel.vendors?.business_name || parcel.vendors?.client_name || null,
       vendorPhone: parcel.vendors?.phone ?? null,
