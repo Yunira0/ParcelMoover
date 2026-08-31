@@ -12,6 +12,7 @@ import {
   listNcmBranchesController,
   markNcmReturnController,
   ncmHandoffController,
+  ncmMatchPreviewController,
   ncmReconcileController,
   ncmWebhookController,
   registerNcmWebhookController,
@@ -65,6 +66,16 @@ ncmRouter.get(
   authorizeRoles("super_admin", "admin"),
   ncmReadLimiter,
   listNcmBranchesController,
+);
+
+// GET /api/ncm/match-preview — debug why a destination maps to a branch (or not)
+// e.g. /api/ncm/match-preview?destination=Jhiljhile&district=Jhapa  or  ?locationId=<uuid>
+ncmRouter.get(
+  "/match-preview",
+  authMiddleware,
+  authorizeRoles("super_admin", "admin"),
+  ncmReadLimiter,
+  ncmMatchPreviewController,
 );
 
 // POST /api/ncm/handoff — create NCM orders for oov parcels (OOV page "Via 3PL (NCM)").
