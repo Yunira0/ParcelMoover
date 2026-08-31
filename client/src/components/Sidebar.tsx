@@ -37,6 +37,7 @@ import {
   Wrench,
   Image,
   Megaphone,
+  Gauge,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { getCurrentUserRoles, hasAdminPermission, isAdminSide } from '../utils/auth';

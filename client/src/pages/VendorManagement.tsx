@@ -278,9 +278,9 @@ const VendorManagement: React.FC = () => {
             value={view}
             onChange={selectView}
             options={[
-              { value: 'vendors', label: 'Vendors' },
-              ...(canReviewKyc ? [{ value: 'kyc', label: 'KYC Applications' }] : []),
-              ...(isSuperAdmin ? [{ value: 'volume-limit', label: 'Volume Limit' }] : []),
+              { value: 'vendors' as const, label: 'Vendors' },
+              ...(canReviewKyc ? [{ value: 'kyc' as const, label: 'KYC Applications' }] : []),
+              ...(isSuperAdmin ? [{ value: 'volume-limit' as const, label: 'Volume Limit' }] : []),
             ]}
           />
         </div>
