@@ -104,8 +104,8 @@ const CodSettlementRequests: React.FC = () => {
   };
 
   const columns = [
-    { header: 'REQUEST', accessor: (r: CodSettlementRequest) => r.requestNo, width: '170px' },
-    { header: 'VENDOR', accessor: (r: CodSettlementRequest) => r.vendorName || '—' },
+    { header: 'REQUEST', accessor: (r: CodSettlementRequest) => r.requestNo, width: '140px' },
+    { header: 'VENDOR', accessor: (r: CodSettlementRequest) => r.vendorName || '—', width: '160px' },
     {
       header: 'PAYOUT ACCOUNT',
       accessor: (r: CodSettlementRequest) => (
@@ -115,33 +115,34 @@ const CodSettlementRequests: React.FC = () => {
           <span>{r.accountName}</span>
         </div>
       ),
+      width: '200px',
     },
     {
       // Snapshot, not a live figure — labelled so nobody pays out against it.
       header: 'BALANCE WHEN ASKED',
       accessor: (r: CodSettlementRequest) =>
         r.amountSnapshot === null ? '—' : `Rs ${r.amountSnapshot.toLocaleString()}`,
-      width: '150px',
+      width: '160px',
     },
     {
       header: 'STATUS',
       accessor: (r: CodSettlementRequest) => COD_REQUEST_STATUS_LABELS[r.status],
-      width: '120px',
+      width: '110px',
     },
-    { header: 'RAISED', accessor: (r: CodSettlementRequest) => r.createdAt.slice(0, 10), width: '120px' },
+    { header: 'RAISED', accessor: (r: CodSettlementRequest) => r.createdAt.slice(0, 10), width: '110px' },
     {
       header: 'ACTIONS',
       accessor: (r: CodSettlementRequest) =>
         isLiveCodRequest(r.status) ? (
           <div className="cod-request-actions">
             {/* The action this queue exists for, so it takes the brand
-                colour and Reject stays outlined beside it. Without a variant
-                it fell back to `secondary` and the two read as equal choices.
+                 colour and Reject stays outlined beside it. Without a variant
+                 it fell back to `secondary` and the two read as equal choices.
 
-                There is no "Start" any more: marking a request in_progress
-                changed nothing the vendor or the books could see, and it left
-                a queue of half-actioned rows nobody closed. Requests already
-                started still show, and settle or reject the same way. */}
+                 There is no "Start" any more: marking a request in_progress
+                 changed nothing the vendor or the books could see, and it left
+                 a queue of half-actioned rows nobody closed. Requests already
+                 started still show, and settle or reject the same way. */}
             <Button variant="primary" disabled={busyId === r.id} onClick={() => act(r, 'settled')}>
               Settle
             </Button>
@@ -152,7 +153,7 @@ const CodSettlementRequests: React.FC = () => {
         ) : (
           <span className="cod-request-outcome">{r.decisionNote || r.settlementStatementId || '—'}</span>
         ),
-      width: '230px',
+      width: '200px',
     },
   ];
 
@@ -212,7 +213,7 @@ const CodSettlementRequests: React.FC = () => {
         </section>
       )}
 
-      <Table columns={columns} data={requests} loading={loading} />
+      <Table columns={columns} data={requests} loading={loading} minWidth="1080px" />
 
       <Pagination
         ariaLabel="COD settlement requests pagination"

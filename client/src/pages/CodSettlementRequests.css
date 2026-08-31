@@ -81,10 +81,12 @@
 .cod-request-account {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-1);
 }
 
 .cod-request-account span {
   overflow: hidden;
   text-overflow: ellipsis;
+  line-height: var(--line-height-sm);
+  font-size: var(--font-size-sm);
 }

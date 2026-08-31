@@ -27,6 +27,7 @@ import './vendor/VendorFinance.css';
 import './SettlementDetailPage.css';
 
 const money = (value: number) => `Rs. ${value.toLocaleString()}`;
+const hubNameOnly = (value: string) => ((value || '').split(' - ')[0] ?? '').replace(/\s*Branch\s*$/i, '').trim();
 
 function initials(name: string): string {
   return name
@@ -244,6 +245,7 @@ function buildStatementHtml(detail: SettlementDetail): string {
               : ''
           }
           <td>${item.receiverName}${item.receiverAddress ? `<div class="sub">${item.receiverAddress}</div>` : ''}</td>
+          <td>${item.destination ? hubNameOnly(item.destination) : '-'}</td>
           <td>${item.receiverPhone}</td>
           <td class="r">${item.weightKg === null ? '-' : item.weightKg.toFixed(2)}</td>
           <td class="r">${money(item.codAmount)}</td>
@@ -304,7 +306,7 @@ function buildStatementHtml(detail: SettlementDetail): string {
     </div>
     <table>
       <thead><tr>
-        <th>SN</th><th>Order ID</th><th>Transaction ID</th>${showVendor ? '<th>Vendor</th>' : ''}<th>Receiver</th><th>Number</th>
+        <th>SN</th><th>Order ID</th><th>Transaction ID</th>${showVendor ? '<th>Vendor</th>' : ''}<th>Receiver</th><th>Destination</th><th>Number</th>
         <th class="r">Weight</th><th class="r">COD</th>
         <th class="r">Collected COD</th><th class="r">Delivery Charges</th>
         <th class="r">Net Payable</th>
@@ -433,6 +435,7 @@ const SettlementDetailPage: React.FC = () => {
       'Transaction ID',
       ...(showVendor ? ['Vendor', 'Vendor Phone'] : []),
       'Receiver',
+      'Destination',
       'Receiver Phone',
       'Receiver Address',
       'Weight',
@@ -446,6 +449,7 @@ const SettlementDetailPage: React.FC = () => {
       item.trackingId,
       ...(showVendor ? [item.vendorName ?? '', item.vendorPhone ?? ''] : []),
       item.receiverName,
+      hubNameOnly(item.destination || ''),
       item.receiverPhone,
       item.receiverAddress ?? '',
       item.weightKg === null ? '' : item.weightKg,
@@ -683,6 +687,7 @@ const SettlementDetailPage: React.FC = () => {
                         <th>Order Type</th>
                         {showVendor && <th>Vendor</th>}
                         <th>Receiver</th>
+                        <th>Destination</th>
                         <th>Number</th>
                         <th style={{ textAlign: 'right' }}>Weight</th>
                         <th style={{ textAlign: 'right' }}>COD</th>
@@ -723,6 +728,7 @@ const SettlementDetailPage: React.FC = () => {
                               <div className="sdp-subtext">{item.receiverAddress}</div>
                             )}
                           </td>
+                          <td title={item.destination || '-'}>{hubNameOnly(item.destination || '') || '-'}</td>
                           <td>{item.receiverPhone}</td>
                           <td style={{ textAlign: 'right' }}>
                             {item.weightKg === null ? '-' : item.weightKg.toFixed(2)}
