@@ -34,6 +34,7 @@ import {
   ChevronRight,
   CreditCard,
   FileText,
+  Gauge,
   Wrench,
   Image,
   Megaphone,

@@ -18,6 +18,7 @@ export interface UpsertLocationInput {
   ringRoad?: string | null; // inside | outside - only meaningful when valley = inside
   perDestinationRate?: number | null;
   branchPerDestinationRate?: number | null;
+  ncmBranch?: string | null; // explicit NCM branch override — pins handoff to this branch
 }
 
 function mapLocation(loc: {
@@ -36,6 +37,7 @@ function mapLocation(loc: {
   ring_road: string | null;
   per_destination_rate: { toString(): string } | null;
   branch_per_destination_rate: { toString(): string } | null;
+  ncm_branch?: string | null;
 }) {
   return {
     id: loc.id,
@@ -53,6 +55,7 @@ function mapLocation(loc: {
     ringRoad: loc.ring_road,
     perDestinationRate: loc.per_destination_rate === null ? null : Number(loc.per_destination_rate),
     branchPerDestinationRate: loc.branch_per_destination_rate === null ? null : Number(loc.branch_per_destination_rate),
+    ncmBranch: (loc as any).ncm_branch ?? null,
   };
 }
 
@@ -113,6 +116,9 @@ export async function createLocation(input: UpsertLocationInput) {
       is_hub: parentId ? false : input.isHub ?? true,
       is_active: input.isActive ?? true,
       parent_id: parentId,
+      // ncm_branch column is added in 20260830120000; keep writes tolerant before
+      // migration is applied (prisma client pre-generate won't select it anyway).
+      ...(input.ncmBranch !== undefined ? { ncm_branch: input.ncmBranch?.trim().toUpperCase() || null } as any : {}),
     },
   });
 
@@ -134,6 +140,7 @@ export interface BulkImportDestination {
   perDestinationRate?: number | null;
   // Rate for branch delivery (parcel dropped at the branch, not the door).
   branchPerDestinationRate?: number | null;
+  ncmBranch?: string;
   areas: string[];
 }
 
@@ -282,6 +289,7 @@ export async function bulkImportLocations(rows: BulkImportDestination[]) {
             ring_road: row.ringRoad || null,
             per_destination_rate: row.perDestinationRate ?? null,
             branch_per_destination_rate: row.branchPerDestinationRate ?? null,
+            ncm_branch: row.ncmBranch?.trim().toUpperCase() || null,
           },
         });
         action = "created";
@@ -304,6 +312,7 @@ export async function bulkImportLocations(rows: BulkImportDestination[]) {
             ...(row.branchPerDestinationRate !== undefined
               ? { branch_per_destination_rate: row.branchPerDestinationRate }
               : {}),
+            ...(row.ncmBranch !== undefined ? { ncm_branch: row.ncmBranch?.trim().toUpperCase() || null } : {}),
             updated_at: new Date(),
           },
         });
@@ -373,6 +382,7 @@ export async function updateLocation(id: string, input: Partial<UpsertLocationIn
       ...(input.branchPerDestinationRate !== undefined
         ? { branch_per_destination_rate: input.branchPerDestinationRate }
         : {}),
+      ...(input.ncmBranch !== undefined ? { ncm_branch: input.ncmBranch?.trim().toUpperCase() || null } : {}),
       updated_at: new Date(),
     },
   });

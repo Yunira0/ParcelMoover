@@ -108,30 +108,36 @@ export type NcmBranch = {
   covered_areas?: string | undefined;
 };
 
-// GET /api/v2/branches' actual field names — district_name/province_name/
-// areas_covered, not the district/region/covered_areas this file matches
-// and serializes on. Left unmapped, every branch's `.district` read as
-// undefined, so matchNcmBranch's district-first pass never matched anything
-// and silently fell through to the much weaker name-substring pass —
-// destinations NCM does serve (their branch just isn't a substring of our
-// hub name) got skipped as "no matching NCM branch".
+// GET /api/v2/branches' actual field names — demo returns district_name/
+// province_name/areas_covered, but portal or future versions may return
+// district/province/covered_areas without suffix. Left unmapped, every
+// branch's `.district` read as undefined, so matchNcmBranch's district-first
+// pass never matched anything and silently fell through to the much weaker
+// name-substring pass — destinations NCM does serve (their branch just isn't
+// a substring of our hub name) got skipped as "no matching NCM branch".
+// Be tolerant to both shapes: check suffixed and unsuffixed variants.
 type NcmBranchRaw = {
   name: string;
   code?: string;
   district_name?: string;
+  district?: string;
   province_name?: string;
+  province?: string;
+  region?: string;
   phone?: string;
   areas_covered?: string;
+  covered_areas?: string;
 };
 
 function mapNcmBranch(raw: NcmBranchRaw): NcmBranch {
+  const rawAny = raw as any;
   return {
     name: raw.name,
     code: raw.code,
-    district: raw.district_name,
-    region: raw.province_name,
+    district: raw.district_name ?? raw.district ?? rawAny.districtName ?? rawAny.District ?? undefined,
+    region: raw.province_name ?? raw.province ?? raw.region ?? rawAny.provinceName ?? undefined,
     phone: raw.phone,
-    covered_areas: raw.areas_covered,
+    covered_areas: raw.areas_covered ?? raw.covered_areas ?? rawAny.areasCovered ?? undefined,
   };
 }
 
@@ -194,27 +200,101 @@ function handoffRemark(ncmOrderId: number, branch: string, deliveryType: string)
   return `${HANDOFF_REMARK_PREFIX} — order #${ncmOrderId} → ${branch} (${deliveryType})`;
 }
 
-// Auto-matches a parcel's own destination hub to an NCM branch — district
-// first (both `locations` and NCM branches carry an explicit district field,
-// the more reliable key), falling back to a name/city match since NCM branch
-// names are city labels (e.g. POKHARA, BIRATNAGAR) that sometimes appear
-// inside our own hub names (e.g. "Pokhara Branch"). No match => the caller
-// skips the parcel rather than guessing a branch.
-function matchNcmBranch(
-  destination: { name: string; district: string | null } | null | undefined,
+// Our own destination names embed district as "PLACE - DISTRICT" (e.g.
+// "Jhiljhile - Jhapa"). Only the place prefix is the useful matching key
+// — keep logic in sync with upaya's upayaMatchPlaceName.
+function ncmMatchPlaceName(destinationName: string): string {
+  const dashIndex = destinationName.indexOf(" - ");
+  return (dashIndex === -1 ? destinationName : destinationName.slice(0, dashIndex)).trim();
+}
+
+// Auto-matches a parcel's own destination hub to an NCM branch. No guessing:
+// the priorities are strict-exact only — substring/contains is deliberately
+// absent (see upaya.service.ts:278 comment: "Sunsari" ⊂ "RajabasSunsari" false
+// positive). For Jhiljhile→Hile (JHILJHILE includes HILE) and
+// Jhiljhile(Jhapa)→Bahundangi (first branch in Jhapa) this previously caused
+// silent misroutes.
+//
+// Tiers, most confident first:
+//
+//   0. Explicit per-hub override `ncm_branch` if present — ops pins the
+//      correct NCM branch for ambiguous villages where district alone is not
+//      enough (multiple branches share Jhapa/Morang/etc).
+//   1. District exact — only when exactly one branch carries that district.
+//      If district maps to >1 branches (Jhapa→Birtamode/Damak/Bahundangi),
+//      it's genuinely ambiguous and we fall through rather than picking
+//      whichever row the API happened to return first.
+//   2. Place-name exact against branch name (district suffix stripped, case-
+//      insensitive). Handles "Pokhara Branch" still finding branch POKHARA via
+//      a token-exact check below, without the old `includes` bug.
+//   3. Place-name exact against a branch's `covered_areas` tokens (e.g.
+//      Damak covers "Jhiljhile" as one item in its comma list), and a
+//      word-boundary fallback where the branch name equals one whitespace-
+//      separated token of the place name.
+//   No match => the caller skips the parcel with "No matching NCM branch…"
+//   and ops can fix via the per-hub override or by correcting district/name.
+export function matchNcmBranch(
+  destination:
+    | { name: string; district: string | null; ncm_branch?: string | null; ncm_branch_name?: string | null }
+    | null
+    | undefined,
   branches: NcmBranch[],
 ): NcmBranch | undefined {
   if (!destination) return undefined;
-  const district = destination.district?.trim().toUpperCase();
-  if (district) {
-    const byDistrict = branches.find((b) => b.district?.trim().toUpperCase() === district);
-    if (byDistrict) return byDistrict;
+
+  const overrideRaw = (destination as any).ncm_branch ?? (destination as any).ncm_branch_name;
+  const override = typeof overrideRaw === "string" ? overrideRaw.trim().toUpperCase() : "";
+  if (override) {
+    const byOverride = branches.find((b) => b.name.trim().toUpperCase() === override);
+    if (byOverride) return byOverride;
+    // Explicit override that doesn't exist in NCM's live list is a data error
+    // — treat as no match (caller will report "No matching NCM branch…") rather
+    // than silently falling through to a different branch.
+    return undefined;
   }
-  const name = destination.name.trim().toUpperCase();
-  return branches.find((b) => {
-    const branchName = b.name.trim().toUpperCase();
-    return name === branchName || name.includes(branchName);
-  });
+
+  // Normalize "JHAPA DISTRICT" vs "JHAPA" and collapse whitespace so a
+  // minor data-entry variant doesn't silently break tier 1.
+  const normalizeDistrict = (s: string) =>
+    s.trim().toUpperCase().replace(/\s+DISTRICT\s*$/, "").replace(/\s+/g, " ").trim();
+  const districtRaw = destination.district?.trim();
+  const district = districtRaw ? normalizeDistrict(districtRaw) : "";
+  if (district) {
+    const byDistrict = branches.filter((b) => {
+      const bd = b.district?.trim();
+      return bd ? normalizeDistrict(bd) === district : false;
+    });
+    if (byDistrict.length === 1) return byDistrict[0];
+    // >1 means ambiguous (e.g. Jhapa has Birtamode/Damak/Bahundangi) — don't guess
+    // If ambiguous, still allow covered_areas/name tiers below to disambiguate
+    // (e.g. JHILJHILE is covered by DAMAK even when 3 branches share JHAPA).
+  }
+
+  const placeName = ncmMatchPlaceName(destination.name).trim().toUpperCase();
+  if (!placeName) return undefined;
+
+  // Tier 2 — direct branch-name exact
+  const byPlaceExact = branches.find((b) => b.name.trim().toUpperCase() === placeName);
+  if (byPlaceExact) return byPlaceExact;
+
+  // Tier 3a — exact word inside covered_areas (NCM's per-branch locality list)
+  for (const branch of branches) {
+    if (!branch.covered_areas) continue;
+    const tokens = branch.covered_areas
+      .split(/[,;/]+/)
+      .map((s) => s.trim().toUpperCase())
+      .filter(Boolean);
+    if (tokens.includes(placeName)) return branch;
+  }
+
+  // Tier 3b — word-boundary fallback: branch name equals one token of placeName
+  // e.g. "Pokhara Branch" tokens ["POKHARA","BRANCH"] contains branch "POKHARA"
+  // but "JHILJHILE" tokens ["JHILJHILE"] does NOT contain "HILE".
+  const placeTokens = placeName.split(/[\s\-_/]+/).map((s) => s.trim().toUpperCase()).filter(Boolean);
+  const byToken = branches.find((b) => placeTokens.includes(b.name.trim().toUpperCase()));
+  if (byToken) return byToken;
+
+  return undefined;
 }
 
 async function guardDailyCreateLimit(count: number): Promise<void> {
@@ -339,15 +419,12 @@ export async function handoffParcelsToNcm(
     }
 
     const destination = parcel.locations_parcels_destination_location_idTolocations;
-    const branch = matchNcmBranch(destination, branches);
+    const branch = matchNcmBranch(destination as any, branches);
     if (!branch) {
-      results.push({
-        ...base,
-        success: false,
-        error: destination
-          ? `No matching NCM branch for destination '${destination.name}'`
-          : "Parcel has no destination hub set",
-      });
+      const hint = destination
+        ? `No matching NCM branch for destination '${destination.name}' — parcel left as is.`
+        : "Parcel has no destination hub set";
+      results.push({ ...base, success: false, error: hint });
       continue;
     }
 
