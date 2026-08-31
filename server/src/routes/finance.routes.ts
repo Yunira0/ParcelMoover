@@ -47,6 +47,7 @@ const financeReadLimiter = rateLimit({
   legacyHeaders: false,
   // Fail open (skip limiting), not 500, if Redis is unreachable mid-request.
   passOnStoreError: true,
+  validate: false,
   store: createRedisRateLimitStore("finance-read"),
   keyGenerator: actorOrIpKey,
 });
@@ -58,6 +59,7 @@ const settlementCreateLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   passOnStoreError: true,
+  validate: false,
   store: createRedisRateLimitStore("finance-settlement-create"),
   keyGenerator: actorOrIpKey,
 });

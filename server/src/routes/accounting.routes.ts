@@ -73,6 +73,7 @@ const readLimiter = rateLimit({
   legacyHeaders: false,
   // Fail open rather than 500 if Redis is unreachable, matching finance.routes.
   passOnStoreError: true,
+  validate: false,
   store: createRedisRateLimitStore("accounting-read"),
   keyGenerator: actorOrIpKey,
 });

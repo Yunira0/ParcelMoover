@@ -30,6 +30,7 @@ const billingReadLimiter = rateLimit({
   legacyHeaders: false,
   // Fail open (skip limiting), not 500, if Redis is unreachable mid-request.
   passOnStoreError: true,
+  validate: false,
   store: createRedisRateLimitStore("billing-read"),
   keyGenerator: actorOrIpKey,
 });
@@ -43,6 +44,7 @@ const paymentSubmitLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   passOnStoreError: true,
+  validate: false,
   store: createRedisRateLimitStore("billing-payment-submit"),
   keyGenerator: actorOrIpKey,
 });
@@ -54,6 +56,7 @@ const billingWriteLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   passOnStoreError: true,
+  validate: false,
   store: createRedisRateLimitStore("billing-write"),
   keyGenerator: actorOrIpKey,
 });

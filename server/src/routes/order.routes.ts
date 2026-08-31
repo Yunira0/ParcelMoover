@@ -70,6 +70,7 @@ const createOrderLimiter = rateLimit({
   legacyHeaders: false,
   // Fail open (skip limiting), not 500, if Redis is unreachable mid-request.
   passOnStoreError: true,
+  validate: false,
   store: createRedisRateLimitStore("create-order"),
   keyGenerator: actorOrIpKey,
 });
@@ -81,6 +82,7 @@ const statusUpdateLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   passOnStoreError: true,
+  validate: false,
   store: createRedisRateLimitStore("order-status"),
   keyGenerator: actorOrIpKey,
 });
@@ -92,6 +94,7 @@ const remarkLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   passOnStoreError: true,
+  validate: false,
   store: createRedisRateLimitStore("order-remark"),
   keyGenerator: actorOrIpKey,
 });
@@ -104,6 +107,7 @@ const bulkCreateLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   passOnStoreError: true,
+  validate: false,
   store: createRedisRateLimitStore("bulk-create-order"),
   keyGenerator: actorOrIpKey,
 });
@@ -119,6 +123,7 @@ const orderReadLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   passOnStoreError: true,
+  validate: false,
   store: createRedisRateLimitStore("order-read"),
   keyGenerator: actorOrIpKey,
 });
@@ -294,6 +299,7 @@ const publicTrackLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   passOnStoreError: true,
+  validate: false,
   store: createRedisRateLimitStore("public-track"),
   keyGenerator: (req) => ipKeyGenerator(req.ip ?? ""),
 });

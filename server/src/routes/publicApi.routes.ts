@@ -74,6 +74,7 @@ const publicReadLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   passOnStoreError: true,
+  validate: false,
   store: createRedisRateLimitStore("public-api-read"),
   keyGenerator: (req) => req.apiKey?.id ?? ipKeyGenerator(req.ip ?? ""),
 });
@@ -89,6 +90,7 @@ const publicWriteLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   passOnStoreError: true,
+  validate: false,
   store: createRedisRateLimitStore("public-api-write"),
   keyGenerator: (req) => req.apiKey?.id ?? ipKeyGenerator(req.ip ?? ""),
 });
@@ -106,6 +108,7 @@ const publicBulkLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   passOnStoreError: true,
+  validate: false,
   store: createRedisRateLimitStore("public-api-bulk"),
   keyGenerator: (req) => req.apiKey?.id ?? ipKeyGenerator(req.ip ?? ""),
 });

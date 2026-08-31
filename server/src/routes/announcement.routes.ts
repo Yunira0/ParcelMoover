@@ -24,6 +24,7 @@ const announcementReadLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   passOnStoreError: true,
+  validate: false,
   store: createRedisRateLimitStore("announcement-read"),
   keyGenerator: actorOrIpKey,
 });
@@ -35,6 +36,7 @@ const announcementWriteLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   passOnStoreError: true,
+  validate: false,
   store: createRedisRateLimitStore("announcement-write"),
   keyGenerator: actorOrIpKey,
 });

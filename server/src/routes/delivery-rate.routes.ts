@@ -36,6 +36,7 @@ const quoteLimiter = rateLimit({
   legacyHeaders: false,
   // Fail open (skip limiting), not 500, if Redis is unreachable mid-request.
   passOnStoreError: true,
+  validate: false,
   store: createRedisRateLimitStore("delivery-rate-quote"),
   keyGenerator: actorOrIpKey,
 });
@@ -47,6 +48,7 @@ const ratesReadLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   passOnStoreError: true,
+  validate: false,
   store: createRedisRateLimitStore("delivery-rate-read"),
   keyGenerator: actorOrIpKey,
 });
@@ -58,6 +60,7 @@ const ratesWriteLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   passOnStoreError: true,
+  validate: false,
   store: createRedisRateLimitStore("delivery-rate-write"),
   keyGenerator: actorOrIpKey,
 });
@@ -121,6 +124,7 @@ const ratesBulkImportLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   passOnStoreError: true,
+  validate: false,
   store: createRedisRateLimitStore("delivery-rate-bulk-import"),
   keyGenerator: actorOrIpKey,
 });

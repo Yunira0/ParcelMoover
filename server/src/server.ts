@@ -133,6 +133,7 @@ const globalLimiter = rateLimit({
   passOnStoreError: true,
   store: createRedisRateLimitStore("global"),
   keyGenerator: (req) => ipKeyGenerator(req.ip ?? "unknown"),
+  validate: false,
 });
 app.use(globalLimiter);
 

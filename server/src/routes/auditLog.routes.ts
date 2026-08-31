@@ -23,6 +23,7 @@ const auditLogReadLimiter = rateLimit({
   legacyHeaders: false,
   // Fail open (skip limiting), not 500, if Redis is unreachable mid-request.
   passOnStoreError: true,
+  validate: false,
   store: createRedisRateLimitStore("audit-log-read"),
   keyGenerator: actorOrIpKey,
 });
