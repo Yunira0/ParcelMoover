@@ -154,6 +154,12 @@ skills-lock.json
 .claude/settings.local.json
 .claude/launch.json
 .codex/
+.kilo/
 
 # Rider PWA / Capacitor app — built and maintained locally, not on the server
-rider/
+# rider/
+
+# React Native rewrite — shelved; the rider app is staying on the PWA
+# (rider/) for now. Never tracked in git.
+pm-rider-native/
+

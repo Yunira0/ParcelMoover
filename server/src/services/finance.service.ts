@@ -187,9 +187,12 @@ function toBillingProfile(vendor: {
   };
 }
 
-function formatLocation(location?: { name: string; city: string | null; district: string | null } | null) {
-  if (!location) return "";
-  return [location.name, location.city || location.district].filter(Boolean).join(", ");
+function formatLocation(location?: { name: string } | null) {
+  // The location's own name, exactly as it reads in the destination picker at
+  // order creation (see CreateOrderPage's destinationSelectOptions) - hub
+  // names already carry the district or valley grouping where one applies
+  // ("Inaruwa - Sunsari", "Inside Valley - KTM"), so there's nothing to derive.
+  return location?.name ?? "";
 }
 
 export async function getPendingCodBill(actor: Actor, vendorIdParam?: string): Promise<PendingCodBill> {
@@ -222,7 +225,7 @@ export async function getPendingCodBill(actor: Actor, vendorIdParam?: string): P
           delivery_charge: true,
           parties_parcels_receiver_idToparties: { select: { name: true, phone: true } },
           locations_parcels_destination_location_idTolocations: {
-            select: { name: true, city: true, district: true },
+            select: { name: true },
           },
         },
       },
@@ -610,7 +613,7 @@ export async function getUnsettledOrders(
           delivery_rider_id: true,
           parties_parcels_receiver_idToparties: { select: { name: true, phone: true, address: true } },
           locations_parcels_destination_location_idTolocations: {
-            select: { name: true, city: true, district: true },
+            select: { name: true },
           },
           // Only needed for the rider leg - see location resolution below.
           locations_parcels_origin_location_idTolocations: { select: { name: true } },

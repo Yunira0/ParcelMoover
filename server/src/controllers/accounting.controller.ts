@@ -127,7 +127,14 @@ export async function getJournalEntryController(req: Request, res: Response) {
 
 export async function getAccountLedgerController(req: Request, res: Response) {
   try {
-    return ok(res, await getAccountLedger(req.params.code as string, rangeOf(req)));
+    return ok(
+      res,
+      await getAccountLedger(req.params.code as string, {
+        ...rangeOf(req),
+        page: Number(req.query.page) || undefined,
+        pageSize: Number(req.query.pageSize) || undefined,
+      }),
+    );
   } catch (error) {
     return fail(res, error, "Failed to load the account ledger");
   }
@@ -178,7 +185,14 @@ export async function getPartyLedgerController(req: Request, res: Response) {
 
 export async function getPartySettlementLedgerController(req: Request, res: Response) {
   try {
-    return ok(res, await getPartySettlementLedger(partyTypeOf(req), partyIdOf(req), rangeOf(req)));
+    return ok(
+      res,
+      await getPartySettlementLedger(partyTypeOf(req), partyIdOf(req), {
+        ...rangeOf(req),
+        page: Number(req.query.page) || undefined,
+        pageSize: Number(req.query.pageSize) || undefined,
+      }),
+    );
   } catch (error) {
     return fail(res, error, "Failed to load the settlement ledger");
   }

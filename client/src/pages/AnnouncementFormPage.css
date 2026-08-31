@@ -1,0 +1,117 @@
+.anfp-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  width: 100%;
+  max-width: 720px;
+}
+
+.anfp-muted {
+  color: var(--color-text-caption);
+  font-size: var(--font-size-sm);
+}
+
+/* Back navigation */
+.anfp-back {
+  align-items: center;
+  background: transparent;
+  border: none;
+  color: var(--color-text-caption);
+  cursor: pointer;
+  display: inline-flex;
+  font-family: var(--typography-font-family-default);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  gap: var(--space-2);
+  padding: 0;
+  transition: color 150ms ease;
+  align-self: flex-start;
+}
+
+.anfp-back:hover {
+  color: var(--color-text-default);
+}
+
+.anfp-back:focus-visible {
+  border-radius: var(--border-radius-default);
+  outline: 2px solid var(--color-border-primary);
+  outline-offset: 2px;
+}
+
+/* Header */
+.anfp-header h1 {
+  color: var(--color-text-default);
+  font-size: var(--font-size-2xl);
+  font-weight: var(--font-weight-bold);
+  line-height: var(--line-height-2xl);
+  margin: 0 0 var(--space-1) 0;
+}
+
+.anfp-header p {
+  color: var(--color-text-caption);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-sm);
+  margin: 0;
+}
+
+/* Form */
+.anfp-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.anfp-section {
+  background: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-modal);
+  padding: var(--space-6);
+}
+
+.anfp-fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* Enabled toggle row */
+.anfp-toggle-row {
+  align-items: center;
+  display: flex;
+  gap: var(--space-3);
+  height: 36px;
+}
+
+.anfp-toggle-label {
+  color: var(--color-text-caption);
+  font-size: var(--font-size-sm);
+}
+
+/* Error */
+.anfp-error {
+  align-items: center;
+  background: var(--color-danger-surface);
+  border: 1px solid var(--color-danger-border);
+  border-radius: var(--border-radius-default);
+  color: var(--color-danger-text);
+  display: flex;
+  font-size: var(--font-size-sm);
+  gap: var(--space-2);
+  line-height: var(--line-height-sm);
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+}
+
+/* Actions */
+.anfp-actions {
+  display: flex;
+  gap: var(--space-3);
+  justify-content: flex-end;
+  padding-top: var(--space-2);
+}
+
+@media (max-width: 640px) {
+  .anfp-form .form-grid {
+    grid-template-columns: 1fr;
+  }
+}

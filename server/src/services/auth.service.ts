@@ -531,12 +531,15 @@ export async function getManagedUserDetail(actorUserId: string, type: ManagedUse
     if (!a) throw new AppError(404, "Admin not found");
     return {
       type, id: a.id, userId: a.user_id,
+      employeeId: a.employee_number ? `PM-${a.employee_number}` : "",
       fullName: a.users.full_name, email: a.users.email, phone: a.users.phone,
       locationId: a.location_id, position: a.position, department: a.department,
       address: a.address, citizenshipNo: a.citizenship_no, pan: a.pan,
       fatherName: a.father_name, motherName: a.mother_name, grandfatherName: a.grandfather_name,
       permanentAddress: a.permanent_address, currentAddress: a.current_address, experience: a.experience,
       idDocumentType: a.id_document_type, idDocumentNumber: a.id_document_number,
+      idDocument: a.id_document, citizenshipDoc: a.citizenship_doc, panDoc: a.pan_doc,
+      experienceLetterDoc: a.experience_letter_doc,
       bankName: a.bank_name, bankAccountNo: a.bank_account_no, bankAccountHolder: a.bank_account_holder,
       joinedAt: dateStr(a.joined_at),
     };
@@ -546,10 +549,13 @@ export async function getManagedUserDetail(actorUserId: string, type: ManagedUse
   if (!r) throw new AppError(404, "Rider not found");
   return {
     type, id: r.id, userId: r.user_id,
+    employeeId: r.employee_number ? `PM-${r.employee_number}` : "",
     fullName: r.name, email: r.users?.email ?? "", phone: r.phone,
     locationId: r.location_id, riderLocation: r.rider_location,
     citizenshipNo: r.citizenship_no, licenceNo: r.licence_no, vehicleNo: r.vehicle_no,
     salaryCommission: r.salary_commission, pan: r.pan,
+    citizenshipDoc: r.citizenship_doc, panVatDoc: r.pan_vat_doc,
+    licenceDoc: r.licence_doc, bluebookDoc: r.bluebook_doc,
     bankName: r.bank_name, bankAccountNo: r.bank_account_no, bankAccountHolder: r.bank_account_holder,
     joinedAt: dateStr(r.joined_at),
     carrierCode: r.carrier_code ?? "",

@@ -1,0 +1,101 @@
+/* ── Permanent hero strip ─────────────────────────────────────────────────── */
+
+.vendor-notice-hero {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 6 / 1;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-lg);
+  overflow: hidden;
+  margin-bottom: var(--space-6);
+  background: var(--color-background-elevated);
+}
+
+.vendor-notice-hero-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.vendor-notice-link {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+}
+
+@media (max-width: 900px) {
+  .vendor-notice-hero {
+    aspect-ratio: 3 / 1;
+  }
+}
+
+@media (max-width: 560px) {
+  .vendor-notice-hero {
+    aspect-ratio: 2 / 1;
+  }
+}
+
+/* ── Shared dismiss control (hero + modal) ───────────────────────────────── */
+
+.vendor-notice-close {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: var(--border-radius-full);
+  background: rgb(3 7 18 / 55%);
+  color: var(--color-text-base);
+  cursor: pointer;
+  transition: background-color 150ms ease;
+}
+
+.vendor-notice-close:hover {
+  background: rgb(3 7 18 / 75%);
+}
+
+.vendor-notice-close:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+
+/* ── Modal notice ─────────────────────────────────────────────────────────── */
+
+.vendor-notice-modal {
+  position: relative;
+  width: 560px;
+  max-width: 90vw;
+  max-height: 85vh;
+  background: var(--color-background-surface);
+  border-radius: var(--border-radius-modal);
+  overflow: hidden;
+  box-shadow: var(--app-shadow);
+  animation: modal-content-in 150ms ease;
+  display: flex;
+}
+
+.vendor-notice-modal .vendor-notice-link,
+.vendor-notice-modal-img {
+  max-height: 85vh;
+}
+
+.vendor-notice-modal-img {
+  display: block;
+  width: 100%;
+  height: auto;
+  object-fit: contain;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vendor-notice-modal {
+    animation: none;
+  }
+}

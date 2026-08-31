@@ -33,12 +33,30 @@
 }
 
 /* Page header */
+.afp-header-title-row {
+  align-items: center;
+  display: flex;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-1) 0;
+}
+
 .afp-header h1 {
   color: var(--color-text-default);
   font-size: var(--font-size-2xl);
   font-weight: var(--font-weight-bold);
   line-height: var(--line-height-2xl);
-  margin: 0 0 var(--space-1) 0;
+  margin: 0;
+}
+
+.afp-employee-id {
+  background: var(--color-background-canvas);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-full);
+  color: var(--color-text-caption);
+  font-family: var(--typography-font-family-mono, ui-monospace, Consolas, monospace);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  padding: var(--space-0-5) var(--space-2);
 }
 
 .afp-header p {

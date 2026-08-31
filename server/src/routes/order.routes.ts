@@ -176,6 +176,19 @@ orderRouter.get(
   getStatusCountsController,
 );
 
+// POST /orders/status-counts — same read, same controller, body instead of
+// query string. Used once a scan batch's `search` term list is too long to
+// fit safely in a URL (see MAX_SCANNED_TERMS in the client). Read-only, so
+// no csrfProtection - matches the GET route's exemption.
+orderRouter.post(
+  "/status-counts",
+  authMiddleware,
+  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider", "sales"),
+  requireStaffPermission("ORDER_ACCESS"),
+  orderReadLimiter,
+  getStatusCountsController,
+);
+
 // GET /orders/sender-profile — the calling vendor/vendor_staff's own business identity,
 // used to auto-fill "sender" on order creation instead of asking them to type it in.
 orderRouter.get(
@@ -253,6 +266,20 @@ orderRouter.get(
   requireStaffPermission("ORDER_ACCESS"),
   orderReadLimiter,
   validate(listOrdersQuerySchema, "query"),
+  listOrdersController,
+);
+
+// POST /orders/search — identical filters, same controller, body instead of
+// query string. Used once a scan batch's `search` term list is too long to
+// fit safely in a URL (see MAX_SCANNED_TERMS in the client). Read-only, so
+// no csrfProtection - matches GET /orders' exemption.
+orderRouter.post(
+  "/search",
+  authMiddleware,
+  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider", "sales"),
+  requireStaffPermission("ORDER_ACCESS"),
+  orderReadLimiter,
+  validate(listOrdersQuerySchema, "body"),
   listOrdersController,
 );
 

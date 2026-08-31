@@ -19,6 +19,7 @@ import './AdminManagement.css';
 interface AdminUser {
   id: string;
   sn: number;
+  employeeId: string;
   name: string;
   email: string;
   phone: string;
@@ -149,6 +150,7 @@ const AdminManagement: React.FC = () => {
 
   const columns = [
     { header: 'SN', accessor: 'sn' as keyof AdminUser, width: '50px' },
+    { header: 'EMPLOYEE ID', accessor: (a: AdminUser) => a.employeeId || '—', width: '110px' },
     { header: 'NAME', accessor: 'name' as keyof AdminUser },
     { header: 'EMAIL', accessor: 'email' as keyof AdminUser },
     { header: 'PHONE', accessor: 'phone' as keyof AdminUser },

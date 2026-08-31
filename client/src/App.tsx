@@ -37,6 +37,12 @@ const VendorManagement = lazy(() => import('./pages/VendorManagement'))
 const VendorFormPage = lazy(() => import('./pages/VendorFormPage'))
 const RiderManagement = lazy(() => import('./pages/RiderManagement'))
 const RiderFormPage = lazy(() => import('./pages/RiderFormPage'))
+const BannerManagement = lazy(() => import('./pages/BannerManagement'))
+const BannerFormPage = lazy(() => import('./pages/BannerFormPage'))
+const AnnouncementManagement = lazy(() => import('./pages/AnnouncementManagement'))
+const AnnouncementFormPage = lazy(() => import('./pages/AnnouncementFormPage'))
+const VendorAnnouncementsPage = lazy(() => import('./pages/vendor/VendorAnnouncementsPage'))
+const VendorAnnouncementDetailPage = lazy(() => import('./pages/vendor/VendorAnnouncementDetailPage'))
 const ReportsPage = lazy(() => import('./pages/ReportsPage'))
 const SettlementDetailPage = lazy(() => import('./pages/SettlementDetailPage'))
 const SettlementCreatePage = lazy(() => import('./pages/SettlementCreatePage'))
@@ -109,7 +115,7 @@ function App() {
         <Route path="/apply" element={<KycApplicationPage />} />
 
         {/* Protected Dashboard Routes */}
-        <Route 
+        <Route
           element={
             <ProtectedRoute>
               <DashboardLayout />
@@ -224,6 +230,38 @@ function App() {
           <Route
             path="/reports"
             element={<RoleGuard allowedRoles={['super_admin', 'admin']}><ReportsPage /></RoleGuard>}
+          />
+          <Route
+            path="/banners"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']} adminPermission="SETTINGS_ACCESS"><BannerManagement /></RoleGuard>}
+          />
+          <Route
+            path="/banners/new"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']} adminPermission="SETTINGS_ACCESS"><BannerFormPage /></RoleGuard>}
+          />
+          <Route
+            path="/banners/:id/edit"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']} adminPermission="SETTINGS_ACCESS"><BannerFormPage /></RoleGuard>}
+          />
+          <Route
+            path="/announcements"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']} adminPermission="SETTINGS_ACCESS"><AnnouncementManagement /></RoleGuard>}
+          />
+          <Route
+            path="/announcements/new"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']} adminPermission="SETTINGS_ACCESS"><AnnouncementFormPage /></RoleGuard>}
+          />
+          <Route
+            path="/announcements/:id/edit"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']} adminPermission="SETTINGS_ACCESS"><AnnouncementFormPage /></RoleGuard>}
+          />
+          <Route
+            path="/vendor/announcements"
+            element={<RoleGuard allowedRoles={['vendor', 'vendor_staff']}><VendorAnnouncementsPage /></RoleGuard>}
+          />
+          <Route
+            path="/vendor/announcements/:id"
+            element={<RoleGuard allowedRoles={['vendor', 'vendor_staff']}><VendorAnnouncementDetailPage /></RoleGuard>}
           />
           <Route
             path="/settings"

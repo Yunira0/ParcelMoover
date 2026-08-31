@@ -2166,6 +2166,14 @@ function mapOrder(
     labelHeightMm: labelSize.heightMm,
     riderName: rider?.name || "",
     remarks: stripCarrierStaffTag(parcel.parcel_remarks[0]?.remark || "").text,
+    // The stage the parcel was in right before it was cancelled - only
+    // meaningful when that's what the latest history row actually records
+    // (a still-cancelled parcel's newest entry is always its cancellation,
+    // since restoring or advancing it would write a newer one over it).
+    cancelledFromStatus:
+      parcel.status === "cancelled" && latestHistory?.new_status === "cancelled"
+        ? latestHistory.old_status
+        : undefined,
     // Vendor-declared eligibility at creation, plus the actual outcome once a
     // rider/admin marks the parcel partially_delivered (both null/false until then).
     allowPartialDelivery: parcel.allow_partial_delivery,
@@ -3292,14 +3300,22 @@ async function computeDashboardSummary(
   const totalReturnedToVendorAmount = Number(overviewRow!.total_returned_to_vendor_amount);
 
   // Same consolidation for the weekly/monthly trend: previously 4 queries per
-  // day (up to 120 for the 30-day view), now one query with 4 conditional
+  // day (up to 120 for the 30-day view), now one query with 3 conditional
   // aggregates per day. Column aliases are loop-index-derived, never
   // user-supplied, so Prisma.raw here isn't an injection risk.
+  //
+  // Every series here is an event-of-the-day count keyed off the timestamp of
+  // the milestone itself - creation for Total, picked_up_at for Picked Up,
+  // delivered_at for Delivered. "Returned" follows the same rule but its event
+  // lives in parcel_status_history (parcels has no returned_at column), so it's
+  // counted in a separate query below - see trendReturnedRow. Counting
+  // order_type = 'return' orders by created_at here instead measured a
+  // different thing entirely (return orders raised, not parcels sent back) and
+  // never matched the "Returned" figure on Today's activity.
   const trendSelects = trendDayRanges.map(({ start, end }, i) => Prisma.sql`
     COUNT(*) FILTER (WHERE created_at >= ${start} AND created_at < ${end}) AS ${Prisma.raw(`d${i}_total`)},
     COUNT(*) FILTER (WHERE picked_up_at >= ${start} AND picked_up_at < ${end}) AS ${Prisma.raw(`d${i}_picked_up`)},
-    COUNT(*) FILTER (WHERE status::text = ANY(ARRAY['delivered','partially_delivered']) AND delivered_at >= ${start} AND delivered_at < ${end}) AS ${Prisma.raw(`d${i}_delivered`)},
-    COUNT(*) FILTER (WHERE order_type::text = 'return' AND created_at >= ${start} AND created_at < ${end}) AS ${Prisma.raw(`d${i}_returned`)}
+    COUNT(*) FILTER (WHERE status::text = ANY(ARRAY['delivered','partially_delivered']) AND delivered_at >= ${start} AND delivered_at < ${end}) AS ${Prisma.raw(`d${i}_delivered`)}
   `);
   const [trendRow] = await prisma.$queryRaw<Array<Record<string, bigint>>>(Prisma.sql`
     SELECT ${Prisma.join(trendSelects, ",")} FROM parcels WHERE deleted_at IS NULL ${parcelScopeSql}
@@ -3308,7 +3324,6 @@ async function computeDashboardSummary(
     Number(trendRow![`d${i}_total`]),
     Number(trendRow![`d${i}_picked_up`]),
     Number(trendRow![`d${i}_delivered`]),
-    Number(trendRow![`d${i}_returned`]),
   ]);
 
   // Same scope as parcelScopeSql but qualified for the `p` alias, so it can be
@@ -3321,7 +3336,16 @@ async function computeDashboardSummary(
     ? riderHandledSql(riderId, "p.")
     : Prisma.empty;
 
-  const [todaysRemarks, unclosedComments, codRows, pendingCodCount, lastSettlement, returnedTodayRows] = await Promise.all([
+  // Per-day "Returned" for the trend graph: parcels whose status *became*
+  // returned_to_vendor within each day's window, keyed off the status-history
+  // timestamp - the same event and scope as returnedTodayRows below, just
+  // bucketed across the whole range so the graph's last point equals the
+  // "Returned" figure on Today's activity. Aliases are loop-index-derived.
+  const trendReturnedSelects = trendDayRanges.map(({ start, end }, i) => Prisma.sql`
+    COUNT(DISTINCT h.parcel_id) FILTER (WHERE h.created_at >= ${start} AND h.created_at < ${end}) AS ${Prisma.raw(`d${i}_returned`)}
+  `);
+
+  const [todaysRemarks, unclosedComments, codRows, pendingCodCount, lastSettlement, returnedTodayRows, trendReturnedRows] = await Promise.all([
     prisma.parcel_remarks.count({
       where: { created_at: { gte: todayStart }, parcels: parcelWhere },
     }),
@@ -3412,8 +3436,19 @@ async function computeDashboardSummary(
         AND p.deleted_at IS NULL
         ${pAliasScopeSql}
     `),
+    prisma.$queryRaw<Array<Record<string, bigint>>>(Prisma.sql`
+      SELECT ${Prisma.join(trendReturnedSelects, ",")}
+      FROM parcel_status_history h
+      JOIN parcels p ON p.id = h.parcel_id
+      WHERE h.new_status::text = 'returned_to_vendor'
+        AND h.created_at >= ${trendDayRanges[0]!.start}
+        AND h.created_at < ${trendDayRanges[TREND_DAYS - 1]!.end}
+        AND p.deleted_at IS NULL
+        ${pAliasScopeSql}
+    `),
   ]);
   const todaysReturnedToVendor = Number(returnedTodayRows[0]?.count ?? 0);
+  const trendReturnedRow = trendReturnedRows[0];
 
   // All figures are on the collected-cash basis (see codScopeSql above). Total
   // is the cash actually collected; settled is what has been remitted onward
@@ -3448,7 +3483,8 @@ async function computeDashboardSummary(
   const deliveryCharge = Number(codRow?.total_delivery_charge ?? 0);
 
   const weeklyTrend = trendDayRanges.map(({ start }, index) => {
-    const [dayTotalOrders, dayPickedUp, dayDelivered, dayReturned] = trendCounts[index] ?? [0, 0, 0, 0];
+    const [dayTotalOrders, dayPickedUp, dayDelivered] = trendCounts[index] ?? [0, 0, 0];
+    const dayReturned = Number(trendReturnedRow?.[`d${index}_returned`] ?? 0);
     return {
       day: start.toLocaleDateString("en-US", { weekday: "short" }),
       date: formatDate(start),
@@ -5776,8 +5812,12 @@ async function invalidateTrashFinanceCaches(parcel: { vendor_id: string | null; 
  * exception: it is admin-only, one order at a time, and audited, so an operator
  * putting a wrongly-cancelled parcel back into the pipeline doesn't need the
  * rule relaxed for every screen in the app. It stays enforced everywhere else.
+ *
+ * pickup_ordered only - a restored order always re-enters at pickup rather
+ * than being dropped back in mid-pipeline at whatever stage it was cancelled
+ * from.
  */
-export const TRASH_RESTORE_STAGES = ["pickup_ordered", "ready_to_deliver"] as const;
+export const TRASH_RESTORE_STAGES = ["pickup_ordered"] as const;
 export type TrashRestoreStage = (typeof TRASH_RESTORE_STAGES)[number];
 
 /**
@@ -5787,8 +5827,8 @@ export type TrashRestoreStage = (typeof TRASH_RESTORE_STAGES)[number];
  * that function enforces STATUS_TRANSITIONS, which is exactly what this has to
  * step around, and adding a bypass flag to it would put the escape hatch on
  * every caller in the app instead of this one. The side effects that matter for
- * a parcel re-entering at pickup or delivery are reproduced here - history row,
- * audit row, vendor webhook, ledger sync, cache invalidation.
+ * a parcel re-entering at pickup are reproduced here - history row, audit
+ * row, vendor webhook, ledger sync, cache invalidation.
  */
 export async function restoreOrderFromTrash(
   actor: OrderActor,

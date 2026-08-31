@@ -12,12 +12,9 @@ import { apiErrorMessage } from '../utils/serverValidation';
 import {
   getTrashedOrders,
   restoreOrder,
-  TRASH_RESTORE_STAGES,
   type Order,
   type OrdersPageMeta,
-  type TrashRestoreStage,
 } from '../services/orders.service';
-import { recoveryTargetFor } from '../utils/failedRecovery';
 import { ORDER_STATUS_LABELS as STATUS_LABELS } from '../utils/orderStatus';
 import './TrashOrdersPage.css';
 
@@ -41,9 +38,8 @@ const TrashOrdersPage: React.FC = () => {
   const [notice, setNotice] = useState('');
   const [busyId, setBusyId] = useState<string | null>(null);
   const [pageSizeChoice, setPageSizeChoice] = useState(PAGE_SIZE);
-  // The failed order awaiting a "restore as…" choice; null when closed.
+  // The order awaiting restore confirmation; null when closed.
   const [restoreTarget, setRestoreTarget] = useState<Order | null>(null);
-  const [restoreAs, setRestoreAs] = useState<TrashRestoreStage>('pickup_ordered');
 
   // Same keyset pager the orders list uses: /orders/trash goes through
   // listOrders, so it returns the identical cursor meta.
@@ -83,28 +79,19 @@ const TrashOrdersPage: React.FC = () => {
     if (!loading && orders.length === 0 && pager.page > 1) pager.reset();
   }, [loading, orders.length, pager]);
 
-  // Every restore asks which stage the order re-enters at — there is no
-  // "put it back as it was", because a trashed order is usually cancelled and
-  // coming back cancelled would just leave it stuck again.
-  const beginRestore = (order: Order) => {
-    setRestoreTarget(order);
-    // Default to the stage that matches how it failed, where that is knowable;
-    // otherwise the pickup queue, which is the earliest safe re-entry point.
-    setRestoreAs(recoveryTargetFor(order.status) ?? 'pickup_ordered');
-  };
-
   /**
-   * Restore the order straight into `stage`.
+   * Restore the order into Pickup Ordered - the only stage a trash restore
+   * may target.
    *
    * One call: the server does the un-cancel, the history row, the vendor
    * webhook and the ledger re-sync in a single transaction, so there is no
    * window where the order is restored but sitting at the wrong stage.
    */
-  const runRestore = async (order: Order, stage: TrashRestoreStage) => {
+  const runRestore = async (order: Order) => {
     setBusyId(order.id);
     try {
-      await restoreOrder(order.id, stage);
-      setNotice(`Order ${order.trackingId} restored to ${STATUS_LABELS[stage]}`);
+      await restoreOrder(order.id, 'pickup_ordered');
+      setNotice(`Order ${order.trackingId} restored to ${STATUS_LABELS.pickup_ordered}`);
       setError('');
       setRestoreTarget(null);
       // Refetch rather than dropping the row locally: the page would otherwise
@@ -144,8 +131,16 @@ const TrashOrdersPage: React.FC = () => {
       ),
     },
     {
+      header: 'VENDOR',
+      accessor: (order: Order) => order.vendorName || '—',
+    },
+    {
       header: 'DESTINATION',
       accessor: (order: Order) => order.destination || '—',
+    },
+    {
+      header: 'ADDRESS',
+      accessor: (order: Order) => order.receiverAddress || '—',
     },
     {
       header: 'STATUS',
@@ -157,13 +152,23 @@ const TrashOrdersPage: React.FC = () => {
       width: '140px',
     },
     {
+      header: 'CANCELLED FROM',
+      accessor: (order: Order) =>
+        order.cancelledFromStatus ? STATUS_LABELS[order.cancelledFromStatus] : '—',
+      width: '150px',
+    },
+    {
+      header: 'REMARK',
+      accessor: (order: Order) => order.remarks || '—',
+    },
+    {
       header: 'ACTION',
       accessor: (order: Order) => (
         <div className="trash-actions">
           <Button
             variant="secondary"
             size="sm"
-            onClick={() => beginRestore(order)}
+            onClick={() => setRestoreTarget(order)}
             disabled={busyId === order.id}
           >
             <RotateCcw size={14} /> Restore
@@ -216,29 +221,15 @@ const TrashOrdersPage: React.FC = () => {
       <ConfirmDialog
         isOpen={restoreTarget !== null}
         busy={busyId !== null && busyId === restoreTarget?.id}
-        title={restoreTarget ? `Restore order ${restoreTarget.trackingId}` : ''}
-        message={
-          restoreTarget && (
-            <span className="trash-restore-choice">
-              Currently {STATUS_LABELS[restoreTarget.status]}. Choose the stage it
-              re-enters the workflow at:
-              {TRASH_RESTORE_STAGES.map(stage => (
-                <label key={stage}>
-                  <input
-                    type="radio"
-                    name="restore-stage"
-                    checked={restoreAs === stage}
-                    onChange={() => setRestoreAs(stage)}
-                  />
-                  {STATUS_LABELS[stage]}
-                </label>
-              ))}
-            </span>
-          )
+        title={
+          restoreTarget
+            ? `Restore ${restoreTarget.trackingId} to ${STATUS_LABELS.pickup_ordered}?`
+            : ''
         }
-        confirmLabel="Restore"
+        message="The order rejoins the workflow at Pickup Ordered and the change is recorded in its history."
+        confirmLabel="OK"
         cancelLabel="Cancel"
-        onConfirm={() => restoreTarget && runRestore(restoreTarget, restoreAs)}
+        onConfirm={() => restoreTarget && runRestore(restoreTarget)}
         onCancel={() => setRestoreTarget(null)}
       />
     </div>

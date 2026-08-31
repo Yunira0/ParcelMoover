@@ -5,6 +5,7 @@ import SegmentedTabs from '../components/SegmentedTabs';
 import Table from '../components/Table';
 import Button from '../components/Button';
 import FileField from '../components/FileField';
+import Pagination from '../components/Pagination';
 import '../components/Modal.css';
 import { getCurrentUserRoles } from '../utils/auth';
 import {
@@ -48,10 +49,10 @@ const BillingManagement: React.FC = () => {
 
   // Verification queue
   const [claims, setClaims] = useState<VendorPayment[]>([]);
-  // Real pending count from the server, not claims.length — the queue only
-  // ever loads one page (pageSize: 50), so the visible rows undercount the
-  // badge once the queue backs up past that.
   const [claimsTotal, setClaimsTotal] = useState(0);
+  const [claimsTotalPages, setClaimsTotalPages] = useState(1);
+  const [claimsPage, setClaimsPage] = useState(1);
+  const [claimsPageSize, setClaimsPageSize] = useState(50);
   const [claimsLoading, setClaimsLoading] = useState(true);
   const [reviewing, setReviewing] = useState<string | null>(null);
   const [remarks, setRemarks] = useState<Record<string, string>>({});
@@ -88,16 +89,17 @@ const BillingManagement: React.FC = () => {
   const loadClaims = useCallback(async () => {
     setClaimsLoading(true);
     try {
-      const res = await listVendorPayments({ status: 'pending', pageSize: 50 });
+      const res = await listVendorPayments({ status: 'pending', page: claimsPage, pageSize: claimsPageSize });
       setClaims(res.data);
       setClaimsTotal(res.meta.total);
+      setClaimsTotalPages(res.meta.totalPages);
       setError('');
     } catch (err) {
       setError(apiErrorMessage(err, 'Failed to load payment claims.'));
     } finally {
       setClaimsLoading(false);
     }
-  }, []);
+  }, [claimsPage, claimsPageSize]);
 
   const loadBalances = useCallback(async () => {
     setBalancesLoading(true);
@@ -131,6 +133,12 @@ const BillingManagement: React.FC = () => {
   useEffect(() => {
     if (activeTab === 'vendors' && balances.length === 0) void loadBalances();
   }, [activeTab, balances.length, loadBalances]);
+
+  // Verifying/rejecting the last claim on a page (other than the first)
+  // leaves claimsPage pointing past the end of the now-shorter queue.
+  useEffect(() => {
+    if (!claimsLoading && claims.length === 0 && claimsPage > 1) setClaimsPage(1);
+  }, [claimsLoading, claims.length, claimsPage]);
 
   const handleReview = async (payment: VendorPayment, decision: 'verified' | 'rejected') => {
     setReviewing(payment.id);
@@ -306,14 +314,29 @@ const BillingManagement: React.FC = () => {
       {error && <p className="vendor-finance-error">{error}</p>}
 
       {activeTab === 'queue' && (
-        <Table
-          columns={claimColumns}
-          data={claims}
-          loading={claimsLoading}
-          loadingMessage="Loading payment claims..."
-          emptyMessage="No payments awaiting verification."
-          minWidth="1200px"
-        />
+        <>
+          <Table
+            columns={claimColumns}
+            data={claims}
+            loading={claimsLoading}
+            loadingMessage="Loading payment claims..."
+            emptyMessage="No payments awaiting verification."
+            minWidth="1200px"
+          />
+          <Pagination
+            ariaLabel="Payment verification pagination"
+            page={claimsPage}
+            totalPages={claimsTotalPages}
+            onPageChange={setClaimsPage}
+            pageSize={claimsPageSize}
+            pageSizeLabel="claims"
+            onPageSizeChange={(size) => {
+              setClaimsPageSize(size);
+              setClaimsPage(1);
+            }}
+            summary={`${claimsTotal} claim${claimsTotal === 1 ? '' : 's'} awaiting verification`}
+          />
+        </>
       )}
 
       {activeTab === 'vendors' && (

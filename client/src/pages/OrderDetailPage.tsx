@@ -348,6 +348,7 @@ const OrderDetailPage: React.FC = () => {
             <OrderTimeline
               statusHistory={order.statusHistory}
               currentStatus={order.status}
+              showCarrierBadge={!isVendorActor}
             />
           </div>
           <div className="od-activity-right">
