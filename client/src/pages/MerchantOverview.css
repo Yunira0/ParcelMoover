@@ -1,8 +1,19 @@
 /* Merchant Overview — same design system as Orders page (.order-management-container + .orders-table) */
 
 .merchant-overview-page {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
   gap: var(--space-6);
+}
+
+/* Clean breathing space between filters and stats cards */
+.merchant-overview-page .merchant-filter-toolbar {
+  margin-bottom: var(--space-2);
+}
+
+.merchant-overview-page .vendor-cards-section {
+  margin-top: var(--space-2);
 }
 
 .vendor-overview-count {
