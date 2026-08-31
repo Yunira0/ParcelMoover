@@ -5974,6 +5974,16 @@ export async function sweepCancelledOrdersToTrash(): Promise<{ checked: number; 
 // Server-side aggregation for the Merchant Overview stats cards. Replaces the
 // client-side 5 000-order walk with a single SQL query that joins parcels,
 // cod_collections, and settlements so every figure is exact and up-to-date.
+//
+// Money invariants (all filtering on p.created_at + vendor, like the table):
+//   totalDelivered(amount) = SUM(collected_amount)                            — gross cash collected on delivered
+//   deliveryCharge(amount) = SUM(delivery_charge) FILTER delivered            — office fee on delivered
+//   deposited(amount)      = SUM(si.amount) where settlement settled          — net collected - charge, frozen at settlement time
+//   pendingDeposit(amount) = SUM(collected - delivery_charge) FILTER delivered NOT in settled settlement — net still owed
+//   => deposited(net) + pendingDeposit(net) + deliveryCharge = totalDelivered(gross)
+//   => depositedCount + pendingCount = deliveredCount
+// See finance.service.ts: payableAmount = collected - delivery_charge is the
+// vendor-payout definition used everywhere.
 
 export interface MerchantOverviewMetric {
   count: number;
@@ -6144,11 +6154,15 @@ export async function getMerchantOverview(
         ${depositedVendorCondition}
         ${depositedDateFilter}
     `,
-    // Pending: delivered parcels that are NOT in any settled settlement
+    // Pending: delivered parcels that are NOT in any settled settlement.
+    // Amount is net payable (collected - delivery_charge) — same basis as
+    // deposited (si.amount = collected - charge frozen at settlement time)
+    // so the books balance: deposited(net) + pending(net) + deliveryCharge = delivered(gross),
+    // and depositedCount + pendingCount = deliveredCount.
     prisma.$queryRaw<{ cnt: bigint; total: string }[]>`
       SELECT
         COUNT(*)::bigint AS cnt,
-        COALESCE(SUM(COALESCE(cc.collected_amount,0)), 0)::text AS total
+        COALESCE(SUM(COALESCE(cc.collected_amount,0) - COALESCE(p.delivery_charge,0)), 0)::text AS total
       FROM parcels p
       LEFT JOIN cod_collections cc ON cc.parcel_id = p.id
       WHERE p.deleted_at IS NULL
