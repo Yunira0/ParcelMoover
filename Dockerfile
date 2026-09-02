@@ -11,7 +11,17 @@ COPY client/ ./
 RUN npm run build
 
 #######################################
-# Stage 2 — install ALL server deps (including dev), generate Prisma, compile TS
+# Stage 2 — build the Rider PWA
+#######################################
+FROM node:20-alpine AS rider-build
+WORKDIR /app/rider
+COPY rider/package.json rider/package-lock.json ./
+RUN npm ci
+COPY rider/ ./
+RUN npm run build
+
+#######################################
+# Stage 3 — install ALL server deps (including dev), generate Prisma, compile TS
 #######################################
 FROM node:20-alpine AS server-build
 RUN apk add --no-cache openssl
@@ -25,7 +35,7 @@ RUN npm run build
 RUN cp src/generated/prisma/*.so.node dist/generated/prisma/
 
 #######################################
-# Stage 3 — production-only server deps (no devDependencies)
+# Stage 4 — production-only server deps (no devDependencies)
 #######################################
 FROM node:20-alpine AS prod-deps
 RUN apk add --no-cache openssl
@@ -37,7 +47,7 @@ ENV SHARP_IGNORE_GLOBAL_LIBVIPS=1
 RUN npm ci --omit=dev
 
 #######################################
-# Stage 4 — runtime image (production deps only)
+# Stage 5 — runtime image (production deps only)
 #######################################
 FROM node:20-alpine AS runtime
 RUN apk add --no-cache openssl tini \
@@ -54,6 +64,9 @@ COPY --from=server-build /app/prisma ./prisma
 COPY --from=server-build /app/prisma.config.ts ./prisma.config.ts
 # server.ts does `express.static("public")` — this is where the built SPA lives.
 COPY --from=client-build /app/client/dist ./public
+# server.ts serves /rider from public/.rider. Keep this separate from the
+# main SPA so Rider's hash routes and service worker retain the /rider scope.
+COPY --from=rider-build /app/rider/dist ./public/.rider
 # Partner API reference page, served at GET /api/v1/docs. tsc doesn't copy
 # non-TS files into dist/, so this comes across from the server build context.
 COPY --from=server-build /app/docs-static ./docs-static

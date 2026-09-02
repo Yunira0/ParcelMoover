@@ -38,6 +38,7 @@ jobs:
           cache-dependency-path: |
             server/package-lock.json
             client/package-lock.json
+            rider/package-lock.json
 
       - name: Install server deps
         working-directory: server
@@ -68,6 +69,12 @@ jobs:
 
       - name: Install client deps & build
         working-directory: client
+        run: |
+          npm ci
+          npm run build
+
+      - name: Install Rider deps & build
+        working-directory: rider
         run: |
           npm ci
           npm run build
