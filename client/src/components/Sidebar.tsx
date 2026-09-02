@@ -367,10 +367,7 @@ const AdminSidebar: React.FC<{ isSuperAdmin: boolean }> = ({ isSuperAdmin }) => 
         <SidebarItem to="/orders" icon={Package} label="Orders" />
         <SidebarItem to="/merchant-overview" icon={Gauge} label="Vendor Overview" />
         {(isSuperAdmin || hasAdminPermission('BRANCH_TRACKING_READ')) && (
-          <>
-            <SidebarItem to="/branches" icon={Building2} label="Branch Overview" />
-            <SidebarItem to="/branches/settlement" icon={Banknote} label="Branch Settlement" />
-          </>
+          <SidebarItem to="/branches" icon={Building2} label="Branch Overview" />
         )}
 
         <SidebarSection label="Management" />
@@ -444,6 +441,10 @@ const AdminSidebar: React.FC<{ isSuperAdmin: boolean }> = ({ isSuperAdmin }) => 
             <SubItem to="/cod-settlement-requests" icon={Banknote} label="Settlement Requests" />
             <SubItem to="/billing" icon={Receipt} label="Billing & Credit" />
           </SidebarGroup>
+
+          {(isSuperAdmin || hasAdminPermission('BRANCH_TRACKING_READ')) && (
+            <SubItem to="/branches/settlement" icon={Banknote} label="Branch Settlement" />
+          )}
 
           {canReadBooks && (
             <>

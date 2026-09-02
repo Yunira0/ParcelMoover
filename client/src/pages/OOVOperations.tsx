@@ -555,8 +555,8 @@ const OOVOperations: React.FC = () => {
         options={[
           { value: 'oov', label: TAB_LABELS.oov, count: tabCounts['oov'] },
           { value: 'open_manifest', label: 'Open Manifest' },
-          { value: 'received', label: 'Received' },
           { value: 'dispatched', label: TAB_LABELS.dispatched, count: tabCounts['dispatched'] },
+          { value: 'received', label: 'Receive Manifest' },
         ]}
       />
 

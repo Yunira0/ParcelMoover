@@ -127,13 +127,19 @@ const TransitManifestPanel: React.FC<TransitManifestPanelProps> = ({ statusFilte
 
       <div className="oov-toolbar">
         <span className="oov-selected-count">
-          {selected ? `Scanning into ${selected.manifestNo}` : 'Select a manifest to scan into'}
+          {statusFilter === 'active'
+            ? selected
+              ? `Scanning into ${selected.manifestNo}`
+              : 'Select a manifest to scan into'
+            : 'Manifests received so far'}
         </span>
-        <div className="oov-toolbar-actions">
-          <Button variant="secondary" className="oov-outline-btn" onClick={() => setCreateOpen(true)} disabled={busy}>
-            <Plus size={14} /> New manifest
-          </Button>
-        </div>
+        {statusFilter === 'active' && (
+          <div className="oov-toolbar-actions">
+            <Button variant="secondary" className="oov-outline-btn" onClick={() => setCreateOpen(true)} disabled={busy}>
+              <Plus size={14} /> New manifest
+            </Button>
+          </div>
+        )}
       </div>
 
       {statusFilter === 'active' && (

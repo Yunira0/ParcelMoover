@@ -9,8 +9,11 @@ import NepaliDatePicker from '../../components/NepaliDatePicker';
 import { Banner } from '../accounting/ui';
 import { useBranchScope } from '../../context/BranchScopeContext';
 import { useBranchAccess } from '../../hooks/useBranchAccess';
+import '../../components/merchant/MerchantFilterBar.css';
 import '../../components/branch/BranchOverviewFilterBar.css';
-import './BranchOverview.css';
+import '../vendor/VendorFinance.css';
+
+const PAGE_SIZE = 20;
 
 interface BranchSettlementRow {
   id: string;
@@ -23,14 +26,18 @@ interface BranchSettlementRow {
   remark: string;
 }
 
-// COD statements settled between branches — same layout as Rider/Vendor COD.
-// The list stays empty until a branch-settlement endpoint exists.
+// COD statements settled between branches — same page shape as the vendor's
+// own Settlements page (VendorSettlements/VendorFinance.css): a PageHeader, a
+// filter row, a plain table, Pagination with a rows-per-page picker. The list
+// stays empty until a branch-settlement endpoint exists.
 const BranchSettlement: React.FC = () => {
   const navigate = useNavigate();
   const { fromBranchId, toBranchId, setFromBranchId, setToBranchId, branches, loading } = useBranchScope();
   const { canWriteOtherBranches } = useBranchAccess();
-  const [settlementDate, setSettlementDate] = useState('');
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
   const [page, setPage] = useState(1);
+  const [pageSizeChoice, setPageSizeChoice] = useState(PAGE_SIZE);
 
   const options = (allLabel: string): SearchableSelectOption[] => [
     { id: 'all', label: allLabel },
@@ -50,7 +57,7 @@ const BranchSettlement: React.FC = () => {
   ];
 
   return (
-    <div className="order-management-container branch-overview-page">
+    <div className="vendor-finance-page">
       <PageHeader
         title="Branch Settlement"
         subtitle="COD statements settled between branches"
@@ -67,21 +74,53 @@ const BranchSettlement: React.FC = () => {
         </Banner>
       )}
 
-      <div className="merchant-filter-toolbar">
-        <div className="merchant-filter-group">
-          <label className="merchant-filter-wide branch-filter-narrow">
-            <span>From Branch</span>
-            <SearchableSelect options={options('All branches')} value={fromBranchId}
-              onChange={setFromBranchId} placeholder="All branches" disabled={loading} />
+      <div className="vendor-finance-toolbar">
+        <div className="vendor-finance-date-range">
+          <label className="branch-filter-narrow">
+            From Branch
+            <SearchableSelect
+              options={options('All branches')}
+              value={fromBranchId}
+              onChange={setFromBranchId}
+              placeholder="All branches"
+              disabled={loading}
+            />
           </label>
-          <label className="merchant-filter-wide branch-filter-narrow">
-            <span>To Branch</span>
-            <SearchableSelect options={options('Any destination')} value={toBranchId}
-              onChange={setToBranchId} placeholder="Any destination" disabled={loading} />
+          <label className="branch-filter-narrow">
+            To Branch
+            <SearchableSelect
+              options={options('Any destination')}
+              value={toBranchId}
+              onChange={setToBranchId}
+              placeholder="Any destination"
+              disabled={loading}
+            />
           </label>
-          <label className="merchant-filter-wide branch-filter-narrow">
-            <span>Settlement Date</span>
-            <NepaliDatePicker value={settlementDate} onChange={setSettlementDate} />
+          <label className="merchant-filter-daterange">
+            <span>Date</span>
+            <div className="merchant-filter-range">
+              <NepaliDatePicker
+                value={fromDate}
+                max={toDate || undefined}
+                onChange={(next) => {
+                  setPage(1);
+                  setFromDate(next);
+                }}
+                placeholder="From"
+                aria-label="Date range start"
+              />
+              <span className="merchant-filter-range-sep" aria-hidden="true">~</span>
+              <NepaliDatePicker
+                value={toDate}
+                min={fromDate || undefined}
+                onChange={(next) => {
+                  setPage(1);
+                  setToDate(next);
+                }}
+                placeholder="To"
+                aria-label="Date range end"
+              />
+            </div>
           </label>
         </div>
       </div>
@@ -99,6 +138,12 @@ const BranchSettlement: React.FC = () => {
         page={page}
         totalPages={1}
         onPageChange={setPage}
+        pageSize={pageSizeChoice}
+        pageSizeLabel="settlements"
+        onPageSizeChange={(size) => {
+          setPageSizeChoice(size);
+          setPage(1);
+        }}
         summary={`${rows.length} settlements`}
       />
     </div>
