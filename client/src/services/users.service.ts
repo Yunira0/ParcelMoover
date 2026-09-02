@@ -308,6 +308,8 @@ export const ADMIN_PERMISSIONS = [
   { code: 'EDIT_SETTLEMENTS', label: 'Edit COD Statements', description: 'Correct an unsettled COD statement (add/remove orders) before it is paid out.' },
   { code: 'ACCOUNTING_ACCESS', label: 'Finance', description: 'The whole Finance section: the books, party balances and reports, plus recording expenses, posting journal entries and closing a month. This is the full financial picture of the business.' },
   { code: 'EDIT_COD_LOCKED', label: 'Edit COD (any status)', description: 'Correct the COD amount on a delivered, returned-to-vendor, or RTO parcel, as long as it hasn’t been settled to the vendor yet.' },
+  { code: 'BRANCH_TRACKING_READ', label: 'Branch Tracking (read-only)', description: 'View other branches — their overview figures and settlement position — without making any change. Own branch stays the only one they can edit.' },
+  { code: 'BRANCH_TRACKING_WRITE', label: 'Branch Tracking (read & write)', description: 'View other branches and act on their orders and settlements, the same as a super_admin would. Includes everything Branch Tracking (read-only) grants.' },
 ] as const;
 
 export type AdminPermissionCode = (typeof ADMIN_PERMISSIONS)[number]['code'];

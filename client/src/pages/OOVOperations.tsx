@@ -13,6 +13,7 @@ import SegmentedTabs from '../components/SegmentedTabs';
 import PageHeader from '../components/PageHeader';
 import Pagination from '../components/Pagination';
 import QuickRemarkPopup from '../components/QuickRemarkPopup';
+import TransitManifestPanel from '../components/TransitManifestPanel';
 import {
   bulkUpdateOrderStatus,
   getOrders,
@@ -112,6 +113,15 @@ const OOVOperations: React.FC = () => {
     const fromUrl = searchParams.get('tab');
     return fromUrl && fromUrl in TAB_LABELS ? (fromUrl as OOVTab) : 'oov';
   });
+  // The tab bar carries two extra views for transit manifests, sitting between
+  // the two parcel tabs. Only 'oov'/'dispatched' drive the parcel table below.
+  const [view, setView] = useState<'oov' | 'open_manifest' | 'received' | 'dispatched'>(() => {
+    const fromUrl = searchParams.get('tab');
+    return fromUrl === 'open_manifest' || fromUrl === 'received' || fromUrl === 'dispatched'
+      ? fromUrl
+      : 'oov';
+  });
+  const isManifestView = view === 'open_manifest' || view === 'received';
   const [searchQuery, setSearchQuery] = useState(() => searchParams.get('search') || '');
   // Tracking ids confirmed by pressing Enter (typically a barcode scanner) -
   // kept separate from the live input buffer so rapid scans never race each
@@ -537,11 +547,23 @@ const OOVOperations: React.FC = () => {
 
       <SegmentedTabs
         ariaLabel="Order operation filters"
-        value={activeTab}
-        onChange={setActiveTab}
-        options={(Object.keys(TAB_LABELS) as OOVTab[]).map(tab => ({ value: tab, label: TAB_LABELS[tab], count: tabCounts[tab] }))}
+        value={view}
+        onChange={(v) => {
+          setView(v);
+          if (v === 'oov' || v === 'dispatched') setActiveTab(v);
+        }}
+        options={[
+          { value: 'oov', label: TAB_LABELS.oov, count: tabCounts['oov'] },
+          { value: 'open_manifest', label: 'Open Manifest' },
+          { value: 'received', label: 'Received' },
+          { value: 'dispatched', label: TAB_LABELS.dispatched, count: tabCounts['dispatched'] },
+        ]}
       />
 
+      {isManifestView ? (
+        <TransitManifestPanel statusFilter={view === 'received' ? 'received' : 'active'} />
+      ) : (
+      <>
       {loadError && <p className="oov-action-error">{loadError}</p>}
 
       <div className="oov-toolbar">
@@ -754,6 +776,8 @@ const OOVOperations: React.FC = () => {
           trackingId={remarkPopupOrder.trackingId}
           onClose={() => setRemarkPopupOrder(null)}
         />
+      )}
+      </>
       )}
     </div>
   );

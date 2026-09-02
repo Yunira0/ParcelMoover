@@ -5,6 +5,7 @@ import Sidebar from '../components/Sidebar';
 import TopNav from '../components/TopNav';
 import Button from '../components/Button';
 import { StaffPermissionsProvider } from '../context/StaffPermissionsContext';
+import { BranchScopeProvider } from '../context/BranchScopeContext';
 import { MobileNavProvider } from '../context/MobileNavContext';
 import { isRiderOnly } from '../utils/auth';
 import { logout } from '../services/auth.service';
@@ -39,17 +40,19 @@ const DashboardLayout: React.FC = () => {
 
   return (
     <StaffPermissionsProvider>
-      <MobileNavProvider>
-        <div className="dashboard-layout">
-          <TopNav />
-          <div className="dashboard-body">
-            <Sidebar />
-            <main className="dashboard-content">
-              <Outlet />
-            </main>
+      <BranchScopeProvider>
+        <MobileNavProvider>
+          <div className="dashboard-layout">
+            <TopNav />
+            <div className="dashboard-body">
+              <Sidebar />
+              <main className="dashboard-content">
+                <Outlet />
+              </main>
+            </div>
           </div>
-        </div>
-      </MobileNavProvider>
+        </MobileNavProvider>
+      </BranchScopeProvider>
     </StaffPermissionsProvider>
   );
 };

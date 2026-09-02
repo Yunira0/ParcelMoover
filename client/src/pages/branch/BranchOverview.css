@@ -1,0 +1,9 @@
+/* Same base layout as .merchant-overview-page (Vendor Overview) so every
+   Branch Tracking page keeps the same vertical rhythm, whether or not it
+   also carries that class. */
+.branch-overview-page {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: var(--space-6);
+}

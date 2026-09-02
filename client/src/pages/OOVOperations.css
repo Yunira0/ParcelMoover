@@ -352,6 +352,23 @@
   margin: var(--space-2) 0 0;
 }
 
+/* Same shape as .oov-action-error, success tone — e.g. the "N parcel(s)
+   updated" notice after a manifest scan. */
+.oov-action-notice {
+  color: var(--color-success-default);
+  font-size: var(--font-size-sm);
+  margin: var(--space-2) 0 0;
+}
+
+/* Rejected-scan list under the manifest scan bar — same tone as
+   .oov-action-error, laid out as a list instead of a single line. */
+.oov-action-error-list {
+  color: var(--color-danger-text);
+  font-size: var(--font-size-sm);
+  margin: var(--space-2) 0 0;
+  padding-left: var(--space-5);
+}
+
 .oov-reason-field {
   display: flex;
   flex-direction: column;

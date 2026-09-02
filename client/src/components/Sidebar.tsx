@@ -38,6 +38,7 @@ import {
   Image,
   Megaphone,
   Gauge,
+  Building2,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { getCurrentUserRoles, hasAdminPermission, isAdminSide } from '../utils/auth';
@@ -365,6 +366,12 @@ const AdminSidebar: React.FC<{ isSuperAdmin: boolean }> = ({ isSuperAdmin }) => 
         <SidebarItem to="/dashboard" icon={LayoutDashboard} label="Dashboard" />
         <SidebarItem to="/orders" icon={Package} label="Orders" />
         <SidebarItem to="/merchant-overview" icon={Gauge} label="Vendor Overview" />
+        {(isSuperAdmin || hasAdminPermission('BRANCH_TRACKING_READ')) && (
+          <>
+            <SidebarItem to="/branches" icon={Building2} label="Branch Overview" />
+            <SidebarItem to="/branches/settlement" icon={Banknote} label="Branch Settlement" />
+          </>
+        )}
 
         <SidebarSection label="Management" />
         {/* Three peers in one column. KYC used to be a fourth entry here; it is
