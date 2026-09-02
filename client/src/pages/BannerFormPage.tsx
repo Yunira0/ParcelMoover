@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, ImagePlus, X } from 'lucide-react';
+import { ArrowLeft, Download, ImagePlus, X } from 'lucide-react';
 import Button from '../components/Button';
 import FormField from '../components/FormField';
 import ToggleSwitch from '../components/ToggleSwitch';
@@ -137,12 +137,21 @@ const BannerFormPage: React.FC = () => {
 
       <div className="bfp-header">
         <h1>{isEdit ? 'Edit Banner' : 'New Banner'}</h1>
-        <p>An admin-only label plus the image vendors will see — the image carries the message.</p>
+        <p>Create the exact wide canvas vendors see on their dashboard. Upload the creative first, then set its visibility and timing.</p>
       </div>
 
       <form className="bfp-form" onSubmit={handleSubmit} noValidate>
-        <section className="bfp-section">
-          <div className="bfp-image-field">
+        <section className="bfp-section bfp-creative-section" aria-labelledby="banner-creative-heading">
+          <div className="bfp-creative-intro">
+            <div>
+              <h2 id="banner-creative-heading">Banner creative</h2>
+              <p>Upload a ready-to-publish image in the approved canvas size.</p>
+            </div>
+            <span className="bfp-dimension-badge">1600 × 270 px</span>
+          </div>
+
+          <div className="bfp-creative-layout">
+            <div className="bfp-image-field">
             {previewUrl ? (
               <div className="bfp-image-preview-wrap">
                 <img src={previewUrl} alt="Banner preview" className="bfp-image-preview" />
@@ -158,7 +167,7 @@ const BannerFormPage: React.FC = () => {
               <button type="button" className="bfp-image-dropzone" onClick={() => fileInputRef.current?.click()}>
                 <ImagePlus size={22} />
                 <span>Upload banner image</span>
-                <small>JPG, PNG, or WebP · max 5 MB · wide creatives (~1600×270) read best</small>
+                <small>JPG, PNG, or WebP · 5 MB max</small>
               </button>
             )}
             <input
@@ -168,10 +177,28 @@ const BannerFormPage: React.FC = () => {
               style={{ display: 'none' }}
               onChange={(e) => setImage(e.target.files?.[0] ?? null)}
             />
+            </div>
+
+            <aside className="bfp-creative-guide" aria-label="Banner artwork guide">
+              <h3>Make it fit everywhere</h3>
+              <p className="bfp-guide-lead">This canvas renders at the same ratio on the vendor dashboard and in the notice modal.</p>
+              <div className="bfp-guide-rules">
+                <p><strong>Safe area</strong><span>Keep text and logos inside the central 1360 × 180 px area.</span></p>
+                <p><strong>Export</strong><span>Use large, high-contrast type. JPG, PNG, or WebP under 5 MB.</span></p>
+              </div>
+              <a className="bfp-template-link" href="/banner-template-1600x270.svg" download>
+                <Download size={15} /> Download base canvas
+              </a>
+              <span className="bfp-template-note">Editable SVG · 1600 × 270 px</span>
+            </aside>
           </div>
         </section>
 
-        <section className="bfp-section">
+        <section className="bfp-section bfp-settings-section" aria-labelledby="banner-settings-heading">
+          <div className="bfp-settings-intro">
+            <h2 id="banner-settings-heading">Publishing details</h2>
+            <p>Set how and when vendors will see this banner.</p>
+          </div>
           <div className="bfp-fields">
             <FormField
               label="Name"

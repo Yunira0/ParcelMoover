@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import * as XLSX from 'xlsx';
-import { ArrowLeft, CheckCircle2, Download, Trash2, Upload, XCircle } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, Download, FileSpreadsheet, Trash2, Upload, XCircle } from 'lucide-react';
 import Button from '../../components/Button';
 import FormField from '../../components/FormField';
 import SearchableSelectAsync from '../../components/SearchableSelectAsync';
@@ -331,6 +331,7 @@ const BulkOrderPage: React.FC = () => {
   // fallback at line ~294).
   const handleVendorSelect = useCallback((id: string) => {
     setSelectedVendorId(id);
+    setError(current => current === 'Please select a vendor before submitting this import.' ? '' : current);
     searchVendors(id, 1).then(res => {
       if (res?.success && Array.isArray(res.data)) {
         const v = res.data.find((x: any) => x.id === id);
@@ -361,6 +362,9 @@ const BulkOrderPage: React.FC = () => {
   );
   const errorCount = rowErrors.filter(e => Object.keys(e).length > 0).length;
   const validCount = rows.length - errorCount;
+  const vendorRequiredError = actingForVendor
+    && !selectedVendorId
+    && error === 'Please select a vendor before submitting this import.';
 
   const updateCell = (index: number, field: DraftField, value: string) => {
     setRows(prev => prev.map((row, i) => (i === index ? { ...row, [field]: value } : row)));
@@ -437,7 +441,7 @@ const BulkOrderPage: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (actingForVendor && !selectedVendorId) {
-      setError('Pick which vendor this import is for.');
+      setError('Please select a vendor before submitting this import.');
       return;
     }
     if (!senderProfile) {
@@ -475,20 +479,37 @@ const BulkOrderPage: React.FC = () => {
   // ── Result screen ────────────────────────────────────────────────────────────
   if (result) {
     return (
-      <div className="bop-page">
-        <div className="bop-result-card">
-          <div className="bop-result-counts">
-            <div className="bop-result-stat bop-result-stat--success">
-              <CheckCircle2 size={28} />
-              <span className="bop-result-num">{result.created}</span>
-              <span className="bop-result-label">Created</span>
-            </div>
-            <div className="bop-result-stat bop-result-stat--fail">
-              <XCircle size={28} />
-              <span className="bop-result-num">{result.failed}</span>
-              <span className="bop-result-label">Failed</span>
+      <div className="bop-page bop-page--result">
+        <button type="button" className="bop-back" onClick={() => navigate('/orders')}>
+          <ArrowLeft size={15} /> Orders
+        </button>
+        <section className={`bop-result-card${result.failed === 0 ? ' bop-result-card--complete' : ''}`} aria-labelledby="bop-result-title">
+          <div className="bop-result-heading">
+            <span className="bop-result-icon" aria-hidden="true"><CheckCircle2 size={26} /></span>
+            <div>
+              <h1 id="bop-result-title">Import complete</h1>
+              <p>
+                {result.failed > 0
+                  ? 'Some orders need attention before they can be created.'
+                  : 'Every imported order was created successfully.'}
+              </p>
             </div>
           </div>
+
+          {result.failed > 0 ? (
+            <div className="bop-result-counts" aria-label="Import outcome">
+              <div className="bop-result-stat bop-result-stat--success">
+                <span className="bop-result-label">Orders created</span>
+                <strong className="bop-result-num">{result.created}</strong>
+              </div>
+              <div className="bop-result-stat bop-result-stat--fail">
+                <span className="bop-result-label">Orders not created</span>
+                <strong className="bop-result-num">{result.failed}</strong>
+              </div>
+            </div>
+          ) : (
+            <p className="bop-result-summary"><strong>{result.created}</strong> order{result.created === 1 ? '' : 's'} created</p>
+          )}
 
           {result.failed > 0 && (
             <div className="bop-result-errors">
@@ -514,13 +535,13 @@ const BulkOrderPage: React.FC = () => {
 
           <div className="bop-result-actions">
             <Button variant="secondary" onClick={() => { setResult(null); setRows([]); setFileName(''); }}>
-              Import More Orders
+              Import another file
             </Button>
             <Button variant="primary" onClick={() => navigate('/orders')}>
-              View Orders
+              {result.created > 0 ? `View ${result.created} order${result.created === 1 ? '' : 's'}` : 'View orders'}
             </Button>
           </div>
-        </div>
+        </section>
       </div>
     );
   }
@@ -571,15 +592,15 @@ const BulkOrderPage: React.FC = () => {
       </button>
 
       <div className="bop-header">
-        <h1>Bulk Order Import</h1>
-        <p>Upload a CSV or Excel file to create multiple orders in a single request.</p>
+        <h1>Bulk order import</h1>
+        <p>Upload a spreadsheet, review the rows, then create the valid orders in one request.</p>
       </div>
 
       <form className="bop-form" onSubmit={handleSubmit} noValidate>
         {/* ── Sender ── */}
         <section className="bop-section">
           <div className="bop-section-heading">
-            <h2>Sender</h2>
+            <h2>Sender details</h2>
             <p>Applied to every order in this batch.</p>
           </div>
           {senderLoading ? (
@@ -600,6 +621,7 @@ const BulkOrderPage: React.FC = () => {
                   searchPlaceholder="Search vendors..."
                   emptyMessage="No vendors available."
                 />
+                {vendorRequiredError && <p role="alert" className="bop-field-error">Please select a vendor before submitting this import.</p>}
               </div>
               {senderProfile && (
                 <>
@@ -620,8 +642,8 @@ const BulkOrderPage: React.FC = () => {
         <section className="bop-section">
           <div className="bop-section-heading-row">
             <div>
-              <h2>Upload File</h2>
-              <p>One row per order. Max 100 orders per import.</p>
+              <h2>Upload order list</h2>
+              <p>Use one row per order. Each import can contain up to 100 orders.</p>
             </div>
             <Button type="button" variant="outline" onClick={downloadTemplate}>
               <Download size={15} /> Download Template
@@ -646,9 +668,12 @@ const BulkOrderPage: React.FC = () => {
               className="bop-file-input"
               aria-hidden="true"
             />
-            <Upload size={28} className="bop-dropzone-icon" />
+            {fileName ? <FileSpreadsheet size={28} className="bop-dropzone-icon" /> : <Upload size={28} className="bop-dropzone-icon" />}
             {fileName ? (
-              <span className="bop-dropzone-filename">{fileName}</span>
+              <>
+                <span className="bop-dropzone-filename">{fileName}</span>
+                <span className="bop-dropzone-hint">File loaded. Click or drop another file to replace it.</span>
+              </>
             ) : (
               <>
                 <span className="bop-dropzone-primary">Drop CSV or Excel here or click to browse</span>
@@ -663,17 +688,14 @@ const BulkOrderPage: React.FC = () => {
           <section className="bop-section bop-section--preview">
             <div className="bop-section-heading-row">
               <div>
-                <h2>Preview</h2>
-                <p>
-                  {rows.length} row(s) — {validCount} valid, {errorCount} with errors.
-                  Every cell is editable; hover a red cell for the reason.
-                </p>
+                <h2>Review imported orders</h2>
+                <p>All cells are editable. Invalid fields are highlighted so you can correct them before submitting.</p>
               </div>
-              {errorCount > 0 && (
-                <span className="bop-preview-badge bop-preview-badge--warn">
-                  {errorCount} row(s) need fixing or will be skipped
-                </span>
-              )}
+              <div className="bop-preview-counts" aria-label="Import summary">
+                <span className="bop-preview-badge bop-preview-badge--neutral">{rows.length} imported</span>
+                <span className="bop-preview-badge bop-preview-badge--ready">{validCount} ready</span>
+                {errorCount > 0 && <span className="bop-preview-badge bop-preview-badge--warn">{errorCount} need attention</span>}
+              </div>
             </div>
 
             <div className="bop-preview-wrap">
@@ -783,21 +805,28 @@ const BulkOrderPage: React.FC = () => {
           </section>
         )}
 
-        {error && <p role="alert" className="bop-error">{error}</p>}
+        {error && !vendorRequiredError && <p role="alert" className="bop-error">{error}</p>}
 
         <div className="bop-actions">
-          <Button type="button" variant="secondary" onClick={() => navigate('/orders')} disabled={submitting}>
-            Cancel
-          </Button>
-          <Button
-            type="submit"
-            variant="primary"
-            disabled={submitting || validCount === 0 || !senderProfile}
-          >
-            {submitting
-              ? 'Submitting…'
-              : `Submit ${validCount} Order${validCount !== 1 ? 's' : ''} (1 request)`}
-          </Button>
+          {vendorRequiredError && (
+            <p role="alert" className="bop-submit-error">
+              Select a vendor before submitting this import.
+            </p>
+          )}
+          <div className="bop-actions-buttons">
+            <Button type="button" variant="secondary" onClick={() => navigate('/orders')} disabled={submitting}>
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              variant="primary"
+              disabled={submitting || validCount === 0 || (!actingForVendor && !senderProfile)}
+            >
+              {submitting
+                ? 'Submitting…'
+                : `Submit ${validCount} Order${validCount !== 1 ? 's' : ''}`}
+            </Button>
+          </div>
         </div>
       </form>
     </div>

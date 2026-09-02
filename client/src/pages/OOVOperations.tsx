@@ -37,6 +37,11 @@ type OOVTab = 'oov' | 'dispatched';
 
 const PAGE_SIZE = 10;
 const SEARCH_DEBOUNCE_MS = 300;
+// NCM and Upaya deliberately accept no more than 100 creates per request.
+// Keep every transport request below that boundary, but let ops select far
+// more rows: batches are submitted one after another so a large handoff cannot
+// swamp a partner API or leave the browser waiting on one very long request.
+const STATUS_UPDATE_BATCH_SIZE = 100;
 
 const TAB_LABELS: Record<OOVTab, string> = {
   oov: 'Transit',
@@ -130,6 +135,7 @@ const OOVOperations: React.FC = () => {
   const [isActionOpen, setIsActionOpen] = useState(false);
   const [selectedNextStatus, setSelectedNextStatus] = useState<ParcelStatus | ''>('');
   const [statusUpdating, setStatusUpdating] = useState(false);
+  const [statusUpdateProgress, setStatusUpdateProgress] = useState<{ completed: number; total: number } | null>(null);
   const [actionError, setActionError] = useState('');
   const [remarkPopupOrder, setRemarkPopupOrder] = useState<Order | null>(null);
   const [dispatchMethod, setDispatchMethod] = useState<'manifest' | 'tpl' | 'upaya'>('manifest');
@@ -314,42 +320,60 @@ const OOVOperations: React.FC = () => {
       return;
     }
 
+    const ids = selectedOrders.map(order => String(order.id));
     setStatusUpdating(true);
+    setStatusUpdateProgress({ completed: 0, total: ids.length });
     try {
-      const ids = selectedOrders.map(order => String(order.id));
+      const batches = Array.from(
+        { length: Math.ceil(ids.length / STATUS_UPDATE_BATCH_SIZE) },
+        (_, index) => ids.slice(index * STATUS_UPDATE_BATCH_SIZE, (index + 1) * STATUS_UPDATE_BATCH_SIZE),
+      );
+      const failed: Array<{ trackingId: string; error?: string }> = [];
+      let completed = 0;
 
       if (isDispatchAction && dispatchMethod === 'tpl') {
         // Hand off to NCM: creates their orders; parcels stay
         // in Transit until the partner's pickup webhook moves them to In Transit.
-        const res = await handoffToNcm(ids);
-        const failed = (res.data ?? []).filter(item => !item.success);
-        if (failed.length > 0) {
-          setActionError(
-            failed.map(item => `${item.trackingId}: ${item.error || 'failed'}`).join(' · '),
-          );
-          await loadOovOrders();
-          return;
+        for (const batch of batches) {
+          const res = await handoffToNcm(batch);
+          failed.push(...(res.data ?? []).filter(item => !item.success));
+          completed += batch.length;
+          setStatusUpdateProgress({ completed, total: ids.length });
         }
       } else if (isDispatchAction && dispatchMethod === 'upaya') {
         // Hand off to Upaya: creates the Upaya orders (area + service type
         // both auto-derived server-side per parcel) and moves the parcel
         // straight to dispatched (same as NCM/manifest), then Upaya's
         // webhooks/reconciliation carry it the rest of the way.
-        const res = await handoffParcelsToUpaya(ids);
-        const failed = (res.data ?? []).filter(item => !item.success);
-        if (failed.length > 0) {
-          setActionError(
-            failed.map(item => `${item.trackingId}: ${item.error || 'failed'}`).join(' · '),
-          );
-          await loadOovOrders();
-          return;
+        for (const batch of batches) {
+          const res = await handoffParcelsToUpaya(batch);
+          failed.push(...(res.data ?? []).filter(item => !item.success));
+          completed += batch.length;
+          setStatusUpdateProgress({ completed, total: ids.length });
         }
       } else {
-        await bulkUpdateOrderStatus(ids, effectiveNextStatus, {
-          remarks: isReasonRequiredAction ? reasonRemarks.trim() : undefined,
-        });
+        // The regular bulk-status endpoint also remains bounded. Splitting it
+        // makes this path safe for selections across multiple 500-row pages,
+        // and produces a clear partial-progress state if a later batch fails.
+        for (const batch of batches) {
+          await bulkUpdateOrderStatus(batch, effectiveNextStatus, {
+            remarks: isReasonRequiredAction ? reasonRemarks.trim() : undefined,
+          });
+          completed += batch.length;
+          setStatusUpdateProgress({ completed, total: ids.length });
+        }
       }
       await loadOovOrders();
+
+      if (failed.length > 0) {
+        const preview = failed
+          .slice(0, 5)
+          .map(item => `${item.trackingId}: ${item.error || 'failed'}`)
+          .join(' · ');
+        const remainder = failed.length > 5 ? ` · +${failed.length - 5} more` : '';
+        setActionError(`${ids.length - failed.length} processed; ${failed.length} could not be handed off. ${preview}${remainder}`);
+        return;
+      }
 
       setSelectionByTab(prev => ({ ...prev, [activeTab]: new Map() }));
       setIsActionOpen(false);
@@ -357,6 +381,9 @@ const OOVOperations: React.FC = () => {
       setDispatchMethod('manifest');
       setReasonRemarks('');
     } catch (err: unknown) {
+      // Earlier batches are committed independently. Refresh before showing a
+      // later-batch failure so the table never keeps showing stale Transit rows.
+      await loadOovOrders();
       const message =
         typeof err === 'object' &&
         err !== null &&
@@ -367,6 +394,7 @@ const OOVOperations: React.FC = () => {
       setActionError(message);
     } finally {
       setStatusUpdating(false);
+      setStatusUpdateProgress(null);
     }
   };
 
@@ -553,7 +581,7 @@ const OOVOperations: React.FC = () => {
             </span>
           )}
           <div className="oov-action-anchor">
-            <Button variant="secondary" className="oov-outline-btn" onClick={openStatusAction}>
+            <Button variant="secondary" className="oov-outline-btn" onClick={openStatusAction} disabled={statusUpdating}>
               Action{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
             </Button>
             {isActionOpen && (
@@ -657,6 +685,11 @@ const OOVOperations: React.FC = () => {
                   </div>
                 )}
                 {actionError && <p className="oov-action-error">{actionError}</p>}
+                {statusUpdateProgress && (
+                  <p className="oov-status-empty" aria-live="polite">
+                    Processing {statusUpdateProgress.completed} of {statusUpdateProgress.total} orders…
+                  </p>
+                )}
                 <div className="oov-status-submit-row">
                   <Button variant="secondary" className="oov-outline-btn" onClick={() => { setIsActionOpen(false); setReasonRemarks(''); }}>
                     Cancel
@@ -667,7 +700,9 @@ const OOVOperations: React.FC = () => {
                     onClick={applyStatusChange}
                     disabled={statusUpdating || !effectiveNextStatus || (isReasonRequiredAction && !reasonRemarks.trim())}
                   >
-                    {statusUpdating ? 'Applying...' : 'Submit'}
+                    {statusUpdating
+                      ? `Processing ${statusUpdateProgress?.completed ?? 0}/${statusUpdateProgress?.total ?? selectedOrders.length}...`
+                      : 'Submit'}
                   </Button>
                 </div>
               </div>
