@@ -3,7 +3,7 @@
 .vendor-notice-hero {
   position: relative;
   width: 100%;
-  aspect-ratio: 6 / 1;
+  aspect-ratio: 1600 / 270;
   border: 1px solid var(--color-border-default);
   border-radius: var(--border-radius-lg);
   overflow: hidden;
@@ -15,7 +15,7 @@
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
 }
 
 .vendor-notice-link {
@@ -23,18 +23,6 @@
   width: 100%;
   height: 100%;
   cursor: pointer;
-}
-
-@media (max-width: 900px) {
-  .vendor-notice-hero {
-    aspect-ratio: 3 / 1;
-  }
-}
-
-@media (max-width: 560px) {
-  .vendor-notice-hero {
-    aspect-ratio: 2 / 1;
-  }
 }
 
 /* ── Shared dismiss control (hero + modal) ───────────────────────────────── */
@@ -71,7 +59,7 @@
 
 .vendor-notice-modal {
   position: relative;
-  width: 560px;
+  width: min(760px, 90vw);
   max-width: 90vw;
   max-height: 85vh;
   background: var(--color-background-surface);
@@ -84,6 +72,7 @@
 
 .vendor-notice-modal .vendor-notice-link,
 .vendor-notice-modal-img {
+  aspect-ratio: 1600 / 270;
   max-height: 85vh;
 }
 

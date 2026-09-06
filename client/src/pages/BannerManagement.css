@@ -19,8 +19,8 @@
 .banner-mgmt-thumb {
   display: block;
   width: 80px;
-  aspect-ratio: 6 / 1;
-  object-fit: cover;
+  aspect-ratio: 1600 / 270;
+  object-fit: contain;
   border: 1px solid var(--color-border-default);
   border-radius: var(--border-radius-default);
   background: var(--color-background-elevated);

@@ -35,7 +35,6 @@ function ProtectedLayout() {
   if (rider.mustChangePassword) {
     return (
       <div className="flex flex-col h-dvh overflow-hidden">
-        <OfflineBanner />
         <ChangePasswordPage />
       </div>
     )
@@ -43,7 +42,6 @@ function ProtectedLayout() {
   return (
     <PendingProvider>
       <div className="flex flex-col h-dvh overflow-hidden">
-        <OfflineBanner />
         <Routes>
           <Route path="/scan"      element={<Suspense fallback={<ScannerFallback />}><ScannerPage /></Suspense>} />
           <Route path="/dashboard" element={<DashboardPage />} />
@@ -65,7 +63,6 @@ function PublicLayout() {
   if (rider) return <Navigate to="/scan" replace />
   return (
     <div className="flex flex-col h-full min-h-dvh">
-      <OfflineBanner />
       <Routes>
         <Route path="/login"   element={<LoginPage />} />
         <Route path="*"        element={<Navigate to="/login" replace />} />
