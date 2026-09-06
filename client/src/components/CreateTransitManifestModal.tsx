@@ -14,7 +14,7 @@ interface CreateTransitManifestModalProps {
 }
 
 // Opens a transit manifest: pick the origin hub and the destination hub, add an
-// optional note. The /transit-manifests backend isn't wired yet.
+// optional note.
 const CreateTransitManifestModal: React.FC<CreateTransitManifestModalProps> = ({
   isOpen,
   onClose,

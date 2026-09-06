@@ -7,3 +7,24 @@
   min-width: 0;
   gap: var(--space-6);
 }
+
+/* TRACKING ID — rust semi-bold link, matching the orders list
+   (.tracking-cell / .tracking-id-link in OrderManagement.css).
+   Redefined here rather than relying on that sibling stylesheet:
+   pages are lazy-loaded, so this page can't assume its CSS is fetched.
+   Without this the id inherits the default ink text and loses its highlight. */
+.branch-overview-page .tracking-cell {
+  color: var(--color-text-primary);
+}
+
+.branch-overview-page .tracking-cell .tracking-id-link {
+  color: inherit;
+  cursor: pointer;
+  font-weight: var(--font-weight-semi-bold);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.branch-overview-page .tracking-cell .tracking-id-link:hover {
+  text-decoration: underline;
+}

@@ -6,7 +6,9 @@ import FormField from '../../components/FormField';
 import Table from '../../components/Table';
 import { Banner } from '../accounting/ui';
 import { useBranchScope } from '../../context/BranchScopeContext';
-import { getOrders, type Order } from '../../services/orders.service';
+import type { Order } from '../../services/orders.service';
+import { createBranchSettlement, getBranchOrders } from '../../services/branchTracking.service';
+import { apiErrorMessage } from '../../utils/serverValidation';
 import { downloadExcel, type CellValue } from '../../utils/excel';
 import '../SettlementCreatePage.css';
 
@@ -24,20 +26,16 @@ const SectionHeader: React.FC<{ icon: React.ReactNode; title: string; descriptio
   </div>
 );
 
-const hubName = (loc: string) => loc.split(' - ')[0];
 const money = (n: number) => `Rs. ${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 
-/** The declared COD, as a labelled block — mirrors the rider/vendor form's CodCell. */
+/** Cash collected, as a labelled block — mirrors the rider/vendor form's CodCell. */
 const CodCell: React.FC<{ codAmount: number }> = ({ codAmount }) => (
   <div className="scp-cod">
-    <span className="scp-cod-label">COD</span>
+    <span className="scp-cod-label">COLLECTED</span>
     <span className="scp-cod-value">{money(codAmount)}</span>
   </div>
 );
 
-// Branch settlement form — same shape as the Rider/Vendor settlement form: pick
-// the branches, pick the unsettled orders, net payable = COD less a flat
-// per-parcel commission. Not wired to a backend yet.
 const BranchSettlementCreatePage: React.FC = () => {
   const navigate = useNavigate();
   const { branches } = useBranchScope();
@@ -47,6 +45,7 @@ const BranchSettlementCreatePage: React.FC = () => {
   const [settlementDate, setSettlementDate] = useState(new Date().toISOString().split('T')[0]);
   const [commissionPerParcel, setCommissionPerParcel] = useState('');
   const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
   const [orders, setOrders] = useState<Order[]>([]);
@@ -54,13 +53,6 @@ const BranchSettlementCreatePage: React.FC = () => {
   const [loadingOrders, setLoadingOrders] = useState(false);
 
   const branchOptions = branches.map((b) => ({ value: b.id, label: b.name }));
-  const nameOf = (id: string) => branches.find((b) => b.id === id)?.name ?? null;
-  const fromName = nameOf(fromBranch);
-  const toName = nameOf(toBranch);
-
-  // Unsettled orders for the branch pair — `settlement: 'pending'` is the same
-  // filter the dashboard's Pending Deposit figure uses (delivered, not yet in a
-  // settlement). Hub scoping is client-side, same as Branch Overview.
   const loadOrders = useCallback(
     async (signal: AbortSignal) => {
       if (!fromBranch && !toBranch) {
@@ -69,34 +61,36 @@ const BranchSettlementCreatePage: React.FC = () => {
       }
       setLoadingOrders(true);
       try {
-        const res = await getOrders({ pageSize: 200, settlement: 'pending' }, signal);
-        const list = res?.success && Array.isArray(res.data) ? res.data : [];
-        const scoped = list.filter(
-          (o) =>
-            (!fromName || (o.origin && hubName(o.origin) === fromName)) &&
-            (!toName || (o.destination && hubName(o.destination) === toName)),
-        );
-        setOrders(scoped);
-        setSelectedIds(new Set(scoped.map((o) => o.id))); // default: settle the whole batch
+        const res = await getBranchOrders({
+          ...(fromBranch ? { fromBranchId: fromBranch } : {}),
+          ...(toBranch ? { toBranchId: toBranch } : {}),
+          metric: 'pendingDeposit',
+          pageSize: 100,
+        }, signal);
+        const list = Array.isArray(res.data) ? res.data : [];
+        setOrders(list);
+        setSelectedIds(new Set(list.map((o) => o.id)));
       } catch {
         setError('Failed to load unsettled orders for this branch pair.');
       } finally {
         setLoadingOrders(false);
       }
     },
-    [fromBranch, toBranch, fromName, toName],
+    [fromBranch, toBranch],
   );
 
   useEffect(() => {
     const c = new AbortController();
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- request lifecycle owns loading
     loadOrders(c.signal);
     return () => c.abort();
   }, [loadOrders]);
 
   const commission = Number(commissionPerParcel || 0);
   const selectedOrders = orders.filter((o) => selectedIds.has(o.id));
-  const codTotal = selectedOrders.reduce((sum, o) => sum + (o.codAmount || 0), 0);
-  const netPayable = codTotal - commission * selectedOrders.length;
+  const codTotal = selectedOrders.reduce((sum, o) => sum + (o.collectedAmount || 0), 0);
+  const commissionTotal = selectedOrders.reduce((sum, o) => sum + Math.min(commission, o.collectedAmount), 0);
+  const netPayable = codTotal - commissionTotal;
 
   const rowIds = orders.map((o) => o.id);
   const allSelected = rowIds.length > 0 && rowIds.every((id) => selectedIds.has(id));
@@ -118,7 +112,7 @@ const BranchSettlementCreatePage: React.FC = () => {
       return next;
     });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!fromBranch || !toBranch) {
       setError('Pick both a From and a To branch.');
@@ -132,9 +126,24 @@ const BranchSettlementCreatePage: React.FC = () => {
       setError('Select at least one order to settle.');
       return;
     }
-    // TODO(backend): POST the branch settlement once the endpoint exists.
+    setSaving(true);
     setError('');
-    setSaved(true);
+    try {
+      await createBranchSettlement({
+        fromBranchId: fromBranch,
+        toBranchId: toBranch,
+        settlementDate,
+        orderIds: selectedOrders.map((order) => String(order.id)),
+        commissionPerParcel: commission,
+      });
+      setSaved(true);
+      setOrders([]);
+      setSelectedIds(new Set());
+    } catch (err) {
+      setError(apiErrorMessage(err, 'Failed to create branch settlement'));
+    } finally {
+      setSaving(false);
+    }
   };
 
   const exportRows = selectedOrders.length > 0 ? selectedOrders : orders;
@@ -148,15 +157,15 @@ const BranchSettlementCreatePage: React.FC = () => {
       o.receiverName,
       o.receiverPhone,
       o.destination || '-',
-      o.codAmount,
+      o.collectedAmount,
       commission,
-      o.codAmount - commission,
+      Math.max(0, o.collectedAmount - commission),
     ]);
     rows.push([
       '', '', '', '', '', '',
-      exportRows.reduce((s, o) => s + o.codAmount, 0),
-      commission * exportRows.length,
-      exportRows.reduce((s, o) => s + o.codAmount - commission, 0),
+      exportRows.reduce((s, o) => s + o.collectedAmount, 0),
+      exportRows.reduce((s, o) => s + Math.min(commission, o.collectedAmount), 0),
+      exportRows.reduce((s, o) => s + Math.max(0, o.collectedAmount - commission), 0),
     ]);
     downloadExcel(`branch-settlement-orders-${settlementDate}.xlsx`, 'Unsettled Orders', headers, rows);
   };
@@ -176,7 +185,7 @@ const BranchSettlementCreatePage: React.FC = () => {
     },
     { header: 'NUMBER', accessor: (o: Order) => o.receiverPhone, width: '120px' },
     { header: 'DESTINATION', accessor: (o: Order) => o.destination || '-', width: '130px' },
-    { header: 'COD', accessor: (o: Order) => <CodCell codAmount={o.codAmount} />, width: '110px' },
+    { header: 'COLLECTED', accessor: (o: Order) => <CodCell codAmount={o.collectedAmount} />, width: '110px' },
     {
       header: 'Commission',
       accessor: () => <span className="scp-num">{money(commission)}</span>,
@@ -185,7 +194,7 @@ const BranchSettlementCreatePage: React.FC = () => {
     {
       header: 'Net Payable',
       accessor: (o: Order) => (
-        <span className="scp-num scp-num-strong">{money(o.codAmount - commission)}</span>
+        <span className="scp-num scp-num-strong">{money(Math.max(0, o.collectedAmount - commission))}</span>
       ),
       width: '120px',
     },
@@ -205,8 +214,7 @@ const BranchSettlementCreatePage: React.FC = () => {
 
       {saved && (
         <Banner tone="success">
-          Settlement captured on screen only — the branch settlement API isn’t wired yet, so
-          nothing was saved.
+          Settlement saved successfully. It now appears in Branch Settlement and Deposited totals.
         </Banner>
       )}
 
@@ -224,7 +232,12 @@ const BranchSettlementCreatePage: React.FC = () => {
                 type="select"
                 required
                 value={fromBranch}
-                onChange={setFromBranch}
+                onChange={(id) => {
+                  setFromBranch(id);
+                  setSaved(false);
+                  const branch = branches.find((item) => item.id === id);
+                  setCommissionPerParcel(branch ? String(branch.commissionPerParcel) : '');
+                }}
                 placeholder="Select branch"
                 options={branchOptions}
               />
@@ -309,8 +322,8 @@ const BranchSettlementCreatePage: React.FC = () => {
           <Button type="button" variant="secondary" onClick={() => navigate('/branches/settlement')}>
             Cancel
           </Button>
-          <Button type="submit" variant="primary">
-            Add Settlement
+          <Button type="submit" variant="primary" disabled={saving}>
+            {saving ? 'Saving…' : 'Add Settlement'}
           </Button>
         </div>
       </form>

@@ -22,7 +22,15 @@ export async function hasAdminPermission(
     select: { permissions: true },
   });
 
-  return Boolean(adminRecord?.permissions.includes(permission));
+  const permissions = adminRecord?.permissions ?? [];
+  if (
+    permission === "BRANCH_TRACKING_READ" &&
+    permissions.includes("BRANCH_TRACKING_WRITE")
+  ) {
+    return true;
+  }
+
+  return permissions.includes(permission);
 }
 
 /**

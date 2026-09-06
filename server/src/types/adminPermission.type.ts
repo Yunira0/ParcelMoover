@@ -30,6 +30,10 @@ export const ADMIN_PERMISSIONS = [
   // once a parcel reaches a terminal-ish status. Still blocked once the
   // parcel's COD has actually been paid out to the vendor.
   "EDIT_COD_LOCKED",
+  // Cross-branch operational visibility. WRITE includes READ in
+  // hasAdminPermission so a writer never needs both strings persisted.
+  "BRANCH_TRACKING_READ",
+  "BRANCH_TRACKING_WRITE",
 ] as const;
 
 export type AdminPermission = (typeof ADMIN_PERMISSIONS)[number];

@@ -156,6 +156,12 @@ export interface ListOrdersQuery {
   // Inclusive Nepal-local day bounds, "YYYY-MM-DD".
   dateFrom?: string;
   dateTo?: string;
+  /** Vendor settlement state used by Merchant Overview. */
+  settlement?: "settled" | "pending";
+  /** Internal-only branch scope. These are never accepted by GET /orders. */
+  originLocationIds?: string[];
+  destinationLocationIds?: string[];
+  branchSettlement?: "settled" | "pending";
   // Lists trashed (soft-deleted) parcels instead of live ones. Deliberately
   // absent from listOrdersQuerySchema so ?trashed=true on the public list
   // endpoint is stripped before it reaches the service — only the admin-only
@@ -183,6 +189,16 @@ export interface BulkUpdateParcelStatusInput {
    * that schema would let anyone close someone else's manifest.
    */
   returnManifestId?: string;
+  /**
+   * The transit manifest driving this transition, set only by
+   * transitManifest.service - never accepted over HTTP.
+   *
+   * Same contract as returnManifestId above: bulkUpdateOrderStatusSchema
+   * deliberately omits it, and validate() strips unknown keys, so a client
+   * cannot inject it into PATCH /orders/bulk-status. Adding it to that schema
+   * would let anyone dispatch onto someone else's manifest.
+   */
+  transitManifestId?: string;
 }
 
 export interface BulkCreateOrderInput {

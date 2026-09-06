@@ -1,10 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import '../Modal.css';
 import FormField from '../FormField';
 import Button from '../Button';
 import SearchableSelect from '../SearchableSelect';
 import MultiSearchableSelect from '../MultiSearchableSelect';
-import { listManagedLocations, updateLocation, type ManagedLocation } from '../../services/locations.service';
+import { listManagedLocations, type ManagedLocation } from '../../services/locations.service';
+import { createBranch } from '../../services/branchTracking.service';
 import { apiErrorMessage } from '../../utils/serverValidation';
 
 interface AddBranchModalProps {
@@ -24,9 +25,12 @@ const AddBranchModal: React.FC<AddBranchModalProps> = ({ isOpen, onClose, onSucc
   const [commissionPerParcel, setCommissionPerParcel] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const savingRef = useRef(false);
 
   useEffect(() => {
     if (!isOpen) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- visibility owns this remote resource
     setLoadingLocations(true);
     listManagedLocations()
       .then((res) => {
@@ -39,6 +43,32 @@ const AddBranchModal: React.FC<AddBranchModalProps> = ({ isOpen, onClose, onSucc
       .catch(() => setError('Failed to load destinations.'))
       .finally(() => setLoadingLocations(false));
   }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const previous = document.activeElement as HTMLElement | null;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !savingRef.current) onClose();
+      if (event.key === 'Tab') {
+        const focusable = Array.from(dialogRef.current?.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ) ?? []);
+        if (!focusable.length) return;
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    requestAnimationFrame(() => dialogRef.current?.querySelector<HTMLButtonElement>('.modal-close-btn')?.focus());
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      previous?.focus();
+    };
+  }, [isOpen, onClose]);
+
+  useEffect(() => { savingRef.current = saving; }, [saving]);
 
   if (!isOpen) return null;
 
@@ -57,26 +87,15 @@ const AddBranchModal: React.FC<AddBranchModalProps> = ({ isOpen, onClose, onSucc
     setSaving(true);
     setError('');
     try {
-      await updateLocation(branchId, { isHub: true });
-
-      // Re-parent the picked destinations under it — a link, not a create.
-      let failedAreas: string[] = [];
-      if (coveredAreaIds.length > 0) {
-        const results = await Promise.allSettled(
-          coveredAreaIds.map((id) => updateLocation(id, { parentId: branchId })),
-        );
-        failedAreas = coveredAreaIds
-          .map((id) => locations.find((l) => l.id === id)?.name ?? id)
-          .filter((_, i) => results[i].status === 'rejected');
-      }
+      await createBranch({
+        locationId: branchId,
+        coveredAreaIds,
+        commissionPerParcel: Number(commissionPerParcel || 0),
+      });
 
       reset();
-      onSuccess();
-      if (failedAreas.length > 0) {
-        setError(`Branch set, but couldn't cover: ${failedAreas.join(', ')}`);
-      } else {
-        onClose();
-      }
+      await onSuccess();
+      onClose();
     } catch (err) {
       setError(apiErrorMessage(err, 'Failed to set branch'));
     } finally {
@@ -88,11 +107,11 @@ const AddBranchModal: React.FC<AddBranchModalProps> = ({ isOpen, onClose, onSucc
   const areaOptions = branchOptions.filter((o) => o.id !== branchId);
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+    <div className="modal-overlay" onClick={() => !saving && onClose()}>
+      <div ref={dialogRef} className="modal-content" role="dialog" aria-modal="true" aria-labelledby="add-branch-title" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <h2>New Branch</h2>
-          <Button variant="ghost" size="icon" className="modal-close-btn" onClick={onClose} type="button">
+          <h2 id="add-branch-title">New Branch</h2>
+          <Button variant="ghost" size="icon" className="modal-close-btn" onClick={onClose} type="button" aria-label="Close new branch dialog">
             &times;
           </Button>
         </div>
@@ -110,6 +129,7 @@ const AddBranchModal: React.FC<AddBranchModalProps> = ({ isOpen, onClose, onSucc
               searchPlaceholder="Search destinations…"
               emptyMessage="No destinations found."
               disabled={loadingLocations}
+              ariaLabel="Branch destination"
             />
             <small className="form-hint">
               No destination is created here — pick one that already exists to set it as a branch.
@@ -126,6 +146,7 @@ const AddBranchModal: React.FC<AddBranchModalProps> = ({ isOpen, onClose, onSucc
               searchPlaceholder="Search destinations…"
               emptyMessage="No other destinations yet."
               disabled={!branchId}
+              ariaLabel="Covered areas"
             />
             <small className="form-hint">
               Also existing destinations only — re-linked under the branch above (e.g. Chitwan
@@ -139,7 +160,7 @@ const AddBranchModal: React.FC<AddBranchModalProps> = ({ isOpen, onClose, onSucc
             value={commissionPerParcel}
             onChange={setCommissionPerParcel}
             placeholder="e.g. 50"
-            hint="Rs. per parcel this branch keeps. Not saved yet — no backend field for it."
+            hint="Rs. per parcel this branch keeps when a settlement is recorded."
           />
           {error && <p className="error-text">{error}</p>}
           <div className="modal-footer">

@@ -3,11 +3,9 @@ import api from '../utils/api';
 /**
  * Transit hand-over batch — the transit counterpart of the return manifest.
  *
- * Frontend scaffold only: the /transit-manifests endpoints don't exist yet.
- * TODO(backend): transit_manifests + transit_manifest_parcels models, a
- * migration, routes/controllers/service, and the two status transitions:
- *   addParcels → members move  oov → dispatched          (admin scans out)
- *   receive    → members move  dispatched → arrived_at_branch (branch scans in)
+ * Lifecycle: open (accumulating oov parcels) → dispatched (members move
+ * oov → dispatched as the origin hub scans them on) → received (members move
+ * dispatched → arrived_at_branch as the destination branch scans them in).
  */
 
 export type TransitManifestStatus = 'open' | 'dispatched' | 'received';
