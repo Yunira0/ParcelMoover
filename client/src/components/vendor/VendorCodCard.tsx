@@ -35,7 +35,9 @@ const VendorCodCard: React.FC<VendorCodCardProps> = ({ data, loading = false }) 
         </div>
         <div className="vendor-cod-card-row">
           <span className="vendor-cod-card-row-label">COD Pending</span>
-          <span className="vendor-cod-card-row-value">{loading ? '...' : formatCurrency(data.pendingCod)}</span>
+          <span className="vendor-cod-card-row-value">
+            {loading ? '...' : formatCurrency(data.pendingCod - data.pendingDeliveryCharge)}
+          </span>
         </div>
         <div className="vendor-cod-card-row">
           <span className="vendor-cod-card-row-label">Pending Delivery Charge</span>

@@ -247,6 +247,14 @@ export async function listOrdersController(req: Request, res: Response) {
       deliveryRiderId = source.deliveryRiderId;
     }
 
+    let salesUserId: string | undefined;
+    if (source.salesUserId !== undefined) {
+      if (typeof source.salesUserId !== "string" || !UUID_REGEX.test(source.salesUserId)) {
+        return res.status(400).json({ success: false, message: "salesUserId must be a valid uuid" });
+      }
+      salesUserId = source.salesUserId;
+    }
+
     let page: number | undefined;
     let pageSize: number | undefined;
     if (source.page !== undefined) {
@@ -303,6 +311,7 @@ export async function listOrdersController(req: Request, res: Response) {
         ...(status ? { status } : {}),
         ...(orderType ? { orderType } : {}),
         ...(vendorIdFilter ? { vendorId: vendorIdFilter } : {}),
+        ...(salesUserId ? { salesUserId } : {}),
         ...(search ? { search } : {}),
         ...(deliveryRiderId ? { deliveryRiderId } : {}),
         ...(page !== undefined ? { page } : {}),

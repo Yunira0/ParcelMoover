@@ -131,6 +131,10 @@ export interface ListOrdersQuery {
   // Narrow the list to these vendors. Always intersected with the actor's own
   // scope, so it can only ever shrink what a vendor/sales actor already sees.
   vendorId?: string[];
+  // Narrow the list to parcels whose vendor is owned by this sales user
+  // (vendors.sales_user_id). Like `vendorId`, it's a separate AND condition
+  // intersected with the actor's own scope, never a way to widen it.
+  salesUserId?: string;
   // Narrows the list to parcels carried by one delivery rider.
   deliveryRiderId?: string;
   // Display-only page hint echoed back in meta; the actual position comes

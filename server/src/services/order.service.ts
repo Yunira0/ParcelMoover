@@ -1793,6 +1793,13 @@ function buildOrdersWhere(
   if (query.vendorId?.length) {
     conditions.push({ vendor_id: { in: query.vendorId } });
   }
+  // Sales filter from the UI: narrow to parcels whose vendor is assigned to
+  // this sales user (vendors.sales_user_id). Like the vendor filter it's a
+  // separate AND condition, so a vendor/sales actor can only ever narrow their
+  // own scope with it, never escape it.
+  if (query.salesUserId) {
+    conditions.push({ vendors: { sales_user_id: query.salesUserId } });
+  }
   if (query.deliveryRiderId) {
     conditions.push({ delivery_rider_id: query.deliveryRiderId });
   }
@@ -2406,7 +2413,7 @@ export async function listOrders(
   // a trash listing would both read and overwrite the live orders cache.
   const isDefaultUnfilteredQuery =
     !paginated && !query.status?.length && !query.orderType && !query.search &&
-    !query.vendorId?.length && !query.deliveryRiderId && !query.sortBy &&
+    !query.vendorId?.length && !query.salesUserId && !query.deliveryRiderId && !query.sortBy &&
     !query.deliveredToday && !query.trashed && vendorIds === undefined;
   // Export requests (withArrival) skip the shared cache so the enriched rows
   // never pollute the lean list cache and vice-versa.
@@ -3411,7 +3418,15 @@ async function computeDashboardSummary(
       JOIN parcels p ON p.id = c.parcel_id
       LEFT JOIN riders r ON r.id = c.rider_id
       WHERE p.deleted_at IS NULL
-        AND p.status::text IN ('delivered', 'partially_delivered')
+        -- returned_to_vendor is in scope alongside the delivery statuses: an
+        -- RTV/RTO parcel collected no COD (contributes 0 to the cash figures)
+        -- but still owes its return delivery charge, so its charge belongs in
+        -- pending_delivery_charge / total_delivery_charge. collected_at (stamped
+        -- by the delivery / partial-delivery / RTV transition) is the "reached
+        -- the vendor" gate - the same basis getPendingCodBill and
+        -- getUnsettledOrders bill on.
+        AND c.collected_at IS NOT NULL
+        AND p.status::text IN ('delivered', 'partially_delivered', 'returned_to_vendor')
         ${codScopeSql}
     `),
     prisma.cod_collections.count({
@@ -6043,10 +6058,6 @@ export interface MerchantOverviewResult {
     deposited: MerchantOverviewMetric;
     pendingDeposit: MerchantOverviewMetric;
   };
-  codSettlement: {
-    lastAmount: number;
-    lastSettledAt: string | null;
-  };
 }
 
 export async function getMerchantOverview(
@@ -6169,17 +6180,7 @@ export async function getMerchantOverview(
   // Use same date window as parcels (created_at) for both deposited/pending
   const depositedDateFilter = dateFilter;
 
-  const [lastSettlement, depositedRows, pendingRows] = await Promise.all([
-    // Last settled with at least one item (authentic)
-    prisma.$queryRaw<{ payable_amount: string | null; amount: string; created_at: Date }[]>`
-      SELECT s.payable_amount::text, s.amount::text, s.created_at
-      FROM settlements s
-      WHERE s.payee_type = 'vendor' AND s.status = 'settled'
-        ${vendorId ? Prisma.sql`AND s.vendor_id = ${vendorId}::uuid` : Prisma.empty}
-        AND EXISTS (SELECT 1 FROM settlement_items si WHERE si.settlement_id = s.id)
-      ORDER BY s.settlement_date DESC, s.created_at DESC
-      LIMIT 1
-    `.then(r => r[0] as any ?? null),
+  const [depositedRows, pendingRows] = await Promise.all([
     // Deposited: delivered parcels that ARE in a settled settlement
     prisma.$queryRaw<{ cnt: bigint; total: string }[]>`
       SELECT
@@ -6237,10 +6238,6 @@ export async function getMerchantOverview(
         deposited: { count: depositedCount, amount: depositedAmount },
         pendingDeposit: { count: pendingDepositCount, amount: pendingDepositAmount },
       },
-      codSettlement: {
-        lastAmount: lastSettlement ? Number(lastSettlement.payable_amount ?? lastSettlement.amount) : 0,
-        lastSettledAt: lastSettlement ? lastSettlement.created_at.toISOString() : null,
-      },
     };
   }
 
@@ -6259,10 +6256,6 @@ export async function getMerchantOverview(
       deliveryCharge: { count: deliveredCount, amount: Number(row.delivery_charge_sum) },
       deposited: { count: depositedCount, amount: depositedAmount },
       pendingDeposit: { count: pendingDepositCount, amount: pendingDepositAmount },
-    },
-    codSettlement: {
-      lastAmount: lastSettlement ? Number(lastSettlement.payable_amount ?? lastSettlement.amount) : 0,
-      lastSettledAt: lastSettlement ? lastSettlement.created_at.toISOString() : null,
     },
   };
 }
