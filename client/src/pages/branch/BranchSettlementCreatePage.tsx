@@ -10,6 +10,7 @@ import type { Order } from '../../services/orders.service';
 import { createBranchSettlement, getBranchOrders } from '../../services/branchTracking.service';
 import { apiErrorMessage } from '../../utils/serverValidation';
 import { downloadExcel, type CellValue } from '../../utils/excel';
+import { getCurrentUserLocationId } from '../../utils/auth';
 import '../SettlementCreatePage.css';
 
 const SectionHeader: React.FC<{ icon: React.ReactNode; title: string; description: string }> = ({
@@ -47,6 +48,20 @@ const BranchSettlementCreatePage: React.FC = () => {
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+
+  // Default the paying branch to the admin's own hub - they're almost always
+  // settling out of wherever they work. Only while the field is still blank,
+  // so it never overwrites a manual pick, and it also seeds that branch's own
+  // commission default the same way picking it by hand would.
+  useEffect(() => {
+    if (fromBranch || branches.length === 0) return;
+    const own = branches.find((b) => b.id === getCurrentUserLocationId());
+    if (own) {
+      setFromBranch(own.id);
+      setCommissionPerParcel(String(own.commissionPerParcel));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [branches]);
 
   const [orders, setOrders] = useState<Order[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string | number>>(new Set());

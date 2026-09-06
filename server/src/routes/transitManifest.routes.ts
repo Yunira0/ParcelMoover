@@ -6,15 +6,21 @@ import { csrfProtection } from "../middlewares/csrf.middleware";
 import { validate } from "../middlewares/validate.middleware";
 import {
   createTransitManifestSchema,
+  dispatchTransitManifestSchema,
   listTransitManifestsQuerySchema,
+  stageOrdersToBranchSchema,
   transitScanSchema,
 } from "../validators/transitManifest.schema";
 import {
   addTransitManifestParcelsController,
   createTransitManifestController,
+  deleteTransitManifestController,
+  dispatchTransitManifestController,
   getTransitManifestController,
   listTransitManifestsController,
   receiveTransitManifestParcelsController,
+  removeTransitManifestParcelController,
+  stageOrdersToBranchController,
 } from "../controllers/transitManifest.controller";
 import { createRedisRateLimitStore } from "../lib/rateLimitStore";
 
@@ -95,15 +101,61 @@ transitManifestRouter.post(
   createTransitManifestController,
 );
 
-// POST /api/transit-manifests/:id/parcels — scan oov parcels on → dispatched
+// POST /api/transit-manifests/stage — the "Via Manifest" action: stage a
+// selection onto whichever manifest heads for the given branch, opening one if
+// none is free. Declared before "/:id/..." routes since it has no :id.
+transitManifestRouter.post(
+  "/stage",
+  authMiddleware,
+  csrfProtection,
+  authorizeRoles(...MANIFEST_ROLES),
+  writeLimiter,
+  validate(stageOrdersToBranchSchema),
+  stageOrdersToBranchController,
+);
+
+// DELETE /api/transit-manifests/:id — remove an empty open manifest (one
+// opened by mistake). Refused once it holds parcels or has ever left.
+transitManifestRouter.delete(
+  "/:id",
+  authMiddleware,
+  csrfProtection,
+  authorizeRoles(...MANIFEST_ROLES),
+  writeLimiter,
+  deleteTransitManifestController,
+);
+
+// POST /api/transit-manifests/:id/parcels — stage oov parcels onto it. Only a
+// write, not an action: nothing moves until the manifest is dispatched.
 transitManifestRouter.post(
   "/:id/parcels",
   authMiddleware,
   csrfProtection,
   authorizeRoles(...MANIFEST_ROLES),
-  actionLimiter,
+  writeLimiter,
   validate(transitScanSchema),
   addTransitManifestParcelsController,
+);
+
+// DELETE /api/transit-manifests/:id/parcels/:parcelId — pull one back off
+transitManifestRouter.delete(
+  "/:id/parcels/:parcelId",
+  authMiddleware,
+  csrfProtection,
+  authorizeRoles(...MANIFEST_ROLES),
+  writeLimiter,
+  removeTransitManifestParcelController,
+);
+
+// POST /api/transit-manifests/:id/dispatch — the truck leaves → dispatched
+transitManifestRouter.post(
+  "/:id/dispatch",
+  authMiddleware,
+  csrfProtection,
+  authorizeRoles(...MANIFEST_ROLES),
+  actionLimiter,
+  validate(dispatchTransitManifestSchema),
+  dispatchTransitManifestController,
 );
 
 // POST /api/transit-manifests/:id/receive — scan dispatched parcels in → arrived_at_branch

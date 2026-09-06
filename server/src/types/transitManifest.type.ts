@@ -1,11 +1,12 @@
 /**
  * A hub-to-hub (transit) hand-over batch.
  *
- * `open` accumulates oov parcels; the first successful scan dispatches the
- * manifest (every member parcel moves to dispatched). `dispatched` keeps
- * accepting scans while the truck is being loaded. `received` is terminal:
- * no member is still dispatched because the destination branch scanned them
- * all in to arrived_at_branch.
+ * `open` accumulates oov parcels - scanning or selecting one onto a manifest
+ * only records that it is travelling on it, exactly as a return manifest
+ * stages a parcel without moving it, so members can still be taken back off.
+ * Dispatching the manifest is the deliberate act that moves every member to
+ * dispatched. `received` is terminal: no member is still dispatched because
+ * the destination branch scanned them all in to arrived_at_branch.
  *
  * Unlike the return leg this groups by route (origin hub → destination hub),
  * not by vendor - one truck carries many vendors' parcels - so several open
@@ -37,8 +38,30 @@ export interface CreateTransitManifestInput {
   remarks?: string;
 }
 
+/**
+ * Parcels arrive either off a barcode scanner (tracking ids) or off a ticked
+ * table row (parcel ids). Both are optional individually; the schema enforces
+ * that at least one arrives.
+ */
 export interface TransitScanInput {
-  trackingIds: string[];
+  trackingIds?: string[];
+  parcelIds?: string[];
+}
+
+export interface DispatchTransitManifestInput {
+  remarks?: string;
+}
+
+/**
+ * Stages a selection onto whichever manifest is headed for `toBranchId` -
+ * reusing a free open one for the parcel's origin hub, or opening a new one -
+ * rather than naming a manifest directly. Used by the "Via Manifest" action on
+ * Transit Operations, where the operator picks a destination branch, not a
+ * manifest.
+ */
+export interface StageOrdersToBranchInput {
+  parcelIds: string[];
+  toBranchId: string;
 }
 
 export interface ListTransitManifestsParams {

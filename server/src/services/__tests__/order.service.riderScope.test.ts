@@ -8,6 +8,8 @@ vi.mock("../../lib/prisma", () => ({
     vendors: { findUnique: vi.fn(), findMany: vi.fn() },
     riders: { findFirst: vi.fn(), findUnique: vi.fn() },
     cod_collections: { findFirst: vi.fn(), findMany: vi.fn() },
+    // Not branch-scoped by default - see getAdminBranchScope in order.service.ts.
+    admins: { findFirst: vi.fn().mockResolvedValue(null) },
     $transaction: vi.fn(),
   },
 }));
@@ -80,7 +82,9 @@ function makeMockTx() {
       create: vi.fn().mockResolvedValue({ id: "d-1", dispatch_no: "DSP-0007" }),
       findUnique: vi.fn().mockResolvedValue(null),
     },
-    dispatch_parcels: { createMany: vi.fn() },
+    dispatch_parcels: { createMany: vi.fn(), findFirst: vi.fn().mockResolvedValue(null) },
+    transit_manifest_parcels: { deleteMany: vi.fn() },
+    return_manifest_parcels: { deleteMany: vi.fn() },
     webhook_endpoints: { findMany: vi.fn().mockResolvedValue([]) },
     webhook_deliveries: { createMany: vi.fn() },
   };
@@ -300,6 +304,72 @@ describe("delivery rider is released when the parcel leaves the delivery leg", (
 
     expect(tx.parcels.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ delivery_rider_id: null }) }),
+    );
+  });
+});
+
+// Dispatching moves current_location_id straight to the destination hub the
+// moment a parcel leaves - it hasn't physically arrived, that's just where
+// it's headed. Force-reverting out of dispatched into anything but the
+// natural arrived_at_branch completion must undo that move too, or the
+// parcel reads as sitting at a hub it never reached and a re-dispatch starts
+// the trip from the wrong place (reported: Imadol → Chitwan dispatch, forced
+// back to Transit, re-dispatch showed "from Chitwan" instead of Imadol).
+describe("a force-revert out of dispatched undoes the location move too", () => {
+  it("restores current_location_id to where the last dispatch actually left from", async () => {
+    const tx = makeMockTx();
+    tx.dispatch_parcels.findFirst.mockResolvedValue({ dispatches: { from_location_id: "loc-imadol" } });
+    mockedPrisma.$transaction.mockImplementation((fn: (t: unknown) => Promise<unknown>) => fn(tx));
+    mockedPrisma.parcels.findFirst.mockResolvedValue(
+      makeFakeParcel({ status: "dispatched", current_location_id: "loc-chitwan" }),
+    );
+
+    await updateParcelStatus({ id: "root-1", roles: ["super_admin"] }, "parcel-1", {
+      status: "oov",
+    });
+
+    expect(tx.dispatch_parcels.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { parcel_id: "parcel-1" }, orderBy: { created_at: "desc" } }),
+    );
+    expect(tx.parcels.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ current_location_id: "loc-imadol" }) }),
+    );
+  });
+
+  it("leaves current_location_id alone on the natural arrived_at_branch completion", async () => {
+    const tx = makeMockTx();
+    mockedPrisma.$transaction.mockImplementation((fn: (t: unknown) => Promise<unknown>) => fn(tx));
+    mockedPrisma.parcels.findFirst.mockResolvedValue(
+      makeFakeParcel({ status: "dispatched", current_location_id: "loc-chitwan" }),
+    );
+
+    await updateParcelStatus({ id: "admin-1", roles: ["admin"] }, "parcel-1", {
+      status: "arrived_at_branch",
+    });
+
+    expect(tx.dispatch_parcels.findFirst).not.toHaveBeenCalled();
+    const data = tx.parcels.update.mock.calls[0]![0].data;
+    expect(data).not.toHaveProperty("current_location_id");
+  });
+
+  it("prefers an explicit locationId override over the dispatch lookup", async () => {
+    const tx = makeMockTx();
+    mockedPrisma.$transaction.mockImplementation((fn: (t: unknown) => Promise<unknown>) => fn(tx));
+    mockedPrisma.parcels.findFirst.mockResolvedValue(
+      makeFakeParcel({ status: "dispatched", current_location_id: "loc-chitwan" }),
+    );
+    mockedPrisma.locations.findUnique.mockResolvedValue({ id: "loc-hetauda", is_active: true });
+
+    // hold isn't a legal transition out of dispatched for a plain admin - only
+    // super_admin can force it, same as the revert to oov above.
+    await updateParcelStatus({ id: "root-1", roles: ["super_admin"] }, "parcel-1", {
+      status: "hold",
+      locationId: "loc-hetauda",
+    });
+
+    expect(tx.dispatch_parcels.findFirst).not.toHaveBeenCalled();
+    expect(tx.parcels.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ current_location_id: "loc-hetauda" }) }),
     );
   });
 });

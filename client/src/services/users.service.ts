@@ -30,6 +30,8 @@ export interface RegisterUserInput {
   permanentAddress?: string;
   currentAddress?: string;
   experience?: string;
+  /** Scopes this admin's Order Management to locationId's coverage instead of every order. */
+  branchScoped?: boolean;
 
   // Rider profile
   riderLocation?: string;
@@ -102,6 +104,8 @@ export interface UpdateUserProfileInput {
   permanentAddress?: string;
   currentAddress?: string;
   experience?: string;
+  /** Scopes this admin's Order Management to locationId's coverage instead of every order. */
+  branchScoped?: boolean;
   // vendor
   clientName?: string;
   businessName?: string;

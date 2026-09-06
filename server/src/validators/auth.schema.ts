@@ -80,6 +80,10 @@ export const registerUserSchema = z
     // admin-only
     position: optionalAuthString(100, "Position must not exceed 100 characters"),
     department: optionalAuthString(100),
+    // Opt-in: scopes this admin's own Order Management to locationId's
+    // coverage instead of every order. Meaningless without a locationId, and
+    // never inferred from having one - see admins.branch_scoped.
+    branchScoped: z.boolean().optional(),
     idDocumentType: optionalAuthString(50),
     idDocumentNumber: optionalAuthString(100),
     fatherName: optionalAuthString(100),
@@ -197,6 +201,9 @@ export const updateManagedUserSchema = z.object({
   // admin-only
   position: optionalAuthString(100),
   department: optionalAuthString(100),
+  // Opt-in: scopes this admin's own Order Management to locationId's coverage
+  // instead of every order. See admins.branch_scoped.
+  branchScoped: z.boolean().optional(),
   idDocumentType: optionalAuthString(50),
   idDocumentNumber: optionalAuthString(100),
   fatherName: optionalAuthString(100),

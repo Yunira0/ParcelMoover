@@ -14,6 +14,12 @@ model admins {
   id                    String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   user_id               String               @unique @db.Uuid
   location_id           String?              @db.Uuid
+  /// When true, this admin's own Order Management is scoped to location_id's
+  /// coverage (itself, its covered areas, its virtual branches) - an opt-in
+  /// restriction, never inferred from location_id alone. BRANCH_TRACKING_READ
+  /// or _WRITE lifts it, the same permission that already unlocks the
+  /// dedicated Branch Tracking pages. See order.service.ts's getAdminBranchScope.
+  branch_scoped         Boolean              @default(false)
   /// Shared sequence with riders.employee_number (employee_number_seq) - shown as "PM-<n>".
   employee_number       Int?                 @unique @default(dbgenerated("nextval('employee_number_seq'::regclass)"))
   position              String?
@@ -197,6 +203,10 @@ model locations {
   branch_settlements_to                                            branch_settlements[]    @relation("branch_settlements_to")
   transit_manifests_from                                           transit_manifests[]   @relation("transit_manifests_from_locationTolocations")
   transit_manifests_to                                             transit_manifests[]   @relation("transit_manifests_to_locationTolocations")
+  /// Branches this one virtually covers (its manifests/settlements also treat these as its own).
+  branch_virtual_coverage_branch                                   branch_virtual_coverage[] @relation("branch_virtual_coverage_branch")
+  /// The reverse: branches that virtually cover this one.
+  branch_virtual_coverage_covered                                  branch_virtual_coverage[] @relation("branch_virtual_coverage_covered")
 
   @@index([parent_id], map: "idx_locations_parent_id")
   @@index([name(ops: raw("gin_trgm_ops"))], map: "idx_locations_name_trgm", type: Gin)
@@ -431,6 +441,23 @@ model branch_settlement_items {
 
   @@id([settlement_id, parcel_id])
   @@index([settlement_id], map: "idx_branch_settlement_items_settlement")
+}
+
+/// A branch listing another existing branch as also covered by it, without
+/// touching the covered branch's own row - it keeps its own is_hub, its own
+/// routing, its own pricing and settlements. See resolveBranchLocationIds,
+/// the one place this gets folded into "what counts as covered by branch X".
+model branch_virtual_coverage {
+  branch_id         String    @db.Uuid
+  covered_branch_id String    @db.Uuid
+  created_by        String?   @db.Uuid
+  created_at        DateTime  @default(now()) @db.Timestamptz(6)
+  branch            locations @relation("branch_virtual_coverage_branch", fields: [branch_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  covered_branch    locations @relation("branch_virtual_coverage_covered", fields: [covered_branch_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  created_by_user   users?    @relation(fields: [created_by], references: [id], onUpdate: NoAction)
+
+  @@id([branch_id, covered_branch_id])
+  @@index([covered_branch_id], map: "idx_branch_virtual_coverage_covered_branch")
 }
 
 model parties {
@@ -893,6 +920,7 @@ model users {
   return_manifests_sent_by                               return_manifests[]        @relation("return_manifests_sent_byTousers")
   return_manifests_received_by                           return_manifests[]        @relation("return_manifests_received_byTousers")
   transit_manifests_created_by                           transit_manifests[]       @relation("transit_manifests_created_byTousers")
+  branch_virtual_coverage                                branch_virtual_coverage[]
   transit_manifests_dispatched_by                        transit_manifests[]       @relation("transit_manifests_dispatched_byTousers")
   transit_manifests_received_by                          transit_manifests[]       @relation("transit_manifests_received_byTousers")
   journal_entries                                        journal_entries[]

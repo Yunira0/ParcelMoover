@@ -24,7 +24,14 @@ describe("branch tracking validation", () => {
 
   it("dedicates branch commission and covered areas to one atomic request", () => {
     const result = createBranchSchema.parse({ locationId: a, coveredAreaIds: [b], commissionPerParcel: "50" });
-    expect(result).toEqual({ locationId: a, coveredAreaIds: [b], commissionPerParcel: 50 });
+    expect(result).toEqual({ locationId: a, coveredAreaIds: [b], virtualBranchIds: [], commissionPerParcel: 50 });
+  });
+
+  it("carries virtual branches through as their own array", () => {
+    const result = createBranchSchema.parse({
+      locationId: a, coveredAreaIds: [], virtualBranchIds: [b], commissionPerParcel: "0",
+    });
+    expect(result.virtualBranchIds).toEqual([b]);
   });
 
   it("rejects settlements whose paying and receiving branch are the same", () => {

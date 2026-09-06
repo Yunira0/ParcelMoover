@@ -10,6 +10,9 @@ export interface CurrentUser {
    * admins (codes delegated by a super_admin, e.g. MANAGE_USERS).
    */
   permissions?: string[];
+  /** An admin/super_admin's own assigned hub, if any - lets a "From" field
+   *  default to it instead of making them pick their own branch every time. */
+  locationId?: string | null;
 }
 
 export function getCurrentUser(): CurrentUser | null {
@@ -72,6 +75,11 @@ export function hasStaffPermission(permission: string): boolean {
  * Delegated admin privileges (MANAGE_USERS, SETTINGS_ACCESS). A super_admin
  * implicitly holds all of them; a plain admin only what a super_admin granted.
  */
+/** The current admin/super_admin's own assigned hub, or null if they have none. */
+export function getCurrentUserLocationId(): string | null {
+  return getCurrentUser()?.locationId ?? null;
+}
+
 export function hasAdminPermission(permission: string): boolean {
   const roles = getCurrentUserRoles();
   if (roles.includes('super_admin')) return true;

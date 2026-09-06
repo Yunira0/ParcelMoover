@@ -43,6 +43,28 @@ export const createTransitManifestSchema = z
     path: ["toHub"],
   });
 
-export const transitScanSchema = z.object({
-  trackingIds: trackingIdsSchema,
+// Selecting orders in a table sends ids; a scanner sends tracking ids. Same
+// endpoint either way - the difference is only how the operator picked them.
+const parcelIdsSchema = z
+  .array(z.string().uuid("Each parcel id must be a valid uuid"))
+  .min(1, "parcelIds must be a non-empty array")
+  .max(MAX_TRANSIT_MANIFEST_PARCELS, `Cannot add more than ${MAX_TRANSIT_MANIFEST_PARCELS} parcels at once`);
+
+export const transitScanSchema = z
+  .object({
+    trackingIds: trackingIdsSchema.optional(),
+    parcelIds: parcelIdsSchema.optional(),
+  })
+  .refine((val) => Boolean(val.trackingIds?.length || val.parcelIds?.length), {
+    message: "Scan a tracking id or select at least one order",
+    path: ["trackingIds"],
+  });
+
+export const dispatchTransitManifestSchema = z.object({
+  remarks: optionalRemarksSchema,
+});
+
+export const stageOrdersToBranchSchema = z.object({
+  parcelIds: parcelIdsSchema,
+  toBranchId: z.string().uuid("toBranchId must be a valid uuid"),
 });

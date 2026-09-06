@@ -6,6 +6,7 @@ import SearchableSelect from './SearchableSelect';
 import { listBranches, type Branch } from '../services/branchTracking.service';
 import { createTransitManifest, type TransitManifest } from '../services/transitManifests.service';
 import { apiErrorMessage } from '../utils/serverValidation';
+import { getCurrentUserLocationId } from '../utils/auth';
 
 interface CreateTransitManifestModalProps {
   isOpen: boolean;
@@ -30,7 +31,17 @@ const CreateTransitManifestModal: React.FC<CreateTransitManifestModalProps> = ({
   useEffect(() => {
     if (!isOpen) return;
     listBranches()
-      .then(setBranches)
+      .then((data) => {
+        setBranches(data);
+        // Default the origin to the admin's own hub - almost every manifest
+        // is opened from wherever the operator actually is. Only when the
+        // field is still blank, so it never overwrites a manual pick.
+        setFromHub((prev) => {
+          if (prev) return prev;
+          const own = data.find((b) => b.id === getCurrentUserLocationId());
+          return own?.name ?? prev;
+        });
+      })
       .catch(() => setError('Failed to load branches.'));
   }, [isOpen]);
 

@@ -34,6 +34,7 @@ interface UpdateManagedUserInput {
   bankAccountHolder?: string;
   // admin
   position?: string;
+  branchScoped?: boolean;
   department?: string;
   idDocumentType?: string;
   idDocumentNumber?: string;
@@ -408,6 +409,7 @@ export async function updateManagedUserProfile(
       putText(u, "bank_account_no", data.bankAccountNo);
       putText(u, "bank_account_holder", data.bankAccountHolder);
       if (data.locationId !== undefined) u.location_id = data.locationId || null;
+      if (data.branchScoped !== undefined) u.branch_scoped = data.branchScoped;
       if (joinedAt) u.joined_at = joinedAt;
       // Department is a display attribute only past account creation - it must
       // not silently re-derive the account's RBAC role (that previously made
@@ -533,7 +535,7 @@ export async function getManagedUserDetail(actorUserId: string, type: ManagedUse
       type, id: a.id, userId: a.user_id,
       employeeId: a.employee_number ? `PM-${a.employee_number}` : "",
       fullName: a.users.full_name, email: a.users.email, phone: a.users.phone,
-      locationId: a.location_id, position: a.position, department: a.department,
+      locationId: a.location_id, branchScoped: a.branch_scoped, position: a.position, department: a.department,
       address: a.address, citizenshipNo: a.citizenship_no, pan: a.pan,
       fatherName: a.father_name, motherName: a.mother_name, grandfatherName: a.grandfather_name,
       permanentAddress: a.permanent_address, currentAddress: a.current_address, experience: a.experience,
@@ -908,7 +910,8 @@ export async function registerUserBySuperAdmin(
 
   // Sales (without admin rights) may only onboard vendor (client) accounts, and
   // those are always linked to the sales user who created them.
-  if (!isSuperAdmin && !isAdmin && isSales) {
+  const isPureSalesCreator = !isSuperAdmin && !isAdmin && isSales;
+  if (isPureSalesCreator) {
     if (data.type !== "vendor") {
       throw new AppError(403, "Sales can only create vendor accounts");
     }
@@ -918,7 +921,14 @@ export async function registerUserBySuperAdmin(
   // Hub inheritance: accounts created by anyone below super_admin always land
   // in the creator's own hub (e.g. an Imadol admin's vendors/riders/admins are
   // all Imadol). Only a super_admin may choose a different hub.
-  if (!isSuperAdmin && superAdmin.admins?.location_id) {
+  //
+  // Sales is exempt: a sales rep's job is onboarding vendors wherever the
+  // vendor actually is, often nationwide - forcing every vendor they sign up
+  // into the sales rep's own hub would misprice and misroute it (destination
+  // pricing/branch attribution key off the vendor's real location). Sales
+  // already stays scoped to only the vendors they created (salesUserId
+  // above), regardless of which hub each of those vendors lands in.
+  if (!isSuperAdmin && !isPureSalesCreator && superAdmin.admins?.location_id) {
     data.locationId = superAdmin.admins.location_id;
   }
 
@@ -968,6 +978,7 @@ export async function registerUserBySuperAdmin(
         data: {
           user_id: user.id,
           location_id: data.locationId ?? null,
+          branch_scoped: data.branchScoped ?? false,
           position: data.position ?? null,
           department: data.department ?? null,
           id_document_type: data.idDocumentType ?? null,
@@ -1160,18 +1171,23 @@ export async function loginUser(data: IuserLoginData) {
     // For vendor_staff and plain admins, surface their permission list so the
     // frontend can render only the nav items they're allowed to access.
     let staffPermissions: string[] | undefined;
+    // The admin's own assigned hub - lets the UI default a manifest/settlement
+    // "From" field to it instead of making the operator pick their own branch
+    // every time. Fetched for super_admin too (rare but harmless if set).
+    let locationId: string | null | undefined;
     if (roles.includes("vendor_staff")) {
       const staffRecord = await prisma.vendor_staff.findFirst({
         where: { user_id: user.id, deleted_at: null, enabled: true },
         select: { permissions: true },
       });
       staffPermissions = (staffRecord?.permissions ?? []) as string[];
-    } else if (roles.includes("admin") && !roles.includes("super_admin")) {
+    } else if (roles.includes("admin") || roles.includes("super_admin")) {
       const adminRecord = await prisma.admins.findFirst({
         where: { user_id: user.id },
-        select: { permissions: true },
+        select: { permissions: true, location_id: true },
       });
-      staffPermissions = adminRecord?.permissions ?? [];
+      if (!roles.includes("super_admin")) staffPermissions = adminRecord?.permissions ?? [];
+      locationId = adminRecord?.location_id ?? null;
     }
 
     const mustChangePassword = user.must_change_password;
@@ -1204,6 +1220,7 @@ export async function loginUser(data: IuserLoginData) {
         roles,
         mustChangePassword,
         ...(staffPermissions !== undefined && { permissions: staffPermissions }),
+        ...(locationId !== undefined && { locationId }),
       }
     }
 

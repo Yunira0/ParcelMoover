@@ -227,6 +227,31 @@
   color: var(--color-text-caption);
 }
 
+/* Restrict-to-hub checkbox (super_admin only) */
+.afp-checkbox-field {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  cursor: pointer;
+}
+
+.afp-checkbox-field input[type='checkbox'] {
+  margin-top: 3px;
+}
+
+.afp-checkbox-field span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13px;
+  color: var(--color-text-default);
+}
+
+.afp-checkbox-field small {
+  color: var(--color-text-caption);
+  font-size: 12px;
+}
+
 /* Hint */
 .afp-hint {
   color: var(--color-text-caption);

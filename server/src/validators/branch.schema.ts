@@ -28,6 +28,10 @@ export const branchTrackingQuerySchema = z.object({
 export const createBranchSchema = z.object({
   locationId: uuid,
   coveredAreaIds: z.array(uuid).max(500).default([]),
+  // Other existing branches this one also covers - a side relationship
+  // (branch_virtual_coverage), not a re-parenting: the covered branch keeps
+  // its own is_hub/routing/pricing untouched. See resolveBranchLocationIds.
+  virtualBranchIds: z.array(uuid).max(50).default([]),
   commissionPerParcel: z.coerce.number().min(0).max(1_000_000),
 });
 

@@ -82,10 +82,31 @@ export async function resolveBranchLocationIds(branchId?: string) {
   if (!branchId) return undefined;
   const branch = await prisma.locations.findFirst({
     where: { id: branchId, parent_id: null, is_hub: true, is_active: true },
-    select: { id: true, other_locations: { where: { is_active: true }, select: { id: true } } },
+    select: {
+      id: true,
+      other_locations: { where: { is_active: true }, select: { id: true } },
+      // Other branches this one virtually covers - each contributes its own
+      // id plus its own plain covered areas. Deliberately one level only: a
+      // virtual branch's OWN virtual list is not chased, so there is no cycle
+      // to guard against and "covers" never becomes "covers what it covers".
+      branch_virtual_coverage_branch: {
+        select: {
+          covered_branch: {
+            select: { id: true, other_locations: { where: { is_active: true }, select: { id: true } } },
+          },
+        },
+      },
+    },
   });
   if (!branch) throw new AppError(404, "Branch not found or inactive");
-  return [branch.id, ...branch.other_locations.map((a) => a.id)];
+  return [
+    branch.id,
+    ...branch.other_locations.map((a) => a.id),
+    ...branch.branch_virtual_coverage_branch.flatMap((v) => [
+      v.covered_branch.id,
+      ...v.covered_branch.other_locations.map((a) => a.id),
+    ]),
+  ];
 }
 
 async function branchWhere(query: BranchTrackingQuery): Promise<Prisma.parcelsWhereInput> {
@@ -175,15 +196,44 @@ export async function exportBranchOrders(actor: OrderActor, query: BranchTrackin
 
 export async function createOrPromoteBranch(actor: OrderActor, input: CreateBranchInput) {
   const areaIds = [...new Set(input.coveredAreaIds)].filter((id) => id !== input.locationId);
+  const virtualBranchIds = [...new Set(input.virtualBranchIds ?? [])].filter((id) => id !== input.locationId);
+  if (areaIds.some((id) => virtualBranchIds.includes(id))) {
+    throw new AppError(400, "A location can't be both a covered destination and a virtual branch");
+  }
   const result = await prisma.$transaction(async (tx) => {
     const locations = await tx.locations.findMany({
       where: { id: { in: [input.locationId, ...areaIds] } },
-      select: { id: true, parent_id: true, name: true, other_locations: { select: { id: true } } },
+      select: { id: true, parent_id: true, name: true, is_hub: true, other_locations: { select: { id: true } } },
     });
     if (!locations.some((l) => l.id === input.locationId)) throw new AppError(404, "Branch location not found");
     if (locations.length !== areaIds.length + 1) throw new AppError(400, "One or more covered areas do not exist");
     const invalidArea = locations.find((l) => areaIds.includes(l.id) && l.other_locations.length > 0);
     if (invalidArea) throw new AppError(409, `${invalidArea.name} already has covered areas and cannot be nested`);
+    // A covered area is a plain destination re-parented under the branch - an
+    // existing branch is a different thing (see virtualBranchIds below) and
+    // must never be demoted into one by landing in this list instead.
+    const areaIsBranch = locations.find((l) => areaIds.includes(l.id) && l.is_hub);
+    if (areaIsBranch) {
+      throw new AppError(
+        409,
+        `${areaIsBranch.name} is already a branch - add it as a virtual branch instead of a covered destination`,
+      );
+    }
+
+    // Virtual branches are re-checked here rather than trusted from the
+    // client: each id must already be an existing, active branch (is_hub) -
+    // that's what keeps this a side relationship instead of a re-parenting,
+    // since only a branch's own row can be listed, never re-created as one.
+    let virtualBranches: { id: string; name: string }[] = [];
+    if (virtualBranchIds.length) {
+      virtualBranches = await tx.locations.findMany({
+        where: { id: { in: virtualBranchIds }, parent_id: null, is_hub: true, is_active: true },
+        select: { id: true, name: true },
+      });
+      if (virtualBranches.length !== virtualBranchIds.length) {
+        throw new AppError(400, "One or more virtual branches are not existing, active branches");
+      }
+    }
 
     const branch = await tx.locations.update({
       where: { id: input.locationId },
@@ -192,9 +242,20 @@ export async function createOrPromoteBranch(actor: OrderActor, input: CreateBran
     if (areaIds.length) await tx.locations.updateMany({
       where: { id: { in: areaIds } }, data: { parent_id: branch.id, is_hub: false },
     });
+    if (virtualBranchIds.length) {
+      await tx.branch_virtual_coverage.createMany({
+        data: virtualBranchIds.map((covered_branch_id) => ({
+          branch_id: branch.id, covered_branch_id, created_by: actor.id,
+        })),
+        skipDuplicates: true,
+      });
+    }
     await tx.audit_logs.create({ data: {
       actor_id: actor.id, entity_type: "branch", entity_id: branch.id, action: "CREATE_OR_PROMOTE_BRANCH",
-      new_data: { coveredAreaIds: areaIds, commissionPerParcel: input.commissionPerParcel },
+      new_data: {
+        coveredAreaIds: areaIds, commissionPerParcel: input.commissionPerParcel,
+        virtualBranches: virtualBranches.map((b) => b.name),
+      },
     } });
     return branch;
   });

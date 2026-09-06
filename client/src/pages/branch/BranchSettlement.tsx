@@ -21,6 +21,7 @@ interface BranchSettlementRow {
   sn: number;
   statementId: string;
   route: string;
+  commission: string;
   amount: string;
   settlementDate: string;
   payment: string;
@@ -63,6 +64,7 @@ const BranchSettlement: React.FC = () => {
         sn: (response.meta.page - 1) * response.meta.pageSize + index + 1,
         statementId: item.statementNo,
         route: `${item.fromBranch} → ${item.toBranch}`,
+        commission: `Rs. ${item.commissionPerParcel.toLocaleString()}/parcel · Rs. ${item.commissionAmount.toLocaleString()} total`,
         amount: `Rs. ${item.netPayable.toLocaleString()}`,
         settlementDate: item.settlementDate,
         payment: item.paymentMethod || item.status,
@@ -79,7 +81,8 @@ const BranchSettlement: React.FC = () => {
     { header: 'SN', accessor: 'sn' as keyof BranchSettlementRow, width: '60px' },
     { header: 'Statement ID', accessor: 'statementId' as keyof BranchSettlementRow, width: '180px' },
     { header: 'Route', accessor: 'route' as keyof BranchSettlementRow, width: '220px' },
-    { header: 'Amount', accessor: 'amount' as keyof BranchSettlementRow, width: '130px' },
+    { header: 'Commission', accessor: 'commission' as keyof BranchSettlementRow, width: '210px' },
+    { header: 'Amount (Net)', accessor: 'amount' as keyof BranchSettlementRow, width: '130px' },
     { header: 'Settlement date', accessor: 'settlementDate' as keyof BranchSettlementRow, width: '130px' },
     { header: 'Payment', accessor: 'payment' as keyof BranchSettlementRow, width: '180px' },
     { header: 'Remark', accessor: 'remark' as keyof BranchSettlementRow, width: '180px' },
@@ -161,7 +164,7 @@ const BranchSettlement: React.FC = () => {
         columns={columns}
         loading={loadingRows}
         loadingMessage="Loading settlements…"
-        minWidth="1190px"
+        minWidth="1400px"
         emptyMessage="No branch settlements recorded yet."
       />
 

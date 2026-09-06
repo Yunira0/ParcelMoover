@@ -64,7 +64,16 @@ export async function exportBranchOrders(filters: BranchFilters, signal?: AbortS
   return response.data as { success: boolean; data: Order[]; truncated: boolean };
 }
 
-export async function createBranch(input: { locationId: string; coveredAreaIds: string[]; commissionPerParcel: number }) {
+export async function createBranch(input: {
+  locationId: string;
+  /** Plain-destination coverage (re-parenting) - set from the Destinations
+   *  settings page, not the Add Branch modal, which only offers virtual branches. */
+  coveredAreaIds?: string[];
+  /** Other existing branches this one also covers - a side relationship, not
+   *  a re-parenting: each keeps its own routing/pricing untouched. */
+  virtualBranchIds?: string[];
+  commissionPerParcel: number;
+}) {
   const response = await api.post('/branches', input);
   return response.data;
 }
