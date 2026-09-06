@@ -329,6 +329,9 @@ export async function listOrdersController(req: Request, res: Response) {
           : {}),
         ...(source.dateFrom ? { dateFrom: String(source.dateFrom) } : {}),
         ...(source.dateTo ? { dateTo: String(source.dateTo) } : {}),
+        ...(source.settlement
+          ? { settlement: source.settlement as "settled" | "pending" }
+          : {}),
       },
     );
 

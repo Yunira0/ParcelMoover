@@ -134,7 +134,7 @@ export async function computeReturnCharge(
   }
 }
 
-type OrderActor = {
+export type OrderActor = {
   id: string;
   roles: string[];
 };
@@ -1803,6 +1803,12 @@ function buildOrdersWhere(
   if (query.deliveryRiderId) {
     conditions.push({ delivery_rider_id: query.deliveryRiderId });
   }
+  if (query.originLocationIds?.length) {
+    conditions.push({ origin_location_id: { in: query.originLocationIds } });
+  }
+  if (query.destinationLocationIds?.length) {
+    conditions.push({ destination_location_id: { in: query.destinationLocationIds } });
+  }
   // Same local-midnight anchor getDashboardSummary uses for todays_delivered,
   // so the "Delivered today" card and its drill-down can't disagree.
   if (query.deliveredToday) {
@@ -1881,7 +1887,7 @@ function buildOrdersWhere(
   // linked via settlement_items to a settled vendor settlement count as
   // deposited. Pending = delivered not in any settled settlement.
   // This filters out empty settlements (e.g. STL-2024-001 with 0 items).
-  if ((query as any).settlement === "settled") {
+  if (query.settlement === "settled") {
     conditions.push({
       cod_collections: {
         settlement_items: {
@@ -1891,7 +1897,7 @@ function buildOrdersWhere(
         },
       },
     });
-  } else if ((query as any).settlement === "pending") {
+  } else if (query.settlement === "pending") {
     conditions.push({
       OR: [
         { cod_collections: null },
@@ -1906,6 +1912,12 @@ function buildOrdersWhere(
         },
       ],
     });
+  }
+
+  if (query.branchSettlement === "settled") {
+    conditions.push({ branch_settlement_items: { some: {} } });
+  } else if (query.branchSettlement === "pending") {
+    conditions.push({ branch_settlement_items: { none: {} } });
   }
 
   return { AND: conditions };
@@ -2413,8 +2425,10 @@ export async function listOrders(
   // a trash listing would both read and overwrite the live orders cache.
   const isDefaultUnfilteredQuery =
     !paginated && !query.status?.length && !query.orderType && !query.search &&
-    !query.vendorId?.length && !query.salesUserId && !query.deliveryRiderId && !query.sortBy &&
-    !query.deliveredToday && !query.trashed && vendorIds === undefined;
+    !query.vendorId?.length && !query.salesUserId && !query.deliveryRiderId &&
+    !query.sortBy && !query.deliveredToday && !query.trashed && !query.settlement &&
+    !query.originLocationIds?.length && !query.destinationLocationIds?.length &&
+    !query.branchSettlement && vendorIds === undefined;
   // Export requests (withArrival) skip the shared cache so the enriched rows
   // never pollute the lean list cache and vice-versa.
   const cacheKey =
@@ -4488,6 +4502,19 @@ async function _updateParcelStatusImpl(
       });
     }
 
+    // Same eviction for the transit leg: a parcel pulled off oov (or off the
+    // road) one at a time would otherwise stay a ghost member of its manifest.
+    if (currentStatus === "oov") {
+      await tx.transit_manifest_parcels.deleteMany({
+        where: { parcel_id: parcelId, transit_manifests: { status: "open" } },
+      });
+    }
+    if (currentStatus === "dispatched") {
+      await tx.transit_manifest_parcels.deleteMany({
+        where: { parcel_id: parcelId, transit_manifests: { status: "dispatched" } },
+      });
+    }
+
     if (parcel.vendor_id) {
       await emitWebhookEvent(tx, parcel.vendor_id, "order.status_changed", {
         trackingId: parcel.tracking_id,
@@ -4966,6 +4993,16 @@ async function _bulkUpdateParcelStatusImpl(
       })
     : null;
 
+  // The transit manifest driving this transition, if any. Same shape as the
+  // return manifest above: read before the transaction for its number (which
+  // goes onto every member parcel's timeline), row updated inside.
+  const transitManifest = data.transitManifestId
+    ? await prisma.transit_manifests.findUnique({
+        where: { id: data.transitManifestId },
+        select: { id: true, manifest_no: true },
+      })
+    : null;
+
   const result = await prisma.$transaction(async (tx) => {
     let dispatch: { id: string; dispatch_no: string } | null = null;
 
@@ -5002,9 +5039,17 @@ async function _bulkUpdateParcelStatusImpl(
     // anyone has on "which hand-over did this parcel go back on", so it belongs
     // on the timeline rather than only in the manifests list. Composed the same
     // way and folded into the same remarks field below.
+    // Same reasoning for the transit leg: the manifest number is the only
+    // handle anyone has on "which truck did this parcel leave on", so it
+    // belongs on the timeline rather than only in the manifests list.
+    // Composed the same way and folded into the same remarks field below.
+    const transitRemark = transitManifest
+      ? `Transit manifest ${transitManifest.manifest_no}`
+      : null;
+
     const batchRemark = returnManifest
       ? `Manifest ${returnManifest.manifest_no}${riderName ? ` · carried by ${riderName}` : ""}`
-      : dispatchRemark;
+      : transitRemark ?? dispatchRemark;
 
     const updateData: Prisma.parcelsUpdateInput = { status: newStatus as parcel_status };
     if (newStatus === "picked_up") {
@@ -5218,7 +5263,7 @@ async function _bulkUpdateParcelStatusImpl(
         entity_id: p.id,
         action: "BULK_UPDATE_STATUS",
         old_data: { status: p.status },
-        new_data: { status: newStatus, dispatchId: dispatch?.id || null },
+        new_data: { status: newStatus, dispatchId: dispatch?.id || null, transitManifestId: data.transitManifestId || null },
       })),
     });
 
@@ -5297,6 +5342,32 @@ async function _bulkUpdateParcelStatusImpl(
       });
     }
 
+    // The transit manifest moves with its parcels, in this same transaction,
+    // for the same reason as the return manifest above. The first dispatch
+    // takes an 'open' manifest to 'dispatched' (updateMany so repeat scans
+    // onto an already-dispatched manifest don't re-stamp dispatched_at);
+    // a receive takes it to 'received' once no member is still 'dispatched'.
+    if (transitManifest && newStatus === "dispatched") {
+      await tx.transit_manifests.updateMany({
+        where: { id: transitManifest.id, status: "open" },
+        data: { status: "dispatched", dispatched_at: new Date(), dispatched_by: actor.id },
+      });
+    }
+    if (transitManifest && newStatus === "arrived_at_branch") {
+      const stillDispatched = await tx.transit_manifest_parcels.count({
+        where: {
+          transit_manifest_id: transitManifest.id,
+          parcels: { status: "dispatched" },
+        },
+      });
+      if (stillDispatched === 0) {
+        await tx.transit_manifests.update({
+          where: { id: transitManifest.id },
+          data: { status: "received", received_at: new Date(), received_by: actor.id },
+        });
+      }
+    }
+
     // A parcel leaving ready_to_return by any route other than its own
     // manifest's send is no longer part of that hand-over, so drop it.
     //
@@ -5315,6 +5386,41 @@ async function _bulkUpdateParcelStatusImpl(
           where: {
             parcel_id: { in: leavingReturnPool },
             return_manifests: { status: "open" },
+          },
+        });
+      }
+    }
+
+    // Same ghost-member rule for the transit leg. A parcel leaving oov by any
+    // route other than its own manifest's dispatch (super_admin force, hold)
+    // is no longer part of that hand-over, so drop it from open manifests -
+    // otherwise it deadlocks later dispatches the same way a return ghost
+    // would. Likewise a dispatched member that leaves the transit pool without
+    // being received (e.g. dispatched → follow_up for an NCM return) drops
+    // off its dispatched manifest. The manifest's own flows are excluded: a
+    // dispatch keeps its oov links, a receive keeps its member history.
+    if (newStatus !== "dispatched") {
+      const leavingTransitPool = parcels
+        .filter((p) => p.status === "oov")
+        .map((p) => p.id);
+      if (leavingTransitPool.length) {
+        await tx.transit_manifest_parcels.deleteMany({
+          where: {
+            parcel_id: { in: leavingTransitPool },
+            transit_manifests: { status: "open" },
+          },
+        });
+      }
+    }
+    if (newStatus !== "arrived_at_branch") {
+      const leavingRoadPool = parcels
+        .filter((p) => p.status === "dispatched")
+        .map((p) => p.id);
+      if (leavingRoadPool.length) {
+        await tx.transit_manifest_parcels.deleteMany({
+          where: {
+            parcel_id: { in: leavingRoadPool },
+            transit_manifests: { status: "dispatched" },
           },
         });
       }

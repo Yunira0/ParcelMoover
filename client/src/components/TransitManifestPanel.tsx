@@ -33,8 +33,7 @@ interface TransitManifestPanelProps {
 // The "Open Manifest" / "Received" tabs on the Transit (OOV) page. Scanning a
 // parcel onto an OPEN manifest dispatches it (→ dispatched / In Transit);
 // scanning a parcel on a DISPATCHED manifest receives it (→ arrived_at_branch).
-// The action follows the selected manifest's status — no mode picker. The
-// /transit-manifests backend is not wired yet.
+// The action follows the selected manifest's status — no mode picker.
 const TransitManifestPanel: React.FC<TransitManifestPanelProps> = ({ statusFilter }) => {
   const [manifests, setManifests] = useState<TransitManifestModel[]>([]);
   const [loading, setLoading] = useState(true);

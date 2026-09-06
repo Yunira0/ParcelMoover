@@ -1,17 +1,5 @@
-import { listManagedLocations } from './locations.service';
-import type { ParcelStatus } from './orders.service';
-
-/**
- * Branch Tracking data layer.
- *
- * A "branch" is an existing hub — a managed location with `isHub: true`. The
- * branch list is real (reuses GET /locations). Per-branch roll-up figures for
- * the Branch Overview / Branch Settlement cards are not wired yet: the
- * dashboard/COD-summary endpoints take no `hub` scope.
- *
- * TODO(backend, phase B/C): add `?hub=<id>` (or a from/to pair) to the summary
- * endpoints and add getBranchOverview()/getBranchSettlement() here.
- */
+import api from '../utils/api';
+import type { Order, OrdersPageMeta } from './orders.service';
 
 export interface Branch {
   id: string;
@@ -19,80 +7,93 @@ export interface Branch {
   code: string | null;
   district: string | null;
   isActive: boolean;
+  commissionPerParcel: number;
+  coveredAreaCount: number;
 }
 
-// ── Branch Overview metric cards ─────────────────────────────────────────────
-// Mirrors merchantOverview.service's MERCHANT_METRIC_* — one card key, its
-// label, its display order, and the parcel statuses it stands for (used to
-// filter the waybill table when a card is clicked). Card counts themselves
-// stay unwired until a hub-scoped summary endpoint exists.
-
 export type BranchMetricKey =
-  | 'totalOrders'
-  | 'inTransit'
-  | 'pendingDelivery'
-  | 'totalDelivered'
-  | 'returnProcessing'
-  | 'returned'
-  | 'hold'
-  | 'failed'
-  | 'deposited'
-  | 'pendingDeposit';
+  | 'totalOrders' | 'inTransit' | 'pendingDelivery' | 'totalDelivered'
+  | 'returnProcessing' | 'returned' | 'hold' | 'failed' | 'deposited' | 'pendingDeposit';
+
+export interface BranchMetric { count: number; amount: number }
+export type BranchMetrics = Record<BranchMetricKey, BranchMetric>;
 
 export const BRANCH_METRIC_ORDER: BranchMetricKey[] = [
-  'totalOrders',
-  'inTransit',
-  'pendingDelivery',
-  'totalDelivered',
-  'returnProcessing',
-  'returned',
-  'hold',
-  'failed',
-  'deposited',
-  'pendingDeposit',
+  'totalOrders', 'inTransit', 'pendingDelivery', 'totalDelivered', 'returnProcessing',
+  'returned', 'hold', 'failed', 'deposited', 'pendingDeposit',
 ];
 
 export const BRANCH_METRIC_LABELS: Record<BranchMetricKey, string> = {
-  totalOrders: 'Total Orders',
-  inTransit: 'In Transit',
-  pendingDelivery: 'Pending Delivery',
-  totalDelivered: 'Total Delivered',
-  returnProcessing: 'Return Processing',
-  returned: 'Returned',
-  hold: 'Hold',
-  failed: 'Failed',
-  deposited: 'Deposited',
-  pendingDeposit: 'Pending Deposit',
+  totalOrders: 'Total Orders', inTransit: 'In Transit', pendingDelivery: 'Pending Delivery',
+  totalDelivered: 'Total Delivered', returnProcessing: 'Return Processing', returned: 'Returned',
+  hold: 'Hold', failed: 'Failed', deposited: 'Deposited', pendingDeposit: 'Pending Deposit',
 };
 
-/** Statuses each card filters the table to. `totalOrders` = no filter.
- *  deposited / pendingDeposit are settlement states — both scope to delivered
- *  parcels here until a real settlement filter is wired. */
-export const BRANCH_METRIC_STATUSES: Record<BranchMetricKey, ParcelStatus[] | undefined> = {
-  totalOrders: undefined,
-  inTransit: ['dispatched', 'oov'],
-  pendingDelivery: ['arrived_at_branch', 'ready_to_deliver', 'sent_for_delivery', 'failed_delivery'],
-  totalDelivered: ['delivered', 'partially_delivered'],
-  returnProcessing: ['follow_up', 'ready_to_return', 'sent_to_vendor'],
-  returned: ['returned_to_vendor'],
-  hold: ['hold'],
-  failed: ['failed_pickup', 'failed_delivery', 'loss_and_damage'],
-  deposited: ['delivered', 'partially_delivered'],
-  pendingDeposit: ['delivered', 'partially_delivered'],
-};
+export interface BranchFilters {
+  fromBranchId?: string;
+  toBranchId?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  metric?: BranchMetricKey;
+}
 
-const hubOnly = (name: string): string => name.split(' - ')[0];
+const cleanParams = (filters: object) => Object.fromEntries(
+  Object.entries(filters).filter(([, value]) => value !== undefined && value !== '' && value !== 'all'),
+);
 
-export const listBranches = async (): Promise<Branch[]> => {
-  const res = await listManagedLocations();
-  return (res.data ?? [])
-    .filter((loc) => loc.isHub)
-    .map((loc) => ({
-      id: loc.id,
-      name: hubOnly(loc.name),
-      code: loc.code,
-      district: loc.district,
-      isActive: loc.isActive,
-    }))
-    .sort((a, b) => a.name.localeCompare(b.name));
-};
+export async function listBranches(signal?: AbortSignal): Promise<Branch[]> {
+  const response = await api.get('/branches', { signal });
+  return response.data.data;
+}
+
+export async function getBranchOverview(filters: BranchFilters, signal?: AbortSignal): Promise<BranchMetrics> {
+  const response = await api.get('/branches/overview', { params: cleanParams(filters), signal });
+  return response.data.data;
+}
+
+export async function getBranchOrders(
+  filters: BranchFilters & { page?: number; pageSize?: number; cursor?: string; dir?: 'next' | 'prev' },
+  signal?: AbortSignal,
+): Promise<{ data: Order[]; meta: OrdersPageMeta }> {
+  const response = await api.get('/branches/orders', { params: cleanParams(filters), signal });
+  return { data: response.data.data, meta: response.data.meta };
+}
+
+export async function exportBranchOrders(filters: BranchFilters, signal?: AbortSignal) {
+  const response = await api.get('/branches/orders/export', { params: cleanParams(filters), signal, timeout: 60_000 });
+  return response.data as { success: boolean; data: Order[]; truncated: boolean };
+}
+
+export async function createBranch(input: { locationId: string; coveredAreaIds: string[]; commissionPerParcel: number }) {
+  const response = await api.post('/branches', input);
+  return response.data;
+}
+
+export interface BranchSettlement {
+  id: string;
+  statementNo: string;
+  fromBranch: string;
+  toBranch: string;
+  settlementDate: string;
+  orderCount: number;
+  grossCod: number;
+  commissionAmount: number;
+  netPayable: number;
+  commissionPerParcel: number;
+  status: string;
+  paymentMethod: string | null;
+  remark: string | null;
+}
+
+export async function getBranchSettlements(filters: Omit<BranchFilters, 'metric'> & { page: number; pageSize: number }, signal?: AbortSignal) {
+  const response = await api.get('/branches/settlements', { params: cleanParams(filters), signal });
+  return response.data as { success: boolean; data: BranchSettlement[]; meta: { page: number; pageSize: number; total: number; totalPages: number } };
+}
+
+export async function createBranchSettlement(input: {
+  fromBranchId: string; toBranchId: string; settlementDate: string; orderIds: string[];
+  commissionPerParcel?: number; paymentMethod?: string; remark?: string;
+}) {
+  const response = await api.post('/branches/settlements', input);
+  return response.data;
+}

@@ -9,8 +9,8 @@ import { getCurrentUserRoles, hasAdminPermission } from '../utils/auth';
  *   - BRANCH_TRACKING_READ  — open other-branch views, everything read-only
  *   - BRANCH_TRACKING_WRITE — same views plus acting on another branch's data
  *
- * The server will enforce the same rule later; this hook only drives the UI
- * (nav visibility, route guards, and the read-only lockout on the pages).
+ * The server enforces the same rule; this hook drives route visibility and
+ * read-only presentation in the UI.
  */
 export interface BranchAccess {
   isSuperAdmin: boolean;

@@ -15,13 +15,13 @@ import {
 import {
   BRANCH_METRIC_LABELS,
   BRANCH_METRIC_ORDER,
+  type BranchMetrics,
   type BranchMetricKey,
 } from '../../services/branchTracking.service';
 import '../merchant/MerchantOverviewCards.css';
 
 interface BranchOverviewCardsProps {
-  /** Per-card counts once wired; missing keys render "—". */
-  counts?: Partial<Record<BranchMetricKey, number>>;
+  metrics?: Partial<BranchMetrics>;
   loading?: boolean;
   activeKey?: BranchMetricKey | null;
   onSelect?: (key: BranchMetricKey | null) => void;
@@ -44,7 +44,7 @@ const CARD_CONFIG: Record<BranchMetricKey, { icon: LucideIcon; color: string }> 
 // a big count, click to filter the table. Counts are "—" until a hub-scoped
 // summary endpoint lands.
 const BranchOverviewCards: React.FC<BranchOverviewCardsProps> = ({
-  counts,
+  metrics,
   loading = false,
   activeKey = null,
   onSelect,
@@ -55,7 +55,7 @@ const BranchOverviewCards: React.FC<BranchOverviewCardsProps> = ({
         const isActive = activeKey === key;
         const cfg = CARD_CONFIG[key];
         const Icon = cfg.icon;
-        const count = counts?.[key];
+        const value = metrics?.[key];
         return (
           <button
             key={key}
@@ -64,7 +64,7 @@ const BranchOverviewCards: React.FC<BranchOverviewCardsProps> = ({
             onClick={() => onSelect?.(isActive ? null : key)}
             aria-pressed={isActive}
             aria-label={`${BRANCH_METRIC_LABELS[key]}: ${
-              loading ? 'loading' : count ?? 'not available'
+              loading ? 'loading' : value ? `${value.count} orders, Rs. ${value.amount}` : 'not available'
             }`}
           >
             <span className="vendor-card-top">
@@ -72,8 +72,11 @@ const BranchOverviewCards: React.FC<BranchOverviewCardsProps> = ({
               <span className="vendor-card-label">{BRANCH_METRIC_LABELS[key]}</span>
             </span>
             <span className="vendor-card-value">
-              {loading ? '…' : count === undefined ? '—' : count.toLocaleString()}
+              {loading ? '…' : value === undefined ? '—' : value.count.toLocaleString()}
             </span>
+            {!loading && value && (
+              <span className="vendor-card-caption">Rs. {value.amount.toLocaleString()}</span>
+            )}
           </button>
         );
       })}

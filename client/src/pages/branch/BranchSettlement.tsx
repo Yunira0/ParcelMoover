@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus } from 'lucide-react';
 import PageHeader from '../../components/PageHeader';
@@ -9,6 +9,7 @@ import NepaliDatePicker from '../../components/NepaliDatePicker';
 import { Banner } from '../accounting/ui';
 import { useBranchScope } from '../../context/BranchScopeContext';
 import { useBranchAccess } from '../../hooks/useBranchAccess';
+import { getBranchSettlements } from '../../services/branchTracking.service';
 import '../../components/merchant/MerchantFilterBar.css';
 import '../../components/branch/BranchOverviewFilterBar.css';
 import '../vendor/VendorFinance.css';
@@ -26,10 +27,6 @@ interface BranchSettlementRow {
   remark: string;
 }
 
-// COD statements settled between branches — same page shape as the vendor's
-// own Settlements page (VendorSettlements/VendorFinance.css): a PageHeader, a
-// filter row, a plain table, Pagination with a rows-per-page picker. The list
-// stays empty until a branch-settlement endpoint exists.
 const BranchSettlement: React.FC = () => {
   const navigate = useNavigate();
   const { fromBranchId, toBranchId, setFromBranchId, setToBranchId, branches, loading } = useBranchScope();
@@ -38,13 +35,45 @@ const BranchSettlement: React.FC = () => {
   const [toDate, setToDate] = useState('');
   const [page, setPage] = useState(1);
   const [pageSizeChoice, setPageSizeChoice] = useState(PAGE_SIZE);
+  const [rows, setRows] = useState<BranchSettlementRow[]>([]);
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+  const [loadingRows, setLoadingRows] = useState(false);
+  const [error, setError] = useState('');
 
   const options = (allLabel: string): SearchableSelectOption[] => [
     { id: 'all', label: allLabel },
     ...branches.map((b) => ({ id: b.id, label: b.name, description: b.district ?? undefined })),
   ];
 
-  const rows: BranchSettlementRow[] = []; // TODO(backend): branch settlement list
+  useEffect(() => {
+    const controller = new AbortController();
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- request lifecycle owns loading
+    setLoadingRows(true);
+    getBranchSettlements({
+      ...(fromBranchId !== 'all' ? { fromBranchId } : {}),
+      ...(toBranchId !== 'all' ? { toBranchId } : {}),
+      ...(fromDate ? { dateFrom: fromDate } : {}),
+      ...(toDate ? { dateTo: toDate } : {}),
+      page,
+      pageSize: pageSizeChoice,
+    }, controller.signal).then((response) => {
+      setRows(response.data.map((item, index) => ({
+        id: item.id,
+        sn: (response.meta.page - 1) * response.meta.pageSize + index + 1,
+        statementId: item.statementNo,
+        route: `${item.fromBranch} → ${item.toBranch}`,
+        amount: `Rs. ${item.netPayable.toLocaleString()}`,
+        settlementDate: item.settlementDate,
+        payment: item.paymentMethod || item.status,
+        remark: item.remark || `${item.orderCount} order${item.orderCount === 1 ? '' : 's'}`,
+      })));
+      setTotal(response.meta.total);
+      setTotalPages(response.meta.totalPages);
+      setError('');
+    }).catch(() => setError('Failed to load branch settlements.')).finally(() => setLoadingRows(false));
+    return () => controller.abort();
+  }, [fromBranchId, toBranchId, fromDate, toDate, page, pageSizeChoice]);
 
   const columns = [
     { header: 'SN', accessor: 'sn' as keyof BranchSettlementRow, width: '60px' },
@@ -73,6 +102,7 @@ const BranchSettlement: React.FC = () => {
           branch and the super admin.
         </Banner>
       )}
+      {error && <Banner tone="danger">{error}</Banner>}
 
       <div className="vendor-finance-toolbar">
         <div className="vendor-finance-date-range">
@@ -81,7 +111,7 @@ const BranchSettlement: React.FC = () => {
             <SearchableSelect
               options={options('All branches')}
               value={fromBranchId}
-              onChange={setFromBranchId}
+              onChange={(value) => { setFromBranchId(value); setPage(1); }}
               placeholder="All branches"
               disabled={loading}
             />
@@ -91,7 +121,7 @@ const BranchSettlement: React.FC = () => {
             <SearchableSelect
               options={options('Any destination')}
               value={toBranchId}
-              onChange={setToBranchId}
+              onChange={(value) => { setToBranchId(value); setPage(1); }}
               placeholder="Any destination"
               disabled={loading}
             />
@@ -129,6 +159,8 @@ const BranchSettlement: React.FC = () => {
         selectable={false}
         data={rows}
         columns={columns}
+        loading={loadingRows}
+        loadingMessage="Loading settlements…"
         minWidth="1190px"
         emptyMessage="No branch settlements recorded yet."
       />
@@ -136,7 +168,7 @@ const BranchSettlement: React.FC = () => {
       <Pagination
         ariaLabel="Branch settlements pagination"
         page={page}
-        totalPages={1}
+        totalPages={totalPages}
         onPageChange={setPage}
         pageSize={pageSizeChoice}
         pageSizeLabel="settlements"
@@ -144,7 +176,7 @@ const BranchSettlement: React.FC = () => {
           setPageSizeChoice(size);
           setPage(1);
         }}
-        summary={`${rows.length} settlements`}
+        summary={`${total} settlement${total === 1 ? '' : 's'}`}
       />
     </div>
   );

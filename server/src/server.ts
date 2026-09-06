@@ -2,13 +2,14 @@ import express, {Express} from 'express';
 import path from 'path';
 import helmet from 'helmet';
 import {config} from 'dotenv';
-import rateLimit, { ipKeyGenerator } from "express-rate-limit";
+import rateLimit from "express-rate-limit";
 import routes from "./routes/auth.routes";
 import OrderRoutes from "./routes/order.routes"
 import DeliveryRateRoutes from "./routes/delivery-rate.routes"
 import TicketRoutes from "./routes/ticket.routes"
 import CodSettlementRequestRoutes from "./routes/codSettlementRequest.routes"
 import ReturnManifestRoutes from "./routes/returnManifest.routes"
+import TransitManifestRoutes from "./routes/transitManifest.routes"
 import RemarkRoutes from "./routes/remark.routes"
 import NotificationRoutes from "./routes/notification.routes"
 import FinanceRoutes from "./routes/finance.routes"
@@ -32,6 +33,7 @@ import AccountingRoutes from "./routes/accounting.routes"
 import VendorPrintSettingsRoutes from "./routes/vendorPrintSettings.routes"
 import BannerRoutes from "./routes/banner.routes"
 import AnnouncementRoutes from "./routes/announcement.routes"
+import BranchRoutes from "./routes/branch.routes"
 import prisma, { pool } from "./lib/prisma";
 import cookiesParser from "cookie-parser";
 import {authMiddleware} from "./middlewares/auth.middleware";
@@ -39,6 +41,7 @@ import { errorHandler } from "./middlewares/errorHandler.middleware";
 import { requestId } from "./middlewares/requestId.middleware";
 import {authorizeRoles} from "./middlewares/authorizeRoles.middleware";
 import { createRedisRateLimitStore } from "./lib/rateLimitStore";
+import { createGlobalRateLimitKeyGenerator } from "./lib/rateLimitKey";
 import { serveEncryptedDocument } from "./lib/serveEncryptedDocument";
 
 
@@ -132,7 +135,10 @@ const globalLimiter = rateLimit({
   // whole API down. Route-specific limiters already use the same fail-open mode.
   passOnStoreError: true,
   store: createRedisRateLimitStore("global"),
-  keyGenerator: (req) => ipKeyGenerator(req.ip ?? "unknown"),
+  // Prefer a verified actor identity so users behind the same Cloudflare edge,
+  // office network, or carrier NAT do not exhaust one shared IP bucket.
+  // Anonymous/invalid-token requests remain keyed by their client IP.
+  keyGenerator: createGlobalRateLimitKeyGenerator(process.env.JWT_SECRET),
   validate: false,
 });
 app.use(globalLimiter);
@@ -147,6 +153,7 @@ app.use("/api/delivery-rates", DeliveryRateRoutes)
 app.use("/api/tickets", TicketRoutes)
 app.use("/api/cod-settlement-requests", CodSettlementRequestRoutes)
 app.use("/api/return-manifests", ReturnManifestRoutes)
+app.use("/api/transit-manifests", TransitManifestRoutes)
 
 app.use("/api/remarks", RemarkRoutes)
 
@@ -166,6 +173,7 @@ app.use("/api/staff", StaffRoutes)
 app.use("/api/kyc", KycRoutes)
 
 app.use("/api/locations", LocationRoutes)
+app.use("/api/branches", BranchRoutes)
 
 app.use("/api/pricing", PricingRoutes)
 

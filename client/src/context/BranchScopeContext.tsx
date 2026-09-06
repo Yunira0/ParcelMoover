@@ -66,6 +66,7 @@ export const BranchScopeProvider: React.FC<{ children: React.ReactNode }> = ({ c
   }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- access controls this remote resource
     if (canViewOtherBranches) refreshBranches();
   }, [canViewOtherBranches, refreshBranches]);
 
@@ -78,6 +79,7 @@ export const BranchScopeProvider: React.FC<{ children: React.ReactNode }> = ({ c
   );
 };
 
+// eslint-disable-next-line react-refresh/only-export-components -- context hook intentionally colocated
 export function useBranchScope(): BranchScopeValue {
   return useContext(BranchScopeContext);
 }
