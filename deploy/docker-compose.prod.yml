@@ -53,7 +53,10 @@ services:
       REDIS_PORT: 6379
       NODE_ENV: production
       TRUST_PROXY: "true"
-      TRUSTED_PROXIES: 127.0.0.1
+      # Nginx reaches the container through Docker's private gateway, not the
+      # container's loopback interface. Trust only local/private proxy hops;
+      # the first public address is then treated as the client.
+      TRUSTED_PROXIES: loopback,linklocal,uniquelocal
     # Bound to localhost only — Nginx on the same box terminates TLS on
     # 80/443 and reverse-proxies to this. The app port is never reachable
     # directly from the internet.

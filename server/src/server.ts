@@ -2,7 +2,7 @@ import express, {Express} from 'express';
 import path from 'path';
 import helmet from 'helmet';
 import {config} from 'dotenv';
-import rateLimit, { ipKeyGenerator } from "express-rate-limit";
+import rateLimit from "express-rate-limit";
 import routes from "./routes/auth.routes";
 import OrderRoutes from "./routes/order.routes"
 import DeliveryRateRoutes from "./routes/delivery-rate.routes"
@@ -39,6 +39,7 @@ import { errorHandler } from "./middlewares/errorHandler.middleware";
 import { requestId } from "./middlewares/requestId.middleware";
 import {authorizeRoles} from "./middlewares/authorizeRoles.middleware";
 import { createRedisRateLimitStore } from "./lib/rateLimitStore";
+import { createGlobalRateLimitKeyGenerator } from "./lib/rateLimitKey";
 import { serveEncryptedDocument } from "./lib/serveEncryptedDocument";
 
 
@@ -132,7 +133,10 @@ const globalLimiter = rateLimit({
   // whole API down. Route-specific limiters already use the same fail-open mode.
   passOnStoreError: true,
   store: createRedisRateLimitStore("global"),
-  keyGenerator: (req) => ipKeyGenerator(req.ip ?? "unknown"),
+  // Prefer a verified actor identity so users behind the same Cloudflare edge,
+  // office network, or carrier NAT do not exhaust one shared IP bucket.
+  // Anonymous/invalid-token requests remain keyed by their client IP.
+  keyGenerator: createGlobalRateLimitKeyGenerator(process.env.JWT_SECRET),
   validate: false,
 });
 app.use(globalLimiter);
