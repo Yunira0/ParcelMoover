@@ -13,6 +13,13 @@ export interface CurrentUser {
   /** An admin/super_admin's own assigned hub, if any - lets a "From" field
    *  default to it instead of making them pick their own branch every time. */
   locationId?: string | null;
+  /** Human-readable name of the admin's assigned branch. */
+  locationName?: string | null;
+  /**
+   * True for a branch workspace account. These admins operate only inside
+   * their assigned branch instead of receiving the full head-office shell.
+   */
+  branchScoped?: boolean;
 }
 
 export function getCurrentUser(): CurrentUser | null {
@@ -41,6 +48,28 @@ export function isVendorSide(): boolean {
 /** True for super_admin and admin only. */
 export function isAdminSide(): boolean {
   return hasAnyRole(['super_admin', 'admin']);
+}
+
+/** True only for a branch-scoped plain admin, never a head-office super admin. */
+export function isBranchWorkspaceUser(): boolean {
+  const user = getCurrentUser();
+  if (!user) return false;
+  return (
+    user.branchScoped === true &&
+    user.roles.includes('admin') &&
+    !user.roles.includes('super_admin')
+  );
+}
+
+/** Routes that belong to the intentionally small assigned-branch workspace. */
+export function isBranchWorkspacePathAllowed(pathname: string): boolean {
+  return (
+    pathname === '/orders' ||
+    pathname.startsWith('/orders/track/') ||
+    pathname === '/branches/settlement' ||
+    pathname.startsWith('/branches/settlement/') ||
+    pathname === '/branches/billing'
+  );
 }
 
 /** True for a pure sales account — excludes admin/super_admin, who also carry the 'sales' role code when department = Sales but use the admin views. */

@@ -177,6 +177,12 @@ model locations {
   branch_per_destination_rate                                      Decimal?                @db.Decimal(12, 2)
   /// Default commission retained by this branch for each parcel it settles.
   commission_per_parcel                                            Decimal?                @db.Decimal(12, 2)
+  /// Branch credit-control limits. A null value uses the billing_settings
+  /// defaults; balance is negative while this branch has COD to remit.
+  branch_billing_warn_threshold                                    Decimal?                @db.Decimal(12, 2)
+  branch_billing_block_threshold                                   Decimal?                @db.Decimal(12, 2)
+  branch_billing_alert_state                                       branch_billing_state   @default(ok)
+  branch_billing_alert_at                                          DateTime?              @db.Timestamptz(6)
   ncm_branch                                                       String? // explicit NCM branch override (e.g. "DAMAK") — when set, handoff skips auto-matching and pins to this branch
   created_at                                                       DateTime                @default(now()) @db.Timestamptz(6)
   updated_at                                                       DateTime                @default(now()) @updatedAt @db.Timestamptz(6)
@@ -201,6 +207,7 @@ model locations {
   expenses                                                         expenses[]
   branch_settlements_from                                          branch_settlements[]    @relation("branch_settlements_from")
   branch_settlements_to                                            branch_settlements[]    @relation("branch_settlements_to")
+  branch_payments                                                   branch_payments[]
   transit_manifests_from                                           transit_manifests[]   @relation("transit_manifests_from_locationTolocations")
   transit_manifests_to                                             transit_manifests[]   @relation("transit_manifests_to_locationTolocations")
   /// Branches this one virtually covers (its manifests/settlements also treat these as its own).
@@ -414,19 +421,29 @@ model branch_settlements {
   gross_cod             Decimal                   @db.Decimal(12, 2)
   commission_amount     Decimal                   @db.Decimal(12, 2)
   net_payable           Decimal                   @db.Decimal(12, 2)
-  status                String                    @default("settled")
+  /// Creating a statement only earmarks its parcels. Money moves later through
+  /// branch_settlement_payments; the statement becomes settled at zero balance.
+  status                String                    @default("pending")
+  paid_amount           Decimal                   @default(0) @db.Decimal(12, 2)
   payment_method        String?
+  payments              Json?
   remark                String?
   created_by            String?                   @db.Uuid
+  settled_by            String?                   @db.Uuid
+  settled_at            DateTime?                 @db.Timestamptz(6)
   created_at            DateTime                  @default(now()) @db.Timestamptz(6)
   updated_at            DateTime                  @default(now()) @updatedAt @db.Timestamptz(6)
   from_branch           locations                 @relation("branch_settlements_from", fields: [from_branch_id], references: [id], onUpdate: NoAction)
   to_branch             locations                 @relation("branch_settlements_to", fields: [to_branch_id], references: [id], onUpdate: NoAction)
   created_by_admin      admins?                   @relation(fields: [created_by], references: [user_id], onUpdate: NoAction)
+  settled_by_user       users?                    @relation("branch_settlements_settled_byTousers", fields: [settled_by], references: [id], onUpdate: NoAction)
   items                 branch_settlement_items[]
+  payment_records       branch_settlement_payments[]
+  payment_claims        branch_payments[]
 
   @@index([from_branch_id, to_branch_id, settlement_date(sort: Desc)], map: "idx_branch_settlements_route_date")
   @@index([created_by], map: "idx_branch_settlements_created_by")
+  @@index([status, settlement_date(sort: Desc)], map: "idx_branch_settlements_status_date")
 }
 
 model branch_settlement_items {
@@ -441,6 +458,25 @@ model branch_settlement_items {
 
   @@id([settlement_id, parcel_id])
   @@index([settlement_id], map: "idx_branch_settlement_items_settlement")
+}
+
+/// One cash/bank/online instalment against a branch statement. Keeping these
+/// separate preserves an auditable history when a branch pays in parts.
+model branch_settlement_payments {
+  id             String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  settlement_id  String             @db.Uuid
+  amount         Decimal            @db.Decimal(12, 2)
+  method         String
+  breakdown      Json
+  remark         String?
+  paid_at        DateTime           @default(now()) @db.Timestamptz(6)
+  recorded_by    String?            @db.Uuid
+  created_at     DateTime           @default(now()) @db.Timestamptz(6)
+  settlement     branch_settlements @relation(fields: [settlement_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  recorded_by_user users?           @relation("branch_settlement_payments_recorded_byTousers", fields: [recorded_by], references: [id], onUpdate: NoAction)
+
+  @@index([settlement_id, paid_at], map: "idx_branch_settlement_payments_settlement")
+  @@index([recorded_by], map: "idx_branch_settlement_payments_recorded_by")
 }
 
 /// A branch listing another existing branch as also covered by it, without
@@ -912,6 +948,8 @@ model users {
   settlement_documents_uploaded_by                       settlement_documents[]    @relation("settlement_documents_uploaded_byTousers")
   vendor_payments_submitted_by                           vendor_payments[]         @relation("vendor_payments_submitted_byTousers")
   vendor_payments_reviewed_by                            vendor_payments[]         @relation("vendor_payments_reviewed_byTousers")
+  branch_payments_submitted_by                           branch_payments[]         @relation("branch_payments_submitted_byTousers")
+  branch_payments_reviewed_by                            branch_payments[]         @relation("branch_payments_reviewed_byTousers")
   support_tickets_support_tickets_assigned_toTousers     support_tickets[]         @relation("support_tickets_assigned_toTousers")
   support_tickets_support_tickets_created_byTousers      support_tickets[]         @relation("support_tickets_created_byTousers")
   cod_settlement_requests_created_by                     cod_settlement_requests[] @relation("cod_settlement_requests_created_byTousers")
@@ -921,6 +959,8 @@ model users {
   return_manifests_received_by                           return_manifests[]        @relation("return_manifests_received_byTousers")
   transit_manifests_created_by                           transit_manifests[]       @relation("transit_manifests_created_byTousers")
   branch_virtual_coverage                                branch_virtual_coverage[]
+  branch_settlements_settled_by                          branch_settlements[]      @relation("branch_settlements_settled_byTousers")
+  branch_settlement_payments_recorded_by                 branch_settlement_payments[] @relation("branch_settlement_payments_recorded_byTousers")
   transit_manifests_dispatched_by                        transit_manifests[]       @relation("transit_manifests_dispatched_byTousers")
   transit_manifests_received_by                          transit_manifests[]       @relation("transit_manifests_received_byTousers")
   journal_entries                                        journal_entries[]
@@ -1061,12 +1101,45 @@ model vendor_payments {
   @@index([status, created_at(sort: Desc)], map: "idx_vendor_payments_status_created")
 }
 
+/// Branch -> office payment claims. A branch's COD exposure is only reduced
+/// after office review, exactly as a vendor's delivery-charge payment is.
+model branch_payments {
+  id                                        String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  branch_id                                 String                @db.Uuid
+  /// The statement this receipt clears. Null supports a branch prepayment.
+  settlement_id                             String?               @db.Uuid
+  amount                                    Decimal               @db.Decimal(12, 2)
+  method                                    String                @default("fonepay")
+  reference                                 String?
+  proof_path                                String?
+  status                                    branch_payment_status @default(pending)
+  note                                      String?
+  submitted_by                              String?               @db.Uuid
+  reviewed_by                               String?               @db.Uuid
+  reviewed_at                               DateTime?             @db.Timestamptz(6)
+  review_remark                             String?
+  created_at                                DateTime              @default(now()) @db.Timestamptz(6)
+  updated_at                                DateTime              @default(now()) @updatedAt @db.Timestamptz(6)
+  branch                                    locations             @relation(fields: [branch_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  settlement                                branch_settlements?   @relation(fields: [settlement_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  submitted_by_user                         users?                @relation("branch_payments_submitted_byTousers", fields: [submitted_by], references: [id], onUpdate: NoAction)
+  reviewed_by_user                          users?                @relation("branch_payments_reviewed_byTousers", fields: [reviewed_by], references: [id], onUpdate: NoAction)
+
+  @@index([branch_id, status], map: "idx_branch_payments_branch_status")
+  @@index([settlement_id], map: "idx_branch_payments_settlement")
+  @@index([status, created_at(sort: Desc)], map: "idx_branch_payments_status_created")
+}
+
 // Singleton configuration row, mirroring pricing_settings. Thresholds are the
 // (negative) account balance they trip at: warn at -2000, block at -3000.
 model billing_settings {
   id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   warn_threshold  Decimal  @default(-2000) @db.Decimal(12, 2)
   block_threshold Decimal  @default(-3000) @db.Decimal(12, 2)
+  // Branches remit COD rather than delivery charges, so their limits are
+  // intentionally separate and higher than the vendor defaults.
+  branch_warn_threshold  Decimal @default(-50000) @db.Decimal(12, 2)
+  branch_block_threshold Decimal @default(-75000) @db.Decimal(12, 2)
   // Static Fonepay QR shown to vendors in the pay-now flow.
   payment_qr_path String?
   payment_note    String?
@@ -1380,6 +1453,18 @@ enum transit_manifest_status {
   open
   dispatched
   received
+}
+
+enum branch_payment_status {
+  pending
+  verified
+  rejected
+}
+
+enum branch_billing_state {
+  ok
+  warned
+  blocked
 }
 
 enum user_status {

@@ -165,7 +165,7 @@ export interface ListOrdersQuery {
   /** Internal-only branch scope. These are never accepted by GET /orders. */
   originLocationIds?: string[];
   destinationLocationIds?: string[];
-  branchSettlement?: "settled" | "pending";
+  branchSettlement?: "settled" | "pending" | "unassigned";
   // Lists trashed (soft-deleted) parcels instead of live ones. Deliberately
   // absent from listOrdersQuerySchema so ?trashed=true on the public list
   // endpoint is stripped before it reaches the service — only the admin-only

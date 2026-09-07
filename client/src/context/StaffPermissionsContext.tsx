@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { getCurrentUser } from '../utils/auth';
+import { getCurrentUser, isBranchWorkspacePathAllowed } from '../utils/auth';
 import { getMyPermissions } from '../services/staff.service';
 import { getCurrentUser as fetchMe } from '../services/auth.service';
 
@@ -18,11 +18,33 @@ export const StaffPermissionsProvider: React.FC<{ children: React.ReactNode }> =
   );
 
   useEffect(() => {
-    const persist = (perms: string[]) => {
+    const persist = (
+      perms: string[],
+      profile?: { branchScoped?: boolean; hubId?: string | null; hubName?: string | null },
+    ) => {
       setPermissions(perms);
       const stored = JSON.parse(localStorage.getItem('user') || 'null');
       if (stored) {
-        localStorage.setItem('user', JSON.stringify({ ...stored, permissions: perms }));
+        const nextUser = {
+          ...stored,
+          permissions: perms,
+          ...(profile && {
+            branchScoped: profile.branchScoped === true,
+            locationId: profile.hubId ?? null,
+            locationName: profile.hubName ?? null,
+          }),
+        };
+        localStorage.setItem('user', JSON.stringify(nextUser));
+
+        // Existing admin sessions may predate branchScoped being included in
+        // the login payload. Once /me refreshes that flag, leave any open
+        // head-office screen immediately instead of waiting for the next login.
+        if (
+          profile?.branchScoped === true &&
+          !isBranchWorkspacePathAllowed(window.location.pathname)
+        ) {
+          window.location.replace('/orders');
+        }
       }
     };
 
@@ -34,7 +56,7 @@ export const StaffPermissionsProvider: React.FC<{ children: React.ReactNode }> =
       // /me returns the admin's current delegated permission list, so a grant
       // made by the super_admin lands on the next page load, not next login.
       fetchMe()
-        .then((me) => persist(Array.isArray(me?.permissions) ? me.permissions : []))
+        .then((me) => persist(Array.isArray(me?.permissions) ? me.permissions : [], me))
         .catch((err) => {
           console.error('Failed to refresh admin permissions:', err);
         });

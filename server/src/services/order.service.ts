@@ -1978,8 +1978,14 @@ function buildOrdersWhere(
   }
 
   if (query.branchSettlement === "settled") {
-    conditions.push({ branch_settlement_items: { some: {} } });
+    conditions.push({ branch_settlement_items: { some: { settlement: { status: "settled" } } } });
   } else if (query.branchSettlement === "pending") {
+    // Pending cash includes both parcels not yet statemented and parcels on an
+    // unpaid/part-paid statement. Only a completed branch payment is a deposit.
+    conditions.push({ branch_settlement_items: { none: { settlement: { status: "settled" } } } });
+  } else if (query.branchSettlement === "unassigned") {
+    // The Add Settlement picker must not offer a parcel already earmarked by a
+    // pending statement; membership is the double-statement guard.
     conditions.push({ branch_settlement_items: { none: {} } });
   }
 

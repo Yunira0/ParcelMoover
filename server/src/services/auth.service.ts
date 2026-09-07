@@ -1175,6 +1175,8 @@ export async function loginUser(data: IuserLoginData) {
     // "From" field to it instead of making the operator pick their own branch
     // every time. Fetched for super_admin too (rare but harmless if set).
     let locationId: string | null | undefined;
+    let locationName: string | null | undefined;
+    let branchScoped: boolean | undefined;
     if (roles.includes("vendor_staff")) {
       const staffRecord = await prisma.vendor_staff.findFirst({
         where: { user_id: user.id, deleted_at: null, enabled: true },
@@ -1184,10 +1186,17 @@ export async function loginUser(data: IuserLoginData) {
     } else if (roles.includes("admin") || roles.includes("super_admin")) {
       const adminRecord = await prisma.admins.findFirst({
         where: { user_id: user.id },
-        select: { permissions: true, location_id: true },
+        select: {
+          permissions: true,
+          location_id: true,
+          branch_scoped: true,
+          locations: { select: { name: true } },
+        },
       });
       if (!roles.includes("super_admin")) staffPermissions = adminRecord?.permissions ?? [];
       locationId = adminRecord?.location_id ?? null;
+      locationName = adminRecord?.locations?.name ?? null;
+      branchScoped = adminRecord?.branch_scoped ?? false;
     }
 
     const mustChangePassword = user.must_change_password;
@@ -1221,6 +1230,8 @@ export async function loginUser(data: IuserLoginData) {
         mustChangePassword,
         ...(staffPermissions !== undefined && { permissions: staffPermissions }),
         ...(locationId !== undefined && { locationId }),
+        ...(locationName !== undefined && { locationName }),
+        ...(branchScoped !== undefined && { branchScoped }),
       }
     }
 
@@ -1334,6 +1345,7 @@ export async function getCurrentUserProfile(userId: string) {
     department: user.admins?.department ?? null,
     // Delegated permissions for plain admin accounts (super_admin holds all).
     permissions: user.admins?.permissions ?? [],
+    branchScoped: user.admins?.branch_scoped ?? false,
   };
 }
 

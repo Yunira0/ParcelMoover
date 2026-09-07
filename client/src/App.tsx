@@ -101,6 +101,8 @@ const ProfilePage = lazy(() => import('./pages/ProfilePage'))
 const BranchOverview = lazy(() => import('./pages/branch/BranchOverview'))
 const BranchSettlement = lazy(() => import('./pages/branch/BranchSettlement'))
 const BranchSettlementCreatePage = lazy(() => import('./pages/branch/BranchSettlementCreatePage'))
+const BranchSettlementDetailPage = lazy(() => import('./pages/branch/BranchSettlementDetailPage'))
+const BranchBilling = lazy(() => import('./pages/branch/BranchBilling'))
 
 function App() {
 
@@ -150,12 +152,21 @@ function App() {
           />
           <Route
             path="/branches/settlement"
-            element={<RoleGuard allowedRoles={['super_admin', 'admin']} adminPermission="BRANCH_TRACKING_READ"><BranchSettlement /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']}><BranchSettlement /></RoleGuard>}
           />
-          {/* Recording a cross-branch settlement is a write action — gate on WRITE. */}
+          {/* Assigned branch admins create only their own statements; the API
+              validates the assigned branch and keeps cross-branch tracking restricted. */}
           <Route
             path="/branches/settlement/new"
-            element={<RoleGuard allowedRoles={['super_admin', 'admin']} adminPermission="BRANCH_TRACKING_WRITE"><BranchSettlementCreatePage /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']}><BranchSettlementCreatePage /></RoleGuard>}
+          />
+          <Route
+            path="/branches/settlement/:id"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']}><BranchSettlementDetailPage /></RoleGuard>}
+          />
+          <Route
+            path="/branches/billing"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']}><BranchBilling /></RoleGuard>}
           />
           {/* Drill-down behind a line of the COD Settlement card. Same audience
               as the card itself (Dashboard.tsx), which DashboardRouter shows to

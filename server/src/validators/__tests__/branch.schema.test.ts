@@ -3,6 +3,7 @@ import {
   branchTrackingQuerySchema,
   createBranchSchema,
   createBranchSettlementSchema,
+  payBranchSettlementSchema,
 } from "../branch.schema";
 
 const a = "11111111-1111-4111-8111-111111111111";
@@ -38,5 +39,20 @@ describe("branch tracking validation", () => {
     expect(createBranchSettlementSchema.safeParse({
       fromBranchId: a, toBranchId: a, settlementDate: "2026-09-06", orderIds: [b],
     }).success).toBe(false);
+  });
+
+  it("accepts a split branch payment and keeps money as numbers", () => {
+    const result = payBranchSettlementSchema.parse({
+      payments: [{ method: "Cash", amount: "1200.50" }, { method: "Bank", amount: 300 }],
+      remark: "First remittance",
+    });
+    expect(result).toEqual({
+      payments: [{ method: "Cash", amount: 1200.5 }, { method: "Bank", amount: 300 }],
+      remark: "First remittance",
+    });
+  });
+
+  it("does not allow a branch payment with no payment lines", () => {
+    expect(payBranchSettlementSchema.safeParse({ payments: [] }).success).toBe(false);
   });
 });

@@ -8,7 +8,9 @@ import type {
   BranchTrackingQuery,
   CreateBranchInput,
   CreateBranchSettlementInput,
+  PayBranchSettlementInput,
 } from "../validators/branch.schema";
+import { getActivePaymentMethodNames } from "./payment-method.service";
 
 const DELIVERED: parcel_status[] = ["delivered", "partially_delivered"];
 const METRIC_STATUSES: Record<string, parcel_status[] | undefined> = {
@@ -125,13 +127,13 @@ async function branchWhere(query: BranchTrackingQuery): Promise<Prisma.parcelsWh
 async function metric(where: Prisma.parcelsWhereInput, statuses?: parcel_status[], settlement?: "settled" | "pending") {
   const scoped: Prisma.parcelsWhereInput = {
     AND: [where, ...(statuses ? [{ status: { in: statuses } }] : []),
-      ...(settlement === "settled" ? [{ branch_settlement_items: { some: {} } }] : []),
-      ...(settlement === "pending" ? [{ branch_settlement_items: { none: {} } }] : [])],
+      ...(settlement === "settled" ? [{ branch_settlement_items: { some: { settlement: { status: "settled" } } } }] : []),
+      ...(settlement === "pending" ? [{ branch_settlement_items: { none: { settlement: { status: "settled" } } } }] : [])],
   };
   const aggregate = await prisma.parcels.aggregate({ where: scoped, _count: { _all: true }, _sum: { cod_amount: true } });
   if (settlement === "settled") {
     const settled = await prisma.branch_settlement_items.aggregate({
-      where: { parcel: scoped }, _sum: { collected_amount: true },
+      where: { parcel: scoped, settlement: { status: "settled" } }, _sum: { collected_amount: true },
     });
     return { count: aggregate._count._all, amount: money(settled._sum.collected_amount) };
   }
@@ -164,6 +166,7 @@ async function orderQuery(query: BranchTrackingQuery) {
     ...(statuses ? { status: statuses } : {}),
     ...(query.metric === "deposited" ? { branchSettlement: "settled" as const } : {}),
     ...(query.metric === "pendingDeposit" ? { branchSettlement: "pending" as const } : {}),
+    ...(query.availableForSettlement ? { branchSettlement: "unassigned" as const } : {}),
     ...(query.dateFrom || query.dateTo ? { dateField: "createdAt" as const } : {}),
     ...(query.dateFrom ? { dateFrom: query.dateFrom } : {}),
     ...(query.dateTo ? { dateTo: query.dateTo } : {}),
@@ -263,30 +266,90 @@ export async function createOrPromoteBranch(actor: OrderActor, input: CreateBran
   return { id: result.id, name: result.name, commissionPerParcel: money(result.commission_per_parcel) };
 }
 
-export async function listBranchSettlements(query: BranchSettlementQuery) {
-  const where: Prisma.branch_settlementsWhereInput = {
-    ...(query.fromBranchId ? { from_branch_id: query.fromBranchId } : {}),
-    ...(query.toBranchId ? { to_branch_id: query.toBranchId } : {}),
+export async function listBranchSettlements(actor: OrderActor, query: BranchSettlementQuery) {
+  const ownScope = actor.roles.includes("super_admin") ? null : await getActorBranchScope(actor);
+  if (!actor.roles.includes("super_admin") && !ownScope?.locationId) {
+    throw new AppError(403, "Your admin account is not assigned to a branch");
+  }
+  const ownBranchId = ownScope?.locationId;
+  const ownRouteScope: Prisma.branch_settlementsWhereInput = actor.roles.includes("super_admin") ? {} : {
+    ...(query.scope === "incoming" ? { to_branch_id: ownBranchId! }
+      : query.scope === "all" ? { OR: [{ from_branch_id: ownBranchId! }, { to_branch_id: ownBranchId! }] }
+      : { from_branch_id: ownBranchId! }),
+  };
+  const baseWhere: Prisma.branch_settlementsWhereInput = {
+    ...(actor.roles.includes("super_admin") && query.fromBranchId ? { from_branch_id: query.fromBranchId } : {}),
+    ...ownRouteScope,
+    ...(actor.roles.includes("super_admin") && query.toBranchId ? { to_branch_id: query.toBranchId } : {}),
     ...(query.dateFrom || query.dateTo ? { settlement_date: {
       ...(query.dateFrom ? { gte: new Date(`${query.dateFrom}T00:00:00.000Z`) } : {}),
       ...(query.dateTo ? { lte: new Date(`${query.dateTo}T00:00:00.000Z`) } : {}),
     } } : {}),
   };
+  const where: Prisma.branch_settlementsWhereInput = {
+    ...baseWhere,
+    ...(query.status ? { status: query.status } : {}),
+  };
   const skip = (query.page - 1) * query.pageSize;
-  const [total, rows] = await Promise.all([
+  const [total, rows, totals, pendingStatements] = await Promise.all([
     prisma.branch_settlements.count({ where }),
     prisma.branch_settlements.findMany({ where, skip, take: query.pageSize, orderBy: [{ settlement_date: "desc" }, { created_at: "desc" }],
       include: { from_branch: { select: { name: true } }, to_branch: { select: { name: true } }, _count: { select: { items: true } } } }),
+    prisma.branch_settlements.aggregate({
+      where: baseWhere,
+      _sum: { gross_cod: true, commission_amount: true, net_payable: true, paid_amount: true },
+    }),
+    prisma.branch_settlements.count({ where: { ...baseWhere, status: { in: ["pending", "partially_paid"] } } }),
   ]);
   return { data: rows.map((s) => ({
     id: s.id, statementNo: s.statement_no, fromBranch: s.from_branch.name, toBranch: s.to_branch.name,
     settlementDate: s.settlement_date.toISOString().slice(0, 10), orderCount: s._count.items,
     grossCod: money(s.gross_cod), commissionAmount: money(s.commission_amount), netPayable: money(s.net_payable),
-    commissionPerParcel: money(s.commission_per_parcel), status: s.status, paymentMethod: s.payment_method, remark: s.remark,
-  })), meta: { page: query.page, pageSize: query.pageSize, total, totalPages: Math.max(1, Math.ceil(total / query.pageSize)) } };
+    commissionPerParcel: money(s.commission_per_parcel), status: s.status,
+    paidAmount: money(s.paid_amount), remainingAmount: money(s.net_payable) - money(s.paid_amount),
+    paymentMethod: s.payment_method, paymentBreakdown: paymentLines(s.payments), remark: s.remark,
+  })),
+  summary: {
+    grossCod: money(totals._sum.gross_cod),
+    commissionCredit: money(totals._sum.commission_amount),
+    netPayable: money(totals._sum.net_payable),
+    paid: money(totals._sum.paid_amount),
+    outstanding: money(totals._sum.net_payable) - money(totals._sum.paid_amount),
+    pendingStatements,
+  },
+  meta: { page: query.page, pageSize: query.pageSize, total, totalPages: Math.max(1, Math.ceil(total / query.pageSize)) } };
 }
 
+async function assertOwnSettlementOrigin(actor: OrderActor, fromBranchId: string): Promise<void> {
+  if (actor.roles.includes("super_admin")) return;
+  const scope = await getActorBranchScope(actor);
+  if (!scope.locationId || scope.locationId !== fromBranchId) {
+    throw new AppError(403, "A branch admin can create settlements only for their assigned branch");
+  }
+}
+
+type BranchPaymentLine = { method: string; amount: number };
+
+function paymentLines(value: Prisma.JsonValue | null): BranchPaymentLine[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((line) => {
+    if (!line || typeof line !== "object" || Array.isArray(line)) return [];
+    const method = "method" in line && typeof line.method === "string" ? line.method : "";
+    const amount = "amount" in line ? Number(line.amount) : Number.NaN;
+    return method && Number.isFinite(amount) ? [{ method, amount }] : [];
+  });
+}
+
+function sumPaymentsByMethod(lines: BranchPaymentLine[]): BranchPaymentLine[] {
+  const totals = new Map<string, number>();
+  for (const line of lines) totals.set(line.method, Math.round(((totals.get(line.method) ?? 0) + line.amount) * 100) / 100);
+  return Array.from(totals, ([method, amount]) => ({ method, amount }));
+}
+
+const round2 = (value: number) => Math.round(value * 100) / 100;
+
 export async function createBranchSettlement(actor: OrderActor, input: CreateBranchSettlementInput) {
+  await assertOwnSettlementOrigin(actor, input.fromBranchId);
   const [originIds, destinationIds, fromBranch] = await Promise.all([
     resolveBranchLocationIds(input.fromBranchId), resolveBranchLocationIds(input.toBranchId),
     prisma.locations.findUnique({ where: { id: input.fromBranchId }, select: { commission_per_parcel: true } }),
@@ -315,13 +378,181 @@ export async function createBranchSettlement(actor: OrderActor, input: CreateBra
       statement_no: statementNo, from_branch_id: input.fromBranchId, to_branch_id: input.toBranchId,
       settlement_date: new Date(`${input.settlementDate}T00:00:00.000Z`), commission_per_parcel: commission,
       gross_cod: gross, commission_amount: commissionAmount, net_payable: net,
-      payment_method: input.paymentMethod || null, remark: input.remark || null, created_by: actor.id,
+      status: "pending", remark: input.remark || null, created_by: actor.id,
       items: { create: itemAmounts.map((i) => ({ parcel_id: i.parcelId, collected_amount: i.collected,
         commission_amount: i.commission, net_payable: i.net })) },
     } });
     await tx.audit_logs.create({ data: { actor_id: actor.id, entity_type: "branch_settlement", entity_id: settlement.id,
-      action: "CREATE_BRANCH_SETTLEMENT", new_data: { statementNo, orderIds: ids, netPayable: net.toString() } } });
+      action: "CREATE_BRANCH_SETTLEMENT", new_data: { statementNo, orderIds: ids, netPayable: net.toString(), status: "pending" } } });
     return { id: settlement.id, statementNo, orderCount: ids.length, grossCod: money(gross),
-      commissionAmount: money(commissionAmount), netPayable: money(net) };
+      commissionAmount: money(commissionAmount), netPayable: money(net), paidAmount: 0,
+      remainingAmount: money(net), status: settlement.status };
   });
+}
+
+export async function getBranchSettlementDetail(actor: OrderActor, settlementId: string) {
+  const settlement = await prisma.branch_settlements.findUnique({
+    where: { id: settlementId },
+    include: {
+      from_branch: { select: { id: true, name: true } },
+      to_branch: { select: { id: true, name: true } },
+      settled_by_user: { select: { full_name: true } },
+      payment_records: {
+        orderBy: { paid_at: "asc" },
+        include: { recorded_by_user: { select: { full_name: true } } },
+      },
+      items: {
+        orderBy: { created_at: "asc" },
+        include: {
+          parcel: {
+            select: {
+              order_number: true, tracking_id: true, status: true,
+              parties_parcels_receiver_idToparties: { select: { name: true, phone: true } },
+              locations_parcels_origin_location_idTolocations: { select: { name: true } },
+              locations_parcels_destination_location_idTolocations: { select: { name: true } },
+            },
+          },
+        },
+      },
+    },
+  });
+  if (!settlement) throw new AppError(404, "Branch settlement not found");
+  if (!actor.roles.includes("super_admin")) {
+    const scope = await getActorBranchScope(actor);
+    if (!scope.canRead && (!scope.locationId || (settlement.from_branch_id !== scope.locationId && settlement.to_branch_id !== scope.locationId))) {
+      throw new AppError(403, "You can only view settlements involving your assigned branch");
+    }
+  }
+
+  const netPayable = money(settlement.net_payable);
+  const paidAmount = money(settlement.paid_amount);
+  return {
+    id: settlement.id,
+    statementNo: settlement.statement_no,
+    fromBranch: { id: settlement.from_branch.id, name: settlement.from_branch.name },
+    toBranch: { id: settlement.to_branch.id, name: settlement.to_branch.name },
+    settlementDate: settlement.settlement_date.toISOString().slice(0, 10),
+    status: settlement.status,
+    grossCod: money(settlement.gross_cod),
+    commissionPerParcel: money(settlement.commission_per_parcel),
+    commissionAmount: money(settlement.commission_amount),
+    netPayable,
+    paidAmount,
+    remainingAmount: round2(netPayable - paidAmount),
+    paymentMethod: settlement.payment_method,
+    paymentBreakdown: paymentLines(settlement.payments),
+    remark: settlement.remark,
+    settledAt: settlement.settled_at?.toISOString() ?? null,
+    settledBy: settlement.settled_by_user?.full_name ?? null,
+    createdAt: settlement.created_at.toISOString(),
+    payments: settlement.payment_records.map((payment) => ({
+      id: payment.id,
+      amount: money(payment.amount),
+      method: payment.method,
+      breakdown: paymentLines(payment.breakdown),
+      remark: payment.remark,
+      paidAt: payment.paid_at.toISOString(),
+      recordedBy: payment.recorded_by_user?.full_name ?? null,
+    })),
+    items: settlement.items.map((item) => ({
+      parcelId: item.parcel_id,
+      orderNumber: item.parcel.order_number,
+      trackingId: item.parcel.tracking_id,
+      status: item.parcel.status,
+      receiverName: item.parcel.parties_parcels_receiver_idToparties.name,
+      receiverPhone: item.parcel.parties_parcels_receiver_idToparties.phone,
+      origin: item.parcel.locations_parcels_origin_location_idTolocations?.name ?? null,
+      destination: item.parcel.locations_parcels_destination_location_idTolocations?.name ?? null,
+      collectedAmount: money(item.collected_amount),
+      commissionAmount: money(item.commission_amount),
+      netPayable: money(item.net_payable),
+    })),
+  };
+}
+
+async function lockBranchSettlement(tx: Prisma.TransactionClient, settlementId: string) {
+  const rows = await tx.$queryRaw<Array<{ id: string }>>(
+    Prisma.sql`SELECT id FROM branch_settlements WHERE id = ${settlementId}::uuid FOR UPDATE`,
+  );
+  if (rows.length === 0) throw new AppError(404, "Branch settlement not found");
+}
+
+export async function payBranchSettlement(
+  actor: OrderActor,
+  settlementId: string,
+  input: PayBranchSettlementInput,
+) {
+  if (!actor.roles.includes("super_admin")) {
+    throw new AppError(403, "Only the office can record a settlement payment; branches must submit a receipt through Billing & Credit");
+  }
+  const activeMethods = new Set((await getActivePaymentMethodNames()).map((method) => method.toLowerCase()));
+  for (const payment of input.payments) {
+    if (!activeMethods.has(payment.method.trim().toLowerCase())) {
+      throw new AppError(400, `Unknown payment method "${payment.method}"`);
+    }
+  }
+  const paymentTotal = round2(input.payments.reduce((sum, payment) => sum + payment.amount, 0));
+
+  const result = await prisma.$transaction(async (tx) => {
+    await lockBranchSettlement(tx, settlementId);
+    const settlement = await tx.branch_settlements.findUnique({ where: { id: settlementId } });
+    if (!settlement) throw new AppError(404, "Branch settlement not found");
+    if (settlement.status === "settled") throw new AppError(409, "This branch settlement is already complete");
+    if (settlement.status === "cancelled") throw new AppError(409, "This branch settlement has been cancelled");
+
+    const netPayable = money(settlement.net_payable);
+    const alreadyPaid = money(settlement.paid_amount);
+    const outstanding = round2(netPayable - alreadyPaid);
+    if (paymentTotal <= 0 && outstanding > 0) throw new AppError(400, "Payment amount must be greater than zero");
+    if (paymentTotal > outstanding) {
+      throw new AppError(400, `Payment total (Rs. ${paymentTotal}) exceeds the outstanding balance (Rs. ${outstanding})`);
+    }
+
+    const newPaidAmount = round2(alreadyPaid + paymentTotal);
+    const fullySettled = round2(netPayable - newPaidAmount) === 0;
+    const method = Array.from(new Set(input.payments.map((payment) => payment.method.trim()))).join(", ");
+    const allPayments = sumPaymentsByMethod([
+      ...paymentLines(settlement.payments),
+      ...input.payments.map((payment) => ({ method: payment.method.trim(), amount: payment.amount })),
+    ]);
+
+    const payment = await tx.branch_settlement_payments.create({ data: {
+      settlement_id: settlementId,
+      amount: paymentTotal,
+      method,
+      breakdown: input.payments as unknown as Prisma.InputJsonValue,
+      remark: input.remark?.trim() || null,
+      recorded_by: actor.id,
+    } });
+    const updated = await tx.branch_settlements.update({
+      where: { id: settlementId },
+      data: {
+        paid_amount: newPaidAmount,
+        status: fullySettled ? "settled" : "partially_paid",
+        payment_method: allPayments.map((line) => line.method).join(", "),
+        payments: allPayments as unknown as Prisma.InputJsonValue,
+        ...(input.remark?.trim() ? { remark: input.remark.trim() } : {}),
+        ...(fullySettled ? { settled_by: actor.id, settled_at: new Date() } : {}),
+      },
+    });
+    await tx.audit_logs.create({ data: {
+      actor_id: actor.id,
+      entity_type: "branch_settlement",
+      entity_id: settlementId,
+      action: fullySettled ? "PAY_BRANCH_SETTLEMENT" : "PART_PAY_BRANCH_SETTLEMENT",
+      new_data: { statementNo: settlement.statement_no, amount: paymentTotal, paidAmount: newPaidAmount,
+        remainingAmount: round2(netPayable - newPaidAmount), paymentMethod: method, status: updated.status },
+    } });
+    return { updated, paymentId: payment.id, netPayable, newPaidAmount };
+  }, { maxWait: 10_000, timeout: 20_000 });
+
+  return {
+    id: result.updated.id,
+    statementNo: result.updated.statement_no,
+    status: result.updated.status,
+    netPayable: result.netPayable,
+    paidAmount: result.newPaidAmount,
+    remainingAmount: round2(result.netPayable - result.newPaidAmount),
+    paymentId: result.paymentId,
+  };
 }

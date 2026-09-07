@@ -104,6 +104,8 @@ export async function updateBillingSettingsController(req: Request, res: Respons
     const settings = await updateBillingSettings(req.user.id, {
       warnThreshold: req.body.warnThreshold,
       blockThreshold: req.body.blockThreshold,
+      branchWarnThreshold: req.body.branchWarnThreshold,
+      branchBlockThreshold: req.body.branchBlockThreshold,
       paymentNote: req.body.paymentNote,
     });
     return res.status(200).json({ success: true, data: settings });

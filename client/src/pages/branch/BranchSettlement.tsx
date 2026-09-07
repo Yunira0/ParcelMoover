@@ -4,39 +4,43 @@ import { Plus } from 'lucide-react';
 import PageHeader from '../../components/PageHeader';
 import Table from '../../components/Table';
 import Pagination from '../../components/Pagination';
+import StatusChip from '../../components/StatusChip';
+import FormField from '../../components/FormField';
 import SearchableSelect, { type SearchableSelectOption } from '../../components/SearchableSelect';
 import NepaliDatePicker from '../../components/NepaliDatePicker';
 import { Banner } from '../accounting/ui';
 import { useBranchScope } from '../../context/BranchScopeContext';
 import { useBranchAccess } from '../../hooks/useBranchAccess';
-import { getBranchSettlements } from '../../services/branchTracking.service';
+import { getCurrentUserLocationId } from '../../utils/auth';
+import {
+  getBranchSettlements,
+  type BranchSettlement,
+  type BranchSettlementStatus,
+  type BranchSettlementSummary,
+} from '../../services/branchTracking.service';
+import { settlementStatusLabel, settlementStatusTone } from '../../utils/settlementStatus';
+import { toBsDate } from '../../utils/nepaliDate';
 import '../../components/merchant/MerchantFilterBar.css';
 import '../../components/branch/BranchOverviewFilterBar.css';
 import '../vendor/VendorFinance.css';
+import './BranchSettlement.css';
 
 const PAGE_SIZE = 20;
-
-interface BranchSettlementRow {
-  id: string;
-  sn: number;
-  statementId: string;
-  route: string;
-  commission: string;
-  amount: string;
-  settlementDate: string;
-  payment: string;
-  remark: string;
-}
+const money = (value: number) => `Rs. ${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+const EMPTY_SUMMARY: BranchSettlementSummary = { grossCod: 0, commissionCredit: 0, netPayable: 0, paid: 0, outstanding: 0, pendingStatements: 0 };
 
 const BranchSettlement: React.FC = () => {
   const navigate = useNavigate();
   const { fromBranchId, toBranchId, setFromBranchId, setToBranchId, branches, loading } = useBranchScope();
   const { canWriteOtherBranches } = useBranchAccess();
+  const canCreateSettlement = canWriteOtherBranches || Boolean(getCurrentUserLocationId());
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
+  const [status, setStatus] = useState<BranchSettlementStatus | ''>('');
   const [page, setPage] = useState(1);
   const [pageSizeChoice, setPageSizeChoice] = useState(PAGE_SIZE);
-  const [rows, setRows] = useState<BranchSettlementRow[]>([]);
+  const [rows, setRows] = useState<BranchSettlement[]>([]);
+  const [summary, setSummary] = useState<BranchSettlementSummary>(EMPTY_SUMMARY);
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
   const [loadingRows, setLoadingRows] = useState(false);
@@ -44,143 +48,66 @@ const BranchSettlement: React.FC = () => {
 
   const options = (allLabel: string): SearchableSelectOption[] => [
     { id: 'all', label: allLabel },
-    ...branches.map((b) => ({ id: b.id, label: b.name, description: b.district ?? undefined })),
+    ...branches.map((branch) => ({ id: branch.id, label: branch.name, description: branch.district ?? undefined })),
   ];
 
   useEffect(() => {
     const controller = new AbortController();
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- request lifecycle owns loading
     setLoadingRows(true);
     getBranchSettlements({
       ...(fromBranchId !== 'all' ? { fromBranchId } : {}),
       ...(toBranchId !== 'all' ? { toBranchId } : {}),
       ...(fromDate ? { dateFrom: fromDate } : {}),
       ...(toDate ? { dateTo: toDate } : {}),
+      ...(status ? { status } : {}),
       page,
       pageSize: pageSizeChoice,
     }, controller.signal).then((response) => {
-      setRows(response.data.map((item, index) => ({
-        id: item.id,
-        sn: (response.meta.page - 1) * response.meta.pageSize + index + 1,
-        statementId: item.statementNo,
-        route: `${item.fromBranch} → ${item.toBranch}`,
-        commission: `Rs. ${item.commissionPerParcel.toLocaleString()}/parcel · Rs. ${item.commissionAmount.toLocaleString()} total`,
-        amount: `Rs. ${item.netPayable.toLocaleString()}`,
-        settlementDate: item.settlementDate,
-        payment: item.paymentMethod || item.status,
-        remark: item.remark || `${item.orderCount} order${item.orderCount === 1 ? '' : 's'}`,
-      })));
+      setRows(response.data);
+      setSummary(response.summary);
       setTotal(response.meta.total);
       setTotalPages(response.meta.totalPages);
       setError('');
     }).catch(() => setError('Failed to load branch settlements.')).finally(() => setLoadingRows(false));
     return () => controller.abort();
-  }, [fromBranchId, toBranchId, fromDate, toDate, page, pageSizeChoice]);
+  }, [fromBranchId, toBranchId, fromDate, toDate, status, page, pageSizeChoice]);
 
   const columns = [
-    { header: 'SN', accessor: 'sn' as keyof BranchSettlementRow, width: '60px' },
-    { header: 'Statement ID', accessor: 'statementId' as keyof BranchSettlementRow, width: '180px' },
-    { header: 'Route', accessor: 'route' as keyof BranchSettlementRow, width: '220px' },
-    { header: 'Commission', accessor: 'commission' as keyof BranchSettlementRow, width: '210px' },
-    { header: 'Amount (Net)', accessor: 'amount' as keyof BranchSettlementRow, width: '130px' },
-    { header: 'Settlement date', accessor: 'settlementDate' as keyof BranchSettlementRow, width: '130px' },
-    { header: 'Payment', accessor: 'payment' as keyof BranchSettlementRow, width: '180px' },
-    { header: 'Remark', accessor: 'remark' as keyof BranchSettlementRow, width: '180px' },
+    { header: 'SN', accessor: (item: BranchSettlement) => (page - 1) * pageSizeChoice + rows.indexOf(item) + 1, width: '60px' },
+    { header: 'Statement ID', width: '185px', accessor: (item: BranchSettlement) => <button type="button" className="branch-statement-link" onClick={() => navigate(`/branches/settlement/${item.id}`)}>{item.statementNo}</button> },
+    { header: 'Route', width: '200px', accessor: (item: BranchSettlement) => `${item.fromBranch} → ${item.toBranch}` },
+    { header: 'Orders', width: '80px', accessor: (item: BranchSettlement) => item.orderCount.toLocaleString() },
+    { header: 'COD & credit', width: '185px', accessor: (item: BranchSettlement) => <div className="branch-money-stack"><span>COD {money(item.grossCod)}</span><span>Commission credit {money(item.commissionAmount)}</span></div> },
+    { header: 'Net payable', width: '135px', className: 'branch-money-cell', accessor: (item: BranchSettlement) => money(item.netPayable) },
+    { header: 'Paid / balance', width: '160px', accessor: (item: BranchSettlement) => <div className="branch-money-stack"><span>Paid {money(item.paidAmount)}</span><span className={item.remainingAmount > 0 ? 'branch-balance-due' : 'branch-balance-clear'}>{item.remainingAmount > 0 ? `Due ${money(item.remainingAmount)}` : 'Cleared'}</span></div> },
+    { header: 'Payment', width: '170px', accessor: (item: BranchSettlement) => item.paymentBreakdown.length ? <div className="branch-money-stack">{item.paymentBreakdown.map((line) => <span key={line.method}>{line.method} · {money(line.amount)}</span>)}</div> : <span className="branch-muted">Not paid</span> },
+    { header: 'Status', width: '130px', accessor: (item: BranchSettlement) => <StatusChip variant="solid" tone={settlementStatusTone(item.status)}>{settlementStatusLabel(item.status)}</StatusChip> },
+    { header: 'Statement date', width: '125px', accessor: (item: BranchSettlement) => toBsDate(item.settlementDate) || item.settlementDate },
   ];
 
   return (
-    <div className="vendor-finance-page">
-      <PageHeader
-        title="Branch Settlement"
-        subtitle="COD statements settled between branches"
-        actionLabel="Add settlement"
-        actionIcon={<Plus size={16} />}
-        actionDisabled={!canWriteOtherBranches}
-        onAction={() => navigate('/branches/settlement/new')}
-      />
-
-      {!canWriteOtherBranches && (
-        <Banner tone="info">
-          You have read-only access to other branches. Recording a settlement stays with your own
-          branch and the super admin.
-        </Banner>
-      )}
+    <div className="vendor-finance-page branch-settlement-page">
+      <PageHeader title="Branch Settlement" subtitle="Create a statement first; it is deposited only after the branch payment clears." actionLabel="Add settlement" actionIcon={<Plus size={16} />} actionDisabled={!canCreateSettlement} onAction={() => navigate('/branches/settlement/new')} />
+      {!canCreateSettlement && <Banner tone="info">Assign this admin to a branch before creating branch settlement statements.</Banner>}
       {error && <Banner tone="danger">{error}</Banner>}
 
-      <div className="vendor-finance-toolbar">
-        <div className="vendor-finance-date-range">
-          <label className="branch-filter-narrow">
-            From Branch
-            <SearchableSelect
-              options={options('All branches')}
-              value={fromBranchId}
-              onChange={(value) => { setFromBranchId(value); setPage(1); }}
-              placeholder="All branches"
-              disabled={loading}
-            />
-          </label>
-          <label className="branch-filter-narrow">
-            To Branch
-            <SearchableSelect
-              options={options('Any destination')}
-              value={toBranchId}
-              onChange={(value) => { setToBranchId(value); setPage(1); }}
-              placeholder="Any destination"
-              disabled={loading}
-            />
-          </label>
-          <label className="merchant-filter-daterange">
-            <span>Date</span>
-            <div className="merchant-filter-range">
-              <NepaliDatePicker
-                value={fromDate}
-                max={toDate || undefined}
-                onChange={(next) => {
-                  setPage(1);
-                  setFromDate(next);
-                }}
-                placeholder="From"
-                aria-label="Date range start"
-              />
-              <span className="merchant-filter-range-sep" aria-hidden="true">~</span>
-              <NepaliDatePicker
-                value={toDate}
-                min={fromDate || undefined}
-                onChange={(next) => {
-                  setPage(1);
-                  setToDate(next);
-                }}
-                placeholder="To"
-                aria-label="Date range end"
-              />
-            </div>
-          </label>
-        </div>
-      </div>
+      <section className="branch-ledger-strip" aria-label="Branch settlement position">
+        <div><span>COD in statements</span><strong>{money(summary.grossCod)}</strong></div>
+        <div><span>Commission credit</span><strong>{money(summary.commissionCredit)}</strong></div>
+        <div><span>Net payable</span><strong>{money(summary.netPayable)}</strong></div>
+        <div><span>Paid</span><strong>{money(summary.paid)}</strong></div>
+        <div><span>Outstanding</span><strong className={summary.outstanding > 0 ? 'branch-balance-due' : 'branch-balance-clear'}>{money(summary.outstanding)}</strong><small>{summary.pendingStatements} open statement{summary.pendingStatements === 1 ? '' : 's'}</small></div>
+      </section>
 
-      <Table
-        selectable={false}
-        data={rows}
-        columns={columns}
-        loading={loadingRows}
-        loadingMessage="Loading settlements…"
-        minWidth="1400px"
-        emptyMessage="No branch settlements recorded yet."
-      />
+      <div className="vendor-finance-toolbar"><div className="vendor-finance-date-range">
+        <label className="branch-filter-narrow">From Branch<SearchableSelect options={options('All branches')} value={fromBranchId} onChange={(value) => { setFromBranchId(value); setPage(1); }} placeholder="All branches" disabled={loading} /></label>
+        <label className="branch-filter-narrow">To Branch<SearchableSelect options={options('Any destination')} value={toBranchId} onChange={(value) => { setToBranchId(value); setPage(1); }} placeholder="Any destination" disabled={loading} /></label>
+        <label className="branch-filter-narrow">Status<FormField label="" type="select" value={status} onChange={(value) => { setStatus(value as BranchSettlementStatus | ''); setPage(1); }} options={[{ value: '', label: 'All statuses' }, { value: 'pending', label: 'Pending' }, { value: 'partially_paid', label: 'Partially paid' }, { value: 'settled', label: 'Settled' }]} /></label>
+        <label className="merchant-filter-daterange"><span>Date</span><div className="merchant-filter-range"><NepaliDatePicker value={fromDate} max={toDate || undefined} onChange={(next) => { setPage(1); setFromDate(next); }} placeholder="From" aria-label="Date range start" /><span className="merchant-filter-range-sep" aria-hidden="true">~</span><NepaliDatePicker value={toDate} min={fromDate || undefined} onChange={(next) => { setPage(1); setToDate(next); }} placeholder="To" aria-label="Date range end" /></div></label>
+      </div></div>
 
-      <Pagination
-        ariaLabel="Branch settlements pagination"
-        page={page}
-        totalPages={totalPages}
-        onPageChange={setPage}
-        pageSize={pageSizeChoice}
-        pageSizeLabel="settlements"
-        onPageSizeChange={(size) => {
-          setPageSizeChoice(size);
-          setPage(1);
-        }}
-        summary={`${total} settlement${total === 1 ? '' : 's'}`}
-      />
+      <Table selectable={false} data={rows} columns={columns} loading={loadingRows} loadingMessage="Loading settlements…" minWidth="1600px" emptyMessage="No branch settlements recorded yet." />
+      <Pagination ariaLabel="Branch settlements pagination" page={page} totalPages={totalPages} onPageChange={setPage} pageSize={pageSizeChoice} pageSizeLabel="settlements" onPageSizeChange={(size) => { setPageSizeChoice(size); setPage(1); }} summary={`${total} settlement${total === 1 ? '' : 's'}`} />
     </div>
   );
 };

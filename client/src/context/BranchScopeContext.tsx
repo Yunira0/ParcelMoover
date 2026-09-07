@@ -1,13 +1,14 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { useBranchAccess } from '../hooks/useBranchAccess';
 import { listBranches, type Branch } from '../services/branchTracking.service';
+import { getCurrentUserLocationId } from '../utils/auth';
 
 /**
  * App-wide branch scope for the Branch Tracking views. Inter-branch: `fromBranchId`
  * is the origin hub, `toBranchId` the destination hub. `'all'` means unfiltered.
  *
- * Only loaded for users who may see other branches (super_admin or a
- * BRANCH_TRACKING_* grant) — for everyone else this stays an empty, inert context.
+ * Loaded for branch-tracking staff and admins assigned to a branch. The server
+ * scopes assigned admins to their own branch's settlement workflow.
  */
 interface BranchScopeValue {
   fromBranchId: string; // 'all' | hub id
@@ -35,6 +36,7 @@ const BranchScopeContext = createContext<BranchScopeValue>({
 
 export const BranchScopeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { canViewOtherBranches } = useBranchAccess();
+  const canUseBranchWorkflow = canViewOtherBranches || Boolean(getCurrentUserLocationId());
   const [fromBranchId, setFromState] = useState<string>(() => localStorage.getItem(FROM_KEY) || 'all');
   const [toBranchId, setToState] = useState<string>(() => localStorage.getItem(TO_KEY) || 'all');
   const [branches, setBranches] = useState<Branch[]>([]);
@@ -67,8 +69,8 @@ export const BranchScopeProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- access controls this remote resource
-    if (canViewOtherBranches) refreshBranches();
-  }, [canViewOtherBranches, refreshBranches]);
+    if (canUseBranchWorkflow) refreshBranches();
+  }, [canUseBranchWorkflow, refreshBranches]);
 
   return (
     <BranchScopeContext.Provider

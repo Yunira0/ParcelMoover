@@ -25,10 +25,14 @@ vi.mock("../order.service", () => ({
 vi.mock("../branch.service", () => ({
   resolveBranchLocationIds: vi.fn(),
 }));
+vi.mock("../branch-billing.service", () => ({
+  assertBranchCanReceiveTransit: vi.fn(),
+}));
 
 import prisma from "../../lib/prisma";
 import { bulkUpdateParcelStatus, mapHandoverParcel } from "../order.service";
 import { resolveBranchLocationIds } from "../branch.service";
+import { assertBranchCanReceiveTransit } from "../branch-billing.service";
 import {
   addParcelsToTransitManifest,
   deleteTransitManifest,
@@ -57,6 +61,7 @@ const mockedPrisma = prisma as unknown as {
 };
 const mockedBulkUpdate = bulkUpdateParcelStatus as unknown as ReturnType<typeof vi.fn>;
 const mockedCoverage = resolveBranchLocationIds as unknown as ReturnType<typeof vi.fn>;
+const mockedTransitGate = assertBranchCanReceiveTransit as unknown as ReturnType<typeof vi.fn>;
 const mockedMapHandoverParcel = mapHandoverParcel as unknown as ReturnType<typeof vi.fn>;
 
 const ADMIN = { id: "admin-1", roles: ["admin"] };
@@ -106,6 +111,7 @@ beforeEach(() => {
   );
   // Pokhara covers itself and one covered area by default.
   mockedCoverage.mockResolvedValue([HUB_ID, "area-lakeside"]);
+  mockedTransitGate.mockResolvedValue(undefined);
   mockedMapHandoverParcel.mockImplementation((p: any) => ({ id: p.id, trackingId: p.tracking_id, codAmount: 0 }));
   // Base fallback for calls a test doesn't specifically queue - chiefly every
   // function's own trailing getTransitManifestById(), which re-fetches
@@ -174,6 +180,27 @@ describe("addParcelsToTransitManifest — staging a scan onto an open manifest",
     await expect(
       addParcelsToTransitManifest(ADMIN, MANIFEST_ID, { trackingIds: ["TRK-1"] }),
     ).rejects.toMatchObject({ statusCode: 409 });
+  });
+});
+
+describe("branch billing transit gate", () => {
+  it("refuses staging to a branch whose COD credit limit is blocked", async () => {
+    mockedPrisma.locations.findFirst.mockResolvedValue({ id: HUB_ID, name: "Pokhara" });
+    mockedTransitGate.mockRejectedValue({ statusCode: 403, code: "BRANCH_BILLING_BLOCKED", message: "Pokhara cannot receive transit" });
+
+    await expect(stageOrdersToBranch(ADMIN, { toBranchId: HUB_ID, parcelIds: ["parcel-1"] })).rejects.toMatchObject({
+      statusCode: 403,
+      code: "BRANCH_BILLING_BLOCKED",
+    });
+    expect(mockedPrisma.parcels.findMany).not.toHaveBeenCalled();
+  });
+
+  it("checks the credit limit again immediately before dispatch", async () => {
+    mockedPrisma.transit_manifests.findUnique.mockResolvedValue(manifestRow());
+    mockedTransitGate.mockRejectedValue({ statusCode: 403, code: "BRANCH_BILLING_BLOCKED" });
+
+    await expect(dispatchTransitManifest(ADMIN, MANIFEST_ID)).rejects.toMatchObject({ code: "BRANCH_BILLING_BLOCKED" });
+    expect(mockedBulkUpdate).not.toHaveBeenCalled();
   });
 });
 

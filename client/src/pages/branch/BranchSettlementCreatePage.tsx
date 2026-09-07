@@ -4,13 +4,12 @@ import { ArrowLeft, Building2, Download, ListChecks } from 'lucide-react';
 import Button from '../../components/Button';
 import FormField from '../../components/FormField';
 import Table from '../../components/Table';
-import { Banner } from '../accounting/ui';
 import { useBranchScope } from '../../context/BranchScopeContext';
 import type { Order } from '../../services/orders.service';
 import { createBranchSettlement, getBranchOrders } from '../../services/branchTracking.service';
 import { apiErrorMessage } from '../../utils/serverValidation';
 import { downloadExcel, type CellValue } from '../../utils/excel';
-import { getCurrentUserLocationId } from '../../utils/auth';
+import { getCurrentUserLocationId, getCurrentUserRoles } from '../../utils/auth';
 import '../SettlementCreatePage.css';
 
 const SectionHeader: React.FC<{ icon: React.ReactNode; title: string; description: string }> = ({
@@ -40,12 +39,12 @@ const CodCell: React.FC<{ codAmount: number }> = ({ codAmount }) => (
 const BranchSettlementCreatePage: React.FC = () => {
   const navigate = useNavigate();
   const { branches } = useBranchScope();
+  const isSuperAdmin = getCurrentUserRoles().includes('super_admin');
 
   const [fromBranch, setFromBranch] = useState('');
   const [toBranch, setToBranch] = useState('');
   const [settlementDate, setSettlementDate] = useState(new Date().toISOString().split('T')[0]);
   const [commissionPerParcel, setCommissionPerParcel] = useState('');
-  const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -80,6 +79,7 @@ const BranchSettlementCreatePage: React.FC = () => {
           ...(fromBranch ? { fromBranchId: fromBranch } : {}),
           ...(toBranch ? { toBranchId: toBranch } : {}),
           metric: 'pendingDeposit',
+          availableForSettlement: true,
           pageSize: 100,
         }, signal);
         const list = Array.isArray(res.data) ? res.data : [];
@@ -144,16 +144,14 @@ const BranchSettlementCreatePage: React.FC = () => {
     setSaving(true);
     setError('');
     try {
-      await createBranchSettlement({
+      const response = await createBranchSettlement({
         fromBranchId: fromBranch,
         toBranchId: toBranch,
         settlementDate,
         orderIds: selectedOrders.map((order) => String(order.id)),
         commissionPerParcel: commission,
       });
-      setSaved(true);
-      setOrders([]);
-      setSelectedIds(new Set());
+      navigate(`/branches/settlement/${response.data.id}`, { state: { created: true } });
     } catch (err) {
       setError(apiErrorMessage(err, 'Failed to create branch settlement'));
     } finally {
@@ -224,14 +222,8 @@ const BranchSettlementCreatePage: React.FC = () => {
 
       <div className="scp-header">
         <h1>Add Branch Settlement</h1>
-        <p>Settle the COD one branch collected for another, less that branch’s commission.</p>
+        <p>Create a pending COD statement for one branch to pay another, less the collecting branch’s commission.</p>
       </div>
-
-      {saved && (
-        <Banner tone="success">
-          Settlement saved successfully. It now appears in Branch Settlement and Deposited totals.
-        </Banner>
-      )}
 
       <form className="scp-form" onSubmit={handleSubmit} noValidate>
         <section className="scp-section">
@@ -249,12 +241,12 @@ const BranchSettlementCreatePage: React.FC = () => {
                 value={fromBranch}
                 onChange={(id) => {
                   setFromBranch(id);
-                  setSaved(false);
                   const branch = branches.find((item) => item.id === id);
                   setCommissionPerParcel(branch ? String(branch.commissionPerParcel) : '');
                 }}
                 placeholder="Select branch"
                 options={branchOptions}
+                disabled={!isSuperAdmin}
               />
             </div>
             <div className="scp-field">
@@ -338,7 +330,7 @@ const BranchSettlementCreatePage: React.FC = () => {
             Cancel
           </Button>
           <Button type="submit" variant="primary" disabled={saving}>
-            {saving ? 'Saving…' : 'Add Settlement'}
+            {saving ? 'Creating…' : 'Create Pending Statement'}
           </Button>
         </div>
       </form>

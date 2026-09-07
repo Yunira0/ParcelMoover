@@ -35,6 +35,8 @@ export interface BranchFilters {
   dateFrom?: string;
   dateTo?: string;
   metric?: BranchMetricKey;
+  /** Creation picker only: excludes parcels already attached to any statement. */
+  availableForSettlement?: boolean;
 }
 
 const cleanParams = (filters: object) => Object.fromEntries(
@@ -78,6 +80,9 @@ export async function createBranch(input: {
   return response.data;
 }
 
+export type BranchSettlementStatus = 'pending' | 'partially_paid' | 'settled' | 'cancelled';
+export interface BranchPaymentLine { method: string; amount: number }
+
 export interface BranchSettlement {
   id: string;
   statementNo: string;
@@ -89,14 +94,28 @@ export interface BranchSettlement {
   commissionAmount: number;
   netPayable: number;
   commissionPerParcel: number;
-  status: string;
+  status: BranchSettlementStatus;
+  paidAmount: number;
+  remainingAmount: number;
   paymentMethod: string | null;
+  paymentBreakdown: BranchPaymentLine[];
   remark: string | null;
 }
 
-export async function getBranchSettlements(filters: Omit<BranchFilters, 'metric'> & { page: number; pageSize: number }, signal?: AbortSignal) {
+export interface BranchSettlementSummary {
+  grossCod: number;
+  commissionCredit: number;
+  netPayable: number;
+  paid: number;
+  outstanding: number;
+  pendingStatements: number;
+}
+
+export async function getBranchSettlements(filters: Omit<BranchFilters, 'metric' | 'availableForSettlement'> & {
+  page: number; pageSize: number; status?: BranchSettlementStatus; scope?: 'outgoing' | 'incoming' | 'all';
+}, signal?: AbortSignal) {
   const response = await api.get('/branches/settlements', { params: cleanParams(filters), signal });
-  return response.data as { success: boolean; data: BranchSettlement[]; meta: { page: number; pageSize: number; total: number; totalPages: number } };
+  return response.data as { success: boolean; data: BranchSettlement[]; summary: BranchSettlementSummary; meta: { page: number; pageSize: number; total: number; totalPages: number } };
 }
 
 export async function createBranchSettlement(input: {
@@ -105,4 +124,52 @@ export async function createBranchSettlement(input: {
 }) {
   const response = await api.post('/branches/settlements', input);
   return response.data;
+}
+
+export interface BranchSettlementPaymentRecord {
+  id: string;
+  amount: number;
+  method: string;
+  breakdown: BranchPaymentLine[];
+  remark: string | null;
+  paidAt: string;
+  recordedBy: string | null;
+}
+
+export interface BranchSettlementDetail extends Omit<BranchSettlement, 'fromBranch' | 'toBranch' | 'orderCount'> {
+  fromBranch: { id: string; name: string };
+  toBranch: { id: string; name: string };
+  settledAt: string | null;
+  settledBy: string | null;
+  createdAt: string;
+  payments: BranchSettlementPaymentRecord[];
+  items: Array<{
+    parcelId: string;
+    orderNumber: number;
+    trackingId: string;
+    status: string;
+    receiverName: string;
+    receiverPhone: string;
+    origin: string | null;
+    destination: string | null;
+    collectedAmount: number;
+    commissionAmount: number;
+    netPayable: number;
+  }>;
+}
+
+export async function getBranchSettlement(id: string, signal?: AbortSignal): Promise<BranchSettlementDetail> {
+  const response = await api.get(`/branches/settlements/${id}`, { signal });
+  return response.data.data;
+}
+
+export async function payBranchSettlement(id: string, input: {
+  payments: BranchPaymentLine[];
+  remark?: string;
+}) {
+  const response = await api.post(`/branches/settlements/${id}/pay`, input);
+  return response.data as { success: boolean; message: string; data: {
+    id: string; statementNo: string; status: BranchSettlementStatus;
+    netPayable: number; paidAmount: number; remainingAmount: number; paymentId: string;
+  } };
 }

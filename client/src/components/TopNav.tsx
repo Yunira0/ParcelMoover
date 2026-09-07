@@ -12,7 +12,8 @@ import {
 } from '../services/notifications.service';
 import { getUnclosedRemarksCounts, subscribeToRemarkStatusChanged } from '../services/remarks.service';
 import { useMobileNav } from '../context/MobileNavContext';
-import { isVendorSide } from '../utils/auth';
+import { useStaffPermissions } from '../context/StaffPermissionsContext';
+import { isBranchWorkspaceUser, isVendorSide } from '../utils/auth';
 import { toBsDateLabel, toNptTime } from '../utils/nepaliDate';
 import './TopNav.css';
 
@@ -25,10 +26,13 @@ const formatTime = (iso: string) => {
 const POLL_INTERVAL_MS = 30_000;
 
 const TopNav: React.FC = () => {
+  // Re-render when /me refreshes plain-admin scope in localStorage.
+  useStaffPermissions();
   const navigate = useNavigate();
   const { toggleMobile } = useMobileNav();
+  const isBranchWorkspace = isBranchWorkspaceUser();
   // Rider remarks are an internal queue - vendors only work their own comments.
-  const showRiderCmt = !isVendorSide();
+  const showRiderCmt = !isVendorSide() && !isBranchWorkspace;
   const [query, setQuery] = useState('');
   // Below the breakpoint the search field is collapsed to an icon; this
   // expands it to take over the bar, same pattern as most mobile search UIs.
@@ -65,6 +69,8 @@ const TopNav: React.FC = () => {
   };
 
   useEffect(() => {
+    if (isBranchWorkspace) return;
+
     refreshUnreadCount();
     refreshUnclosedCount();
 
@@ -102,7 +108,7 @@ const TopNav: React.FC = () => {
       clearInterval(pollTimer);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [refreshUnreadCount, refreshUnclosedCount]);
+  }, [isBranchWorkspace, refreshUnreadCount, refreshUnclosedCount]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -263,7 +269,8 @@ const TopNav: React.FC = () => {
         <Search size={20} />
       </button>
 
-      <div className="top-nav-profile">
+      {!isBranchWorkspace && (
+        <div className="top-nav-profile">
         <Button
           variant="outline"
           className="cmt-button"
@@ -356,7 +363,8 @@ const TopNav: React.FC = () => {
         >
           <User size={20} style={{ color: 'var(--color-background-surface)' }} />
         </button>
-      </div>
+        </div>
+      )}
     </nav>
   );
 };

@@ -69,6 +69,8 @@ const BillingManagement: React.FC = () => {
   const [settings, setSettings] = useState<BillingSettings | null>(null);
   const [warn, setWarn] = useState('');
   const [block, setBlock] = useState('');
+  const [branchWarn, setBranchWarn] = useState('');
+  const [branchBlock, setBranchBlock] = useState('');
   const [savingSettings, setSavingSettings] = useState(false);
   const [settingsMessage, setSettingsMessage] = useState('');
   const [settingsError, setSettingsError] = useState('');
@@ -119,6 +121,8 @@ const BillingManagement: React.FC = () => {
       setSettings(data);
       setWarn(String(data.warnThreshold));
       setBlock(String(data.blockThreshold));
+      setBranchWarn(String(data.branchWarnThreshold));
+      setBranchBlock(String(data.branchBlockThreshold));
       setNote(data.paymentNote ?? '');
     } catch (err) {
       setError(apiErrorMessage(err, 'Failed to load billing settings.'));
@@ -164,6 +168,8 @@ const BillingManagement: React.FC = () => {
       const updated = await updateBillingSettings({
         warnThreshold: Number(warn),
         blockThreshold: Number(block),
+        branchWarnThreshold: Number(branchWarn),
+        branchBlockThreshold: Number(branchBlock),
       });
       setSettings(updated);
       setSettingsMessage('Thresholds saved.');
@@ -361,8 +367,8 @@ const BillingManagement: React.FC = () => {
           <section className="billing-card">
             <h3>Credit thresholds</h3>
             <p className="billing-hint">
-              Both are negative: the account balance at which each rule trips. A vendor is notified
-              at the warn threshold and can no longer create orders at the block threshold.
+              Both sets are negative account balances. Vendor thresholds pause new order creation;
+              branch thresholds pause transit into a branch with COD remittance overdue.
             </p>
             <form className="billing-form" onSubmit={handleSaveSettings}>
               <label>
@@ -382,6 +388,26 @@ const BillingManagement: React.FC = () => {
                   step="0.01"
                   value={block}
                   onChange={(e) => setBlock(e.target.value)}
+                  disabled={!isSuperAdmin || savingSettings}
+                />
+              </label>
+              <label>
+                Branch warn threshold
+                <input
+                  type="number"
+                  step="0.01"
+                  value={branchWarn}
+                  onChange={(e) => setBranchWarn(e.target.value)}
+                  disabled={!isSuperAdmin || savingSettings}
+                />
+              </label>
+              <label>
+                Branch transit block threshold
+                <input
+                  type="number"
+                  step="0.01"
+                  value={branchBlock}
+                  onChange={(e) => setBranchBlock(e.target.value)}
                   disabled={!isSuperAdmin || savingSettings}
                 />
               </label>

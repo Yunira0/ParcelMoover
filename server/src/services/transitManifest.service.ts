@@ -33,6 +33,7 @@ import {
   HANDOVER_PARCEL_INCLUDE,
 } from "./order.service";
 import { resolveBranchLocationIds } from "./branch.service";
+import { assertBranchCanReceiveTransit } from "./branch-billing.service";
 import {
   CreateTransitManifestInput,
   DispatchTransitManifestInput,
@@ -242,6 +243,10 @@ export async function createTransitManifest(actor: Actor, input: CreateTransitMa
   if (fromHub === toHub) throw new AppError(400, "Origin and destination must be different");
 
   const { fromLocationId, toLocationId } = await resolveLocationIds(fromHub, toHub);
+  // A manifest can be created in advance, but never toward a branch whose COD
+  // credit limit is already exhausted. Dispatch checks again below in case it
+  // crossed the limit while this manifest sat open.
+  if (toLocationId) await assertBranchCanReceiveTransit(toLocationId);
 
   const created = await prisma.transit_manifests.create({
     data: {
@@ -599,6 +604,7 @@ export async function dispatchTransitManifest(
       `Manifest ${manifest.manifest_no} is "${manifest.status}" and cannot be dispatched.`,
     );
   }
+  if (manifest.to_location_id) await assertBranchCanReceiveTransit(manifest.to_location_id);
 
   const links = await prisma.transit_manifest_parcels.findMany({
     where: { transit_manifest_id: manifestId },
@@ -731,6 +737,7 @@ export async function stageOrdersToBranch(actor: Actor, input: StageOrdersToBran
     select: { id: true, name: true },
   });
   if (!branch) throw new AppError(404, "Branch not found or inactive");
+  await assertBranchCanReceiveTransit(branch.id);
   const coveredIds = new Set(await resolveBranchLocationIds(branch.id));
 
   const parcelIds = Array.from(new Set(input.parcelIds));
