@@ -39,17 +39,21 @@ router.use(authMiddleware, authorizeRoles("super_admin", "admin"));
 // creating a settlement. The workflow middleware scopes their actual data.
 router.get("/", branchReadLimiter, requireBranchWorkflowAccess, listBranchesController);
 router.get("/overview", branchReadLimiter, requireAdminPermission("BRANCH_TRACKING_READ"), validate(branchTrackingQuerySchema, "query"), branchOverviewController);
-router.get("/orders", branchReadLimiter, requireAdminPermission("BRANCH_TRACKING_READ"), validate(branchTrackingQuerySchema, "query"), branchOrdersController);
+// A branch workspace admin reaches this to pick orders for its own COD
+// statement; listBranchOrders pins them to their own branch. Cross-branch
+// access still needs BRANCH_TRACKING_READ, enforced in the service.
+router.get("/orders", branchReadLimiter, requireBranchWorkflowAccess, validate(branchTrackingQuerySchema, "query"), branchOrdersController);
 router.get("/orders/export", branchReadLimiter, requireAdminPermission("BRANCH_TRACKING_READ"), validate(branchTrackingQuerySchema, "query"), branchOrdersExportController);
 router.post("/", csrfProtection, branchWriteLimiter, requireAdminPermission("BRANCH_TRACKING_WRITE"), validate(createBranchSchema), createBranchController);
 router.get("/settlements", branchReadLimiter, requireBranchWorkflowAccess, validate(branchSettlementQuerySchema, "query"), listBranchSettlementsController);
 router.post("/settlements", csrfProtection, branchWriteLimiter, requireBranchWorkflowAccess, validate(createBranchSettlementSchema), createBranchSettlementController);
 router.get("/settlements/:id", branchReadLimiter, requireBranchWorkflowAccess, validate(branchSettlementIdSchema, "params"), getBranchSettlementController);
-router.post("/settlements/:id/pay", csrfProtection, branchWriteLimiter, requireAdminPermission("BRANCH_TRACKING_WRITE"), validate(branchSettlementIdSchema, "params"), validate(payBranchSettlementSchema), payBranchSettlementController);
+// Office-recorded settlement payment: super-admin only, matching payBranchSettlement.
+router.post("/settlements/:id/pay", csrfProtection, branchWriteLimiter, authorizeRoles("super_admin"), validate(branchSettlementIdSchema, "params"), validate(payBranchSettlementSchema), payBranchSettlementController);
 // Branch credit control. A branch account can submit its own proof, while the
 // office review queue is available to branch-tracking staff.
 router.get("/billing/status", branchReadLimiter, requireBranchWorkflowAccess, validate(branchBillingQuerySchema, "query"), getBranchBillingStatusController);
-router.get("/billing/balances", branchReadLimiter, requireAdminPermission("BRANCH_TRACKING_READ"), listBranchBalancesController);
+router.get("/billing/balances", branchReadLimiter, authorizeRoles("super_admin"), listBranchBalancesController);
 router.get("/billing/payments", branchReadLimiter, requireBranchWorkflowAccess, validate(branchBillingQuerySchema, "query"), listBranchPaymentsController);
 router.post("/billing/payments", csrfProtection, branchWriteLimiter, requireBranchWorkflowAccess, paymentProofUpload, validate(branchBillingPaymentSchema), submitBranchPaymentController);
 router.patch("/billing/payments/:id/review", csrfProtection, branchWriteLimiter, requireBranchWorkflowAccess, validate(branchSettlementIdSchema, "params"), validate(branchBillingReviewSchema), reviewBranchPaymentController);

@@ -12,6 +12,7 @@ import type {
 } from "../validators/branch.schema";
 import { getActivePaymentMethodNames } from "./payment-method.service";
 import { createNotification } from "./notification.service";
+import { evaluateBranchBilling } from "./branch-billing.service";
 
 const DELIVERED: parcel_status[] = ["delivered", "partially_delivered"];
 const METRIC_STATUSES: Record<string, parcel_status[] | undefined> = {
@@ -175,12 +176,30 @@ async function orderQuery(query: BranchTrackingQuery) {
   };
 }
 
+/**
+ * Branch tracking reports are cross-branch and stay behind BRANCH_TRACKING_READ.
+ * A branch workspace admin reaches this only to pick the orders for its own COD
+ * statement, so it is pinned to its own branch as the collecting (destination)
+ * side and any caller-supplied route filter is dropped.
+ */
+async function scopeBranchOrderQuery(actor: OrderActor, query: BranchTrackingQuery): Promise<BranchTrackingQuery> {
+  if (actor.roles.includes("super_admin")) return query;
+  const scope = await getActorBranchScope(actor);
+  if (scope.branchScoped) {
+    if (!scope.locationId) throw new AppError(403, "Your branch account is not assigned to a branch");
+    return { ...query, toBranchId: scope.locationId, fromBranchId: undefined };
+  }
+  if (!scope.canRead) throw new AppError(403, "Not authorized to view branch orders");
+  return query;
+}
+
 export async function listBranchOrders(actor: OrderActor, query: BranchTrackingQuery) {
-  return listOrders(actor, { ...(await orderQuery(query)),
-    ...(query.page !== undefined ? { page: query.page } : {}),
-    ...(query.pageSize !== undefined ? { pageSize: query.pageSize } : {}),
-    ...(query.cursor ? { cursor: query.cursor } : {}),
-    ...(query.dir ? { dir: query.dir } : {}),
+  const scoped = await scopeBranchOrderQuery(actor, query);
+  return listOrders(actor, { ...(await orderQuery(scoped)),
+    ...(scoped.page !== undefined ? { page: scoped.page } : {}),
+    ...(scoped.pageSize !== undefined ? { pageSize: scoped.pageSize } : {}),
+    ...(scoped.cursor ? { cursor: scoped.cursor } : {}),
+    ...(scoped.dir ? { dir: scoped.dir } : {}),
   });
 }
 
@@ -326,13 +345,25 @@ export async function listBranchSettlements(actor: OrderActor, query: BranchSett
   meta: { page: query.page, pageSize: query.pageSize, total, totalPages: Math.max(1, Math.ceil(total / query.pageSize)) } };
 }
 
-async function assertCanCreateBranchSettlement(actor: OrderActor, masterBranchId: string): Promise<void> {
+async function assertCanCreateBranchSettlement(
+  actor: OrderActor,
+  masterBranchId: string,
+  fromBranchId: string,
+): Promise<void> {
   if (actor.roles.includes("super_admin")) return;
   const scope = await getActorBranchScope(actor);
-  if (scope.branchScoped) {
-    throw new AppError(403, "The master branch creates statements; branch workspaces submit payment receipts");
+  if (!scope.locationId) {
+    throw new AppError(403, "Your admin account is not assigned to a branch");
   }
-  if (!scope.locationId || scope.locationId !== masterBranchId) {
+  // A branch workspace creates statements for its own COD only.
+  if (scope.branchScoped) {
+    if (scope.locationId !== fromBranchId) {
+      throw new AppError(403, "You can only create a statement for your own branch");
+    }
+    return;
+  }
+  // A non-branch-scoped head-office admin must be the Imadol master-branch admin.
+  if (scope.locationId !== masterBranchId) {
     throw new AppError(403, "Only an Imadol master-branch admin can create branch statements");
   }
 }
@@ -376,15 +407,26 @@ export async function createBranchSettlement(actor: OrderActor, input: CreateBra
   if (input.toBranchId !== masterBranch.id) {
     throw new AppError(400, "The receiving master branch must be Imadol");
   }
-  await assertCanCreateBranchSettlement(actor, masterBranch.id);
+  // A branch workspace can only ever settle its own COD, at its own agreed
+  // commission rate - never trust either from that side of the request.
+  const actorScope = actor.roles.includes("super_admin") ? null : await getActorBranchScope(actor);
+  const isBranchCreator = Boolean(actorScope?.branchScoped && actorScope.locationId);
+  const fromBranchId = isBranchCreator ? actorScope!.locationId! : input.fromBranchId;
+  if (fromBranchId === masterBranch.id) {
+    throw new AppError(400, "Imadol cannot create a COD statement to pay itself");
+  }
+  await assertCanCreateBranchSettlement(actor, masterBranch.id, fromBranchId);
   // The paying branch is where delivery happened and COD was collected. The
   // master branch receives that remittance; it is not a parcel-route filter.
   const [payingBranchLocationIds, fromBranch] = await Promise.all([
-    resolveBranchLocationIds(input.fromBranchId),
-    prisma.locations.findUnique({ where: { id: input.fromBranchId }, select: { commission_per_parcel: true } }),
+    resolveBranchLocationIds(fromBranchId),
+    prisma.locations.findUnique({ where: { id: fromBranchId }, select: { commission_per_parcel: true } }),
   ]);
+  const commissionPerParcel = isBranchCreator
+    ? money(fromBranch?.commission_per_parcel)
+    : (input.commissionPerParcel ?? money(fromBranch?.commission_per_parcel));
   const ids = [...new Set(input.orderIds)];
-  const result = await prisma.$transaction(async (tx) => {
+  const runInTransaction = () => prisma.$transaction(async (tx) => {
     const parcels = await tx.parcels.findMany({
       where: { id: { in: ids }, deleted_at: null, status: { in: DELIVERED },
         destination_location_id: { in: payingBranchLocationIds! },
@@ -392,7 +434,7 @@ export async function createBranchSettlement(actor: OrderActor, input: CreateBra
       select: { id: true, cod_amount: true, cod_collections: { select: { collected_amount: true } } },
     });
     if (parcels.length !== ids.length) throw new AppError(409, "Some selected orders were not delivered by the paying branch or are already in a statement");
-    const commission = new Prisma.Decimal(input.commissionPerParcel ?? money(fromBranch?.commission_per_parcel));
+    const commission = new Prisma.Decimal(commissionPerParcel);
     const itemAmounts = parcels.map((p) => {
       const collected = p.cod_collections?.collected_amount ?? p.cod_amount;
       const net = Prisma.Decimal.max(new Prisma.Decimal(0), collected.minus(commission));
@@ -404,7 +446,7 @@ export async function createBranchSettlement(actor: OrderActor, input: CreateBra
     const stamp = input.settlementDate.replace(/-/g, "");
     const statementNo = `BRS-${stamp}-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
     const settlement = await tx.branch_settlements.create({ data: {
-      statement_no: statementNo, from_branch_id: input.fromBranchId, to_branch_id: input.toBranchId,
+      statement_no: statementNo, from_branch_id: fromBranchId, to_branch_id: input.toBranchId,
       settlement_date: new Date(`${input.settlementDate}T00:00:00.000Z`), commission_per_parcel: commission,
       gross_cod: gross, commission_amount: commissionAmount, net_payable: net,
       status: "pending", remark: input.remark || null, created_by: actor.id,
@@ -418,31 +460,62 @@ export async function createBranchSettlement(actor: OrderActor, input: CreateBra
       remainingAmount: money(net), status: settlement.status };
   });
 
-  // Statement creation is owned by the master branch, but the assigned paying
-  // branch is the one that must act next. Notification delivery stays
-  // best-effort so it cannot roll back an already-created financial record.
+  let result: Awaited<ReturnType<typeof runInTransaction>>;
   try {
-    const recipients = await prisma.admins.findMany({
-      where: {
-        location_id: input.fromBranchId,
-        branch_scoped: true,
-        users: { is: { status: "active", deleted_at: null } },
-      },
-      select: { user_id: true },
-    });
+    result = await runInTransaction();
+  } catch (error) {
+    // A concurrent statement can claim a parcel between the eligibility check
+    // and the item insert; branch_settlement_items.parcel_id is unique, so the
+    // loser trips P2002. Surface it as the same 409 the sequential path returns.
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      throw new AppError(409, "Some selected orders were just added to another statement. Refresh and try again.");
+    }
+    throw error;
+  }
+
+  // Notify whichever side must act next. If Imadol cut the statement, the
+  // paying branch owes the money; if the branch cut it, Imadol owes the
+  // verification. Delivery is best-effort so it cannot roll back the record.
+  try {
+    const [recipients, title, body, link] = isBranchCreator
+      ? [
+          await prisma.admins.findMany({
+            where: {
+              location_id: masterBranch.id,
+              users: { is: { status: "active", deleted_at: null } },
+            },
+            select: { user_id: true },
+          }),
+          `Branch statement ${result.statementNo} submitted`,
+          `A branch created a Rs. ${result.netPayable.toLocaleString()} COD statement for ${result.orderCount} delivered order${result.orderCount === 1 ? "" : "s"}. Verify the payment once the branch remits it.`,
+          "/branches/billing?tab=queue",
+        ]
+      : [
+          await prisma.admins.findMany({
+            where: {
+              location_id: fromBranchId,
+              branch_scoped: true,
+              users: { is: { status: "active", deleted_at: null } },
+            },
+            select: { user_id: true },
+          }),
+          `Branch statement ${result.statementNo} created`,
+          `Pay Rs. ${result.netPayable.toLocaleString()} to Imadol for ${result.orderCount} delivered order${result.orderCount === 1 ? "" : "s"}, then attach the payment proof.`,
+          "/branches/billing?tab=statements",
+        ];
     const userIds = [...new Set(recipients.map((recipient) => recipient.user_id))]
       .filter((userId) => userId !== actor.id);
     await Promise.all(userIds.map((userId) => createNotification(
-      userId,
-      `Branch statement ${result.statementNo} created`,
-      `Pay Rs. ${result.netPayable.toLocaleString()} to Imadol for ${result.orderCount} delivered order${result.orderCount === 1 ? "" : "s"}, then attach the payment proof.`,
-      result.id,
-      "branch_settlement",
-      "/branches/billing?tab=statements",
+      userId, title, body, result.id, "branch_settlement", link,
     )));
   } catch (error) {
-    console.error("[Branch settlements] Failed to notify paying branch:", error);
+    console.error("[Branch settlements] Failed to notify the next actor:", error);
   }
+
+  // A new statement raises the branch's unsettled COD and can tip it into the
+  // warn/block band. Refresh the stored alert state so reporting keyed on it
+  // does not lag the live transit gate. Best-effort: it swallows its own errors.
+  await evaluateBranchBilling(fromBranchId);
 
   return result;
 }

@@ -9,7 +9,7 @@ import type { Order } from '../../services/orders.service';
 import { createBranchSettlement, getBranchOrders } from '../../services/branchTracking.service';
 import { apiErrorMessage } from '../../utils/serverValidation';
 import { downloadExcel, type CellValue } from '../../utils/excel';
-import { isBranchWorkspaceUser } from '../../utils/auth';
+import { getCurrentUserLocationId, isBranchWorkspaceUser } from '../../utils/auth';
 import '../SettlementCreatePage.css';
 
 const SectionHeader: React.FC<{ icon: React.ReactNode; title: string; description: string }> = ({
@@ -40,10 +40,13 @@ const BranchSettlementCreatePage: React.FC = () => {
   const navigate = useNavigate();
   const { branches } = useBranchScope();
   const isBranchWorkspace = isBranchWorkspaceUser();
+  const ownLocationId = getCurrentUserLocationId();
   const masterBranch = branches.find((branch) => branch.code?.trim().toUpperCase() === 'IMADOL');
   const masterBranchId = masterBranch?.id ?? '';
 
-  const [fromBranch, setFromBranch] = useState('');
+  // A branch workspace only ever settles its own COD, at its Imadol-set
+  // commission rate. Both are locked here and re-enforced on the server.
+  const [fromBranch, setFromBranch] = useState(isBranchWorkspace && ownLocationId ? ownLocationId : '');
   const toBranch = masterBranchId;
   const [settlementDate, setSettlementDate] = useState(new Date().toISOString().split('T')[0]);
   const [commissionPerParcel, setCommissionPerParcel] = useState('');
@@ -90,6 +93,15 @@ const BranchSettlementCreatePage: React.FC = () => {
     loadOrders(c.signal);
     return () => c.abort();
   }, [loadOrders]);
+
+  // Branch workspace: fill the commission field from the branch's own agreed
+  // rate once the directory loads. The field is read-only for them.
+  useEffect(() => {
+    if (!isBranchWorkspace || commissionPerParcel) return;
+    const own = branches.find((b) => b.id === fromBranch);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time hydration from the directory
+    if (own) setCommissionPerParcel(String(own.commissionPerParcel));
+  }, [isBranchWorkspace, branches, fromBranch, commissionPerParcel]);
 
   const commission = Number(commissionPerParcel || 0);
   const selectedOrders = orders.filter((o) => selectedIds.has(o.id));
@@ -211,12 +223,14 @@ const BranchSettlementCreatePage: React.FC = () => {
     <div className="scp-page">
       <button type="button" className="scp-back" onClick={() => navigate('/branches/settlement')}>
         <ArrowLeft size={15} />
-        Branch Statements
+        Branch COD
       </button>
 
       <div className="scp-header">
         <h1>Add Branch Statement</h1>
-        <p>Create a pending COD statement for another branch to pay Imadol.</p>
+        <p>{isBranchWorkspace
+          ? 'Select the delivered orders whose COD you are remitting to Imadol, then create the pending statement.'
+          : 'Create a pending COD statement for a branch to pay Imadol.'}</p>
       </div>
 
       <form className="scp-form" onSubmit={handleSubmit} noValidate>
@@ -267,7 +281,10 @@ const BranchSettlementCreatePage: React.FC = () => {
                 value={commissionPerParcel}
                 onChange={setCommissionPerParcel}
                 placeholder="e.g. 50"
-                hint="Rs. per parcel, deducted from each order's COD."
+                disabled={isBranchWorkspace}
+                hint={isBranchWorkspace
+                  ? "Your branch's agreed rate, set by Imadol."
+                  : "Rs. per parcel, deducted from each order's COD."}
               />
             </div>
           </div>

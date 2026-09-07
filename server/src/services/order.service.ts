@@ -628,10 +628,18 @@ async function getAdminBranchScope(actor: OrderActor): Promise<string[] | undefi
   if (actor.roles.includes("super_admin") || !actor.roles.includes("admin")) return undefined;
   const admin = await prisma.admins.findFirst({
     where: { user_id: actor.id },
-    select: { location_id: true, branch_scoped: true, permissions: true },
+    select: {
+      location_id: true,
+      branch_scoped: true,
+      permissions: true,
+      locations: { select: { code: true } },
+    },
   });
   if (!admin?.branch_scoped || !admin.location_id) return undefined;
   if (admin.permissions.some((p) => p === "BRANCH_TRACKING_READ" || p === "BRANCH_TRACKING_WRITE")) return undefined;
+  // Imadol is the central hub: its admins see every branch's orders even when
+  // flagged branch_scoped. Every other branch is limited to its own coverage.
+  if (admin.locations?.code?.trim().toUpperCase() === "IMADOL") return undefined;
   return resolveBranchLocationIds(admin.location_id);
 }
 
@@ -3276,10 +3284,17 @@ async function computeDashboardSummary(
   };
 
   const TREND_DAYS = trendDays;
+  // The 7-day view is anchored to the current Nepal week (Sunday start) so the
+  // graph always reads Sun -> Sat rather than a rolling window that begins
+  // mid-week. It stays one contiguous week, so the line never wraps backwards.
+  // getUTCDay() on the Nepal calendar date is 0 = Sunday regardless of the
+  // host timezone. The 30-day view keeps its rolling window ending today.
+  const nepalWeekday = new Date(`${formatDate(new Date())}T00:00:00Z`).getUTCDay();
   const trendDayRanges = Array.from({ length: TREND_DAYS }, (_, index) => {
-    const offset = TREND_DAYS - 1 - index;
+    const dayDelta =
+      TREND_DAYS === 7 ? index - nepalWeekday : -(TREND_DAYS - 1 - index);
     const start = new Date(todayStart);
-    start.setDate(start.getDate() - offset);
+    start.setDate(start.getDate() + dayDelta);
     const end = new Date(start);
     end.setDate(end.getDate() + 1);
     return { start, end };
@@ -3619,9 +3634,12 @@ async function computeDashboardSummary(
   const weeklyTrend = trendDayRanges.map(({ start }, index) => {
     const [dayTotalOrders, dayPickedUp, dayDelivered] = trendCounts[index] ?? [0, 0, 0];
     const dayReturned = Number(trendReturnedRow?.[`d${index}_returned`] ?? 0);
+    const nepalDate = formatDate(start);
     return {
-      day: start.toLocaleDateString("en-US", { weekday: "short" }),
-      date: formatDate(start),
+      // Weekday of the Nepal calendar date, not the raw instant - the host
+      // timezone must not shift a Sunday bucket onto "Sat".
+      day: new Date(`${nepalDate}T00:00:00Z`).toLocaleDateString("en-US", { weekday: "short", timeZone: "UTC" }),
+      date: nepalDate,
       totalOrders: dayTotalOrders,
       pickedUp: dayPickedUp,
       delivered: dayDelivered,

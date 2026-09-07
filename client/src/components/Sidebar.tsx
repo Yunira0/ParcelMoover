@@ -385,17 +385,26 @@ const BranchSidebar: React.FC = () => {
           </span>
         </div>
 
+        <SidebarItem to="/dashboard" icon={LayoutDashboard} label="Dashboard" />
         <SidebarItem to="/orders" icon={Package} label="Orders" />
 
+        <SidebarSection label="Operations" />
+        <SidebarItem to="/pickup" icon={Archive} label="Pickup" />
+        <SidebarItem to="/dispatch" icon={Send} label="Local Dispatch" />
+        <SidebarItem to="/oov" icon={Route} label="Transit" />
+        <SidebarItem to="/return" icon={RotateCcw} label="Return" />
+
+        <SidebarSection label="Management" />
+        <SidebarItem to="/riders" icon={Bike} label="Rider Management" />
+
         <SidebarSection label="Finance" />
-        <SidebarGroup
-          label="Branch COD"
-          icon={Banknote}
-          match={['/branches/settlement', '/branches/billing']}
-        >
-          <SubItem to="/branches/settlement" icon={FileText} label="Branch Statements" />
-          <SubItem to="/branches/billing" icon={Wallet} label="Branch Payments" />
-        </SidebarGroup>
+        <SidebarItem to="/branches/settlement" icon={Banknote} label="Branch COD" />
+        <SidebarItem to="/branches/billing" icon={Wallet} label="Branch Payments" />
+        <SidebarItem to="/accounting/transactions/rider-cod" icon={Bike} label="Rider COD" />
+
+        <SidebarSection label="Customer Experience" />
+        <SidebarItem to="/tickets" icon={Ticket} label="Tickets" />
+        <SidebarItem to="/remarks" icon={MessageSquare} label="Remarks" />
       </div>
 
       <div className="sidebar-footer">
@@ -479,17 +488,10 @@ const AdminSidebar: React.FC<{ isSuperAdmin: boolean }> = ({ isSuperAdmin }) => 
             so an admin without the grant sees those and nothing else here. */}
         <SidebarSection label="Finance" />
         <div className="sidebar-subnav">
-          {/* Branch statements and their matching deposits are one COD
-              workflow, so keep them together instead of splitting them across
-              the top-level navigation and Finance. */}
-          <SidebarGroup
-            label="Branch COD"
-            icon={Building2}
-            match={['/branches/settlement', '/branches/billing']}
-          >
-            <SubItem to="/branches/settlement" icon={FileText} label="Branch Statements" />
-            <SubItem to="/branches/billing" icon={Wallet} label="Branch Payments" />
-          </SidebarGroup>
+          {/* Branch COD (statements) and its matching deposits (Branch
+              Payments) are one workflow; kept next to Rider/Vendor COD. */}
+          <SubItem to="/branches/settlement" icon={Building2} label="Branch COD" />
+          <SubItem to="/branches/billing" icon={Wallet} label="Branch Payments" />
 
           <SubItem to="/accounting/transactions/rider-cod" icon={Bike} label="Rider COD" />
 

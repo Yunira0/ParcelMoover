@@ -6,6 +6,7 @@ import jwt from "jsonwebtoken";
 import { AppError } from "../utils/AppError";
 import { sendWelcomeEmail } from "../lib/mailer";
 import { revokeAllUserTokens } from "../lib/tokenRevocation";
+import { adminBranchScopeIds } from "../lib/branchScope";
 import { ACCESS_TOKEN_AUDIENCE, JWT_ALGORITHM, JWT_ISSUER } from "../utils/jwtConfig";
 
 import { RegisterUserInput } from "../types/user-registration";
@@ -249,6 +250,19 @@ function isPureSales(roles: string[]) {
   return !roles.includes("super_admin") && !roles.includes("admin") && roles.includes("sales");
 }
 
+// A branch-scoped admin manages only riders assigned to their branch's
+// coverage. No-op for every other actor (super_admin, unrestricted admin,
+// non-rider target).
+async function assertBranchAdminOwnsRider(actorUserId: string, roles: string[], riderId: string) {
+  const ids = await adminBranchScopeIds({ id: actorUserId, roles });
+  if (!ids) return;
+  const rider = await prisma.riders.findFirst({
+    where: { id: riderId, location_id: { in: ids } },
+    select: { id: true },
+  });
+  if (!rider) throw new AppError(403, "This rider is not assigned to your branch");
+}
+
 // The root super admin is the very first account ever granted the super_admin
 // role (the one bootstrapped by create-superadmin.ts). It is the supreme
 // entity of the system: it never appears in Admin Management and no
@@ -315,6 +329,7 @@ export async function updateManagedUserProfile(
 ) {
   const { roles: actorRoles } = await assertCanManageUsers(actorUserId, data.type);
   if (data.type === "vendor") await assertSalesOwnsVendor(actorRoles, actorUserId, id);
+  if (data.type === "rider") await assertBranchAdminOwnsRider(actorUserId, actorRoles, id);
 
   const isStaff = actorRoles.includes("super_admin") || actorRoles.includes("admin");
   const actorIsSales = !isStaff && actorRoles.includes("sales");
@@ -490,6 +505,7 @@ export async function updateManagedUserProfile(
 export async function getManagedUserDetail(actorUserId: string, type: ManagedUserType, id: string) {
   const { roles: actorRoles } = await assertCanManageUsers(actorUserId, type);
   if (type === "vendor") await assertSalesOwnsVendor(actorRoles, actorUserId, id);
+  if (type === "rider") await assertBranchAdminOwnsRider(actorUserId, actorRoles, id);
 
   const num = (v: unknown) => (v === null || v === undefined ? null : Number(v));
   const dateStr = (d: Date | null) => (d ? new Date(d).toISOString().slice(0, 10) : "");
@@ -604,6 +620,7 @@ export async function getManagedUserDocuments(
   id: string,
 ): Promise<{ type: ManagedUserType; id: string; name: string; documents: ManagedUserDocument[] }> {
   const { roles: actorRoles } = await assertCanManageUsers(actorUserId, type);
+  if (type === "rider") await assertBranchAdminOwnsRider(actorUserId, actorRoles, id);
 
   const collect = (
     fields: { key: string; label: string; column: string }[],
@@ -661,6 +678,7 @@ export async function updateManagedUserPassword(
   // without it here any sales account could reset any vendor's password,
   // revoking their sessions, including clients belonging to another rep.
   if (type === "vendor") await assertSalesOwnsVendor(actorRoles, actorUserId, id);
+  if (type === "rider") await assertBranchAdminOwnsRider(actorUserId, actorRoles, id);
 
   if (!password?.trim() || password.length < 8) {
     throw new AppError(400, "Password must be at least 8 characters long");

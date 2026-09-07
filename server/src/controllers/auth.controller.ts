@@ -20,6 +20,7 @@ import { Prisma } from "../generated/prisma/client";
 import { revokeToken } from "../lib/tokenRevocation";
 import { ACCESS_TOKEN_AUDIENCE, CSRF_TOKEN_AUDIENCE, JWT_ALGORITHM, JWT_ISSUER } from "../utils/jwtConfig";
 import { flattenMulterFiles, secureUploadedFiles } from "../lib/secureUploadedFiles";
+import { adminBranchScopeIds } from "../lib/branchScope";
 
 const formatDate = (date?: Date | null) => date ? date.toISOString().slice(0, 10) : "";
 const managedUserTypes = ["admin", "vendor", "rider"] as const;
@@ -776,9 +777,16 @@ export const getRidersController = async (req: Request, res: Response) => {
     const statusWhere =
       statusFilter === "active" || statusFilter === "inactive" ? { status: statusFilter } : {};
 
+    // A branch-scoped admin manages only riders assigned to their branch's
+    // coverage; every other admin sees the whole roster as before.
+    const branchIds = req.user
+      ? await adminBranchScopeIds({ id: req.user.id, roles: req.user.roles })
+      : undefined;
+
     const where: Record<string, unknown> = {
       deleted_at: null,
       ...statusWhere,
+      ...(branchIds ? { location_id: { in: branchIds } } : {}),
     };
 
     if (search) {

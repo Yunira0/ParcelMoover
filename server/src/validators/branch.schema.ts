@@ -83,7 +83,9 @@ export const branchBillingQuerySchema = z.object({
 export const branchBillingPaymentSchema = z.object({
   branchId: uuid.optional(),
   settlementId: uuid.optional(),
-  amount: z.coerce.number().positive().max(1_000_000_000),
+  // A single branch COD remittance never realistically clears this; the cap is
+  // a fat-finger guard. A larger genuine balance is paid as split receipts.
+  amount: z.coerce.number().positive().max(50_000_000),
   method: z.string().trim().min(1).max(100).optional(),
   reference: z.string().trim().max(200).optional(),
   note: z.string().trim().max(500).optional(),

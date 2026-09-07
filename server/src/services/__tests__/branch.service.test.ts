@@ -24,6 +24,9 @@ vi.mock("../../lib/prisma", () => ({
 vi.mock("../order.service", () => ({ listOrders: vi.fn() }));
 vi.mock("../pricing.service", () => ({ invalidateDestinationPricingCache: vi.fn() }));
 vi.mock("../notification.service", () => ({ createNotification: createNotificationMock }));
+// createBranchSettlement refreshes the paying branch's credit state after a
+// statement is cut; that path has its own DB fixtures and coverage elsewhere.
+vi.mock("../branch-billing.service", () => ({ evaluateBranchBilling: vi.fn() }));
 
 import prisma from "../../lib/prisma";
 import { createBranchSettlement, getBranchSettlementDetail, resolveBranchLocationIds } from "../branch.service";

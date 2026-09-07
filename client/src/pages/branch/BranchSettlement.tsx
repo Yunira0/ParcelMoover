@@ -10,8 +10,7 @@ import SearchableSelect, { type SearchableSelectOption } from '../../components/
 import NepaliDatePicker from '../../components/NepaliDatePicker';
 import { Banner } from '../accounting/ui';
 import { useBranchScope } from '../../context/BranchScopeContext';
-import { useBranchAccess } from '../../hooks/useBranchAccess';
-import { getCurrentUserLocationId, isBranchWorkspaceUser } from '../../utils/auth';
+import { getCurrentUserLocationId, getCurrentUserRoles, isBranchWorkspaceUser } from '../../utils/auth';
 import {
   getBranchSettlements,
   type BranchSettlement,
@@ -32,8 +31,15 @@ const EMPTY_SUMMARY: BranchSettlementSummary = { grossCod: 0, commissionCredit: 
 const BranchSettlement: React.FC = () => {
   const navigate = useNavigate();
   const { fromBranchId, toBranchId, setFromBranchId, setToBranchId, branches, loading } = useBranchScope();
-  const { canWriteOtherBranches } = useBranchAccess();
-  const canCreateSettlement = !isBranchWorkspaceUser() && (canWriteOtherBranches || Boolean(getCurrentUserLocationId()));
+  // Both sides create statements (see assertCanCreateBranchSettlement): a branch
+  // workspace for its own COD, a super admin or Imadol master-branch admin for
+  // any branch. A head-office admin on some other hub cannot, so is not offered
+  // the button.
+  const ownLocationId = getCurrentUserLocationId();
+  const masterBranchId = branches.find((branch) => branch.code?.trim().toUpperCase() === 'IMADOL')?.id;
+  const canCreateSettlement = isBranchWorkspaceUser()
+    || getCurrentUserRoles().includes('super_admin')
+    || (Boolean(ownLocationId) && ownLocationId === masterBranchId);
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
   const [status, setStatus] = useState<BranchSettlementStatus | ''>('');
@@ -87,7 +93,7 @@ const BranchSettlement: React.FC = () => {
 
   return (
     <div className="vendor-finance-page branch-settlement-page">
-      <PageHeader title="Branch Statements" subtitle="COD owed by a collecting branch to the master branch, cleared after payment verification." {...(canCreateSettlement ? { actionLabel: 'Add statement', actionIcon: <Plus size={16} />, onAction: () => navigate('/branches/settlement/new') } : {})} />
+      <PageHeader title="Branch COD" subtitle="COD owed by a collecting branch to the master branch, cleared after payment verification." {...(canCreateSettlement ? { actionLabel: 'Add statement', actionIcon: <Plus size={16} />, onAction: () => navigate('/branches/settlement/new') } : {})} />
       {error && <Banner tone="danger">{error}</Banner>}
 
       <section className="branch-ledger-strip" aria-label="Branch settlement position">

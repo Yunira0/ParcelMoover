@@ -10,7 +10,7 @@ import TopVendors from '../components/TopVendors';
 import NeedsAttention from '../components/NeedsAttention';
 import { getDashboardSummary, type DashboardSummary } from '../services/orders.service';
 import { subscribeToRemarkStatusChanged } from '../services/remarks.service';
-import { getCurrentUser } from '../utils/auth';
+import { getCurrentUser, isBranchWorkspaceUser } from '../utils/auth';
 import './Dashboard.css';
 
 const REFRESH_INTERVAL_MS = 15_000;
@@ -90,6 +90,10 @@ const formatUpdatedAt = (value: string) => {
 };
 
 const Dashboard: React.FC = () => {
+  // A branch workspace gets a trimmed dashboard: no office-wide COD settlement
+  // panel and no cross-branch top-vendors ranking, both of which sit outside
+  // its scope. It tracks COD in Branch COD / Rider COD instead.
+  const isBranch = isBranchWorkspaceUser();
   const [summary, setSummary] = useState<DashboardSummary>(EMPTY_SUMMARY);
   // initialLoading only covers the very first fetch - it's what blanks the
   // stat cards, COD Settlement, and Today's Overview to a loading state.
@@ -160,7 +164,11 @@ const Dashboard: React.FC = () => {
 
       <DashboardHeader
         user={getCurrentUser()?.fullName || ''}
-        subtitle="Operational overview for Parcel Moover across the Nepal network."
+        subtitle={
+          isBranch
+            ? `${getCurrentUser()?.locationName?.trim() || 'Your branch'} — orders, operations and COD at a glance.`
+            : 'Operational overview for Parcel Moover across the Nepal network.'
+        }
       />
 
       <div className="overview-section">
@@ -182,38 +190,61 @@ const Dashboard: React.FC = () => {
 
       <QuickActions />
 
-      <div className="dashboard-row">
-        <div className="grid-left">
+      {isBranch ? (
+        <>
           <WeeklyStats
             data={summary.weeklyTrend}
             loading={initialLoading || chartLoading}
             period={trendPeriod}
             onPeriodChange={handlePeriodChange}
           />
-        </div>
-        <CODSettlement data={summary.codSettlement} loading={initialLoading} />
-      </div>
 
-      <div className="dashboard-row">
-        <div className="dashboard-panel">
-          <RecentOrders />
-        </div>
-        <div className="dashboard-panel">
-          <TodayOverview today={summary.today} overview={summary.overview} loading={initialLoading} />
-        </div>
-      </div>
+          <div className="dashboard-row">
+            <div className="dashboard-panel">
+              <RecentOrders />
+            </div>
+            <div className="dashboard-panel">
+              <TodayOverview today={summary.today} overview={summary.overview} loading={initialLoading} />
+            </div>
+          </div>
 
-      <div className="dashboard-row dashboard-row-split">
-        <div className="dashboard-panel">
-          <TopVendors />
-        </div>
-        <div className="dashboard-panel">
-          <NeedsAttention
-            sla={summary.sla}
-            loading={initialLoading}
-          />
-        </div>
-      </div>
+          <div className="dashboard-panel">
+            <NeedsAttention sla={summary.sla} loading={initialLoading} />
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="dashboard-row">
+            <div className="grid-left">
+              <WeeklyStats
+                data={summary.weeklyTrend}
+                loading={initialLoading || chartLoading}
+                period={trendPeriod}
+                onPeriodChange={handlePeriodChange}
+              />
+            </div>
+            <CODSettlement data={summary.codSettlement} loading={initialLoading} />
+          </div>
+
+          <div className="dashboard-row">
+            <div className="dashboard-panel">
+              <RecentOrders />
+            </div>
+            <div className="dashboard-panel">
+              <TodayOverview today={summary.today} overview={summary.overview} loading={initialLoading} />
+            </div>
+          </div>
+
+          <div className="dashboard-row dashboard-row-split">
+            <div className="dashboard-panel">
+              <TopVendors />
+            </div>
+            <div className="dashboard-panel">
+              <NeedsAttention sla={summary.sla} loading={initialLoading} />
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 };

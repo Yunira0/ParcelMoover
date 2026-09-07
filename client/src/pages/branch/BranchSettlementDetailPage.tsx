@@ -92,7 +92,7 @@ const BranchSettlementDetailPage: React.FC = () => {
   };
 
   if (loading) return <div className="scp-page"><div className="scp-empty">Loading branch settlement…</div></div>;
-  if (!detail) return <div className="scp-page"><Button variant="secondary" onClick={() => navigate('/branches/settlement')}>Back to settlements</Button><Banner tone="danger">{error || 'Branch settlement not found.'}</Banner></div>;
+  if (!detail) return <div className="scp-page"><Button variant="secondary" onClick={() => navigate('/branches/settlement')}>Back to Branch COD</Button><Banner tone="danger">{error || 'Branch settlement not found.'}</Banner></div>;
 
   const payable = detail.status === 'pending' || detail.status === 'partially_paid';
   const hasVerifiedPayment = detail.status === 'partially_paid' || detail.status === 'settled';
@@ -117,7 +117,7 @@ const BranchSettlementDetailPage: React.FC = () => {
 
   return (
     <div className="scp-page bsd-page">
-      <button type="button" className="scp-back" onClick={() => navigate('/branches/settlement')}><ArrowLeft size={15} />Branch Statements</button>
+      <button type="button" className="scp-back" onClick={() => navigate('/branches/settlement')}><ArrowLeft size={15} />Branch COD</button>
       <div className="bsd-heading"><div><h1>{detail.statementNo}</h1><p><strong>{detail.fromBranch.name}</strong> pays collected COD to master branch <strong>{detail.toBranch.name}</strong>.</p></div><StatusChip variant="solid" tone={settlementStatusTone(detail.status)}>{settlementStatusLabel(detail.status)}</StatusChip></div>
       {notice && <Banner tone="success">{notice}</Banner>}
       {error && <Banner tone="danger">{error}</Banner>}

@@ -64,10 +64,29 @@ export function isBranchWorkspaceUser(): boolean {
 /** Routes that belong to the intentionally small assigned-branch workspace. */
 export function isBranchWorkspacePathAllowed(pathname: string): boolean {
   return (
+    pathname === '/dashboard' ||
     pathname === '/orders' ||
     pathname.startsWith('/orders/track/') ||
+    // Branch runs its own pickup, dispatch, transit and return desks; the order
+    // APIs behind these pages scope a branch-scoped admin to their own branch.
+    pathname === '/pickup' ||
+    pathname === '/dispatch' ||
+    pathname === '/oov' ||
+    pathname === '/return' ||
+    // Branch manages its own riders and settles their COD; the rider APIs
+    // behind these pages scope a branch-scoped admin to their branch's riders.
+    pathname === '/riders' ||
+    pathname.startsWith('/riders/') ||
+    pathname === '/accounting/transactions/rider-cod' ||
+    pathname.startsWith('/finance/settlements/') ||
+    // Support desk for the branch's own parcels / staff.
+    pathname === '/tickets' ||
+    pathname.startsWith('/tickets/') ||
+    pathname === '/remarks' ||
+    pathname.startsWith('/remarks/') ||
     pathname === '/branches/settlement' ||
-    (pathname.startsWith('/branches/settlement/') && pathname !== '/branches/settlement/new') ||
+    // Includes /branches/settlement/new — a branch creates its own COD statement.
+    pathname.startsWith('/branches/settlement/') ||
     pathname === '/branches/billing'
   );
 }
