@@ -386,8 +386,16 @@ const BranchSidebar: React.FC = () => {
         </div>
 
         <SidebarItem to="/orders" icon={Package} label="Orders" />
-        <SidebarItem to="/branches/settlement" icon={Banknote} label="Branch Settlement" />
-        <SidebarItem to="/branches/billing" icon={Wallet} label="Branch Payments" />
+
+        <SidebarSection label="Finance" />
+        <SidebarGroup
+          label="Branch COD"
+          icon={Banknote}
+          match={['/branches/settlement', '/branches/billing']}
+        >
+          <SubItem to="/branches/settlement" icon={FileText} label="Branch Statements" />
+          <SubItem to="/branches/billing" icon={Wallet} label="Branch Payments" />
+        </SidebarGroup>
       </div>
 
       <div className="sidebar-footer">
@@ -414,10 +422,6 @@ const AdminSidebar: React.FC<{ isSuperAdmin: boolean }> = ({ isSuperAdmin }) => 
         {canViewBranchTracking && (
           <SidebarItem to="/branches" icon={Building2} label="Branch Overview" />
         )}
-        {/* Keep the branch money workflow together: after the branch overview,
-            staff can create/view settlements and add payment proof. */}
-        <SidebarItem to="/branches/settlement" icon={Banknote} label="Branch Settlement" />
-        <SidebarItem to="/branches/billing" icon={Wallet} label="Branch Payments" />
 
         <SidebarSection label="Management" />
         {/* Three peers in one column. KYC used to be a fourth entry here; it is
@@ -475,6 +479,18 @@ const AdminSidebar: React.FC<{ isSuperAdmin: boolean }> = ({ isSuperAdmin }) => 
             so an admin without the grant sees those and nothing else here. */}
         <SidebarSection label="Finance" />
         <div className="sidebar-subnav">
+          {/* Branch statements and their matching deposits are one COD
+              workflow, so keep them together instead of splitting them across
+              the top-level navigation and Finance. */}
+          <SidebarGroup
+            label="Branch COD"
+            icon={Building2}
+            match={['/branches/settlement', '/branches/billing']}
+          >
+            <SubItem to="/branches/settlement" icon={FileText} label="Branch Statements" />
+            <SubItem to="/branches/billing" icon={Wallet} label="Branch Payments" />
+          </SidebarGroup>
+
           <SubItem to="/accounting/transactions/rider-cod" icon={Bike} label="Rider COD" />
 
           {/* Vendor COD keeps its three screens together: the settlements

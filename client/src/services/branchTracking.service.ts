@@ -136,6 +136,17 @@ export interface BranchSettlementPaymentRecord {
   recordedBy: string | null;
 }
 
+export interface BranchSettlementPaymentProof {
+  id: string;
+  amount: number;
+  method: string;
+  reference: string | null;
+  proofPath: string;
+  note: string | null;
+  submittedAt: string;
+  verifiedAt: string | null;
+}
+
 export interface BranchSettlementDetail extends Omit<BranchSettlement, 'fromBranch' | 'toBranch' | 'orderCount'> {
   fromBranch: { id: string; name: string };
   toBranch: { id: string; name: string };
@@ -143,6 +154,7 @@ export interface BranchSettlementDetail extends Omit<BranchSettlement, 'fromBran
   settledBy: string | null;
   createdAt: string;
   payments: BranchSettlementPaymentRecord[];
+  paymentProofs: BranchSettlementPaymentProof[];
   items: Array<{
     parcelId: string;
     orderNumber: number;

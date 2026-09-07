@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, CreditCard, Plus, Trash2 } from 'lucide-react';
+import { ArrowLeft, CreditCard, ExternalLink, FileText, Plus, Trash2 } from 'lucide-react';
 import Button from '../../components/Button';
 import FormField from '../../components/FormField';
+import SegmentedTabs from '../../components/SegmentedTabs';
 import StatusChip from '../../components/StatusChip';
 import Table from '../../components/Table';
 import { Banner } from '../accounting/ui';
@@ -22,8 +23,12 @@ import './BranchSettlement.css';
 import './BranchSettlementDetailPage.css';
 
 type PaymentRow = { method: string; amount: string };
+type DetailTab = 'statement' | 'proof';
 const money = (value: number) => `Rs. ${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 const round2 = (value: number) => Math.round(value * 100) / 100;
+const API_BASE = (import.meta.env.VITE_API_URL || '/api').replace(/\/api\/?$/, '');
+const uploadUrl = (path: string) => `${API_BASE}/${path.replace(/\\/g, '/').replace(/^.*?(uploads\/)/, '$1')}`;
+const isPdfPath = (path: string) => /\.pdf$/i.test(path);
 
 const BranchSettlementDetailPage: React.FC = () => {
   const { id = '' } = useParams();
@@ -34,6 +39,7 @@ const BranchSettlementDetailPage: React.FC = () => {
   const [methods, setMethods] = useState<PaymentMethodOption[]>([]);
   const [payments, setPayments] = useState<PaymentRow[]>([{ method: '', amount: '' }]);
   const [remark, setRemark] = useState('');
+  const [activeTab, setActiveTab] = useState<DetailTab>('statement');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -89,6 +95,7 @@ const BranchSettlementDetailPage: React.FC = () => {
   if (!detail) return <div className="scp-page"><Button variant="secondary" onClick={() => navigate('/branches/settlement')}>Back to settlements</Button><Banner tone="danger">{error || 'Branch settlement not found.'}</Banner></div>;
 
   const payable = detail.status === 'pending' || detail.status === 'partially_paid';
+  const hasVerifiedPayment = detail.status === 'partially_paid' || detail.status === 'settled';
   const paymentColumns = [
     { header: 'Paid at', accessor: (payment: BranchSettlementDetail['payments'][number]) => toBsDate(payment.paidAt) || payment.paidAt.slice(0, 10), width: '130px' },
     { header: 'Method', accessor: (payment: BranchSettlementDetail['payments'][number]) => payment.method, width: '180px' },
@@ -110,20 +117,67 @@ const BranchSettlementDetailPage: React.FC = () => {
 
   return (
     <div className="scp-page bsd-page">
-      <button type="button" className="scp-back" onClick={() => navigate('/branches/settlement')}><ArrowLeft size={15} />Branch Settlement</button>
-      <div className="bsd-heading"><div><h1>{detail.statementNo}</h1><p>{detail.fromBranch.name} pays {detail.toBranch.name} for collected COD.</p></div><StatusChip variant="solid" tone={settlementStatusTone(detail.status)}>{settlementStatusLabel(detail.status)}</StatusChip></div>
+      <button type="button" className="scp-back" onClick={() => navigate('/branches/settlement')}><ArrowLeft size={15} />Branch Statements</button>
+      <div className="bsd-heading"><div><h1>{detail.statementNo}</h1><p><strong>{detail.fromBranch.name}</strong> pays collected COD to master branch <strong>{detail.toBranch.name}</strong>.</p></div><StatusChip variant="solid" tone={settlementStatusTone(detail.status)}>{settlementStatusLabel(detail.status)}</StatusChip></div>
       {notice && <Banner tone="success">{notice}</Banner>}
       {error && <Banner tone="danger">{error}</Banner>}
 
-      <section className="bsd-ledger" aria-label="Settlement balance">
-        <div><span>Gross COD</span><strong>{money(detail.grossCod)}</strong></div>
-        <div><span>Commission credit</span><strong>{money(detail.commissionAmount)}</strong><small>{money(detail.commissionPerParcel)} per parcel retained by {detail.fromBranch.name}</small></div>
-        <div><span>Net payable</span><strong>{money(detail.netPayable)}</strong></div>
-        <div><span>Paid</span><strong>{money(detail.paidAmount)}</strong></div>
-        <div><span>Outstanding</span><strong className={detail.remainingAmount > 0 ? 'branch-balance-due' : 'branch-balance-clear'}>{money(detail.remainingAmount)}</strong><small>{detail.settledAt ? `Completed ${toBsDate(detail.settledAt) || detail.settledAt.slice(0, 10)}` : 'Waiting for payment'}</small></div>
-      </section>
+      {hasVerifiedPayment && (
+        <SegmentedTabs
+          ariaLabel="Branch statement view"
+          fullWidth={false}
+          minTabWidth="150px"
+          value={activeTab}
+          onChange={setActiveTab}
+          options={[
+            { value: 'statement', label: 'Statement details' },
+            { value: 'proof', label: 'Payment proof', count: detail.paymentProofs.length },
+          ]}
+        />
+      )}
 
-      {payable && canRecordOfficePayment && (
+      {activeTab === 'proof' && hasVerifiedPayment ? (
+        <section className="bsd-proof-panel" aria-label="Verified payment proof">
+          {detail.paymentProofs.length === 0 ? (
+            <div className="bsd-proof-empty">
+              <FileText size={22} />
+              <strong>No payment proof attached</strong>
+              <p>This payment was recorded directly by the office without an uploaded receipt.</p>
+            </div>
+          ) : detail.paymentProofs.map((proof, index) => {
+            const href = uploadUrl(proof.proofPath);
+            return (
+              <article className="bsd-proof-card" key={proof.id}>
+                <div className="bsd-proof-meta">
+                  <div><span>{detail.paymentProofs.length > 1 ? `Payment ${index + 1}` : 'Verified payment'}</span><strong>{money(proof.amount)}</strong></div>
+                  <div><span>Method</span><strong>{proof.method}</strong></div>
+                  <div><span>Reference</span><strong>{proof.reference || '—'}</strong></div>
+                  <div><span>Verified</span><strong>{proof.verifiedAt ? toBsDate(proof.verifiedAt) || proof.verifiedAt.slice(0, 10) : 'Verified'}</strong></div>
+                </div>
+                {isPdfPath(proof.proofPath) ? (
+                  <iframe className="bsd-proof-pdf" src={href} title={`Payment proof ${index + 1}`} />
+                ) : (
+                  <a className="bsd-proof-image" href={href} target="_blank" rel="noreferrer">
+                    <img src={href} alt={`Payment proof ${index + 1}`} loading="lazy" />
+                  </a>
+                )}
+                <a className="bsd-proof-open" href={href} target="_blank" rel="noreferrer"><FileText size={14} /> Open in new tab <ExternalLink size={12} /></a>
+                {proof.note && <p className="bsd-proof-note">{proof.note}</p>}
+              </article>
+            );
+          })}
+        </section>
+      ) : (
+        <>
+          <section className="bsd-ledger" aria-label="Settlement balance">
+            <div><span>Gross COD</span><strong>{money(detail.grossCod)}</strong></div>
+            <div><span>Commission credit</span><strong>{money(detail.commissionAmount)}</strong><small>{money(detail.commissionPerParcel)} per parcel retained by {detail.fromBranch.name}</small></div>
+            <div><span>Net payable</span><strong>{money(detail.netPayable)}</strong></div>
+            <div><span>Paid</span><strong>{money(detail.paidAmount)}</strong></div>
+            <div><span>Outstanding</span><strong className={detail.remainingAmount > 0 ? 'branch-balance-due' : 'branch-balance-clear'}>{money(detail.remainingAmount)}</strong><small>{detail.settledAt ? `Completed ${toBsDate(detail.settledAt) || detail.settledAt.slice(0, 10)}` : 'Waiting for payment'}</small></div>
+          </section>
+
+          {payable && canRecordOfficePayment && (
         <section className="scp-section bsd-payment-section">
           <div className="scp-section-header"><div className="scp-section-icon"><CreditCard size={18} /></div><div><h3>Record branch payment</h3><p>Partial payments remain open. The statement is settled only when the balance reaches zero.</p></div></div>
           {activeMethods.length === 0 ? <Banner tone="danger">No active payment method is configured. Add one in Settings before recording a payment.</Banner> : (
@@ -135,11 +189,13 @@ const BranchSettlementDetailPage: React.FC = () => {
             </form>
           )}
         </section>
-      )}
-      {payable && !canRecordOfficePayment && <Banner tone="info">Submit the paid receipt from Branch Billing & Credit. The office will verify it before this statement is cleared.</Banner>}
+          )}
+          {payable && !canRecordOfficePayment && <Banner tone="info">Submit the paid receipt from Branch Billing & Credit. The office will verify it before this statement is cleared.</Banner>}
 
-      <section className="scp-section"><div className="scp-section-header"><div><h3>Payment history</h3><p>Every transfer remains visible here, including split or partial payments.</p></div></div><Table selectable={false} data={detail.payments} columns={paymentColumns} minWidth="1060px" emptyMessage="No payment has been recorded yet." /></section>
-      <section className="scp-section"><div className="scp-section-header"><div><h3>Statement orders ({detail.items.length})</h3><p>These orders are earmarked for this statement and cannot be added to another one.</p></div></div><Table selectable={false} data={detail.items.map((item) => ({ ...item, id: item.parcelId }))} columns={orderColumns} minWidth="1210px" emptyMessage="No orders on this statement." /></section>
+          <section className="scp-section"><div className="scp-section-header"><div><h3>Payment history</h3><p>Every transfer remains visible here, including split or partial payments.</p></div></div><Table selectable={false} data={detail.payments} columns={paymentColumns} minWidth="1060px" emptyMessage="No payment has been recorded yet." /></section>
+          <section className="scp-section"><div className="scp-section-header"><div><h3>Statement orders ({detail.items.length})</h3><p>These orders are earmarked for this statement and cannot be added to another one.</p></div></div><Table selectable={false} data={detail.items.map((item) => ({ ...item, id: item.parcelId }))} columns={orderColumns} minWidth="1210px" emptyMessage="No orders on this statement." /></section>
+        </>
+      )}
     </div>
   );
 };

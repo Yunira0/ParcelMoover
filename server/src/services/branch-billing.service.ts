@@ -43,10 +43,14 @@ export interface BranchPaymentItem {
   createdAt: string;
 }
 
-async function ownBranchId(actor: Actor): Promise<string> {
-  const admin = await prisma.admins.findUnique({ where: { user_id: actor.id }, select: { location_id: true } });
+async function ownBranchContext(actor: Actor): Promise<{ locationId: string; branchScoped: boolean }> {
+  const admin = await prisma.admins.findUnique({ where: { user_id: actor.id }, select: { location_id: true, branch_scoped: true } });
   if (!admin?.location_id) throw new AppError(403, "Your admin account is not assigned to a branch");
-  return admin.location_id;
+  return { locationId: admin.location_id, branchScoped: admin.branch_scoped };
+}
+
+async function ownBranchId(actor: Actor): Promise<string> {
+  return (await ownBranchContext(actor)).locationId;
 }
 
 async function resolveBranchId(actor: Actor, suppliedId?: string): Promise<string> {
@@ -187,7 +191,10 @@ export async function listBranchPayments(
   actor: Actor,
   filters: { branchId?: string; status?: BranchPaymentStatusFilter; page?: number; pageSize?: number },
 ) {
-  const branchId = isSuperAdmin(actor) ? filters.branchId : await ownBranchId(actor);
+  const ownContext = isSuperAdmin(actor) ? null : await ownBranchContext(actor);
+  // A restricted branch sees only payments it submitted. An unrestricted
+  // head-office admin works the master verification queue across branches.
+  const branchId = isSuperAdmin(actor) || !ownContext?.branchScoped ? filters.branchId : ownContext.locationId;
   const take = Math.min(500, Math.max(1, filters.pageSize || 20));
   const page = Math.max(1, filters.page || 1);
   const where = { ...(branchId ? { branch_id: branchId } : {}), ...(filters.status ? { status: filters.status } : {}) };
@@ -202,6 +209,9 @@ export async function reviewBranchPayment(
   actor: Actor, paymentId: string, decision: "verified" | "rejected", remark?: string,
 ): Promise<BranchPaymentItem> {
   if (!isOfficeReviewer(actor)) throw new AppError(403, "Not authorized to review branch payments");
+  if (!isSuperAdmin(actor) && (await ownBranchContext(actor)).branchScoped) {
+    throw new AppError(403, "A paying branch cannot verify branch payments");
+  }
   const existing = await prisma.branch_payments.findFirst({ where: { id: paymentId }, include: { branch: { select: { name: true } }, settlement: { select: { statement_no: true } } } });
   if (!existing) throw new AppError(404, "Payment not found");
   if (existing.status !== "pending") throw new AppError(400, `This payment has already been ${existing.status}`);

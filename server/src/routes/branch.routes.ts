@@ -52,6 +52,6 @@ router.get("/billing/status", branchReadLimiter, requireBranchWorkflowAccess, va
 router.get("/billing/balances", branchReadLimiter, requireAdminPermission("BRANCH_TRACKING_READ"), listBranchBalancesController);
 router.get("/billing/payments", branchReadLimiter, requireBranchWorkflowAccess, validate(branchBillingQuerySchema, "query"), listBranchPaymentsController);
 router.post("/billing/payments", csrfProtection, branchWriteLimiter, requireBranchWorkflowAccess, paymentProofUpload, validate(branchBillingPaymentSchema), submitBranchPaymentController);
-router.patch("/billing/payments/:id/review", csrfProtection, branchWriteLimiter, requireAdminPermission("BRANCH_TRACKING_WRITE"), validate(branchSettlementIdSchema, "params"), validate(branchBillingReviewSchema), reviewBranchPaymentController);
+router.patch("/billing/payments/:id/review", csrfProtection, branchWriteLimiter, requireBranchWorkflowAccess, validate(branchSettlementIdSchema, "params"), validate(branchBillingReviewSchema), reviewBranchPaymentController);
 
 export default router;

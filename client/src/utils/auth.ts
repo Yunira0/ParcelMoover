@@ -10,8 +10,8 @@ export interface CurrentUser {
    * admins (codes delegated by a super_admin, e.g. MANAGE_USERS).
    */
   permissions?: string[];
-  /** An admin/super_admin's own assigned hub, if any - lets a "From" field
-   *  default to it instead of making them pick their own branch every time. */
+  /** An admin/super_admin's own assigned hub, if any. Branch COD has a fixed
+   *  receiving master (Imadol), independent of this profile assignment. */
   locationId?: string | null;
   /** Human-readable name of the admin's assigned branch. */
   locationName?: string | null;
@@ -67,7 +67,7 @@ export function isBranchWorkspacePathAllowed(pathname: string): boolean {
     pathname === '/orders' ||
     pathname.startsWith('/orders/track/') ||
     pathname === '/branches/settlement' ||
-    pathname.startsWith('/branches/settlement/') ||
+    (pathname.startsWith('/branches/settlement/') && pathname !== '/branches/settlement/new') ||
     pathname === '/branches/billing'
   );
 }

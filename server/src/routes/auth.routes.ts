@@ -33,6 +33,7 @@ import rateLimit, {ipKeyGenerator} from "express-rate-limit";
 import { createRedisRateLimitStore } from "../lib/rateLimitStore";
 import { sendWelcomeEmail } from "../lib/mailer";
 import { registrationUpload } from "../lib/registrationUpload";
+import { parseMultipartJson } from "../middlewares/multipartJson.middleware";
 
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -112,6 +113,7 @@ authRouter.post(
   csrfProtection,
   authWriteLimiter,
   registrationUpload,
+  parseMultipartJson("branchScoped"),
   validate(registerUserSchema),
   registerUserController,
 );
@@ -169,6 +171,7 @@ authRouter.patch(
   csrfProtection,
   authWriteLimiter,
   registrationUpload,
+  parseMultipartJson("branchScoped"),
   validate(updateManagedUserSchema),
   updateManagedUserController,
 );

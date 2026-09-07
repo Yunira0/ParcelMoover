@@ -69,10 +69,8 @@ const TopNav: React.FC = () => {
   };
 
   useEffect(() => {
-    if (isBranchWorkspace) return;
-
     refreshUnreadCount();
-    refreshUnclosedCount();
+    if (!isBranchWorkspace) refreshUnclosedCount();
 
     const unsubscribe = subscribeToNotificationStream((notification) => {
       sseConnectedRef.current = true;
@@ -82,14 +80,16 @@ const TopNav: React.FC = () => {
 
     // Remarks have no SSE stream - refetch immediately whenever a remark is
     // closed/reopened anywhere in this tab (Remarks/UnclosedRemarks/RemarkDetail).
-    const unsubscribeRemarks = subscribeToRemarkStatusChanged(refreshUnclosedCount);
+    const unsubscribeRemarks = isBranchWorkspace
+      ? () => {}
+      : subscribeToRemarkStatusChanged(refreshUnclosedCount);
 
     // Polling fallback: catches changes made in other tabs/by other users, and
     // covers the notification SSE stream missing events (tab backgrounded,
     // connection drop).
     const pollTimer = setInterval(() => {
       refreshUnreadCount();
-      refreshUnclosedCount();
+      if (!isBranchWorkspace) refreshUnclosedCount();
     }, POLL_INTERVAL_MS);
 
     // Coming back to a backgrounded tab, refetch instead of waiting out the
@@ -98,7 +98,7 @@ const TopNav: React.FC = () => {
     const handleVisibilityChange = () => {
       if (document.hidden) return;
       refreshUnreadCount();
-      refreshUnclosedCount();
+      if (!isBranchWorkspace) refreshUnclosedCount();
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
@@ -154,6 +154,8 @@ const TopNav: React.FC = () => {
         return '/dispatch-operations';
       case 'cod_settlement':
         return '/finance';
+      case 'branch_settlement':
+        return '/branches/billing?tab=statements';
       case 'ticket':
       case 'ticket_reply':
       case 'ticket_status':
@@ -203,6 +205,7 @@ const TopNav: React.FC = () => {
       case 'delivery_failed':
         return <AlertCircle size={14} className="notification-icon notification-icon-failed" />;
       case 'cod_settlement':
+      case 'branch_settlement':
         return <Banknote size={14} className="notification-icon notification-icon-cod" />;
       case 'ticket':
       case 'ticket_reply':
@@ -269,9 +272,9 @@ const TopNav: React.FC = () => {
         <Search size={20} />
       </button>
 
-      {!isBranchWorkspace && (
-        <div className="top-nav-profile">
-        <Button
+      <div className="top-nav-profile">
+        {!isBranchWorkspace && (
+          <Button
           variant="outline"
           className="cmt-button"
           onClick={() => navigate('/unclosed-remarks')}
@@ -284,7 +287,8 @@ const TopNav: React.FC = () => {
               {vendorCmtCount > 99 ? '99+' : vendorCmtCount}
             </span>
           )}
-        </Button>
+          </Button>
+        )}
 
         {showRiderCmt && (
           <Button
@@ -363,8 +367,7 @@ const TopNav: React.FC = () => {
         >
           <User size={20} style={{ color: 'var(--color-background-surface)' }} />
         </button>
-        </div>
-      )}
+      </div>
     </nav>
   );
 };

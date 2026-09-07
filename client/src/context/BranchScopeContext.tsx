@@ -4,8 +4,9 @@ import { listBranches, type Branch } from '../services/branchTracking.service';
 import { getCurrentUserLocationId } from '../utils/auth';
 
 /**
- * App-wide branch scope for the Branch Tracking views. Inter-branch: `fromBranchId`
- * is the origin hub, `toBranchId` the destination hub. `'all'` means unfiltered.
+ * App-wide branch scope for Branch Tracking. On statement screens,
+ * `fromBranchId` is the paying branch and `toBranchId` is the receiving master
+ * branch. Order reports still use them as origin/destination filters.
  *
  * Loaded for branch-tracking staff and admins assigned to a branch. The server
  * scopes assigned admins to their own branch's settlement workflow.

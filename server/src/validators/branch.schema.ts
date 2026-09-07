@@ -44,8 +44,8 @@ export const branchSettlementQuerySchema = z.object({
   dateFrom: day.optional(),
   dateTo: day.optional(),
   status: z.enum(["pending", "partially_paid", "settled", "cancelled"]).optional(),
-  // A branch can inspect statements it owes, statements another branch owes
-  // it, or both. Only its own branch ever participates in this scope.
+  // Outgoing is what a branch owes the master; incoming is what the master is
+  // due from branches. Only the actor's assigned branch participates.
   scope: z.enum(["outgoing", "incoming", "all"]).optional(),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
