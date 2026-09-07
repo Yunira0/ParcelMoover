@@ -207,6 +207,7 @@ export async function submitBranchPayment(
 ): Promise<BranchPaymentItem> {
   const branchId = await resolveBranchId(actor, input.branchId);
   if (!Number.isFinite(input.amount) || input.amount <= 0) throw new AppError(400, "amount must be greater than zero");
+  if (!input.proofPath) throw new AppError(400, "A payment screenshot or receipt is required");
   const branch = await prisma.locations.findFirst({ where: { id: branchId, parent_id: null, is_hub: true, is_active: true }, select: { id: true } });
   if (!branch) throw new AppError(404, "Branch not found or inactive");
   if (input.settlementId) {

@@ -182,6 +182,7 @@ const BranchBilling: React.FC = () => {
     const suggested = branchStatus && branchStatus.balance < 0 ? Math.abs(branchStatus.balance).toFixed(2) : '';
     const amount = Number(payAmount ?? suggested);
     if (!Number.isFinite(amount) || amount <= 0) { setError('Enter the amount you paid.'); return; }
+    if (!payProof) { setError('Attach the payment screenshot before submitting.'); return; }
     setPaySaving(true); setError(''); setPayMessage('');
     try {
       await submitBranchPayment({ amount, reference: payReference, note: payNote, proof: payProof });
@@ -215,6 +216,7 @@ const BranchBilling: React.FC = () => {
     if (!selectedSettlement) return;
     const amount = Number(receiptAmount);
     if (!Number.isFinite(amount) || amount <= 0) { setError('Enter the receipt amount.'); return; }
+    if (!receiptProof) { setError('Attach the paid receipt or payment screenshot before submitting.'); return; }
     setReceiptSaving(true); setError(''); setReceiptMessage('');
     try {
       await submitBranchPayment({ settlementId: selectedSettlement.id, amount, reference: receiptReference, note: receiptNote, proof: receiptProof });
@@ -287,7 +289,7 @@ const BranchBilling: React.FC = () => {
             <label>Amount paid<div className="billing-amount-field"><span className="billing-amount-prefix">Rs.</span><input type="number" min="0" step="0.01" value={amountValue} onChange={(event) => setPayAmount(event.target.value)} placeholder="0.00" disabled={paySaving} /></div>{suggestedAmount && <span className="billing-field-hint">Suggested: {formatCurrency(Number(suggestedAmount))}</span>}</label>
             <label>Transaction reference<input type="text" value={payReference} onChange={(event) => setPayReference(event.target.value)} placeholder="From your payment app" disabled={paySaving} /></label>
             <label>Note (optional)<input type="text" value={payNote} onChange={(event) => setPayNote(event.target.value)} disabled={paySaving} /></label>
-            <FileField label="Payment screenshot (optional)" hint="JPG, PNG, WebP or PDF · max 5 MB" file={payProof} onChange={setPayProof} />
+            <FileField label="Payment screenshot (required)" hint="JPG, PNG, WebP or PDF · max 5 MB" file={payProof} onChange={setPayProof} />
             {payMessage && <p className="billing-success"><CheckCircle2 size={14} /> {payMessage}</p>}
             <Button type="submit" variant="primary" disabled={paySaving}>{paySaving ? 'Submitting…' : 'Add money'}</Button><p className="billing-hint">The amount is credited after the head branch verifies your payment.</p>
           </form></div>
@@ -299,7 +301,7 @@ const BranchBilling: React.FC = () => {
 
     {activeTab === 'statements' && (isMasterWorkspace ? <p className="billing-hint">Open Branch COD from the sidebar to create and review COD due to the master branch.</p> : <>
       <section className="billing-card"><h3>COD due to the master branch</h3><p className="billing-hint">Pay a statement and attach the receipt or screenshot. It becomes settled after the master branch verifies it.</p><Table selectable={false} columns={pendingColumns} data={pendingRows} emptyMessage="No COD statements are awaiting payment." minWidth="900px" /></section>
-      {selectedSettlement && <section className="billing-card"><h3>Add payment · {selectedSettlement.statementNo}</h3><form className="billing-form" onSubmit={submitReceipt}><label>Amount paid<div className="billing-amount-field"><span className="billing-amount-prefix">Rs.</span><input type="number" min="0" max={selectedSettlement.remainingAmount} step="0.01" value={receiptAmount} onChange={(event) => setReceiptAmount(event.target.value)} disabled={receiptSaving} /></div></label><label>Transaction reference<input type="text" value={receiptReference} onChange={(event) => setReceiptReference(event.target.value)} disabled={receiptSaving} /></label><label>Note (optional)<input type="text" value={receiptNote} onChange={(event) => setReceiptNote(event.target.value)} disabled={receiptSaving} /></label><FileField label="Paid receipt / screenshot" hint="JPG, PNG, WebP or PDF · max 5 MB" file={receiptProof} onChange={setReceiptProof} /><div className="billing-review-actions"><Button type="button" variant="secondary" onClick={() => setSelectedSettlement(null)} disabled={receiptSaving}>Cancel</Button><Button type="submit" variant="primary" disabled={receiptSaving}>{receiptSaving ? 'Submitting…' : 'Submit payment'}</Button></div></form></section>}
+      {selectedSettlement && <section className="billing-card"><h3>Add payment · {selectedSettlement.statementNo}</h3><form className="billing-form" onSubmit={submitReceipt}><label>Amount paid<div className="billing-amount-field"><span className="billing-amount-prefix">Rs.</span><input type="number" min="0" max={selectedSettlement.remainingAmount} step="0.01" value={receiptAmount} onChange={(event) => setReceiptAmount(event.target.value)} disabled={receiptSaving} /></div></label><label>Transaction reference<input type="text" value={receiptReference} onChange={(event) => setReceiptReference(event.target.value)} disabled={receiptSaving} /></label><label>Note (optional)<input type="text" value={receiptNote} onChange={(event) => setReceiptNote(event.target.value)} disabled={receiptSaving} /></label><FileField label="Paid receipt / screenshot (required)" hint="JPG, PNG, WebP or PDF · max 5 MB" file={receiptProof} onChange={setReceiptProof} /><div className="billing-review-actions"><Button type="button" variant="secondary" onClick={() => setSelectedSettlement(null)} disabled={receiptSaving}>Cancel</Button><Button type="submit" variant="primary" disabled={receiptSaving}>{receiptSaving ? 'Submitting…' : 'Submit payment'}</Button></div></form></section>}
       {receiptMessage && <p className="billing-success"><CheckCircle2 size={14} /> {receiptMessage}</p>}
     </>)}
 
