@@ -65,9 +65,16 @@
 }
 
 .vendor-card:focus-visible {
-  outline: none;
-  box-shadow: none;
+  outline: 2px solid var(--color-primary);
+  outline-offset: 3px;
+  box-shadow: 0 0 0 2px var(--color-background-surface);
   border-radius: var(--border-radius-default);
+}
+
+.vendor-card-caption {
+  color: var(--color-text-caption);
+  font-size: var(--font-size-xs);
+  font-variant-numeric: tabular-nums;
 }
 
 /* ── Active state — primary accent ───── */

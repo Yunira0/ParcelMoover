@@ -141,6 +141,9 @@ export interface ListOrdersParams {
   search?: string;
   /** Narrow to these vendors. Server intersects it with the caller's own scope. */
   vendorId?: string[];
+  /** Narrow to parcels whose vendor is assigned to this sales user (an admin in
+   *  the Sales department). Joined through vendors.sales_user_id server-side. */
+  salesUserId?: string;
   /** Narrows the list to parcels carried by one delivery rider. */
   deliveryRiderId?: string;
   /** Display-only page hint echoed back in meta; position comes from the cursor. */
@@ -334,6 +337,7 @@ export const getOrders = async (params?: ListOrdersParams, signal?: AbortSignal)
   if (params?.status?.length) query.status = params.status.join(',');
   if (params?.orderType) query.orderType = params.orderType;
   if (params?.vendorId?.length) query.vendorId = params.vendorId.join(',');
+  if (params?.salesUserId) query.salesUserId = params.salesUserId;
   if (params?.search) query.search = params.search;
   if (params?.deliveryRiderId) query.deliveryRiderId = params.deliveryRiderId;
   if (params?.page !== undefined) query.page = String(params.page);
@@ -362,7 +366,7 @@ export type OrderCountsByStatus = Record<ParcelStatus, number>;
 // same set of orders the table does, broken down per status rather than paged.
 export type OrderCountsByStatusParams = Pick<
   ListOrdersParams,
-  'orderType' | 'vendorId' | 'search' | 'deliveryRiderId' | 'deliveredToday' | 'dateField' | 'dateFrom' | 'dateTo'
+  'orderType' | 'vendorId' | 'salesUserId' | 'search' | 'deliveryRiderId' | 'deliveredToday' | 'dateField' | 'dateFrom' | 'dateTo'
 >;
 
 // Deliberately not derived from getOrders: that endpoint returns one keyset
@@ -375,6 +379,7 @@ export const getOrderCountsByStatus = async (
   const query: Record<string, string> = {};
   if (params?.orderType) query.orderType = params.orderType;
   if (params?.vendorId?.length) query.vendorId = params.vendorId.join(',');
+  if (params?.salesUserId) query.salesUserId = params.salesUserId;
   if (params?.search) query.search = params.search;
   if (params?.deliveryRiderId) query.deliveryRiderId = params.deliveryRiderId;
   if (params?.deliveredToday) query.deliveredToday = 'true';

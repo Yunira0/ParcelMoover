@@ -10,6 +10,16 @@ export interface CurrentUser {
    * admins (codes delegated by a super_admin, e.g. MANAGE_USERS).
    */
   permissions?: string[];
+  /** An admin/super_admin's own assigned hub, if any - lets a "From" field
+   *  default to it instead of making them pick their own branch every time. */
+  locationId?: string | null;
+  /** Human-readable name of the admin's assigned branch. */
+  locationName?: string | null;
+  /**
+   * True for a branch workspace account. These admins operate only inside
+   * their assigned branch instead of receiving the full head-office shell.
+   */
+  branchScoped?: boolean;
 }
 
 export function getCurrentUser(): CurrentUser | null {
@@ -38,6 +48,28 @@ export function isVendorSide(): boolean {
 /** True for super_admin and admin only. */
 export function isAdminSide(): boolean {
   return hasAnyRole(['super_admin', 'admin']);
+}
+
+/** True only for a branch-scoped plain admin, never a head-office super admin. */
+export function isBranchWorkspaceUser(): boolean {
+  const user = getCurrentUser();
+  if (!user) return false;
+  return (
+    user.branchScoped === true &&
+    user.roles.includes('admin') &&
+    !user.roles.includes('super_admin')
+  );
+}
+
+/** Routes that belong to the intentionally small assigned-branch workspace. */
+export function isBranchWorkspacePathAllowed(pathname: string): boolean {
+  return (
+    pathname === '/orders' ||
+    pathname.startsWith('/orders/track/') ||
+    pathname === '/branches/settlement' ||
+    pathname.startsWith('/branches/settlement/') ||
+    pathname === '/branches/billing'
+  );
 }
 
 /** True for a pure sales account — excludes admin/super_admin, who also carry the 'sales' role code when department = Sales but use the admin views. */
@@ -72,6 +104,11 @@ export function hasStaffPermission(permission: string): boolean {
  * Delegated admin privileges (MANAGE_USERS, SETTINGS_ACCESS). A super_admin
  * implicitly holds all of them; a plain admin only what a super_admin granted.
  */
+/** The current admin/super_admin's own assigned hub, or null if they have none. */
+export function getCurrentUserLocationId(): string | null {
+  return getCurrentUser()?.locationId ?? null;
+}
+
 export function hasAdminPermission(permission: string): boolean {
   const roles = getCurrentUserRoles();
   if (roles.includes('super_admin')) return true;

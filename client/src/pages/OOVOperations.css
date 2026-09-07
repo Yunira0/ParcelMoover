@@ -109,6 +109,30 @@
   gap: var(--space-4);
 }
 
+.oov-manifest-row-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.oov-muted {
+  color: var(--color-text-caption);
+}
+
+.oov-manifest-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.oov-manifest-panel-bar {
+  align-items: center;
+  display: flex;
+  gap: var(--space-3);
+  justify-content: space-between;
+  flex-wrap: wrap;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--font-size-xs);
+}
+
 .oov-table th,
 .oov-table td {
   font-size: var(--font-size-xs);
@@ -350,6 +374,23 @@
   color: var(--color-danger-text);
   font-size: var(--font-size-sm);
   margin: var(--space-2) 0 0;
+}
+
+/* Same shape as .oov-action-error, success tone — e.g. the "N parcel(s)
+   updated" notice after a manifest scan. */
+.oov-action-notice {
+  color: var(--color-success-default);
+  font-size: var(--font-size-sm);
+  margin: var(--space-2) 0 0;
+}
+
+/* Rejected-scan list under the manifest scan bar — same tone as
+   .oov-action-error, laid out as a list instead of a single line. */
+.oov-action-error-list {
+  color: var(--color-danger-text);
+  font-size: var(--font-size-sm);
+  margin: var(--space-2) 0 0;
+  padding-left: var(--space-5);
 }
 
 .oov-reason-field {

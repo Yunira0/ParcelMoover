@@ -27,6 +27,7 @@
 .vendor-finance-date-range {
   display: flex;
   align-items: flex-end;
+  flex-wrap: wrap;
   gap: var(--space-3);
 }
 

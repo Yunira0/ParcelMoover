@@ -35,10 +35,6 @@ export interface MerchantMetric {
 
 export interface MerchantOverviewSummary {
   metrics: Record<MerchantMetricKey, MerchantMetric>;
-  codSettlement: {
-    lastAmount: number;
-    lastSettledAt: string | null;
-  };
 }
 
 // Card labels, in the order the strip renders them.

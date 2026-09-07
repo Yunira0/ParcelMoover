@@ -34,6 +34,9 @@ interface AdminFormInput {
   joinedAt: string;
   // Service Info
   locationId: string;
+  // Scopes this admin's own Order Management to locationId's coverage
+  // instead of every order. Super_admin only - see admins.branch_scoped.
+  branchScoped: boolean;
   department: string;
   designation: string;
   // Documents
@@ -73,6 +76,7 @@ const emptyForm: AdminFormInput = {
   experience: '',
   joinedAt: '',
   locationId: '',
+  branchScoped: false,
   department: '',
   designation: '',
   citizenshipDoc: null,
@@ -157,7 +161,7 @@ const AdminFormPage: React.FC = () => {
   }>({ citizenshipDoc: null, idDocument: null, panDoc: null });
   // Accounts created by a plain admin inherit that admin's hub; only a
   // super_admin may choose a different one (server enforces the same rule).
-  const { myHubId, hubLocked, isPlainAdmin } = useHubLock();
+  const { myHubId, hubLocked, isPlainAdmin, isSuperAdmin } = useHubLock();
   const hubFieldDisabled = hubLocked || (isEdit && isPlainAdmin);
 
   useEffect(() => {
@@ -206,6 +210,7 @@ const AdminFormPage: React.FC = () => {
           experience: s(d.experience),
           joinedAt: s(d.joinedAt),
           locationId: s(d.locationId),
+          branchScoped: Boolean(d.branchScoped),
           department: s(d.department),
           designation: s(d.position),
           nationalIdNumber: s(d.idDocumentNumber),
@@ -294,6 +299,7 @@ const AdminFormPage: React.FC = () => {
           joinedAt: form.joinedAt || undefined,
           position: form.designation,
           locationId: form.locationId,
+          branchScoped: isSuperAdmin ? form.branchScoped : undefined,
           department: form.department,
           address: form.address,
           citizenshipNo: form.citizenshipNo,
@@ -322,6 +328,7 @@ const AdminFormPage: React.FC = () => {
         joinedAt: form.joinedAt || undefined,
         position: form.designation,
         locationId: form.locationId,
+        branchScoped: isSuperAdmin ? form.branchScoped : undefined,
         department: form.department,
         address: form.address,
         citizenshipNo: form.citizenshipNo,
@@ -516,6 +523,20 @@ const AdminFormPage: React.FC = () => {
                   disabled={hubFieldDisabled}
                 />
                 {fieldErrors.locationId && <span className="afp-field-error">{fieldErrors.locationId}</span>}
+                {isSuperAdmin && (
+                  <label className="afp-checkbox-field">
+                    <input
+                      type="checkbox"
+                      checked={form.branchScoped}
+                      disabled={!form.locationId}
+                      onChange={(e) => setForm((prev) => ({ ...prev, branchScoped: e.target.checked }))}
+                    />
+                    <span>
+                      Restrict to this hub's orders
+                      <small>Order Management only shows orders that touch this hub - not every order.</small>
+                    </span>
+                  </label>
+                )}
                 <FormField
                   label="Department"
                   type="select"

@@ -208,15 +208,19 @@ export async function getPendingCodBill(actor: Actor, vendorIdParam?: string): P
   if (cached) return cached;
 
   const collections = await prisma.cod_collections.findMany({
-    // Only orders with cash actually collected are billable (excludes
-    // not-yet-delivered orders); amounts are on the collected basis so the bill
-    // matches what will be settled. Orders already bundled into a vendor
-    // statement are excluded - they've moved out of the pending bill and into
-    // that statement, even while it awaits payment.
+    // Keyed on collected_at (set by the delivery / partial-delivery / RTV
+    // transition), not collected_amount > 0: any order that reached the vendor
+    // belongs on the bill even when no cash came in - a 0-COD delivery, or an
+    // RTV/return parcel - because the vendor still owes its delivery charge, so
+    // that row's net payable is negative. Excludes not-yet-delivered orders.
+    // Amounts are on the collected basis so the bill matches what will be
+    // settled, and mirrors getUnsettledOrders' vendor leg. Orders already
+    // bundled into a vendor statement are excluded - they've moved out of the
+    // pending bill and into that statement, even while it awaits payment.
     where: {
       vendor_id: vendor.id,
       payment_status: payment_status.pending,
-      collected_amount: { gt: 0 },
+      collected_at: { not: null },
       settlement_items: { none: { settlements: { payee_type: "vendor" } } },
       // A cancelled order is void - it must never be billed, even if cash was
       // recorded as collected before the cancellation happened.

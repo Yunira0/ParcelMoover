@@ -4,6 +4,7 @@ import redis, { scanAndDelete } from "../lib/redis";
 import { AppError } from "../utils/AppError";
 import { getSlaSettings, SLA_GROUPS } from "./sla.service";
 import { unclosedRemarksWhere } from "./remark.service";
+import { resolveBranchLocationIds } from "./branch.service";
 import {
   BulkCreateOrderInput,
   BulkUpdateParcelStatusInput,
@@ -20,6 +21,8 @@ import {
 import { generateTrackingId } from "../utils/trackingId";
 import { generateDispatchNo } from "../utils/dispatchId";
 import { generateRunSheetNo } from "../utils/runSheetNo";
+import { generateTransitManifestNo } from "../utils/transitManifestNo";
+import { MAX_TRANSIT_MANIFEST_PARCELS } from "../types/transitManifest.type";
 import {
   NEPAL_UTC_OFFSET_MS,
   formatNepalDate as formatDate,
@@ -134,7 +137,7 @@ export async function computeReturnCharge(
   }
 }
 
-type OrderActor = {
+export type OrderActor = {
   id: string;
   roles: string[];
 };
@@ -584,16 +587,65 @@ const locationName = (location?: { name: string; city: string | null; district: 
 
 const moneyToNumber = (value?: Prisma.Decimal | null) => value ? Number(value) : 0;
 
+/**
+ * The one condition every branch-scoped query in this file uses: does this
+ * parcel touch the branch somewhere - where it came from, where it's headed,
+ * or where it currently sits. `alias` prefixes the column names for a raw
+ * SQL fragment joining `parcels` under something other than its own name
+ * (e.g. "p."); omitted for a Prisma where-object or an unaliased FROM parcels.
+ */
+function branchTouchesFilter(branchLocationIds: string[]): Prisma.parcelsWhereInput {
+  return {
+    OR: [
+      { origin_location_id: { in: branchLocationIds } },
+      { destination_location_id: { in: branchLocationIds } },
+      { current_location_id: { in: branchLocationIds } },
+    ],
+  };
+}
+
+function branchTouchesSql(branchLocationIds: string[], alias = ""): Prisma.Sql {
+  const col = (name: string) => Prisma.raw(`${alias}${name}`);
+  return Prisma.sql`AND (
+    ${col("origin_location_id")} = ANY(${branchLocationIds}::uuid[]) OR
+    ${col("destination_location_id")} = ANY(${branchLocationIds}::uuid[]) OR
+    ${col("current_location_id")} = ANY(${branchLocationIds}::uuid[])
+  )`;
+}
+
+/**
+ * An admin's own order visibility, restricted to their assigned branch's
+ * coverage - opt-in per admin (branch_scoped), never inferred from having a
+ * location_id at all: many admins already carry one purely from hub
+ * inheritance at account creation, not as an access signal. Lifted entirely
+ * by BRANCH_TRACKING_READ/WRITE, the same permission that already unlocks
+ * the dedicated Branch Tracking pages - one admin, one consistent rule about
+ * whether they're limited to their own branch or not.
+ *
+ * super_admin is never scoped here regardless of any admins row.
+ */
+async function getAdminBranchScope(actor: OrderActor): Promise<string[] | undefined> {
+  if (actor.roles.includes("super_admin") || !actor.roles.includes("admin")) return undefined;
+  const admin = await prisma.admins.findFirst({
+    where: { user_id: actor.id },
+    select: { location_id: true, branch_scoped: true, permissions: true },
+  });
+  if (!admin?.branch_scoped || !admin.location_id) return undefined;
+  if (admin.permissions.some((p) => p === "BRANCH_TRACKING_READ" || p === "BRANCH_TRACKING_WRITE")) return undefined;
+  return resolveBranchLocationIds(admin.location_id);
+}
+
 async function getActorScope(actor: OrderActor) {
   const isStaff = actor.roles.includes("super_admin") || actor.roles.includes("admin");
   const actorIsRider = actor.roles.includes("rider");
   const actorIsSales = actor.roles.includes("sales");
+  const branchLocationIds = await getAdminBranchScope(actor);
 
   // Vendor / vendor staff: resolved through the shared helper so both roles
   // land on the same vendor-scoping guarantees used elsewhere (finance, pricing).
   const ownVendorId = await resolveOwnVendorId(actor);
   if (ownVendorId) {
-    return { vendorId: ownVendorId, vendorIds: undefined, riderId: undefined };
+    return { vendorId: ownVendorId, vendorIds: undefined, riderId: undefined, branchLocationIds: undefined };
   }
 
   // Sales: scoped to the set of vendors (clients) they own. Staff/super_admin
@@ -603,7 +655,7 @@ async function getActorScope(actor: OrderActor) {
       where: { sales_user_id: actor.id, deleted_at: null },
       select: { id: true },
     });
-    return { vendorId: undefined, vendorIds: ownedVendors.map((v) => v.id), riderId: undefined };
+    return { vendorId: undefined, vendorIds: ownedVendors.map((v) => v.id), riderId: undefined, branchLocationIds: undefined };
   }
 
   const rider = actorIsRider
@@ -617,7 +669,7 @@ async function getActorScope(actor: OrderActor) {
     throw new AppError(403, "Rider profile not found or inactive");
   }
 
-  return { vendorId: undefined, vendorIds: undefined, riderId: rider?.id };
+  return { vendorId: undefined, vendorIds: undefined, riderId: rider?.id, branchLocationIds };
 }
 
 async function generateUniqueTrackingId(
@@ -1759,7 +1811,12 @@ export async function bulkCreateOrders(actor: OrderActor, input: BulkCreateOrder
 }
 
 function buildOrdersWhere(
-  scope: { vendorId: string | undefined; vendorIds?: string[] | undefined; riderId: string | undefined },
+  scope: {
+    vendorId: string | undefined;
+    vendorIds?: string[] | undefined;
+    riderId: string | undefined;
+    branchLocationIds?: string[] | undefined;
+  },
   query: ListOrdersQuery,
 ): Prisma.parcelsWhereInput {
   // The trash view is the one place that wants soft-deleted rows; everywhere
@@ -1779,6 +1836,12 @@ function buildOrdersWhere(
   if (scope.riderId) {
     conditions.push(riderCustodyFilter(scope.riderId));
   }
+  // A branch-scoped admin (see getAdminBranchScope): the order has to touch
+  // their branch somehow - where it came from, where it's headed, or where it
+  // currently sits - to count as theirs.
+  if (scope.branchLocationIds) {
+    conditions.push(branchTouchesFilter(scope.branchLocationIds));
+  }
   if (query.status?.length) {
     conditions.push({ status: { in: query.status as parcel_status[] } });
   }
@@ -1793,8 +1856,21 @@ function buildOrdersWhere(
   if (query.vendorId?.length) {
     conditions.push({ vendor_id: { in: query.vendorId } });
   }
+  // Sales filter from the UI: narrow to parcels whose vendor is assigned to
+  // this sales user (vendors.sales_user_id). Like the vendor filter it's a
+  // separate AND condition, so a vendor/sales actor can only ever narrow their
+  // own scope with it, never escape it.
+  if (query.salesUserId) {
+    conditions.push({ vendors: { sales_user_id: query.salesUserId } });
+  }
   if (query.deliveryRiderId) {
     conditions.push({ delivery_rider_id: query.deliveryRiderId });
+  }
+  if (query.originLocationIds?.length) {
+    conditions.push({ origin_location_id: { in: query.originLocationIds } });
+  }
+  if (query.destinationLocationIds?.length) {
+    conditions.push({ destination_location_id: { in: query.destinationLocationIds } });
   }
   // Same local-midnight anchor getDashboardSummary uses for todays_delivered,
   // so the "Delivered today" card and its drill-down can't disagree.
@@ -1874,7 +1950,7 @@ function buildOrdersWhere(
   // linked via settlement_items to a settled vendor settlement count as
   // deposited. Pending = delivered not in any settled settlement.
   // This filters out empty settlements (e.g. STL-2024-001 with 0 items).
-  if ((query as any).settlement === "settled") {
+  if (query.settlement === "settled") {
     conditions.push({
       cod_collections: {
         settlement_items: {
@@ -1884,7 +1960,7 @@ function buildOrdersWhere(
         },
       },
     });
-  } else if ((query as any).settlement === "pending") {
+  } else if (query.settlement === "pending") {
     conditions.push({
       OR: [
         { cod_collections: null },
@@ -1899,6 +1975,18 @@ function buildOrdersWhere(
         },
       ],
     });
+  }
+
+  if (query.branchSettlement === "settled") {
+    conditions.push({ branch_settlement_items: { some: { settlement: { status: "settled" } } } });
+  } else if (query.branchSettlement === "pending") {
+    // Pending cash includes both parcels not yet statemented and parcels on an
+    // unpaid/part-paid statement. Only a completed branch payment is a deposit.
+    conditions.push({ branch_settlement_items: { none: { settlement: { status: "settled" } } } });
+  } else if (query.branchSettlement === "unassigned") {
+    // The Add Settlement picker must not offer a parcel already earmarked by a
+    // pending statement; membership is the double-statement guard.
+    conditions.push({ branch_settlement_items: { none: {} } });
   }
 
   return { AND: conditions };
@@ -1921,8 +2009,8 @@ export async function getOrderFilterOptions(
   actor: OrderActor,
   status?: ListOrdersQuery["status"],
 ): Promise<OrderFilterOptions> {
-  const { vendorId, vendorIds, riderId } = await getActorScope(actor);
-  const where = buildOrdersWhere({ vendorId, vendorIds, riderId }, status?.length ? { status } : {});
+  const { vendorId, vendorIds, riderId, branchLocationIds } = await getActorScope(actor);
+  const where = buildOrdersWhere({ vendorId, vendorIds, riderId, branchLocationIds }, status?.length ? { status } : {});
 
   const rows = await prisma.parcels.findMany({
     where,
@@ -1986,9 +2074,9 @@ export async function getOrderCountsByStatus(
   actor: OrderActor,
   query: OrderCountsByStatusFilters = {},
 ): Promise<OrderCountsByStatus> {
-  const { vendorId, vendorIds, riderId } = await getActorScope(actor);
+  const { vendorId, vendorIds, riderId, branchLocationIds } = await getActorScope(actor);
   // `status` is deliberately left out: the group-by supplies it per row.
-  const where = buildOrdersWhere({ vendorId, vendorIds, riderId }, query as ListOrdersQuery);
+  const where = buildOrdersWhere({ vendorId, vendorIds, riderId, branchLocationIds }, query as ListOrdersQuery);
 
   const rows = await prisma.parcels.groupBy({
     by: ["status"],
@@ -2379,12 +2467,12 @@ export async function listOrders(
   actor: OrderActor,
   query: ListOrdersQuery = {},
 ): Promise<ListOrdersResult> {
-  const { vendorId, vendorIds, riderId } = await getActorScope(actor);
+  const { vendorId, vendorIds, riderId, branchLocationIds } = await getActorScope(actor);
   const isStaff = actor.roles.includes("super_admin") || actor.roles.includes("admin");
   // Own-vendor scope is set only for vendor / vendor_staff actors - never for
   // staff, sales or riders viewing the same parcels.
   const isOwnVendorViewer = !!vendorId;
-  const where = buildOrdersWhere({ vendorId, vendorIds, riderId }, query);
+  const where = buildOrdersWhere({ vendorId, vendorIds, riderId, branchLocationIds }, query);
   const sortColumn = resolveSortColumn(query);
   const sortDirection: SortDirection = query.sortDir === "asc" ? "asc" : "desc";
   const orderBy = buildOrdersOrderBy(sortColumn, sortDirection);
@@ -2406,8 +2494,10 @@ export async function listOrders(
   // a trash listing would both read and overwrite the live orders cache.
   const isDefaultUnfilteredQuery =
     !paginated && !query.status?.length && !query.orderType && !query.search &&
-    !query.vendorId?.length && !query.deliveryRiderId && !query.sortBy &&
-    !query.deliveredToday && !query.trashed && vendorIds === undefined;
+    !query.vendorId?.length && !query.salesUserId && !query.deliveryRiderId &&
+    !query.sortBy && !query.deliveredToday && !query.trashed && !query.settlement &&
+    !query.originLocationIds?.length && !query.destinationLocationIds?.length &&
+    !query.branchSettlement && vendorIds === undefined && branchLocationIds === undefined;
   // Export requests (withArrival) skip the shared cache so the enriched rows
   // never pollute the lean list cache and vice-versa.
   const cacheKey =
@@ -2748,7 +2838,7 @@ function isStaffAuthor(
 }
 
 export async function getOrderByTrackingId(actor: OrderActor, trackingId: string) {
-  const { vendorId, vendorIds, riderId } = await getActorScope(actor);
+  const { vendorId, vendorIds, riderId, branchLocationIds } = await getActorScope(actor);
   const isStaff = actor.roles.includes("super_admin") || actor.roles.includes("admin");
 
   const parcel = await prisma.parcels.findFirst({
@@ -2758,6 +2848,7 @@ export async function getOrderByTrackingId(actor: OrderActor, trackingId: string
       ...(vendorId ? { vendor_id: vendorId } : {}),
       ...(vendorIds ? { vendor_id: { in: vendorIds } } : {}),
       ...(riderId ? riderHandledFilter(riderId) : {}),
+      ...(branchLocationIds ? branchTouchesFilter(branchLocationIds) : {}),
     },
     include: ORDER_DETAIL_INCLUDE,
   });
@@ -2940,7 +3031,7 @@ export async function getPublicOrderTracking(trackingId: string) {
 // typo, deleted) land in `notFound` instead of silently vanishing, so a
 // polling client can tell "not mine / doesn't exist" from "still processing."
 export async function getOrderStatusesByTrackingIds(actor: OrderActor, trackingIds: string[]) {
-  const { vendorId, vendorIds, riderId } = await getActorScope(actor);
+  const { vendorId, vendorIds, riderId, branchLocationIds } = await getActorScope(actor);
 
   const parcels = await prisma.parcels.findMany({
     where: {
@@ -2949,6 +3040,7 @@ export async function getOrderStatusesByTrackingIds(actor: OrderActor, trackingI
       ...(vendorId ? { vendor_id: vendorId } : {}),
       ...(vendorIds ? { vendor_id: { in: vendorIds } } : {}),
       ...(riderId ? riderHandledFilter(riderId) : {}),
+      ...(branchLocationIds ? branchTouchesFilter(branchLocationIds) : {}),
     },
     select: { tracking_id: true, status: true, updated_at: true },
   });
@@ -2978,7 +3070,7 @@ export async function addOrderRemark(
     throw new AppError(400, "Remark text is required");
   }
 
-  const { vendorId, vendorIds, riderId } = await getActorScope(actor);
+  const { vendorId, vendorIds, riderId, branchLocationIds } = await getActorScope(actor);
 
   const parcel = await prisma.parcels.findFirst({
     where: {
@@ -2987,6 +3079,7 @@ export async function addOrderRemark(
       ...(vendorId ? { vendor_id: vendorId } : {}),
       ...(vendorIds ? { vendor_id: { in: vendorIds } } : {}),
       ...(riderId ? riderHandledFilter(riderId) : {}),
+      ...(branchLocationIds ? branchTouchesFilter(branchLocationIds) : {}),
     },
     select: { id: true, tracking_id: true },
   });
@@ -3079,9 +3172,15 @@ export async function addOrderRemark(
 }
 
 export async function getDashboardSummary(actor: OrderActor, trendDays: 7 | 30 = 7) {
-  const { vendorId, vendorIds, riderId } = await getActorScope(actor);
+  const { vendorId, vendorIds, riderId, branchLocationIds } = await getActorScope(actor);
+  // A branch-scoped admin never uses the shared cache (there is no per-branch
+  // key for it, same reasoning as the sales vendorIds case below) - it would
+  // otherwise serve one branch-scoped admin's figures to another, or the
+  // unscoped figures to either.
   const cacheKey =
-    vendorIds === undefined
+    branchLocationIds !== undefined
+      ? null
+      : vendorIds === undefined
       ? dashboardSummaryCacheKey(vendorId, riderId, trendDays)
       : vendorIds.length > 0
       ? salesDashboardSummaryCacheKey(vendorIds, trendDays)
@@ -3098,7 +3197,9 @@ export async function getDashboardSummary(actor: OrderActor, trendDays: 7 | 30 =
     }
   }
 
-  return dedupeInFlight(cacheKey, () => computeDashboardSummary(trendDays, vendorId, vendorIds, riderId, cacheKey));
+  return dedupeInFlight(cacheKey, () =>
+    computeDashboardSummary(trendDays, vendorId, vendorIds, riderId, branchLocationIds, cacheKey),
+  );
 }
 
 async function computeDashboardSummary(
@@ -3106,6 +3207,7 @@ async function computeDashboardSummary(
   vendorId: string | undefined,
   vendorIds: string[] | undefined,
   riderId: string | undefined,
+  branchLocationIds: string[] | undefined,
   cacheKey: string | null,
 ) {
   // Start of today in Nepal local time. setHours() would truncate to the *host*
@@ -3116,17 +3218,27 @@ async function computeDashboardSummary(
     Date.parse(`${formatDate(new Date())}T00:00:00Z`) - NEPAL_UTC_OFFSET_MS,
   );
 
+  // A branch-scoped admin (see getAdminBranchScope): same OR-of-three-columns
+  // every other branch check in this file uses, reused below wherever a query
+  // needs it expressed differently (a relation filter, a raw-SQL join).
+  const branchOr: Prisma.parcelsWhereInput | undefined = branchLocationIds
+    ? branchTouchesFilter(branchLocationIds)
+    : undefined;
+
   const parcelWhere: Prisma.parcelsWhereInput = {
     deleted_at: null,
     ...(vendorId ? { vendor_id: vendorId } : {}),
     ...(vendorIds ? { vendor_id: { in: vendorIds } } : {}),
     ...(riderId ? riderHandledFilter(riderId) : {}),
+    ...(branchOr ?? {}),
   };
 
   const codWhere: Prisma.cod_collectionsWhereInput = {
     ...(vendorId ? { vendor_id: vendorId } : {}),
     ...(vendorIds ? { vendor_id: { in: vendorIds } } : {}),
     ...(riderId ? { rider_id: riderId } : {}),
+    // cod_collections carries no location itself - reach through to its parcel.
+    ...(branchOr ? { parcels: branchOr } : {}),
   };
 
   // The COD Settlement card counts every delivered / partially-delivered
@@ -3138,12 +3250,16 @@ async function computeDashboardSummary(
   // clamped with LEAST() so a settlement can never exceed what was collected.
   // Pending is then collected - settled, so Settled + Pending always equals
   // Total exactly.
+  // The query this feeds always joins `p` (parcels) alongside `c`, so the
+  // branch check reads off that join rather than a subquery.
   const codScopeSql: Prisma.Sql = vendorId
     ? Prisma.sql`AND c.vendor_id = ${vendorId}::uuid`
     : vendorIds
     ? Prisma.sql`AND c.vendor_id = ANY(${vendorIds}::uuid[])`
     : riderId
     ? Prisma.sql`AND c.rider_id = ${riderId}::uuid`
+    : branchLocationIds
+    ? branchTouchesSql(branchLocationIds, "p.")
     : Prisma.empty;
 
   const settlementWhere: Prisma.settlementsWhereInput = {
@@ -3151,6 +3267,12 @@ async function computeDashboardSummary(
     ...(vendorId ? { vendor_id: vendorId } : {}),
     ...(vendorIds ? { vendor_id: { in: vendorIds } } : {}),
     ...(riderId ? { rider_id: riderId } : {}),
+    // settlements carries no location either - reach through settlement_items
+    // → cod_collections → parcels. "some" is correct here (not "every"): a
+    // settlement scoped to another branch that happens to also bundle one of
+    // this branch's parcels should still surface as the branch's own pending
+    // settlement, the same way listOrders would show that one parcel.
+    ...(branchOr ? { settlement_items: { some: { cod_collections: { parcels: branchOr } } } } : {}),
   };
 
   const TREND_DAYS = trendDays;
@@ -3207,6 +3329,8 @@ async function computeDashboardSummary(
     ? Prisma.sql`AND vendor_id = ANY(${vendorIds}::uuid[])`
     : riderId
     ? riderHandledSql(riderId)
+    : branchLocationIds
+    ? branchTouchesSql(branchLocationIds)
     : Prisma.empty;
 
   // The 11 overview/today metrics below all count the same `parcels` table
@@ -3334,6 +3458,8 @@ async function computeDashboardSummary(
     ? Prisma.sql`AND p.vendor_id = ANY(${vendorIds}::uuid[])`
     : riderId
     ? riderHandledSql(riderId, "p.")
+    : branchLocationIds
+    ? branchTouchesSql(branchLocationIds, "p.")
     : Prisma.empty;
 
   // Per-day "Returned" for the trend graph: parcels whose status *became*
@@ -3411,7 +3537,15 @@ async function computeDashboardSummary(
       JOIN parcels p ON p.id = c.parcel_id
       LEFT JOIN riders r ON r.id = c.rider_id
       WHERE p.deleted_at IS NULL
-        AND p.status::text IN ('delivered', 'partially_delivered')
+        -- returned_to_vendor is in scope alongside the delivery statuses: an
+        -- RTV/RTO parcel collected no COD (contributes 0 to the cash figures)
+        -- but still owes its return delivery charge, so its charge belongs in
+        -- pending_delivery_charge / total_delivery_charge. collected_at (stamped
+        -- by the delivery / partial-delivery / RTV transition) is the "reached
+        -- the vendor" gate - the same basis getPendingCodBill and
+        -- getUnsettledOrders bill on.
+        AND c.collected_at IS NOT NULL
+        AND p.status::text IN ('delivered', 'partially_delivered', 'returned_to_vendor')
         ${codScopeSql}
     `),
     prisma.cod_collections.count({
@@ -3702,14 +3836,17 @@ export async function getCodSettlementDetail(
   actor: OrderActor,
   bucket: CodDetailBucket,
 ): Promise<{ rows: CodDetailRow[]; capped: boolean }> {
-  const { vendorId, vendorIds, riderId } = await getActorScope(actor);
+  const { vendorId, vendorIds, riderId, branchLocationIds } = await getActorScope(actor);
 
+  // Joins `p` (parcels) alongside `c`, so the branch check reads off that join.
   const codScopeSql: Prisma.Sql = vendorId
     ? Prisma.sql`AND c.vendor_id = ${vendorId}::uuid`
     : vendorIds
     ? Prisma.sql`AND c.vendor_id = ANY(${vendorIds}::uuid[])`
     : riderId
     ? Prisma.sql`AND c.rider_id = ${riderId}::uuid`
+    : branchLocationIds
+    ? branchTouchesSql(branchLocationIds, "p.")
     : Prisma.empty;
 
   // Same durable NCM/Upaya signals as the dashboard summary above - see its comment.
@@ -4083,6 +4220,22 @@ async function _updateParcelStatusImpl(
     }
   }
 
+  // A branch-scoped admin can act on this same set of statuses as any other
+  // admin (isAdmin above bypasses the block it sits in) - but only for a
+  // parcel that actually touches their branch. Checked regardless of isAdmin,
+  // since getAdminBranchScope itself already resolves to undefined for
+  // super_admin and for an admin who isn't branch_scoped.
+  const adminBranchIds = await getAdminBranchScope(actor);
+  if (adminBranchIds) {
+    const touchesBranch =
+      (parcel.origin_location_id && adminBranchIds.includes(parcel.origin_location_id)) ||
+      (parcel.destination_location_id && adminBranchIds.includes(parcel.destination_location_id)) ||
+      (parcel.current_location_id && adminBranchIds.includes(parcel.current_location_id));
+    if (!touchesBranch) {
+      throw new AppError(404, "Parcel not found");
+    }
+  }
+
   // cannot transition from a terminal state
   if (!isSuperAdmin && TERMINAL_STATUSES.includes(currentStatus as parcel_status)) {
     throw new AppError(
@@ -4342,6 +4495,24 @@ async function _updateParcelStatusImpl(
     // Side-effect: update current_location_id
     if (data.locationId) {
       (updateData as any).current_location_id = data.locationId;
+    } else if (currentStatus === "dispatched" && newStatus !== "arrived_at_branch") {
+      // Dispatching moves current_location_id straight to the destination hub
+      // the moment the parcel leaves (see the mirror of this in
+      // _bulkUpdateParcelStatusImpl) - it hasn't physically arrived yet, that's
+      // just where it's headed. A force-revert out of dispatched into anything
+      // other than the natural arrived_at_branch completion (back to oov, or
+      // to hold, or any other correction) undoes that move too: without this,
+      // the parcel reads as already sitting at a hub it never reached, and
+      // re-dispatching it would start the trip from there instead of from
+      // wherever it actually still is.
+      const lastDispatch = await tx.dispatch_parcels.findFirst({
+        where: { parcel_id: parcelId },
+        orderBy: { created_at: "desc" },
+        select: { dispatches: { select: { from_location_id: true } } },
+      });
+      if (lastDispatch?.dispatches.from_location_id) {
+        (updateData as any).current_location_id = lastDispatch.dispatches.from_location_id;
+      }
     }
     // Side-effect: assign the rider for this leg
     if (riderAssignmentField) {
@@ -4470,6 +4641,19 @@ async function _updateParcelStatusImpl(
     if (currentStatus === "ready_to_return") {
       await tx.return_manifest_parcels.deleteMany({
         where: { parcel_id: parcelId, return_manifests: { status: "open" } },
+      });
+    }
+
+    // Same eviction for the transit leg: a parcel pulled off oov (or off the
+    // road) one at a time would otherwise stay a ghost member of its manifest.
+    if (currentStatus === "oov") {
+      await tx.transit_manifest_parcels.deleteMany({
+        where: { parcel_id: parcelId, transit_manifests: { status: "open" } },
+      });
+    }
+    if (currentStatus === "dispatched") {
+      await tx.transit_manifest_parcels.deleteMany({
+        where: { parcel_id: parcelId, transit_manifests: { status: "dispatched" } },
       });
     }
 
@@ -4667,7 +4851,195 @@ export async function bulkUpdateParcelStatus(
     throw new AppError(400, `Cannot update more than ${MAX_BULK_IDS} parcels at once`);
   }
 
-  return withParcelStatusLocks(ids, () => _bulkUpdateParcelStatusImpl(actor, ids, data));
+  return withParcelStatusLocks(ids, async () => {
+    // A manifest scan already carries its own id, and a dispatch to a named
+    // destination already opens a dispatches row - its number and driver are
+    // what the timeline records. Only the transition that ends up with no
+    // hand-over document at all gets one opened for it (see
+    // resolveAutoTransitManifests).
+    //
+    // riderId without toLocationId is rejected downstream as a dispatch with
+    // no destination; it's checked here too so an invalid request throws
+    // before a manifest gets opened for it rather than after.
+    if (
+      data.status !== "dispatched" ||
+      data.transitManifestId ||
+      data.toLocationId ||
+      data.riderId
+    ) {
+      return _bulkUpdateParcelStatusImpl(actor, ids, data);
+    }
+
+    const groups = await resolveAutoTransitManifests(actor, ids);
+    if (groups.length === 0) return _bulkUpdateParcelStatusImpl(actor, ids, data);
+
+    // One call per manifest, mirroring addParcelsToTransitManifest: each
+    // group's parcels move under their own manifest id, so the timeline
+    // remark, the membership links and the open → dispatched flip all land on
+    // the right manifest. Anything no route could be resolved for - and
+    // anything already past oov - dispatches on the plain path as before.
+    const claimed = new Set(groups.flatMap((group) => group.parcelIds));
+    const unclaimed = ids.filter((id) => !claimed.has(id));
+
+    const results: BulkUpdateResult[] = [];
+    for (const group of groups) {
+      results.push(
+        await _bulkUpdateParcelStatusImpl(actor, group.parcelIds, {
+          ...data,
+          transitManifestId: group.manifestId,
+        }),
+      );
+    }
+    if (unclaimed.length) {
+      results.push(await _bulkUpdateParcelStatusImpl(actor, unclaimed, data));
+    }
+
+    const alreadyUpToDate = results.reduce((sum, r) => sum + (r.alreadyUpToDate ?? 0), 0);
+    const dispatch = results.find((r) => r.dispatch)?.dispatch;
+    return {
+      updatedCount: results.reduce((sum, r) => sum + r.updatedCount, 0),
+      status: data.status,
+      ...(dispatch ? { dispatch } : {}),
+      ...(alreadyUpToDate > 0 ? { alreadyUpToDate } : {}),
+    };
+  });
+}
+
+type HubRef = { id: string; name: string };
+
+async function generateUniqueTransitManifestNo(retries = 0): Promise<string> {
+  const manifestNo = generateTransitManifestNo();
+  const clash = await prisma.transit_manifests.findUnique({
+    where: { manifest_no: manifestNo },
+    select: { id: true },
+  });
+  if (!clash) return manifestNo;
+  if (retries >= 5) throw new AppError(500, "Failed to generate unique transit manifest number");
+  return generateUniqueTransitManifestNo(retries + 1);
+}
+
+async function openOrReuseTransitManifest(
+  actor: OrderActor,
+  from: HubRef,
+  to: HubRef,
+  parcelIds: string[],
+): Promise<string> {
+  // Reuse an open manifest for this route only when nothing else is staged on
+  // it. One that someone is still scanning parcels onto belongs to that shift:
+  // dispatching it from here would flip it to 'dispatched' with its other
+  // members still sitting at oov, stranding them as ghosts that its own
+  // receive scan would then reject.
+  const existing = await prisma.transit_manifests.findFirst({
+    where: {
+      status: "open",
+      from_location_id: from.id,
+      to_location_id: to.id,
+      transit_manifest_parcels: {
+        none: { parcel_id: { notIn: parcelIds }, parcels: { status: "oov" } },
+      },
+    },
+    orderBy: { created_at: "desc" },
+    select: { id: true, _count: { select: { transit_manifest_parcels: true } } },
+  });
+  if (existing && existing._count.transit_manifest_parcels + parcelIds.length <= MAX_TRANSIT_MANIFEST_PARCELS) {
+    return existing.id;
+  }
+
+  const created = await prisma.transit_manifests.create({
+    data: {
+      manifest_no: await generateUniqueTransitManifestNo(),
+      status: "open",
+      from_location_id: from.id,
+      to_location_id: to.id,
+      from_hub: from.name,
+      to_hub: to.name,
+      created_by: actor.id,
+    },
+    select: { id: true },
+  });
+  return created.id;
+}
+
+/**
+ * Opens the transit manifest that a Transit → dispatched move outside the
+ * scanning flow would otherwise never get.
+ *
+ * Dispatching from Transit Operations with "Via Manifest" selected - and every
+ * other route into the transition that names no destination: a QuickActions
+ * change, an order-detail force, the Partner API - took the plain status path,
+ * so the parcels went on the road belonging to no manifest at all and nothing
+ * recorded which truck carried them. The manifest tabs only ever showed
+ * hand-overs that happened to be built by scanning.
+ *
+ * So the transition opens one itself. Parcels group by route (their current
+ * location → the destination hub, resolved through a covered area's parent),
+ * an open manifest for that route is reused when one is free and a fresh one
+ * created when there isn't, and members are linked before the status moves -
+ * the same order addParcelsToTransitManifest uses, so a crash between the two
+ * leaves a retryable member rather than a dispatched parcel no manifest claims.
+ */
+async function resolveAutoTransitManifests(
+  actor: OrderActor,
+  ids: string[],
+): Promise<{ manifestId: string; parcelIds: string[] }[]> {
+  const parcels = await prisma.parcels.findMany({
+    where: { id: { in: ids }, deleted_at: null, status: "oov" },
+    select: { id: true, current_location_id: true, destination_location_id: true },
+  });
+  if (parcels.length === 0) return [];
+
+  const locationIds = new Set<string>();
+  for (const parcel of parcels) {
+    if (parcel.current_location_id) locationIds.add(parcel.current_location_id);
+    if (parcel.destination_location_id) locationIds.add(parcel.destination_location_id);
+  }
+
+  const locations = await prisma.locations.findMany({
+    where: { id: { in: [...locationIds] } },
+    select: { id: true, name: true, locations: { select: { id: true, name: true } } },
+  });
+  const self = new Map<string, HubRef>();
+  const hub = new Map<string, HubRef>();
+  for (const location of locations) {
+    self.set(location.id, { id: location.id, name: location.name });
+    hub.set(location.id, location.locations ?? { id: location.id, name: location.name });
+  }
+
+  // A parcel whose route can't be resolved - no current location, no
+  // destination, or a destination hub it already sits at - gets no manifest and
+  // still dispatches exactly as it did before.
+  const routes = new Map<string, { from: HubRef; to: HubRef; parcelIds: string[] }>();
+  for (const parcel of parcels) {
+    const from = parcel.current_location_id ? self.get(parcel.current_location_id) : undefined;
+    const to = parcel.destination_location_id
+      ? hub.get(parcel.destination_location_id)
+      : undefined;
+    if (!from || !to || from.id === to.id) continue;
+    const key = `${from.id}|${to.id}`;
+    const route = routes.get(key);
+    if (route) route.parcelIds.push(parcel.id);
+    else routes.set(key, { from, to, parcelIds: [parcel.id] });
+  }
+
+  const groups: { manifestId: string; parcelIds: string[] }[] = [];
+  for (const { from, to, parcelIds } of routes.values()) {
+    const manifestId = await openOrReuseTransitManifest(actor, from, to, parcelIds);
+    await prisma.transit_manifest_parcels.createMany({
+      data: parcelIds.map((parcel_id) => ({ transit_manifest_id: manifestId, parcel_id })),
+      skipDuplicates: true,
+    });
+    await prisma.audit_logs.create({
+      data: {
+        actor_id: actor.id,
+        entity_type: "transit_manifest",
+        entity_id: manifestId,
+        action: "AUTO_OPEN_ON_DISPATCH",
+        new_data: { fromHub: from.name, toHub: to.name, parcelIds },
+      },
+    });
+    groups.push({ manifestId, parcelIds });
+  }
+  return groups;
 }
 
 async function _bulkUpdateParcelStatusImpl(
@@ -4720,12 +5092,18 @@ async function _bulkUpdateParcelStatusImpl(
     throw new AppError(403, "Rider profile not found or inactive");
   }
 
+  // A branch-scoped admin (see getAdminBranchScope) - checked unconditionally
+  // rather than gated on isVendorActor/isRiderActor/isSalesActor above, since
+  // it applies specifically to an admin actor those never match.
+  const adminBranchIds = await getAdminBranchScope(actor);
+
   let parcels = await prisma.parcels.findMany({
     where: {
       id: { in: ids },
       deleted_at: null,
       ...(vendorId ? { vendor_id: vendorId } : {}),
       ...(vendorIds ? { vendor_id: { in: vendorIds } } : {}),
+      ...(adminBranchIds ? branchTouchesFilter(adminBranchIds) : {}),
     },
     include: { pickup_tasks: true, locations_parcels_destination_location_idTolocations: true, vendors: true },
   });
@@ -4951,6 +5329,16 @@ async function _bulkUpdateParcelStatusImpl(
       })
     : null;
 
+  // The transit manifest driving this transition, if any. Same shape as the
+  // return manifest above: read before the transaction for its number (which
+  // goes onto every member parcel's timeline), row updated inside.
+  const transitManifest = data.transitManifestId
+    ? await prisma.transit_manifests.findUnique({
+        where: { id: data.transitManifestId },
+        select: { id: true, manifest_no: true },
+      })
+    : null;
+
   const result = await prisma.$transaction(async (tx) => {
     let dispatch: { id: string; dispatch_no: string } | null = null;
 
@@ -4987,9 +5375,17 @@ async function _bulkUpdateParcelStatusImpl(
     // anyone has on "which hand-over did this parcel go back on", so it belongs
     // on the timeline rather than only in the manifests list. Composed the same
     // way and folded into the same remarks field below.
+    // Same reasoning for the transit leg: the manifest number is the only
+    // handle anyone has on "which truck did this parcel leave on", so it
+    // belongs on the timeline rather than only in the manifests list.
+    // Composed the same way and folded into the same remarks field below.
+    const transitRemark = transitManifest
+      ? `Transit manifest ${transitManifest.manifest_no}`
+      : null;
+
     const batchRemark = returnManifest
       ? `Manifest ${returnManifest.manifest_no}${riderName ? ` · carried by ${riderName}` : ""}`
-      : dispatchRemark;
+      : transitRemark ?? dispatchRemark;
 
     const updateData: Prisma.parcelsUpdateInput = { status: newStatus as parcel_status };
     if (newStatus === "picked_up") {
@@ -5203,7 +5599,7 @@ async function _bulkUpdateParcelStatusImpl(
         entity_id: p.id,
         action: "BULK_UPDATE_STATUS",
         old_data: { status: p.status },
-        new_data: { status: newStatus, dispatchId: dispatch?.id || null },
+        new_data: { status: newStatus, dispatchId: dispatch?.id || null, transitManifestId: data.transitManifestId || null },
       })),
     });
 
@@ -5282,6 +5678,32 @@ async function _bulkUpdateParcelStatusImpl(
       });
     }
 
+    // The transit manifest moves with its parcels, in this same transaction,
+    // for the same reason as the return manifest above. The first dispatch
+    // takes an 'open' manifest to 'dispatched' (updateMany so repeat scans
+    // onto an already-dispatched manifest don't re-stamp dispatched_at);
+    // a receive takes it to 'received' once no member is still 'dispatched'.
+    if (transitManifest && newStatus === "dispatched") {
+      await tx.transit_manifests.updateMany({
+        where: { id: transitManifest.id, status: "open" },
+        data: { status: "dispatched", dispatched_at: new Date(), dispatched_by: actor.id },
+      });
+    }
+    if (transitManifest && newStatus === "arrived_at_branch") {
+      const stillDispatched = await tx.transit_manifest_parcels.count({
+        where: {
+          transit_manifest_id: transitManifest.id,
+          parcels: { status: "dispatched" },
+        },
+      });
+      if (stillDispatched === 0) {
+        await tx.transit_manifests.update({
+          where: { id: transitManifest.id },
+          data: { status: "received", received_at: new Date(), received_by: actor.id },
+        });
+      }
+    }
+
     // A parcel leaving ready_to_return by any route other than its own
     // manifest's send is no longer part of that hand-over, so drop it.
     //
@@ -5300,6 +5722,41 @@ async function _bulkUpdateParcelStatusImpl(
           where: {
             parcel_id: { in: leavingReturnPool },
             return_manifests: { status: "open" },
+          },
+        });
+      }
+    }
+
+    // Same ghost-member rule for the transit leg. A parcel leaving oov by any
+    // route other than its own manifest's dispatch (super_admin force, hold)
+    // is no longer part of that hand-over, so drop it from open manifests -
+    // otherwise it deadlocks later dispatches the same way a return ghost
+    // would. Likewise a dispatched member that leaves the transit pool without
+    // being received (e.g. dispatched → follow_up for an NCM return) drops
+    // off its dispatched manifest. The manifest's own flows are excluded: a
+    // dispatch keeps its oov links, a receive keeps its member history.
+    if (newStatus !== "dispatched") {
+      const leavingTransitPool = parcels
+        .filter((p) => p.status === "oov")
+        .map((p) => p.id);
+      if (leavingTransitPool.length) {
+        await tx.transit_manifest_parcels.deleteMany({
+          where: {
+            parcel_id: { in: leavingTransitPool },
+            transit_manifests: { status: "open" },
+          },
+        });
+      }
+    }
+    if (newStatus !== "arrived_at_branch") {
+      const leavingRoadPool = parcels
+        .filter((p) => p.status === "dispatched")
+        .map((p) => p.id);
+      if (leavingRoadPool.length) {
+        await tx.transit_manifest_parcels.deleteMany({
+          where: {
+            parcel_id: { in: leavingRoadPool },
+            transit_manifests: { status: "dispatched" },
           },
         });
       }
@@ -5657,6 +6114,12 @@ export async function getStatusCounts(
         ? riderCustodySql(scope.riderId)
         : Prisma.empty;
 
+  // A branch-scoped admin (see getAdminBranchScope) - mirrors buildOrdersWhere's
+  // OR-of-three-columns exactly, so the tab badges never disagree with the list.
+  const branchScopeSql: Prisma.Sql = scope.branchLocationIds
+    ? branchTouchesSql(scope.branchLocationIds)
+    : Prisma.empty;
+
   // Caller-supplied filters, applied on top of the actor's own scope so the tab
   // badges stay in step with the filtered list (see buildOrdersWhere).
   const riderSql: Prisma.Sql = filters.deliveryRiderId
@@ -5707,6 +6170,7 @@ export async function getStatusCounts(
     WHERE deleted_at IS NULL
       AND status::text = ANY(${allStatuses})
       ${scopeSql}
+      ${branchScopeSql}
       ${riderSql}
       ${vendorSql}
       ${searchSql}
@@ -6043,10 +6507,6 @@ export interface MerchantOverviewResult {
     deposited: MerchantOverviewMetric;
     pendingDeposit: MerchantOverviewMetric;
   };
-  codSettlement: {
-    lastAmount: number;
-    lastSettledAt: string | null;
-  };
 }
 
 export async function getMerchantOverview(
@@ -6169,17 +6629,7 @@ export async function getMerchantOverview(
   // Use same date window as parcels (created_at) for both deposited/pending
   const depositedDateFilter = dateFilter;
 
-  const [lastSettlement, depositedRows, pendingRows] = await Promise.all([
-    // Last settled with at least one item (authentic)
-    prisma.$queryRaw<{ payable_amount: string | null; amount: string; created_at: Date }[]>`
-      SELECT s.payable_amount::text, s.amount::text, s.created_at
-      FROM settlements s
-      WHERE s.payee_type = 'vendor' AND s.status = 'settled'
-        ${vendorId ? Prisma.sql`AND s.vendor_id = ${vendorId}::uuid` : Prisma.empty}
-        AND EXISTS (SELECT 1 FROM settlement_items si WHERE si.settlement_id = s.id)
-      ORDER BY s.settlement_date DESC, s.created_at DESC
-      LIMIT 1
-    `.then(r => r[0] as any ?? null),
+  const [depositedRows, pendingRows] = await Promise.all([
     // Deposited: delivered parcels that ARE in a settled settlement
     prisma.$queryRaw<{ cnt: bigint; total: string }[]>`
       SELECT
@@ -6237,10 +6687,6 @@ export async function getMerchantOverview(
         deposited: { count: depositedCount, amount: depositedAmount },
         pendingDeposit: { count: pendingDepositCount, amount: pendingDepositAmount },
       },
-      codSettlement: {
-        lastAmount: lastSettlement ? Number(lastSettlement.payable_amount ?? lastSettlement.amount) : 0,
-        lastSettledAt: lastSettlement ? lastSettlement.created_at.toISOString() : null,
-      },
     };
   }
 
@@ -6259,10 +6705,6 @@ export async function getMerchantOverview(
       deliveryCharge: { count: deliveredCount, amount: Number(row.delivery_charge_sum) },
       deposited: { count: depositedCount, amount: depositedAmount },
       pendingDeposit: { count: pendingDepositCount, amount: pendingDepositAmount },
-    },
-    codSettlement: {
-      lastAmount: lastSettlement ? Number(lastSettlement.payable_amount ?? lastSettlement.amount) : 0,
-      lastSettledAt: lastSettlement ? lastSettlement.created_at.toISOString() : null,
     },
   };
 }

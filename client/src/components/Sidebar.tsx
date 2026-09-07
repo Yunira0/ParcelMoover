@@ -38,9 +38,16 @@ import {
   Image,
   Megaphone,
   Gauge,
+  Building2,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { getCurrentUserRoles, hasAdminPermission, isAdminSide } from '../utils/auth';
+import {
+  getCurrentUser,
+  getCurrentUserRoles,
+  hasAdminPermission,
+  isAdminSide,
+  isBranchWorkspaceUser,
+} from '../utils/auth';
 import { useStaffPermissions } from '../context/StaffPermissionsContext';
 import { useMobileNav } from '../context/MobileNavContext';
 import { logout } from '../services/auth.service';
@@ -352,12 +359,51 @@ const SalesSidebar: React.FC = () => {
   );
 };
 
+// ── Assigned branch sidebar ──────────────────────────────────────────────────
+// Branch-scoped admins get a purpose-built workspace instead of the head-office
+// information architecture. Their assigned branch stays visible so there is no
+// ambiguity about which cash and orders they are handling.
+const BranchSidebar: React.FC = () => {
+  const { collapsed, mobileOpen } = useSidebarCollapse();
+  const branchName = getCurrentUser()?.locationName?.trim() || 'Assigned branch';
+
+  return (
+    <aside className={asideClassName(collapsed, mobileOpen)}>
+      <SidebarToggleBtn />
+      <div className="sidebar-nav">
+        <div
+          className="branch-workspace-identity"
+          title={collapsed ? branchName : undefined}
+          aria-label={`Branch workspace: ${branchName}`}
+        >
+          <span className="branch-workspace-icon" aria-hidden="true">
+            <Building2 size={18} />
+          </span>
+          <span className="branch-workspace-copy">
+            <strong>{branchName}</strong>
+            <small>Branch workspace</small>
+          </span>
+        </div>
+
+        <SidebarItem to="/orders" icon={Package} label="Orders" />
+        <SidebarItem to="/branches/settlement" icon={Banknote} label="Branch Settlement" />
+        <SidebarItem to="/branches/billing" icon={Wallet} label="Branch Payments" />
+      </div>
+
+      <div className="sidebar-footer">
+        <SidebarLogout />
+      </div>
+    </aside>
+  );
+};
+
 // ── Admin / super-admin sidebar ────────────────────────────────────────────────
 const AdminSidebar: React.FC<{ isSuperAdmin: boolean }> = ({ isSuperAdmin }) => {
   const { collapsed, mobileOpen } = useSidebarCollapse();
   const canReadBooks = isSuperAdmin || hasAdminPermission('ACCOUNTING_ACCESS');
   const canOpenSystem =
     isSuperAdmin || hasAdminPermission('SYSTEM_LOGS_ACCESS') || hasAdminPermission('SETTINGS_ACCESS');
+  const canViewBranchTracking = isSuperAdmin || hasAdminPermission('BRANCH_TRACKING_READ') || hasAdminPermission('BRANCH_TRACKING_WRITE');
   return (
     <aside className={asideClassName(collapsed, mobileOpen)}>
       <SidebarToggleBtn />
@@ -365,6 +411,13 @@ const AdminSidebar: React.FC<{ isSuperAdmin: boolean }> = ({ isSuperAdmin }) => 
         <SidebarItem to="/dashboard" icon={LayoutDashboard} label="Dashboard" />
         <SidebarItem to="/orders" icon={Package} label="Orders" />
         <SidebarItem to="/merchant-overview" icon={Gauge} label="Vendor Overview" />
+        {canViewBranchTracking && (
+          <SidebarItem to="/branches" icon={Building2} label="Branch Overview" />
+        )}
+        {/* Keep the branch money workflow together: after the branch overview,
+            staff can create/view settlements and add payment proof. */}
+        <SidebarItem to="/branches/settlement" icon={Banknote} label="Branch Settlement" />
+        <SidebarItem to="/branches/billing" icon={Wallet} label="Branch Payments" />
 
         <SidebarSection label="Management" />
         {/* Three peers in one column. KYC used to be a fourth entry here; it is
@@ -508,6 +561,9 @@ const AdminSidebar: React.FC<{ isSuperAdmin: boolean }> = ({ isSuperAdmin }) => 
 
 // ── Root — owns collapse state, provides context ───────────────────────────────
 const Sidebar: React.FC = () => {
+  // Subscribe to the permissions refresh so an existing admin session swaps
+  // to the branch shell as soon as /me supplies its branchScoped flag.
+  useStaffPermissions();
   const [collapsed, setCollapsed] = useState(
     () => localStorage.getItem('sidebar-collapsed') === 'true',
   );
@@ -535,6 +591,8 @@ const Sidebar: React.FC = () => {
         <VendorSidebar />
       ) : roles.includes('sales') && !isAdminSide() ? (
         <SalesSidebar />
+      ) : isBranchWorkspaceUser() ? (
+        <BranchSidebar />
       ) : (
         <AdminSidebar isSuperAdmin={roles.includes('super_admin')} />
       )}

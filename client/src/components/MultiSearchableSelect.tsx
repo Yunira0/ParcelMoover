@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useId, useRef, useState } from 'react';
 import { Check, ChevronDown, Search } from 'lucide-react';
 import type { SearchableSelectOption } from './SearchableSelect';
 import './SearchableSelect.css';
@@ -12,7 +12,10 @@ interface MultiSearchableSelectProps {
   searchPlaceholder?: string;
   emptyMessage?: string;
   disabled?: boolean;
+  ariaLabel?: string;
 }
+
+const OPTION_BATCH_SIZE = 50;
 
 /** Multi-select counterpart to SearchableSelect: the panel stays open while you
  * toggle options, and the trigger summarises how many are picked. Shares the
@@ -25,10 +28,13 @@ const MultiSearchableSelect: React.FC<MultiSearchableSelectProps> = ({
   searchPlaceholder = 'Search...',
   emptyMessage = 'No matches found.',
   disabled = false,
+  ariaLabel,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const [visibleLimit, setVisibleLimit] = useState(OPTION_BATCH_SIZE);
   const containerRef = useRef<HTMLDivElement>(null);
+  const listboxId = useId();
 
   const selectedSet = new Set(value);
   const selectedOptions = options.filter(option => selectedSet.has(option.id));
@@ -45,6 +51,11 @@ const MultiSearchableSelect: React.FC<MultiSearchableSelectProps> = ({
 
   const filteredOptions = options.filter(option =>
     option.label.toLowerCase().includes(query.trim().toLowerCase()),
+  );
+  const visibleOptions = filteredOptions.slice(0, visibleLimit);
+  const hiddenCount = filteredOptions.length - visibleOptions.length;
+  const revealNextBatch = () => setVisibleLimit(current =>
+    Math.min(filteredOptions.length, current + OPTION_BATCH_SIZE),
   );
 
   const toggle = (id: string) => {
@@ -63,8 +74,12 @@ const MultiSearchableSelect: React.FC<MultiSearchableSelectProps> = ({
       <button
         type="button"
         className="searchable-select-trigger"
-        onClick={() => setIsOpen(open => !open)}
+        onClick={() => { setIsOpen(open => !open); setVisibleLimit(OPTION_BATCH_SIZE); }}
         disabled={disabled}
+        aria-label={ariaLabel ?? placeholder}
+        aria-haspopup="listbox"
+        aria-expanded={isOpen}
+        aria-controls={listboxId}
       >
         <span
           className={`searchable-select-value${selectedOptions.length ? '' : ' searchable-select-placeholder'}`}
@@ -82,14 +97,27 @@ const MultiSearchableSelect: React.FC<MultiSearchableSelectProps> = ({
             <input
               autoFocus
               value={query}
-              onChange={event => setQuery(event.target.value)}
+              onChange={event => { setQuery(event.target.value); setVisibleLimit(OPTION_BATCH_SIZE); }}
               placeholder={searchPlaceholder}
+              aria-label={searchPlaceholder}
             />
           </label>
-          <div className="searchable-select-options searchable-select-options--multi">
+          <div
+            id={listboxId}
+            role="listbox"
+            aria-multiselectable="true"
+            className="searchable-select-options searchable-select-options--multi"
+            onScroll={(event) => {
+              const target = event.currentTarget;
+              if (hiddenCount > 0 && target.scrollHeight - target.scrollTop - target.clientHeight < 80) {
+                revealNextBatch();
+              }
+            }}
+          >
             {filteredOptions.length === 0 ? (
               <p className="searchable-select-empty">{emptyMessage}</p>
-            ) : filteredOptions.map(option => {
+            ) : <>
+              {visibleOptions.map(option => {
               const checked = selectedSet.has(option.id);
               return (
                 <button
@@ -97,13 +125,20 @@ const MultiSearchableSelect: React.FC<MultiSearchableSelectProps> = ({
                   type="button"
                   className={`searchable-select-option searchable-select-option--multi ${checked ? 'selected' : ''}`}
                   onClick={() => toggle(option.id)}
-                  aria-pressed={checked}
+                  role="option"
+                  aria-selected={checked}
                 >
                   <span className="searchable-select-check">{checked && <Check size={14} />}</span>
                   <span>{option.label}</span>
                 </button>
               );
-            })}
+              })}
+              {hiddenCount > 0 && (
+                <button type="button" className="searchable-select-more" onClick={revealNextBatch}>
+                  Load next {Math.min(OPTION_BATCH_SIZE, hiddenCount)} · {hiddenCount} remaining
+                </button>
+              )}
+            </>}
           </div>
         </div>
       )}

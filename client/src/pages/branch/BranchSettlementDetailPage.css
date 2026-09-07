@@ -1,0 +1,14 @@
+.bsd-page { max-width: 1500px; }
+.bsd-heading { align-items: flex-start; display: flex; gap: var(--space-4); justify-content: space-between; }
+.bsd-heading h1 { color: var(--color-text-default); font-size: var(--font-size-2xl); line-height: var(--line-height-2xl); margin: 0 0 var(--space-1); }
+.bsd-heading p { color: var(--color-text-caption); margin: 0; }
+.bsd-ledger { background: var(--color-background-surface); border: 1px solid var(--color-border-default); display: grid; grid-template-columns: repeat(5, minmax(160px, 1fr)); overflow-x: auto; }
+.bsd-ledger > div { display: flex; flex-direction: column; gap: var(--space-1); min-width: 160px; padding: var(--space-4) var(--space-5); }
+.bsd-ledger > div + div { border-left: 1px solid var(--color-border-default); }
+.bsd-ledger span, .bsd-ledger small, .bsd-payment-actions span { color: var(--color-text-caption); font-size: var(--font-size-xs); }
+.bsd-ledger strong { color: var(--color-text-default); font-size: var(--font-size-lg); font-variant-numeric: tabular-nums; }
+.bsd-payment-form { display: flex; flex-direction: column; gap: var(--space-4); }
+.bsd-payment-row { align-items: end; display: grid; gap: var(--space-3); grid-template-columns: minmax(180px, 1fr) minmax(150px, 220px) auto; }
+.bsd-payment-row .form-group { margin: 0; }
+.bsd-payment-actions { align-items: center; display: flex; flex-wrap: wrap; gap: var(--space-3); }
+@media (max-width: 680px) { .bsd-heading { align-items: stretch; flex-direction: column; } .bsd-payment-row { grid-template-columns: 1fr auto; } .bsd-payment-row .form-group:first-child { grid-column: 1 / -1; } }

@@ -70,6 +70,8 @@ export interface VendorBillingStatus extends VendorAccountBalance, BillingThresh
 
 export interface BillingSettings extends BillingThresholds {
   id: string;
+  branchWarnThreshold: number;
+  branchBlockThreshold: number;
   paymentQrPath: string | null;
   paymentNote: string | null;
 }
@@ -99,6 +101,8 @@ export async function getBillingSettings(): Promise<BillingSettings> {
     id: settings.id,
     warnThreshold: money(settings.warn_threshold),
     blockThreshold: money(settings.block_threshold),
+    branchWarnThreshold: money(settings.branch_warn_threshold),
+    branchBlockThreshold: money(settings.branch_block_threshold),
     paymentQrPath: settings.payment_qr_path,
     paymentNote: settings.payment_note,
   };
@@ -124,6 +128,8 @@ export async function updateBillingSettings(
   input: {
     warnThreshold?: number;
     blockThreshold?: number;
+    branchWarnThreshold?: number;
+    branchBlockThreshold?: number;
     paymentQrPath?: string | null;
     paymentNote?: string | null;
   },
@@ -131,11 +137,16 @@ export async function updateBillingSettings(
   const current = await getBillingSettings();
   const warn = input.warnThreshold ?? current.warnThreshold;
   const block = input.blockThreshold ?? current.blockThreshold;
+  const branchWarn = input.branchWarnThreshold ?? current.branchWarnThreshold;
+  const branchBlock = input.branchBlockThreshold ?? current.branchBlockThreshold;
 
   // The block threshold must be the harsher of the two, or a vendor could be
   // blocked before ever being warned.
   if (block > warn) {
     throw new AppError(400, "blockThreshold must be less than or equal to warnThreshold");
+  }
+  if (branchBlock > branchWarn) {
+    throw new AppError(400, "branchBlockThreshold must be less than or equal to branchWarnThreshold");
   }
 
   await prisma.billing_settings.update({
@@ -143,6 +154,8 @@ export async function updateBillingSettings(
     data: {
       warn_threshold: warn,
       block_threshold: block,
+      branch_warn_threshold: branchWarn,
+      branch_block_threshold: branchBlock,
       ...(input.paymentQrPath !== undefined ? { payment_qr_path: input.paymentQrPath } : {}),
       ...(input.paymentNote !== undefined ? { payment_note: input.paymentNote } : {}),
     },
@@ -154,8 +167,8 @@ export async function updateBillingSettings(
       entity_type: "billing_settings",
       entity_id: current.id,
       action: "UPDATE_BILLING_SETTINGS",
-      old_data: { warnThreshold: current.warnThreshold, blockThreshold: current.blockThreshold },
-      new_data: { warnThreshold: warn, blockThreshold: block },
+      old_data: { warnThreshold: current.warnThreshold, blockThreshold: current.blockThreshold, branchWarnThreshold: current.branchWarnThreshold, branchBlockThreshold: current.branchBlockThreshold },
+      new_data: { warnThreshold: warn, blockThreshold: block, branchWarnThreshold: branchWarn, branchBlockThreshold: branchBlock },
     },
   });
 

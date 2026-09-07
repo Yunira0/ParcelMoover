@@ -82,6 +82,63 @@
   border-radius: 4px;
 }
 
+/* ── Assigned branch identity ─────────────────────────────────────────────── */
+.branch-workspace-identity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  margin: 0 2px 10px;
+  padding: 8px 10px 12px;
+  border-bottom: 1px solid var(--color-border-default);
+  color: var(--color-text-default);
+}
+
+.branch-workspace-icon {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border-radius: 8px;
+  color: var(--color-background-primary-default);
+  background: var(--color-background-primary-invert-default);
+}
+
+.branch-workspace-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.branch-workspace-copy strong {
+  overflow: hidden;
+  color: var(--color-text-default);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semi-bold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.branch-workspace-copy small {
+  color: var(--color-text-caption);
+  font-size: var(--font-size-xs);
+}
+
+.sidebar--collapsed .branch-workspace-identity {
+  width: 40px;
+  justify-content: center;
+  margin: 0 0 10px;
+  padding: 8px 4px 12px;
+  box-sizing: border-box;
+}
+
+.sidebar--collapsed .branch-workspace-copy {
+  display: none;
+}
+
 /* ── Top-level nav item ────────────────────────────────────────────────────── */
 .sidebar-item {
   display: flex;
@@ -396,6 +453,17 @@
   .sidebar--collapsed.sidebar--mobile-open .sidebar-label,
   .sidebar--collapsed.sidebar--mobile-open .sidebar-section-label {
     display: block;
+  }
+
+  .sidebar--collapsed.sidebar--mobile-open .branch-workspace-identity {
+    width: auto;
+    justify-content: flex-start;
+    margin: 0 2px 10px;
+    padding: 8px 10px 12px;
+  }
+
+  .sidebar--collapsed.sidebar--mobile-open .branch-workspace-copy {
+    display: flex;
   }
 
   .sidebar--collapsed.sidebar--mobile-open .sidebar-subnav {

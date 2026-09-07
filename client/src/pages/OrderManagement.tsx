@@ -51,7 +51,7 @@ import {
   type OrderSortField,
   type ParcelStatus,
 } from '../services/orders.service';
-import { searchVendors } from '../services/users.service';
+import { searchVendors, getAdmins } from '../services/users.service';
 import { printLabels } from '../utils/printLabels';
 import { getCurrentUserRoles } from '../utils/auth';
 import { apiErrorMessage } from '../utils/serverValidation';
@@ -178,7 +178,9 @@ interface SecondaryFilters {
   dateTo: string;
   /** Multi-select vendor ids; pushed to the server, empty = all. */
   vendor: string[];
-  operationDept: string;
+  /** Single sales-user id; pushed to the server (an order carries no sales
+   *  field of its own, so it can't be re-checked client-side). Empty = all. */
+  salesUserId: string;
 }
 
 // Case-insensitive substring match of the keyword against the order's names
@@ -201,27 +203,21 @@ const matchesKeyword = (order: Order, keyword: string) => {
 };
 
 // Filters the backend doesn't have a query param for (origin/rider/keyword/
-// destination/department) - applied client-side on top of whatever page the
-// server already returned for the active tab + search. Status, vendor and the
-// date range are also re-checked here, but only as a no-op safety net: all
-// three are pushed down to the query, so the rows are already narrowed
-// server-side.
+// destination) - applied client-side on top of whatever page the server
+// already returned for the active tab + search. Status, vendor and the date
+// range are also re-checked here, but only as a no-op safety net: all three
+// are pushed down to the query, so the rows are already narrowed server-side.
+// The sales filter is push-down only (an order carries no sales field to
+// re-check), so it isn't part of the match below.
 
 const matchesSecondaryFilters = (order: Order, filters: SecondaryFilters) => {
-  const matchesOperation =
-    !filters.operationDept ||
-    (filters.operationDept === 'pickup' && ['pickup_ordered', 'rider_assigned', 'picked_up'].includes(order.status)) ||
-    (filters.operationDept === 'delivery' && ['ready_to_deliver', 'sent_for_delivery', 'delivered', 'partially_delivered', 'failed_delivery'].includes(order.status)) ||
-    (filters.operationDept === 'returns' && order.orderType === 'return');
-
   return (!filters.originHub || order.origin === filters.originHub) &&
     (!filters.riderName || order.riderName === filters.riderName) &&
     matchesKeyword(order, filters.keyword) &&
     (!filters.destinationHub || order.destination === filters.destinationHub) &&
     (filters.currentStatus.length === 0 || filters.currentStatus.includes(order.status)) &&
     (!filters.orderType || order.orderType === filters.orderType) &&
-    (filters.vendor.length === 0 || (!!order.vendorId && filters.vendor.includes(order.vendorId))) &&
-    matchesOperation;
+    (filters.vendor.length === 0 || (!!order.vendorId && filters.vendor.includes(order.vendorId)));
 };
 
 const orderToCreateInput = (order: Order): CreateOrderInput => ({
@@ -301,7 +297,12 @@ const OrderManagement: React.FC = () => {
   const [dateFrom, setDateFrom] = useState(() => searchParams.get('dateFrom') || '');
   const [dateTo, setDateTo] = useState(() => searchParams.get('dateTo') || '');
   const [vendor, setVendor] = useState<string[]>(() => searchParams.getAll('vendor'));
-  const [operationDept, setOperationDept] = useState(() => searchParams.get('operationDept') || '');
+  const [salesUserId, setSalesUserId] = useState(() => searchParams.get('salesUserId') || '');
+  // Sales-department admins, for the SALES filter. Staff-only: the /users/admins
+  // endpoint behind it is super_admin/admin, and a sales/vendor actor's list is
+  // already scoped to their own vendors, so the filter would be a no-op anyway.
+  const canFilterBySales = getCurrentUserRoles().some((r) => ['super_admin', 'admin'].includes(r));
+  const [salesOptions, setSalesOptions] = useState<Array<{ value: string; label: string }>>([]);
   const pager = useCursorPagination();
   const [pageSizeChoice, setPageSizeChoice] = useState(PAGE_SIZE);
   const [sortBy, setSortBy] = useState<OrderSortField | undefined>(() => {
@@ -338,7 +339,7 @@ const OrderManagement: React.FC = () => {
   };
 
   const secondaryFilters: SecondaryFilters = {
-    originHub, riderName, keyword, destinationHub, currentStatus, orderType, dateField, dateFrom, dateTo, vendor, operationDept,
+    originHub, riderName, keyword, destinationHub, currentStatus, orderType, dateField, dateFrom, dateTo, vendor, salesUserId,
   };
   // Arrays are truthy even when empty, so check length for the multi-select filters.
   // dateField is a mode toggle (not itself a filter), so it never counts as active.
@@ -401,6 +402,9 @@ const OrderManagement: React.FC = () => {
         // client-side only ever narrowed the page already fetched, so picking a
         // vendor with no parcels on the current page showed an empty table.
         vendorId: vendor.length ? vendor : undefined,
+        // Server joins this through vendors.sales_user_id — the order rows carry
+        // no sales field, so it has to be a push-down filter.
+        salesUserId: salesUserId || undefined,
         pageSize,
         cursor: pager.request.cursor,
         dir: pager.request.dir,
@@ -419,11 +423,11 @@ const OrderManagement: React.FC = () => {
     } finally {
       if (requestId === loadRequestIdRef.current) setLoading(false);
     }
-  }, [filter, currentStatus, vendor, debouncedSearch, pager.request, sortBy, sortDir, pageSizeChoice, dateField, dateFrom, dateTo]);
+  }, [filter, currentStatus, vendor, salesUserId, debouncedSearch, pager.request, sortBy, sortDir, pageSizeChoice, dateField, dateFrom, dateTo]);
 
   useEffect(() => { loadOrders(); }, [loadOrders]);
   useEffect(() => subscribeToOrderStatusChanged(loadOrders), [loadOrders]);
-  useEffect(() => { pager.reset(); }, [filter, debouncedSearch, originHub, riderName, keyword, destinationHub, currentStatus, orderType, dateField, dateFrom, dateTo, vendor, operationDept, sortBy, sortDir, pager.reset]);
+  useEffect(() => { pager.reset(); }, [filter, debouncedSearch, originHub, riderName, keyword, destinationHub, currentStatus, orderType, dateField, dateFrom, dateTo, vendor, salesUserId, sortBy, sortDir, pager.reset]);
   // Re-sync when the navbar search re-navigates here with a new ?search= param -
   // but not when the URL change is just our own sync below echoing back.
   useEffect(() => {
@@ -450,13 +454,13 @@ const OrderManagement: React.FC = () => {
     if (dateFrom) next.set('dateFrom', dateFrom);
     if (dateTo) next.set('dateTo', dateTo);
     vendor.forEach(value => next.append('vendor', value));
-    if (operationDept) next.set('operationDept', operationDept);
+    if (salesUserId) next.set('salesUserId', salesUserId);
     if (sortBy) next.set('sortBy', sortBy);
     if (sortDir !== 'desc') next.set('sortDir', sortDir);
     lastSyncedSearchRef.current = combinedSearch;
     setSearchParams(next, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filter, combinedSearch, originHub, riderName, keyword, destinationHub, currentStatus, orderType, dateField, dateFrom, dateTo, vendor, operationDept, sortBy, sortDir]);
+  }, [filter, combinedSearch, originHub, riderName, keyword, destinationHub, currentStatus, orderType, dateField, dateFrom, dateTo, vendor, salesUserId, sortBy, sortDir]);
 
   // A separate, tab-scoped (unsearched, unpaginated) fetch purely to keep the
   // filter dropdown option lists representative - the paginated `orders` above
@@ -476,6 +480,29 @@ const OrderManagement: React.FC = () => {
     return () => { cancelled = true; };
   }, [filter]);
 
+  // Sales-department admins for the SALES filter dropdown. Fetched once; the
+  // list is small enough that one large page covers every rep.
+  useEffect(() => {
+    if (!canFilterBySales) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await getAdmins({ pageSize: 100, status: 'active' });
+        if (!cancelled && res?.success && Array.isArray(res.data)) {
+          setSalesOptions(
+            res.data
+              .filter((a: any) => (a.department || '').toLowerCase() === 'sales')
+              .map((a: any) => ({ value: a.userId as string, label: a.name as string }))
+              .filter((o: { value?: string; label?: string }) => o.value && o.label),
+          );
+        }
+      } catch {
+        // The filter just won't have options; not fatal.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [canFilterBySales]);
+
   // Tab badge totals. Deliberately not scoped to the active tab (it feeds every
   // tab at once) and deliberately not read off `meta.total`, which only ever
   // describes the tab currently open. Carries the same non-status filters the
@@ -486,6 +513,7 @@ const OrderManagement: React.FC = () => {
       const res = await getOrderCountsByStatus({
         search: debouncedSearch || undefined,
         vendorId: vendor.length ? vendor : undefined,
+        salesUserId: salesUserId || undefined,
         ...(dateFrom || dateTo ? { dateField } : {}),
         ...(dateFrom ? { dateFrom } : {}),
         ...(dateTo ? { dateTo } : {}),
@@ -495,7 +523,7 @@ const OrderManagement: React.FC = () => {
       // Badges keep their previous numbers; the table below is the source of
       // truth either way, so a failed count fetch shouldn't surface an error.
     }
-  }, [debouncedSearch, vendor, dateField, dateFrom, dateTo]);
+  }, [debouncedSearch, vendor, salesUserId, dateField, dateFrom, dateTo]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -550,7 +578,7 @@ const OrderManagement: React.FC = () => {
   const filteredOrders = useMemo(
     () => orders.filter(order => matchesSecondaryFilters(order, secondaryFilters)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [orders, originHub, riderName, keyword, destinationHub, currentStatus, orderType, dateField, dateFrom, dateTo, vendor, operationDept],
+    [orders, originHub, riderName, keyword, destinationHub, currentStatus, orderType, dateField, dateFrom, dateTo, vendor, salesUserId],
   );
 
   const totalPages = meta?.totalPages ?? 1;
@@ -591,7 +619,7 @@ const OrderManagement: React.FC = () => {
     setDateFrom('');
     setDateTo('');
     setVendor([]);
-    setOperationDept('');
+    setSalesUserId('');
   };
 
   // Who may create a single order - mirrors the /orders/create route's allowed
@@ -1105,17 +1133,15 @@ const OrderManagement: React.FC = () => {
               searchPlaceholder="Search vendor by name..."
               asyncSearch={handleVendorFilterSearch}
             />
-            <FilterDropdown
-              label="OPERATION DEPT"
-              value={operationDept}
-              onChange={setOperationDept}
-              placeholder="All Departments"
-              options={[
-                { value: 'pickup', label: 'Pickup' },
-                { value: 'delivery', label: 'Delivery' },
-                { value: 'returns', label: 'Returns' },
-              ]}
-            />
+            {canFilterBySales && (
+              <FilterDropdown
+                label="SALES"
+                value={salesUserId}
+                onChange={setSalesUserId}
+                placeholder="All Sales"
+                options={salesOptions}
+              />
+            )}
             <MultiFilterDropdown
               label="CURRENT STATUS"
               className="order-filter-span-2"

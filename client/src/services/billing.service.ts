@@ -66,6 +66,8 @@ export interface BillingSettings {
   id: string;
   warnThreshold: number;
   blockThreshold: number;
+  branchWarnThreshold: number;
+  branchBlockThreshold: number;
   paymentQrPath: string | null;
   paymentNote: string | null;
 }
@@ -134,6 +136,8 @@ export const getBillingSettings = async (): Promise<BillingSettings> => {
 export const updateBillingSettings = async (input: {
   warnThreshold?: number;
   blockThreshold?: number;
+  branchWarnThreshold?: number;
+  branchBlockThreshold?: number;
   paymentNote?: string | null;
 }): Promise<BillingSettings> => {
   const response = await api.patch('/billing/settings', input);

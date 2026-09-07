@@ -237,6 +237,10 @@ export const listOrdersQuerySchema = paginationQuerySchema.extend({
   // tracking ids (~26 chars each incl. separator). Sized for the client's
   // 500-term scan batch cap (scannerInput.ts MAX_SCANNED_TERMS) with margin.
   search: z.string().max(15000).optional(),
+  // Narrows the list to parcels whose vendor is assigned to this sales user
+  // (an admin in the Sales department). Joined through vendors.sales_user_id
+  // server-side and intersected with the caller's own scope.
+  salesUserId: optionalUuidSchema,
   // Narrows the list to parcels carried by one delivery rider.
   deliveryRiderId: optionalUuidSchema,
   // Keyset pagination: opaque cursor + walk direction. A malformed cursor is
@@ -283,6 +287,7 @@ export const orderFilterOptionsQuerySchema = z.object({
 export const orderCountByStatusQuerySchema = z.object({
   orderType: listOrdersQuerySchema.shape.orderType,
   vendorId: listOrdersQuerySchema.shape.vendorId,
+  salesUserId: listOrdersQuerySchema.shape.salesUserId,
   search: listOrdersQuerySchema.shape.search,
   deliveryRiderId: listOrdersQuerySchema.shape.deliveryRiderId,
   deliveredToday: listOrdersQuerySchema.shape.deliveredToday,

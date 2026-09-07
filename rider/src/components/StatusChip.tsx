@@ -14,7 +14,7 @@ export const STATUS_LABEL: Record<ParcelStatus, string> = {
   arrived:             'At Origin Hub',
   ready_to_deliver:    'Ready to Deliver',
   sent_for_delivery:   'Out for Delivery',
-  oov:                 'Out of Vicinity',
+  oov:                 'Transit',
   dispatched:          'Dispatched',
   arrived_at_branch:   'At Destination',
   hold:                'On Hold',

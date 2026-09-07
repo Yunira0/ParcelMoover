@@ -98,6 +98,11 @@ const ForceChangePasswordPage = lazy(() => import('./pages/ForceChangePasswordPa
 const KycApplicationPage = lazy(() => import('./pages/KycApplicationPage'))
 const SystemLogs = lazy(() => import('./pages/SystemLogs'))
 const ProfilePage = lazy(() => import('./pages/ProfilePage'))
+const BranchOverview = lazy(() => import('./pages/branch/BranchOverview'))
+const BranchSettlement = lazy(() => import('./pages/branch/BranchSettlement'))
+const BranchSettlementCreatePage = lazy(() => import('./pages/branch/BranchSettlementCreatePage'))
+const BranchSettlementDetailPage = lazy(() => import('./pages/branch/BranchSettlementDetailPage'))
+const BranchBilling = lazy(() => import('./pages/branch/BranchBilling'))
 
 function App() {
 
@@ -136,6 +141,32 @@ function App() {
           <Route
             path="/merchant-overview"
             element={<RoleGuard allowedRoles={['super_admin', 'admin']}><MerchantOverview /></RoleGuard>}
+          />
+          {/* Branch Tracking — cross-hub monitoring. Default super_admin only;
+              a super_admin may grant a branch admin BRANCH_TRACKING_READ (or
+              _WRITE, which implies read). RoleGuard treats super_admin as
+              holding every adminPermission, so the READ gate covers both. */}
+          <Route
+            path="/branches"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']} adminPermission="BRANCH_TRACKING_READ"><BranchOverview /></RoleGuard>}
+          />
+          <Route
+            path="/branches/settlement"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']}><BranchSettlement /></RoleGuard>}
+          />
+          {/* Assigned branch admins create only their own statements; the API
+              validates the assigned branch and keeps cross-branch tracking restricted. */}
+          <Route
+            path="/branches/settlement/new"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']}><BranchSettlementCreatePage /></RoleGuard>}
+          />
+          <Route
+            path="/branches/settlement/:id"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']}><BranchSettlementDetailPage /></RoleGuard>}
+          />
+          <Route
+            path="/branches/billing"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']}><BranchBilling /></RoleGuard>}
           />
           {/* Drill-down behind a line of the COD Settlement card. Same audience
               as the card itself (Dashboard.tsx), which DashboardRouter shows to

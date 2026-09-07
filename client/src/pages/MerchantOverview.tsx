@@ -3,7 +3,6 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { Download } from 'lucide-react';
 import MerchantOverviewCards from '../components/merchant/MerchantOverviewCards';
 import MerchantFilterBar from '../components/merchant/MerchantFilterBar';
-import MerchantLastSettlement from '../components/merchant/MerchantLastSettlement';
 import Table from '../components/Table';
 import Pagination from '../components/Pagination';
 import StatusChip from '../components/StatusChip';
@@ -307,13 +306,6 @@ const MerchantOverview: React.FC = () => {
         activeKey={activeCard}
         onSelect={setActiveCard}
       />
-
-      {summary?.codSettlement && (
-        <MerchantLastSettlement
-          data={summary.codSettlement}
-          loading={loading}
-        />
-      )}
 
       {error && <p className="order-load-error">{error}</p>}
 

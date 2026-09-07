@@ -13,6 +13,8 @@ import SegmentedTabs from '../components/SegmentedTabs';
 import PageHeader from '../components/PageHeader';
 import Pagination from '../components/Pagination';
 import QuickRemarkPopup from '../components/QuickRemarkPopup';
+import TransitManifestPanel from '../components/TransitManifestPanel';
+import SearchableSelect from '../components/SearchableSelect';
 import {
   bulkUpdateOrderStatus,
   getOrders,
@@ -26,6 +28,8 @@ import {
 import { downloadExcel } from '../utils/excel';
 import { handoffToNcm } from '../services/ncm.service';
 import { handoffParcelsToUpaya } from '../services/upaya.service';
+import { addOrdersToBranchManifest } from '../services/transitManifests.service';
+import { listBranches, type Branch } from '../services/branchTracking.service';
 import { toBsDate, toBsDateTimeCell } from '../utils/nepaliDate';
 import { STATUS_TIMELINE_HEADERS, statusTimelineCells } from '../utils/orderStatus';
 import { printLabels } from '../utils/printLabels';
@@ -117,6 +121,15 @@ const OOVOperations: React.FC = () => {
     const fromUrl = searchParams.get('tab');
     return fromUrl && fromUrl in TAB_LABELS ? (fromUrl as OOVTab) : 'oov';
   });
+  // The tab bar carries two extra views for transit manifests, sitting between
+  // the two parcel tabs. Only 'oov'/'dispatched' drive the parcel table below.
+  const [view, setView] = useState<'oov' | 'open_manifest' | 'received' | 'dispatched'>(() => {
+    const fromUrl = searchParams.get('tab');
+    return fromUrl === 'open_manifest' || fromUrl === 'received' || fromUrl === 'dispatched'
+      ? fromUrl
+      : 'oov';
+  });
+  const isManifestView = view === 'open_manifest' || view === 'received';
   const [searchQuery, setSearchQuery] = useState(() => searchParams.get('search') || '');
   // Tracking ids confirmed by pressing Enter (typically a barcode scanner) -
   // kept separate from the live input buffer so rapid scans never race each
@@ -140,7 +153,16 @@ const OOVOperations: React.FC = () => {
   const [remarkPopupOrder, setRemarkPopupOrder] = useState<Order | null>(null);
   const [dispatchMethod, setDispatchMethod] = useState<'manifest' | 'tpl' | 'upaya'>('manifest');
   const [reasonRemarks, setReasonRemarks] = useState('');
+  // "Via Manifest" doesn't change status at all - it stages the selection onto
+  // whichever manifest heads for this branch (opening one if needed) instead
+  // of calling the status API. Parcels stay `oov` until that manifest is
+  // dispatched from the Open Manifest tab.
+  const [branches, setBranches] = useState<Branch[]>([]);
+  const [manifestBranchId, setManifestBranchId] = useState('');
+  const [manifestNotice, setManifestNotice] = useState('');
   const [tabCounts, setTabCounts] = useState<Record<string, number>>({});
+
+  useEffect(() => { listBranches().then(setBranches).catch(() => {}); }, []);
 
   // Badge counts follow the search, so a scanned parcel shows "1" on its tab
   // instead of the unfiltered total. Guarded so a slow earlier request can't
@@ -320,6 +342,11 @@ const OOVOperations: React.FC = () => {
       return;
     }
 
+    if (isDispatchAction && dispatchMethod === 'manifest' && !manifestBranchId) {
+      setActionError('Pick the destination branch.');
+      return;
+    }
+
     const ids = selectedOrders.map(order => String(order.id));
     setStatusUpdating(true);
     setStatusUpdateProgress({ completed: 0, total: ids.length });
@@ -331,7 +358,18 @@ const OOVOperations: React.FC = () => {
       const failed: Array<{ trackingId: string; error?: string }> = [];
       let completed = 0;
 
-      if (isDispatchAction && dispatchMethod === 'tpl') {
+      // Via Manifest never calls the status API - it stages the selection onto
+      // whichever manifest heads for the chosen branch. Status only changes
+      // once that manifest is dispatched from the Open Manifest tab.
+      if (isDispatchAction && dispatchMethod === 'manifest') {
+        const res = await addOrdersToBranchManifest(ids, manifestBranchId);
+        if (res.data.rejected.length > 0) {
+          setActionError(res.data.rejected.map(r => `${r.trackingId}: ${r.reason}`).join(' · '));
+          await loadOovOrders();
+          return;
+        }
+        setManifestNotice(res.message);
+      } else if (isDispatchAction && dispatchMethod === 'tpl') {
         // Hand off to NCM: creates their orders; parcels stay
         // in Transit until the partner's pickup webhook moves them to In Transit.
         for (const batch of batches) {
@@ -379,6 +417,7 @@ const OOVOperations: React.FC = () => {
       setIsActionOpen(false);
       setSelectedNextStatus('');
       setDispatchMethod('manifest');
+      setManifestBranchId('');
       setReasonRemarks('');
     } catch (err: unknown) {
       // Earlier batches are committed independently. Refresh before showing a
@@ -565,12 +604,25 @@ const OOVOperations: React.FC = () => {
 
       <SegmentedTabs
         ariaLabel="Order operation filters"
-        value={activeTab}
-        onChange={setActiveTab}
-        options={(Object.keys(TAB_LABELS) as OOVTab[]).map(tab => ({ value: tab, label: TAB_LABELS[tab], count: tabCounts[tab] }))}
+        value={view}
+        onChange={(v) => {
+          setView(v);
+          if (v === 'oov' || v === 'dispatched') setActiveTab(v);
+        }}
+        options={[
+          { value: 'oov', label: TAB_LABELS.oov, count: tabCounts['oov'] },
+          { value: 'open_manifest', label: 'Open Manifest' },
+          { value: 'dispatched', label: TAB_LABELS.dispatched, count: tabCounts['dispatched'] },
+          { value: 'received', label: 'Receive Manifest' },
+        ]}
       />
 
+      {isManifestView ? (
+        <TransitManifestPanel statusFilter={view === 'received' ? 'received' : 'active'} />
+      ) : (
+      <>
       {loadError && <p className="oov-action-error">{loadError}</p>}
+      {manifestNotice && <p className="oov-action-notice">{manifestNotice}</p>}
 
       <div className="oov-toolbar">
         <div />
@@ -651,6 +703,24 @@ const OOVOperations: React.FC = () => {
                     </label>
                   </div>
                 )}
+                {isDispatchAction && dispatchMethod === 'manifest' && (
+                  <div className="oov-manifest-fields">
+                    <label className="oov-reason-label">Destination Branch</label>
+                    <SearchableSelect
+                      options={branches.map(b => ({ id: b.id, label: b.name, description: b.district ?? undefined }))}
+                      value={manifestBranchId}
+                      onChange={setManifestBranchId}
+                      placeholder="Where are these leaving for?"
+                      searchPlaceholder="Search branches…"
+                      disabled={statusUpdating}
+                    />
+                    <p className="oov-status-empty">
+                      Orders not covered by this branch are skipped. The rest are staged onto that
+                      branch's manifest (a free open one, or a new one) and stay in Transit -
+                      nothing dispatches until that manifest is sent from the Open Manifest tab.
+                    </p>
+                  </div>
+                )}
                 {isDispatchAction && dispatchMethod === 'tpl' && (
                   <div className="oov-manifest-fields">
                     <p className="oov-status-empty">
@@ -698,11 +768,18 @@ const OOVOperations: React.FC = () => {
                     variant="primary"
                     className="oov-apply-btn"
                     onClick={applyStatusChange}
-                    disabled={statusUpdating || !effectiveNextStatus || (isReasonRequiredAction && !reasonRemarks.trim())}
+                    disabled={
+                      statusUpdating ||
+                      !effectiveNextStatus ||
+                      (isReasonRequiredAction && !reasonRemarks.trim()) ||
+                      (isDispatchAction && dispatchMethod === 'manifest' && !manifestBranchId)
+                    }
                   >
                     {statusUpdating
                       ? `Processing ${statusUpdateProgress?.completed ?? 0}/${statusUpdateProgress?.total ?? selectedOrders.length}...`
-                      : 'Submit'}
+                      : isDispatchAction && dispatchMethod === 'manifest'
+                        ? 'Add to manifest'
+                        : 'Submit'}
                   </Button>
                 </div>
               </div>
@@ -789,6 +866,8 @@ const OOVOperations: React.FC = () => {
           trackingId={remarkPopupOrder.trackingId}
           onClose={() => setRemarkPopupOrder(null)}
         />
+      )}
+      </>
       )}
     </div>
   );

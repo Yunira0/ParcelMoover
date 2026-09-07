@@ -467,6 +467,7 @@ const VendorOrders: React.FC = () => {
       accessor: (order: Order) => (
         <div className="vo-amount-cell">
           <span>Cod Amount: NPR. {formatMoney(order.codAmount)}</span>
+          <span>Collected Cod: NPR. {formatMoney(order.collectedAmount)}</span>
           <span>Service Charge: NPR. {formatMoney(order.deliveryCharge)}</span>
         </div>
       ),

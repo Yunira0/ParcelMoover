@@ -7,6 +7,8 @@ vi.mock("../../lib/prisma", () => ({
     locations: { findUnique: vi.fn() },
     vendors: { findUnique: vi.fn(), findMany: vi.fn() },
     riders: { findFirst: vi.fn() },
+    // Not branch-scoped by default - see getAdminBranchScope in order.service.ts.
+    admins: { findFirst: vi.fn().mockResolvedValue(null) },
     $transaction: vi.fn(),
   },
 }));

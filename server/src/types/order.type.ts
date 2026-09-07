@@ -131,6 +131,10 @@ export interface ListOrdersQuery {
   // Narrow the list to these vendors. Always intersected with the actor's own
   // scope, so it can only ever shrink what a vendor/sales actor already sees.
   vendorId?: string[];
+  // Narrow the list to parcels whose vendor is owned by this sales user
+  // (vendors.sales_user_id). Like `vendorId`, it's a separate AND condition
+  // intersected with the actor's own scope, never a way to widen it.
+  salesUserId?: string;
   // Narrows the list to parcels carried by one delivery rider.
   deliveryRiderId?: string;
   // Display-only page hint echoed back in meta; the actual position comes
@@ -156,6 +160,12 @@ export interface ListOrdersQuery {
   // Inclusive Nepal-local day bounds, "YYYY-MM-DD".
   dateFrom?: string;
   dateTo?: string;
+  /** Vendor settlement state used by Merchant Overview. */
+  settlement?: "settled" | "pending";
+  /** Internal-only branch scope. These are never accepted by GET /orders. */
+  originLocationIds?: string[];
+  destinationLocationIds?: string[];
+  branchSettlement?: "settled" | "pending" | "unassigned";
   // Lists trashed (soft-deleted) parcels instead of live ones. Deliberately
   // absent from listOrdersQuerySchema so ?trashed=true on the public list
   // endpoint is stripped before it reaches the service — only the admin-only
@@ -183,6 +193,16 @@ export interface BulkUpdateParcelStatusInput {
    * that schema would let anyone close someone else's manifest.
    */
   returnManifestId?: string;
+  /**
+   * The transit manifest driving this transition, set only by
+   * transitManifest.service - never accepted over HTTP.
+   *
+   * Same contract as returnManifestId above: bulkUpdateOrderStatusSchema
+   * deliberately omits it, and validate() strips unknown keys, so a client
+   * cannot inject it into PATCH /orders/bulk-status. Adding it to that schema
+   * would let anyone dispatch onto someone else's manifest.
+   */
+  transitManifestId?: string;
 }
 
 export interface BulkCreateOrderInput {
