@@ -29,6 +29,8 @@ const RATE_SELECT = {
   branch_zone_inside_valley: true,
   return_inside_valley_percent: true,
   return_outside_valley_percent: true,
+  branch_return_inside_valley_percent: true,
+  branch_return_outside_valley_percent: true,
 } as const;
 
 // Resolve the vendor whose rates apply to this request: vendor/vendor_staff
@@ -67,6 +69,8 @@ async function loadVendorRateConfig(actor: Express.Request["user"], requestedVen
     extraWeightPercent: num(vendor.extra_weight_percent),
     returnInsideValleyPercent: num(vendor.return_inside_valley_percent),
     returnOutsideValleyPercent: num(vendor.return_outside_valley_percent),
+    branchReturnInsideValleyPercent: num(vendor.branch_return_inside_valley_percent),
+    branchReturnOutsideValleyPercent: num(vendor.branch_return_outside_valley_percent),
     branchFlatInsideValley: num(vendor.branch_flat_inside_valley),
     branchFlatOutsideValley: num(vendor.branch_flat_outside_valley),
     branchZoneMajorCities: num(vendor.branch_zone_major_cities),
@@ -129,6 +133,8 @@ export async function getVendorQuoteController(req: Request, res: Response) {
       branch_zone_inside_valley: true,
       return_inside_valley_percent: true,
       return_outside_valley_percent: true,
+      branch_return_inside_valley_percent: true,
+      branch_return_outside_valley_percent: true,
     } as const;
 
     let vendor = null;
@@ -165,6 +171,8 @@ export async function getVendorQuoteController(req: Request, res: Response) {
       extraWeightPercent: vendor!.extra_weight_percent === null ? null : Number(vendor!.extra_weight_percent),
       returnInsideValleyPercent: vendor!.return_inside_valley_percent === null ? null : Number(vendor!.return_inside_valley_percent),
       returnOutsideValleyPercent: vendor!.return_outside_valley_percent === null ? null : Number(vendor!.return_outside_valley_percent),
+      branchReturnInsideValleyPercent: vendor!.branch_return_inside_valley_percent === null ? null : Number(vendor!.branch_return_inside_valley_percent),
+      branchReturnOutsideValleyPercent: vendor!.branch_return_outside_valley_percent === null ? null : Number(vendor!.branch_return_outside_valley_percent),
       branchFlatInsideValley: vendor!.branch_flat_inside_valley === null ? null : Number(vendor!.branch_flat_inside_valley),
       branchFlatOutsideValley: vendor!.branch_flat_outside_valley === null ? null : Number(vendor!.branch_flat_outside_valley),
       branchZoneMajorCities: vendor!.branch_zone_major_cities === null ? null : Number(vendor!.branch_zone_major_cities),

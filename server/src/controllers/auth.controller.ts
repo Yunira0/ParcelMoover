@@ -436,7 +436,12 @@ export const getVendorsController = async (req: Request, res: Response) => {
       });
       scope = { id: staffRecord?.vendor_id ?? "__none__" };
     }
-    const where: Record<string, unknown> = { deleted_at: null, ...scope };
+    const branchIds = req.user ? await adminBranchScopeIds({ id: req.user.id, roles }) : undefined;
+    const where: Record<string, unknown> = {
+      deleted_at: null,
+      ...scope,
+      ...(branchIds ? { location_id: { in: branchIds } } : {}),
+    };
 
     // Optional server-side filters for the vendor management page.
     const search = typeof req.query.search === "string" ? req.query.search.trim() : "";
@@ -586,7 +591,7 @@ export const getVendorsController = async (req: Request, res: Response) => {
   }
 };
 
-const TOP_VENDORS_LIMIT = 5;
+const TOP_VENDORS_LIMIT = 10;
 
 // Ranks vendors by real order volume, scoped the same way getVendorsController
 // is - unlike that endpoint (which pages "newest first" and leaves ranking to
@@ -608,7 +613,12 @@ export const getTopVendorsController = async (req: Request, res: Response) => {
       });
       scope = { id: staffRecord?.vendor_id ?? "__none__" };
     }
-    const where: Record<string, unknown> = { deleted_at: null, ...scope };
+    const branchIds = req.user ? await adminBranchScopeIds({ id: req.user.id, roles }) : undefined;
+    const where: Record<string, unknown> = {
+      deleted_at: null,
+      ...scope,
+      ...(branchIds ? { location_id: { in: branchIds } } : {}),
+    };
 
     const scopedVendors = await prisma.vendors.findMany({ where, select: { id: true } });
     const scopedVendorIds = scopedVendors.map((v) => v.id);
@@ -707,7 +717,12 @@ export const getVendorsDropdownController = async (req: Request, res: Response) 
       ? Math.max(0, Number(req.query.offset))
       : 0;
 
-    const where: Record<string, unknown> = { deleted_at: null, ...scope };
+    const branchIds = req.user ? await adminBranchScopeIds({ id: req.user.id, roles }) : undefined;
+    const where: Record<string, unknown> = {
+      deleted_at: null,
+      ...scope,
+      ...(branchIds ? { location_id: { in: branchIds } } : {}),
+    };
 
     if (search) {
       // Same search_text fast-path as getVendorsController above - a plain

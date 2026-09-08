@@ -20,6 +20,8 @@ export interface PricingSettings {
   branchFlatOutsideRingRoad: number | null;
   returnInsideValleyPercent: number | null;
   returnOutsideValleyPercent: number | null;
+  branchReturnInsideValleyPercent: number | null;
+  branchReturnOutsideValleyPercent: number | null;
 }
 
 export type UpdatePricingSettingsInput = Partial<Omit<PricingSettings, 'id'>>;

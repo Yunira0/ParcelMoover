@@ -20,6 +20,8 @@ const defaultFormState = {
   destinationLocationId: '',
   baseCharge: '',
   branchBaseCharge: '',
+  returnPercent: '',
+  branchReturnPercent: '',
   extraWeightPercent: '',
   freeWeightKg: '2',
 };
@@ -103,6 +105,8 @@ const DeliveryRateSettings: React.FC = () => {
         destinationLocationId: form.destinationLocationId,
         baseCharge,
         branchBaseCharge: form.branchBaseCharge ? Number(form.branchBaseCharge) : null,
+        returnPercent: form.returnPercent ? Number(form.returnPercent) : 0,
+        branchReturnPercent: form.branchReturnPercent ? Number(form.branchReturnPercent) : null,
         extraWeightPercent: form.extraWeightPercent ? Number(form.extraWeightPercent) : 0,
         freeWeightKg: form.freeWeightKg ? Number(form.freeWeightKg) : 2,
       });
@@ -139,6 +143,7 @@ const DeliveryRateSettings: React.FC = () => {
     { header: 'DESTINATION', accessor: (r: DeliveryRate) => r.destinationLocationName },
     { header: 'BASE CHARGE', accessor: (r: DeliveryRate) => r.baseCharge.toLocaleString() },
     { header: 'BRANCH CHARGE', accessor: (r: DeliveryRate) => (r.branchBaseCharge != null ? r.branchBaseCharge.toLocaleString() : '—') },
+    { header: 'RETURN %', accessor: (r: DeliveryRate) => `${r.returnPercent}%${r.branchReturnPercent != null ? ` (branch ${r.branchReturnPercent}%)` : ''}` },
     { header: 'EXTRA % / KG', accessor: (r: DeliveryRate) => `${r.extraWeightPercent}%` },
     { header: 'FREE WEIGHT', accessor: (r: DeliveryRate) => `${r.freeWeightKg} kg` },
     {
@@ -160,8 +165,8 @@ const DeliveryRateSettings: React.FC = () => {
   return (
     <div className="delivery-rate-settings-page">
       <PageHeader
-        title="Delivery Rates"
-        subtitle="Configure the base delivery charge and extra-weight surcharge per route."
+        title="Route Rates"
+        subtitle="Delivery, return and extra-weight charges per origin → destination route (e.g. Hetauda → Imadol, Hetauda → Pokhara). Branch-origin orders price off this table."
         actionLabel="Add Rate"
         actionIcon={<Plus size={16} />}
         onAction={() => { setShowForm(v => !v); setShowImport(false); }}
@@ -238,6 +243,25 @@ const DeliveryRateSettings: React.FC = () => {
               onChange={value => setForm(prev => ({ ...prev, extraWeightPercent: value }))}
               placeholder="e.g. 10"
               error={fieldErrors.extraWeightPercent}
+            />
+            <FormField
+              label="Return Charge (% of delivery charge)"
+              type="number"
+              min={0}
+              max={100}
+              value={form.returnPercent}
+              onChange={value => setForm(prev => ({ ...prev, returnPercent: value }))}
+              placeholder="e.g. 50 · 0 = free return"
+              error={fieldErrors.returnPercent}
+            />
+            <FormField
+              label="Branch Return Charge (% · optional)"
+              type="number"
+              min={0}
+              max={100}
+              value={form.branchReturnPercent}
+              onChange={value => setForm(prev => ({ ...prev, branchReturnPercent: value }))}
+              placeholder="Falls back to the return %"
             />
           </div>
           {generalError && <p className="delivery-rate-error">{generalError}</p>}

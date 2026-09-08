@@ -8,6 +8,8 @@ export interface DeliveryRate {
   destinationLocationName: string;
   baseCharge: number;
   branchBaseCharge: number | null;
+  returnPercent: number;
+  branchReturnPercent: number | null;
   extraWeightPercent: number;
   freeWeightKg: number;
   isActive: boolean;
@@ -19,6 +21,8 @@ export interface UpsertDeliveryRateInput {
   destinationLocationId: string;
   baseCharge: number;
   branchBaseCharge?: number | null;
+  returnPercent?: number;
+  branchReturnPercent?: number | null;
   extraWeightPercent?: number;
   freeWeightKg?: number;
 }
@@ -80,6 +84,9 @@ export interface BulkImportRateRow {
   origin: string;
   destination: string;
   baseCharge: number;
+  branchBaseCharge?: number | null;
+  returnPercent?: number;
+  branchReturnPercent?: number | null;
   extraWeightPercent?: number;
   freeWeightKg?: number;
 }
@@ -102,9 +109,16 @@ export const getDeliveryQuote = async (
   originLocationId: string,
   destinationLocationId: string,
   weightKg: number,
+  opts?: { serviceType?: 'home_delivery' | 'branch_delivery'; isReturn?: boolean },
 ): Promise<{ success: boolean; data: DeliveryQuote }> => {
   const response = await api.get('/delivery-rates/quote', {
-    params: { originLocationId, destinationLocationId, weightKg },
+    params: {
+      originLocationId,
+      destinationLocationId,
+      weightKg,
+      ...(opts?.serviceType ? { serviceType: opts.serviceType } : {}),
+      ...(opts?.isReturn ? { isReturn: 'true' } : {}),
+    },
   });
   return response.data;
 };

@@ -1070,7 +1070,12 @@ export async function merchantOverviewController(req: Request, res: Response) {
     const dateFrom = typeof req.query.dateFrom === "string" ? req.query.dateFrom : undefined;
     const dateTo = typeof req.query.dateTo === "string" ? req.query.dateTo : undefined;
 
-    const summary = await getMerchantOverview(vendorId, dateFrom, dateTo);
+    const summary = await getMerchantOverview(
+      { id: req.user.id, roles: req.user.roles },
+      vendorId,
+      dateFrom,
+      dateTo,
+    );
 
     return res.status(200).json({ success: true, data: summary });
   } catch (error: any) {

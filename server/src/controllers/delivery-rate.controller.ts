@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import {
   bulkImportDeliveryRates,
   getDeliveryQuote,
+  getReturnRouteQuote,
   getVendorSelfRates,
   listDeliveryRates,
   setDeliveryRateActive,
@@ -41,7 +42,16 @@ export async function upsertDeliveryRateController(req: Request, res: Response) 
       return res.status(401).json({ success: false, message: "Unauthorized" });
     }
 
-    const { originLocationId, destinationLocationId, baseCharge, extraWeightPercent, freeWeightKg } = req.body;
+    const {
+      originLocationId,
+      destinationLocationId,
+      baseCharge,
+      branchBaseCharge,
+      returnPercent,
+      branchReturnPercent,
+      extraWeightPercent,
+      freeWeightKg,
+    } = req.body;
 
     if (typeof originLocationId !== "string" || typeof destinationLocationId !== "string") {
       return res.status(400).json({
@@ -55,7 +65,16 @@ export async function upsertDeliveryRateController(req: Request, res: Response) 
 
     const rate = await upsertDeliveryRate(
       { id: req.user.id, roles: req.user.roles },
-      { originLocationId, destinationLocationId, baseCharge, extraWeightPercent, freeWeightKg },
+      {
+        originLocationId,
+        destinationLocationId,
+        baseCharge,
+        branchBaseCharge,
+        returnPercent,
+        branchReturnPercent,
+        extraWeightPercent,
+        freeWeightKg,
+      },
     );
 
     return res.status(200).json({
@@ -118,7 +137,7 @@ export async function setDeliveryRateActiveController(req: Request, res: Respons
 
 export async function getDeliveryQuoteController(req: Request, res: Response) {
   try {
-    const { originLocationId, destinationLocationId, weightKg } = req.query;
+    const { originLocationId, destinationLocationId, weightKg, serviceType, isReturn } = req.query;
 
     if (typeof originLocationId !== "string" || typeof destinationLocationId !== "string") {
       return res.status(400).json({
@@ -132,7 +151,11 @@ export async function getDeliveryQuoteController(req: Request, res: Response) {
       return res.status(400).json({ success: false, message: "weightKg must be a positive number" });
     }
 
-    const quote = await getDeliveryQuote(originLocationId, destinationLocationId, weight);
+    const service = serviceType === "branch_delivery" ? "branch_delivery" : "home_delivery";
+    const quote =
+      isReturn === "true"
+        ? await getReturnRouteQuote(originLocationId, destinationLocationId, weight, service)
+        : await getDeliveryQuote(originLocationId, destinationLocationId, weight, service);
     return res.status(200).json({ success: true, data: quote });
   } catch (error: any) {
     return res.status(error.statusCode || 500).json({

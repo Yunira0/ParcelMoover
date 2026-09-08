@@ -47,8 +47,8 @@ export const MERCHANT_METRIC_LABELS: Record<MerchantMetricKey, string> = {
   holdOrder: 'Hold Order',
   cancelledOrders: 'Cancelled Orders',
   deliveryCharge: 'Delivery Charge',
-  deposited: 'Deposited',
-  pendingDeposit: 'Pending Deposit',
+  deposited: 'COD Deposited',
+  pendingDeposit: 'COD Pending',
 };
 
 export const MERCHANT_METRIC_ORDER: MerchantMetricKey[] = [

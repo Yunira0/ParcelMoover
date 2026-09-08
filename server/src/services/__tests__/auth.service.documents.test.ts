@@ -15,6 +15,9 @@ vi.mock("../../lib/mailer", () => ({
 vi.mock("bcrypt", () => ({
   default: { hash: vi.fn().mockResolvedValue("hashed-password") },
 }));
+vi.mock("../../lib/branchScope", () => ({
+  adminBranchScopeIds: vi.fn().mockResolvedValue(undefined),
+}));
 
 import { registerUserBySuperAdmin, updateManagedUserProfile } from "../auth.service";
 import prisma from "../../lib/prisma";

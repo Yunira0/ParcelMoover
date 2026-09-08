@@ -89,6 +89,10 @@ export async function getPricingSettings() {
       settings.return_inside_valley_percent === null ? null : Number(settings.return_inside_valley_percent),
     returnOutsideValleyPercent:
       settings.return_outside_valley_percent === null ? null : Number(settings.return_outside_valley_percent),
+    branchReturnInsideValleyPercent:
+      settings.branch_return_inside_valley_percent === null ? null : Number(settings.branch_return_inside_valley_percent),
+    branchReturnOutsideValleyPercent:
+      settings.branch_return_outside_valley_percent === null ? null : Number(settings.branch_return_outside_valley_percent),
   };
 
   try {
@@ -119,6 +123,8 @@ export interface UpdatePricingSettingsInput {
   branchFlatOutsideRingRoad?: number | null;
   returnInsideValleyPercent?: number | null;
   returnOutsideValleyPercent?: number | null;
+  branchReturnInsideValleyPercent?: number | null;
+  branchReturnOutsideValleyPercent?: number | null;
 }
 
 export async function updatePricingSettings(input: UpdatePricingSettingsInput) {
@@ -146,6 +152,12 @@ export async function updatePricingSettings(input: UpdatePricingSettingsInput) {
         : {}),
       ...(input.returnInsideValleyPercent !== undefined ? { return_inside_valley_percent: input.returnInsideValleyPercent } : {}),
       ...(input.returnOutsideValleyPercent !== undefined ? { return_outside_valley_percent: input.returnOutsideValleyPercent } : {}),
+      ...(input.branchReturnInsideValleyPercent !== undefined
+        ? { branch_return_inside_valley_percent: input.branchReturnInsideValleyPercent }
+        : {}),
+      ...(input.branchReturnOutsideValleyPercent !== undefined
+        ? { branch_return_outside_valley_percent: input.branchReturnOutsideValleyPercent }
+        : {}),
       updated_at: new Date(),
     },
   });
@@ -224,6 +236,10 @@ export interface VendorRateOverrides {
   // Return-parcel charge as a percent of the normal delivery rate, by valley side.
   returnInsideValleyPercent?: number | null;
   returnOutsideValleyPercent?: number | null;
+  // Parallel branch-delivery return percents; each falls back to its home
+  // counterpart when unset.
+  branchReturnInsideValleyPercent?: number | null;
+  branchReturnOutsideValleyPercent?: number | null;
 }
 
 export type ServiceType = "home_delivery" | "branch_delivery";
@@ -425,12 +441,23 @@ export async function getReturnDeliveryQuote(
   const pick = (override: number | null | undefined, fallback: number | null) =>
     override !== undefined && override !== null ? override : fallback;
 
+  // Branch deliveries use the branch return percent when set, then fall back
+  // through the home return percent - vendor override, then global setting.
+  const isBranch = serviceType === "branch_delivery";
+  const insidePercent = isBranch
+    ? pick(
+        pick(overrides.branchReturnInsideValleyPercent, settings.branchReturnInsideValleyPercent),
+        pick(overrides.returnInsideValleyPercent, settings.returnInsideValleyPercent),
+      )
+    : pick(overrides.returnInsideValleyPercent, settings.returnInsideValleyPercent);
+  const outsidePercent = isBranch
+    ? pick(
+        pick(overrides.branchReturnOutsideValleyPercent, settings.branchReturnOutsideValleyPercent),
+        pick(overrides.returnOutsideValleyPercent, settings.returnOutsideValleyPercent),
+      )
+    : pick(overrides.returnOutsideValleyPercent, settings.returnOutsideValleyPercent);
   const percent =
-    (base.valley === "inside"
-      ? pick(overrides.returnInsideValleyPercent, settings.returnInsideValleyPercent)
-      : base.valley === "outside"
-      ? pick(overrides.returnOutsideValleyPercent, settings.returnOutsideValleyPercent)
-      : null) ?? 0;
+    (base.valley === "inside" ? insidePercent : base.valley === "outside" ? outsidePercent : null) ?? 0;
 
   const charge = base.totalPayable * (percent / 100);
   const valleyLabel = base.valley ? `${base.valley} valley` : "unclassified destination";

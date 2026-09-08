@@ -8,8 +8,9 @@ import BillingStatusBanner from '../components/BillingStatusBanner';
 import Button from '../components/Button';
 import { getLocations, searchVendors } from '../services/users.service';
 import { getVendorQuote } from '../services/pricing.service';
+import { getDeliveryQuote as getRouteQuote } from '../services/deliveryRates.service';
 import { createOrder, updateOrder, getSenderProfile, type CreateOrderInput, type UpdateOrderInput, type OrderType, type ServiceType } from '../services/orders.service';
-import { isVendorSide } from '../utils/auth';
+import { getCurrentUser, isVendorSide } from '../utils/auth';
 import './CreateOrderPage.css';
 
 interface VendorOption {
@@ -244,36 +245,50 @@ const CreateOrderPage: React.FC = () => {
     return { results: [], hasMore: false };
   }, []);
 
-  // The single admin hub all orders originate from. Matched by code first, name as fallback.
+  // The Imadol admin hub, matched by code first, name as fallback.
   const imadolHub = locationOptions.find(
     l => (l.code || '').toUpperCase() === 'IMADOL' || l.name.trim().toLowerCase() === 'imadol',
   );
+  // A branch admin's orders originate at their own branch (the server enforces
+  // this for every non-super-admin). A hubless head-office admin falls back to
+  // Imadol.
+  const myAdminHubId = getCurrentUser()?.locationId ?? null;
+  const adminOriginHub = (myAdminHubId && locationOptions.find(l => l.id === myAdminHubId)) || imadolHub;
 
-  // Origin ("From") is always fixed to the Imadol admin hub — for vendors it's their
-  // assigned hub (Imadol), for admins we lock it to Imadol too rather than a free picker.
+  // Origin ("From") is fixed, not a free picker. A parcel is picked up at the
+  // vendor's premises, so once a vendor is chosen its hub is the origin - for
+  // an admin too (a super admin creating an order for a Hetauda vendor ships
+  // it from Hetauda, not Imadol). Falls back to the admin's own hub before a
+  // vendor is selected. The server applies the same rule.
   // Edit mode only: leave the parcel's real originLocationId (from prefillInitialData)
   // alone. There can be more than one location row that resolves as "Imadol" (matched
   // loosely by name/code), so forcing it here can silently reassign an existing order
   // to a different-but-identical-looking Imadol row - which then also reads as a real
   // "origin changed" edit server-side, defeating the COD-only edit allowance on a
   // delivered/RTV/RTO parcel purely because of this reset, not an actual user change.
-  const fixedOriginId = isVendorActor ? selectedVendor?.locationId : imadolHub?.id;
+  const fixedOriginId = isVendorActor
+    ? selectedVendor?.locationId
+    : selectedVendor?.locationId || adminOriginHub?.id;
   useEffect(() => {
     if (!fixedOriginId || isEditMode) return;
     setForm(prev => (prev.originLocationId === fixedOriginId ? prev : { ...prev, originLocationId: fixedOriginId }));
   }, [fixedOriginId, isEditMode]);
 
   const weightKgNumber = Number(form.weightKg) || 0;
+  // A branch-origin order (origin hub is not Imadol) is priced off the
+  // (branch → destination) route table, not the vendor's Imadol rate model -
+  // mirrors the branch path in order.service.ts.
+  const originIsBranch = !isVendorActor && Boolean(fixedOriginId) && Boolean(imadolHub) && fixedOriginId !== imadolHub!.id;
 
-  // Auto-calculate the payable amount from the VENDOR's chosen rate model
-  // (per-destination / zone / flat) — mirrors the server-side charge in
-  // order.service.ts so the displayed number matches what gets saved.
+  // Auto-calculate the payable amount so the displayed number matches what the
+  // server will save: branch origin → route rate; otherwise the vendor's model.
   useEffect(() => {
     // For admin actors, use form.vendorId directly (set synchronously on selection).
     // For vendor actors, use selectedVendor.id resolved from their own profile.
     const vendorId = isVendorActor ? selectedVendor?.id : form.vendorId;
-    // Need a destination, a weight, and a resolvable vendor (admins must pick one).
-    if (!form.destinationLocationId || !weightKgNumber || (!isVendorActor && !form.vendorId)) {
+    // Need a destination and weight; the vendor model also needs a vendor, the
+    // branch route model does not.
+    if (!form.destinationLocationId || !weightKgNumber || (!isVendorActor && !originIsBranch && !form.vendorId)) {
       setQuote(null);
       setQuoteError('');
       return;
@@ -283,7 +298,12 @@ const CreateOrderPage: React.FC = () => {
     setQuoteError('');
     const timer = setTimeout(async () => {
       try {
-        const res = await getVendorQuote(form.destinationLocationId, weightKgNumber, vendorId, form.serviceType);
+        const res = originIsBranch
+          ? await getRouteQuote(fixedOriginId!, form.destinationLocationId, weightKgNumber, {
+              serviceType: form.serviceType,
+              isReturn: form.orderType === 'return',
+            })
+          : await getVendorQuote(form.destinationLocationId, weightKgNumber, vendorId, form.serviceType);
         if (!cancelled && res?.success) {
           setQuote(res.data);
         }
@@ -292,7 +312,7 @@ const CreateOrderPage: React.FC = () => {
           setQuote(null);
           setQuoteError(
             err.response?.status === 404
-              ? (err.response?.data?.message || 'No rate configured for this destination yet. Contact an admin.')
+              ? (err.response?.data?.message || 'No rate configured for this route yet. Contact an admin.')
               : 'Failed to calculate charges for this destination.',
           );
         }
@@ -301,7 +321,7 @@ const CreateOrderPage: React.FC = () => {
       }
     }, 400);
     return () => { cancelled = true; clearTimeout(timer); };
-  }, [form.destinationLocationId, weightKgNumber, form.vendorId, form.serviceType, selectedVendor?.id, isVendorActor]);
+  }, [form.destinationLocationId, weightKgNumber, form.vendorId, form.serviceType, form.orderType, selectedVendor?.id, isVendorActor, originIsBranch, fixedOriginId]);
 
   const setField = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm(prev => ({ ...prev, [key]: value }));

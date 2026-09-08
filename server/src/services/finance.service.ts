@@ -197,12 +197,12 @@ async function assertBranchActorOwnsRider(actor: Actor, riderId: string) {
  * activity, so this guards the "vendor" payee type only.
  */
 async function assertHeadOfficeForVendorSettlement(actor: Actor) {
-  if (actor.roles.includes("super_admin")) return;
-  const admin = await prisma.admins.findUnique({
-    where: { user_id: actor.id },
-    select: { branch_scoped: true },
-  });
-  if (admin?.branch_scoped) {
+  // adminBranchScopeIds returns undefined for everyone who is NOT a real branch
+  // (super_admin, unrestricted admin, BRANCH_TRACKING staff, and Imadol's own
+  // admins even when flagged branch_scoped) - the same head-office rule used
+  // everywhere else in the branch feature.
+  const ids = await adminBranchScopeIds(actor);
+  if (ids) {
     throw new AppError(403, "Vendor settlements are handled centrally from Imadol, not from a branch");
   }
 }

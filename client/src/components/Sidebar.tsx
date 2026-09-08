@@ -387,6 +387,7 @@ const BranchSidebar: React.FC = () => {
 
         <SidebarItem to="/dashboard" icon={LayoutDashboard} label="Dashboard" />
         <SidebarItem to="/orders" icon={Package} label="Orders" />
+        <SidebarItem to="/merchant-overview" icon={Gauge} label="Vendor Overview" />
 
         <SidebarSection label="Operations" />
         <SidebarItem to="/pickup" icon={Archive} label="Pickup" />
@@ -395,6 +396,7 @@ const BranchSidebar: React.FC = () => {
         <SidebarItem to="/return" icon={RotateCcw} label="Return" />
 
         <SidebarSection label="Management" />
+        <SidebarItem to="/vendors" icon={Store} label="Vendor Management" />
         <SidebarItem to="/riders" icon={Bike} label="Rider Management" />
 
         <SidebarSection label="Finance" />
@@ -441,6 +443,9 @@ const AdminSidebar: React.FC<{ isSuperAdmin: boolean }> = ({ isSuperAdmin }) => 
         <SidebarItem to="/riders" icon={Bike} label="Rider Management" />
         {(isSuperAdmin || hasAdminPermission('SETTINGS_ACCESS')) && (
           <SidebarItem to="/settings" icon={MapPin} label="Destination Management" />
+        )}
+        {(isSuperAdmin || hasAdminPermission('SETTINGS_ACCESS')) && (
+          <SidebarItem to="/settings/delivery-rates" icon={Route} label="Route Rates" />
         )}
         {/* COD Management used to sit here. It was the rider and vendor
             settlement lists behind a toggle, which is exactly what Rider COD
