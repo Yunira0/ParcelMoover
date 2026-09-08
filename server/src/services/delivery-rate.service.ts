@@ -75,9 +75,8 @@ async function assertActiveLocation(locationId: string, label: string) {
 }
 
 export async function upsertDeliveryRate(actor: Actor, input: UpsertDeliveryRateInput) {
-  if (input.originLocationId === input.destinationLocationId) {
-    throw new AppError(400, "Origin and destination locations must be different");
-  }
+  // origin === destination is allowed: it's the local same-hub rate (e.g.
+  // Hetauda → Hetauda) used to price a branch's deliveries within its own city.
   if (!(input.baseCharge >= 0)) {
     throw new AppError(400, "Base charge must be a non-negative number");
   }
@@ -196,9 +195,7 @@ export async function bulkImportDeliveryRates(
     if (!destinationHub) {
       errors.push(`destination '${row.destination}' does not match any active destination`);
     }
-    if (originHub && destinationHub && originHub.id === destinationHub.id) {
-      errors.push("origin and destination must be different");
-    }
+    // origin === destination is allowed here too (local same-hub rate).
     if (!(row.baseCharge >= 0)) errors.push("baseCharge must be a non-negative number");
     if (row.branchBaseCharge != null && !(row.branchBaseCharge >= 0)) {
       errors.push("branchBaseCharge must be a non-negative number");

@@ -92,9 +92,6 @@ function parseSheet(raw: string[][]): ParsedRow[] {
       const destination = get(1);
       if (!origin) errors.push('origin is required');
       if (!destination) errors.push('destination is required');
-      if (origin && destination && origin.toLowerCase() === destination.toLowerCase()) {
-        errors.push('origin and destination must be different');
-      }
 
       const baseCharge = get(2);
       if (!baseCharge) errors.push('base_charge is required');
