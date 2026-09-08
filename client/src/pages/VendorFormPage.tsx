@@ -13,7 +13,7 @@ import {
   type ManagedUserDocument,
 } from '../services/users.service';
 import { getCurrentUser } from '../services/auth.service';
-import { getCurrentUser as getCachedUser, getCurrentUserRoles, isAdminSide, isBranchWorkspaceUser } from '../utils/auth';
+import { getCurrentUser as getCachedUser, getCurrentUserRoles, isAdminSide } from '../utils/auth';
 import { toDocumentUrl } from '../utils/documentUrl';
 import { getPricingSettings } from '../services/pricing.service';
 import { extractServerFieldErrors, isValidEmail, isValidName, isValidPhone, hasLetter, isDigits, normalizePhone } from '../utils/serverValidation';
@@ -267,7 +267,7 @@ const VendorFormPage: React.FC = () => {
   // Documents already on file, so an edit can show which slots are filled and
   // fill the ones that are not. null while still loading.
   const [existingDocs, setExistingDocs] = useState<ManagedUserDocument[] | null>(null);
-  const [locations, setLocations] = useState<Array<{ value: string; label: string }>>([]);
+  const [locations, setLocations] = useState<Array<{ value: string; label: string; code: string | null; isMasterHub: boolean }>>([]);
   // Sales-department admins, kept unfiltered so the dropdown can be re-filtered
   // by hub whenever the selected pickup location changes.
   const [salesAdmins, setSalesAdmins] = useState<Array<{ userId: string; name: string; locationId: string | null }>>([]);
@@ -286,12 +286,20 @@ const VendorFormPage: React.FC = () => {
           getCurrentUser().catch(() => null),
           getAdmins().catch(() => null),
         ]);
-        let hubs: Array<{ value: string; label: string }> = [];
+        let hubs: Array<{ value: string; label: string; code: string | null; isMasterHub: boolean }> = [];
         if (res && res.success && Array.isArray(res.data)) {
           // Vendors are assigned to a hub/branch, so only show hub locations.
           hubs = res.data
             .filter((loc: any) => loc.is_hub)
-            .map((loc: any) => ({ value: loc.id, label: loc.name }));
+            .map((loc: any) => ({
+              value: loc.id,
+              label: loc.name,
+              code: loc.code ?? null,
+              // Branches are top-level hubs too (parent_id null, is_hub true), so
+              // the only thing that marks the central hub is its IMADOL code -
+              // matching the server's getMasterHubId().
+              isMasterHub: String(loc.code ?? '').trim().toUpperCase() === 'IMADOL',
+            }));
           setLocations(hubs);
         }
         // Sales staff = admins in the "Sales" department, each carrying their
@@ -339,18 +347,20 @@ const VendorFormPage: React.FC = () => {
 
   // The vendor's own branch, for labelling its branch-delivery rates as
   // "inside / outside <branch>" instead of "inside / outside valley".
+  const selectedHub = locations.find((l) => l.value === form.pickupLocation) || null;
   const branchLabel =
-    (locations.find((l) => l.value === form.pickupLocation)?.label || '')
+    (selectedHub?.label || '')
       .split(' - ')[0]
       .replace(/\s*branch\s*$/i, '')
       .trim() || 'the branch';
-  // A branch workspace admin does not deal in the Kathmandu-valley split - its
-  // vendors are priced off the branch route table. Drop valley wording and the
-  // valley-only inputs from the form for them; the "inside/outside" pair is
+  // A vendor assigned to a non-central branch (e.g. Hetauda) is priced off the
+  // branch route table, not the Kathmandu-valley split - regardless of who is
+  // filling in this form (branch admin, sales rep, or super admin). Drop valley
+  // wording and the valley-only inputs for them; the "inside/outside" pair is
   // relabelled to the branch name.
-  const isBranchWorkspace = isBranchWorkspaceUser();
-  const insideLabel = isBranchWorkspace ? `inside ${branchLabel}` : 'inside valley';
-  const outsideLabel = isBranchWorkspace ? `outside ${branchLabel}` : 'outside valley';
+  const useBranchRateModel = Boolean(selectedHub) && !selectedHub!.isMasterHub;
+  const insideLabel = useBranchRateModel ? `inside ${branchLabel}` : 'inside valley';
+  const outsideLabel = useBranchRateModel ? `outside ${branchLabel}` : 'outside valley';
 
   // Prefill the per-vendor rate fields with the global defaults from Settings;
   // the creator can then edit them so this vendor gets its own rates. Create
@@ -1042,10 +1052,11 @@ const VendorFormPage: React.FC = () => {
                 {[
                   { value: 'per_destination', title: 'Per-destination', desc: "Each destination's own configured rate." },
                   { value: 'flat', title: 'Flat rate', desc: `One rate ${insideLabel}, one ${outsideLabel}.` },
-                  // Zone-based pricing is retired from vendor setup for now; existing
-                  // zone vendors still edit their zone rates below.
-                  ...(form.rateType === 'zone'
-                    ? [{ value: 'zone', title: 'Zone-based', desc: 'Priced by zone (legacy).' }]
+                  // Zone-based pricing stays available for central (Imadol) vendors;
+                  // it's retired from branch vendor setup. Legacy zone vendors on
+                  // any hub can still edit their zone rates below.
+                  ...(!useBranchRateModel || form.rateType === 'zone'
+                    ? [{ value: 'zone', title: 'Zone-based', desc: 'Priced by zone.' }]
                     : []),
                 ].map((opt) => (
                   <button
@@ -1068,18 +1079,18 @@ const VendorFormPage: React.FC = () => {
                 <div className="vfp-rate-fields">
                   <p className="vfp-rate-note">Rates default to Settings; edit to give this vendor its own.</p>
                   <div className="vfp-fields">
-                    <FormField label={`${isBranchWorkspace ? `Inside ${branchLabel}` : 'Inside valley'} (Rs.)`} type="number" min={0}
+                    <FormField label={`${useBranchRateModel ? `Inside ${branchLabel}` : 'Inside valley'} (Rs.)`} type="number" min={0}
                       value={form.flatInsideValley} onChange={set('flatInsideValley')} placeholder="e.g. 120" />
-                    <FormField label={`${isBranchWorkspace ? `Outside ${branchLabel}` : 'Outside valley'} (Rs.)`} type="number" min={0}
+                    <FormField label={`${useBranchRateModel ? `Outside ${branchLabel}` : 'Outside valley'} (Rs.)`} type="number" min={0}
                       value={form.flatOutsideValley} onChange={set('flatOutsideValley')} placeholder="e.g. 250" />
-                    {!isBranchWorkspace && (
+                    {!useBranchRateModel && (
                       <FormField label="Outside ring road (Rs.)" type="number" min={0}
                         value={form.flatOutsideRingRoad} onChange={set('flatOutsideRingRoad')} placeholder="e.g. 170" />
                     )}
                     <FormField label="Extra weight surcharge (%)" type="number" min={0} max={100}
                       value={form.extraWeightPercent} onChange={set('extraWeightPercent')} placeholder="e.g. 10" />
                   </div>
-                  {!isBranchWorkspace && (
+                  {!useBranchRateModel && (
                     <p className="vfp-rate-note">
                       Outside ring road applies to inside-valley destinations flagged “outside ring
                       road” in Rate Setup. Leave blank to charge them the normal inside-valley rate.
@@ -1118,7 +1129,7 @@ const VendorFormPage: React.FC = () => {
               {/* Optional second rate: a flat inside-valley rate that overrides the
                   primary model for inside-valley destinations. Valley-specific,
                   so hidden for a branch workspace. */}
-              {!isBranchWorkspace && (form.rateType === 'zone' || form.rateType === 'per_destination') && (
+              {!useBranchRateModel && (form.rateType === 'zone' || form.rateType === 'per_destination') && (
                 <div className={`vfp-rate-fields vfp-inside-valley-block${form.insideValleyEnabled ? ' is-on' : ''}`}>
                   <label className="vfp-inside-valley-toggle">
                     <input
@@ -1149,9 +1160,9 @@ const VendorFormPage: React.FC = () => {
                   <h4 className="vfp-rate-subhead">Branch delivery rate</h4>
                   <p className="vfp-rate-note">For parcels dropped at a branch. Blank uses the Settings default.</p>
                   <div className="vfp-fields">
-                    <FormField label={`Inside ${branchLabel} (Rs.)`} type="number" min={0}
+                    <FormField label={`${useBranchRateModel ? `Inside ${branchLabel}` : 'Branch — inside valley'} (Rs.)`} type="number" min={0}
                       value={form.branchFlatInsideValley} onChange={set('branchFlatInsideValley')} placeholder="e.g. 80" />
-                    <FormField label={`Outside ${branchLabel} (Rs.)`} type="number" min={0}
+                    <FormField label={`${useBranchRateModel ? `Outside ${branchLabel}` : 'Branch — outside valley'} (Rs.)`} type="number" min={0}
                       value={form.branchFlatOutsideValley} onChange={set('branchFlatOutsideValley')} placeholder="e.g. 180" />
                   </div>
                 </div>
@@ -1198,9 +1209,9 @@ const VendorFormPage: React.FC = () => {
                   For return parcels handed in at a branch. Blank uses the return rate above.
                 </p>
                 <div className="vfp-fields">
-                  <FormField label={`Inside ${branchLabel} (%)`} type="number" min={0} max={100}
+                  <FormField label={`${useBranchRateModel ? `Inside ${branchLabel}` : 'Branch — inside valley'} (%)`} type="number" min={0} max={100}
                     value={form.branchReturnInsideValleyPercent} onChange={set('branchReturnInsideValleyPercent')} placeholder="e.g. 0" />
-                  <FormField label={`Outside ${branchLabel} (%)`} type="number" min={0} max={100}
+                  <FormField label={`${useBranchRateModel ? `Outside ${branchLabel}` : 'Branch — outside valley'} (%)`} type="number" min={0} max={100}
                     value={form.branchReturnOutsideValleyPercent} onChange={set('branchReturnOutsideValleyPercent')} placeholder="e.g. 40" />
                 </div>
               </div>

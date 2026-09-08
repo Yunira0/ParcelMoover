@@ -1412,12 +1412,23 @@ export async function updateOrderDetails(
   const originIsBranch = Boolean(originLocationId && masterHubId && originLocationId !== masterHubId);
   if (repriceNeeded && destinationLocationId) {
     if (originIsBranch && originLocationId) {
-      // Branch-origin: route-table rate, same as creation.
+      // Branch-origin: route-table rate, same as creation - including the
+      // friendly 400 when the branch route has no rate configured.
       const serviceType = (data.serviceType ?? parcel.service_type) as ServiceType;
-      const quote = effectiveOrderType === "return"
-        ? await getReturnRouteQuote(originLocationId, destinationLocationId, weightKg, serviceType)
-        : await getDeliveryQuote(originLocationId, destinationLocationId, weightKg, serviceType);
-      deliveryCharge = quote.totalPayable;
+      try {
+        const quote = effectiveOrderType === "return"
+          ? await getReturnRouteQuote(originLocationId, destinationLocationId, weightKg, serviceType)
+          : await getDeliveryQuote(originLocationId, destinationLocationId, weightKg, serviceType);
+        deliveryCharge = quote.totalPayable;
+      } catch (error) {
+        if (error instanceof AppError && error.statusCode === 404) {
+          throw new AppError(
+            400,
+            "No delivery rate is configured for this branch's route. Add it under Delivery Charges before saving.",
+          );
+        }
+        throw error;
+      }
     } else if (effectiveVendor) {
       const vendor = effectiveVendor;
       const overrides = {
