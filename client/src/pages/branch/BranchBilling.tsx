@@ -92,12 +92,10 @@ const BranchBilling: React.FC = () => {
   const tabs = useMemo<Array<{ value: Tab; label: string; count?: number }>>(
     () => isSuperAdmin ? [
       { value: 'queue', label: 'Payment verification', count: paymentsTotal },
-      { value: 'statements', label: 'Statements' },
       { value: 'branches', label: 'Branch balances' },
       { value: 'settings', label: 'Thresholds & QR' },
     ] : isMasterWorkspace ? [
       { value: 'queue', label: 'Payment verification', count: paymentsTotal },
-      { value: 'statements', label: 'Statements' },
     ] : [
       { value: 'pay', label: 'Add money' },
       { value: 'statements', label: 'Settlements' },
@@ -299,11 +297,11 @@ const BranchBilling: React.FC = () => {
 
     {activeTab === 'queue' && <><Table columns={isMasterWorkspace ? officePaymentColumns : historyColumns} data={payments} loading={paymentsLoading} loadingMessage="Loading branch payments…" emptyMessage={isMasterWorkspace ? 'No payments awaiting verification.' : 'No branch payments added yet.'} minWidth={isMasterWorkspace ? '1290px' : '1080px'} /><Pagination ariaLabel={isMasterWorkspace ? 'Branch payment verification pagination' : 'Branch payment history pagination'} page={paymentsPage} totalPages={paymentsTotalPages} onPageChange={setPaymentsPage} pageSize={paymentsPageSize} pageSizeLabel="payments" onPageSizeChange={(size) => { setPaymentsPageSize(size); setPaymentsPage(1); }} summary={`${paymentsTotal} payment${paymentsTotal === 1 ? '' : 's'}`} /></>}
 
-    {activeTab === 'statements' && (isMasterWorkspace ? <p className="billing-hint">Open Branch COD from the sidebar to create and review COD due to the master branch.</p> : <>
+    {activeTab === 'statements' && !isMasterWorkspace && <>
       <section className="billing-card"><h3>COD due to the master branch</h3><p className="billing-hint">Pay a statement and attach the receipt or screenshot. It becomes settled after the master branch verifies it.</p><Table selectable={false} columns={pendingColumns} data={pendingRows} emptyMessage="No COD statements are awaiting payment." minWidth="900px" /></section>
       {selectedSettlement && <section className="billing-card"><h3>Add payment · {selectedSettlement.statementNo}</h3><form className="billing-form" onSubmit={submitReceipt}><label>Amount paid<div className="billing-amount-field"><span className="billing-amount-prefix">Rs.</span><input type="number" min="0" max={selectedSettlement.remainingAmount} step="0.01" value={receiptAmount} onChange={(event) => setReceiptAmount(event.target.value)} disabled={receiptSaving} /></div></label><label>Transaction reference<input type="text" value={receiptReference} onChange={(event) => setReceiptReference(event.target.value)} disabled={receiptSaving} /></label><label>Note (optional)<input type="text" value={receiptNote} onChange={(event) => setReceiptNote(event.target.value)} disabled={receiptSaving} /></label><FileField label="Paid receipt / screenshot (required)" hint="JPG, PNG, WebP or PDF · max 5 MB" file={receiptProof} onChange={setReceiptProof} /><div className="billing-review-actions"><Button type="button" variant="secondary" onClick={() => setSelectedSettlement(null)} disabled={receiptSaving}>Cancel</Button><Button type="submit" variant="primary" disabled={receiptSaving}>{receiptSaving ? 'Submitting…' : 'Submit payment'}</Button></div></form></section>}
       {receiptMessage && <p className="billing-success"><CheckCircle2 size={14} /> {receiptMessage}</p>}
-    </>)}
+    </>}
 
     {activeTab === 'branches' && isSuperAdmin && <><p className="billing-hint">A branch at its block threshold cannot receive new transit until verified credit clears the hold.</p><Table columns={balanceColumns} data={balanceRows} loading={balancesLoading} loadingMessage="Calculating branch balances…" emptyMessage="No active branches found." minWidth="950px" /></>}
 
