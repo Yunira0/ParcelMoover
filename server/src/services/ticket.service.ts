@@ -3,6 +3,7 @@ import { AppError } from "../utils/AppError";
 import { getDatePart, randomBase32 } from "../utils/trackingId";
 import { CreateTicketInput, ListTicketsParams, TicketStatus, TicketWorkflowStatus } from "../types/ticket.type";
 import { createNotification } from "./notification.service";
+import { adminBranchScopeIds } from "../lib/branchScope";
 import { notifyAdmins } from "./order.service";
 
 type Actor = { id: string; roles: string[] };
@@ -201,7 +202,20 @@ async function vendorOrgCreatorIds(actor: Actor): Promise<string[]> {
 // touch any; sales see tickets tied to parcels owned by one of their vendors
 // (clients); riders see only their own.
 async function scopeWhere(actor: Actor, extra: Record<string, unknown> = {}) {
-  if (isStaff(actor)) return extra;
+  if (isStaff(actor)) {
+    // A branch-scoped admin sees only tickets raised by their own branch's
+    // staff. Tickets carry no parcel link (see the sales branch below), so
+    // creator is the only signal - the same approach sales uses for its
+    // vendors.
+    const branchIds = await adminBranchScopeIds(actor);
+    if (!branchIds) return extra;
+    const branchAdmins = await prisma.admins.findMany({
+      where: { location_id: { in: branchIds } },
+      select: { user_id: true },
+    });
+    const creatorIds = [...new Set([actor.id, ...branchAdmins.map((a) => a.user_id)])];
+    return { ...extra, created_by: { in: creatorIds } };
+  }
 
   if (actor.roles.includes("vendor") || actor.roles.includes("vendor_staff")) {
     const creatorIds = await vendorOrgCreatorIds(actor);

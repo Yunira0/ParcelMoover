@@ -11,6 +11,7 @@ import { evaluateVendorBillingAsync } from "./billing.service";
 import { syncSettlementPostings } from "./accounting/sync";
 
 import { getActivePaymentMethodNames } from "./payment-method.service";
+import { adminBranchScopeIds } from "../lib/branchScope";
 import {
   AttachSettlementDocumentsInput,
   CodPaymentFilter,
@@ -161,13 +162,68 @@ async function resolveRider(actor: Actor, riderIdParam?: string) {
     throw new AppError(400, "riderId is required");
   }
 
+  // A branch-scoped admin may only settle riders in their branch's coverage;
+  // the filter (not a separate check) keeps "not mine" indistinguishable from
+  // "doesn't exist".
+  const branchIds = await adminBranchScopeIds(actor);
   const rider = await prisma.riders.findFirst({
-    where: { id: riderIdParam, deleted_at: null },
+    where: { id: riderIdParam, deleted_at: null, ...(branchIds ? { location_id: { in: branchIds } } : {}) },
   });
   if (!rider) {
     throw new AppError(404, "Rider not found");
   }
   return rider;
+}
+
+/**
+ * Vendor COD settlement is centralised at Imadol; rider COD settlement is a
+ * branch activity but limited to the branch's own riders. No-op for
+ * super_admin and unrestricted admins.
+ */
+async function assertBranchActorOwnsRider(actor: Actor, riderId: string) {
+  const ids = await adminBranchScopeIds(actor);
+  if (!ids) return;
+  const rider = await prisma.riders.findFirst({
+    where: { id: riderId, location_id: { in: ids } },
+    select: { id: true },
+  });
+  if (!rider) throw new AppError(403, "This rider is not assigned to your branch");
+}
+
+/**
+ * Vendor COD settlement is centralised at the Imadol head office: a branch only
+ * collects COD (from customers via riders, and from those riders) and remits it
+ * to Imadol, which then settles vendors. Rider settlement stays a branch
+ * activity, so this guards the "vendor" payee type only.
+ */
+async function assertHeadOfficeForVendorSettlement(actor: Actor) {
+  if (actor.roles.includes("super_admin")) return;
+  const admin = await prisma.admins.findUnique({
+    where: { user_id: actor.id },
+    select: { branch_scoped: true },
+  });
+  if (admin?.branch_scoped) {
+    throw new AppError(403, "Vendor settlements are handled centrally from Imadol, not from a branch");
+  }
+}
+
+/**
+ * Actor access to one existing statement, resolved from its payee:
+ * - vendor statement -> Imadol head office only (no branch admin)
+ * - rider statement  -> a branch-scoped admin only for their own branch's rider
+ */
+async function assertHeadOfficeForVendorSettlementById(actor: Actor, settlementId: string) {
+  if (actor.roles.includes("super_admin")) return;
+  const settlement = await prisma.settlements.findUnique({
+    where: { id: settlementId },
+    select: { payee_type: true, rider_id: true },
+  });
+  if (!settlement) return;
+  if (settlement.payee_type === "vendor") {
+    await assertHeadOfficeForVendorSettlement(actor);
+  } else if (settlement.payee_type === "rider" && settlement.rider_id) {
+    await assertBranchActorOwnsRider(actor, settlement.rider_id);
+  }
 }
 
 function toBillingProfile(vendor: {
@@ -386,6 +442,8 @@ export async function listSettlements(
     } else if (isStaff) {
       // No targetId means "all vendors" - staff-only, matches the admin
       // COD Management view which lists every statement of a type at once.
+      // A branch-scoped admin has no business in the vendor settlement ledger.
+      await assertHeadOfficeForVendorSettlement(actor);
       vendorId = targetId;
     } else {
       const ownVendorId = await resolveOwnVendorId(actor);
@@ -407,14 +465,39 @@ export async function listSettlements(
     }
   }
 
+  // A branch-scoped admin only sees settlements for riders in their branch's
+  // coverage. undefined for every other actor (super_admin, unrestricted admin,
+  // vendor/rider self, sales).
+  const branchRiderIds = payeeType === "rider" && isStaff ? await adminBranchScopeIds(actor) : undefined;
+  if (riderId && branchRiderIds) {
+    const owned = await prisma.riders.findFirst({
+      where: { id: riderId, location_id: { in: branchRiderIds } },
+      select: { id: true },
+    });
+    if (!owned) throw new AppError(403, "This rider is not assigned to your branch");
+  }
+
   const take = Math.min(MAX_PAGE_SIZE, Math.max(1, pageSize));
   const safePage = Math.max(1, page);
   const skip = (safePage - 1) * take;
 
-  const scopeKey = vendorId ? vendorId : riderId ? `rider:${riderId}` : `all:${payeeType}`;
+  const scopeKey = vendorId
+    ? vendorId
+    : riderId
+      ? `rider:${riderId}`
+      : branchRiderIds
+        ? `branch:${[...branchRiderIds].sort().join("-")}`
+        : `all:${payeeType}`;
   const cacheKey = `finance:${scopeKey}:settlements:${safePage}:${take}:${fromDate?.toISOString() ?? ""}:${toDate?.toISOString() ?? ""}:${status ?? ""}:${search ?? ""}`;
   const cached = await readFinanceCache<SettlementsListResult>(cacheKey);
   if (cached) return cached;
+
+  // riders relation filter - the branch scope and the name search both land on
+  // it, so they are merged into one object (Prisma allows only one `riders` key).
+  const ridersFilter: Prisma.ridersWhereInput = {
+    ...(branchRiderIds ? { location_id: { in: branchRiderIds } } : {}),
+    ...(search && payeeType === "rider" ? { name: { contains: search, mode: "insensitive" } } : {}),
+  };
 
   const where: Prisma.settlementsWhereInput = {
     payee_type: payeeType,
@@ -429,17 +512,15 @@ export async function listSettlements(
         }
       : {}),
     ...(status ? { status } : {}),
-    // Payee name filter - riders have a single name field, vendors show
-    // business_name with client_name as fallback, so either can match.
-    ...(search
-      ? payeeType === "rider"
-        ? { riders: { name: { contains: search, mode: "insensitive" } } }
-        : {
-            OR: [
-              { vendors: { business_name: { contains: search, mode: "insensitive" } } },
-              { vendors: { client_name: { contains: search, mode: "insensitive" } } },
-            ],
-          }
+    ...(Object.keys(ridersFilter).length ? { riders: ridersFilter } : {}),
+    // Vendor name filter - business_name with client_name as fallback.
+    ...(search && payeeType === "vendor"
+      ? {
+          OR: [
+            { vendors: { business_name: { contains: search, mode: "insensitive" } } },
+            { vendors: { client_name: { contains: search, mode: "insensitive" } } },
+          ],
+        }
       : {}),
   };
 
@@ -525,6 +606,7 @@ export async function getUnsettledOrders(
     }
     if (isStaff) {
       if (!targetId) throw new AppError(400, "riderId is required");
+      await assertBranchActorOwnsRider(actor, targetId);
       riderId = targetId;
     } else {
       const rider = await prisma.riders.findFirst({
@@ -544,6 +626,7 @@ export async function getUnsettledOrders(
       vendorId = owned.id;
     } else if (isStaff) {
       if (!targetId) throw new AppError(400, "vendorId is required");
+      await assertHeadOfficeForVendorSettlement(actor);
       vendorId = targetId;
     } else {
       const vendor = await prisma.vendors.findFirst({
@@ -712,6 +795,7 @@ export async function createSettlement(
   if (Number.isNaN(parsedDate.getTime())) {
     throw new AppError(400, "settlementDate must be a valid date");
   }
+  if (payeeType === "vendor") await assertHeadOfficeForVendorSettlement(actor);
 
   const target =
     payeeType === "rider" ? await resolveRider(actor, targetId) : await resolveVendor(actor, targetId);
@@ -949,6 +1033,7 @@ export async function payForSettlement(
   if (!payments || payments.length === 0) {
     throw new AppError(400, "At least one payment is required");
   }
+  await assertHeadOfficeForVendorSettlementById(actor, settlementId);
   // Payment methods are configurable (Cash, Online, eSewa, Bank, ...) and
   // managed by super admins, so validate each submitted method against the
   // currently-active set rather than a hardcoded list.
@@ -1219,6 +1304,7 @@ export async function attachSettlementDocuments(
   if (replaceDocumentId && incoming.length > 1) {
     throw new AppError(400, "Only one file can be uploaded when replacing a document");
   }
+  await assertHeadOfficeForVendorSettlementById(actor, settlementId);
 
   // Under the row lock like the other writers: a revert landing between these
   // checks and the insert deletes the statement's instalments and documents,
@@ -1308,6 +1394,7 @@ export async function deleteSettlementDocument(
   settlementId: string,
   documentId: string,
 ): Promise<{ id: string; documents: SettlementDocumentResult[] }> {
+  await assertHeadOfficeForVendorSettlementById(actor, settlementId);
   const existing = await prisma.settlement_documents.findFirst({
     where: { id: documentId, settlement_id: settlementId },
     select: { id: true, kind: true, file_path: true, settlement_payment_id: true },
@@ -1355,6 +1442,7 @@ export async function updateSettlement(
   if (!codCollectionIds || codCollectionIds.length === 0) {
     throw new AppError(400, "A settlement must include at least one order");
   }
+  await assertHeadOfficeForVendorSettlementById(actor, settlementId);
 
   // All of this runs under the row lock: the "still pending" check guards the
   // edit, and the set of orders being added or removed is derived from the
@@ -1546,6 +1634,7 @@ export async function revertSettlement(
   settlementId: string,
   remark: string,
 ): Promise<CreateSettlementResult> {
+  await assertHeadOfficeForVendorSettlementById(actor, settlementId);
   // Read under the row lock: `wasSettled` decides whether the bundled
   // collections get unwound, so reading it before an instalment commits would
   // leave them marked paid against a statement that is pending again.
@@ -1703,7 +1792,16 @@ async function assertSettlementAccess(
   },
 ): Promise<void> {
   const isStaff = actor.roles.some((r) => ["super_admin", "admin"].includes(r));
-  if (isStaff) return;
+  if (isStaff) {
+    // A branch-scoped admin only reaches its own branch's rider statements;
+    // vendor statements are head-office (Imadol) only.
+    if (settlement.payee_type === "vendor") {
+      await assertHeadOfficeForVendorSettlement(actor);
+    } else if (settlement.payee_type === "rider" && settlement.rider_id) {
+      await assertBranchActorOwnsRider(actor, settlement.rider_id);
+    }
+    return;
+  }
 
   const isSales = actor.roles.includes("sales");
 
@@ -1798,6 +1896,7 @@ export async function cancelSettlement(
   settlementId: string,
   remark: string,
 ): Promise<CreateSettlementResult> {
+  await assertHeadOfficeForVendorSettlementById(actor, settlementId);
   // Under the row lock: "still pending" has to be true at the moment the items
   // are deleted, not a moment earlier, or a statement that just took its first
   // instalment loses the orders backing it.

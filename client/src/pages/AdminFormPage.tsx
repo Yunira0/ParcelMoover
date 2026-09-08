@@ -532,8 +532,8 @@ const AdminFormPage: React.FC = () => {
                       onChange={(e) => setForm((prev) => ({ ...prev, branchScoped: e.target.checked }))}
                     />
                     <span>
-                      Restrict to this hub's orders
-                      <small>Order Management only shows orders that touch this hub - not every order.</small>
+                      Use limited branch workspace
+                      <small>Shows only this hub's orders, branch settlements, and branch payments.</small>
                     </span>
                   </label>
                 )}

@@ -34,6 +34,7 @@ import {
 } from "./order.service";
 import { resolveBranchLocationIds } from "./branch.service";
 import { assertBranchCanReceiveTransit } from "./branch-billing.service";
+import { adminBranchScopeIds } from "../lib/branchScope";
 import {
   CreateTransitManifestInput,
   DispatchTransitManifestInput,
@@ -162,12 +163,21 @@ async function resolveLocationIds(fromHub: string, toHub: string) {
   };
 }
 
-export async function listTransitManifests(_actor: Actor, params: ListTransitManifestsParams = {}) {
+export async function listTransitManifests(actor: Actor, params: ListTransitManifestsParams = {}) {
   const page = Math.max(1, params.page ?? 1);
   const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, params.pageSize ?? DEFAULT_PAGE_SIZE));
 
   const where: Record<string, unknown> = {};
   if (params.status) where.status = params.status;
+
+  // A branch-scoped admin only sees manifests that start or end at their branch.
+  // Kept in AND so it can't be clobbered by (or clobber) the search OR below.
+  const branchIds = await adminBranchScopeIds(actor);
+  if (branchIds) {
+    where.AND = [
+      { OR: [{ from_location_id: { in: branchIds } }, { to_location_id: { in: branchIds } }] },
+    ];
+  }
 
   if (params.search?.trim()) {
     const search = params.search.trim();
@@ -218,8 +228,19 @@ export async function listTransitManifests(_actor: Actor, params: ListTransitMan
   };
 }
 
-export async function getTransitManifestById(_actor: Actor, id: string) {
+export async function getTransitManifestById(actor: Actor, id: string) {
   const row = await loadManifestOrThrow(id);
+
+  const branchIds = await adminBranchScopeIds(actor);
+  if (
+    branchIds &&
+    !(
+      (row.from_location_id && branchIds.includes(row.from_location_id)) ||
+      (row.to_location_id && branchIds.includes(row.to_location_id))
+    )
+  ) {
+    throw new AppError(404, "Transit manifest not found");
+  }
 
   const links = await prisma.transit_manifest_parcels.findMany({
     where: { transit_manifest_id: id },

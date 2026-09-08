@@ -28,6 +28,9 @@ vi.mock("../branch.service", () => ({
 vi.mock("../branch-billing.service", () => ({
   assertBranchCanReceiveTransit: vi.fn(),
 }));
+vi.mock("../../lib/branchScope", () => ({
+  adminBranchScopeIds: vi.fn().mockResolvedValue(undefined),
+}));
 
 import prisma from "../../lib/prisma";
 import { bulkUpdateParcelStatus, mapHandoverParcel } from "../order.service";

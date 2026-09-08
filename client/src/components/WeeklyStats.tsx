@@ -56,10 +56,12 @@ function niceCeiling(value: number): number {
 }
 
 const formatDayLabel = (dateStr: string) => {
-  const d = new Date(dateStr);
+  const d = new Date(`${dateStr}T00:00:00Z`);
   if (Number.isNaN(d.getTime())) return { dow: '', md: '' };
   return {
-    dow: d.toLocaleDateString('en-US', { weekday: 'long' }),
+    // The date string is already a Nepal calendar day; read the weekday off it
+    // in UTC so it doesn't drift by the viewer's timezone.
+    dow: d.toLocaleDateString('en-US', { weekday: 'long', timeZone: 'UTC' }),
     md: (toBsDate(d).slice(5) || '').replace('-', '/'),
   };
 };
@@ -113,11 +115,10 @@ const WeeklyStats: React.FC<WeeklyStatsProps> = ({ data, loading, period, onPeri
   const slotW = n > 0 ? innerW / n : 0;
   const xAt = (i: number) => PAD.left + slotW / 2 + i * slotW;
 
-  // Plot the server's order as-is: it builds the range oldest-first and ends on
-  // today, so today is always the rightmost point. The 7-day view used to
-  // re-sort by day-of-week index (Sun=0..Sat=6), which pinned the axis to a
-  // fixed Sun-to-Sat week - today landed mid-axis, and the line jumped backwards
-  // in time wherever the week wrapped (e.g. Tue 17th connected to Wed 11th).
+  // Plot the server's order as-is - it builds one contiguous chronological
+  // range, so the line never wraps backwards. The 7-day view is the current
+  // Nepal week (Sunday -> Saturday); the 30-day view is a rolling window
+  // ending today. Do not re-sort by day-of-week here.
 
   // Show every tick for 7 days; thin out to ~6 labels for 30 to avoid collisions.
   const labelStride = n <= 10 ? 1 : Math.ceil(n / 6);
@@ -286,7 +287,7 @@ const WeeklyStats: React.FC<WeeklyStatsProps> = ({ data, loading, period, onPeri
                   }}
                 >
                   <div className="chart-tooltip-date">
-                    {new Date(hovered.date).toLocaleDateString('en-US', { weekday: 'short' })}
+                    {new Date(`${hovered.date}T00:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', timeZone: 'UTC' })}
                     {', '}
                     {toBsDateLabel(hovered.date)}
                   </div>

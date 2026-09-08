@@ -18,10 +18,13 @@ export const StaffPermissionsProvider: React.FC<{ children: React.ReactNode }> =
   );
 
   useEffect(() => {
+    let active = true;
+
     const persist = (
       perms: string[],
       profile?: { branchScoped?: boolean; hubId?: string | null; hubName?: string | null },
     ) => {
+      if (!active) return;
       setPermissions(perms);
       const stored = JSON.parse(localStorage.getItem('user') || 'null');
       if (stored) {
@@ -48,20 +51,51 @@ export const StaffPermissionsProvider: React.FC<{ children: React.ReactNode }> =
       }
     };
 
-    if (isStaff) {
-      getMyPermissions().then(persist).catch((err) => {
-        console.error('Failed to refresh staff permissions:', err);
-      });
-    } else if (isPlainAdmin) {
-      // /me returns the admin's current delegated permission list, so a grant
-      // made by the super_admin lands on the next page load, not next login.
-      fetchMe()
-        .then((me) => persist(Array.isArray(me?.permissions) ? me.permissions : [], me))
-        .catch((err) => {
-          console.error('Failed to refresh admin permissions:', err);
+    const refresh = () => {
+      if (isStaff) {
+        getMyPermissions().then(persist).catch((err) => {
+          console.error('Failed to refresh staff permissions:', err);
         });
-    }
+      } else if (isPlainAdmin) {
+        // /me is authoritative for both delegated permissions and branch
+        // scope. Re-read it whenever this tab becomes active so a change made
+        // by a super admin in another browser/profile takes effect without the
+        // branch operator having to log out first.
+        fetchMe()
+          .then((me) => persist(Array.isArray(me?.permissions) ? me.permissions : [], me))
+          .catch((err) => {
+            console.error('Failed to refresh admin permissions:', err);
+          });
+      }
+    };
+
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') refresh();
+    };
+
+    refresh();
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+
+    return () => {
+      active = false;
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
+    };
   }, [isStaff, isPlainAdmin]);
+
+  useEffect(() => {
+    // Cookies and localStorage are shared by tabs in the same browser profile.
+    // If another tab logs in or out, reload this shell immediately instead of
+    // leaving controls from the previous account visible against the new
+    // server session.
+    const syncCrossTabSession = (event: StorageEvent) => {
+      if (event.key === 'user') window.location.reload();
+    };
+
+    window.addEventListener('storage', syncCrossTabSession);
+    return () => window.removeEventListener('storage', syncCrossTabSession);
+  }, []);
 
   return (
     <StaffPermissionsContext.Provider value={permissions}>

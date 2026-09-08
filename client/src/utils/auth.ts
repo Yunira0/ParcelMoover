@@ -10,8 +10,8 @@ export interface CurrentUser {
    * admins (codes delegated by a super_admin, e.g. MANAGE_USERS).
    */
   permissions?: string[];
-  /** An admin/super_admin's own assigned hub, if any - lets a "From" field
-   *  default to it instead of making them pick their own branch every time. */
+  /** An admin/super_admin's own assigned hub, if any. Branch COD has a fixed
+   *  receiving master (Imadol), independent of this profile assignment. */
   locationId?: string | null;
   /** Human-readable name of the admin's assigned branch. */
   locationName?: string | null;
@@ -64,9 +64,28 @@ export function isBranchWorkspaceUser(): boolean {
 /** Routes that belong to the intentionally small assigned-branch workspace. */
 export function isBranchWorkspacePathAllowed(pathname: string): boolean {
   return (
+    pathname === '/dashboard' ||
     pathname === '/orders' ||
     pathname.startsWith('/orders/track/') ||
+    // Branch runs its own pickup, dispatch, transit and return desks; the order
+    // APIs behind these pages scope a branch-scoped admin to their own branch.
+    pathname === '/pickup' ||
+    pathname === '/dispatch' ||
+    pathname === '/oov' ||
+    pathname === '/return' ||
+    // Branch manages its own riders and settles their COD; the rider APIs
+    // behind these pages scope a branch-scoped admin to their branch's riders.
+    pathname === '/riders' ||
+    pathname.startsWith('/riders/') ||
+    pathname === '/accounting/transactions/rider-cod' ||
+    pathname.startsWith('/finance/settlements/') ||
+    // Support desk for the branch's own parcels / staff.
+    pathname === '/tickets' ||
+    pathname.startsWith('/tickets/') ||
+    pathname === '/remarks' ||
+    pathname.startsWith('/remarks/') ||
     pathname === '/branches/settlement' ||
+    // Includes /branches/settlement/new — a branch creates its own COD statement.
     pathname.startsWith('/branches/settlement/') ||
     pathname === '/branches/billing'
   );

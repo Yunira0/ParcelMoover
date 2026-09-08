@@ -385,9 +385,26 @@ const BranchSidebar: React.FC = () => {
           </span>
         </div>
 
+        <SidebarItem to="/dashboard" icon={LayoutDashboard} label="Dashboard" />
         <SidebarItem to="/orders" icon={Package} label="Orders" />
-        <SidebarItem to="/branches/settlement" icon={Banknote} label="Branch Settlement" />
+
+        <SidebarSection label="Operations" />
+        <SidebarItem to="/pickup" icon={Archive} label="Pickup" />
+        <SidebarItem to="/dispatch" icon={Send} label="Local Dispatch" />
+        <SidebarItem to="/oov" icon={Route} label="Transit" />
+        <SidebarItem to="/return" icon={RotateCcw} label="Return" />
+
+        <SidebarSection label="Management" />
+        <SidebarItem to="/riders" icon={Bike} label="Rider Management" />
+
+        <SidebarSection label="Finance" />
+        <SidebarItem to="/branches/settlement" icon={Banknote} label="Branch COD" />
         <SidebarItem to="/branches/billing" icon={Wallet} label="Branch Payments" />
+        <SidebarItem to="/accounting/transactions/rider-cod" icon={Bike} label="Rider COD" />
+
+        <SidebarSection label="Customer Experience" />
+        <SidebarItem to="/tickets" icon={Ticket} label="Tickets" />
+        <SidebarItem to="/remarks" icon={MessageSquare} label="Remarks" />
       </div>
 
       <div className="sidebar-footer">
@@ -414,10 +431,6 @@ const AdminSidebar: React.FC<{ isSuperAdmin: boolean }> = ({ isSuperAdmin }) => 
         {canViewBranchTracking && (
           <SidebarItem to="/branches" icon={Building2} label="Branch Overview" />
         )}
-        {/* Keep the branch money workflow together: after the branch overview,
-            staff can create/view settlements and add payment proof. */}
-        <SidebarItem to="/branches/settlement" icon={Banknote} label="Branch Settlement" />
-        <SidebarItem to="/branches/billing" icon={Wallet} label="Branch Payments" />
 
         <SidebarSection label="Management" />
         {/* Three peers in one column. KYC used to be a fourth entry here; it is
@@ -475,6 +488,11 @@ const AdminSidebar: React.FC<{ isSuperAdmin: boolean }> = ({ isSuperAdmin }) => 
             so an admin without the grant sees those and nothing else here. */}
         <SidebarSection label="Finance" />
         <div className="sidebar-subnav">
+          {/* Branch COD (statements) and its matching deposits (Branch
+              Payments) are one workflow; kept next to Rider/Vendor COD. */}
+          <SubItem to="/branches/settlement" icon={Building2} label="Branch COD" />
+          <SubItem to="/branches/billing" icon={Wallet} label="Branch Payments" />
+
           <SubItem to="/accounting/transactions/rider-cod" icon={Bike} label="Rider COD" />
 
           {/* Vendor COD keeps its three screens together: the settlements

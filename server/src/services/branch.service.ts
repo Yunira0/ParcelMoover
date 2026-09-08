@@ -11,6 +11,8 @@ import type {
   PayBranchSettlementInput,
 } from "../validators/branch.schema";
 import { getActivePaymentMethodNames } from "./payment-method.service";
+import { createNotification } from "./notification.service";
+import { evaluateBranchBilling } from "./branch-billing.service";
 
 const DELIVERED: parcel_status[] = ["delivered", "partially_delivered"];
 const METRIC_STATUSES: Record<string, parcel_status[] | undefined> = {
@@ -55,10 +57,11 @@ export async function canWriteBranchTracking(actor: OrderActor) {
 
 export async function getActorBranchScope(actor: OrderActor) {
   const admin = await prisma.admins.findUnique({
-    where: { user_id: actor.id }, select: { location_id: true, permissions: true },
+    where: { user_id: actor.id }, select: { location_id: true, branch_scoped: true, permissions: true },
   });
   return {
     locationId: admin?.location_id ?? null,
+    branchScoped: admin?.branch_scoped ?? false,
     canRead: actor.roles.includes("super_admin") || Boolean(admin?.permissions.some((p) => p === "BRANCH_TRACKING_READ" || p === "BRANCH_TRACKING_WRITE")),
     canWrite: actor.roles.includes("super_admin") || Boolean(admin?.permissions.includes("BRANCH_TRACKING_WRITE")),
   };
@@ -173,12 +176,30 @@ async function orderQuery(query: BranchTrackingQuery) {
   };
 }
 
+/**
+ * Branch tracking reports are cross-branch and stay behind BRANCH_TRACKING_READ.
+ * A branch workspace admin reaches this only to pick the orders for its own COD
+ * statement, so it is pinned to its own branch as the collecting (destination)
+ * side and any caller-supplied route filter is dropped.
+ */
+async function scopeBranchOrderQuery(actor: OrderActor, query: BranchTrackingQuery): Promise<BranchTrackingQuery> {
+  if (actor.roles.includes("super_admin")) return query;
+  const scope = await getActorBranchScope(actor);
+  if (scope.branchScoped) {
+    if (!scope.locationId) throw new AppError(403, "Your branch account is not assigned to a branch");
+    return { ...query, toBranchId: scope.locationId, fromBranchId: undefined };
+  }
+  if (!scope.canRead) throw new AppError(403, "Not authorized to view branch orders");
+  return query;
+}
+
 export async function listBranchOrders(actor: OrderActor, query: BranchTrackingQuery) {
-  return listOrders(actor, { ...(await orderQuery(query)),
-    ...(query.page !== undefined ? { page: query.page } : {}),
-    ...(query.pageSize !== undefined ? { pageSize: query.pageSize } : {}),
-    ...(query.cursor ? { cursor: query.cursor } : {}),
-    ...(query.dir ? { dir: query.dir } : {}),
+  const scoped = await scopeBranchOrderQuery(actor, query);
+  return listOrders(actor, { ...(await orderQuery(scoped)),
+    ...(scoped.page !== undefined ? { page: scoped.page } : {}),
+    ...(scoped.pageSize !== undefined ? { pageSize: scoped.pageSize } : {}),
+    ...(scoped.cursor ? { cursor: scoped.cursor } : {}),
+    ...(scoped.dir ? { dir: scoped.dir } : {}),
   });
 }
 
@@ -272,9 +293,13 @@ export async function listBranchSettlements(actor: OrderActor, query: BranchSett
     throw new AppError(403, "Your admin account is not assigned to a branch");
   }
   const ownBranchId = ownScope?.locationId;
+  // Branch workspace: this branch is the payer. Head-office workspace: its
+  // assigned master branch is the receiver. The default follows the actor's
+  // side of the payer -> master workflow.
+  const effectiveScope = query.scope ?? (ownScope?.branchScoped ? "outgoing" : "incoming");
   const ownRouteScope: Prisma.branch_settlementsWhereInput = actor.roles.includes("super_admin") ? {} : {
-    ...(query.scope === "incoming" ? { to_branch_id: ownBranchId! }
-      : query.scope === "all" ? { OR: [{ from_branch_id: ownBranchId! }, { to_branch_id: ownBranchId! }] }
+    ...(effectiveScope === "incoming" ? { to_branch_id: ownBranchId! }
+      : effectiveScope === "all" ? { OR: [{ from_branch_id: ownBranchId! }, { to_branch_id: ownBranchId! }] }
       : { from_branch_id: ownBranchId! }),
   };
   const baseWhere: Prisma.branch_settlementsWhereInput = {
@@ -320,12 +345,41 @@ export async function listBranchSettlements(actor: OrderActor, query: BranchSett
   meta: { page: query.page, pageSize: query.pageSize, total, totalPages: Math.max(1, Math.ceil(total / query.pageSize)) } };
 }
 
-async function assertOwnSettlementOrigin(actor: OrderActor, fromBranchId: string): Promise<void> {
+async function assertCanCreateBranchSettlement(
+  actor: OrderActor,
+  masterBranchId: string,
+  fromBranchId: string,
+): Promise<void> {
   if (actor.roles.includes("super_admin")) return;
   const scope = await getActorBranchScope(actor);
-  if (!scope.locationId || scope.locationId !== fromBranchId) {
-    throw new AppError(403, "A branch admin can create settlements only for their assigned branch");
+  if (!scope.locationId) {
+    throw new AppError(403, "Your admin account is not assigned to a branch");
   }
+  // A branch workspace creates statements for its own COD only.
+  if (scope.branchScoped) {
+    if (scope.locationId !== fromBranchId) {
+      throw new AppError(403, "You can only create a statement for your own branch");
+    }
+    return;
+  }
+  // A non-branch-scoped head-office admin must be the Imadol master-branch admin.
+  if (scope.locationId !== masterBranchId) {
+    throw new AppError(403, "Only an Imadol master-branch admin can create branch statements");
+  }
+}
+
+async function getImadolMasterBranch() {
+  const master = await prisma.locations.findFirst({
+    where: {
+      code: { equals: "IMADOL", mode: "insensitive" },
+      parent_id: null,
+      is_hub: true,
+      is_active: true,
+    },
+    select: { id: true, name: true },
+  });
+  if (!master) throw new AppError(503, "The Imadol master branch is not configured or active");
+  return master;
 }
 
 type BranchPaymentLine = { method: string; amount: number };
@@ -349,21 +403,38 @@ function sumPaymentsByMethod(lines: BranchPaymentLine[]): BranchPaymentLine[] {
 const round2 = (value: number) => Math.round(value * 100) / 100;
 
 export async function createBranchSettlement(actor: OrderActor, input: CreateBranchSettlementInput) {
-  await assertOwnSettlementOrigin(actor, input.fromBranchId);
-  const [originIds, destinationIds, fromBranch] = await Promise.all([
-    resolveBranchLocationIds(input.fromBranchId), resolveBranchLocationIds(input.toBranchId),
-    prisma.locations.findUnique({ where: { id: input.fromBranchId }, select: { commission_per_parcel: true } }),
+  const masterBranch = await getImadolMasterBranch();
+  if (input.toBranchId !== masterBranch.id) {
+    throw new AppError(400, "The receiving master branch must be Imadol");
+  }
+  // A branch workspace can only ever settle its own COD, at its own agreed
+  // commission rate - never trust either from that side of the request.
+  const actorScope = actor.roles.includes("super_admin") ? null : await getActorBranchScope(actor);
+  const isBranchCreator = Boolean(actorScope?.branchScoped && actorScope.locationId);
+  const fromBranchId = isBranchCreator ? actorScope!.locationId! : input.fromBranchId;
+  if (fromBranchId === masterBranch.id) {
+    throw new AppError(400, "Imadol cannot create a COD statement to pay itself");
+  }
+  await assertCanCreateBranchSettlement(actor, masterBranch.id, fromBranchId);
+  // The paying branch is where delivery happened and COD was collected. The
+  // master branch receives that remittance; it is not a parcel-route filter.
+  const [payingBranchLocationIds, fromBranch] = await Promise.all([
+    resolveBranchLocationIds(fromBranchId),
+    prisma.locations.findUnique({ where: { id: fromBranchId }, select: { commission_per_parcel: true } }),
   ]);
+  const commissionPerParcel = isBranchCreator
+    ? money(fromBranch?.commission_per_parcel)
+    : (input.commissionPerParcel ?? money(fromBranch?.commission_per_parcel));
   const ids = [...new Set(input.orderIds)];
-  return prisma.$transaction(async (tx) => {
+  const runInTransaction = () => prisma.$transaction(async (tx) => {
     const parcels = await tx.parcels.findMany({
       where: { id: { in: ids }, deleted_at: null, status: { in: DELIVERED },
-        origin_location_id: { in: originIds! }, destination_location_id: { in: destinationIds! },
+        destination_location_id: { in: payingBranchLocationIds! },
         branch_settlement_items: { none: {} } },
       select: { id: true, cod_amount: true, cod_collections: { select: { collected_amount: true } } },
     });
-    if (parcels.length !== ids.length) throw new AppError(409, "Some selected orders are ineligible, outside this branch pair, or already deposited");
-    const commission = new Prisma.Decimal(input.commissionPerParcel ?? money(fromBranch?.commission_per_parcel));
+    if (parcels.length !== ids.length) throw new AppError(409, "Some selected orders were not delivered by the paying branch or are already in a statement");
+    const commission = new Prisma.Decimal(commissionPerParcel);
     const itemAmounts = parcels.map((p) => {
       const collected = p.cod_collections?.collected_amount ?? p.cod_amount;
       const net = Prisma.Decimal.max(new Prisma.Decimal(0), collected.minus(commission));
@@ -375,7 +446,7 @@ export async function createBranchSettlement(actor: OrderActor, input: CreateBra
     const stamp = input.settlementDate.replace(/-/g, "");
     const statementNo = `BRS-${stamp}-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
     const settlement = await tx.branch_settlements.create({ data: {
-      statement_no: statementNo, from_branch_id: input.fromBranchId, to_branch_id: input.toBranchId,
+      statement_no: statementNo, from_branch_id: fromBranchId, to_branch_id: input.toBranchId,
       settlement_date: new Date(`${input.settlementDate}T00:00:00.000Z`), commission_per_parcel: commission,
       gross_cod: gross, commission_amount: commissionAmount, net_payable: net,
       status: "pending", remark: input.remark || null, created_by: actor.id,
@@ -388,6 +459,65 @@ export async function createBranchSettlement(actor: OrderActor, input: CreateBra
       commissionAmount: money(commissionAmount), netPayable: money(net), paidAmount: 0,
       remainingAmount: money(net), status: settlement.status };
   });
+
+  let result: Awaited<ReturnType<typeof runInTransaction>>;
+  try {
+    result = await runInTransaction();
+  } catch (error) {
+    // A concurrent statement can claim a parcel between the eligibility check
+    // and the item insert; branch_settlement_items.parcel_id is unique, so the
+    // loser trips P2002. Surface it as the same 409 the sequential path returns.
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      throw new AppError(409, "Some selected orders were just added to another statement. Refresh and try again.");
+    }
+    throw error;
+  }
+
+  // Notify whichever side must act next. If Imadol cut the statement, the
+  // paying branch owes the money; if the branch cut it, Imadol owes the
+  // verification. Delivery is best-effort so it cannot roll back the record.
+  try {
+    const [recipients, title, body, link] = isBranchCreator
+      ? [
+          await prisma.admins.findMany({
+            where: {
+              location_id: masterBranch.id,
+              users: { is: { status: "active", deleted_at: null } },
+            },
+            select: { user_id: true },
+          }),
+          `Branch statement ${result.statementNo} submitted`,
+          `A branch created a Rs. ${result.netPayable.toLocaleString()} COD statement for ${result.orderCount} delivered order${result.orderCount === 1 ? "" : "s"}. Verify the payment once the branch remits it.`,
+          "/branches/billing?tab=queue",
+        ]
+      : [
+          await prisma.admins.findMany({
+            where: {
+              location_id: fromBranchId,
+              branch_scoped: true,
+              users: { is: { status: "active", deleted_at: null } },
+            },
+            select: { user_id: true },
+          }),
+          `Branch statement ${result.statementNo} created`,
+          `Pay Rs. ${result.netPayable.toLocaleString()} to Imadol for ${result.orderCount} delivered order${result.orderCount === 1 ? "" : "s"}, then attach the payment proof.`,
+          "/branches/billing?tab=statements",
+        ];
+    const userIds = [...new Set(recipients.map((recipient) => recipient.user_id))]
+      .filter((userId) => userId !== actor.id);
+    await Promise.all(userIds.map((userId) => createNotification(
+      userId, title, body, result.id, "branch_settlement", link,
+    )));
+  } catch (error) {
+    console.error("[Branch settlements] Failed to notify the next actor:", error);
+  }
+
+  // A new statement raises the branch's unsettled COD and can tip it into the
+  // warn/block band. Refresh the stored alert state so reporting keyed on it
+  // does not lag the live transit gate. Best-effort: it swallows its own errors.
+  await evaluateBranchBilling(fromBranchId);
+
+  return result;
 }
 
 export async function getBranchSettlementDetail(actor: OrderActor, settlementId: string) {
@@ -400,6 +530,23 @@ export async function getBranchSettlementDetail(actor: OrderActor, settlementId:
       payment_records: {
         orderBy: { paid_at: "asc" },
         include: { recorded_by_user: { select: { full_name: true } } },
+      },
+      // A branch submits the receipt through Branch Payments, then office
+      // verification creates the settlement payment above. Keep the verified
+      // claims on the statement too so its proof can be reviewed later.
+      payment_claims: {
+        where: { status: "verified", proof_path: { not: null } },
+        orderBy: { created_at: "asc" },
+        select: {
+          id: true,
+          amount: true,
+          method: true,
+          reference: true,
+          proof_path: true,
+          note: true,
+          reviewed_at: true,
+          created_at: true,
+        },
       },
       items: {
         orderBy: { created_at: "asc" },
@@ -453,6 +600,16 @@ export async function getBranchSettlementDetail(actor: OrderActor, settlementId:
       remark: payment.remark,
       paidAt: payment.paid_at.toISOString(),
       recordedBy: payment.recorded_by_user?.full_name ?? null,
+    })),
+    paymentProofs: settlement.payment_claims.map((claim) => ({
+      id: claim.id,
+      amount: money(claim.amount),
+      method: claim.method,
+      reference: claim.reference,
+      proofPath: claim.proof_path!,
+      note: claim.note,
+      submittedAt: claim.created_at.toISOString(),
+      verifiedAt: claim.reviewed_at?.toISOString() ?? null,
     })),
     items: settlement.items.map((item) => ({
       parcelId: item.parcel_id,

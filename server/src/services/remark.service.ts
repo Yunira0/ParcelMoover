@@ -3,6 +3,7 @@ import { AppError } from "../utils/AppError";
 import { ListRemarksParams, RemarkAuthorGroup } from "../types/remark.type";
 import { displayAuthor, stripCarrierStaffTag } from "../utils/carrierRemark";
 import { nepalDayRangeUtc } from "../utils/nepalTime";
+import { adminBranchScopeIds, branchParcelFilter } from "../lib/branchScope";
 
 type Actor = { id: string; roles: string[] };
 
@@ -22,9 +23,14 @@ const normalizeStatus = (status: string | null): RemarkWorkflowStatus => {
   return "pending";
 };
 
-// Vendors and their staff only see remarks on their vendor's parcels; admins see everything.
+// Vendors and their staff only see remarks on their vendor's parcels; a
+// branch-scoped admin only sees remarks on parcels touching their branch;
+// every other admin sees everything.
 async function scopeWhere(actor: Actor, extra: Record<string, unknown> = {}) {
-  if (isStaff(actor)) return extra;
+  if (isStaff(actor)) {
+    const branchIds = await adminBranchScopeIds(actor);
+    return branchIds ? { ...extra, parcels: branchParcelFilter(branchIds) } : extra;
+  }
 
   // Sales: remarks on parcels belonging to any of the vendors (clients) they own.
   if (actor.roles.includes("sales")) {

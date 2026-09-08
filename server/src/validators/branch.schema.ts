@@ -44,8 +44,8 @@ export const branchSettlementQuerySchema = z.object({
   dateFrom: day.optional(),
   dateTo: day.optional(),
   status: z.enum(["pending", "partially_paid", "settled", "cancelled"]).optional(),
-  // A branch can inspect statements it owes, statements another branch owes
-  // it, or both. Only its own branch ever participates in this scope.
+  // Outgoing is what a branch owes the master; incoming is what the master is
+  // due from branches. Only the actor's assigned branch participates.
   scope: z.enum(["outgoing", "incoming", "all"]).optional(),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
@@ -83,7 +83,9 @@ export const branchBillingQuerySchema = z.object({
 export const branchBillingPaymentSchema = z.object({
   branchId: uuid.optional(),
   settlementId: uuid.optional(),
-  amount: z.coerce.number().positive().max(1_000_000_000),
+  // A single branch COD remittance never realistically clears this; the cap is
+  // a fat-finger guard. A larger genuine balance is paid as split receipts.
+  amount: z.coerce.number().positive().max(50_000_000),
   method: z.string().trim().min(1).max(100).optional(),
   reference: z.string().trim().max(200).optional(),
   note: z.string().trim().max(500).optional(),
