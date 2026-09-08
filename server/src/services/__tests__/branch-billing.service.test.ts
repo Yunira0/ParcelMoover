@@ -164,7 +164,10 @@ describe("reviewBranchPayment — verifying an Add money deposit", () => {
       where: { id: "s1" },
       data: expect.objectContaining({ paid_amount: 3000, status: "partially_paid" }),
     }));
-    expect(mocks.txSettlementUpdate.mock.calls[0][0].data).not.toHaveProperty("settled_by");
+    // A short deposit must not stamp the statement as settled.
+    expect(mocks.txSettlementUpdate).not.toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ settled_by: expect.anything() }),
+    }));
   });
 
   it("waterfalls oldest-first and keeps the remainder as branch credit", async () => {
