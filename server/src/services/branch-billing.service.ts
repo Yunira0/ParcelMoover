@@ -252,6 +252,48 @@ export async function listBranchPayments(
   return { data: rows.map(mapPayment), meta: { page, pageSize: take, total, totalPages: Math.max(1, Math.ceil(total / take)) } };
 }
 
+/**
+ * Apply already-verified branch money against one open COD statement: record a
+ * branch_settlement_payments line, roll the running payment-method breakdown
+ * forward, and flip the statement to `settled` once its balance reaches zero
+ * (`partially_paid` while a balance remains). Returns how much was absorbed.
+ */
+async function applyVerifiedCreditToSettlement(
+  tx: Prisma.TransactionClient,
+  settlement: { id: string; statement_no: string; net_payable: Prisma.Decimal; paid_amount: Prisma.Decimal; payments: unknown },
+  credit: number,
+  actorId: string,
+  opts: { method: string; remark: string },
+): Promise<{ applied: number; settled: boolean; statementNo: string }> {
+  const outstanding = money(money(settlement.net_payable) - money(settlement.paid_amount));
+  const applied = Math.min(money(credit), outstanding);
+  if (applied <= 0) return { applied: 0, settled: false, statementNo: settlement.statement_no };
+  const paidAmount = money(money(settlement.paid_amount) + applied);
+  const settled = Math.round((money(settlement.net_payable) - paidAmount) * 100) === 0;
+  await tx.branch_settlement_payments.create({ data: {
+    settlement_id: settlement.id, amount: applied, method: opts.method,
+    breakdown: [{ method: opts.method, amount: applied }] as unknown as Prisma.InputJsonValue,
+    remark: opts.remark, recorded_by: actorId,
+  } });
+  const mergedByMethod = new Map<string, number>();
+  if (Array.isArray(settlement.payments)) {
+    for (const line of settlement.payments as Array<{ method?: unknown; amount?: unknown }>) {
+      if (line && typeof line.method === "string" && Number.isFinite(Number(line.amount))) {
+        mergedByMethod.set(line.method, money((mergedByMethod.get(line.method) ?? 0) + Number(line.amount)));
+      }
+    }
+  }
+  mergedByMethod.set(opts.method, money((mergedByMethod.get(opts.method) ?? 0) + applied));
+  const mergedLines = Array.from(mergedByMethod, ([method, amount]) => ({ method, amount }));
+  await tx.branch_settlements.update({ where: { id: settlement.id }, data: {
+    paid_amount: paidAmount, status: settled ? "settled" : "partially_paid",
+    payment_method: mergedLines.map((line) => line.method).join(", "),
+    payments: mergedLines as unknown as Prisma.InputJsonValue,
+    ...(settled ? { settled_by: actorId, settled_at: new Date() } : {}),
+  } });
+  return { applied, settled, statementNo: settlement.statement_no };
+}
+
 export async function reviewBranchPayment(
   actor: Actor, paymentId: string, decision: "verified" | "rejected", remark?: string,
 ): Promise<BranchPaymentItem> {
@@ -271,39 +313,70 @@ export async function reviewBranchPayment(
       data: { status: decision, reviewed_by: actor.id, reviewed_at: new Date(), review_remark: remark?.trim() || null },
     });
     if (!claimed.count) throw new AppError(409, "This payment was already reviewed by someone else");
-    await tx.audit_logs.create({ data: {
-      actor_id: actor.id, entity_type: "branch_payment", entity_id: paymentId,
-      action: decision === "verified" ? "VERIFY_BRANCH_PAYMENT" : "REJECT_BRANCH_PAYMENT",
-      old_data: { status: "pending" }, new_data: { status: decision, amount: money(existing.amount), remark: remark?.trim() || null },
-    } });
+
+    const allocations: Array<{ settlementId: string; statementNo: string; amount: number; settled: boolean }> = [];
+    let leftoverCredit = 0;
+
     if (decision === "verified" && existing.settlement_id) {
       const settlement = await tx.branch_settlements.findUnique({ where: { id: existing.settlement_id } });
       if (!settlement || settlement.status === "cancelled" || settlement.status === "settled") throw new AppError(409, "The linked settlement is no longer payable");
       const outstanding = money(settlement.net_payable) - money(settlement.paid_amount);
       if (money(existing.amount) > outstanding) throw new AppError(409, "Receipt amount now exceeds the settlement balance");
-      const paidAmount = money(settlement.paid_amount) + money(existing.amount);
-      const settled = Math.round((money(settlement.net_payable) - paidAmount) * 100) === 0;
-      await tx.branch_settlement_payments.create({ data: { settlement_id: settlement.id, amount: existing.amount, method: existing.method, breakdown: [{ method: existing.method, amount: money(existing.amount) }], remark: `Verified receipt${existing.reference ? ` · ${existing.reference}` : ""}`, recorded_by: actor.id } });
-      // Keep the running payment-method breakdown on the statement in step with
-      // the office-recorded path (payBranchSettlement), so the statements list
-      // and detail ledger show how a branch-submitted receipt was paid.
-      const mergedByMethod = new Map<string, number>();
-      if (Array.isArray(settlement.payments)) {
-        for (const line of settlement.payments as Array<{ method?: unknown; amount?: unknown }>) {
-          if (line && typeof line.method === "string" && Number.isFinite(Number(line.amount))) {
-            mergedByMethod.set(line.method, money((mergedByMethod.get(line.method) ?? 0) + Number(line.amount)));
-          }
+      const applied = await applyVerifiedCreditToSettlement(tx, settlement, money(existing.amount), actor.id, {
+        method: existing.method, remark: `Verified receipt${existing.reference ? ` · ${existing.reference}` : ""}`,
+      });
+      allocations.push({ settlementId: settlement.id, statementNo: applied.statementNo, amount: applied.applied, settled: applied.settled });
+    } else if (decision === "verified") {
+      // A branch "Add money" deposit that named no statement: waterfall the
+      // verified amount onto that branch's open COD statements, oldest first.
+      // A statement it fully covers is marked settled; a short one goes
+      // partially_paid with the balance still outstanding; any remainder stays
+      // as general branch credit. The applied portion is re-pointed at a
+      // statement so the branch balance still nets out (credit down by the same
+      // amount the statements' outstanding drops).
+      const openStatements = await tx.branch_settlements.findMany({
+        where: { from_branch_id: existing.branch_id, status: { in: ["pending", "partially_paid"] } },
+        orderBy: [{ settlement_date: "asc" }, { created_at: "asc" }],
+      });
+      let credit = money(existing.amount);
+      let firstTouched: string | null = null;
+      for (const statement of openStatements) {
+        if (credit <= 0) break;
+        const applied = await applyVerifiedCreditToSettlement(tx, statement, credit, actor.id, {
+          method: existing.method, remark: `Verified deposit${existing.reference ? ` · ${existing.reference}` : ""}`,
+        });
+        if (applied.applied <= 0) continue;
+        credit = money(credit - applied.applied);
+        firstTouched ??= statement.id;
+        allocations.push({ settlementId: statement.id, statementNo: applied.statementNo, amount: applied.applied, settled: applied.settled });
+      }
+      leftoverCredit = credit;
+      const consumed = money(money(existing.amount) - credit);
+      if (consumed > 0 && firstTouched) {
+        if (credit <= 0) {
+          await tx.branch_payments.update({ where: { id: paymentId }, data: { settlement_id: firstTouched } });
+        } else {
+          await tx.branch_payments.update({ where: { id: paymentId }, data: { amount: credit } });
+          await tx.branch_payments.create({ data: {
+            branch_id: existing.branch_id, settlement_id: firstTouched, amount: consumed,
+            method: existing.method, reference: existing.reference, proof_path: existing.proof_path,
+            note: existing.note, submitted_by: existing.submitted_by, status: "verified",
+            reviewed_by: actor.id, reviewed_at: new Date(), review_remark: remark?.trim() || null,
+          } });
         }
       }
-      mergedByMethod.set(existing.method, money((mergedByMethod.get(existing.method) ?? 0) + money(existing.amount)));
-      const mergedLines = Array.from(mergedByMethod, ([method, amount]) => ({ method, amount }));
-      await tx.branch_settlements.update({ where: { id: settlement.id }, data: {
-        paid_amount: paidAmount, status: settled ? "settled" : "partially_paid",
-        payment_method: mergedLines.map((line) => line.method).join(", "),
-        payments: mergedLines as unknown as Prisma.InputJsonValue,
-        ...(settled ? { settled_by: actor.id, settled_at: new Date() } : {}),
-      } });
     }
+
+    await tx.audit_logs.create({ data: {
+      actor_id: actor.id, entity_type: "branch_payment", entity_id: paymentId,
+      action: decision === "verified" ? "VERIFY_BRANCH_PAYMENT" : "REJECT_BRANCH_PAYMENT",
+      old_data: { status: "pending" },
+      new_data: {
+        status: decision, amount: money(existing.amount), remark: remark?.trim() || null,
+        ...(allocations.length ? { allocations } : {}),
+        ...(leftoverCredit > 0 ? { leftoverCredit } : {}),
+      },
+    } });
     return tx.branch_payments.findFirstOrThrow({ where: { id: paymentId }, include: { branch: { select: { name: true } }, settlement: { select: { statement_no: true } } } });
   });
   if (decision === "verified") await evaluateBranchBilling(existing.branch_id);
