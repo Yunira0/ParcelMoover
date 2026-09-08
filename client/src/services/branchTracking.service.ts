@@ -26,7 +26,7 @@ export const BRANCH_METRIC_ORDER: BranchMetricKey[] = [
 export const BRANCH_METRIC_LABELS: Record<BranchMetricKey, string> = {
   totalOrders: 'Total Orders', inTransit: 'In Transit', pendingDelivery: 'Pending Delivery',
   totalDelivered: 'Total Delivered', returnProcessing: 'Return Processing', returned: 'Returned',
-  hold: 'Hold', failed: 'Failed', deposited: 'Deposited', pendingDeposit: 'Pending Deposit',
+  hold: 'Hold', failed: 'Failed', deposited: 'COD Deposited', pendingDeposit: 'COD Pending',
 };
 
 export interface BranchFilters {

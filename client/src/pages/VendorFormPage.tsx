@@ -13,7 +13,7 @@ import {
   type ManagedUserDocument,
 } from '../services/users.service';
 import { getCurrentUser } from '../services/auth.service';
-import { getCurrentUser as getCachedUser, getCurrentUserRoles, isAdminSide } from '../utils/auth';
+import { getCurrentUser as getCachedUser, getCurrentUserRoles, isAdminSide, isBranchWorkspaceUser } from '../utils/auth';
 import { toDocumentUrl } from '../utils/documentUrl';
 import { getPricingSettings } from '../services/pricing.service';
 import { extractServerFieldErrors, isValidEmail, isValidName, isValidPhone, hasLetter, isDigits, normalizePhone } from '../utils/serverValidation';
@@ -88,6 +88,8 @@ interface VendorFormInput {
   extraWeightPercent: string;
   returnInsideValleyPercent: string;
   returnOutsideValleyPercent: string;
+  branchReturnInsideValleyPercent: string;
+  branchReturnOutsideValleyPercent: string;
   branchFlatInsideValley: string;
   branchFlatOutsideValley: string;
   branchFlatOutsideRingRoad: string;
@@ -133,6 +135,8 @@ const emptyForm: VendorFormInput = {
   extraWeightPercent: '',
   returnInsideValleyPercent: '',
   returnOutsideValleyPercent: '',
+  branchReturnInsideValleyPercent: '',
+  branchReturnOutsideValleyPercent: '',
   branchFlatInsideValley: '',
   branchFlatOutsideValley: '',
   branchFlatOutsideRingRoad: '',
@@ -333,6 +337,21 @@ const VendorFormPage: React.FC = () => {
       .map((a) => ({ value: a.userId, label: a.name }));
   }, [salesAdmins, form.pickupLocation, isSalesUser, salesName, ownSalesUserId]);
 
+  // The vendor's own branch, for labelling its branch-delivery rates as
+  // "inside / outside <branch>" instead of "inside / outside valley".
+  const branchLabel =
+    (locations.find((l) => l.value === form.pickupLocation)?.label || '')
+      .split(' - ')[0]
+      .replace(/\s*branch\s*$/i, '')
+      .trim() || 'the branch';
+  // A branch workspace admin does not deal in the Kathmandu-valley split - its
+  // vendors are priced off the branch route table. Drop valley wording and the
+  // valley-only inputs from the form for them; the "inside/outside" pair is
+  // relabelled to the branch name.
+  const isBranchWorkspace = isBranchWorkspaceUser();
+  const insideLabel = isBranchWorkspace ? `inside ${branchLabel}` : 'inside valley';
+  const outsideLabel = isBranchWorkspace ? `outside ${branchLabel}` : 'outside valley';
+
   // Prefill the per-vendor rate fields with the global defaults from Settings;
   // the creator can then edit them so this vendor gets its own rates. Create
   // mode only - on Edit, a blank rate field means "inherits Settings" and
@@ -398,6 +417,8 @@ const VendorFormPage: React.FC = () => {
           extraWeightPercent: s(d.extraWeightPercent),
           returnInsideValleyPercent: s(d.returnInsideValleyPercent),
           returnOutsideValleyPercent: s(d.returnOutsideValleyPercent),
+          branchReturnInsideValleyPercent: s(d.branchReturnInsideValleyPercent),
+          branchReturnOutsideValleyPercent: s(d.branchReturnOutsideValleyPercent),
           branchFlatInsideValley: s(d.branchFlatInsideValley),
           branchFlatOutsideValley: s(d.branchFlatOutsideValley),
           branchFlatOutsideRingRoad: s(d.branchFlatOutsideRingRoad),
@@ -559,6 +580,8 @@ const VendorFormPage: React.FC = () => {
           insideValleyFlatRate: form.insideValleyEnabled ? form.insideValleyFlatRate : '',
           returnInsideValleyPercent: form.returnInsideValleyPercent,
           returnOutsideValleyPercent: form.returnOutsideValleyPercent,
+          branchReturnInsideValleyPercent: form.branchReturnInsideValleyPercent,
+          branchReturnOutsideValleyPercent: form.branchReturnOutsideValleyPercent,
           branchFlatInsideValley: form.branchFlatInsideValley,
           branchFlatOutsideValley: form.branchFlatOutsideValley,
           branchFlatOutsideRingRoad: form.branchFlatOutsideRingRoad,
@@ -625,6 +648,8 @@ const VendorFormPage: React.FC = () => {
         // Return percents apply regardless of the primary rate model.
         returnInsideValleyPercent: form.returnInsideValleyPercent,
         returnOutsideValleyPercent: form.returnOutsideValleyPercent,
+        branchReturnInsideValleyPercent: form.branchReturnInsideValleyPercent,
+        branchReturnOutsideValleyPercent: form.branchReturnOutsideValleyPercent,
         // Branch overrides mirror the chosen model.
         ...(form.rateType === 'flat'
           ? {
@@ -1016,8 +1041,12 @@ const VendorFormPage: React.FC = () => {
               <div className="vfp-rate-options">
                 {[
                   { value: 'per_destination', title: 'Per-destination', desc: "Each destination's own configured rate." },
-                  { value: 'zone', title: 'Zone-based', desc: 'Priced by zone: major cities, urban, remote.' },
-                  { value: 'flat', title: 'Flat rate', desc: 'One rate inside valley, one outside valley.' },
+                  { value: 'flat', title: 'Flat rate', desc: `One rate ${insideLabel}, one ${outsideLabel}.` },
+                  // Zone-based pricing is retired from vendor setup for now; existing
+                  // zone vendors still edit their zone rates below.
+                  ...(form.rateType === 'zone'
+                    ? [{ value: 'zone', title: 'Zone-based', desc: 'Priced by zone (legacy).' }]
+                    : []),
                 ].map((opt) => (
                   <button
                     type="button"
@@ -1039,19 +1068,23 @@ const VendorFormPage: React.FC = () => {
                 <div className="vfp-rate-fields">
                   <p className="vfp-rate-note">Rates default to Settings; edit to give this vendor its own.</p>
                   <div className="vfp-fields">
-                    <FormField label="Inside valley (Rs.)" type="number" min={0}
+                    <FormField label={`${isBranchWorkspace ? `Inside ${branchLabel}` : 'Inside valley'} (Rs.)`} type="number" min={0}
                       value={form.flatInsideValley} onChange={set('flatInsideValley')} placeholder="e.g. 120" />
-                    <FormField label="Outside valley (Rs.)" type="number" min={0}
+                    <FormField label={`${isBranchWorkspace ? `Outside ${branchLabel}` : 'Outside valley'} (Rs.)`} type="number" min={0}
                       value={form.flatOutsideValley} onChange={set('flatOutsideValley')} placeholder="e.g. 250" />
-                    <FormField label="Outside ring road (Rs.)" type="number" min={0}
-                      value={form.flatOutsideRingRoad} onChange={set('flatOutsideRingRoad')} placeholder="e.g. 170" />
+                    {!isBranchWorkspace && (
+                      <FormField label="Outside ring road (Rs.)" type="number" min={0}
+                        value={form.flatOutsideRingRoad} onChange={set('flatOutsideRingRoad')} placeholder="e.g. 170" />
+                    )}
                     <FormField label="Extra weight surcharge (%)" type="number" min={0} max={100}
                       value={form.extraWeightPercent} onChange={set('extraWeightPercent')} placeholder="e.g. 10" />
                   </div>
-                  <p className="vfp-rate-note">
-                    Outside ring road applies to inside-valley destinations flagged “outside ring
-                    road” in Rate Setup. Leave blank to charge them the normal inside-valley rate.
-                  </p>
+                  {!isBranchWorkspace && (
+                    <p className="vfp-rate-note">
+                      Outside ring road applies to inside-valley destinations flagged “outside ring
+                      road” in Rate Setup. Leave blank to charge them the normal inside-valley rate.
+                    </p>
+                  )}
                 </div>
               )}
               {form.rateType === 'zone' && (
@@ -1083,8 +1116,9 @@ const VendorFormPage: React.FC = () => {
                 </div>
               )}
               {/* Optional second rate: a flat inside-valley rate that overrides the
-                  primary model for inside-valley destinations. */}
-              {(form.rateType === 'zone' || form.rateType === 'per_destination') && (
+                  primary model for inside-valley destinations. Valley-specific,
+                  so hidden for a branch workspace. */}
+              {!isBranchWorkspace && (form.rateType === 'zone' || form.rateType === 'per_destination') && (
                 <div className={`vfp-rate-fields vfp-inside-valley-block${form.insideValleyEnabled ? ' is-on' : ''}`}>
                   <label className="vfp-inside-valley-toggle">
                     <input
@@ -1115,12 +1149,10 @@ const VendorFormPage: React.FC = () => {
                   <h4 className="vfp-rate-subhead">Branch delivery rate</h4>
                   <p className="vfp-rate-note">For parcels dropped at a branch. Blank uses the Settings default.</p>
                   <div className="vfp-fields">
-                    <FormField label="Branch — inside valley (Rs.)" type="number" min={0}
+                    <FormField label={`Inside ${branchLabel} (Rs.)`} type="number" min={0}
                       value={form.branchFlatInsideValley} onChange={set('branchFlatInsideValley')} placeholder="e.g. 80" />
-                    <FormField label="Branch — outside valley (Rs.)" type="number" min={0}
+                    <FormField label={`Outside ${branchLabel} (Rs.)`} type="number" min={0}
                       value={form.branchFlatOutsideValley} onChange={set('branchFlatOutsideValley')} placeholder="e.g. 180" />
-                    <FormField label="Branch — outside ring road (Rs.)" type="number" min={0}
-                      value={form.branchFlatOutsideRingRoad} onChange={set('branchFlatOutsideRingRoad')} placeholder="e.g. 130" />
                   </div>
                 </div>
               )}
@@ -1142,29 +1174,45 @@ const VendorFormPage: React.FC = () => {
               )}
 
               {/* Return rate: a return parcel has no COD but is billed this
-                  percent of the normal delivery rate, by valley side. */}
+                  percent of the normal delivery rate. */}
               <div className="vfp-rate-fields">
                 <h4 className="vfp-rate-subhead">Return rate</h4>
                 <p className="vfp-rate-note">
                   Return parcels carry no COD but are charged this percent of the normal delivery
-                  rate. Leave blank to use the Settings default (e.g. 0% inside, 50% outside).
+                  rate. Leave blank to use the Settings default.
                 </p>
                 <div className="vfp-fields">
-                  <FormField label="Return — inside valley (% of delivery)" type="number" min={0} max={100}
+                  <FormField label={`Return — ${insideLabel} (% of delivery)`} type="number" min={0} max={100}
                     value={form.returnInsideValleyPercent} onChange={set('returnInsideValleyPercent')} placeholder="e.g. 0" />
-                  <FormField label="Return — outside valley (% of delivery)" type="number" min={0} max={100}
+                  <FormField label={`Return — ${outsideLabel} (% of delivery)`} type="number" min={0} max={100}
                     value={form.returnOutsideValleyPercent} onChange={set('returnOutsideValleyPercent')} placeholder="e.g. 50" />
                 </div>
               </div>
 
-              {isSuperAdmin && (form.rateType === 'zone' || form.rateType === 'flat') && (
+              {/* Branch return rate: return parcels dropped at a branch, priced
+                  off the branch delivery charge. Blank = falls back to the
+                  return rate above. */}
+              <div className="vfp-rate-fields">
+                <h4 className="vfp-rate-subhead">Branch return rate</h4>
+                <p className="vfp-rate-note">
+                  For return parcels handed in at a branch. Blank uses the return rate above.
+                </p>
+                <div className="vfp-fields">
+                  <FormField label={`Inside ${branchLabel} (%)`} type="number" min={0} max={100}
+                    value={form.branchReturnInsideValleyPercent} onChange={set('branchReturnInsideValleyPercent')} placeholder="e.g. 0" />
+                  <FormField label={`Outside ${branchLabel} (%)`} type="number" min={0} max={100}
+                    value={form.branchReturnOutsideValleyPercent} onChange={set('branchReturnOutsideValleyPercent')} placeholder="e.g. 40" />
+                </div>
+              </div>
+
+              {isSuperAdmin && form.rateType === 'flat' && (
                 <button
                   type="button"
                   className="vfp-rate-config-link"
                   onClick={() => window.open('/settings?tab=rates', '_blank', 'noopener')}
                 >
                   <ExternalLink size={14} />
-                  Edit default {form.rateType === 'zone' ? 'zone' : 'flat'} rates in Settings
+                  Edit default flat rates in Settings
                 </button>
               )}
             </section>

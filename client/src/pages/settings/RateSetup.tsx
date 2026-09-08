@@ -156,6 +156,8 @@ const RateSetup: React.FC = () => {
         freeWeightKg: settings.freeWeightKg,
         returnInsideValleyPercent: settings.returnInsideValleyPercent,
         returnOutsideValleyPercent: settings.returnOutsideValleyPercent,
+        branchReturnInsideValleyPercent: settings.branchReturnInsideValleyPercent,
+        branchReturnOutsideValleyPercent: settings.branchReturnOutsideValleyPercent,
         branchZoneMajorCities: settings.branchZoneMajorCities,
         branchZoneUrbanAreas: settings.branchZoneUrbanAreas,
         branchZoneRemoteAreas: settings.branchZoneRemoteAreas,
@@ -250,6 +252,14 @@ const RateSetup: React.FC = () => {
             <input type="number" min={0} max={100} step="0.1" value={settings.returnOutsideValleyPercent ?? ''}
               onChange={(e) => setSetting('returnOutsideValleyPercent', e.target.value)} />
           </label>
+          <label>Branch — inside branch area (%)
+            <input type="number" min={0} max={100} step="0.1" value={settings.branchReturnInsideValleyPercent ?? ''}
+              onChange={(e) => setSetting('branchReturnInsideValleyPercent', e.target.value)} />
+          </label>
+          <label>Branch — outside branch area (%)
+            <input type="number" min={0} max={100} step="0.1" value={settings.branchReturnOutsideValleyPercent ?? ''}
+              onChange={(e) => setSetting('branchReturnOutsideValleyPercent', e.target.value)} />
+          </label>
         </div>
 
         <h3>Branch delivery rates</h3>
@@ -274,17 +284,13 @@ const RateSetup: React.FC = () => {
             <input type="number" min={0} value={settings.branchZoneInsideValley ?? ''}
               onChange={(e) => setSetting('branchZoneInsideValley', e.target.value)} />
           </label>
-          <label>Branch — flat inside valley (Rs.)
+          <label>Branch — flat inside branch area (Rs.)
             <input type="number" min={0} value={settings.branchFlatInsideValley ?? ''}
               onChange={(e) => setSetting('branchFlatInsideValley', e.target.value)} />
           </label>
-          <label>Branch — flat outside valley (Rs.)
+          <label>Branch — flat outside branch area (Rs.)
             <input type="number" min={0} value={settings.branchFlatOutsideValley ?? ''}
               onChange={(e) => setSetting('branchFlatOutsideValley', e.target.value)} />
-          </label>
-          <label>Branch — outside ring road (Rs.)
-            <input type="number" min={0} value={settings.branchFlatOutsideRingRoad ?? ''}
-              onChange={(e) => setSetting('branchFlatOutsideRingRoad', e.target.value)} />
           </label>
         </div>
 

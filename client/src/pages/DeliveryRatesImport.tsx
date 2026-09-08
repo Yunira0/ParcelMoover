@@ -15,15 +15,18 @@ const COLUMNS = [
   'origin',
   'destination',
   'base_charge',
+  'branch_base_charge',
+  'return_percent',
+  'branch_return_percent',
   'extra_weight_percent',
   'free_weight_kg',
 ] as const;
 
 const SAMPLE_ROWS = [
-  ['Kathmandu', 'Pokhara', '150', '10', '2'],
-  ['Kathmandu', 'Butwal', '200', '10', '2'],
-  ['Pokhara', 'Kathmandu', '150', '', ''],
-  ['Butwal', 'Kathmandu', '200', '15', '3'],
+  ['Hetauda', 'Imadol', '120', '100', '50', '30', '10', '2'],
+  ['Hetauda', 'Pokhara', '220', '', '50', '', '10', '2'],
+  ['Kathmandu', 'Pokhara', '150', '', '', '', '10', '2'],
+  ['Pokhara', 'Kathmandu', '150', '', '0', '', '', ''],
 ];
 
 // ── Template download ─────────────────────────────────────────────────────────
@@ -32,18 +35,21 @@ function downloadTemplate() {
   const wb = XLSX.utils.book_new();
   const data = [COLUMNS as unknown as string[], ...SAMPLE_ROWS];
   const ws = XLSX.utils.aoa_to_sheet(data);
-  ws['!cols'] = [{ wch: 22 }, { wch: 22 }, { wch: 14 }, { wch: 20 }, { wch: 16 }];
+  ws['!cols'] = [{ wch: 22 }, { wch: 22 }, { wch: 14 }, { wch: 18 }, { wch: 15 }, { wch: 20 }, { wch: 20 }, { wch: 14 }];
   XLSX.utils.book_append_sheet(wb, ws, 'Delivery Rates');
 
   const notes = XLSX.utils.aoa_to_sheet([
     ['Column', 'Required', 'Allowed values / Notes'],
-    ['origin', 'YES', 'Destination name (or code) exactly as it appears in Settings > Destinations.'],
-    ['destination', 'YES', 'Destination name (or code). Must differ from origin.'],
-    ['base_charge', 'YES', 'Delivery charge in NPR for the route. Numeric, covers the free weight.'],
+    ['origin', 'YES', 'Hub name (or code) exactly as it appears in Settings > Destinations. A branch as origin (e.g. Hetauda) makes this a branch route.'],
+    ['destination', 'YES', 'Hub name (or code). Must differ from origin.'],
+    ['base_charge', 'YES', 'Home-delivery charge in NPR for the route. Numeric, covers the free weight.'],
+    ['branch_base_charge', 'no', 'Charge when service type is branch_delivery. Blank = same as base_charge.'],
+    ['return_percent', 'no', 'Return parcel = this % of the route delivery charge (0-100). Blank / 0 = free return.'],
+    ['branch_return_percent', 'no', 'Return % for branch_delivery. Blank = falls back to return_percent.'],
     ['extra_weight_percent', 'no', 'Surcharge per extra kg as % of base charge (0-100). Defaults to 0.'],
     ['free_weight_kg', 'no', 'Weight included in the base charge. Defaults to 2.'],
   ]);
-  notes['!cols'] = [{ wch: 22 }, { wch: 10 }, { wch: 70 }];
+  notes['!cols'] = [{ wch: 24 }, { wch: 10 }, { wch: 90 }];
   XLSX.utils.book_append_sheet(wb, notes, 'Notes');
 
   XLSX.writeFile(wb, 'delivery_rates_template.xlsx');
@@ -55,11 +61,20 @@ interface ParsedRow {
   origin: string;
   destination: string;
   baseCharge: string;
+  branchBaseCharge: string;
+  returnPercent: string;
+  branchReturnPercent: string;
   extraWeightPercent: string;
   freeWeightKg: string;
   _rowIndex: number;
   _error?: string;
 }
+
+const pctCell = (label: string, value: string, errors: string[]) => {
+  if (value && (isNaN(Number(value)) || Number(value) < 0 || Number(value) > 100)) {
+    errors.push(`${label} must be a number between 0 and 100`);
+  }
+};
 
 function parseSheet(raw: string[][]): ParsedRow[] {
   if (raw.length === 0) return [];
@@ -87,11 +102,17 @@ function parseSheet(raw: string[][]): ParsedRow[] {
         errors.push('base_charge must be a non-negative number');
       }
 
-      const extraPercent = get(3);
-      if (extraPercent && (isNaN(Number(extraPercent)) || Number(extraPercent) < 0 || Number(extraPercent) > 100)) {
-        errors.push('extra_weight_percent must be a number between 0 and 100');
+      const branchBaseCharge = get(3);
+      if (branchBaseCharge && (isNaN(Number(branchBaseCharge)) || Number(branchBaseCharge) < 0)) {
+        errors.push('branch_base_charge must be a non-negative number');
       }
-      const freeWeight = get(4);
+      const returnPercent = get(4);
+      pctCell('return_percent', returnPercent, errors);
+      const branchReturnPercent = get(5);
+      pctCell('branch_return_percent', branchReturnPercent, errors);
+      const extraPercent = get(6);
+      pctCell('extra_weight_percent', extraPercent, errors);
+      const freeWeight = get(7);
       if (freeWeight && (isNaN(Number(freeWeight)) || Number(freeWeight) < 0)) {
         errors.push('free_weight_kg must be a non-negative number');
       }
@@ -100,6 +121,9 @@ function parseSheet(raw: string[][]): ParsedRow[] {
         origin,
         destination,
         baseCharge,
+        branchBaseCharge,
+        returnPercent,
+        branchReturnPercent,
         extraWeightPercent: extraPercent,
         freeWeightKg: freeWeight,
         _rowIndex: i + (isHeader ? 2 : 1),
@@ -116,6 +140,9 @@ function toApiRows(rows: ParsedRow[]): BulkImportRateRow[] {
       origin: r.origin,
       destination: r.destination,
       baseCharge: Number(r.baseCharge),
+      ...(r.branchBaseCharge ? { branchBaseCharge: Number(r.branchBaseCharge) } : {}),
+      ...(r.returnPercent ? { returnPercent: Number(r.returnPercent) } : {}),
+      ...(r.branchReturnPercent ? { branchReturnPercent: Number(r.branchReturnPercent) } : {}),
       ...(r.extraWeightPercent ? { extraWeightPercent: Number(r.extraWeightPercent) } : {}),
       ...(r.freeWeightKg ? { freeWeightKg: Number(r.freeWeightKg) } : {}),
     }));
@@ -326,7 +353,10 @@ const DeliveryRatesImport: React.FC<{ onImported?: () => void }> = ({ onImported
                   <th>ID</th>
                   <th>Origin</th>
                   <th>Destination</th>
-                  <th>Base Charge</th>
+                  <th>Base</th>
+                  <th>Branch</th>
+                  <th>Return %</th>
+                  <th>Br. Ret %</th>
                   <th>Extra %</th>
                   <th>Free kg</th>
                   <th>Status</th>
@@ -339,6 +369,9 @@ const DeliveryRatesImport: React.FC<{ onImported?: () => void }> = ({ onImported
                     <td>{row.origin || <span className="di-empty">—</span>}</td>
                     <td>{row.destination || <span className="di-empty">—</span>}</td>
                     <td>{row.baseCharge || <span className="di-empty">—</span>}</td>
+                    <td>{row.branchBaseCharge || <span className="di-empty">—</span>}</td>
+                    <td>{row.returnPercent || <span className="di-empty">—</span>}</td>
+                    <td>{row.branchReturnPercent || <span className="di-empty">—</span>}</td>
                     <td>{row.extraWeightPercent || <span className="di-empty">—</span>}</td>
                     <td>{row.freeWeightKg || <span className="di-empty">—</span>}</td>
                     <td>

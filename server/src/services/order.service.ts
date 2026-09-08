@@ -61,7 +61,7 @@ function parseOrderNumber(term: string): number | null {
   return match ? Number(match[1]) : null;
 }
 
-import { getDeliveryQuote } from "./delivery-rate.service";
+import { getDeliveryQuote, getReturnRouteQuote } from "./delivery-rate.service";
 import { getVendorQuote, getReturnDeliveryQuote, RateType, ServiceType } from "./pricing.service";
 import { resolveLabelSize } from "./vendorPrintSettings.service";
 import { HANDOFF_REMARK_PREFIX as NCM_HANDOFF_REMARK_PREFIX } from "./ncm.service";
@@ -72,6 +72,7 @@ function branchOverrides(v: {
   branch_flat_inside_valley: unknown; branch_flat_outside_valley: unknown;
   branch_zone_major_cities: unknown; branch_zone_urban_areas: unknown;
   branch_zone_remote_areas: unknown; branch_zone_inside_valley: unknown;
+  branch_return_inside_valley_percent?: unknown; branch_return_outside_valley_percent?: unknown;
 }) {
   const n = (x: unknown) => (x === null || x === undefined ? null : Number(x));
   return {
@@ -81,9 +82,25 @@ function branchOverrides(v: {
     branchZoneUrbanAreas: n(v.branch_zone_urban_areas),
     branchZoneRemoteAreas: n(v.branch_zone_remote_areas),
     branchZoneInsideValley: n(v.branch_zone_inside_valley),
+    branchReturnInsideValleyPercent: n(v.branch_return_inside_valley_percent),
+    branchReturnOutsideValleyPercent: n(v.branch_return_outside_valley_percent),
   };
 }
 import { createNotification } from "./notification.service";
+
+// The central master hub (Imadol). An order that originates anywhere else is a
+// branch-origin order and prices off the (branch → destination) route table.
+// Cached for the process; hub identity does not change at runtime.
+let masterHubIdCache: string | null | undefined;
+async function getMasterHubId(): Promise<string | null> {
+  if (masterHubIdCache !== undefined) return masterHubIdCache;
+  const hub = await prisma.locations.findFirst({
+    where: { code: { equals: "IMADOL", mode: "insensitive" }, parent_id: null, is_hub: true },
+    select: { id: true },
+  });
+  masterHubIdCache = hub?.id ?? null;
+  return masterHubIdCache;
+}
 
 // Prices a parcel's return-to-vendor charge as the vendor's return percent of
 // the normal rate for that destination/weight - the same discounted quote a
@@ -588,11 +605,10 @@ const locationName = (location?: { name: string; city: string | null; district: 
 const moneyToNumber = (value?: Prisma.Decimal | null) => value ? Number(value) : 0;
 
 /**
- * The one condition every branch-scoped query in this file uses: does this
- * parcel touch the branch somewhere - where it came from, where it's headed,
- * or where it currently sits. `alias` prefixes the column names for a raw
- * SQL fragment joining `parcels` under something other than its own name
- * (e.g. "p."); omitted for a Prisma where-object or an unaliased FROM parcels.
+ * Broad branch scope: the parcel touches the branch anywhere - where it came
+ * from, where it's headed, or where it currently sits. Used for write
+ * enforcement (a branch may act on an inbound parcel before it arrives) and
+ * direct single-parcel lookups. Read lists/aggregates use branchHandlesFilter.
  */
 function branchTouchesFilter(branchLocationIds: string[]): Prisma.parcelsWhereInput {
   return {
@@ -604,11 +620,29 @@ function branchTouchesFilter(branchLocationIds: string[]): Prisma.parcelsWhereIn
   };
 }
 
-function branchTouchesSql(branchLocationIds: string[], alias = ""): Prisma.Sql {
+/**
+ * A tighter branch scope for everything a branch-scoped admin *reads* - the
+ * order list and its status tabs, pickup / dispatch / return views, the
+ * dashboard summary, Vendor Overview: a parcel the branch actually works, one
+ * it originated or that is physically at / passing through it now. Deliberately
+ * NOT destination - an inbound parcel still at another hub pre-pickup is not
+ * this branch's concern until it arrives (current_location moves here).
+ * Write enforcement stays on the broader branchTouchesFilter.
+ */
+function branchHandlesFilter(branchLocationIds: string[]): Prisma.parcelsWhereInput {
+  return {
+    OR: [
+      { origin_location_id: { in: branchLocationIds } },
+      { current_location_id: { in: branchLocationIds } },
+    ],
+  };
+}
+
+/** Raw-SQL form of branchHandlesFilter (origin OR current, no destination). */
+function branchHandlesSql(branchLocationIds: string[], alias = ""): Prisma.Sql {
   const col = (name: string) => Prisma.raw(`${alias}${name}`);
   return Prisma.sql`AND (
     ${col("origin_location_id")} = ANY(${branchLocationIds}::uuid[]) OR
-    ${col("destination_location_id")} = ANY(${branchLocationIds}::uuid[]) OR
     ${col("current_location_id")} = ANY(${branchLocationIds}::uuid[])
   )`;
 }
@@ -913,15 +947,23 @@ async function _createOrderImpl(
   // scoping already enforced on the vendor list / dashboard / tickets.
   const isSalesActor = actor.roles.includes("sales") && !isStaffActor(actor);
 
-  // Hub inheritance: orders keyed in by a plain admin always originate from
-  // that admin's own hub — only a super_admin may pick a different origin.
+  // Hub inheritance: a plain/branch admin's orders always originate from that
+  // admin's own hub. A super_admin (or vendor) order otherwise picks up from
+  // the attached vendor's own hub - where the parcel physically is - not a UI
+  // default. Both take precedence over data.originLocationId below.
+  let forcedAdminHub: string | null = null;
   if (isStaffActor(actor) && !actor.roles.includes("super_admin")) {
     const actorAdmin = await prisma.admins.findFirst({
       where: { user_id: actor.id },
       select: { location_id: true },
     });
-    if (actorAdmin?.location_id) data.originLocationId = actorAdmin.location_id;
+    forcedAdminHub = actorAdmin?.location_id ?? null;
   }
+
+  // A branch-scoped admin may only key an order in for one of its own branch's
+  // vendors; a picked vendor outside that coverage resolves to null and 404s
+  // below, the same as an unknown id.
+  const adminBranchIds = await getAdminBranchScope(actor);
 
   // Run the remaining two independent reads in parallel.
   const [vendor, originLoc, destinationLoc] = await Promise.all([
@@ -936,6 +978,7 @@ async function _createOrderImpl(
             deleted_at: null,
             status: "active",
             ...(isSalesActor ? { sales_user_id: actor.id } : {}),
+            ...(adminBranchIds ? { location_id: { in: adminBranchIds } } : {}),
           },
         })
       : Promise.resolve(null),
@@ -969,8 +1012,10 @@ async function _createOrderImpl(
     }
   }
 
-  const resolvedOriginLocationId = data.originLocationId || data.sender.locationId || vendor?.location_id || null;
+  const resolvedOriginLocationId =
+    forcedAdminHub || vendor?.location_id || data.originLocationId || data.sender.locationId || null;
   const resolvedDestinationLocationId = data.destinationLocationId || data.receiver.locationId || null;
+  const masterHubId = await getMasterHubId();
   const weightKg = data.weightKg || 1;
 
   // A return parcel is goods the customer hands back for the vendor (created on
@@ -981,13 +1026,35 @@ async function _createOrderImpl(
   const codAmount = isReturnOrder ? 0 : data.codAmount || 0;
   const itemValue = data.itemValue || 0;
 
-  // Payable is computed server-side so the client can't spoof the charge. Vendor
-  // orders price by the vendor's chosen rate model (per-destination / zone / flat);
-  // non-vendor orders fall back to the legacy origin→destination route rate, then
-  // to a manually supplied charge when no rate can be resolved. Return orders are
-  // charged the vendor's return percent of that normal rate instead of the full rate.
+  // Payable is computed server-side so the client can't spoof the charge.
+  //  1. Branch-origin orders price off the (branch → destination) route rate
+  //     table - the branch leg is its own charge, not the vendor's Imadol model.
+  //  2. Vendor orders from Imadol price by the vendor's rate model
+  //     (per-destination / zone / flat).
+  //  3. Non-vendor orders fall back to the legacy origin→destination route rate.
+  //  4. Otherwise a manually supplied charge, else 0.
+  // Return orders are charged the return percent of the normal rate for the path taken.
+  const originIsBranch = Boolean(
+    resolvedOriginLocationId && masterHubId && resolvedOriginLocationId !== masterHubId,
+  );
   let deliveryCharge = data.deliveryCharge || 0;
-  if (vendor && resolvedDestinationLocationId) {
+  if (originIsBranch && resolvedDestinationLocationId) {
+    const serviceType = (data.serviceType as ServiceType) || "home_delivery";
+    try {
+      const quote = isReturnOrder
+        ? await getReturnRouteQuote(resolvedOriginLocationId!, resolvedDestinationLocationId, weightKg, serviceType)
+        : await getDeliveryQuote(resolvedOriginLocationId!, resolvedDestinationLocationId, weightKg, serviceType);
+      deliveryCharge = quote.totalPayable;
+    } catch (error) {
+      if (error instanceof AppError && error.statusCode === 404) {
+        throw new AppError(
+          400,
+          "No delivery rate is configured for this branch's route. Add it under Delivery Charges before creating the order.",
+        );
+      }
+      throw error;
+    }
+  } else if (vendor && resolvedDestinationLocationId) {
     const overrides = {
       flatInsideValley: vendor.flat_inside_valley === null ? null : Number(vendor.flat_inside_valley),
       flatOutsideValley: vendor.flat_outside_valley === null ? null : Number(vendor.flat_outside_valley),
@@ -1341,8 +1408,17 @@ export async function updateOrderDetails(
     changedKeys.has("weight") || changedKeys.has("destination") || changedKeys.has("origin") || vendorChanged;
   // A vendor reassignment reprices against the NEW vendor's rate model, not the old one.
   const effectiveVendor = vendorChanged ? newVendor : parcel.vendors;
+  const masterHubId = await getMasterHubId();
+  const originIsBranch = Boolean(originLocationId && masterHubId && originLocationId !== masterHubId);
   if (repriceNeeded && destinationLocationId) {
-    if (effectiveVendor) {
+    if (originIsBranch && originLocationId) {
+      // Branch-origin: route-table rate, same as creation.
+      const serviceType = (data.serviceType ?? parcel.service_type) as ServiceType;
+      const quote = effectiveOrderType === "return"
+        ? await getReturnRouteQuote(originLocationId, destinationLocationId, weightKg, serviceType)
+        : await getDeliveryQuote(originLocationId, destinationLocationId, weightKg, serviceType);
+      deliveryCharge = quote.totalPayable;
+    } else if (effectiveVendor) {
       const vendor = effectiveVendor;
       const overrides = {
         flatInsideValley: vendor.flat_inside_valley === null ? null : Number(vendor.flat_inside_valley),
@@ -1844,11 +1920,12 @@ function buildOrdersWhere(
   if (scope.riderId) {
     conditions.push(riderCustodyFilter(scope.riderId));
   }
-  // A branch-scoped admin (see getAdminBranchScope): the order has to touch
-  // their branch somehow - where it came from, where it's headed, or where it
-  // currently sits - to count as theirs.
+  // A branch-scoped admin (see getAdminBranchScope): the order list shows only
+  // parcels the branch actually handles - originated here, or physically here
+  // now. An inbound parcel still at another hub pre-pickup is excluded until it
+  // reaches the branch (see branchHandlesFilter).
   if (scope.branchLocationIds) {
-    conditions.push(branchTouchesFilter(scope.branchLocationIds));
+    conditions.push(branchHandlesFilter(scope.branchLocationIds));
   }
   if (query.status?.length) {
     conditions.push({ status: { in: query.status as parcel_status[] } });
@@ -3230,7 +3307,7 @@ async function computeDashboardSummary(
   // every other branch check in this file uses, reused below wherever a query
   // needs it expressed differently (a relation filter, a raw-SQL join).
   const branchOr: Prisma.parcelsWhereInput | undefined = branchLocationIds
-    ? branchTouchesFilter(branchLocationIds)
+    ? branchHandlesFilter(branchLocationIds)
     : undefined;
 
   const parcelWhere: Prisma.parcelsWhereInput = {
@@ -3267,7 +3344,7 @@ async function computeDashboardSummary(
     : riderId
     ? Prisma.sql`AND c.rider_id = ${riderId}::uuid`
     : branchLocationIds
-    ? branchTouchesSql(branchLocationIds, "p.")
+    ? branchHandlesSql(branchLocationIds, "p.")
     : Prisma.empty;
 
   const settlementWhere: Prisma.settlementsWhereInput = {
@@ -3345,7 +3422,7 @@ async function computeDashboardSummary(
     : riderId
     ? riderHandledSql(riderId)
     : branchLocationIds
-    ? branchTouchesSql(branchLocationIds)
+    ? branchHandlesSql(branchLocationIds)
     : Prisma.empty;
 
   // The 11 overview/today metrics below all count the same `parcels` table
@@ -3474,7 +3551,7 @@ async function computeDashboardSummary(
     : riderId
     ? riderHandledSql(riderId, "p.")
     : branchLocationIds
-    ? branchTouchesSql(branchLocationIds, "p.")
+    ? branchHandlesSql(branchLocationIds, "p.")
     : Prisma.empty;
 
   // Per-day "Returned" for the trend graph: parcels whose status *became*
@@ -3864,7 +3941,7 @@ export async function getCodSettlementDetail(
     : riderId
     ? Prisma.sql`AND c.rider_id = ${riderId}::uuid`
     : branchLocationIds
-    ? branchTouchesSql(branchLocationIds, "p.")
+    ? branchHandlesSql(branchLocationIds, "p.")
     : Prisma.empty;
 
   // Same durable NCM/Upaya signals as the dashboard summary above - see its comment.
@@ -6133,9 +6210,9 @@ export async function getStatusCounts(
         : Prisma.empty;
 
   // A branch-scoped admin (see getAdminBranchScope) - mirrors buildOrdersWhere's
-  // OR-of-three-columns exactly, so the tab badges never disagree with the list.
+  // branchHandlesFilter exactly, so the tab badges never disagree with the list.
   const branchScopeSql: Prisma.Sql = scope.branchLocationIds
-    ? branchTouchesSql(scope.branchLocationIds)
+    ? branchHandlesSql(scope.branchLocationIds)
     : Prisma.empty;
 
   // Caller-supplied filters, applied on top of the actor's own scope so the tab
@@ -6528,6 +6605,7 @@ export interface MerchantOverviewResult {
 }
 
 export async function getMerchantOverview(
+  actor: OrderActor,
   vendorId?: string,
   dateFrom?: string,
   dateTo?: string,
@@ -6535,6 +6613,11 @@ export async function getMerchantOverview(
   const vendorCondition = vendorId
     ? Prisma.sql`AND p.vendor_id = ${vendorId}::uuid`
     : Prisma.empty;
+
+  // A branch-scoped admin's Vendor Overview counts only parcels the branch
+  // handles (originated here / physically here), matching the branch order list.
+  const branchLocationIds = await getAdminBranchScope(actor);
+  const branchCondition = branchLocationIds ? branchHandlesSql(branchLocationIds, "p.") : Prisma.empty;
 
   const dateConditions: Prisma.Sql[] = [];
   if (dateFrom) {
@@ -6631,6 +6714,7 @@ export async function getMerchantOverview(
     LEFT JOIN cod_collections cc ON cc.parcel_id = p.id
     WHERE p.deleted_at IS NULL
       ${vendorCondition}
+      ${branchCondition}
       ${dateFilter}
   `;
 
@@ -6660,6 +6744,7 @@ export async function getMerchantOverview(
       WHERE p.deleted_at IS NULL
         AND p.status IN ('delivered','partially_delivered')
         ${depositedVendorCondition}
+        ${branchCondition}
         ${depositedDateFilter}
     `,
     // Pending: delivered parcels that are NOT in any settled settlement.
@@ -6676,6 +6761,7 @@ export async function getMerchantOverview(
       WHERE p.deleted_at IS NULL
         AND p.status IN ('delivered','partially_delivered')
         ${depositedVendorCondition}
+        ${branchCondition}
         ${depositedDateFilter}
         AND NOT EXISTS (
           SELECT 1 FROM settlement_items si

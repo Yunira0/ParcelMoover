@@ -66,7 +66,14 @@ export function isBranchWorkspacePathAllowed(pathname: string): boolean {
   return (
     pathname === '/dashboard' ||
     pathname === '/orders' ||
+    pathname === '/orders/create' ||
+    pathname === '/orders/bulk-create' ||
     pathname.startsWith('/orders/track/') ||
+    // Branch onboards and manages its own vendors; the vendor APIs scope a
+    // branch-scoped admin to vendors registered at their branch.
+    pathname === '/vendors' ||
+    pathname.startsWith('/vendors/') ||
+    pathname === '/merchant-overview' ||
     // Branch runs its own pickup, dispatch, transit and return desks; the order
     // APIs behind these pages scope a branch-scoped admin to their own branch.
     pathname === '/pickup' ||

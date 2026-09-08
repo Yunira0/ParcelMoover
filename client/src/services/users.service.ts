@@ -57,6 +57,8 @@ export interface RegisterUserInput {
   insideValleyFlatRate?: string;
   returnInsideValleyPercent?: string;
   returnOutsideValleyPercent?: string;
+  branchReturnInsideValleyPercent?: string;
+  branchReturnOutsideValleyPercent?: string;
   branchFlatInsideValley?: string;
   branchFlatOutsideValley?: string;
   branchFlatOutsideRingRoad?: string;
@@ -122,6 +124,8 @@ export interface UpdateUserProfileInput {
   insideValleyFlatRate?: string;
   returnInsideValleyPercent?: string;
   returnOutsideValleyPercent?: string;
+  branchReturnInsideValleyPercent?: string;
+  branchReturnOutsideValleyPercent?: string;
   branchFlatInsideValley?: string;
   branchFlatOutsideValley?: string;
   branchFlatOutsideRingRoad?: string;

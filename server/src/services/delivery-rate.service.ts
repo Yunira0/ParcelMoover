@@ -46,6 +46,8 @@ export async function resolveDestinationRef(ref: string): Promise<string> {
 interface CachedRate {
   baseCharge: number;
   branchBaseCharge: number | null;
+  returnPercent: number;
+  branchReturnPercent: number | null;
   freeWeightKg: number;
   extraWeightPercent: number;
 }
@@ -94,6 +96,8 @@ export async function upsertDeliveryRate(actor: Actor, input: UpsertDeliveryRate
   const data = {
     base_charge: input.baseCharge,
     branch_base_charge: input.branchBaseCharge ?? null,
+    return_percent: input.returnPercent ?? 0,
+    branch_return_percent: input.branchReturnPercent ?? null,
     extra_weight_percent: input.extraWeightPercent ?? 0,
     free_weight_kg: input.freeWeightKg ?? 2,
     is_active: true,
@@ -137,6 +141,8 @@ export async function listDeliveryRates() {
     destinationLocationName: rate.locations_delivery_rates_destination_location_idTolocations.name,
     baseCharge: Number(rate.base_charge),
     branchBaseCharge: rate.branch_base_charge === null ? null : Number(rate.branch_base_charge),
+    returnPercent: Number(rate.return_percent),
+    branchReturnPercent: rate.branch_return_percent === null ? null : Number(rate.branch_return_percent),
     extraWeightPercent: Number(rate.extra_weight_percent),
     freeWeightKg: Number(rate.free_weight_kg),
     isActive: rate.is_active,
@@ -148,6 +154,9 @@ export interface BulkImportRateRow {
   origin: string;
   destination: string;
   baseCharge: number;
+  branchBaseCharge?: number | null;
+  returnPercent?: number;
+  branchReturnPercent?: number | null;
   extraWeightPercent?: number;
   freeWeightKg?: number;
 }
@@ -191,6 +200,12 @@ export async function bulkImportDeliveryRates(
       errors.push("origin and destination must be different");
     }
     if (!(row.baseCharge >= 0)) errors.push("baseCharge must be a non-negative number");
+    if (row.branchBaseCharge != null && !(row.branchBaseCharge >= 0)) {
+      errors.push("branchBaseCharge must be a non-negative number");
+    }
+    const pctOk = (v: number | null | undefined) => v == null || (v >= 0 && v <= 100);
+    if (!pctOk(row.returnPercent)) errors.push("returnPercent must be between 0 and 100");
+    if (!pctOk(row.branchReturnPercent)) errors.push("branchReturnPercent must be between 0 and 100");
 
     if (errors.length) {
       results.push({ origin: row.origin, destination: row.destination, error: errors.join("; ") });
@@ -210,6 +225,9 @@ export async function bulkImportDeliveryRates(
 
       const data = {
         base_charge: row.baseCharge,
+        branch_base_charge: row.branchBaseCharge ?? null,
+        return_percent: row.returnPercent ?? 0,
+        branch_return_percent: row.branchReturnPercent ?? null,
         extra_weight_percent: row.extraWeightPercent ?? 0,
         free_weight_kg: row.freeWeightKg ?? 2,
         is_active: true,
@@ -290,6 +308,8 @@ async function getActiveRate(
   const result: CachedRate = {
     baseCharge: Number(rate.base_charge),
     branchBaseCharge: rate.branch_base_charge === null ? null : Number(rate.branch_base_charge),
+    returnPercent: Number(rate.return_percent),
+    branchReturnPercent: rate.branch_return_percent === null ? null : Number(rate.branch_return_percent),
     freeWeightKg: Number(rate.free_weight_kg),
     extraWeightPercent: Number(rate.extra_weight_percent),
   };
@@ -320,6 +340,34 @@ export async function getDeliveryQuote(
   const totalPayable = baseCharge + weightSurcharge;
 
   return { baseCharge, weightSurcharge, totalPayable, freeWeightKg, extraWeightPercent };
+}
+
+// A return parcel on a configured (origin -> destination) route is charged a
+// percent of that route's delivery charge - the route-table analogue of the
+// vendor model's getReturnDeliveryQuote. branch_delivery uses branch_return_percent
+// when set, else return_percent; an unset/zero percent means a free return.
+export async function getReturnRouteQuote(
+  originLocationId: string,
+  destinationLocationId: string,
+  weightKg: number,
+  serviceType: "home_delivery" | "branch_delivery" = "home_delivery",
+): Promise<DeliveryQuote & { returnPercent: number; baseDeliveryCharge: number }> {
+  const delivery = await getDeliveryQuote(originLocationId, destinationLocationId, weightKg, serviceType);
+  const rate = await getActiveRate(originLocationId, destinationLocationId);
+  const percent =
+    serviceType === "branch_delivery" && rate.branchReturnPercent !== null
+      ? rate.branchReturnPercent
+      : rate.returnPercent;
+  const totalPayable = Math.round(delivery.totalPayable * (percent / 100) * 100) / 100;
+  return {
+    baseCharge: totalPayable,
+    weightSurcharge: 0,
+    totalPayable,
+    freeWeightKg: delivery.freeWeightKg,
+    extraWeightPercent: delivery.extraWeightPercent,
+    returnPercent: percent,
+    baseDeliveryCharge: delivery.totalPayable,
+  };
 }
 
 // Resolve the vendor behind the current actor - either the owner (users -> vendors)

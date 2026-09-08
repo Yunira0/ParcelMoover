@@ -62,6 +62,8 @@ interface UpdateManagedUserInput {
   extraWeightPercent?: string | number;
   returnInsideValleyPercent?: string | number;
   returnOutsideValleyPercent?: string | number;
+  branchReturnInsideValleyPercent?: string | number;
+  branchReturnOutsideValleyPercent?: string | number;
   branchFlatInsideValley?: string | number;
   branchFlatOutsideValley?: string | number;
   branchFlatOutsideRingRoad?: string | number;
@@ -263,6 +265,18 @@ async function assertBranchAdminOwnsRider(actorUserId: string, roles: string[], 
   if (!rider) throw new AppError(403, "This rider is not assigned to your branch");
 }
 
+// As above, for vendors: a branch-scoped admin manages only the vendors
+// registered at its branch.
+async function assertBranchAdminOwnsVendor(actorUserId: string, roles: string[], vendorId: string) {
+  const ids = await adminBranchScopeIds({ id: actorUserId, roles });
+  if (!ids) return;
+  const vendor = await prisma.vendors.findFirst({
+    where: { id: vendorId, location_id: { in: ids } },
+    select: { id: true },
+  });
+  if (!vendor) throw new AppError(403, "This vendor is not registered at your branch");
+}
+
 // The root super admin is the very first account ever granted the super_admin
 // role (the one bootstrapped by create-superadmin.ts). It is the supreme
 // entity of the system: it never appears in Admin Management and no
@@ -329,6 +343,7 @@ export async function updateManagedUserProfile(
 ) {
   const { roles: actorRoles } = await assertCanManageUsers(actorUserId, data.type);
   if (data.type === "vendor") await assertSalesOwnsVendor(actorRoles, actorUserId, id);
+  if (data.type === "vendor") await assertBranchAdminOwnsVendor(actorUserId, actorRoles, id);
   if (data.type === "rider") await assertBranchAdminOwnsRider(actorUserId, actorRoles, id);
 
   const isStaff = actorRoles.includes("super_admin") || actorRoles.includes("admin");
@@ -465,6 +480,8 @@ export async function updateManagedUserProfile(
       putRate(u, "extra_weight_percent", data.extraWeightPercent);
       putRate(u, "return_inside_valley_percent", data.returnInsideValleyPercent);
       putRate(u, "return_outside_valley_percent", data.returnOutsideValleyPercent);
+      putRate(u, "branch_return_inside_valley_percent", data.branchReturnInsideValleyPercent);
+      putRate(u, "branch_return_outside_valley_percent", data.branchReturnOutsideValleyPercent);
       putRate(u, "branch_flat_inside_valley", data.branchFlatInsideValley);
       putRate(u, "branch_flat_outside_valley", data.branchFlatOutsideValley);
       putRate(u, "branch_flat_outside_ring_road", data.branchFlatOutsideRingRoad);
@@ -505,6 +522,7 @@ export async function updateManagedUserProfile(
 export async function getManagedUserDetail(actorUserId: string, type: ManagedUserType, id: string) {
   const { roles: actorRoles } = await assertCanManageUsers(actorUserId, type);
   if (type === "vendor") await assertSalesOwnsVendor(actorRoles, actorUserId, id);
+  if (type === "vendor") await assertBranchAdminOwnsVendor(actorUserId, actorRoles, id);
   if (type === "rider") await assertBranchAdminOwnsRider(actorUserId, actorRoles, id);
 
   const num = (v: unknown) => (v === null || v === undefined ? null : Number(v));
@@ -533,6 +551,8 @@ export async function getManagedUserDetail(actorUserId: string, type: ManagedUse
       extraWeightPercent: num(v.extra_weight_percent),
       returnInsideValleyPercent: num(v.return_inside_valley_percent),
       returnOutsideValleyPercent: num(v.return_outside_valley_percent),
+      branchReturnInsideValleyPercent: num(v.branch_return_inside_valley_percent),
+      branchReturnOutsideValleyPercent: num(v.branch_return_outside_valley_percent),
       branchFlatInsideValley: num(v.branch_flat_inside_valley), branchFlatOutsideValley: num(v.branch_flat_outside_valley),
       branchFlatOutsideRingRoad: num(v.branch_flat_outside_ring_road),
       branchZoneMajorCities: num(v.branch_zone_major_cities), branchZoneUrbanAreas: num(v.branch_zone_urban_areas),
@@ -621,6 +641,7 @@ export async function getManagedUserDocuments(
 ): Promise<{ type: ManagedUserType; id: string; name: string; documents: ManagedUserDocument[] }> {
   const { roles: actorRoles } = await assertCanManageUsers(actorUserId, type);
   if (type === "rider") await assertBranchAdminOwnsRider(actorUserId, actorRoles, id);
+  if (type === "vendor") await assertBranchAdminOwnsVendor(actorUserId, actorRoles, id);
 
   const collect = (
     fields: { key: string; label: string; column: string }[],
@@ -678,6 +699,7 @@ export async function updateManagedUserPassword(
   // without it here any sales account could reset any vendor's password,
   // revoking their sessions, including clients belonging to another rep.
   if (type === "vendor") await assertSalesOwnsVendor(actorRoles, actorUserId, id);
+  if (type === "vendor") await assertBranchAdminOwnsVendor(actorUserId, actorRoles, id);
   if (type === "rider") await assertBranchAdminOwnsRider(actorUserId, actorRoles, id);
 
   if (!password?.trim() || password.length < 8) {
@@ -1067,6 +1089,8 @@ export async function registerUserBySuperAdmin(
           extra_weight_percent: parseRate(data.extraWeightPercent),
           return_inside_valley_percent: parseRate(data.returnInsideValleyPercent),
           return_outside_valley_percent: parseRate(data.returnOutsideValleyPercent),
+          branch_return_inside_valley_percent: parseRate(data.branchReturnInsideValleyPercent),
+          branch_return_outside_valley_percent: parseRate(data.branchReturnOutsideValleyPercent),
           branch_flat_inside_valley: parseRate(data.branchFlatInsideValley),
           branch_flat_outside_valley: parseRate(data.branchFlatOutsideValley),
           branch_flat_outside_ring_road: parseRate(data.branchFlatOutsideRingRoad),

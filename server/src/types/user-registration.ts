@@ -35,6 +35,8 @@ export interface RegisterUserInput {
     extraWeightPercent?: string | number;
     returnInsideValleyPercent?: string | number;
     returnOutsideValleyPercent?: string | number;
+    branchReturnInsideValleyPercent?: string | number;
+    branchReturnOutsideValleyPercent?: string | number;
     branchFlatInsideValley?: string | number;
     branchFlatOutsideValley?: string | number;
     branchFlatOutsideRingRoad?: string | number;
