@@ -294,6 +294,106 @@ async function applyVerifiedCreditToSettlement(
   return { applied, settled, statementNo: settlement.statement_no };
 }
 
+export interface DepositAllocation {
+  settlementId: string;
+  statementNo: string;
+  amount: number;
+  settled: boolean;
+  /** Set only when the statement was already settled and this deposit was
+   *  linked to it for balance purposes without moving paid_amount. */
+  linkOnly?: true;
+}
+
+/**
+ * Waterfall an already-verified, statement-less branch deposit onto that
+ * branch's COD statements, oldest first, re-pointing the branch_payments row so
+ * the branch balance nets out (its floating credit drops by the same amount the
+ * statements absorb). Shared by the live verify path and the
+ * repoint-branch-deposits backfill.
+ *
+ * A `pending` / `partially_paid` statement is paid down for real via
+ * applyVerifiedCreditToSettlement — balance-neutral, it only moves the money
+ * from "floating credit" to "recorded against the statement". With
+ * `includeSettled`, an already-`settled` statement instead absorbs the deposit
+ * as a *link only*: no branch_settlement_payments line, no paid_amount change,
+ * capped at net_payable minus the deposits already pointing at it. That path
+ * lowers the branch balance, and exists to clean up deposits that predate this
+ * waterfall (verified while the office settled the same statement by hand, so
+ * the money got counted twice).
+ */
+export async function waterfallVerifiedDeposit(
+  tx: Prisma.TransactionClient,
+  deposit: {
+    id: string; branch_id: string; amount: Prisma.Decimal | number; method: string;
+    reference: string | null; proof_path: string | null; note: string | null;
+    submitted_by: string | null;
+  },
+  actorId: string,
+  opts: { remark?: string | null; includeSettled?: boolean } = {},
+): Promise<{ allocations: DepositAllocation[]; leftoverCredit: number; consumed: number }> {
+  const statuses: Array<"pending" | "partially_paid" | "settled"> = opts.includeSettled
+    ? ["pending", "partially_paid", "settled"]
+    : ["pending", "partially_paid"];
+  const statements = await tx.branch_settlements.findMany({
+    where: { from_branch_id: deposit.branch_id, status: { in: statuses } },
+    orderBy: [{ settlement_date: "asc" }, { created_at: "asc" }],
+  });
+
+  const depositAmount = money(deposit.amount);
+  const refSuffix = deposit.reference ? ` · ${deposit.reference}` : "";
+  const allocations: DepositAllocation[] = [];
+  let credit = depositAmount;
+  let firstTouched: string | null = null;
+
+  for (const statement of statements) {
+    if (credit <= 0) break;
+
+    if (statement.status === "settled") {
+      const linked = await tx.branch_payments.aggregate({
+        where: { settlement_id: statement.id, status: "verified" }, _sum: { amount: true },
+      });
+      const capacity = money(money(statement.net_payable) - money(linked._sum.amount));
+      const applied = Math.min(credit, capacity);
+      if (applied <= 0) continue;
+      credit = money(credit - applied);
+      firstTouched ??= statement.id;
+      allocations.push({
+        settlementId: statement.id, statementNo: statement.statement_no,
+        amount: applied, settled: true, linkOnly: true,
+      });
+      continue;
+    }
+
+    const applied = await applyVerifiedCreditToSettlement(tx, statement, credit, actorId, {
+      method: deposit.method, remark: `Verified deposit${refSuffix}`,
+    });
+    if (applied.applied <= 0) continue;
+    credit = money(credit - applied.applied);
+    firstTouched ??= statement.id;
+    allocations.push({
+      settlementId: statement.id, statementNo: applied.statementNo,
+      amount: applied.applied, settled: applied.settled,
+    });
+  }
+
+  const consumed = money(depositAmount - credit);
+  if (consumed > 0 && firstTouched) {
+    if (credit <= 0) {
+      await tx.branch_payments.update({ where: { id: deposit.id }, data: { settlement_id: firstTouched } });
+    } else {
+      await tx.branch_payments.update({ where: { id: deposit.id }, data: { amount: credit } });
+      await tx.branch_payments.create({ data: {
+        branch_id: deposit.branch_id, settlement_id: firstTouched, amount: consumed,
+        method: deposit.method, reference: deposit.reference, proof_path: deposit.proof_path,
+        note: deposit.note, submitted_by: deposit.submitted_by, status: "verified",
+        reviewed_by: actorId, reviewed_at: new Date(), review_remark: opts.remark ?? null,
+      } });
+    }
+  }
+
+  return { allocations, leftoverCredit: credit, consumed };
+}
+
 export async function reviewBranchPayment(
   actor: Actor, paymentId: string, decision: "verified" | "rejected", remark?: string,
 ): Promise<BranchPaymentItem> {
@@ -314,7 +414,7 @@ export async function reviewBranchPayment(
     });
     if (!claimed.count) throw new AppError(409, "This payment was already reviewed by someone else");
 
-    const allocations: Array<{ settlementId: string; statementNo: string; amount: number; settled: boolean }> = [];
+    const allocations: DepositAllocation[] = [];
     let leftoverCredit = 0;
 
     if (decision === "verified" && existing.settlement_id) {
@@ -334,37 +434,9 @@ export async function reviewBranchPayment(
       // as general branch credit. The applied portion is re-pointed at a
       // statement so the branch balance still nets out (credit down by the same
       // amount the statements' outstanding drops).
-      const openStatements = await tx.branch_settlements.findMany({
-        where: { from_branch_id: existing.branch_id, status: { in: ["pending", "partially_paid"] } },
-        orderBy: [{ settlement_date: "asc" }, { created_at: "asc" }],
-      });
-      let credit = money(existing.amount);
-      let firstTouched: string | null = null;
-      for (const statement of openStatements) {
-        if (credit <= 0) break;
-        const applied = await applyVerifiedCreditToSettlement(tx, statement, credit, actor.id, {
-          method: existing.method, remark: `Verified deposit${existing.reference ? ` · ${existing.reference}` : ""}`,
-        });
-        if (applied.applied <= 0) continue;
-        credit = money(credit - applied.applied);
-        firstTouched ??= statement.id;
-        allocations.push({ settlementId: statement.id, statementNo: applied.statementNo, amount: applied.applied, settled: applied.settled });
-      }
-      leftoverCredit = credit;
-      const consumed = money(money(existing.amount) - credit);
-      if (consumed > 0 && firstTouched) {
-        if (credit <= 0) {
-          await tx.branch_payments.update({ where: { id: paymentId }, data: { settlement_id: firstTouched } });
-        } else {
-          await tx.branch_payments.update({ where: { id: paymentId }, data: { amount: credit } });
-          await tx.branch_payments.create({ data: {
-            branch_id: existing.branch_id, settlement_id: firstTouched, amount: consumed,
-            method: existing.method, reference: existing.reference, proof_path: existing.proof_path,
-            note: existing.note, submitted_by: existing.submitted_by, status: "verified",
-            reviewed_by: actor.id, reviewed_at: new Date(), review_remark: remark?.trim() || null,
-          } });
-        }
-      }
+      const result = await waterfallVerifiedDeposit(tx, existing, actor.id, { remark: remark?.trim() || null });
+      allocations.push(...result.allocations);
+      leftoverCredit = result.leftoverCredit;
     }
 
     await tx.audit_logs.create({ data: {
@@ -375,7 +447,7 @@ export async function reviewBranchPayment(
         status: decision, amount: money(existing.amount), remark: remark?.trim() || null,
         ...(allocations.length ? { allocations } : {}),
         ...(leftoverCredit > 0 ? { leftoverCredit } : {}),
-      },
+      } as unknown as Prisma.InputJsonValue,
     } });
     return tx.branch_payments.findFirstOrThrow({ where: { id: paymentId }, include: { branch: { select: { name: true } }, settlement: { select: { statement_no: true } } } });
   });
