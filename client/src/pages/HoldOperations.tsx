@@ -21,6 +21,7 @@ import { useCursorPagination } from '../hooks/useCursorPagination';
 import { toBsDate, toBsDateTime, toBsDateTimeCell } from '../utils/nepaliDate';
 import { STATUS_TIMELINE_HEADERS, statusTimelineCells } from '../utils/orderStatus';
 import { printLabels } from '../utils/printLabels';
+import { isBranchWorkspaceUser } from '../utils/auth';
 import './HoldOperations.css';
 
 const PAGE_SIZE = 10;
@@ -55,6 +56,10 @@ const HoldOperations: React.FC = () => {
   const [statusUpdating, setStatusUpdating] = useState(false);
   const [actionError, setActionError] = useState('');
   const [remarkPopupOrder, setRemarkPopupOrder] = useState<Order | null>(null);
+  // Loss & damage is a head-office classification (insurance/claim
+  // implications) — a branch workspace admin may only release holds back
+  // into the active flow, not write parcels off.
+  const canMarkLossAndDamage = !isBranchWorkspaceUser();
 
   // Debounce search input so every keystroke doesn't fire a request.
   useEffect(() => {
@@ -295,14 +300,16 @@ const HoldOperations: React.FC = () => {
               ? 'Updating...'
               : `Change to previous status${selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}`}
           </Button>
-          <Button
-            variant="danger"
-            onClick={markLossAndDamage}
-            disabled={selectedIds.size === 0 || statusUpdating}
-          >
-            <AlertTriangle size={14} />
-            {`Mark Loss & Damage${selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}`}
-          </Button>
+          {canMarkLossAndDamage && (
+            <Button
+              variant="danger"
+              onClick={markLossAndDamage}
+              disabled={selectedIds.size === 0 || statusUpdating}
+            >
+              <AlertTriangle size={14} />
+              {`Mark Loss & Damage${selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}`}
+            </Button>
+          )}
           <Button variant="secondary" onClick={downloadCsv}>
             <Download size={14} /> Download
           </Button>

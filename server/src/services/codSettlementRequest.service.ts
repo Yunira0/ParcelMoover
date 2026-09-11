@@ -14,6 +14,7 @@
 // existing settlement flow; a settled request just points at it.
 import prisma from "../lib/prisma";
 import { AppError } from "../utils/AppError";
+import { assertHeadOfficeOnly } from "../lib/branchScope";
 import { getDatePart, randomBase32 } from "../utils/trackingId";
 import { getVendorAccountBalance } from "./billing.service";
 import { createNotification } from "./notification.service";
@@ -31,6 +32,11 @@ const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 500;
 
 const isStaff = (actor: Actor) => actor.roles.includes("admin") || actor.roles.includes("super_admin");
+
+// Vendor COD settlement is handled centrally from Imadol elsewhere in the app
+// (see assertHeadOfficeForVendorSettlement in finance.service.ts) - a request
+// is the ask that precedes one, so it follows the same rule.
+const HEAD_OFFICE_ONLY_MESSAGE = "COD settlement requests are handled centrally from Imadol, not from a branch";
 
 function generateRequestNo(date = new Date()) {
   return `CSR-${getDatePart(date)}-${randomBase32(6)}`;
@@ -244,6 +250,8 @@ export async function listCodSettlementRequests(actor: Actor, params: ListCodSet
     // Not linked to a vendor - show nothing rather than everything.
     if (!vendorId) return { data: [], meta: { page, pageSize, total: 0, totalPages: 0 } };
     where.vendor_id = vendorId;
+  } else {
+    await assertHeadOfficeOnly(actor, HEAD_OFFICE_ONLY_MESSAGE);
   }
 
   if (params.search?.trim()) {
@@ -282,6 +290,8 @@ export async function getCodSettlementRequestById(actor: Actor, id: string) {
     if (!vendorId || row.vendor_id !== vendorId) {
       throw new AppError(404, "COD settlement request not found");
     }
+  } else {
+    await assertHeadOfficeOnly(actor, HEAD_OFFICE_ONLY_MESSAGE);
   }
 
   return mapRequest(row);
@@ -301,6 +311,7 @@ export async function updateCodSettlementRequestStatus(
   input: UpdateCodSettlementRequestStatusInput,
 ) {
   if (!isStaff(actor)) throw new AppError(403, "Only staff can action a COD settlement request");
+  await assertHeadOfficeOnly(actor, HEAD_OFFICE_ONLY_MESSAGE);
 
   const existing = await prisma.cod_settlement_requests.findUnique({ where: { id } });
   if (!existing) throw new AppError(404, "COD settlement request not found");

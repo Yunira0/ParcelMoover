@@ -1,8 +1,8 @@
-import { Request, Router } from "express";
+import { NextFunction, Request, Response, Router } from "express";
 import { rateLimit, ipKeyGenerator } from "express-rate-limit";
 import { authMiddleware } from "../middlewares/auth.middleware";
 import { authorizeRoles } from "../middlewares/authorizeRoles.middleware";
-import { requireAdminPermission } from "../middlewares/adminPermission.middleware";
+import { hasAdminPermission } from "../middlewares/adminPermission.middleware";
 import { requireStaffPermission } from "../middlewares/staffPermission.middleware";
 import { csrfProtection } from "../middlewares/csrf.middleware";
 import { validate } from "../middlewares/validate.middleware";
@@ -15,17 +15,43 @@ import {
 } from "../validators/delivery-rate.schema";
 import {
   bulkImportDeliveryRatesController,
+  deleteDeliveryRateController,
   getDeliveryQuoteController,
   getMyDeliveryRatesController,
   listDeliveryRatesController,
   setDeliveryRateActiveController,
   upsertDeliveryRateController,
 } from "../controllers/delivery-rate.controller";
+import { isBranchScopedAdmin } from "../services/delivery-rate.service";
 import { createRedisRateLimitStore } from "../lib/rateLimitStore";
 
 const deliveryRateRouter: Router = Router();
 
 const actorOrIpKey = (req: Request) => req.user?.id ?? ipKeyGenerator(req.ip ?? "");
+
+// Route Rates writes: a super_admin, an admin granted SETTINGS_ACCESS, or any
+// branch-scoped admin - the service layer already confines the latter to
+// routes originating from their own hub, so no separate delegation is needed
+// on top of that scoping. Everyone else keeps requiring the delegated
+// permission, same as the rest of the Settings section.
+function requireSettingsAccessOrBranchScoped() {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: "Unauthorized access" });
+    }
+    if (
+      req.user.roles.includes("super_admin") ||
+      (await hasAdminPermission(req.user, "SETTINGS_ACCESS")) ||
+      (await isBranchScopedAdmin(req.user))
+    ) {
+      return next();
+    }
+    return res.status(403).json({
+      success: false,
+      message: "Forbidden: this account does not have 'SETTINGS_ACCESS' access",
+    });
+  };
+}
 
 // Generous since the order form calls this on every weight/route change to recalc price.
 const quoteLimiter = rateLimit({
@@ -109,7 +135,7 @@ deliveryRateRouter.post(
   authMiddleware,
   csrfProtection,
   authorizeRoles("super_admin", "admin"),
-  requireAdminPermission("SETTINGS_ACCESS"),
+  requireSettingsAccessOrBranchScoped(),
   ratesWriteLimiter,
   validate(upsertDeliveryRateSchema),
   upsertDeliveryRateController,
@@ -135,7 +161,7 @@ deliveryRateRouter.post(
   authMiddleware,
   csrfProtection,
   authorizeRoles("super_admin", "admin"),
-  requireAdminPermission("SETTINGS_ACCESS"),
+  requireSettingsAccessOrBranchScoped(),
   ratesBulkImportLimiter,
   validate(bulkImportDeliveryRatesSchema),
   bulkImportDeliveryRatesController,
@@ -147,11 +173,23 @@ deliveryRateRouter.patch(
   authMiddleware,
   csrfProtection,
   authorizeRoles("super_admin", "admin"),
-  requireAdminPermission("SETTINGS_ACCESS"),
+  requireSettingsAccessOrBranchScoped(),
   ratesWriteLimiter,
   validate(uuidParamSchema, "params"),
   validate(setDeliveryRateActiveSchema),
   setDeliveryRateActiveController,
+);
+
+// DELETE /api/delivery-rates/:id — remove a route's rate
+deliveryRateRouter.delete(
+  "/:id",
+  authMiddleware,
+  csrfProtection,
+  authorizeRoles("super_admin", "admin"),
+  requireSettingsAccessOrBranchScoped(),
+  ratesWriteLimiter,
+  validate(uuidParamSchema, "params"),
+  deleteDeliveryRateController,
 );
 
 export default deliveryRateRouter;

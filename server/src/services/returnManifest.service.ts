@@ -21,6 +21,7 @@
 // four money bugs in a trench coat.
 import prisma from "../lib/prisma";
 import { AppError } from "../utils/AppError";
+import { adminBranchScopeIds } from "../lib/branchScope";
 import { generateReturnManifestNo } from "../utils/returnManifestNo";
 import {
   bulkUpdateParcelStatus,
@@ -49,7 +50,7 @@ const MAX_MANIFEST_NO_RETRIES = 5;
 const MANIFESTABLE_STATUS = "ready_to_return";
 
 const MANIFEST_INCLUDE = {
-  vendors: { select: { id: true, client_name: true, business_name: true, phone: true } },
+  vendors: { select: { id: true, client_name: true, business_name: true, phone: true, location_id: true } },
   riders: { select: { id: true, name: true, phone: true, vehicle_no: true } },
   created_by_user: { select: { full_name: true } },
   sent_by_user: { select: { full_name: true } },
@@ -68,7 +69,7 @@ type ManifestRow = {
   remarks: string | null;
   created_at: Date;
   updated_at: Date;
-  vendors?: { id: string; client_name: string; business_name: string | null; phone: string } | null;
+  vendors?: { id: string; client_name: string; business_name: string | null; phone: string; location_id: string | null } | null;
   riders?: { id: string; name: string; phone: string; vehicle_no: string | null } | null;
   created_by_user?: { full_name: string } | null;
   sent_by_user?: { full_name: string } | null;
@@ -142,13 +143,19 @@ export async function getOpenManifestForVendor(vendorId: string) {
   return row ? mapManifest(row) : null;
 }
 
-export async function listReturnManifests(_actor: Actor, params: ListReturnManifestsParams = {}) {
+export async function listReturnManifests(actor: Actor, params: ListReturnManifestsParams = {}) {
   const page = Math.max(1, params.page ?? 1);
   const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, params.pageSize ?? DEFAULT_PAGE_SIZE));
 
   const where: Record<string, unknown> = {};
   if (params.status) where.status = params.status;
   if (params.vendorId) where.vendor_id = params.vendorId;
+
+  // A branch-scoped admin only sees manifests for vendors registered at their
+  // branch - a manifest has no location of its own, but it always belongs to
+  // exactly one vendor.
+  const branchIds = await adminBranchScopeIds(actor);
+  if (branchIds) where.vendors = { location_id: { in: branchIds } };
 
   if (params.search?.trim()) {
     const search = params.search.trim();
@@ -199,8 +206,13 @@ export async function listReturnManifests(_actor: Actor, params: ListReturnManif
   };
 }
 
-export async function getReturnManifestById(_actor: Actor, id: string) {
+export async function getReturnManifestById(actor: Actor, id: string) {
   const row = await loadManifestOrThrow(id);
+
+  const branchIds = await adminBranchScopeIds(actor);
+  if (branchIds && !(row.vendors?.location_id && branchIds.includes(row.vendors.location_id))) {
+    throw new AppError(404, "Return manifest not found");
+  }
 
   const links = await prisma.return_manifest_parcels.findMany({
     where: { return_manifest_id: id },

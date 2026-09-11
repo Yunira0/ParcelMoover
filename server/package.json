@@ -31,7 +31,9 @@
     "reconcile:undelivered-cod": "ts-node --transpile-only scripts/reconcile-undelivered-cod.ts",
     "debrand:carrier-remarks": "ts-node --transpile-only scripts/debrand-carrier-remarks.ts",
     "restate:memos": "ts-node --transpile-only src/scripts/restate-memos.ts",
-    "restate:memos:prod": "node dist/scripts/restate-memos.js"
+    "restate:memos:prod": "node dist/scripts/restate-memos.js",
+    "repoint:branch-deposits": "ts-node --transpile-only src/scripts/repoint-branch-deposits.ts",
+    "repoint:branch-deposits:prod": "node dist/scripts/repoint-branch-deposits.js"
   },
   "keywords": [],
   "author": "",

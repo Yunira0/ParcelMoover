@@ -6,7 +6,7 @@ import jwt from "jsonwebtoken";
 import { AppError } from "../utils/AppError";
 import { sendWelcomeEmail } from "../lib/mailer";
 import { revokeAllUserTokens } from "../lib/tokenRevocation";
-import { adminBranchScopeIds } from "../lib/branchScope";
+import { adminBranchScopeIds, deriveBranchScoped } from "../lib/branchScope";
 import { ACCESS_TOKEN_AUDIENCE, JWT_ALGORITHM, JWT_ISSUER } from "../utils/jwtConfig";
 
 import { RegisterUserInput } from "../types/user-registration";
@@ -35,7 +35,6 @@ interface UpdateManagedUserInput {
   bankAccountHolder?: string;
   // admin
   position?: string;
-  branchScoped?: boolean;
   department?: string;
   idDocumentType?: string;
   idDocumentNumber?: string;
@@ -438,8 +437,13 @@ export async function updateManagedUserProfile(
       putText(u, "bank_name", data.bankName);
       putText(u, "bank_account_no", data.bankAccountNo);
       putText(u, "bank_account_holder", data.bankAccountHolder);
-      if (data.locationId !== undefined) u.location_id = data.locationId || null;
-      if (data.branchScoped !== undefined) u.branch_scoped = data.branchScoped;
+      if (data.locationId !== undefined) {
+        u.location_id = data.locationId || null;
+        // branch_scoped tracks the hub, not a manual toggle - recompute it
+        // whenever the hub changes (only reachable by a super_admin; see the
+        // locationId strip above for every other actor).
+        u.branch_scoped = await deriveBranchScoped(tx, data.locationId || null);
+      }
       if (joinedAt) u.joined_at = joinedAt;
       // Department is a display attribute only past account creation - it must
       // not silently re-derive the account's RBAC role (that previously made
@@ -616,8 +620,9 @@ const ADMIN_DOCUMENT_FIELDS: { key: string; label: string; column: "id_document"
   { key: "experienceLetterDoc", label: "Experience letter", column: "experience_letter_doc" },
 ];
 
-const VENDOR_DOCUMENT_FIELDS: { key: string; label: string; column: "citizenship_doc" | "pan_vat_doc" | "business_cert_doc" }[] = [
-  { key: "citizenshipDoc", label: "Citizenship", column: "citizenship_doc" },
+const VENDOR_DOCUMENT_FIELDS: { key: string; label: string; column: "citizenship_doc" | "citizenship_doc_back" | "pan_vat_doc" | "business_cert_doc" }[] = [
+  { key: "citizenshipDoc", label: "Citizenship (front)", column: "citizenship_doc" },
+  { key: "citizenshipDocBack", label: "Citizenship (back)", column: "citizenship_doc_back" },
   { key: "panVatDoc", label: "PAN / VAT", column: "pan_vat_doc" },
   { key: "businessCertDoc", label: "Business certificate", column: "business_cert_doc" },
 ];
@@ -981,6 +986,13 @@ export async function registerUserBySuperAdmin(
 
   validateRegisterInput(data);
 
+  // No longer a manual toggle: every hub except Imadol gets the branch
+  // workspace automatically, computed once here so the transaction below just
+  // writes the value.
+  const adminBranchScoped = data.type === "admin"
+    ? await deriveBranchScoped(prisma, data.locationId ?? null)
+    : false;
+
   const role = await prisma.roles.findUnique({
     where: { code: data.type },
   });
@@ -1018,7 +1030,7 @@ export async function registerUserBySuperAdmin(
         data: {
           user_id: user.id,
           location_id: data.locationId ?? null,
-          branch_scoped: data.branchScoped ?? false,
+          branch_scoped: adminBranchScoped,
           position: data.position ?? null,
           department: data.department ?? null,
           id_document_type: data.idDocumentType ?? null,

@@ -31,7 +31,8 @@ export const submitKycController = async (req: Request, res: Response) => {
       bankName: req.body.bankName,
       bankAccountNo: req.body.bankAccountNo,
       bankAccountHolder: req.body.bankAccountHolder,
-      citizenshipDocPath: docPath(files?.citizenshipDoc?.[0]),
+      citizenshipDocFrontPath: docPath(files?.citizenshipDocFront?.[0]),
+      citizenshipDocBackPath: docPath(files?.citizenshipDocBack?.[0]),
       panVatDocPath: docPath(files?.panVatDoc?.[0]),
       businessCertDocPath: docPath(files?.businessCertDoc?.[0]),
     });

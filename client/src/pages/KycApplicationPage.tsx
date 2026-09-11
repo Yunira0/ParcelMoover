@@ -21,7 +21,8 @@ const emptyForm = (): KycApplicationInput => ({
   registeredAddress: '',
   registrationNo: '',
   panVatNo: '',
-  citizenshipDoc: null,
+  citizenshipDocFront: null,
+  citizenshipDocBack: null,
   panVatDoc: null,
   businessCertDoc: null,
   bankName: '',
@@ -93,9 +94,13 @@ const KycApplicationPage: React.FC = () => {
       if (!isValidEmail(form.ownerEmail)) return 'Enter a valid email address';
       if (!form.ownerContact.trim()) return 'Contact number is required';
       if (!isValidPhone(form.ownerContact)) return 'Enter a valid Nepali mobile number (e.g. 98XXXXXXXX)';
+      if (!form.bankName?.trim()) return 'Bank name is required';
+      if (!form.bankAccountNo?.trim()) return 'Bank account number is required';
+      if (!form.bankAccountHolder?.trim()) return 'Account holder name is required';
     }
     if (step === 2) {
-      if (!form.citizenshipDoc) return 'Citizenship document is required';
+      if (!form.citizenshipDocFront) return 'Citizenship document (front side) is required';
+      if (!form.citizenshipDocBack) return 'Citizenship document (back side) is required';
     }
     return '';
   };
@@ -270,18 +275,21 @@ const KycApplicationPage: React.FC = () => {
                 />
                 <FormField
                   label="Bank Name"
+                  required
                   value={form.bankName ?? ''}
                   onChange={set('bankName')}
                   placeholder="e.g. Nabil Bank"
                 />
                 <FormField
                   label="Bank Account No."
+                  required
                   value={form.bankAccountNo ?? ''}
                   onChange={set('bankAccountNo')}
                   placeholder="Account number"
                 />
                 <FormField
                   label="Account Holder Name"
+                  required
                   value={form.bankAccountHolder ?? ''}
                   onChange={set('bankAccountHolder')}
                   placeholder="Name as on bank account"
@@ -294,7 +302,8 @@ const KycApplicationPage: React.FC = () => {
             <div className="kyc-section">
               <h3>Documents &amp; Review</h3>
               <div className="kyc-grid">
-                <FileField label="Citizenship" required file={form.citizenshipDoc} onChange={setFile('citizenshipDoc')} />
+                <FileField label="Citizenship (Front)" required file={form.citizenshipDocFront} onChange={setFile('citizenshipDocFront')} />
+                <FileField label="Citizenship (Back)" required file={form.citizenshipDocBack} onChange={setFile('citizenshipDocBack')} />
                 <FileField label="PAN / VAT Document" file={form.panVatDoc} onChange={setFile('panVatDoc')} />
                 <FileField label="Business Certificate" file={form.businessCertDoc} onChange={setFile('businessCertDoc')} />
               </div>

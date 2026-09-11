@@ -47,6 +47,12 @@ export const SLA_GROUPS: { title: string; keys: { key: string; label: string }[]
       { key: 'remarks', label: 'Unclosed Remarks' },
     ],
   },
+  {
+    title: 'Branch SLA',
+    keys: [
+      { key: 'branch_cod_submission', label: 'Branch COD Submission (after delivery)' },
+    ],
+  },
 ];
 
 export const getSlaSettings = async (): Promise<{ success: boolean; data: SlaSettings }> => {

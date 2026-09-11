@@ -19,14 +19,15 @@ export interface KycApplicationInput {
   panVatNo?: string;
 
   // Documents
-  citizenshipDoc?: File | null;
+  citizenshipDocFront?: File | null;
+  citizenshipDocBack?: File | null;
   panVatDoc?: File | null;
   businessCertDoc?: File | null;
 
   // Bank Details
-  bankName?: string;
-  bankAccountNo?: string;
-  bankAccountHolder?: string;
+  bankName: string;
+  bankAccountNo: string;
+  bankAccountHolder: string;
 }
 
 export interface KycApplication {
@@ -44,7 +45,8 @@ export interface KycApplication {
   registeredAddress: string | null;
   registrationNo: string | null;
   panVatNo: string | null;
-  citizenshipDoc: string | null;
+  citizenshipDocFront: string | null;
+  citizenshipDocBack: string | null;
   panVatDoc: string | null;
   businessCertDoc: string | null;
   bankName: string | null;
@@ -70,10 +72,11 @@ export const submitKycApplication = async (data: KycApplicationInput) => {
   if (data.registeredAddress) form.append('registeredAddress', data.registeredAddress);
   if (data.registrationNo) form.append('registrationNo', data.registrationNo);
   if (data.panVatNo) form.append('panVatNo', data.panVatNo);
-  if (data.bankName) form.append('bankName', data.bankName);
-  if (data.bankAccountNo) form.append('bankAccountNo', data.bankAccountNo);
-  if (data.bankAccountHolder) form.append('bankAccountHolder', data.bankAccountHolder);
-  if (data.citizenshipDoc) form.append('citizenshipDoc', data.citizenshipDoc);
+  form.append('bankName', data.bankName);
+  form.append('bankAccountNo', data.bankAccountNo);
+  form.append('bankAccountHolder', data.bankAccountHolder);
+  if (data.citizenshipDocFront) form.append('citizenshipDocFront', data.citizenshipDocFront);
+  if (data.citizenshipDocBack) form.append('citizenshipDocBack', data.citizenshipDocBack);
   if (data.panVatDoc) form.append('panVatDoc', data.panVatDoc);
   if (data.businessCertDoc) form.append('businessCertDoc', data.businessCertDoc);
 

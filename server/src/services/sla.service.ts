@@ -12,6 +12,11 @@ export const SLA_GROUPS = {
   return: ["follow_up", "ready_to_return", "sent_to_vendor"],
 } as const satisfies Record<string, parcel_status[]>;
 
+// Singleton key: how long a branch has, after a parcel destined to it is
+// delivered, to submit the collected COD before it counts as overdue. Read by
+// branch-billing.service to flag overdue COD on the branch balance.
+export const BRANCH_COD_SLA_KEY = "branch_cod_submission";
+
 // Every configurable key, in a stable order.
 export const SLA_STATUS_KEYS: string[] = [
   ...SLA_GROUPS.pickup,
@@ -19,6 +24,7 @@ export const SLA_STATUS_KEYS: string[] = [
   ...SLA_GROUPS.transit,
   ...SLA_GROUPS.return,
   "remarks",
+  BRANCH_COD_SLA_KEY,
 ];
 
 // Defaults used to backfill any key missing from the table on first read.
@@ -38,6 +44,7 @@ const DEFAULT_HOURS: Record<string, number> = {
   ready_to_return: 72,
   sent_to_vendor: 72,
   remarks: 24,
+  [BRANCH_COD_SLA_KEY]: 24,
 };
 
 export type SlaSettings = Record<string, number | null>;

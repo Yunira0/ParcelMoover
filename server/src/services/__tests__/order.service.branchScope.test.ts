@@ -1,9 +1,10 @@
-// getAdminBranchScope is opt-in per admin (branch_scoped) and never inferred
-// from location_id alone - many admins already carry one purely from hub
-// inheritance at account creation. These lock down the actual security
-// boundary it creates: a branch-scoped admin can't act on (or, via
-// buildOrdersWhere/getStatusCounts, even see) a parcel that doesn't touch
-// their branch - and everyone else's behaviour is completely unchanged.
+// getAdminBranchScope restricts order visibility to any admin who simply has
+// a hub assigned - Imadol included, unlike every other branch-scoping check
+// in the app (which key off branch_scoped and stay unrestricted at Imadol).
+// These lock down the actual security boundary it creates: a hub-assigned
+// admin can't act on (or, via buildOrdersWhere/getStatusCounts, even see) a
+// parcel that doesn't touch their hub - and everyone else's behaviour is
+// completely unchanged.
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("../../lib/prisma", () => ({
@@ -12,6 +13,7 @@ vi.mock("../../lib/prisma", () => ({
     admins: { findFirst: vi.fn() },
     locations: { findUnique: vi.fn() },
     riders: { findFirst: vi.fn() },
+    run_sheets: { findMany: vi.fn() },
     $transaction: vi.fn(),
   },
 }));
@@ -30,13 +32,20 @@ vi.mock("../vendor-scope.service", () => ({
 vi.mock("../notification.service", () => ({ createNotification: vi.fn() }));
 vi.mock("../branch.service", () => ({ resolveBranchLocationIds: vi.fn() }));
 
-import { updateParcelStatus, bulkUpdateParcelStatus } from "../order.service";
+import {
+  updateParcelStatus,
+  bulkUpdateParcelStatus,
+  updateOrderDetails,
+  redirectOrder,
+  getRiderRunSheet,
+} from "../order.service";
 import prisma from "../../lib/prisma";
 import { resolveBranchLocationIds } from "../branch.service";
 
 const mockedPrisma = prisma as unknown as {
   parcels: { findFirst: ReturnType<typeof vi.fn>; findMany: ReturnType<typeof vi.fn> };
   admins: { findFirst: ReturnType<typeof vi.fn> };
+  run_sheets: { findMany: ReturnType<typeof vi.fn> };
   $transaction: ReturnType<typeof vi.fn>;
 };
 const mockedResolveBranchLocationIds = resolveBranchLocationIds as unknown as ReturnType<typeof vi.fn>;
@@ -128,9 +137,16 @@ describe("a branch-scoped admin (single-parcel path)", () => {
     ).rejects.toMatchObject({ statusCode: 404 });
   });
 
-  it("is unrestricted when branch_scoped is false, even with a location_id set", async () => {
+  // Unlike every other branch-scoping check in the app (remarks, COD
+  // settlement, vendor/rider management, etc. - all keyed on branch_scoped
+  // and unrestricted at Imadol), order visibility keys off having a hub
+  // assigned at all. branch_scoped plays no part, and neither does which hub
+  // it is - an Imadol-based admin (branch_scoped auto-derived false, so their
+  // remarks/COD-settlement stay unrestricted) is narrowed to their own hub's
+  // orders exactly like any other branch.
+  it("restricts purely by having a hub assigned - branch_scoped plays no part", async () => {
     mockedPrisma.admins.findFirst.mockResolvedValue({
-      location_id: HUB_ID, branch_scoped: false, permissions: [],
+      location_id: HUB_ID, permissions: [],
     });
     mockedPrisma.parcels.findFirst.mockResolvedValue(
       makeFakeParcel({ status: "hold", origin_location_id: OTHER_HUB_ID, current_location_id: OTHER_HUB_ID, destination_location_id: OTHER_HUB_ID }),
@@ -138,8 +154,7 @@ describe("a branch-scoped admin (single-parcel path)", () => {
 
     await expect(
       updateParcelStatus(SCOPED_ADMIN, "parcel-1", { status: "ready_to_deliver" }),
-    ).resolves.toBeDefined();
-    expect(mockedResolveBranchLocationIds).not.toHaveBeenCalled();
+    ).rejects.toMatchObject({ statusCode: 404 });
   });
 
   it("is unrestricted once granted BRANCH_TRACKING_READ, the same rule Branch Tracking itself uses", async () => {
@@ -189,5 +204,85 @@ describe("a branch-scoped admin (bulk path)", () => {
       { destination_location_id: { in: [HUB_ID, AREA_ID] } },
       { current_location_id: { in: [HUB_ID, AREA_ID] } },
     ]);
+  });
+});
+
+// updateOrderDetails, redirectOrder and getRiderRunSheet used to look the
+// parcel/rider up with no branch filter at all - a branch-scoped admin could
+// act on (or run-sheet) anything system-wide by id even though listOrders
+// already hid it from them. These lock down the fix.
+describe("a branch-scoped admin (updateOrderDetails)", () => {
+  it("404s on a parcel that never touches their branch", async () => {
+    mockedPrisma.admins.findFirst.mockResolvedValue({
+      location_id: HUB_ID, branch_scoped: true, permissions: [],
+    });
+    mockedPrisma.parcels.findFirst.mockResolvedValue(null);
+
+    await expect(
+      updateOrderDetails(SCOPED_ADMIN, "parcel-1", {}),
+    ).rejects.toMatchObject({ statusCode: 404 });
+
+    const where = mockedPrisma.parcels.findFirst.mock.calls[0]![0].where;
+    expect(where.OR).toEqual([
+      { origin_location_id: { in: [HUB_ID, AREA_ID] } },
+      { destination_location_id: { in: [HUB_ID, AREA_ID] } },
+      { current_location_id: { in: [HUB_ID, AREA_ID] } },
+    ]);
+  });
+
+  it("applies no branch filter for a super_admin", async () => {
+    mockedPrisma.parcels.findFirst.mockResolvedValue(null);
+
+    await expect(
+      updateOrderDetails({ id: "root-1", roles: ["super_admin"] }, "parcel-1", {}),
+    ).rejects.toMatchObject({ statusCode: 404 });
+
+    const where = mockedPrisma.parcels.findFirst.mock.calls[0]![0].where;
+    expect(where.OR).toBeUndefined();
+  });
+});
+
+describe("a branch-scoped admin (redirectOrder)", () => {
+  it("404s on a parcel that never touches their branch", async () => {
+    mockedPrisma.admins.findFirst.mockResolvedValue({
+      location_id: HUB_ID, branch_scoped: true, permissions: [],
+    });
+    mockedPrisma.parcels.findFirst.mockResolvedValue(null);
+
+    await expect(
+      redirectOrder(SCOPED_ADMIN, "parcel-1", {
+        destinationLocationId: "dest-1", address: "New address", reason: "Customer moved", redirectCharge: 0,
+      }),
+    ).rejects.toMatchObject({ statusCode: 404 });
+
+    const where = mockedPrisma.parcels.findFirst.mock.calls[0]![0].where;
+    expect(where.OR).toEqual([
+      { origin_location_id: { in: [HUB_ID, AREA_ID] } },
+      { destination_location_id: { in: [HUB_ID, AREA_ID] } },
+      { current_location_id: { in: [HUB_ID, AREA_ID] } },
+    ]);
+  });
+});
+
+describe("a branch-scoped admin (getRiderRunSheet)", () => {
+  it("only queries run sheets for riders based at their branch", async () => {
+    mockedPrisma.admins.findFirst.mockResolvedValue({
+      location_id: HUB_ID, branch_scoped: true, permissions: [],
+    });
+    mockedPrisma.run_sheets.findMany.mockResolvedValue([]);
+
+    await getRiderRunSheet(SCOPED_ADMIN, {});
+
+    const where = mockedPrisma.run_sheets.findMany.mock.calls[0]![0].where;
+    expect(where.riders).toEqual({ location_id: { in: [HUB_ID, AREA_ID] } });
+  });
+
+  it("applies no rider filter for a super_admin", async () => {
+    mockedPrisma.run_sheets.findMany.mockResolvedValue([]);
+
+    await getRiderRunSheet({ id: "root-1", roles: ["super_admin"] }, {});
+
+    const where = mockedPrisma.run_sheets.findMany.mock.calls[0]![0].where;
+    expect(where.riders).toBeUndefined();
   });
 });

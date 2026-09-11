@@ -648,13 +648,18 @@ function branchHandlesSql(branchLocationIds: string[], alias = ""): Prisma.Sql {
 }
 
 /**
- * An admin's own order visibility, restricted to their assigned branch's
- * coverage - opt-in per admin (branch_scoped), never inferred from having a
- * location_id at all: many admins already carry one purely from hub
- * inheritance at account creation, not as an access signal. Lifted entirely
- * by BRANCH_TRACKING_READ/WRITE, the same permission that already unlocks
- * the dedicated Branch Tracking pages - one admin, one consistent rule about
- * whether they're limited to their own branch or not.
+ * An admin's own order visibility, restricted to their assigned hub's
+ * coverage - every admin with a hub, Imadol included, unless they hold
+ * BRANCH_TRACKING_READ/WRITE (the same permission that already unlocks the
+ * dedicated Branch Tracking pages).
+ *
+ * Deliberately does NOT key off branch_scoped like every other branch-scoping
+ * check in the app (remarks, COD settlement, vendor/rider management,
+ * finance, delivery rates, transit/return manifests, all via
+ * lib/branchScope.ts's adminBranchScopeIds): those stay unrestricted at
+ * Imadol because branch_scoped is auto-derived false there (see
+ * deriveBranchScoped), but order visibility must still narrow to Imadol's own
+ * orders for an Imadol-based admin - so this checks location_id alone.
  *
  * super_admin is never scoped here regardless of any admins row.
  */
@@ -662,18 +667,10 @@ async function getAdminBranchScope(actor: OrderActor): Promise<string[] | undefi
   if (actor.roles.includes("super_admin") || !actor.roles.includes("admin")) return undefined;
   const admin = await prisma.admins.findFirst({
     where: { user_id: actor.id },
-    select: {
-      location_id: true,
-      branch_scoped: true,
-      permissions: true,
-      locations: { select: { code: true } },
-    },
+    select: { location_id: true, permissions: true },
   });
-  if (!admin?.branch_scoped || !admin.location_id) return undefined;
+  if (!admin?.location_id) return undefined;
   if (admin.permissions.some((p) => p === "BRANCH_TRACKING_READ" || p === "BRANCH_TRACKING_WRITE")) return undefined;
-  // Imadol is the central hub: its admins see every branch's orders even when
-  // flagged branch_scoped. Every other branch is limited to its own coverage.
-  if (admin.locations?.code?.trim().toUpperCase() === "IMADOL") return undefined;
   return resolveBranchLocationIds(admin.location_id);
 }
 
@@ -1282,6 +1279,7 @@ export async function updateOrderDetails(
   const salesVendorIds = !ownVendorId && !isStaffActor && actor.roles.includes("sales")
     ? (await getActorScope(actor)).vendorIds
     : undefined;
+  const adminBranchIds = await getAdminBranchScope(actor);
 
   // Reassigning the order to a different vendor is an ops-staff action only —
   // a vendor/vendor_staff actor is already scoped to their own vendor_id via
@@ -1296,6 +1294,7 @@ export async function updateOrderDetails(
       id: parcelId,
       ...(ownVendorId ? { vendor_id: ownVendorId } : {}),
       ...(salesVendorIds ? { vendor_id: { in: salesVendorIds } } : {}),
+      ...(adminBranchIds ? branchTouchesFilter(adminBranchIds) : {}),
     },
     include: {
       parties_parcels_sender_idToparties: true,
@@ -1664,8 +1663,13 @@ export async function redirectOrder(
     throw new AppError(403, "Only an admin can redirect an order");
   }
 
+  const adminBranchIds = await getAdminBranchScope(actor);
   const parcel = await prisma.parcels.findFirst({
-    where: { id: parcelId, deleted_at: null },
+    where: {
+      id: parcelId,
+      deleted_at: null,
+      ...(adminBranchIds ? branchTouchesFilter(adminBranchIds) : {}),
+    },
     include: {
       parties_parcels_sender_idToparties: true,
       parties_parcels_receiver_idToparties: true,
@@ -2806,6 +2810,7 @@ function nepalDayWindow(date: string) {
 }
 
 export async function getRiderRunSheet(
+  actor: OrderActor,
   query: { riderId?: string; date?: string } = {},
 ) {
   const date = query.date || nepalToday();
@@ -2814,10 +2819,13 @@ export async function getRiderRunSheet(
     throw new AppError(400, "Invalid date");
   }
 
+  const adminBranchIds = await getAdminBranchScope(actor);
+
   const sheets = await prisma.run_sheets.findMany({
     where: {
       created_at: { gte: start, lt: end },
       ...(query.riderId ? { rider_id: query.riderId } : {}),
+      ...(adminBranchIds ? { riders: { location_id: { in: adminBranchIds } } } : {}),
     },
     include: {
       riders: { include: { locations: true } },
@@ -4415,6 +4423,12 @@ async function _updateParcelStatusImpl(
     throw new AppError(403, "Only admins can manage hold / loss & damage status");
   }
 
+  // loss & damage is a head-office write-off classification - a branch-scoped
+  // admin may release a hold back into the active flow but not write it off.
+  if (newStatus === "loss_and_damage" && adminBranchIds) {
+    throw new AppError(403, "Only head office can mark loss & damage");
+  }
+
   if (data.locationId) {
     const loc = await prisma.locations.findUnique({
       where: { id: data.locationId },
@@ -5202,6 +5216,12 @@ async function _bulkUpdateParcelStatusImpl(
   // rather than gated on isVendorActor/isRiderActor/isSalesActor above, since
   // it applies specifically to an admin actor those never match.
   const adminBranchIds = await getAdminBranchScope(actor);
+
+  // loss & damage is a head-office write-off classification - a branch-scoped
+  // admin may release a hold back into the active flow but not write it off.
+  if (newStatus === "loss_and_damage" && adminBranchIds) {
+    throw new AppError(403, "Only head office can mark loss & damage");
+  }
 
   let parcels = await prisma.parcels.findMany({
     where: {
@@ -6293,16 +6313,21 @@ export async function getStatusCounts(
 
 // ── Trash (soft-deleted orders) ──────────────────────────────────────────────
 // `deleted_at` has always been on parcels and filtered out of every read path;
-// these are the first writers of it. Nothing here is reachable by a vendor,
-// sales or rider actor - the routes are admin-only - so none of it re-checks
-// actor scope beyond what listOrders already applies.
+// these are the first writers of it. The routes are admin-only, so a
+// branch-scoped admin is the only actor loadParcelForTrash needs to narrow for
+// - everyone else here is unrestricted (see getAdminBranchScope).
 
 /** Cancelled orders older than this are swept into the trash automatically. */
 export const CANCELLED_TRASH_AFTER_DAYS = 7;
 
-async function loadParcelForTrash(parcelId: string, opts: { trashed: boolean }) {
+async function loadParcelForTrash(actor: OrderActor, parcelId: string, opts: { trashed: boolean }) {
+  const adminBranchIds = await getAdminBranchScope(actor);
   const parcel = await prisma.parcels.findFirst({
-    where: { id: parcelId, deleted_at: opts.trashed ? { not: null } : null },
+    where: {
+      id: parcelId,
+      deleted_at: opts.trashed ? { not: null } : null,
+      ...(adminBranchIds ? branchTouchesFilter(adminBranchIds) : {}),
+    },
     select: {
       id: true, order_number: true, tracking_id: true, status: true, deleted_at: true,
       vendor_id: true, delivery_rider_id: true,
@@ -6327,7 +6352,7 @@ async function loadParcelForTrash(parcelId: string, opts: { trashed: boolean }) 
  * also only ever picks up cancelled orders.
  */
 export async function moveOrderToTrash(actor: OrderActor, parcelId: string) {
-  const parcel = await loadParcelForTrash(parcelId, { trashed: false });
+  const parcel = await loadParcelForTrash(actor, parcelId, { trashed: false });
 
   if (parcel.status !== "cancelled") {
     throw new AppError(
@@ -6408,7 +6433,7 @@ export async function restoreOrderFromTrash(
   if (!TRASH_RESTORE_STAGES.includes(restoreTo)) {
     throw new AppError(400, `restoreTo must be one of: ${TRASH_RESTORE_STAGES.join(", ")}`);
   }
-  const parcel = await loadParcelForTrash(parcelId, { trashed: true });
+  const parcel = await loadParcelForTrash(actor, parcelId, { trashed: true });
 
   await prisma.$transaction(async (tx) => {
     await tx.parcels.update({
@@ -6487,7 +6512,7 @@ export async function getPermanentDeleteBlocker(parcelId: string): Promise<strin
  * redirects, pickup tasks - are all ON DELETE CASCADE and go with it.
  */
 export async function deleteOrderPermanently(actor: OrderActor, parcelId: string) {
-  const parcel = await loadParcelForTrash(parcelId, { trashed: true });
+  const parcel = await loadParcelForTrash(actor, parcelId, { trashed: true });
 
   const blocker = await getPermanentDeleteBlocker(parcel.id);
   if (blocker) throw new AppError(409, blocker);

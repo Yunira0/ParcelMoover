@@ -13,8 +13,6 @@ export interface RegisterUserInput {
 
     //admin only
     position?: string;
-    /** Scopes this admin's Order Management to locationId's coverage. See admins.branch_scoped. */
-    branchScoped?: boolean;
 
     //vendor only
     clientName?: string;

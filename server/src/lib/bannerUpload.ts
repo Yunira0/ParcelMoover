@@ -3,6 +3,7 @@ import path from "path";
 import fs from "fs";
 import { randomBytes } from "crypto";
 import { safeUploadExtension } from "./uploadExtension";
+import { AppError } from "../utils/AppError";
 
 // Admin-uploaded banner creatives shown to vendors. Same storage/encryption
 // contract as billingUpload.ts's QR — secureUploadedFiles must run before the
@@ -10,7 +11,9 @@ import { safeUploadExtension } from "./uploadExtension";
 const UPLOAD_DIR = path.join(process.cwd(), "uploads", "banners");
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
-const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
+// HEIC/HEIF (iPhone camera default) is accepted here and converted to JPEG by
+// secureUploadedFiles before it's ever stored.
+const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"];
 const MAX_SIZE_MB = 5;
 
 const storage = multer.diskStorage({
@@ -28,7 +31,7 @@ const bannerMulter = multer({
     if (ALLOWED_TYPES.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error("Only JPG, PNG, and WebP images are allowed"));
+      cb(new AppError(400, "Only JPG, PNG, WebP, and HEIC images are allowed"));
     }
   },
 });

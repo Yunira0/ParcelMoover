@@ -33,28 +33,157 @@
 .delivery-rate-form-actions {
   display: flex;
   justify-content: flex-end;
+  gap: var(--space-3);
 }
 
-.rate-status-toggle {
-  border: 1px solid var(--color-border-default);
+.delivery-rate-editing-banner {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-info-surface);
   border-radius: var(--border-radius-default);
-  padding: var(--space-1) var(--space-3);
   font-size: var(--font-size-sm);
-  cursor: pointer;
-  background: var(--color-background-surface);
+  color: var(--color-info-text);
 }
 
-.rate-status-toggle.active {
-  border-color: var(--color-background-success-default);
-  color: var(--color-background-success-default);
+/* Edit / Delete row actions - same look as Settings > Destinations & Areas. */
+.rate-actions-cell {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
 }
 
-.rate-status-toggle.inactive {
-  border-color: var(--color-border-default);
+.rate-delete-btn,
+.rate-edit-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--border-radius-default);
+  border: 1px solid var(--color-border-default);
+  background: transparent;
   color: var(--color-text-caption);
+  cursor: pointer;
+  transition: all 150ms ease;
+  flex-shrink: 0;
+}
+
+.rate-edit-btn {
+  color: #000;
+}
+
+.rate-edit-btn:hover {
+  background: var(--color-background-canvas);
+  color: #000;
+}
+
+.rate-delete-btn:hover {
+  border-color: var(--color-danger-border);
+  background: var(--color-danger-surface);
+  color: var(--color-danger-default);
+}
+
+.rate-confirm-delete {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.rate-confirm-delete span {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-default);
+  white-space: nowrap;
+}
+
+.rate-confirm-btn {
+  padding: 4px 10px;
+  border-radius: var(--border-radius-default);
+  border: 1px solid var(--color-border-default);
+  background: var(--color-background-surface);
+  color: var(--color-text-default);
+  font-family: var(--typography-font-family-default);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+
+.rate-confirm-btn:hover {
+  background: var(--color-background-elevated);
+}
+
+.rate-confirm-btn--danger {
+  border-color: var(--color-danger-border);
+  background: var(--color-danger-surface);
+  color: var(--color-danger-default);
+}
+
+.rate-confirm-btn--danger:hover {
+  background: var(--color-danger-surface-hover);
+}
+
+.rate-status-cell {
+  align-items: center;
+  display: flex;
+  gap: var(--space-2);
 }
 
 .delivery-rate-toolbar {
   display: flex;
   justify-content: flex-end;
+}
+
+.delivery-rate-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.delivery-rate-search-icon {
+  position: absolute;
+  left: 12px;
+  color: var(--color-text-placeholder);
+  pointer-events: none;
+}
+
+.delivery-rate-search-input {
+  width: 100%;
+  padding: 8px 36px 8px 36px;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-lg);
+  font-size: var(--font-size-sm);
+  font-family: var(--typography-font-family-default);
+  background: var(--color-background-surface);
+  color: var(--color-text-default);
+}
+
+.delivery-rate-search-input::placeholder {
+  color: var(--color-text-placeholder);
+}
+
+.delivery-rate-search-input:focus {
+  outline: none;
+  border-color: var(--color-border-strong, var(--color-text-caption));
+}
+
+.delivery-rate-search-clear {
+  position: absolute;
+  right: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--color-text-caption);
+  cursor: pointer;
+}
+
+.delivery-rate-search-clear:hover {
+  background: var(--color-danger-surface);
+  color: var(--color-danger-default);
 }

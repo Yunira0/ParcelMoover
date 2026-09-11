@@ -237,8 +237,12 @@ const KycManagement: React.FC<KycManagementProps> = ({ embedded = false }) => {
                 <h4>Documents</h4>
                 <div className="kyc-docs-grid">
                   <div className="kyc-doc-item">
-                    <span className="kyc-doc-label">Citizenship</span>
-                    <DocLink path={selected.citizenshipDoc} label="View" />
+                    <span className="kyc-doc-label">Citizenship (Front)</span>
+                    <DocLink path={selected.citizenshipDocFront} label="View" />
+                  </div>
+                  <div className="kyc-doc-item">
+                    <span className="kyc-doc-label">Citizenship (Back)</span>
+                    <DocLink path={selected.citizenshipDocBack} label="View" />
                   </div>
                   <div className="kyc-doc-item">
                     <span className="kyc-doc-label">PAN / VAT</span>

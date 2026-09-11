@@ -701,10 +701,13 @@ export async function riderRunSheetController(req: Request, res: Response) {
     const date =
       typeof req.query.date === "string" && req.query.date ? req.query.date : undefined;
 
-    const data = await getRiderRunSheet({
-      ...(riderId ? { riderId } : {}),
-      ...(date ? { date } : {}),
-    });
+    const data = await getRiderRunSheet(
+      { id: req.user.id, roles: req.user.roles },
+      {
+        ...(riderId ? { riderId } : {}),
+        ...(date ? { date } : {}),
+      },
+    );
     return res.status(200).json({ success: true, data });
   } catch (error: any) {
     return res.status(error.statusCode || 500).json({

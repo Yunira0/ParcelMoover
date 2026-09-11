@@ -77,6 +77,11 @@ export const setDeliveryRateActive = async (id: string, isActive: boolean) => {
   return response.data;
 };
 
+export const deleteDeliveryRate = async (id: string): Promise<{ success: boolean; message: string }> => {
+  const response = await api.delete(`/delivery-rates/${id}`);
+  return response.data;
+};
+
 // ── Bulk import (Excel/CSV upload) ───────────────────────────────────────────
 // Rows reference locations by name; the server resolves them to hub ids.
 

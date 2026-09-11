@@ -25,12 +25,13 @@ export interface KycApplicationInput {
   panVatNo?: string;
 
   // Bank Details
-  bankName?: string;
-  bankAccountNo?: string;
-  bankAccountHolder?: string;
+  bankName: string;
+  bankAccountNo: string;
+  bankAccountHolder: string;
 
   // Document file paths (set by controller after multer processes files)
-  citizenshipDocPath?: string | undefined;
+  citizenshipDocFrontPath?: string | undefined;
+  citizenshipDocBackPath?: string | undefined;
   panVatDocPath?: string | undefined;
   businessCertDocPath?: string | undefined;
 }
@@ -61,10 +62,14 @@ function validateKycInput(input: KycApplicationInput) {
   if (!EMAIL_REGEX.test(input.ownerEmail.trim())) throw new AppError(400, "Invalid owner email address");
   if (!input.ownerContact?.trim()) throw new AppError(400, "Owner contact number is required");
   if (!PHONE_REGEX.test(input.ownerContact.trim())) throw new AppError(400, "Enter a valid Nepali mobile number");
+  if (!input.bankName?.trim()) throw new AppError(400, "Bank name is required");
+  if (!input.bankAccountNo?.trim()) throw new AppError(400, "Bank account number is required");
+  if (!input.bankAccountHolder?.trim()) throw new AppError(400, "Bank account holder name is required");
 
-  // Citizenship is mandatory to verify against; PAN/VAT and business
-  // certificate scans are optional.
-  if (!input.citizenshipDocPath) throw new AppError(400, "Citizenship document is required");
+  // Both sides of the citizenship document are mandatory to verify against;
+  // PAN/VAT and business certificate scans are optional.
+  if (!input.citizenshipDocFrontPath) throw new AppError(400, "Citizenship document (front side) is required");
+  if (!input.citizenshipDocBackPath) throw new AppError(400, "Citizenship document (back side) is required");
 
   const shortFields: Array<[string, string | undefined]> = [
     ["Online business name", input.onlineBusinessName],
@@ -124,7 +129,8 @@ export async function submitKycApplication(data: KycApplicationInput) {
         registered_address: data.registeredAddress?.trim() || null,
         registration_no: data.registrationNo?.trim() || null,
         pan_vat_no: data.panVatNo?.trim() || null,
-        citizenship_doc: data.citizenshipDocPath || null,
+        citizenship_doc_front: data.citizenshipDocFrontPath || null,
+        citizenship_doc_back: data.citizenshipDocBackPath || null,
         pan_vat_doc: data.panVatDocPath || null,
         business_cert_doc: data.businessCertDocPath || null,
         bank_name: data.bankName?.trim() || null,
@@ -143,7 +149,8 @@ export async function submitKycApplication(data: KycApplicationInput) {
           ownerEmail: normalizedEmail,
           onlineBusinessName: app.online_business_name,
           documentsSubmitted: {
-            citizenshipDoc: !!app.citizenship_doc,
+            citizenshipDocFront: !!app.citizenship_doc_front,
+            citizenshipDocBack: !!app.citizenship_doc_back,
             panVatDoc: !!app.pan_vat_doc,
             businessCertDoc: !!app.business_cert_doc,
           },
@@ -193,7 +200,8 @@ export async function listKycApplications(status?: string, page = 1, pageSize = 
     registeredAddress: app.registered_address,
     registrationNo: app.registration_no,
     panVatNo: app.pan_vat_no,
-    citizenshipDoc: app.citizenship_doc,
+    citizenshipDocFront: app.citizenship_doc_front,
+    citizenshipDocBack: app.citizenship_doc_back,
     panVatDoc: app.pan_vat_doc,
     businessCertDoc: app.business_cert_doc,
     bankName: app.bank_name,
@@ -295,7 +303,8 @@ export async function approveKycApplication(id: string, reviewerId: string, note
         billing_business_name: app.billing_business_name,
         registration_no: app.registration_no,
         pan_vat_no: app.pan_vat_no,
-        citizenship_doc: app.citizenship_doc,
+        citizenship_doc: app.citizenship_doc_front,
+        citizenship_doc_back: app.citizenship_doc_back,
         pan_vat_doc: app.pan_vat_doc,
         business_cert_doc: app.business_cert_doc,
         bank_name: app.bank_name,
@@ -400,25 +409,28 @@ export async function purgeExpiredRejectedKycDocuments(): Promise<{ checked: num
       status: "rejected",
       reviewed_at: { lt: cutoff },
       OR: [
-        { citizenship_doc: { not: null } },
+        { citizenship_doc_front: { not: null } },
+        { citizenship_doc_back: { not: null } },
         { pan_vat_doc: { not: null } },
         { business_cert_doc: { not: null } },
       ],
     },
-    select: { id: true, citizenship_doc: true, pan_vat_doc: true, business_cert_doc: true },
+    select: { id: true, citizenship_doc_front: true, citizenship_doc_back: true, pan_vat_doc: true, business_cert_doc: true },
   });
 
   let purged = 0;
 
   for (const app of candidates) {
-    const [citizenshipDeleted, panVatDeleted, businessCertDeleted] = await Promise.all([
-      deleteDocumentFile(app.citizenship_doc),
+    const [citizenshipFrontDeleted, citizenshipBackDeleted, panVatDeleted, businessCertDeleted] = await Promise.all([
+      deleteDocumentFile(app.citizenship_doc_front),
+      deleteDocumentFile(app.citizenship_doc_back),
       deleteDocumentFile(app.pan_vat_doc),
       deleteDocumentFile(app.business_cert_doc),
     ]);
 
     const clearedFields: Record<string, null> = {};
-    if (app.citizenship_doc && citizenshipDeleted) clearedFields.citizenship_doc = null;
+    if (app.citizenship_doc_front && citizenshipFrontDeleted) clearedFields.citizenship_doc_front = null;
+    if (app.citizenship_doc_back && citizenshipBackDeleted) clearedFields.citizenship_doc_back = null;
     if (app.pan_vat_doc && panVatDeleted) clearedFields.pan_vat_doc = null;
     if (app.business_cert_doc && businessCertDeleted) clearedFields.business_cert_doc = null;
     if (Object.keys(clearedFields).length === 0) continue;
