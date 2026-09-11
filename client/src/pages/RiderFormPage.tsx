@@ -7,6 +7,7 @@ import DocLink from '../components/DocLink';
 import { registerUser, getLocations, getManagedUser, updateUserProfile } from '../services/users.service';
 import { getCurrentUser } from '../services/auth.service';
 import { extractServerFieldErrors, isValidEmail, isValidName, isValidPhone, normalizePhone } from '../utils/serverValidation';
+import { convertHeicFileIfNeeded } from '../utils/heicConvert';
 import { useHubLock } from '../hooks/useHubLock';
 import './RiderFormPage.css';
 
@@ -84,6 +85,16 @@ const FileInput: React.FC<{
   accept?: string;
 }> = ({ label, required, file, onChange, accept = 'image/*,.pdf' }) => {
   const ref = useRef<HTMLInputElement>(null);
+  const [converting, setConverting] = useState(false);
+  const handleFile = async (picked: File | null) => {
+    if (!picked) { onChange(null); return; }
+    setConverting(true);
+    try {
+      onChange(await convertHeicFileIfNeeded(picked));
+    } finally {
+      setConverting(false);
+    }
+  };
   return (
     <div className="rfp-file-field">
       <label className="rfp-file-label">
@@ -98,8 +109,8 @@ const FileInput: React.FC<{
           </button>
         </div>
       ) : (
-        <button type="button" className="rfp-file-btn" onClick={() => ref.current?.click()}>
-          <Upload size={15} /> Choose file
+        <button type="button" className="rfp-file-btn" disabled={converting} onClick={() => ref.current?.click()}>
+          <Upload size={15} /> {converting ? 'Converting…' : 'Choose file'}
         </button>
       )}
       <input
@@ -107,7 +118,7 @@ const FileInput: React.FC<{
         type="file"
         accept={accept}
         style={{ display: 'none' }}
-        onChange={(e) => onChange(e.target.files?.[0] ?? null)}
+        onChange={(e) => void handleFile(e.target.files?.[0] ?? null)}
       />
       <span className="rfp-file-hint">JPG, PNG or PDF · max 5 MB</span>
     </div>

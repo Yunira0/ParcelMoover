@@ -11,6 +11,7 @@ import {
   updateBanner,
   type BannerDisplayType,
 } from '../services/banners.service';
+import { convertHeicFileIfNeeded } from '../utils/heicConvert';
 import './BannerFormPage.css';
 
 interface BannerFormState {
@@ -47,6 +48,7 @@ const BannerFormPage: React.FC = () => {
 
   const [form, setForm] = useState<BannerFormState>(emptyForm);
   const [image, setImage] = useState<File | null>(null);
+  const [convertingImage, setConvertingImage] = useState(false);
   const [existingImage, setExistingImage] = useState<{ id: string; path: string } | null>(null);
   const [loading, setLoading] = useState(isEdit);
   const [saving, setSaving] = useState(false);
@@ -79,6 +81,16 @@ const BannerFormPage: React.FC = () => {
     : existingImage
       ? bannerImageUrl(existingImage.id, existingImage.path)
       : null;
+
+  const handleImagePick = async (picked: File | null) => {
+    if (!picked) { setImage(null); return; }
+    setConvertingImage(true);
+    try {
+      setImage(await convertHeicFileIfNeeded(picked));
+    } finally {
+      setConvertingImage(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -164,18 +176,18 @@ const BannerFormPage: React.FC = () => {
                 </button>
               </div>
             ) : (
-              <button type="button" className="bfp-image-dropzone" onClick={() => fileInputRef.current?.click()}>
+              <button type="button" className="bfp-image-dropzone" disabled={convertingImage} onClick={() => fileInputRef.current?.click()}>
                 <ImagePlus size={22} />
-                <span>Upload banner image</span>
+                <span>{convertingImage ? 'Converting HEIC photo…' : 'Upload banner image'}</span>
                 <small>JPG, PNG, or WebP · 5 MB max</small>
               </button>
             )}
             <input
               ref={fileInputRef}
               type="file"
-              accept="image/jpeg,image/png,image/webp"
+              accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
               style={{ display: 'none' }}
-              onChange={(e) => setImage(e.target.files?.[0] ?? null)}
+              onChange={(e) => void handleImagePick(e.target.files?.[0] ?? null)}
             />
             </div>
 

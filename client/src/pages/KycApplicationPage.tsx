@@ -5,6 +5,7 @@ import Button from '../components/Button';
 import FormField from '../components/FormField';
 import { submitKycApplication, type KycApplicationInput } from '../services/kyc.service';
 import { hasLetter, isValidEmail, isValidName, isValidPhone } from '../utils/serverValidation';
+import { convertHeicFileIfNeeded } from '../utils/heicConvert';
 import './KycApplicationPage.css';
 
 const STEPS = ['Business', 'Owner & Bank', 'Documents'];
@@ -38,6 +39,16 @@ const FileField: React.FC<{
   required?: boolean;
 }> = ({ label, file, onChange, required }) => {
   const ref = useRef<HTMLInputElement>(null);
+  const [converting, setConverting] = useState(false);
+  const handleFile = async (picked: File | null) => {
+    if (!picked) { onChange(null); return; }
+    setConverting(true);
+    try {
+      onChange(await convertHeicFileIfNeeded(picked));
+    } finally {
+      setConverting(false);
+    }
+  };
   return (
     <div className="kyc-file-field">
       <span className="kyc-file-label">
@@ -52,8 +63,8 @@ const FileField: React.FC<{
           </button>
         </div>
       ) : (
-        <button type="button" className="kyc-file-btn" onClick={() => ref.current?.click()}>
-          <Upload size={15} /> Upload
+        <button type="button" className="kyc-file-btn" disabled={converting} onClick={() => ref.current?.click()}>
+          <Upload size={15} /> {converting ? 'Converting…' : 'Upload'}
         </button>
       )}
       <input
@@ -61,7 +72,7 @@ const FileField: React.FC<{
         type="file"
         accept="image/*,.pdf"
         style={{ display: 'none' }}
-        onChange={(e) => onChange(e.target.files?.[0] ?? null)}
+        onChange={(e) => void handleFile(e.target.files?.[0] ?? null)}
       />
     </div>
   );
