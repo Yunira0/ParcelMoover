@@ -14,6 +14,43 @@ type Actor = { id: string; roles: string[] };
 const RATE_CACHE_PREFIX = "delivery-rate:";
 const RATE_CACHE_TTL_SECONDS = 5 * 60;
 
+/**
+ * The hub a branch-scoped admin is limited to as a route's *origin*, or
+ * undefined when unrestricted (super_admin, a non-branch-scoped admin, an
+ * admin holding BRANCH_TRACKING_READ/WRITE cross-branch visibility, or
+ * Imadol - the central hub, which prices routes for the whole network).
+ * Mirrors order.service's getAdminBranchScope carve-outs so a branch
+ * workspace admin gets the same "own hub only" rule everywhere.
+ */
+async function getBranchOriginScope(actor: Actor): Promise<string | undefined> {
+  if (actor.roles.includes("super_admin") || !actor.roles.includes("admin")) return undefined;
+  const admin = await prisma.admins.findFirst({
+    where: { user_id: actor.id },
+    select: { location_id: true, branch_scoped: true, permissions: true, locations: { select: { code: true } } },
+  });
+  if (!admin?.branch_scoped || !admin.location_id) return undefined;
+  if (admin.permissions.some((p) => p === "BRANCH_TRACKING_READ" || p === "BRANCH_TRACKING_WRITE")) return undefined;
+  if (admin.locations?.code?.trim().toUpperCase() === "IMADOL") return undefined;
+  return admin.location_id;
+}
+
+/**
+ * True for any branch-scoped admin (matches the client's isBranchWorkspaceUser),
+ * regardless of the BRANCH_TRACKING/Imadol carve-outs above - those decide the
+ * *scope* of what such an admin can see once let in, not whether they're let
+ * in at all. Used to open up Route Rates management to every branch admin
+ * without requiring a separate SETTINGS_ACCESS delegation, since the write
+ * paths above already confine them to their own hub as origin.
+ */
+export async function isBranchScopedAdmin(actor: Actor): Promise<boolean> {
+  if (!actor.roles.includes("admin") || actor.roles.includes("super_admin")) return false;
+  const admin = await prisma.admins.findFirst({
+    where: { user_id: actor.id },
+    select: { branch_scoped: true },
+  });
+  return Boolean(admin?.branch_scoped);
+}
+
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // Resolves a vendor-supplied destination reference to a real location id -
@@ -77,6 +114,10 @@ async function assertActiveLocation(locationId: string, label: string) {
 export async function upsertDeliveryRate(actor: Actor, input: UpsertDeliveryRateInput) {
   // origin === destination is allowed: it's the local same-hub rate (e.g.
   // Hetauda → Hetauda) used to price a branch's deliveries within its own city.
+  const originScope = await getBranchOriginScope(actor);
+  if (originScope && input.originLocationId !== originScope) {
+    throw new AppError(403, "You can only set delivery rates originating from your own branch");
+  }
   if (!(input.baseCharge >= 0)) {
     throw new AppError(400, "Base charge must be a non-negative number");
   }
@@ -123,8 +164,10 @@ export async function upsertDeliveryRate(actor: Actor, input: UpsertDeliveryRate
   return rate;
 }
 
-export async function listDeliveryRates() {
+export async function listDeliveryRates(actor: Actor) {
+  const originScope = await getBranchOriginScope(actor);
   const rates = await prisma.delivery_rates.findMany({
+    where: originScope ? { origin_location_id: originScope } : {},
     include: {
       locations_delivery_rates_origin_location_idTolocations: true,
       locations_delivery_rates_destination_location_idTolocations: true,
@@ -167,33 +210,109 @@ export interface BulkImportRateResult {
   error?: string;
 }
 
-// Spreadsheet rows reference destinations by name; resolve them against the
-// hub (top-level) locations once, then upsert row by row so one bad row
-// doesn't sink the rest of the file.
+type RowLocation = { id: string; name: string };
+type RowLocationResult = RowLocation | { error: string };
+
+function isRowLocationError(result: RowLocationResult): result is { error: string } {
+  return "error" in result;
+}
+
+// Builds the name/code -> location lookup used to resolve a spreadsheet row's
+// free-text origin/destination against a hub OR one of its covered areas.
+// Codes are globally unique (locations.code), so a code always resolves
+// unambiguously; area *names* are only unique within their own hub (two
+// branches can each have a "Chowk" area), so a bare area name that exists
+// under more than one hub is rejected with a hint to disambiguate via
+// "<hub> / <area>" instead of guessing which one was meant.
+async function buildRouteLocationLookup() {
+  const locations = await prisma.locations.findMany({
+    where: { is_active: true },
+    select: { id: true, name: true, code: true, parent_id: true },
+  });
+
+  const byCode = new Map<string, RowLocation>();
+  const hubById = new Map<string, RowLocation>();
+  const byHubNameOrCode = new Map<string, RowLocation>();
+  const byComposite = new Map<string, RowLocation>();
+  const byAreaName = new Map<string, { id: string; name: string; hubName: string }[]>();
+
+  for (const loc of locations) {
+    if (loc.code) byCode.set(loc.code.trim().toLowerCase(), { id: loc.id, name: loc.name });
+    if (!loc.parent_id) {
+      const hub = { id: loc.id, name: loc.name };
+      hubById.set(loc.id, hub);
+      byHubNameOrCode.set(loc.name.trim().toLowerCase(), hub);
+      if (loc.code) byHubNameOrCode.set(loc.code.trim().toLowerCase(), hub);
+    }
+  }
+  for (const loc of locations) {
+    if (!loc.parent_id) continue;
+    const hub = hubById.get(loc.parent_id);
+    if (!hub) continue; // parent hub is inactive or not top-level
+    const areaNameKey = loc.name.trim().toLowerCase();
+    const area = { id: loc.id, name: loc.name, hubName: hub.name };
+    byAreaName.set(areaNameKey, [...(byAreaName.get(areaNameKey) ?? []), area]);
+    byComposite.set(`${hub.name.trim().toLowerCase()}::${areaNameKey}`, { id: loc.id, name: loc.name });
+  }
+
+  function resolve(ref: string): RowLocationResult {
+    const trimmed = ref.trim();
+    const lower = trimmed.toLowerCase();
+
+    const byCodeMatch = byCode.get(lower);
+    if (byCodeMatch) return byCodeMatch;
+
+    const hubMatch = byHubNameOrCode.get(lower);
+    if (hubMatch) return hubMatch;
+
+    // "<hub> / <area>" disambiguates a covered area from a same-named one
+    // under a different hub.
+    const slashIdx = trimmed.indexOf("/");
+    if (slashIdx !== -1) {
+      const hubPart = trimmed.slice(0, slashIdx).trim().toLowerCase();
+      const areaPart = trimmed.slice(slashIdx + 1).trim().toLowerCase();
+      const compositeMatch = byComposite.get(`${hubPart}::${areaPart}`);
+      if (compositeMatch) return compositeMatch;
+      return { error: `does not match any active destination or covered area ("${trimmed}")` };
+    }
+
+    const areaMatches = byAreaName.get(lower);
+    const soleMatch = areaMatches?.length === 1 ? areaMatches[0] : undefined;
+    if (soleMatch) return soleMatch;
+    if (areaMatches && areaMatches.length > 1) {
+      return {
+        error: `matches a covered area under more than one destination (${areaMatches
+          .map((a) => a.hubName)
+          .join(", ")}) - use "<destination> / ${trimmed}" or the area's code to disambiguate`,
+      };
+    }
+
+    return { error: `does not match any active destination or covered area` };
+  }
+
+  return resolve;
+}
+
+// Spreadsheet rows reference destinations by name (a hub, or a covered area -
+// see buildRouteLocationLookup); resolve them once, then upsert row by row so
+// one bad row doesn't sink the rest of the file.
 export async function bulkImportDeliveryRates(
   actor: Actor,
   rows: BulkImportRateRow[],
 ): Promise<BulkImportRateResult[]> {
-  const hubs = await prisma.locations.findMany({
-    where: { parent_id: null, is_active: true },
-    select: { id: true, name: true, code: true },
-  });
-  const hubByKey = new Map<string, { id: string; name: string }>();
-  for (const hub of hubs) {
-    hubByKey.set(hub.name.trim().toLowerCase(), hub);
-    if (hub.code) hubByKey.set(hub.code.trim().toLowerCase(), hub);
-  }
-
+  const resolveLocationRef = await buildRouteLocationLookup();
+  const originScope = await getBranchOriginScope(actor);
   const results: BulkImportRateResult[] = [];
 
   for (const row of rows) {
-    const originHub = hubByKey.get(row.origin.trim().toLowerCase());
-    const destinationHub = hubByKey.get(row.destination.trim().toLowerCase());
+    const originResult = resolveLocationRef(row.origin);
+    const destinationResult = resolveLocationRef(row.destination);
 
     const errors: string[] = [];
-    if (!originHub) errors.push(`origin '${row.origin}' does not match any active destination`);
-    if (!destinationHub) {
-      errors.push(`destination '${row.destination}' does not match any active destination`);
+    if (isRowLocationError(originResult)) errors.push(`origin '${row.origin}' ${originResult.error}`);
+    if (isRowLocationError(destinationResult)) errors.push(`destination '${row.destination}' ${destinationResult.error}`);
+    if (!isRowLocationError(originResult) && originScope && originResult.id !== originScope) {
+      errors.push("you can only import rates originating from your own branch");
     }
     // origin === destination is allowed here too (local same-hub rate).
     if (!(row.baseCharge >= 0)) errors.push("baseCharge must be a non-negative number");
@@ -204,7 +323,7 @@ export async function bulkImportDeliveryRates(
     if (!pctOk(row.returnPercent)) errors.push("returnPercent must be between 0 and 100");
     if (!pctOk(row.branchReturnPercent)) errors.push("branchReturnPercent must be between 0 and 100");
 
-    if (errors.length) {
+    if (errors.length || isRowLocationError(originResult) || isRowLocationError(destinationResult)) {
       results.push({ origin: row.origin, destination: row.destination, error: errors.join("; ") });
       continue;
     }
@@ -213,8 +332,8 @@ export async function bulkImportDeliveryRates(
       const existing = await prisma.delivery_rates.findUnique({
         where: {
           origin_location_id_destination_location_id: {
-            origin_location_id: originHub!.id,
-            destination_location_id: destinationHub!.id,
+            origin_location_id: originResult.id,
+            destination_location_id: destinationResult.id,
           },
         },
         select: { id: true },
@@ -233,24 +352,24 @@ export async function bulkImportDeliveryRates(
       await prisma.delivery_rates.upsert({
         where: {
           origin_location_id_destination_location_id: {
-            origin_location_id: originHub!.id,
-            destination_location_id: destinationHub!.id,
+            origin_location_id: originResult.id,
+            destination_location_id: destinationResult.id,
           },
         },
         update: data,
         create: {
           ...data,
-          origin_location_id: originHub!.id,
-          destination_location_id: destinationHub!.id,
+          origin_location_id: originResult.id,
+          destination_location_id: destinationResult.id,
           created_by: actor.id,
         },
       });
 
-      await invalidateRateCache(originHub!.id, destinationHub!.id);
+      await invalidateRateCache(originResult.id, destinationResult.id);
 
       results.push({
-        origin: originHub!.name,
-        destination: destinationHub!.name,
+        origin: originResult.name,
+        destination: destinationResult.name,
         action: existing ? "updated" : "created",
       });
     } catch (error: any) {
@@ -265,14 +384,34 @@ export async function bulkImportDeliveryRates(
   return results;
 }
 
-export async function setDeliveryRateActive(id: string, isActive: boolean) {
+export async function setDeliveryRateActive(actor: Actor, id: string, isActive: boolean) {
   const rate = await prisma.delivery_rates.findUnique({ where: { id } });
   if (!rate) {
+    throw new AppError(404, "Delivery rate not found");
+  }
+  const originScope = await getBranchOriginScope(actor);
+  if (originScope && rate.origin_location_id !== originScope) {
     throw new AppError(404, "Delivery rate not found");
   }
   const updated = await prisma.delivery_rates.update({ where: { id }, data: { is_active: isActive } });
   await invalidateRateCache(rate.origin_location_id, rate.destination_location_id);
   return updated;
+}
+
+// Nothing else stores a delivery_rates id (a parcel's price is computed and
+// stamped onto the order at booking time, not linked back to this row), so a
+// hard delete is safe with no dependent-record check, unlike deleteLocation.
+export async function deleteDeliveryRate(actor: Actor, id: string) {
+  const rate = await prisma.delivery_rates.findUnique({ where: { id } });
+  if (!rate) {
+    throw new AppError(404, "Delivery rate not found");
+  }
+  const originScope = await getBranchOriginScope(actor);
+  if (originScope && rate.origin_location_id !== originScope) {
+    throw new AppError(404, "Delivery rate not found");
+  }
+  await prisma.delivery_rates.delete({ where: { id } });
+  await invalidateRateCache(rate.origin_location_id, rate.destination_location_id);
 }
 
 async function getActiveRate(

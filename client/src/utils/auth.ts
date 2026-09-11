@@ -80,6 +80,7 @@ export function isBranchWorkspacePathAllowed(pathname: string): boolean {
     pathname === '/dispatch' ||
     pathname === '/oov' ||
     pathname === '/return' ||
+    pathname === '/hold' ||
     // Branch manages its own riders and settles their COD; the rider APIs
     // behind these pages scope a branch-scoped admin to their branch's riders.
     pathname === '/riders' ||
@@ -94,7 +95,11 @@ export function isBranchWorkspacePathAllowed(pathname: string): boolean {
     pathname === '/branches/settlement' ||
     // Includes /branches/settlement/new — a branch creates its own COD statement.
     pathname.startsWith('/branches/settlement/') ||
-    pathname === '/branches/billing'
+    pathname === '/branches/billing' ||
+    // Route Rates, scoped server-side to routes originating from the
+    // branch's own hub; only reachable at all if a super_admin also
+    // granted this admin SETTINGS_ACCESS.
+    pathname === '/settings/delivery-rates'
   );
 }
 

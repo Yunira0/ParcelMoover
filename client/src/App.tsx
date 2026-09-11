@@ -300,7 +300,7 @@ function App() {
           />
           <Route
             path="/settings/delivery-rates"
-            element={<RoleGuard allowedRoles={['super_admin', 'admin']} adminPermission="SETTINGS_ACCESS"><DeliveryRateSettings /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']} adminPermission="SETTINGS_ACCESS" allowBranchWorkspace><DeliveryRateSettings /></RoleGuard>}
           />
           <Route
             path="/sla"

@@ -34,9 +34,6 @@ interface AdminFormInput {
   joinedAt: string;
   // Service Info
   locationId: string;
-  // Scopes this admin's own Order Management to locationId's coverage
-  // instead of every order. Super_admin only - see admins.branch_scoped.
-  branchScoped: boolean;
   department: string;
   designation: string;
   // Documents
@@ -76,7 +73,6 @@ const emptyForm: AdminFormInput = {
   experience: '',
   joinedAt: '',
   locationId: '',
-  branchScoped: false,
   department: '',
   designation: '',
   citizenshipDoc: null,
@@ -152,7 +148,7 @@ const AdminFormPage: React.FC = () => {
   const [error, setError] = useState('');
   const [submitted, setSubmitted] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
-  const [hubs, setHubs] = useState<Array<{ value: string; label: string }>>([]);
+  const [hubs, setHubs] = useState<Array<{ value: string; label: string; isMasterHub: boolean }>>([]);
   // Already-uploaded document paths, shown as view links in edit mode.
   const [existingDocs, setExistingDocs] = useState<{
     citizenshipDoc: string | null;
@@ -161,7 +157,7 @@ const AdminFormPage: React.FC = () => {
   }>({ citizenshipDoc: null, idDocument: null, panDoc: null });
   // Accounts created by a plain admin inherit that admin's hub; only a
   // super_admin may choose a different one (server enforces the same rule).
-  const { myHubId, hubLocked, isPlainAdmin, isSuperAdmin } = useHubLock();
+  const { myHubId, hubLocked, isPlainAdmin } = useHubLock();
   const hubFieldDisabled = hubLocked || (isEdit && isPlainAdmin);
 
   useEffect(() => {
@@ -178,7 +174,14 @@ const AdminFormPage: React.FC = () => {
           setHubs(
             res.data
               .filter((loc: any) => loc.is_hub)
-              .map((loc: any) => ({ value: loc.id, label: loc.name })),
+              .map((loc: any) => ({
+                value: loc.id,
+                label: loc.name,
+                // Branches are top-level hubs too, so the only thing that
+                // marks the central hub is its IMADOL code - matching the
+                // server's getMasterHubId()/deriveBranchScoped.
+                isMasterHub: String(loc.code ?? '').trim().toUpperCase() === 'IMADOL',
+              })),
           );
         }
       })
@@ -210,7 +213,6 @@ const AdminFormPage: React.FC = () => {
           experience: s(d.experience),
           joinedAt: s(d.joinedAt),
           locationId: s(d.locationId),
-          branchScoped: Boolean(d.branchScoped),
           department: s(d.department),
           designation: s(d.position),
           nationalIdNumber: s(d.idDocumentNumber),
@@ -299,7 +301,6 @@ const AdminFormPage: React.FC = () => {
           joinedAt: form.joinedAt || undefined,
           position: form.designation,
           locationId: form.locationId,
-          branchScoped: isSuperAdmin ? form.branchScoped : undefined,
           department: form.department,
           address: form.address,
           citizenshipNo: form.citizenshipNo,
@@ -328,7 +329,6 @@ const AdminFormPage: React.FC = () => {
         joinedAt: form.joinedAt || undefined,
         position: form.designation,
         locationId: form.locationId,
-        branchScoped: isSuperAdmin ? form.branchScoped : undefined,
         department: form.department,
         address: form.address,
         citizenshipNo: form.citizenshipNo,
@@ -523,19 +523,12 @@ const AdminFormPage: React.FC = () => {
                   disabled={hubFieldDisabled}
                 />
                 {fieldErrors.locationId && <span className="afp-field-error">{fieldErrors.locationId}</span>}
-                {isSuperAdmin && (
-                  <label className="afp-checkbox-field">
-                    <input
-                      type="checkbox"
-                      checked={form.branchScoped}
-                      disabled={!form.locationId}
-                      onChange={(e) => setForm((prev) => ({ ...prev, branchScoped: e.target.checked }))}
-                    />
-                    <span>
-                      Use limited branch workspace
-                      <small>Shows only this hub's orders, branch settlements, and branch payments.</small>
-                    </span>
-                  </label>
+                {form.locationId && (
+                  <p className="afp-hint">
+                    {hubs.find((h) => h.value === form.locationId)?.isMasterHub
+                      ? 'Imadol admins get the full head-office view — every branch, not just their own.'
+                      : "This hub gets the limited branch workspace automatically — only this hub's orders, branch settlements, and branch payments."}
+                  </p>
                 )}
                 <FormField
                   label="Department"

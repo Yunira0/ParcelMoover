@@ -1,5 +1,8 @@
+import { Prisma } from "../generated/prisma/client";
 import prisma from "./prisma";
 import { AppError } from "../utils/AppError";
+
+type Db = Prisma.TransactionClient | typeof prisma;
 
 /**
  * Every location a branch "covers": the branch hub itself, its active covered
@@ -76,4 +79,28 @@ export async function adminBranchScopeIds(actor: ScopeActor): Promise<string[] |
   // flagged branch_scoped.
   if (admin.locations?.code?.trim().toUpperCase() === "IMADOL") return undefined;
   return resolveBranchCoverageIds(admin.location_id);
+}
+
+/**
+ * Some actions (vendor COD settlement, and anything else scoped the same way)
+ * are centralised at head office rather than delegated to branches at all -
+ * unlike most of the app, a branch-scoped admin isn't narrowed to their own
+ * branch here, they're blocked outright. Shared by every caller that needs
+ * this exact rule so it can't drift between them.
+ */
+export async function assertHeadOfficeOnly(actor: ScopeActor, message: string): Promise<void> {
+  const ids = await adminBranchScopeIds(actor);
+  if (ids) throw new AppError(403, message);
+}
+
+/**
+ * What an admin's branch_scoped should be, computed from their hub alone:
+ * true for every hub except Imadol, false with no hub or at Imadol. Called at
+ * admin create/update time instead of reading a client-supplied value - the
+ * flag is no longer a manual toggle.
+ */
+export async function deriveBranchScoped(db: Db, locationId: string | null): Promise<boolean> {
+  if (!locationId) return false;
+  const location = await db.locations.findUnique({ where: { id: locationId }, select: { code: true } });
+  return location?.code?.trim().toUpperCase() !== "IMADOL";
 }

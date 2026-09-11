@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from "express";
+import multer from "multer";
 import { ZodError } from "zod";
 import { AppError } from "../utils/AppError";
 
@@ -47,7 +48,27 @@ export function errorHandler(
     return;
   }
 
-  // 2. Application-level known errors
+  // 2. Multer upload errors (file too large, too many files, wrong field name).
+  // These come straight from multer itself - a fileFilter rejection is already
+  // an AppError (see kycUpload.ts and friends) and is caught by branch 3 below,
+  // but a limit violation only ever surfaces here. Left unhandled, this used to
+  // fall through to the generic 500 branch, which is why a phone camera's
+  // larger-than-5MB photo showed "Internal server error" instead of a message
+  // naming the actual limit.
+  if (err instanceof multer.MulterError) {
+    const messages: Partial<Record<string, string>> = {
+      LIMIT_FILE_SIZE: "That file is too large. Please upload a smaller one.",
+      LIMIT_FILE_COUNT: "Too many files were uploaded.",
+      LIMIT_UNEXPECTED_FILE: "Unexpected file field in the upload.",
+    };
+    res.status(400).json({
+      success: false,
+      message: messages[err.code] || `Upload failed: ${err.message}`,
+    });
+    return;
+  }
+
+  // 3. Application-level known errors
   if (err instanceof AppError) {
     res.status(err.statusCode).json({
       success: false,
@@ -58,7 +79,7 @@ export function errorHandler(
     return;
   }
 
-  // 3. Prisma constraint / not-found errors
+  // 4. Prisma constraint / not-found errors
   if (isPrismaKnownError(err)) {
     switch (err.code) {
       case "P2002":
@@ -93,7 +114,7 @@ export function errorHandler(
     }
   }
 
-  // 4. Unexpected errors — log server-side, never expose internals to the client.
+  // 5. Unexpected errors — log server-side, never expose internals to the client.
   // Fail safe: only show stack traces when NODE_ENV is explicitly "development",
   // not merely "not production" (an unset/misconfigured NODE_ENV must never
   // default to the verbose/leaky behavior).

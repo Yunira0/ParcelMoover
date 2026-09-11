@@ -3,11 +3,14 @@ import path from "path";
 import fs from "fs";
 import { randomBytes } from "crypto";
 import { safeUploadExtension } from "./uploadExtension";
+import { AppError } from "../utils/AppError";
 
 const UPLOAD_DIR = path.join(process.cwd(), "uploads", "kyc");
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
-const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "application/pdf"];
+// HEIC/HEIF (iPhone camera default) is accepted here and converted to JPEG by
+// secureUploadedFiles before it's ever stored.
+const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "application/pdf", "image/heic", "image/heif"];
 const MAX_SIZE_MB = 5;
 
 const storage = multer.diskStorage({
@@ -25,11 +28,12 @@ export const kycUpload = multer({
     if (ALLOWED_TYPES.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error("Only JPG, PNG, WebP, and PDF files are allowed"));
+      cb(new AppError(400, "Only JPG, PNG, WebP, HEIC, and PDF files are allowed"));
     }
   },
 }).fields([
-  { name: "citizenshipDoc", maxCount: 1 },
+  { name: "citizenshipDocFront", maxCount: 1 },
+  { name: "citizenshipDocBack", maxCount: 1 },
   { name: "panVatDoc", maxCount: 1 },
   { name: "businessCertDoc", maxCount: 1 },
 ]);

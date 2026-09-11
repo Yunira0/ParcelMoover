@@ -8,6 +8,11 @@ const EXTENSION_BY_MIME_TYPE: Record<string, string> = {
   "image/png": ".png",
   "image/webp": ".webp",
   "application/pdf": ".pdf",
+  // Accepted on upload only - secureUploadedFiles converts every HEIC/HEIF
+  // file to JPEG before it's ever encrypted and stored, so this extension
+  // only ever names the transient pre-conversion file on disk.
+  "image/heic": ".heic",
+  "image/heif": ".heif",
 };
 
 export function safeUploadExtension(mimetype: string): string {

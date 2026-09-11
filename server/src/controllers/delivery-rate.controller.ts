@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import {
   bulkImportDeliveryRates,
+  deleteDeliveryRate,
   getDeliveryQuote,
   getReturnRouteQuote,
   getVendorSelfRates,
@@ -11,7 +12,7 @@ import {
 
 export async function listDeliveryRatesController(req: Request, res: Response) {
   try {
-    const rates = await listDeliveryRates();
+    const rates = await listDeliveryRates({ id: req.user!.id, roles: req.user!.roles });
     return res.status(200).json({ success: true, data: rates });
   } catch (error: any) {
     return res.status(error.statusCode || 500).json({
@@ -119,18 +120,43 @@ export async function bulkImportDeliveryRatesController(req: Request, res: Respo
 
 export async function setDeliveryRateActiveController(req: Request, res: Response) {
   try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
     const { id } = req.params;
     const { isActive } = req.body;
     if (typeof id !== "string" || typeof isActive !== "boolean") {
       return res.status(400).json({ success: false, message: "isActive (boolean) is required" });
     }
 
-    const rate = await setDeliveryRateActive(id, isActive);
+    const rate = await setDeliveryRateActive({ id: req.user.id, roles: req.user.roles }, id, isActive);
     return res.status(200).json({ success: true, data: rate });
   } catch (error: any) {
     return res.status(error.statusCode || 500).json({
       success: false,
       message: error.message || "Failed to update delivery rate",
+    });
+  }
+}
+
+export async function deleteDeliveryRateController(req: Request, res: Response) {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const { id } = req.params;
+    if (typeof id !== "string") {
+      return res.status(400).json({ success: false, message: "id is required" });
+    }
+
+    await deleteDeliveryRate({ id: req.user.id, roles: req.user.roles }, id);
+    return res.status(200).json({ success: true, message: "Delivery rate deleted" });
+  } catch (error: any) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to delete delivery rate",
     });
   }
 }

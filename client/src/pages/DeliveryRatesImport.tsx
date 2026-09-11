@@ -27,6 +27,7 @@ const SAMPLE_ROWS = [
   ['Hetauda', 'Pokhara', '220', '', '50', '', '10', '2'],
   ['Kathmandu', 'Pokhara', '150', '', '', '', '10', '2'],
   ['Pokhara', 'Kathmandu', '150', '', '0', '', '', ''],
+  ['Pokhara / Lakeside', 'Imadol', '180', '', '', '', '10', '2'],
 ];
 
 // ── Template download ─────────────────────────────────────────────────────────
@@ -40,8 +41,8 @@ function downloadTemplate() {
 
   const notes = XLSX.utils.aoa_to_sheet([
     ['Column', 'Required', 'Allowed values / Notes'],
-    ['origin', 'YES', 'Hub name (or code) exactly as it appears in Settings > Destinations. A branch as origin (e.g. Hetauda) makes this a branch route.'],
-    ['destination', 'YES', 'Hub name (or code). Must differ from origin.'],
+    ['origin', 'YES', 'Destination name (or code) exactly as in Settings > Destinations, or a covered area\'s name/code. A branch as origin (e.g. Hetauda) makes this a branch route. An area name shared by more than one destination must be written "<destination> / <area>" (e.g. "Pokhara / Lakeside").'],
+    ['destination', 'YES', 'Destination or covered area, same rules as origin. Must differ from origin.'],
     ['base_charge', 'YES', 'Home-delivery charge in NPR for the route. Numeric, covers the free weight.'],
     ['branch_base_charge', 'no', 'Charge when service type is branch_delivery. Blank = same as base_charge.'],
     ['return_percent', 'no', 'Return parcel = this % of the route delivery charge (0-100). Blank / 0 = free return.'],
@@ -267,7 +268,11 @@ const DeliveryRatesImport: React.FC<{ onImported?: () => void }> = ({ onImported
       <div className="di-head">
         <div>
           <h2>Import Delivery Rates</h2>
-          <p>Upload an Excel or CSV file to bulk-create or update route rates. Rows reference destinations by name.</p>
+          <p>
+            Upload an Excel or CSV file to bulk-create or update route rates. Rows reference a
+            destination or covered area by name or code — write "&lt;destination&gt; / &lt;area&gt;" if
+            the area name alone is ambiguous.
+          </p>
         </div>
         <Button variant="outline" onClick={downloadTemplate}>
           <Download size={15} /> Download Template

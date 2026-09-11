@@ -9,11 +9,15 @@ export interface BranchBillingStatus {
   unsettledCod: number;
   paymentsReceived: number;
   balance: number;
+  /** Portion of unsettledCod past the branch COD SLA (delivered more than codSlaHours ago). */
+  overdueCod: number;
   warnThreshold: number;
   blockThreshold: number;
   state: BranchBillingState;
   amountToClearBlock: number;
   pendingPaymentAmount: number;
+  /** Hours a branch has, after delivery, to submit collected COD; null if the SLA is disabled. */
+  codSlaHours: number | null;
 }
 
 export interface BranchPayment {

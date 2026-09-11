@@ -1126,10 +1126,15 @@ const VendorFormPage: React.FC = () => {
                   </div>
                 </div>
               )}
-              {/* Optional second rate: a flat inside-valley rate that overrides the
-                  primary model for inside-valley destinations. Valley-specific,
-                  so hidden for a branch workspace. */}
-              {!useBranchRateModel && (form.rateType === 'zone' || form.rateType === 'per_destination') && (
+              {/* Optional extra rate: a flat inside-valley rate that overrides the
+                  primary model for inside-valley destinations. Keyed off the
+                  destination's real Kathmandu-valley classification, so it
+                  applies the same way regardless of the vendor's own hub —
+                  including a branch's "flat" model, whose Inside/Outside
+                  <branch> pair otherwise has no separate valley rate. */}
+              {(form.rateType === 'zone'
+                || form.rateType === 'per_destination'
+                || (useBranchRateModel && form.rateType === 'flat')) && (
                 <div className={`vfp-rate-fields vfp-inside-valley-block${form.insideValleyEnabled ? ' is-on' : ''}`}>
                   <label className="vfp-inside-valley-toggle">
                     <input
@@ -1140,8 +1145,10 @@ const VendorFormPage: React.FC = () => {
                     <span className="vfp-rate-text">
                       <strong>Also charge a flat rate for inside-valley deliveries</strong>
                       <small>
-                        Overrides the {form.rateType === 'zone' ? 'zone' : 'per-destination'} rate above for
-                        destinations classified inside valley.
+                        {form.rateType === 'flat'
+                          ? `Overrides the ${insideLabel} rate above for destinations in Kathmandu valley, so this vendor can price valley deliveries separately from the rest of ${branchLabel}.`
+                          : `Overrides the ${form.rateType === 'zone' ? 'zone' : 'per-destination'} rate above for
+                        destinations classified inside valley${useBranchRateModel ? ' (Kathmandu valley, regardless of this vendor’s own branch)' : ''}.`}
                       </small>
                     </span>
                   </label>

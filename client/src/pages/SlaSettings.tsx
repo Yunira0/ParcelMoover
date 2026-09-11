@@ -79,7 +79,7 @@ const SlaSettings: React.FC = () => {
     <div className="sla-page">
       <PageHeader
         title="SLA"
-        subtitle="Set how many hours an order may sit in each status before it shows up in “Needs attention”. Leave a field blank to disable that SLA."
+        subtitle="Set how many hours an order may sit in each status before it shows up in “Needs attention”, and how many hours a branch has to submit collected COD after delivery. Leave a field blank to disable that SLA."
       />
 
       {error && <p className="sla-error">{error}</p>}

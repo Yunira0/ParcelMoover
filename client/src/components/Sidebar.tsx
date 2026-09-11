@@ -394,10 +394,12 @@ const BranchSidebar: React.FC = () => {
         <SidebarItem to="/dispatch" icon={Send} label="Local Dispatch" />
         <SidebarItem to="/oov" icon={Route} label="Transit" />
         <SidebarItem to="/return" icon={RotateCcw} label="Return" />
+        <SidebarItem to="/hold" icon={OctagonMinus} label="Hold" />
 
         <SidebarSection label="Management" />
         <SidebarItem to="/vendors" icon={Store} label="Vendor Management" />
         <SidebarItem to="/riders" icon={Bike} label="Rider Management" />
+        <SidebarItem to="/settings/delivery-rates" icon={Route} label="Route Rates" />
 
         <SidebarSection label="Finance" />
         <SidebarItem to="/branches/settlement" icon={Banknote} label="Branch COD" />

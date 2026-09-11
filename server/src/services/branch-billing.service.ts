@@ -2,6 +2,7 @@ import { Prisma } from "../generated/prisma/client";
 import prisma from "../lib/prisma";
 import { AppError } from "../utils/AppError";
 import { getBillingSettings, type BillingThresholds } from "./billing.service";
+import { BRANCH_COD_SLA_KEY, getSlaSettings } from "./sla.service";
 
 type Actor = { id: string; roles: string[] };
 const money = (value: unknown) => Math.round(Number(value ?? 0) * 100) / 100;
@@ -23,6 +24,11 @@ export interface BranchAccountBalance {
   paymentsReceived: number;
   /** Negative means the branch still has COD to remit to the office. */
   balance: number;
+  /**
+   * Portion of unsettledCod whose parcel was delivered more than codSlaHours
+   * ago and is still unstatemented - COD the branch is late remitting.
+   */
+  overdueCod: number;
 }
 
 export interface BranchBillingStatus extends BranchAccountBalance, BillingThresholds {
@@ -31,6 +37,8 @@ export interface BranchBillingStatus extends BranchAccountBalance, BillingThresh
   state: BranchBillingState;
   amountToClearBlock: number;
   pendingPaymentAmount: number;
+  /** Hours a branch has, after delivery, to submit collected COD (SLA settings); null if disabled. */
+  codSlaHours: number | null;
 }
 
 export interface BranchPaymentItem {
@@ -95,12 +103,17 @@ export function branchStateForBalance(balance: number, thresholds: BillingThresh
   return "ok";
 }
 
-async function computeBranchBalance(branchId: string): Promise<BranchAccountBalance> {
+async function computeBranchBalance(branchId: string, codSlaHours: number | null): Promise<BranchAccountBalance> {
+  // A disabled SLA (null) means nothing is ever overdue.
+  const overdueCondition = codSlaHours === null
+    ? Prisma.sql`false`
+    : Prisma.sql`delivered_at IS NOT NULL AND delivered_at < now() - make_interval(hours => ${codSlaHours})`;
+
   // branch_locs mirrors resolveBranchLocationIds (branch.service): the branch's
   // own id, its active covered areas, and — one level only — each virtually
   // covered branch plus that branch's own active covered areas. Kept inline as
   // SQL to avoid a branch.service <-> branch-billing.service import cycle.
-  const rows = await prisma.$queryRaw<Array<{ outstanding: string; unstatemented: string; payments: string }>>(Prisma.sql`
+  const rows = await prisma.$queryRaw<Array<{ outstanding: string; unstatemented: string; overdue: string; payments: string }>>(Prisma.sql`
     WITH branch_locs AS (
       SELECT ${branchId}::uuid AS id
       UNION SELECT l.id FROM locations l WHERE l.parent_id = ${branchId}::uuid AND l.is_active
@@ -108,6 +121,19 @@ async function computeBranchBalance(branchId: string): Promise<BranchAccountBala
       UNION SELECT l.id FROM locations l
         JOIN branch_virtual_coverage vc ON vc.branch_id = ${branchId}::uuid
         WHERE l.parent_id = vc.covered_branch_id AND l.is_active
+    ), unstatemented_parcels AS (
+      SELECT p.delivered_at,
+        GREATEST(
+          0::numeric,
+          COALESCE(cc.collected_amount, p.cod_amount)
+            - COALESCE((SELECT commission_per_parcel FROM locations WHERE id = ${branchId}::uuid), 0)
+        ) AS net_cod
+      FROM parcels p
+      LEFT JOIN cod_collections cc ON cc.parcel_id = p.id
+      WHERE p.deleted_at IS NULL
+        AND p.status::text IN ('delivered', 'partially_delivered')
+        AND p.destination_location_id IN (SELECT id FROM branch_locs)
+        AND NOT EXISTS (SELECT 1 FROM branch_settlement_items bsi WHERE bsi.parcel_id = p.id)
     )
     SELECT
       COALESCE((
@@ -116,19 +142,10 @@ async function computeBranchBalance(branchId: string): Promise<BranchAccountBala
         WHERE bs.from_branch_id = ${branchId}::uuid
           AND bs.status <> 'cancelled'
       ), 0) AS outstanding,
+      COALESCE((SELECT SUM(net_cod) FROM unstatemented_parcels), 0) AS unstatemented,
       COALESCE((
-        SELECT SUM(GREATEST(
-          0::numeric,
-          COALESCE(cc.collected_amount, p.cod_amount)
-            - COALESCE((SELECT commission_per_parcel FROM locations WHERE id = ${branchId}::uuid), 0)
-        ))
-        FROM parcels p
-        LEFT JOIN cod_collections cc ON cc.parcel_id = p.id
-        WHERE p.deleted_at IS NULL
-          AND p.status::text IN ('delivered', 'partially_delivered')
-          AND p.destination_location_id IN (SELECT id FROM branch_locs)
-          AND NOT EXISTS (SELECT 1 FROM branch_settlement_items bsi WHERE bsi.parcel_id = p.id)
-      ), 0) AS unstatemented,
+        SELECT SUM(net_cod) FROM unstatemented_parcels WHERE ${overdueCondition}
+      ), 0) AS overdue,
       COALESCE((
         SELECT SUM(bp.amount)
         FROM branch_payments bp
@@ -137,20 +154,23 @@ async function computeBranchBalance(branchId: string): Promise<BranchAccountBala
   `);
   const unsettledCod = money(money(rows[0]?.outstanding) + money(rows[0]?.unstatemented));
   const paymentsReceived = money(rows[0]?.payments);
-  return { unsettledCod, paymentsReceived, balance: money(paymentsReceived - unsettledCod) };
+  const overdueCod = money(rows[0]?.overdue);
+  return { unsettledCod, paymentsReceived, overdueCod, balance: money(paymentsReceived - unsettledCod) };
 }
 
 export async function getBranchBillingStatus(branchId: string): Promise<BranchBillingStatus> {
-  const [branch, settings, balance, pending] = await Promise.all([
+  const [branch, settings, slaSettings, pending] = await Promise.all([
     prisma.locations.findFirst({
       where: { id: branchId, parent_id: null, is_hub: true },
       select: { id: true, name: true, branch_billing_warn_threshold: true, branch_billing_block_threshold: true },
     }),
     getBillingSettings(),
-    computeBranchBalance(branchId),
+    getSlaSettings(),
     prisma.branch_payments.aggregate({ where: { branch_id: branchId, status: "pending" }, _sum: { amount: true } }),
   ]);
   if (!branch) throw new AppError(404, "Branch not found");
+  const codSlaHours = slaSettings[BRANCH_COD_SLA_KEY] ?? null;
+  const balance = await computeBranchBalance(branchId, codSlaHours);
   const thresholds = thresholdsForBranch(branch, settings);
   return {
     branchId: branch.id,
@@ -160,6 +180,7 @@ export async function getBranchBillingStatus(branchId: string): Promise<BranchBi
     state: branchStateForBalance(balance.balance, thresholds),
     amountToClearBlock: Math.max(0, money(thresholds.blockThreshold - balance.balance)),
     pendingPaymentAmount: money(pending._sum.amount),
+    codSlaHours,
   };
 }
 

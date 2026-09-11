@@ -14,11 +14,15 @@ model admins {
   id                    String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   user_id               String               @unique @db.Uuid
   location_id           String?              @db.Uuid
-  /// When true, this admin's own Order Management is scoped to location_id's
-  /// coverage (itself, its covered areas, its virtual branches) - an opt-in
-  /// restriction, never inferred from location_id alone. BRANCH_TRACKING_READ
-  /// or _WRITE lifts it, the same permission that already unlocks the
-  /// dedicated Branch Tracking pages. See order.service.ts's getAdminBranchScope.
+  /// Auto-derived from location_id, not a manual toggle - true for every hub
+  /// except Imadol (false there, and with no hub). Recomputed by
+  /// deriveBranchScoped (lib/branchScope.ts) whenever a super_admin changes
+  /// the admin's hub. Gates remarks, COD settlement, vendor/rider management,
+  /// finance and delivery-rate visibility - BRANCH_TRACKING_READ/WRITE lifts
+  /// it, the same permission that unlocks the dedicated Branch Tracking
+  /// pages. Order visibility (order.service.ts's getAdminBranchScope) does
+  /// NOT use this column: it restricts every admin with a hub, Imadol
+  /// included, independently of branch_scoped.
   branch_scoped         Boolean              @default(false)
   /// Shared sequence with riders.employee_number (employee_number_seq) - shown as "PM-<n>".
   employee_number       Int?                 @unique @default(dbgenerated("nextval('employee_number_seq'::regclass)"))
@@ -1024,6 +1028,7 @@ model vendors {
   registration_no               String?
   pan_vat_no                    String?
   citizenship_doc               String?
+  citizenship_doc_back          String?
   pan_vat_doc                   String?
   business_cert_doc             String?
   bank_name                     String?
@@ -1512,9 +1517,10 @@ model vendor_kyc_applications {
   pan_vat_no            String?
 
   // Documents (stored file paths)
-  citizenship_doc   String?
-  pan_vat_doc       String?
-  business_cert_doc String?
+  citizenship_doc_front String?
+  citizenship_doc_back  String?
+  pan_vat_doc           String?
+  business_cert_doc     String?
 
   // Bank Details
   bank_name           String?

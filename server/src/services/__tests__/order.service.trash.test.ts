@@ -6,9 +6,11 @@ vi.mock("../../lib/prisma", () => ({
     parcels: { findFirst: vi.fn(), findMany: vi.fn() },
     journal_lines: { count: vi.fn() },
     cod_collections: { count: vi.fn() },
+    admins: { findFirst: vi.fn() },
     $transaction: vi.fn(),
   },
 }));
+vi.mock("../branch.service", () => ({ resolveBranchLocationIds: vi.fn() }));
 vi.mock("../../lib/redis", () => ({
   default: { set: vi.fn(), del: vi.fn(), get: vi.fn() },
   scanAndDelete: vi.fn().mockResolvedValue(undefined),
@@ -38,13 +40,16 @@ import {
 import prisma from "../../lib/prisma";
 import { invalidateVendorFinanceCache, invalidateRiderFinanceCache } from "../finance.service";
 import { emitWebhookEvent } from "../webhookDispatch.service";
+import { resolveBranchLocationIds } from "../branch.service";
 
 const mockedPrisma = prisma as unknown as {
   parcels: { findFirst: ReturnType<typeof vi.fn>; findMany: ReturnType<typeof vi.fn> };
   journal_lines: { count: ReturnType<typeof vi.fn> };
   cod_collections: { count: ReturnType<typeof vi.fn> };
+  admins: { findFirst: ReturnType<typeof vi.fn> };
   $transaction: ReturnType<typeof vi.fn>;
 };
+const mockedResolveBranchLocationIds = resolveBranchLocationIds as unknown as ReturnType<typeof vi.fn>;
 const mockedVendorCache = invalidateVendorFinanceCache as unknown as ReturnType<typeof vi.fn>;
 const mockedRiderCache = invalidateRiderFinanceCache as unknown as ReturnType<typeof vi.fn>;
 const mockedEmitWebhook = emitWebhookEvent as unknown as ReturnType<typeof vi.fn>;
@@ -453,5 +458,70 @@ describe("sweepCancelledOrdersToTrash", () => {
 
     expect(first.trashed).toBe(2);
     expect(second).toEqual({ checked: 0, trashed: 0 });
+  });
+});
+
+// loadParcelForTrash (shared by all three actions below) used to look the
+// parcel up with no branch filter at all - a branch-scoped admin could trash,
+// restore, or permanently delete any parcel system-wide by id.
+describe("branch scoping (loadParcelForTrash, shared by trash/restore/permanent-delete)", () => {
+  const HUB_ID = "hub-imadol";
+  const AREA_ID = "area-lakeside";
+  const SCOPED_ADMIN = { id: "admin-1", roles: ["admin"] };
+
+  beforeEach(() => {
+    mockedResolveBranchLocationIds.mockResolvedValue([HUB_ID, AREA_ID]);
+  });
+
+  it("moveOrderToTrash includes the branch filter for a branch-scoped admin", async () => {
+    mockedPrisma.admins.findFirst.mockResolvedValue({
+      location_id: HUB_ID, branch_scoped: true, permissions: [],
+    });
+    mockedPrisma.parcels.findFirst.mockResolvedValue(null);
+
+    await expect(moveOrderToTrash(SCOPED_ADMIN, "parcel-1")).rejects.toMatchObject({ statusCode: 404 });
+
+    const where = mockedPrisma.parcels.findFirst.mock.calls[0]![0].where;
+    expect(where.OR).toEqual([
+      { origin_location_id: { in: [HUB_ID, AREA_ID] } },
+      { destination_location_id: { in: [HUB_ID, AREA_ID] } },
+      { current_location_id: { in: [HUB_ID, AREA_ID] } },
+    ]);
+  });
+
+  it("restoreOrderFromTrash includes the branch filter for a branch-scoped admin", async () => {
+    mockedPrisma.admins.findFirst.mockResolvedValue({
+      location_id: HUB_ID, branch_scoped: true, permissions: [],
+    });
+    mockedPrisma.parcels.findFirst.mockResolvedValue(null);
+
+    await expect(
+      restoreOrderFromTrash(SCOPED_ADMIN, "parcel-1", "pickup_ordered"),
+    ).rejects.toMatchObject({ statusCode: 404 });
+
+    const where = mockedPrisma.parcels.findFirst.mock.calls[0]![0].where;
+    expect(where.OR).toBeDefined();
+  });
+
+  it("deleteOrderPermanently includes the branch filter for a branch-scoped admin", async () => {
+    mockedPrisma.admins.findFirst.mockResolvedValue({
+      location_id: HUB_ID, branch_scoped: true, permissions: [],
+    });
+    mockedPrisma.parcels.findFirst.mockResolvedValue(null);
+
+    await expect(deleteOrderPermanently(SCOPED_ADMIN, "parcel-1")).rejects.toMatchObject({ statusCode: 404 });
+
+    const where = mockedPrisma.parcels.findFirst.mock.calls[0]![0].where;
+    expect(where.OR).toBeDefined();
+  });
+
+  it("applies no branch filter for a super_admin", async () => {
+    mockedPrisma.parcels.findFirst.mockResolvedValue(null);
+
+    await expect(moveOrderToTrash(ACTOR, "parcel-1")).rejects.toMatchObject({ statusCode: 404 });
+
+    const where = mockedPrisma.parcels.findFirst.mock.calls[0]![0].where;
+    expect(where.OR).toBeUndefined();
+    expect(mockedPrisma.admins.findFirst).not.toHaveBeenCalled();
   });
 });
