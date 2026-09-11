@@ -6,6 +6,7 @@ import FormField from '../components/FormField';
 import DocLink from '../components/DocLink';
 import { registerUser, getManagedUser, updateUserProfile, getLocations } from '../services/users.service';
 import { extractServerFieldErrors, isValidEmail, isValidName, isValidPhone, normalizePhone } from '../utils/serverValidation';
+import { convertHeicFileIfNeeded } from '../utils/heicConvert';
 import { useHubLock } from '../hooks/useHubLock';
 import './AdminFormPage.css';
 
@@ -95,6 +96,16 @@ const FileInput: React.FC<{
   accept?: string;
 }> = ({ label, required, file, onChange, accept = 'image/*,.pdf' }) => {
   const ref = useRef<HTMLInputElement>(null);
+  const [converting, setConverting] = useState(false);
+  const handleFile = async (picked: File | null) => {
+    if (!picked) { onChange(null); return; }
+    setConverting(true);
+    try {
+      onChange(await convertHeicFileIfNeeded(picked));
+    } finally {
+      setConverting(false);
+    }
+  };
   return (
     <div className="afp-file-field">
       <label className="afp-file-label">
@@ -109,8 +120,8 @@ const FileInput: React.FC<{
           </button>
         </div>
       ) : (
-        <button type="button" className="afp-file-btn" onClick={() => ref.current?.click()}>
-          <Upload size={15} /> Choose file
+        <button type="button" className="afp-file-btn" disabled={converting} onClick={() => ref.current?.click()}>
+          <Upload size={15} /> {converting ? 'Converting…' : 'Choose file'}
         </button>
       )}
       <input
@@ -118,7 +129,7 @@ const FileInput: React.FC<{
         type="file"
         accept={accept}
         style={{ display: 'none' }}
-        onChange={(e) => onChange(e.target.files?.[0] ?? null)}
+        onChange={(e) => void handleFile(e.target.files?.[0] ?? null)}
       />
       <span className="afp-file-hint">JPG, PNG or PDF · max 5 MB</span>
     </div>
