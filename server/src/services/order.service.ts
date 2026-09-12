@@ -1909,7 +1909,7 @@ export async function bulkCreateOrders(actor: OrderActor, input: BulkCreateOrder
   return { created, failed, results };
 }
 
-function buildOrdersWhere(
+export function buildOrdersWhere(
   scope: {
     vendorId: string | undefined;
     vendorIds?: string[] | undefined;
@@ -1943,7 +1943,21 @@ function buildOrdersWhere(
     conditions.push(branchHandlesFilter(scope.branchLocationIds));
   }
   if (query.status?.length) {
-    conditions.push({ status: { in: query.status as parcel_status[] } });
+    // secondaryOrderType/secondaryStatus let one query cover both a plain
+    // status match and a different-order-type-with-different-status match at
+    // once (see the type's own doc comment) - e.g. Return Operations'
+    // ready_to_return tab, which needs a true RTO parcel by status alone OR a
+    // reverse-shipment order still mid-delivery by order_type + status.
+    conditions.push(
+      query.secondaryOrderType && query.secondaryStatus?.length
+        ? {
+            OR: [
+              { status: { in: query.status as parcel_status[] } },
+              { order_type: query.secondaryOrderType, status: { in: query.secondaryStatus as parcel_status[] } },
+            ],
+          }
+        : { status: { in: query.status as parcel_status[] } },
+    );
   }
   if (query.orderType) {
     conditions.push({ order_type: query.orderType });

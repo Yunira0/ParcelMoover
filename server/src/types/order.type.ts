@@ -127,6 +127,11 @@ export type OrderSortField = (typeof ORDER_SORT_FIELDS)[number];
 export interface ListOrdersQuery {
   status?: ParcelStatus[];
   orderType?: OrderType;
+  // Paired together to express "status IN (...) OR (order_type = X AND status
+  // IN (Y))" in one query, instead of the caller running two separate sweeps
+  // and merging them. No-op unless both are set. See buildOrdersWhere.
+  secondaryOrderType?: OrderType;
+  secondaryStatus?: ParcelStatus[];
   search?: string;
   // Narrow the list to these vendors. Always intersected with the actor's own
   // scope, so it can only ever shrink what a vendor/sales actor already sees.

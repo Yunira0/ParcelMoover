@@ -14,11 +14,15 @@ import SearchableSelectAsync, {
 } from '../components/SearchableSelectAsync';
 import {
   getOrders,
+  getOrderCountsByStatus,
   bulkUpdateOrderStatus,
   subscribeToOrderStatusChanged,
   type Order,
+  type OrderType,
+  type OrdersPageMeta,
   type ParcelStatus,
 } from '../services/orders.service';
+import { useCursorPagination } from '../hooks/useCursorPagination';
 import { downloadExcel } from '../utils/excel';
 import RiderAssignModal from '../components/RiderAssignModal';
 import AddToReturnManifestModal from '../components/AddToReturnManifestModal';
@@ -82,57 +86,37 @@ const STATUS_LABELS: Partial<Record<ParcelStatus, string>> = {
   returned_to_vendor: 'Returned to Vendor',
 };
 
-// Maps any return-relevant parcel into one of the four return stages.
-// Type 2 (RTO of a failed delivery) maps by its real status; Type 1 (an
-// order_type='return' reverse shipment) maps by where it is in its lifecycle.
+// Per-tab server query: which status(es) put a parcel in this tab, plus an
+// optional secondary order_type+status match (via buildOrdersWhere's OR) for
+// a Type 1 (order_type='return') reverse shipment that isn't at a return-only
+// status yet. Two tabs need only the primary status:
 //
 // "Sent to vendor" is deliberately status-pure: only parcels actually at
-// sent_to_vendor appear there, so the tab's action can offer the one move that
+// sent_to_vendor belong there, so the tab's action can offer the one move that
 // status allows (-> returned_to_vendor) and have it apply to every row. A
 // Type 1 order mid-delivery is NOT at that status - it never reaches it, since
 // sent_to_vendor belongs to the RTO manifest flow - so it stays out of the tab
 // until it completes and lands under "Returned to vendor". While in flight it
 // is an ordinary delivery parcel, visible on Dispatch and Order Management.
-const returnStage = (o: Order): ParcelReturnTab | null => {
-  if (o.status === 'failed_delivery' || o.status === 'follow_up') return 'follow_up';
-  if (o.status === 'ready_to_return') return 'ready_to_return';
-  if (o.status === 'sent_to_vendor') return 'sent_to_vendor';
-  if (o.status === 'returned_to_vendor') return 'returned_to_vendor';
-  if (o.orderType === 'return') {
-    if (o.status === 'delivered') return 'returned_to_vendor';
-    if (['pickup_ordered', 'rider_assigned'].includes(o.status)) return 'ready_to_return';
-    return null;
-  }
-  return null;
+const TAB_QUERY: Record<
+  ParcelReturnTab,
+  { status: ParcelStatus[]; secondaryOrderType?: OrderType; secondaryStatus?: ParcelStatus[] }
+> = {
+  follow_up: { status: ['failed_delivery', 'follow_up'] },
+  ready_to_return: {
+    status: ['ready_to_return'],
+    secondaryOrderType: 'return',
+    secondaryStatus: ['pickup_ordered', 'rider_assigned'],
+  },
+  sent_to_vendor: { status: ['sent_to_vendor'] },
+  returned_to_vendor: {
+    status: ['returned_to_vendor'],
+    secondaryOrderType: 'return',
+    secondaryStatus: ['delivered'],
+  },
 };
 
 const formatMoney = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 0 });
-
-// Every status that can put a parcel into one of the four return tabs, on top
-// of the separate orderType==='return' sweep below (see returnStage).
-const RETURN_STATUS_FILTER: ParcelStatus[] = [
-  'failed_delivery', 'follow_up', 'ready_to_return', 'sent_to_vendor', 'returned_to_vendor',
-];
-const SERVER_FETCH_PAGE_SIZE = 100;
-const MAX_FETCH_PAGES = 20; // safety cap: 2000 orders per sweep
-
-// Cursor-walks one filtered query to exhaustion instead of relying on the
-// backend's capped (200-row, company-wide) unfiltered list default.
-const fetchAllPages = async (params: { status?: ParcelStatus[]; orderType?: 'return' }) => {
-  const all: Order[] = [];
-  let cursor: string | undefined;
-  let truncated = false;
-  for (let i = 0; i < MAX_FETCH_PAGES; i++) {
-    const res = await getOrders({ ...params, pageSize: SERVER_FETCH_PAGE_SIZE, cursor, dir: 'next', withArrival: true });
-    if (!res?.success || !Array.isArray(res.data)) throw new Error('Unexpected orders response');
-    all.push(...res.data);
-    const hasMore = !!res.meta?.hasNextPage && !!res.meta?.nextCursor;
-    if (!hasMore) return { all, truncated };
-    cursor = res.meta!.nextCursor!;
-    if (i === MAX_FETCH_PAGES - 1) truncated = true;
-  }
-  return { all, truncated };
-};
 
 // Columns for the manifest drill-down. Mirrors the printed RTV sheet, so what
 // an operator checks on screen is what the vendor signs for on paper. Takes the
@@ -193,11 +177,12 @@ const ReturnOperations: React.FC = () => {
     return fromUrl && fromUrl in TAB_LABELS ? (fromUrl as ReturnTab) : 'follow_up';
   });
   const [searchQuery, setSearchQuery] = useState(() => searchParams.get('search') || '');
-  const [page, setPage] = useState(1);
+  const [debouncedSearch, setDebouncedSearch] = useState(() => searchParams.get('search') || '');
+  const pager = useCursorPagination();
+  const [meta, setMeta] = useState<OrdersPageMeta | null>(null);
   const [pageSizeChoice, setPageSizeChoice] = useState(PAGE_SIZE);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
-  const [truncated, setTruncated] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string | number>>(new Set());
   const [actionMsg, setActionMsg] = useState('');
   const [acting, setActing] = useState(false);
@@ -242,32 +227,74 @@ const ReturnOperations: React.FC = () => {
   // manifest. Scoped to whichever manifest is expanded, so it resets on switch.
   const [selectedParcelIds, setSelectedParcelIds] = useState<Set<string | number>>(new Set());
   const [addToManifestOpen, setAddToManifestOpen] = useState(false);
+  const [tabCounts, setTabCounts] = useState<Record<ReturnTab, number>>({
+    follow_up: 0,
+    ready_to_return: 0,
+    manifests: 0,
+    sent_to_vendor: 0,
+    returned_to_vendor: 0,
+  });
 
-  // The follow_up/ready_to_return/sent_to_vendor/returned_to_vendor split
-  // depends on orderType *and* status together (see returnStage below), which
-  // the backend's status[] filter can't express as a single query - so this
-  // runs two exhaustive sweeps (by status, by orderType) and merges them,
-  // rather than relying on the backend's capped (200-row, company-wide)
-  // unfiltered list default, which silently drops older return orders.
-  const loadReturns = async () => {
+  // Badge counts, fetched separately from the fetched-page rows so a tab's
+  // count reflects its whole set, not just the loaded page. Two calls because
+  // ready_to_return/returned_to_vendor's counts, like TAB_QUERY's filters
+  // themselves, need both an all-type sweep and an order_type='return' one.
+  const countsRequestIdRef = useRef(0);
+  const loadTabCounts = useCallback(async () => {
+    const requestId = ++countsRequestIdRef.current;
+    try {
+      const [allType, returnType] = await Promise.all([
+        getOrderCountsByStatus({ search: debouncedSearch || undefined }),
+        getOrderCountsByStatus({ orderType: 'return', search: debouncedSearch || undefined }),
+      ]);
+      if (requestId !== countsRequestIdRef.current) return;
+      if (allType?.success && returnType?.success) {
+        setTabCounts({
+          follow_up: (allType.data.failed_delivery || 0) + (allType.data.follow_up || 0),
+          ready_to_return:
+            (allType.data.ready_to_return || 0) +
+            (returnType.data.pickup_ordered || 0) +
+            (returnType.data.rider_assigned || 0),
+          manifests: manifestMeta.total,
+          sent_to_vendor: allType.data.sent_to_vendor || 0,
+          returned_to_vendor: (allType.data.returned_to_vendor || 0) + (returnType.data.delivered || 0),
+        });
+      }
+    } catch {
+      // non-fatal; tabs just won't show counts
+    }
+  }, [debouncedSearch, manifestMeta.total]);
+
+  // Guarded like loadTabCounts so a slow earlier request can't overwrite a
+  // newer tab/search/page's rows.
+  const loadRequestIdRef = useRef(0);
+  const loadReturns = useCallback(async () => {
+    // "Manifests" isn't parcel-derived (see TAB_QUERY) - loadManifests covers it.
+    if (activeTab === 'manifests') return;
+    const requestId = ++loadRequestIdRef.current;
     setLoading(true);
     try {
-      const [byStatus, byType] = await Promise.all([
-        fetchAllPages({ status: RETURN_STATUS_FILTER }),
-        fetchAllPages({ orderType: 'return' }),
-      ]);
-      const merged = new Map<string, Order>();
-      for (const order of byStatus.all) merged.set(order.id, order);
-      for (const order of byType.all) merged.set(order.id, order);
-      setOrders(Array.from(merged.values()).filter((order) => returnStage(order) !== null));
-      setTruncated(byStatus.truncated || byType.truncated);
-      setLoadError('');
+      const res = await getOrders({
+        ...TAB_QUERY[activeTab],
+        search: debouncedSearch || undefined,
+        withArrival: true,
+        pageSize: pageSizeChoice,
+        cursor: pager.request.cursor,
+        dir: pager.request.dir,
+      });
+      if (requestId !== loadRequestIdRef.current) return;
+      if (res?.success && Array.isArray(res.data)) {
+        setOrders(res.data);
+        setMeta(res.meta ?? null);
+        setLoadError('');
+      }
     } catch {
+      if (requestId !== loadRequestIdRef.current) return;
       setLoadError('Failed to load return orders. Showing the last loaded data, if any.');
     } finally {
-      setLoading(false);
+      if (requestId === loadRequestIdRef.current) setLoading(false);
     }
-  };
+  }, [activeTab, debouncedSearch, pageSizeChoice, pager.request]);
 
   // Memoised: SearchableSelectAsync re-runs its debounced fetch whenever this
   // identity changes, so an inline arrow would refetch on every render.
@@ -328,7 +355,6 @@ const ReturnOperations: React.FC = () => {
     }
   }, [manifestPage, manifestVendorId]);
 
-  useEffect(() => { loadReturns(); }, []);
   useEffect(() => { void loadManifests(); }, [loadManifests]);
   // Manifests are paged by the server, so a selection can't span pages the way
   // the parcel tabs' can - clear it rather than let it sit on rows nobody sees.
@@ -336,32 +362,35 @@ const ReturnOperations: React.FC = () => {
     setSelectedManifestIds(new Set());
     setExpandedManifestId('');
   }, [manifestPage, manifestVendorId]);
-  useEffect(() => subscribeToOrderStatusChanged(loadReturns), []);
-  useEffect(() => { setPage(1); setSelectedIds(new Set()); setActionMsg(''); }, [activeTab, searchQuery, pageSizeChoice]);
+
+  // Debounce search input so every keystroke doesn't fire a request.
+  useEffect(() => {
+    const handle = setTimeout(() => setDebouncedSearch(searchQuery.trim()), 300);
+    return () => clearTimeout(handle);
+  }, [searchQuery]);
+
+  useEffect(() => { pager.reset(); }, [activeTab, debouncedSearch, pageSizeChoice, pager.reset]);
+  useEffect(() => { loadReturns(); }, [loadReturns]);
+  useEffect(() => subscribeToOrderStatusChanged(loadReturns), [loadReturns]);
+  useEffect(() => { void loadTabCounts(); }, [loadTabCounts]);
+  useEffect(() => subscribeToOrderStatusChanged(loadTabCounts), [loadTabCounts]);
+  // Selection is scoped to a single loaded page - clear it whenever the tab,
+  // search, or page changes so a bulk action never silently drops ids that
+  // scrolled out of the currently-fetched page.
+  useEffect(() => { setSelectedIds(new Set()); setActionMsg(''); }, [activeTab, debouncedSearch, pager.request, pageSizeChoice]);
 
   // Keep tab/search bookmarkable - mirror into the URL (replacing history,
   // not pushing, so the back button doesn't step through every keystroke).
   useEffect(() => {
     const next = new URLSearchParams();
     if (activeTab !== 'follow_up') next.set('tab', activeTab);
-    if (searchQuery) next.set('search', searchQuery);
+    if (debouncedSearch) next.set('search', debouncedSearch);
     setSearchParams(next, { replace: true });
-  }, [activeTab, searchQuery, setSearchParams]);
+  }, [activeTab, debouncedSearch, setSearchParams]);
 
-  const filteredOrders = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    return orders.filter((order) => {
-      if (returnStage(order) !== activeTab) return false;
-      if (!q) return true;
-      return (
-        order.trackingId.toLowerCase().includes(q) ||
-        order.senderName.toLowerCase().includes(q) ||
-        order.receiverName.toLowerCase().includes(q) ||
-        // The order id as the table shows it, with or without the leading "#".
-        `#${order.orderNumber}`.includes(q.startsWith('#') ? q : `#${q}`)
-      );
-    });
-  }, [orders, activeTab, searchQuery]);
+  // The server now returns exactly the active tab's, search-matched, single
+  // page of rows - nothing left to re-filter client-side.
+  const filteredOrders = orders;
 
   // Which manifest each parcel is on, so every parcel tab can show the
   // hand-over it travelled with. Only live manifests contribute - a received
@@ -374,23 +403,8 @@ const ReturnOperations: React.FC = () => {
     return map;
   }, [liveManifests]);
 
-  const tabCounts = useMemo(() => {
-    const counts: Record<ReturnTab, number> = {
-      follow_up: 0,
-      ready_to_return: 0,
-      manifests: manifestMeta.total,
-      sent_to_vendor: 0,
-      returned_to_vendor: 0,
-    };
-    for (const order of orders) {
-      const stage = returnStage(order);
-      if (stage) counts[stage]++;
-    }
-    return counts;
-  }, [orders, manifestMeta.total]);
-
-  const totalPages = Math.max(1, Math.ceil(filteredOrders.length / pageSizeChoice));
-  const visibleOrders = filteredOrders.slice((page - 1) * pageSizeChoice, page * pageSizeChoice);
+  const totalPages = meta?.totalPages ?? 1;
+  const visibleOrders = filteredOrders;
   const visibleOrderIds = visibleOrders.map((order) => order.id);
   const allVisibleSelected = visibleOrderIds.length > 0 && visibleOrderIds.every((id) => selectedIds.has(id));
   const someVisibleSelected = visibleOrderIds.some((id) => selectedIds.has(id));
@@ -416,9 +430,9 @@ const ReturnOperations: React.FC = () => {
   // of `sourceStatuses` are eligible (server rejects invalid transitions), so we
   // pre-filter to avoid failing the whole batch.
   const advance = async (target: ParcelStatus, sourceStatuses: ParcelStatus[]) => {
-    // Filtered over the whole tab, not just the visible page: selection survives
-    // paging, so scoping this to `visibleOrders` silently dropped everything the
-    // operator ticked on an earlier page.
+    // filteredOrders is just the currently-fetched page (selection is
+    // page-scoped, same as Dispatch/OOV) - no separate visibleOrders slice to
+    // reconcile against.
     const eligible = filteredOrders
       .filter((o) => selectedIds.has(o.id) && sourceStatuses.includes(o.status))
       .map((o) => o.id);
@@ -483,7 +497,7 @@ const ReturnOperations: React.FC = () => {
   };
 
   // Options come from what the SELECTED rows can actually do, not from the tab.
-  // The Sent to vendor tab holds two different things (see returnStage): true
+  // The Sent to vendor tab holds two different things (see TAB_QUERY): true
   // RTO parcels at sent_to_vendor, whose next step is returned_to_vendor, and
   // order_type='return' parcels still working through delivery - for those the
   // delivery *is* the trip back, so they finish via delivered instead. Deriving
@@ -496,7 +510,7 @@ const ReturnOperations: React.FC = () => {
   const actionStatusOptions = useMemo(() => {
     const options = sharedNextStatuses(selectedForAction.map(o => o.status));
     // "Follow Up" is a legal next status for a fresh failed_delivery row (this
-    // tab bundles both failed_delivery and follow_up - see returnStage), but
+    // tab bundles both failed_delivery and follow_up - see TAB_QUERY), but
     // offering it as a destination while already viewing the Follow Up tab is
     // just confusing - this tab's real options are Reattempt/Transit/Return.
     return activeTab === 'follow_up' ? options.filter(status => status !== 'follow_up') : options;
@@ -804,11 +818,26 @@ const ReturnOperations: React.FC = () => {
     }
   };
 
-  const downloadCsv = () => {
+  const downloadCsv = async () => {
+    // Exports every matching row for the tab, not just the loaded page -
+    // mirrors DispatchOperations.downloadCsv, falling back to the loaded page
+    // if the on-demand fetch fails.
+    let rows: Order[] = filteredOrders;
+    try {
+      const res = await getOrders({
+        ...TAB_QUERY[activeTab as ParcelReturnTab],
+        search: debouncedSearch || undefined,
+        withArrival: true,
+      });
+      if (res?.success && Array.isArray(res.data)) rows = res.data;
+    } catch {
+      // fall back to the currently loaded page
+    }
+
     // Mirrors the table on screen, where the Last Updated cell shows who and
     // when - two things, so two columns here rather than one.
     const headers = ['Order ID', 'Date', 'Tracking ID', 'Type', 'Vendor', 'Manifest', 'Sender', 'Receiver', 'Location', 'Address', 'Weight', 'COD', 'Status', 'Last Updated By', 'Last Updated', 'Remarks', ...STATUS_TIMELINE_HEADERS];
-    const rows = filteredOrders.map((order) => [
+    const csvRows = rows.map((order) => [
       `#${order.orderNumber}`,
       toBsDateTimeCell(order.createdAtRaw || order.createdAt) || '',
       order.trackingId,
@@ -827,7 +856,7 @@ const ReturnOperations: React.FC = () => {
       order.remarks || '',
       ...statusTimelineCells(order.statusTimestamps),
     ]);
-    downloadExcel('return-orders.xlsx', 'Return Orders', headers, rows);
+    downloadExcel('return-orders.xlsx', 'Return Orders', headers, csvRows);
   };
 
   const selectedOrders = visibleOrders.filter((o) => selectedIds.has(o.id));
@@ -1084,11 +1113,6 @@ const ReturnOperations: React.FC = () => {
       />
 
       {loadError && <p className="return-action-msg">{loadError}</p>}
-      {truncated && (
-        <p className="return-action-msg">
-          Showing a partial list - there are more return orders than could be loaded. Narrow your search to find a specific order.
-        </p>
-      )}
 
       <div className="return-toolbar">
         {showingManifests ? (
@@ -1136,7 +1160,7 @@ const ReturnOperations: React.FC = () => {
               submitStatusAction) filters to rows genuinely able to make the
               chosen move, which matters on the sent_to_vendor tab because it
               also lists order_type='return' parcels sitting at other statuses
-              (see returnStage) that the server would reject. */}
+              (see TAB_QUERY) that the server would reject. */}
           {(activeTab === 'follow_up' || activeTab === 'sent_to_vendor') && (
             <div className="return-action-anchor">
               <Button variant="secondary" onClick={openStatusAction}>
@@ -1272,13 +1296,16 @@ const ReturnOperations: React.FC = () => {
 
           <Pagination
             ariaLabel="Return pagination"
-            page={page}
+            page={pager.page}
             totalPages={totalPages}
-            onPageChange={setPage}
+            cursor={pager.controls(meta)}
             pageSize={pageSizeChoice}
             pageSizeLabel="return orders"
-            onPageSizeChange={setPageSizeChoice}
-            summary={`${filteredOrders.length} order${filteredOrders.length === 1 ? '' : 's'}`}
+            onPageSizeChange={(size) => {
+              setPageSizeChoice(size);
+              pager.reset();
+            }}
+            summary={meta ? `${meta.total} order${meta.total === 1 ? '' : 's'}` : undefined}
           />
         </>
       )}
