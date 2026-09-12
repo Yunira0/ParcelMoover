@@ -414,6 +414,13 @@ model parcels {
   @@index([sender_id], map: "idx_parcels_sender_id")
   @@index([vendor_id], map: "idx_parcels_vendor_id")
   @@index([status], map: "idx_parcels_status")
+  /// Lets a status-filtered keyset page (order_number DESC, id DESC) seek
+  /// directly through the index instead of scanning idx_parcels_order_number_id
+  /// and filtering status row by row. See listOrders/buildOrdersWhere.
+  @@index([status, order_number(sort: Desc), id(sort: Desc)], map: "idx_parcels_status_order_number_id")
+  /// Same as above, for an order_type-filtered keyset page - order_type had no
+  /// index at all before this. See buildOrdersWhere's secondaryOrderType.
+  @@index([order_type, order_number(sort: Desc), id(sort: Desc)], map: "idx_parcels_order_type_order_number_id")
   @@index([search_text(ops: raw("gin_trgm_ops"))], map: "idx_parcels_search_text", type: Gin)
 }
 

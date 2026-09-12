@@ -223,6 +223,19 @@ export const listOrdersQuerySchema = paginationQuerySchema.extend({
     }, z.array(z.enum(PARCEL_STATUSES)).optional())
     .optional(),
   orderType: z.enum(ORDER_TYPES).optional(),
+  // Paired with secondaryStatus to express "status IN (...) OR (order_type = X
+  // AND status IN (Y))" in one query - e.g. Return Operations' ready_to_return
+  // tab, which holds both a true RTO parcel (by status alone) and a reverse-
+  // shipment order still working through its own delivery leg (by order_type +
+  // a different status set). No-op unless secondaryStatus is also given.
+  secondaryOrderType: z.enum(ORDER_TYPES).optional(),
+  secondaryStatus: z
+    .preprocess((val) => {
+      if (!val) return undefined;
+      const raw = Array.isArray(val) ? val : String(val).split(",");
+      return raw.map((s) => String(s).trim()).filter(Boolean);
+    }, z.array(z.enum(PARCEL_STATUSES)).optional())
+    .optional(),
   // Multi-select vendor filter, sent as a comma-separated list of vendor ids
   // (or repeated params). Intersected with the actor's scope server-side.
   vendorId: z

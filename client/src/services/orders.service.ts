@@ -138,6 +138,12 @@ export type OrderSortField = (typeof ORDER_SORT_FIELDS)[number];
 export interface ListOrdersParams {
   status?: ParcelStatus[];
   orderType?: OrderType;
+  /** Paired together: "status IN (...) OR (order_type = X AND status IN (Y))"
+   *  in one query - e.g. Return Operations' ready_to_return tab, which holds
+   *  both a true RTO parcel (by status) and a reverse-shipment order still
+   *  mid-delivery (by orderType + a different status). No-op alone. */
+  secondaryOrderType?: OrderType;
+  secondaryStatus?: ParcelStatus[];
   search?: string;
   /** Narrow to these vendors. Server intersects it with the caller's own scope. */
   vendorId?: string[];
@@ -336,6 +342,8 @@ export const getOrders = async (params?: ListOrdersParams, signal?: AbortSignal)
   const query: Record<string, string> = {};
   if (params?.status?.length) query.status = params.status.join(',');
   if (params?.orderType) query.orderType = params.orderType;
+  if (params?.secondaryOrderType) query.secondaryOrderType = params.secondaryOrderType;
+  if (params?.secondaryStatus?.length) query.secondaryStatus = params.secondaryStatus.join(',');
   if (params?.vendorId?.length) query.vendorId = params.vendorId.join(',');
   if (params?.salesUserId) query.salesUserId = params.salesUserId;
   if (params?.search) query.search = params.search;
