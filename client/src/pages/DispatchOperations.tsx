@@ -98,7 +98,10 @@ const STATUS_TRANSITIONS: Record<ParcelStatus, ParcelStatus[]> = {
   picked_up: ['arrived'],
   arrived: ['ready_to_deliver', 'oov'],
   dispatched: ['arrived_at_branch'],
-  arrived_at_branch: ['ready_to_deliver'],
+  // A parcel that arrived here via transit while working through a return
+  // (e.g. sent here from another branch's Follow Up tab) needs to go back
+  // into the return flow rather than out for delivery.
+  arrived_at_branch: ['ready_to_deliver', 'follow_up'],
   ready_to_deliver: ['sent_for_delivery', 'hold', 'cancelled'],
   sent_for_delivery: ['delivered', 'partially_delivered', 'failed_delivery'],
   oov: ['dispatched', 'hold'],

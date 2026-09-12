@@ -108,7 +108,7 @@ export const PARCEL_STATUS_TRANSITIONS: Record<ParcelStatus, ParcelStatus[]> = {
   failed_delivery: ['ready_to_deliver', 'follow_up', 'ready_to_return'],
   cancelled: [],
   loss_and_damage: ['ready_to_deliver', 'arrived_at_branch'],
-  follow_up: ['ready_to_deliver', 'ready_to_return'],
+  follow_up: ['ready_to_deliver', 'ready_to_return', 'oov'],
   ready_to_return: ['sent_to_vendor'],
   sent_to_vendor: ['returned_to_vendor'],
   returned_to_vendor: [],
