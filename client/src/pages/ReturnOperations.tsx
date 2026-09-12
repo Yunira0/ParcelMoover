@@ -453,16 +453,20 @@ const ReturnOperations: React.FC = () => {
     }
   };
 
-  // "Transit" (follow_up -> oov) auto-stages toward each parcel's own origin
-  // hub in one action, rather than leaving the operator to separately visit
-  // the Transit page and pick a destination - origin is exactly where a
-  // follow_up parcel needs to get back to (see stageOrdersToBranch's
+  // "Transit" (follow_up/failed_delivery -> oov) auto-stages toward each
+  // parcel's own origin hub in one action, rather than leaving the operator to
+  // separately visit the Transit page and pick a destination - origin is
+  // exactly where a parcel needs to get back to (see stageOrdersToBranch's
   // return-leg check, which validates the chosen branch against origin
-  // instead of the customer's now-irrelevant delivery address). Parcels can
-  // have different origins, so each origin gets its own status update +
-  // staging call.
+  // instead of the customer's now-irrelevant delivery address). A fresh
+  // failed_delivery row is included too, so an operator doesn't have to
+  // promote it to follow_up first just to unlock Transit. Parcels can have
+  // different origins, so each origin gets its own status update + staging
+  // call.
   const sendToTransit = async () => {
-    const eligible = filteredOrders.filter((o) => selectedIds.has(o.id) && o.status === 'follow_up');
+    const eligible = filteredOrders.filter(
+      (o) => selectedIds.has(o.id) && (o.status === 'follow_up' || o.status === 'failed_delivery'),
+    );
     if (eligible.length === 0) {
       setActionMsg('Select one or more orders in the return flow to action.');
       return;

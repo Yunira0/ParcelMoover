@@ -425,6 +425,12 @@ async function manifestCoverage(manifest: { to_location_id: string | null }): Pr
  * (the hub the order needs to get back to) instead, everywhere the coverage
  * check below runs.
  */
+// A parcel reaches "oov" from either follow_up or, since Return Operations'
+// Follow Up tab lets an operator send a fresh failed delivery straight to
+// transit without promoting it to follow_up first, failed_delivery too - both
+// are the RTO leg (see coverageRejection), not the forward one.
+const RETURN_LEG_ORIGIN_STATUSES = ["follow_up", "failed_delivery"];
+
 async function returnTransitParcelIds(parcelIds: string[]): Promise<Set<string>> {
   if (parcelIds.length === 0) return new Set();
   const entries = await prisma.parcel_status_history.findMany({
@@ -433,7 +439,9 @@ async function returnTransitParcelIds(parcelIds: string[]): Promise<Set<string>>
     distinct: ["parcel_id"],
     select: { parcel_id: true, old_status: true },
   });
-  return new Set(entries.filter((e) => e.old_status === "follow_up").map((e) => e.parcel_id));
+  return new Set(
+    entries.filter((e) => RETURN_LEG_ORIGIN_STATUSES.includes(e.old_status ?? "")).map((e) => e.parcel_id),
+  );
 }
 
 /** Coverage check shared by addParcelsToTransitManifest and stageOrdersToBranch. */

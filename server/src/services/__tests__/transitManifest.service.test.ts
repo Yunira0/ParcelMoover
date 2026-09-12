@@ -471,6 +471,31 @@ describe("stageOrdersToBranch — a follow_up-originated parcel validates agains
       stageOrdersToBranch(ADMIN, { parcelIds: ["parcel-1"], toBranchId: HUB_ID }),
     ).rejects.toMatchObject({ message: expect.stringContaining("Destination is not covered by Pokhara") });
   });
+
+  // Return Operations' Follow Up tab lets an operator send a parcel straight
+  // to Transit from failed_delivery, without promoting it to follow_up first
+  // - so a return leg that skipped follow_up entirely must still validate
+  // against origin, exactly like one that went through it.
+  it("also treats a failed_delivery-originated return leg as a return leg", async () => {
+    mockedPrisma.locations.findFirst.mockResolvedValue({ id: HUB_ID, name: "Pokhara" });
+    mockedPrisma.parcels.findMany.mockResolvedValue([
+      parcelRow({ current_location_id: "hub-kathmandu", destination_location_id: "hub-kathmandu", origin_location_id: HUB_ID }),
+    ]);
+    mockedPrisma.parcel_status_history.findMany.mockResolvedValue([
+      { parcel_id: "parcel-1", old_status: "failed_delivery" },
+    ]);
+    mockedPrisma.locations.findMany.mockResolvedValue([{ id: "hub-kathmandu", name: "Kathmandu" }]);
+    mockedPrisma.transit_manifests.findFirst.mockResolvedValue(null);
+    mockedPrisma.transit_manifests.create.mockResolvedValue({ id: MANIFEST_ID });
+    mockedPrisma.transit_manifests.findUnique.mockImplementation(({ where }: any) =>
+      Promise.resolve(where.manifest_no ? null : manifestRow()),
+    );
+    mockedPrisma.transit_manifest_parcels.findMany.mockResolvedValue([]);
+
+    const result = await stageOrdersToBranch(ADMIN, { parcelIds: ["parcel-1"], toBranchId: HUB_ID });
+
+    expect(result.added).toBe(1);
+  });
 });
 
 describe("end to end: scan → dispatch → receive", () => {

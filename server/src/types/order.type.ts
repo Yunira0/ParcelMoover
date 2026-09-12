@@ -245,9 +245,12 @@ export const STATUS_TRANSITIONS = {
   // straight away (Return-to-Origin) when recovery is clearly hopeless.
   partially_delivered: ["ready_to_deliver", "follow_up", "ready_to_return"],
   failed_pickup:     ["pickup_ordered", "cancelled"],
-  // A failed delivery can be re-attempted, sent into NDR follow-up, or returned
-  // straight away (Return-to-Origin) when recovery is clearly hopeless.
-  failed_delivery:   ["ready_to_deliver", "follow_up", "ready_to_return"],
+  // A failed delivery can be re-attempted, sent into NDR follow-up, returned
+  // straight away (Return-to-Origin), or - like follow_up below - sent to
+  // transit directly, since Return Operations' Follow Up tab bundles both
+  // statuses and an operator shouldn't have to promote to follow_up first
+  // just to unlock Transit.
+  failed_delivery:   ["ready_to_deliver", "follow_up", "ready_to_return", "oov"],
   cancelled:         [],
   loss_and_damage:   ["ready_to_deliver","arrived_at_branch"],
   // ── Return-to-Origin (RTO) workflow ───────────────────────────────────────
