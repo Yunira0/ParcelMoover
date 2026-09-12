@@ -39,6 +39,7 @@ import {
 import { printReturnManifests } from '../utils/printReturnManifest';
 import { searchVendors } from '../services/users.service';
 import { apiErrorMessage } from '../utils/serverValidation';
+import { addOrdersToBranchManifest } from '../services/transitManifests.service';
 import './ReturnOperations.css';
 
 // "manifests" sits between ready_to_return and sent_to_vendor because that is
@@ -438,6 +439,49 @@ const ReturnOperations: React.FC = () => {
     }
   };
 
+  // "Transit" (follow_up -> oov) auto-stages toward each parcel's own origin
+  // hub in one action, rather than leaving the operator to separately visit
+  // the Transit page and pick a destination - origin is exactly where a
+  // follow_up parcel needs to get back to (see stageOrdersToBranch's
+  // return-leg check, which validates the chosen branch against origin
+  // instead of the customer's now-irrelevant delivery address). Parcels can
+  // have different origins, so each origin gets its own status update +
+  // staging call.
+  const sendToTransit = async () => {
+    const eligible = filteredOrders.filter((o) => selectedIds.has(o.id) && o.status === 'follow_up');
+    if (eligible.length === 0) {
+      setActionMsg('Select one or more orders in the return flow to action.');
+      return;
+    }
+
+    const groups = new Map<string, Order[]>();
+    const skipped: string[] = [];
+    for (const o of eligible) {
+      if (!o.originLocationId) { skipped.push(o.trackingId); continue; }
+      const list = groups.get(o.originLocationId);
+      if (list) list.push(o); else groups.set(o.originLocationId, [o]);
+    }
+
+    setActing(true);
+    setActionMsg('');
+    const problems: string[] = skipped.map((t) => `${t}: no origin hub on file, cannot auto-transit`);
+    try {
+      for (const [originId, group] of groups) {
+        const ids = group.map((o) => o.id);
+        await bulkUpdateOrderStatus(ids, 'oov');
+        const res = await addOrdersToBranchManifest(ids, originId);
+        problems.push(...res.data.rejected.map((r) => `${r.trackingId}: ${r.reason}`));
+      }
+      setActionMsg(problems.join(' · '));
+      setSelectedIds(new Set());
+      await loadReturns();
+    } catch (err: any) {
+      setActionMsg(apiErrorMessage(err, 'Failed to send to transit.'));
+    } finally {
+      setActing(false);
+    }
+  };
+
   // Options come from what the SELECTED rows can actually do, not from the tab.
   // The Sent to vendor tab holds two different things (see returnStage): true
   // RTO parcels at sent_to_vendor, whose next step is returned_to_vendor, and
@@ -449,10 +493,14 @@ const ReturnOperations: React.FC = () => {
     () => filteredOrders.filter(o => selectedIds.has(o.id)),
     [filteredOrders, selectedIds],
   );
-  const actionStatusOptions = useMemo(
-    () => sharedNextStatuses(selectedForAction.map(o => o.status)),
-    [selectedForAction],
-  );
+  const actionStatusOptions = useMemo(() => {
+    const options = sharedNextStatuses(selectedForAction.map(o => o.status));
+    // "Follow Up" is a legal next status for a fresh failed_delivery row (this
+    // tab bundles both failed_delivery and follow_up - see returnStage), but
+    // offering it as a destination while already viewing the Follow Up tab is
+    // just confusing - this tab's real options are Reattempt/Transit/Return.
+    return activeTab === 'follow_up' ? options.filter(status => status !== 'follow_up') : options;
+  }, [selectedForAction, activeTab]);
 
   const closeAction = () => {
     setIsActionOpen(false);
@@ -496,6 +544,13 @@ const ReturnOperations: React.FC = () => {
 
   const submitStatusAction = async () => {
     if (!selectedNextStatus) return;
+    // "Transit" isn't a plain status flip - it also auto-stages toward the
+    // parcel's origin hub, so it gets its own handler instead of advance().
+    if (selectedNextStatus === 'oov') {
+      await sendToTransit();
+      closeAction();
+      return;
+    }
     // Eligible sources are whichever selected statuses can reach the target -
     // by construction of actionStatusOptions that is all of them, but advance()
     // wants them named explicitly.
