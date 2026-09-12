@@ -246,7 +246,10 @@ export const STATUS_TRANSITIONS = {
   cancelled:         [],
   loss_and_damage:   ["ready_to_deliver","arrived_at_branch"],
   // ── Return-to-Origin (RTO) workflow ───────────────────────────────────────
-  follow_up:          ["ready_to_deliver", "ready_to_return"],
+  // "oov" here lets a branch that can't directly hand the parcel back to the
+  // vendor (it's not physically at the right hub) route it through the same
+  // transit system any other inter-branch parcel uses, instead of being stuck.
+  follow_up:          ["ready_to_deliver", "ready_to_return", "oov"],
   ready_to_return:    ["sent_to_vendor"],
   sent_to_vendor:     ["returned_to_vendor"],
   returned_to_vendor: [],

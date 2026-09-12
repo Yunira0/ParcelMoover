@@ -13,6 +13,7 @@ vi.mock("../../lib/prisma", () => ({
     locations: { findFirst: vi.fn(), findMany: vi.fn() },
     transit_manifests: { findUnique: vi.fn(), findFirst: vi.fn(), create: vi.fn(), delete: vi.fn() },
     transit_manifest_parcels: { findMany: vi.fn(), createMany: vi.fn(), deleteMany: vi.fn() },
+    parcel_status_history: { findMany: vi.fn() },
     audit_logs: { create: vi.fn() },
     $transaction: vi.fn(),
   },
@@ -59,6 +60,7 @@ const mockedPrisma = prisma as unknown as {
     createMany: ReturnType<typeof vi.fn>;
     deleteMany: ReturnType<typeof vi.fn>;
   };
+  parcel_status_history: { findMany: ReturnType<typeof vi.fn> };
   audit_logs: { create: ReturnType<typeof vi.fn> };
   $transaction: ReturnType<typeof vi.fn>;
 };
@@ -115,6 +117,8 @@ beforeEach(() => {
   // Pokhara covers itself and one covered area by default.
   mockedCoverage.mockResolvedValue([HUB_ID, "area-lakeside"]);
   mockedTransitGate.mockResolvedValue(undefined);
+  // No parcel here is a return-leg reroute unless a test says otherwise.
+  mockedPrisma.parcel_status_history.findMany.mockResolvedValue([]);
   mockedMapHandoverParcel.mockImplementation((p: any) => ({ id: p.id, trackingId: p.tracking_id, codAmount: 0 }));
   // Base fallback for calls a test doesn't specifically queue - chiefly every
   // function's own trailing getTransitManifestById(), which re-fetches
@@ -403,6 +407,69 @@ describe("stageOrdersToBranch — the branch picker never creates a same-hub man
         data: expect.objectContaining({ from_location_id: "hub-kathmandu", to_location_id: HUB_ID }),
       }),
     );
+  });
+});
+
+// A follow_up parcel sent to transit is being rerouted away from a delivery
+// destination it couldn't reach, back toward the hub it needs to get back to
+// - destination_location_id is still the customer's address, so validating
+// against it (as a normal forward leg would) would reject the one branch that
+// actually makes sense here. These lock down the origin_location_id check
+// that applies instead, only for a parcel whose most recent arrival at oov
+// came from follow_up.
+describe("stageOrdersToBranch — a follow_up-originated parcel validates against its origin, not its destination", () => {
+  it("rejects a return leg whose origin the chosen branch doesn't cover", async () => {
+    mockedPrisma.locations.findFirst.mockResolvedValue({ id: HUB_ID, name: "Pokhara" });
+    // Still destined for a Kathmandu-area address (unchanged since creation),
+    // now sitting at Kathmandu after a failed delivery there, being routed to
+    // Pokhara - a branch that covers neither Kathmandu the destination nor,
+    // in this test, Kathmandu the origin either.
+    mockedPrisma.parcels.findMany.mockResolvedValue([
+      parcelRow({ current_location_id: "hub-kathmandu", destination_location_id: "hub-kathmandu", origin_location_id: "hub-butwal" }),
+    ]);
+    mockedPrisma.parcel_status_history.findMany.mockResolvedValue([
+      { parcel_id: "parcel-1", old_status: "follow_up" },
+    ]);
+
+    await expect(
+      stageOrdersToBranch(ADMIN, { parcelIds: ["parcel-1"], toBranchId: HUB_ID }),
+    ).rejects.toMatchObject({ message: expect.stringContaining("Origin is not covered by Pokhara") });
+    expect(mockedPrisma.transit_manifests.create).not.toHaveBeenCalled();
+  });
+
+  it("stages a return leg once the chosen branch covers its origin, even though it doesn't cover its destination", async () => {
+    mockedPrisma.locations.findFirst.mockResolvedValue({ id: HUB_ID, name: "Pokhara" });
+    mockedPrisma.parcels.findMany.mockResolvedValue([
+      parcelRow({ current_location_id: "hub-kathmandu", destination_location_id: "hub-kathmandu", origin_location_id: HUB_ID }),
+    ]);
+    mockedPrisma.parcel_status_history.findMany.mockResolvedValue([
+      { parcel_id: "parcel-1", old_status: "follow_up" },
+    ]);
+    mockedPrisma.locations.findMany.mockResolvedValue([{ id: "hub-kathmandu", name: "Kathmandu" }]);
+    mockedPrisma.transit_manifests.findFirst.mockResolvedValue(null);
+    mockedPrisma.transit_manifests.create.mockResolvedValue({ id: MANIFEST_ID });
+    mockedPrisma.transit_manifests.findUnique.mockImplementation(({ where }: any) =>
+      Promise.resolve(where.manifest_no ? null : manifestRow()),
+    );
+    mockedPrisma.transit_manifest_parcels.findMany.mockResolvedValue([]);
+
+    const result = await stageOrdersToBranch(ADMIN, { parcelIds: ["parcel-1"], toBranchId: HUB_ID });
+
+    expect(result.added).toBe(1);
+  });
+
+  it("still validates a normal (non-return) parcel against its destination, unchanged", async () => {
+    mockedPrisma.locations.findFirst.mockResolvedValue({ id: HUB_ID, name: "Pokhara" });
+    // origin happens to be Pokhara, but this parcel never passed through
+    // follow_up, so that must NOT be enough to satisfy the check on its own.
+    mockedPrisma.parcels.findMany.mockResolvedValue([
+      parcelRow({ current_location_id: "hub-kathmandu", destination_location_id: "hub-butwal", origin_location_id: HUB_ID }),
+    ]);
+    mockedPrisma.parcel_status_history.findMany.mockResolvedValue([]);
+
+    await expect(
+      stageOrdersToBranch(ADMIN, { parcelIds: ["parcel-1"], toBranchId: HUB_ID }),
+    ).rejects.toMatchObject({ message: expect.stringContaining("Destination is not covered by Pokhara") });
   });
 });
 

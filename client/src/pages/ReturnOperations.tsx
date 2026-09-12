@@ -1065,28 +1065,24 @@ const ReturnOperations: React.FC = () => {
           <div />
         )}
         <div className="return-toolbar-actions">
-          {activeTab === 'follow_up' && (
-            <>
-              <Button variant="secondary" disabled={noSelection} onClick={() => advance('ready_to_deliver', ['failed_delivery', 'follow_up'])}>
-                Reattempt delivery
-              </Button>
-              <Button variant="primary" disabled={noSelection} onClick={() => advance('ready_to_return', ['failed_delivery', 'follow_up'])}>
-                Mark for return
-              </Button>
-            </>
-          )}
           {activeTab === 'ready_to_return' && (
             <Button variant="primary" disabled={noSelection} onClick={openAddToManifest}>
               Add to manifest
             </Button>
           )}
-          {/* Closes the RTO loop per-order. The manifest tab's "Mark received"
-              does the same thing a whole manifest at a time; this is the way to
-              finish parcels the vendor confirmed individually. advance() filters
-              to rows genuinely at sent_to_vendor, which matters here because the
-              tab also lists order_type='return' parcels sitting at other
-              statuses (see returnStage) that the server would reject. */}
-          {activeTab === 'sent_to_vendor' && (
+          {/* Follow up: offers whatever the selection can legally do next -
+              Ready to Deliver, Ready to Return, or Transit (-> oov, for a
+              parcel that isn't at the right branch to hand back to the vendor
+              directly and needs to travel there first via the normal Transit
+              workflow). Sent to vendor: closes the RTO loop per-order, same
+              mechanism - the manifest tab's "Mark received" does the same
+              thing a whole manifest at a time; this is the way to finish
+              parcels the vendor confirmed individually. advance() (called by
+              submitStatusAction) filters to rows genuinely able to make the
+              chosen move, which matters on the sent_to_vendor tab because it
+              also lists order_type='return' parcels sitting at other statuses
+              (see returnStage) that the server would reject. */}
+          {(activeTab === 'follow_up' || activeTab === 'sent_to_vendor') && (
             <div className="return-action-anchor">
               <Button variant="secondary" onClick={openStatusAction}>
                 Action{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}

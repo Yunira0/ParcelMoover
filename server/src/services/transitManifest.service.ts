@@ -291,6 +291,7 @@ type ScannedParcel = {
   status: string;
   current_location_id: string | null;
   destination_location_id: string | null;
+  origin_location_id: string | null;
 };
 
 /**
@@ -308,7 +309,7 @@ async function findParcelsByTrackingIds(ids: string[]) {
 
   const rows = await prisma.parcels.findMany({
     where: { tracking_id: { in: ids }, deleted_at: null },
-    select: { id: true, tracking_id: true, status: true, current_location_id: true, destination_location_id: true },
+    select: { id: true, tracking_id: true, status: true, current_location_id: true, destination_location_id: true, origin_location_id: true },
   });
   for (const row of rows) byTracking.set(row.tracking_id, row);
 
@@ -319,7 +320,7 @@ async function findParcelsByTrackingIds(ids: string[]) {
   if (upperMissing.length) {
     const upperRows = await prisma.parcels.findMany({
       where: { tracking_id: { in: upperMissing }, deleted_at: null },
-      select: { id: true, tracking_id: true, status: true, current_location_id: true, destination_location_id: true },
+      select: { id: true, tracking_id: true, status: true, current_location_id: true, destination_location_id: true, origin_location_id: true },
     });
     for (const row of upperRows) byTracking.set(row.tracking_id, row);
   }
@@ -379,7 +380,7 @@ async function resolveScanTargets(input: TransitScanInput) {
   if (parcelIds.length) {
     const rows = await prisma.parcels.findMany({
       where: { id: { in: parcelIds }, deleted_at: null },
-      select: { id: true, tracking_id: true, status: true, current_location_id: true, destination_location_id: true },
+      select: { id: true, tracking_id: true, status: true, current_location_id: true, destination_location_id: true, origin_location_id: true },
     });
     const byId = new Map(rows.map((row) => [row.id, row]));
     for (const id of parcelIds) {
@@ -416,6 +417,43 @@ async function manifestCoverage(manifest: { to_location_id: string | null }): Pr
 }
 
 /**
+ * A parcel whose most recent arrival at "oov" came from "follow_up" is a
+ * return leg being rerouted away from a delivery destination it couldn't
+ * reach - not the normal forward leg toward one. destination_location_id is
+ * still the customer's address in that case, which is no longer where this
+ * leg is headed, so these parcels are validated against origin_location_id
+ * (the hub the order needs to get back to) instead, everywhere the coverage
+ * check below runs.
+ */
+async function returnTransitParcelIds(parcelIds: string[]): Promise<Set<string>> {
+  if (parcelIds.length === 0) return new Set();
+  const entries = await prisma.parcel_status_history.findMany({
+    where: { parcel_id: { in: parcelIds }, new_status: "oov" },
+    orderBy: { created_at: "desc" },
+    distinct: ["parcel_id"],
+    select: { parcel_id: true, old_status: true },
+  });
+  return new Set(entries.filter((e) => e.old_status === "follow_up").map((e) => e.parcel_id));
+}
+
+/** Coverage check shared by addParcelsToTransitManifest and stageOrdersToBranch. */
+function coverageRejection(
+  parcel: ScannedParcel,
+  coveredIds: Set<string>,
+  isReturnLeg: boolean,
+  branchLabel: string,
+): { trackingId: string; reason: string } | null {
+  const locationId = isReturnLeg ? parcel.origin_location_id : parcel.destination_location_id;
+  if (!locationId || !coveredIds.has(locationId)) {
+    return {
+      trackingId: parcel.tracking_id,
+      reason: `${isReturnLeg ? "Origin" : "Destination"} is not covered by ${branchLabel}`,
+    };
+  }
+  return null;
+}
+
+/**
  * Stages parcels onto an open manifest. Nothing moves: they stay at oov until
  * the manifest is dispatched, which is what makes removeParcelFromTransitManifest
  * meaningful and what stops a mis-scan from putting a parcel on the road.
@@ -437,6 +475,9 @@ export async function addParcelsToTransitManifest(
   if (targets.length === 0) throw new AppError(400, "Scan a tracking id or select at least one order");
 
   const coveredIds = await manifestCoverage(manifest);
+  const returnLegIds = await returnTransitParcelIds(
+    targets.flatMap((t) => (t.parcel ? [t.parcel.id] : [])),
+  );
 
   const existing = await prisma.transit_manifest_parcels.findMany({
     where: { transit_manifest_id: manifestId },
@@ -474,11 +515,10 @@ export async function addParcelsToTransitManifest(
         trackingId: parcel.tracking_id,
         reason: `Is ${prettyStatus(parcel.status)}, not in transit`,
       });
-    } else if (coveredIds && (!parcel.destination_location_id || !coveredIds.has(parcel.destination_location_id))) {
-      rejected.push({
-        trackingId: parcel.tracking_id,
-        reason: `Destination is not covered by ${manifest.to_hub}`,
-      });
+    } else if (coveredIds) {
+      const rejection = coverageRejection(parcel, coveredIds, returnLegIds.has(parcel.id), manifest.to_hub);
+      if (rejection) rejected.push(rejection);
+      else eligible.push(parcel);
     } else {
       eligible.push(parcel);
     }
@@ -770,9 +810,11 @@ export async function stageOrdersToBranch(actor: Actor, input: StageOrdersToBran
       status: true,
       current_location_id: true,
       destination_location_id: true,
+      origin_location_id: true,
     },
   });
   const byId = new Map(parcels.map((p) => [p.id, p]));
+  const returnLegIds = await returnTransitParcelIds(parcelIds);
 
   const rejected: { trackingId: string; reason: string }[] = [];
   const eligible: (typeof parcels)[number][] = [];
@@ -791,10 +833,10 @@ export async function stageOrdersToBranch(actor: Actor, input: StageOrdersToBran
       // (bulkUpdateParcelStatus itself refuses that transition), so it would
       // just sit open forever with nothing to do.
       rejected.push({ trackingId: parcel.tracking_id, reason: `Already at ${branch.name} - nothing to transit` });
-    } else if (!parcel.destination_location_id || !coveredIds.has(parcel.destination_location_id)) {
-      rejected.push({ trackingId: parcel.tracking_id, reason: `Destination is not covered by ${branch.name}` });
     } else {
-      eligible.push(parcel);
+      const rejection = coverageRejection(parcel, coveredIds, returnLegIds.has(parcel.id), branch.name);
+      if (rejection) rejected.push(rejection);
+      else eligible.push(parcel);
     }
   }
 
