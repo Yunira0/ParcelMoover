@@ -231,6 +231,15 @@ function ncmMatchPlaceName(destinationName: string): string {
 //      Damak covers "Jhiljhile" as one item in its comma list), and a
 //      word-boundary fallback where the branch name equals one whitespace-
 //      separated token of the place name.
+//
+//   Tiers 2 and 3 all match on the hub's town name alone, which is not unique
+//   across Nepal, so they are district-gated: a match is rejected when the hub
+//   and the candidate branch both carry a district and those districts differ
+//   (a missing district on either side falls back to allowing the match, so
+//   incomplete data doesn't regress). "Khalanga" is the HQ-town name of
+//   several far/mid-west districts and sits in the AMARGADHI (Dadeldhura)
+//   branch's covered_areas — without the gate a "Khalanga - Darchula" hub
+//   silently booked to Dadeldhura (NCM order #25301800).
 //   No match => the caller skips the parcel with "No matching NCM branch…"
 //   and ops can fix via the per-hub override or by correcting district/name.
 export function matchNcmBranch(
@@ -270,16 +279,29 @@ export function matchNcmBranch(
     // (e.g. JHILJHILE is covered by DAMAK even when 3 branches share JHAPA).
   }
 
+  // The place-name tiers below match on the hub's town name alone, which is
+  // not unique across Nepal — many far/mid-west district HQs are all named
+  // "Khalanga". Reject such a match when we know both districts and they
+  // disagree; a missing district on either side falls back to allowing it
+  // (no regression for incomplete data).
+  const districtAgrees = (branch: NcmBranch): boolean => {
+    if (!district) return true;
+    const bd = branch.district?.trim();
+    if (!bd) return true;
+    return normalizeDistrict(bd) === district;
+  };
+
   const placeName = ncmMatchPlaceName(destination.name).trim().toUpperCase();
   if (!placeName) return undefined;
 
   // Tier 2 — direct branch-name exact
-  const byPlaceExact = branches.find((b) => b.name.trim().toUpperCase() === placeName);
+  const byPlaceExact = branches.find((b) => districtAgrees(b) && b.name.trim().toUpperCase() === placeName);
   if (byPlaceExact) return byPlaceExact;
 
   // Tier 3a — exact word inside covered_areas (NCM's per-branch locality list)
   for (const branch of branches) {
     if (!branch.covered_areas) continue;
+    if (!districtAgrees(branch)) continue;
     const tokens = branch.covered_areas
       .split(/[,;/]+/)
       .map((s) => s.trim().toUpperCase())
@@ -291,7 +313,7 @@ export function matchNcmBranch(
   // e.g. "Pokhara Branch" tokens ["POKHARA","BRANCH"] contains branch "POKHARA"
   // but "JHILJHILE" tokens ["JHILJHILE"] does NOT contain "HILE".
   const placeTokens = placeName.split(/[\s\-_/]+/).map((s) => s.trim().toUpperCase()).filter(Boolean);
-  const byToken = branches.find((b) => placeTokens.includes(b.name.trim().toUpperCase()));
+  const byToken = branches.find((b) => districtAgrees(b) && placeTokens.includes(b.name.trim().toUpperCase()));
   if (byToken) return byToken;
 
   return undefined;

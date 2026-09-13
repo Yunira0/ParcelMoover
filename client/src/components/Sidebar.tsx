@@ -39,6 +39,7 @@ import {
   Megaphone,
   Gauge,
   Building2,
+  TrendingUp,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import {
@@ -435,6 +436,8 @@ const AdminSidebar: React.FC<{ isSuperAdmin: boolean }> = ({ isSuperAdmin }) => 
         {canViewBranchTracking && (
           <SidebarItem to="/branches" icon={Building2} label="Branch Overview" />
         )}
+        <SidebarItem to="/rider-overview" icon={Bike} label="Rider Overview" />
+        <SidebarItem to="/sales-overview" icon={TrendingUp} label="Sales Overview" />
 
         <SidebarSection label="Management" />
         {/* Three peers in one column. KYC used to be a fourth entry here; it is
