@@ -245,9 +245,12 @@ const CreateOrderPage: React.FC = () => {
     return { results: [], hasMore: false };
   }, []);
 
-  // The Imadol admin hub, matched by code first, name as fallback.
+  // The Imadol admin hub, matched by code first, name as fallback. Restricted to
+  // top-level locations (no parentId) so a covered area that happens to share the
+  // name "Imadol" under a different destination can't be mistaken for the real hub -
+  // mirrors the server's own `parent_id: null` check in order.service.ts.
   const imadolHub = locationOptions.find(
-    l => (l.code || '').toUpperCase() === 'IMADOL' || l.name.trim().toLowerCase() === 'imadol',
+    l => !l.parentId && ((l.code || '').toUpperCase() === 'IMADOL' || l.name.trim().toLowerCase() === 'imadol'),
   );
   // A branch admin's orders originate at their own branch (the server enforces
   // this for every non-super-admin). A hubless head-office admin falls back to
