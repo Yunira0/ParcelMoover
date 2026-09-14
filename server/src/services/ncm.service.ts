@@ -220,17 +220,11 @@ function ncmMatchPlaceName(destinationName: string): string {
 //   0. Explicit per-hub override `ncm_branch` if present — ops pins the
 //      correct NCM branch for ambiguous villages where district alone is not
 //      enough (multiple branches share Jhapa/Morang/etc).
-//   1. District exact — only when exactly one branch carries that district.
-//      If district maps to >1 branches (Jhapa→Birtamode/Damak/Bahundangi),
-//      it's genuinely ambiguous and we fall through rather than picking
-//      whichever row the API happened to return first.
-//   2. Place-name exact against branch name, including NCM's disambiguating
+//   1. Place-name exact against branch name, including NCM's disambiguating
 //      district suffix ("KERABARI - MORANG" -> "KERABARI MORANG").
-//   3. Place-name exact against a branch's `covered_areas` tokens (e.g.
-//      Damak covers "Jhiljhile" as one item in its comma list), and a
-//      word-boundary fallback where the branch name equals one whitespace-
-//      separated token of the place name. When NCM has branches in the
-//      destination district, both fallbacks are restricted to that district.
+//   2. Place-name exact against a same-district branch's `covered_areas`
+//      tokens (e.g. Damak covers "Jhiljhile" as one item in its comma list).
+//      The match must be unique; district by itself never selects a branch.
 //   No match => the caller skips the parcel with "No matching NCM branch…"
 //   and ops can fix via the per-hub override or by correcting district/name.
 export function matchNcmBranch(
@@ -254,58 +248,50 @@ export function matchNcmBranch(
   }
 
   // Normalize "JHAPA DISTRICT" vs "JHAPA" and collapse whitespace so a
-  // minor data-entry variant doesn't silently break tier 1.
+  // minor data-entry variant doesn't silently break candidate scoping.
   const normalizeDistrict = (s: string) =>
     s.trim().toUpperCase().replace(/\s+DISTRICT\s*$/, "").replace(/\s+/g, " ").trim();
   const districtRaw = destination.district?.trim();
   const district = districtRaw ? normalizeDistrict(districtRaw) : "";
-  let byDistrict: NcmBranch[] = [];
-  if (district) {
-    byDistrict = branches.filter((b) => {
-      const bd = b.district?.trim();
-      return bd ? normalizeDistrict(bd) === district : false;
-    });
-    if (byDistrict.length === 1) return byDistrict[0];
-    // >1 means ambiguous (e.g. Jhapa has Birtamode/Damak/Bahundangi) — don't guess
-    // If ambiguous, still allow covered_areas/name tiers below to disambiguate
-    // (e.g. JHILJHILE is covered by DAMAK even when 3 branches share JHAPA).
-  }
+  const byDistrict = district
+    ? branches.filter((b) => {
+        const bd = b.district?.trim();
+        return bd ? normalizeDistrict(bd) === district : false;
+      })
+    : [];
 
   const placeName = ncmMatchPlaceName(destination.name).trim().toUpperCase();
   if (!placeName) return undefined;
 
-  // Once the destination district has at least one NCM branch, every
-  // lower-confidence fallback must stay inside that district. Place names are
-  // not unique across Nepal (Kerabari exists in both Morang and Tanahu), so a
-  // global covered-area scan can silently send an order across the country.
-  const fallbackBranches = district && byDistrict.length > 0 ? byDistrict : branches;
+  // A known destination district is a hard boundary, never a fallback match.
+  // If NCM has no branch metadata for that district, leave the parcel alone.
+  const candidates = district ? byDistrict : branches;
+  if (district && candidates.length === 0) return undefined;
 
-  // Tier 2 — direct branch-name exact. NCM sometimes appends the district to
+  // Tier 1 — direct branch-name exact. NCM sometimes appends the district to
   // disambiguate duplicate names (e.g. "KERABARI MORANG"), while our location
   // is stored as "KERABARI - MORANG". Treat that canonical suffix as exact.
   const placeWithDistrict = district ? `${placeName} ${district}` : "";
-  const byPlaceExact = fallbackBranches.find((b) => {
+  const exactMatches = candidates.filter((b) => {
     const branchName = b.name.trim().toUpperCase();
     return branchName === placeName || (placeWithDistrict !== "" && branchName === placeWithDistrict);
   });
-  if (byPlaceExact) return byPlaceExact;
+  if (exactMatches.length === 1) return exactMatches[0];
+  if (exactMatches.length > 1) return undefined;
 
-  // Tier 3a — exact word inside covered_areas (NCM's per-branch locality list)
-  for (const branch of fallbackBranches) {
-    if (!branch.covered_areas) continue;
+  // Tier 2 — covered-area matching without a district is unsafe: the same locality
+  // name can exist in multiple districts even if NCM currently lists it only
+  // once. With a district, accept only one exact same-district coverage hit.
+  if (!district) return undefined;
+  const coveredMatches = candidates.filter((branch) => {
+    if (!branch.covered_areas) return false;
     const tokens = branch.covered_areas
       .split(/[,;/]+/)
       .map((s) => s.trim().toUpperCase())
       .filter(Boolean);
-    if (tokens.includes(placeName)) return branch;
-  }
-
-  // Tier 3b — word-boundary fallback: branch name equals one token of placeName
-  // e.g. "Pokhara Branch" tokens ["POKHARA","BRANCH"] contains branch "POKHARA"
-  // but "JHILJHILE" tokens ["JHILJHILE"] does NOT contain "HILE".
-  const placeTokens = placeName.split(/[\s\-_/]+/).map((s) => s.trim().toUpperCase()).filter(Boolean);
-  const byToken = fallbackBranches.find((b) => placeTokens.includes(b.name.trim().toUpperCase()));
-  if (byToken) return byToken;
+    return tokens.includes(placeName);
+  });
+  if (coveredMatches.length === 1) return coveredMatches[0];
 
   return undefined;
 }
