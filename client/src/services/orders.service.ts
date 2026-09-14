@@ -152,6 +152,10 @@ export interface ListOrdersParams {
   salesUserId?: string;
   /** Narrows the list to parcels carried by one delivery rider. */
   deliveryRiderId?: string;
+  /** Origin/destination hub filters, by location id - matches OrderFilterOptions'
+   *  origins/destinations, which are keyed by id for exactly this reason. */
+  originLocationId?: string;
+  destinationLocationId?: string;
   /** Display-only page hint echoed back in meta; position comes from the cursor. */
   page?: number;
   pageSize?: number;
@@ -348,6 +352,8 @@ export const getOrders = async (params?: ListOrdersParams, signal?: AbortSignal)
   if (params?.salesUserId) query.salesUserId = params.salesUserId;
   if (params?.search) query.search = params.search;
   if (params?.deliveryRiderId) query.deliveryRiderId = params.deliveryRiderId;
+  if (params?.originLocationId) query.originLocationId = params.originLocationId;
+  if (params?.destinationLocationId) query.destinationLocationId = params.destinationLocationId;
   if (params?.page !== undefined) query.page = String(params.page);
   if (params?.pageSize !== undefined) query.pageSize = String(params.pageSize);
   if (params?.cursor !== undefined) query.cursor = params.cursor;
@@ -374,7 +380,17 @@ export type OrderCountsByStatus = Record<ParcelStatus, number>;
 // same set of orders the table does, broken down per status rather than paged.
 export type OrderCountsByStatusParams = Pick<
   ListOrdersParams,
-  'orderType' | 'vendorId' | 'salesUserId' | 'search' | 'deliveryRiderId' | 'deliveredToday' | 'dateField' | 'dateFrom' | 'dateTo'
+  | 'orderType'
+  | 'vendorId'
+  | 'salesUserId'
+  | 'search'
+  | 'deliveryRiderId'
+  | 'originLocationId'
+  | 'destinationLocationId'
+  | 'deliveredToday'
+  | 'dateField'
+  | 'dateFrom'
+  | 'dateTo'
 >;
 
 // Deliberately not derived from getOrders: that endpoint returns one keyset
@@ -390,6 +406,8 @@ export const getOrderCountsByStatus = async (
   if (params?.salesUserId) query.salesUserId = params.salesUserId;
   if (params?.search) query.search = params.search;
   if (params?.deliveryRiderId) query.deliveryRiderId = params.deliveryRiderId;
+  if (params?.originLocationId) query.originLocationId = params.originLocationId;
+  if (params?.destinationLocationId) query.destinationLocationId = params.destinationLocationId;
   if (params?.deliveredToday) query.deliveredToday = 'true';
   if (params?.dateField) query.dateField = params.dateField;
   if (params?.dateFrom) query.dateFrom = params.dateFrom;
@@ -400,8 +418,10 @@ export const getOrderCountsByStatus = async (
 };
 
 export interface OrderFilterOptions {
-  origins: string[];
-  destinations: string[];
+  // Keyed by location id, not just a name string - two different hubs can
+  // share a display name (see order.service.ts's getOrderFilterOptions).
+  origins: { id: string; name: string }[];
+  destinations: { id: string; name: string }[];
   riders: string[];
 }
 
