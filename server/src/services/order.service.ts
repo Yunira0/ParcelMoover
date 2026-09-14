@@ -2107,8 +2107,13 @@ export function buildOrdersWhere(
 }
 
 export interface OrderFilterOptions {
-  origins: string[];
-  destinations: string[];
+  // Keyed by location id, not just a name string: two different hubs (e.g. a
+  // top-level "Imadol" hub and an unrelated "Imadol" covered area filed under
+  // a different destination) can share a display name, and the list page
+  // needs to filter by the exact location the user picked, not by whichever
+  // same-named location the string happens to also match.
+  origins: { id: string; name: string }[];
+  destinations: { id: string; name: string }[];
   riders: string[];
 }
 
@@ -2119,6 +2124,14 @@ export interface OrderFilterOptions {
 // status history+users+roles) that the page previously reused here just to
 // read three strings per row - doubling the backend cost of every non-"All"
 // tab view for no reason.
+//
+// Each dimension runs its own `distinct` query on its FK column (all four are
+// indexed) rather than pulling one arbitrary `take: 200` slice of parcels and
+// hoping every hub/rider shows up in it: in a system with more than ~200
+// in-scope parcels, an unordered sample silently drops whichever origins,
+// destinations or riders didn't happen to land in that slice - previously
+// hiding valid filter options (and any hub with only a handful of orders)
+// with no indication anything was missing.
 export async function getOrderFilterOptions(
   actor: OrderActor,
   status?: ListOrdersQuery["status"],
@@ -2126,43 +2139,67 @@ export async function getOrderFilterOptions(
   const { vendorId, vendorIds, riderId, branchLocationIds } = await getActorScope(actor);
   const where = buildOrdersWhere({ vendorId, vendorIds, riderId, branchLocationIds }, status?.length ? { status } : {});
 
-  const rows = await prisma.parcels.findMany({
-    where,
-    select: {
-      locations_parcels_origin_location_idTolocations: { select: { name: true } },
-      locations_parcels_destination_location_idTolocations: { select: { name: true } },
-      parties_parcels_sender_idToparties: { select: { address: true } },
-      parties_parcels_receiver_idToparties: { select: { address: true } },
-      riders_parcels_delivery_rider_idToriders: { select: { name: true } },
-      riders_parcels_pickup_rider_idToriders: { select: { name: true } },
-    },
-    take: 200,
-  });
+  const [originRows, destinationRows, deliveryRiderRows, pickupRiderRows] = await Promise.all([
+    prisma.parcels.findMany({
+      where,
+      distinct: ["origin_location_id"],
+      select: {
+        origin_location_id: true,
+        locations_parcels_origin_location_idTolocations: { select: { name: true } },
+      },
+    }),
+    prisma.parcels.findMany({
+      where,
+      distinct: ["destination_location_id"],
+      select: {
+        destination_location_id: true,
+        locations_parcels_destination_location_idTolocations: { select: { name: true } },
+      },
+    }),
+    prisma.parcels.findMany({
+      where: { ...where, delivery_rider_id: { not: null } },
+      distinct: ["delivery_rider_id"],
+      select: { riders_parcels_delivery_rider_idToriders: { select: { name: true } } },
+    }),
+    prisma.parcels.findMany({
+      where: { ...where, pickup_rider_id: { not: null } },
+      distinct: ["pickup_rider_id"],
+      select: { riders_parcels_pickup_rider_idToriders: { select: { name: true } } },
+    }),
+  ]);
 
-  const origins = new Set<string>();
-  const destinations = new Set<string>();
+  // Keyed by id (a Map, not a Set of names) so two locations that happen to
+  // share a display name still surface as two distinct, individually
+  // filterable options.
+  const origins = new Map<string, string>();
+  for (const row of originRows) {
+    const name = row.locations_parcels_origin_location_idTolocations?.name;
+    // A legacy/free-text order with no linked origin location has nothing to
+    // filter by here (there's no id) - excluded rather than shown unusable.
+    if (row.origin_location_id && name) origins.set(row.origin_location_id, name);
+  }
+
+  const destinations = new Map<string, string>();
+  for (const row of destinationRows) {
+    const name = row.locations_parcels_destination_location_idTolocations?.name;
+    if (row.destination_location_id && name) destinations.set(row.destination_location_id, name);
+  }
+
+  // Same "who's this filter for" duality as mapOrder's rider column: a
+  // delivery rider and a pickup-only rider are both valid filter values.
   const riders = new Set<string>();
-  for (const row of rows) {
-    const origin =
-      row.locations_parcels_origin_location_idTolocations?.name ||
-      row.parties_parcels_sender_idToparties.address ||
-      "";
-    const destination =
-      row.locations_parcels_destination_location_idTolocations?.name ||
-      row.parties_parcels_receiver_idToparties.address ||
-      "";
-    const rider =
-      row.riders_parcels_delivery_rider_idToriders?.name ||
-      row.riders_parcels_pickup_rider_idToriders?.name ||
-      "";
-    if (origin) origins.add(origin);
-    if (destination) destinations.add(destination);
-    if (rider) riders.add(rider);
+  for (const row of deliveryRiderRows) {
+    const name = row.riders_parcels_delivery_rider_idToriders?.name;
+    if (name) riders.add(name);
+  }
+  for (const row of pickupRiderRows) {
+    const name = row.riders_parcels_pickup_rider_idToriders?.name;
+    if (name) riders.add(name);
   }
 
   return {
-    origins: Array.from(origins),
-    destinations: Array.from(destinations),
+    origins: Array.from(origins, ([id, name]) => ({ id, name })),
+    destinations: Array.from(destinations, ([id, name]) => ({ id, name })),
     riders: Array.from(riders),
   };
 }

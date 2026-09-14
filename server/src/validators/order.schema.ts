@@ -256,6 +256,13 @@ export const listOrdersQuerySchema = paginationQuerySchema.extend({
   salesUserId: optionalUuidSchema,
   // Narrows the list to parcels carried by one delivery rider.
   deliveryRiderId: optionalUuidSchema,
+  // Origin/destination hub filters from the orders list page. Single-value,
+  // matching the dropdown's single-select UI; the service already supports a
+  // multi-value form (originLocationIds/destinationLocationIds) for internal
+  // branch scoping, which the controller feeds this single id into as a
+  // one-element array rather than duplicating that AND-condition logic here.
+  originLocationId: optionalUuidSchema,
+  destinationLocationId: optionalUuidSchema,
   // Keyset pagination: opaque cursor + walk direction. A malformed cursor is
   // treated as "no cursor" by the service, so only the length is bounded here.
   cursor: z.string().max(400).optional(),
@@ -303,6 +310,8 @@ export const orderCountByStatusQuerySchema = z.object({
   salesUserId: listOrdersQuerySchema.shape.salesUserId,
   search: listOrdersQuerySchema.shape.search,
   deliveryRiderId: listOrdersQuerySchema.shape.deliveryRiderId,
+  originLocationId: listOrdersQuerySchema.shape.originLocationId,
+  destinationLocationId: listOrdersQuerySchema.shape.destinationLocationId,
   deliveredToday: listOrdersQuerySchema.shape.deliveredToday,
   dateField: listOrdersQuerySchema.shape.dateField,
   dateFrom: listOrdersQuerySchema.shape.dateFrom,

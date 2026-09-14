@@ -255,6 +255,25 @@ export async function listOrdersController(req: Request, res: Response) {
       salesUserId = source.salesUserId;
     }
 
+    // Orders list page's Origin/Destination Hub filters. Single ids from the
+    // client, fed into the service's existing multi-value fields below so a
+    // second AND-condition branch doesn't need to exist just for this.
+    let originLocationId: string | undefined;
+    if (source.originLocationId !== undefined) {
+      if (typeof source.originLocationId !== "string" || !UUID_REGEX.test(source.originLocationId)) {
+        return res.status(400).json({ success: false, message: "originLocationId must be a valid uuid" });
+      }
+      originLocationId = source.originLocationId;
+    }
+
+    let destinationLocationId: string | undefined;
+    if (source.destinationLocationId !== undefined) {
+      if (typeof source.destinationLocationId !== "string" || !UUID_REGEX.test(source.destinationLocationId)) {
+        return res.status(400).json({ success: false, message: "destinationLocationId must be a valid uuid" });
+      }
+      destinationLocationId = source.destinationLocationId;
+    }
+
     let page: number | undefined;
     let pageSize: number | undefined;
     if (source.page !== undefined) {
@@ -314,6 +333,8 @@ export async function listOrdersController(req: Request, res: Response) {
         ...(salesUserId ? { salesUserId } : {}),
         ...(search ? { search } : {}),
         ...(deliveryRiderId ? { deliveryRiderId } : {}),
+        ...(originLocationId ? { originLocationIds: [originLocationId] } : {}),
+        ...(destinationLocationId ? { destinationLocationIds: [destinationLocationId] } : {}),
         ...(page !== undefined ? { page } : {}),
         ...(pageSize !== undefined ? { pageSize } : {}),
         ...(cursor !== undefined ? { cursor } : {}),
@@ -392,9 +413,18 @@ export async function getOrderCountsByStatusController(req: Request, res: Respon
       });
     }
 
+    // The list's Origin/Destination Hub filters arrive as single ids (the
+    // dropdowns are single-select) but buildOrdersWhere only reads the
+    // service's multi-value fields - same conversion listOrdersController
+    // does, so the badges narrow in step with the table.
+    const { originLocationId, destinationLocationId, ...rest } = req.query as OrderCountsByStatusQuery;
     const data = await getOrderCountsByStatus(
       { id: req.user.id, roles: req.user.roles },
-      req.query as OrderCountsByStatusQuery,
+      {
+        ...rest,
+        ...(originLocationId ? { originLocationIds: [originLocationId] } : {}),
+        ...(destinationLocationId ? { destinationLocationIds: [destinationLocationId] } : {}),
+      },
     );
     return res.status(200).json({ success: true, data });
   } catch (error: any) {
