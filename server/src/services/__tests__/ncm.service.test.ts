@@ -108,6 +108,32 @@ describe("matchNcmBranch — regression: Jhiljhile must not match Hile/Bahundang
     expect(m?.name).toBe("DAMAK");
   });
 
+  it("Kerabari Morang must not match a covered area named Kerabari in Bandipur", () => {
+    const dest = { name: "KERABARI - MORANG", district: "MORANG" as string | null };
+    const branches: Branch[] = [
+      // NCM currently returns BANDIPUR before the correct branch, and its
+      // Tanahu coverage list happens to contain another KERABARI.
+      { name: "BANDIPUR", district: "TANAHU", covered_areas: "GURDUM, KERABARI, KHAREY" },
+      { name: "DAMAULI", district: "TANAHU", covered_areas: "BHATGAUN, KERABARI" },
+      { name: "BELBARI", district: "MORANG", covered_areas: "KANEPOKHARI" },
+      { name: "KERABARI MORANG", district: "MORANG", covered_areas: "BAGAICHHA, AMJUNGI" },
+    ];
+
+    const m = matchNcmBranch(dest as any, branches as any);
+    expect(m?.name).toBe("KERABARI MORANG");
+  });
+
+  it("covered-area fallback never crosses a known destination district", () => {
+    const dest = { name: "DUPLICATE PLACE - MORANG", district: "MORANG" as string | null };
+    const branches: Branch[] = [
+      { name: "WRONG", district: "TANAHU", covered_areas: "DUPLICATE PLACE" },
+      { name: "MORANG HUB A", district: "MORANG", covered_areas: "SOMEWHERE ELSE" },
+      { name: "MORANG HUB B", district: "MORANG", covered_areas: "ANOTHER PLACE" },
+    ];
+
+    expect(matchNcmBranch(dest as any, branches as any)).toBeUndefined();
+  });
+
   it("district exact single match wins even when name differs", () => {
     const dest = { name: "Random Village", district: "Kaski" as string | null };
     const branches: Branch[] = [{ name: "POKHARA", district: "Kaski" }];
