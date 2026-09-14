@@ -98,6 +98,8 @@ const ForceChangePasswordPage = lazy(() => import('./pages/ForceChangePasswordPa
 const KycApplicationPage = lazy(() => import('./pages/KycApplicationPage'))
 const SystemLogs = lazy(() => import('./pages/SystemLogs'))
 const ProfilePage = lazy(() => import('./pages/ProfilePage'))
+const RiderOverview = lazy(() => import('./pages/rider/RiderOverview'))
+const SalesOverview = lazy(() => import('./pages/sales/SalesOverview'))
 const BranchOverview = lazy(() => import('./pages/branch/BranchOverview'))
 const BranchSettlement = lazy(() => import('./pages/branch/BranchSettlement'))
 const BranchSettlementCreatePage = lazy(() => import('./pages/branch/BranchSettlementCreatePage'))
@@ -149,6 +151,20 @@ function App() {
           <Route
             path="/branches"
             element={<RoleGuard allowedRoles={['super_admin', 'admin']} adminPermission="BRANCH_TRACKING_READ"><BranchOverview /></RoleGuard>}
+          />
+          {/* Per-rider read of the orders list — the same ten roll-up figures
+              plus the waybill table as Vendor Overview, scoped by a rider
+              picker and date range instead of a vendor. */}
+          <Route
+            path="/rider-overview"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']}><RiderOverview /></RoleGuard>}
+          />
+          {/* Per-sales-rep read of the orders list — scoped to every vendor a
+              sales rep owns (vendors.sales_user_id) instead of one vendor.
+              Admin-side only: a sales actor uses their own SalesDashboard. */}
+          <Route
+            path="/sales-overview"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']}><SalesOverview /></RoleGuard>}
           />
           <Route
             path="/branches/settlement"
