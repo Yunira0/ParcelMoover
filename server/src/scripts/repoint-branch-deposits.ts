@@ -248,4 +248,9 @@ main()
     console.error(error);
     process.exitCode = 1;
   })
-  .finally(() => prisma.$disconnect());
+  .finally(async () => {
+    await prisma.$disconnect();
+    // The imported services open a Redis connection that would keep the
+    // process alive and stall the deploy's `&& node dist/index.js`.
+    process.exit(process.exitCode ?? 0);
+  });
