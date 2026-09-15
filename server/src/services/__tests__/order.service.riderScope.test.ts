@@ -381,14 +381,21 @@ describe("a force-revert out of dispatched undoes the location move too", () => 
 // was invisible to every branch-scoped admin (reported: an Imadol vendor's
 // exchange return showed for super_admin only).
 describe("the exchange-raised return starts at the delivering hub", () => {
+  // The auto-created return needs create/lookup mocks the shared makeMockTx
+  // doesn't carry, since no other transition writes a second parcel.
   function makeExchangeTx() {
-    const tx = makeMockTx() as ReturnType<typeof makeMockTx> & Record<string, unknown>;
-    tx.parcels.findFirst = vi.fn().mockResolvedValue(null);
-    tx.parcels.findUnique = vi.fn().mockResolvedValue(null);
-    tx.parcels.create = vi.fn().mockResolvedValue({ id: "return-1", tracking_id: "TRK-RET-1" });
-    tx.cod_collections.create = vi.fn();
-    tx.pickup_tasks.create = vi.fn();
-    return tx;
+    const base = makeMockTx();
+    return {
+      ...base,
+      parcels: {
+        ...base.parcels,
+        findFirst: vi.fn().mockResolvedValue(null),
+        findUnique: vi.fn().mockResolvedValue(null),
+        create: vi.fn().mockResolvedValue({ id: "return-1", tracking_id: "TRK-RET-1" }),
+      },
+      cod_collections: { ...base.cod_collections, create: vi.fn() },
+      pickup_tasks: { ...base.pickup_tasks, create: vi.fn() },
+    };
   }
 
   const exchangeParcel = (overrides: Record<string, unknown> = {}) =>
