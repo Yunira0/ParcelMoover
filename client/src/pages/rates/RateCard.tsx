@@ -44,6 +44,8 @@ interface Props {
   onChanged: () => Promise<void> | void;
   /** Origin picker and import toggle, shown in the panel header. */
   controls: React.ReactNode;
+  /** Left side of the panel header (the weight rules). */
+  leading?: React.ReactNode;
   /** When set, replaces the table (an open import). */
   importPanel?: React.ReactNode;
 }
@@ -66,6 +68,7 @@ const RateCard: React.FC<Props> = ({
   canEditRates,
   onChanged,
   controls,
+  leading,
   importPanel,
 }) => {
   const [edits, setEdits] = useState<Record<string, RowEdit>>({});
@@ -325,14 +328,7 @@ const RateCard: React.FC<Props> = ({
   return (
     <section className="rates-panel">
       <header className="rates-panel-head">
-        <div className="rates-panel-title">
-          <h2>{isHeadOffice ? 'Per-destination rates' : `Rates from ${originName || 'this branch'}`}</h2>
-          <p>
-            {isHeadOffice
-              ? 'Each destination’s own rate for head-office orders. A vendor’s rate card can override it; return, extra-weight and free-weight charges come from Global Pricing.'
-              : 'The rate from this branch to each destination. A destination left blank can’t be ordered from this branch.'}
-          </p>
-        </div>
+        <div className="rates-panel-controls rates-panel-leading">{leading}</div>
         <div className="rates-panel-controls">{controls}</div>
       </header>
 

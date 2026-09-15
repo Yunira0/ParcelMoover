@@ -3,13 +3,14 @@ import { Navigate, useSearchParams } from 'react-router-dom';
 import { Upload, X } from 'lucide-react';
 import DeliveryRatesImport from './DeliveryRatesImport';
 import RateCard from './rates/RateCard';
+import WeightRules from './rates/WeightRules';
 import FormField from '../components/FormField';
 import PageHeader from '../components/PageHeader';
 import Banner from '../components/Banner';
 import Button from '../components/Button';
 import { listManagedLocations, type Destination } from '../services/locations.service';
 import { listDeliveryRates, type DeliveryRate } from '../services/deliveryRates.service';
-import { getCurrentUserLocationId, hasAdminPermission, isBranchWorkspaceUser } from '../utils/auth';
+import { getCurrentUserLocationId, getCurrentUserRoles, hasAdminPermission, isBranchWorkspaceUser } from '../utils/auth';
 import { apiErrorMessage } from '../utils/serverValidation';
 import './DeliveryRateSettings.css';
 
@@ -208,6 +209,8 @@ const DeliveryRateSettings: React.FC<Props> = ({ embedded = false }) => {
         canEditRates={isHeadOfficeView ? canEditHeadOffice : canConfigure}
         onChanged={reloadAll}
         controls={controls}
+        // Network-wide, so branch admins don't see them; only a super admin can save.
+        leading={isBranchWorkspace ? undefined : <WeightRules canEdit={getCurrentUserRoles().includes('super_admin')} />}
         importPanel={importPanel}
       />
     </div>
