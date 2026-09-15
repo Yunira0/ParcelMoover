@@ -53,11 +53,12 @@ const DeliveryRateSettings: React.FC<Props> = ({ embedded = false }) => {
 
   const headOffice = useMemo(() => destinations.find(isHeadOffice) ?? null, [destinations]);
 
-  // Origins are top-level destinations. A branch admin is pinned to their own
-  // hub whatever the URL says - the server 403s the rest, this just keeps the
-  // page from showing an error instead of their own rates.
+  // Origins are branches only - head office and the locations set up through
+  // Add Branch - never plain destinations, which don't ship parcels. A branch
+  // admin is pinned to their own hub whatever the URL says - the server 403s the
+  // rest, this just keeps the page from showing an error instead of their own rates.
   const originOptions = useMemo(() => {
-    const tops = destinations.filter((d) => !d.parentId && d.isActive);
+    const tops = destinations.filter((d) => !d.parentId && d.isActive && (d.isHub || isHeadOffice(d)));
     const pool = isBranchWorkspace && ownLocationId ? tops.filter((d) => d.id === ownLocationId) : tops;
     return [...pool]
       .sort((a, b) => {

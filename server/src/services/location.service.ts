@@ -112,8 +112,9 @@ export async function createLocation(input: UpsertLocationInput) {
       district: input.district?.trim() || null,
       city: input.city?.trim() || null,
       address_line: input.addressLine?.trim() || null,
-      // A destination defaults to a hub; a covered area never is one.
-      is_hub: parentId ? false : input.isHub ?? true,
+      // Only Add Branch (branch.service createOrPromoteBranch) makes a location
+      // a branch. A plain destination isn't one, and a covered area never is.
+      is_hub: parentId ? false : input.isHub ?? false,
       is_active: input.isActive ?? true,
       parent_id: parentId,
       // ncm_branch column is added in 20260830120000; keep writes tolerant before
@@ -282,7 +283,8 @@ export async function bulkImportLocations(rows: BulkImportDestination[]) {
             province: row.province?.trim() || null,
             city: (row.municipality ?? row.city)?.trim() || null,
             district: row.district?.trim() || null,
-            is_hub: true,
+            // An imported destination is not a branch; Add Branch promotes one.
+            is_hub: false,
             is_active: true,
             zone: row.zone || null,
             valley: row.valley || null,

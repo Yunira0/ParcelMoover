@@ -120,7 +120,8 @@ const DestinationsSettings: React.FC = () => {
       if (editDestId) {
         await updateLocation(editDestId, payload);
       } else {
-        await createLocation({ ...payload, isHub: true });
+        // A destination isn't a branch - only Add Branch (Branch Overview) makes one.
+        await createLocation(payload);
         // The list is newest-first, so jump to page 1 where the new destination shows.
         setPage(1);
       }
@@ -324,6 +325,7 @@ const DestinationsSettings: React.FC = () => {
                   <MapPin size={16} />
                   <span>{dest.name}</span>
                   {dest.code && <span className="dest-code">{dest.code}</span>}
+                  {dest.isHub && <StatusChip tone="info">Branch</StatusChip>}
                 </div>
                 <div className="dest-card-actions">
                   <button
