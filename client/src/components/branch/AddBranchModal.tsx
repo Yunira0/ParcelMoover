@@ -5,13 +5,15 @@ import Button from '../Button';
 import SearchableSelect from '../SearchableSelect';
 import MultiSearchableSelect from '../MultiSearchableSelect';
 import { listManagedLocations, type ManagedLocation } from '../../services/locations.service';
-import { createBranch, listBranches, type Branch } from '../../services/branchTracking.service';
+import { createBranch, listBranches, updateBranch, type Branch } from '../../services/branchTracking.service';
 import { apiErrorMessage } from '../../utils/serverValidation';
 
 interface AddBranchModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
+  /** Edit this existing branch instead of setting a new one. */
+  branch?: Branch | null;
 }
 
 // Nothing gets created here. A branch is an existing destination flagged
@@ -21,7 +23,8 @@ interface AddBranchModalProps {
 // (Plain-destination coverage - re-parenting a non-hub area under a branch -
 // is handled on the Destinations settings page, not here.) Super_admin only
 // (gated by caller).
-const AddBranchModal: React.FC<AddBranchModalProps> = ({ isOpen, onClose, onSuccess }) => {
+const AddBranchModal: React.FC<AddBranchModalProps> = ({ isOpen, onClose, onSuccess, branch }) => {
+  const isEdit = Boolean(branch);
   const [locations, setLocations] = useState<ManagedLocation[]>([]);
   const [loadingLocations, setLoadingLocations] = useState(false);
   const [branches, setBranches] = useState<Branch[]>([]);
@@ -50,7 +53,11 @@ const AddBranchModal: React.FC<AddBranchModalProps> = ({ isOpen, onClose, onSucc
       .catch(() => setError('Failed to load destinations.'))
       .finally(() => setLoadingLocations(false));
     listBranches().then(setBranches).catch(() => {});
-  }, [isOpen]);
+    setBranchId(branch?.id ?? '');
+    setVirtualBranchIds(branch?.virtualBranches.map((v) => v.id) ?? []);
+    setCommissionPerParcel(branch ? String(branch.commissionPerParcel) : '');
+    setError('');
+  }, [isOpen, branch]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -95,11 +102,9 @@ const AddBranchModal: React.FC<AddBranchModalProps> = ({ isOpen, onClose, onSucc
     setSaving(true);
     setError('');
     try {
-      await createBranch({
-        locationId: branchId,
-        virtualBranchIds,
-        commissionPerParcel: Number(commissionPerParcel || 0),
-      });
+      const commission = Number(commissionPerParcel || 0);
+      if (isEdit) await updateBranch(branchId, { virtualBranchIds, commissionPerParcel: commission });
+      else await createBranch({ locationId: branchId, virtualBranchIds, commissionPerParcel: commission });
 
       reset();
       await onSuccess();
@@ -111,16 +116,26 @@ const AddBranchModal: React.FC<AddBranchModalProps> = ({ isOpen, onClose, onSucc
     }
   };
 
-  const branchOptions = locations.map((l) => ({ id: l.id, label: l.name, description: l.district ?? undefined }));
-  const virtualBranchOptions = branches
-    .filter((b) => b.id !== branchId)
-    .map((b) => ({ id: b.id, label: b.name, description: b.district ?? undefined }));
+  // A new branch is picked from destinations that aren't branches yet; an edit
+  // shows just the branch being edited.
+  const branchOptions = locations.filter((l) => (isEdit ? l.id === branchId : !branches.some((b) => b.id === l.id))).map((l) => ({ id: l.id, label: l.name, description: l.district ?? undefined }));
+  // Any active top-level destination can be added. One the branch already
+  // covers stays listed even if since deactivated or nested, so it shows (and
+  // can be removed) in the selection.
+  const linkedIds = new Set(branch?.virtualBranches.map((v) => v.id) ?? []);
+  const virtualBranchOptions = locations
+    .filter((l) => l.id !== branchId && (linkedIds.has(l.id) || (!l.parentId && l.isActive)))
+    .map((l) => ({
+      id: l.id,
+      label: l.name,
+      description: l.isHub ? 'Branch' : l.district ?? undefined,
+    }));
 
   return (
     <div className="modal-overlay" onClick={() => !saving && onClose()}>
       <div ref={dialogRef} className="modal-content" role="dialog" aria-modal="true" aria-labelledby="add-branch-title" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <h2 id="add-branch-title">New Branch</h2>
+          <h2 id="add-branch-title">{isEdit ? 'Edit Branch' : 'New Branch'}</h2>
           <Button variant="ghost" size="icon" className="modal-close-btn" onClick={onClose} type="button" aria-label="Close new branch dialog">
             &times;
           </Button>
@@ -135,11 +150,13 @@ const AddBranchModal: React.FC<AddBranchModalProps> = ({ isOpen, onClose, onSucc
               placeholder={loadingLocations ? 'Loading destinations…' : 'Select an existing destination'}
               searchPlaceholder="Search destinations…"
               emptyMessage="No destinations found."
-              disabled={loadingLocations}
+              disabled={loadingLocations || isEdit}
               ariaLabel="Branch destination"
             />
             <small className="form-hint">
-              No destination is created here — pick one that already exists to set it as a branch.
+              {isEdit
+                ? 'The branch itself can’t be changed here - set a different destination as a new branch instead.'
+                : 'No destination is created here — pick one that already exists to set it as a branch.'}
             </small>
           </div>
 
@@ -149,16 +166,16 @@ const AddBranchModal: React.FC<AddBranchModalProps> = ({ isOpen, onClose, onSucc
               options={virtualBranchOptions}
               value={virtualBranchIds}
               onChange={setVirtualBranchIds}
-              placeholder="Select existing branches"
-              searchPlaceholder="Search branches…"
-              emptyMessage="No other branches yet."
+              placeholder="Select existing destinations"
+              searchPlaceholder="Search destinations…"
+              emptyMessage="No other destinations yet."
               disabled={!branchId}
               ariaLabel="Virtual branches"
             />
             <small className="form-hint">
-              Other existing branches to also treat as covered by this one, for manifest routing
-              and settlements. Each keeps running as its own independent branch — this doesn't
-              change its destination, its routing, or anything on the client/vendor side.
+              Existing destinations to also treat as covered by this one, for manifest routing
+              and settlements. Each keeps its own setup — this doesn't move it, change its
+              routing, or anything on the client/vendor side.
             </small>
           </div>
 
@@ -176,7 +193,7 @@ const AddBranchModal: React.FC<AddBranchModalProps> = ({ isOpen, onClose, onSucc
               Cancel
             </Button>
             <Button variant="primary" type="submit" disabled={saving || !branchId}>
-              {saving ? 'Saving…' : 'Set as Branch'}
+              {saving ? 'Saving…' : isEdit ? 'Save changes' : 'Set as Branch'}
             </Button>
           </div>
         </form>

@@ -1,6 +1,9 @@
 import { z } from "zod";
+import { uuidSchema } from "./common";
 
-const uuid = z.string().uuid();
+// Not z.string().uuid(): Zod 4's is strict about the RFC version digit and
+// rejects ids Postgres accepts (e.g. seeded 11111111-0000-0000-0000-...).
+const uuid = uuidSchema;
 const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD");
 
 export const BRANCH_METRIC_KEYS = [
@@ -37,6 +40,9 @@ export const createBranchSchema = z.object({
   virtualBranchIds: z.array(uuid).max(50).default([]),
   commissionPerParcel: z.coerce.number().min(0).max(1_000_000),
 });
+
+// Editing a branch replaces its virtual-branch set and commission.
+export const updateBranchSchema = createBranchSchema.pick({ virtualBranchIds: true, commissionPerParcel: true });
 
 export const branchSettlementQuerySchema = z.object({
   fromBranchId: uuid.optional(),
@@ -98,6 +104,7 @@ export const branchBillingReviewSchema = z.object({
 
 export type BranchTrackingQuery = z.infer<typeof branchTrackingQuerySchema>;
 export type CreateBranchInput = z.infer<typeof createBranchSchema>;
+export type UpdateBranchInput = z.infer<typeof updateBranchSchema>;
 export type BranchSettlementQuery = z.infer<typeof branchSettlementQuerySchema>;
 export type CreateBranchSettlementInput = z.infer<typeof createBranchSettlementSchema>;
 export type PayBranchSettlementInput = z.infer<typeof payBranchSettlementSchema>;
