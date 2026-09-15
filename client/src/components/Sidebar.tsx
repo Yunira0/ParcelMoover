@@ -400,7 +400,7 @@ const BranchSidebar: React.FC = () => {
         <SidebarSection label="Management" />
         <SidebarItem to="/vendors" icon={Store} label="Vendor Management" />
         <SidebarItem to="/riders" icon={Bike} label="Rider Management" />
-        <SidebarItem to="/settings/delivery-rates" icon={Route} label="Route Rates" />
+        <SidebarItem to="/settings/delivery-rates" icon={Route} label="Rates" />
 
         <SidebarSection label="Finance" />
         <SidebarItem to="/branches/settlement" icon={Banknote} label="Branch COD" />
@@ -446,11 +446,11 @@ const AdminSidebar: React.FC<{ isSuperAdmin: boolean }> = ({ isSuperAdmin }) => 
         <SidebarItem to="/admin" icon={UserCheck} label="Admin Management" />
         <SidebarItem to="/vendors" icon={Store} label="Vendor Management" />
         <SidebarItem to="/riders" icon={Bike} label="Rider Management" />
+        {/* Rates are a tab of Destination Management. The standalone Rates
+            entry survives only in the branch workspace menu above, since
+            branch admins can't open /settings. */}
         {(isSuperAdmin || hasAdminPermission('SETTINGS_ACCESS')) && (
           <SidebarItem to="/settings" icon={MapPin} label="Destination Management" />
-        )}
-        {(isSuperAdmin || hasAdminPermission('SETTINGS_ACCESS')) && (
-          <SidebarItem to="/settings/delivery-rates" icon={Route} label="Route Rates" />
         )}
         {/* COD Management used to sit here. It was the rider and vendor
             settlement lists behind a toggle, which is exactly what Rider COD

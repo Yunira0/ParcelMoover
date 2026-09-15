@@ -11,9 +11,30 @@ import {
   deleteLocation,
   type Destination,
 } from '../../services/locations.service';
+import { apiErrorMessage } from '../../utils/serverValidation';
 import './DestinationsSettings.css';
 
 const emptyDest = { name: '', code: '', province: '', district: '', municipality: '' };
+
+// The empty "Not set" option comes from FormField's placeholder.
+const ZONE_OPTIONS = [
+  { value: 'major_cities', label: 'Major cities' },
+  { value: 'urban_areas', label: 'Urban areas' },
+  { value: 'remote_areas', label: 'Remote areas' },
+  { value: 'inside_valley', label: 'Inside valley' },
+];
+
+// A single control for the combined valley + ring-road classification, since
+// ring road only ever means something alongside "inside valley".
+// "inside_outside_ring" is UI-only: it writes valley="inside" + ringRoad="outside".
+const VALLEY_RING_ROAD_OPTIONS = [
+  { value: 'inside', label: 'Inside valley' },
+  { value: 'inside_outside_ring', label: 'Inside valley — outside ring road' },
+  { value: 'outside', label: 'Outside valley' },
+];
+
+const toValleyRingRoadValue = (dest: Destination) =>
+  dest.valley === 'inside' && dest.ringRoad === 'outside' ? 'inside_outside_ring' : dest.valley || '';
 
 const PAGE_SIZE = 10;
 
@@ -42,6 +63,7 @@ const DestinationsSettings: React.FC = () => {
   // Inline area edit: id being edited + working name
   const [editArea, setEditArea] = useState<{ id: string; name: string } | null>(null);
   const [savingEdit, setSavingEdit] = useState(false);
+  const [savingClassId, setSavingClassId] = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -149,6 +171,27 @@ const DestinationsSettings: React.FC = () => {
       setError(err.response?.data?.message || 'Failed to rename area.');
     } finally {
       setSavingEdit(false);
+    }
+  };
+
+  // Zone and valley price every origin's orders (zone and flat vendor models),
+  // so they live with the destination rather than on any one origin's rates.
+  // Saved the moment a select changes; the list is updated optimistically and
+  // put back if the write fails.
+  const saveClassification = async (
+    dest: Destination,
+    patch: { zone?: string | null; valley?: string | null; ringRoad?: string | null },
+  ) => {
+    setError('');
+    setSavingClassId(dest.id);
+    setDestinations((prev) => prev.map((d) => (d.id === dest.id ? { ...d, ...patch } : d)));
+    try {
+      await updateLocation(dest.id, patch);
+    } catch (err) {
+      setDestinations((prev) => prev.map((d) => (d.id === dest.id ? dest : d)));
+      setError(apiErrorMessage(err, `Failed to update ${dest.name}.`));
+    } finally {
+      setSavingClassId(null);
     }
   };
 
@@ -333,6 +376,34 @@ const DestinationsSettings: React.FC = () => {
                     </>
                   )}
                 </div>
+              </div>
+
+              <div className="dest-classification">
+                <FormField
+                  label="Zone"
+                  type="select"
+                  value={dest.zone || ''}
+                  onChange={(v) => saveClassification(dest, { zone: v || null })}
+                  placeholder="Not set"
+                  options={ZONE_OPTIONS}
+                  disabled={savingClassId === dest.id}
+                />
+                <FormField
+                  label="Valley"
+                  type="select"
+                  value={toValleyRingRoadValue(dest)}
+                  onChange={(v) =>
+                    saveClassification(
+                      dest,
+                      v === 'inside_outside_ring'
+                        ? { valley: 'inside', ringRoad: 'outside' }
+                        : { valley: v || null, ringRoad: null },
+                    )
+                  }
+                  placeholder="Not set"
+                  options={VALLEY_RING_ROAD_OPTIONS}
+                  disabled={savingClassId === dest.id}
+                />
               </div>
 
               <div className="dest-areas">

@@ -1,0 +1,186 @@
+/* The rates panel: a surface card holding a header (title + origin controls),
+   a search toolbar, the shared <Table>, and pagination. Same panel treatment as
+   the accounting screens, so the table sits inside the card rather than as a
+   box within a box. */
+
+.rates-panel {
+  background: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-modal);
+  overflow: hidden;
+}
+
+.rates-panel-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  padding: var(--space-4);
+  border-bottom: 1px solid var(--color-border-default);
+}
+
+.rates-panel-title {
+  flex: 1 1 320px;
+  min-width: 0;
+}
+
+.rates-panel-title h2 {
+  margin: 0;
+  color: var(--color-text-default);
+  font-family: var(--typography-font-family-default);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semi-bold);
+  line-height: var(--line-height-md);
+}
+
+.rates-panel-title p {
+  margin: var(--space-1) 0 0;
+  max-width: 640px;
+  color: var(--color-text-caption);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-sm);
+}
+
+.rates-panel-controls {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.rates-panel-controls .form-group {
+  width: 280px;
+}
+
+.rates-panel-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-border-default);
+}
+
+.rates-panel-toolbar .search-field {
+  max-width: 420px;
+}
+
+.rates-panel-status {
+  margin-left: auto;
+  color: var(--color-text-caption);
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+}
+
+.rates-panel-banner {
+  padding: var(--space-3) var(--space-4) 0;
+}
+
+.rates-panel-body {
+  padding: var(--space-4);
+}
+
+.rates-panel-footer {
+  padding: var(--space-2) var(--space-4);
+  border-top: 1px solid var(--color-border-default);
+}
+
+/* The table is part of the panel, not a bordered box inside it, and its outer
+   cells line up with the panel header and search above. */
+.rates-panel .table-container {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+
+.rates-panel .custom-table th:first-child,
+.rates-panel .custom-table td:first-child {
+  padding-left: var(--space-4);
+}
+
+.rates-panel .custom-table th:last-child,
+.rates-panel .custom-table td:last-child {
+  padding-right: var(--space-4);
+}
+
+.rates-panel-destination {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-0-5);
+  min-width: 180px;
+}
+
+.rates-panel-destination-name {
+  color: var(--color-text-default);
+  font-weight: var(--font-weight-semi-bold);
+}
+
+.rates-panel-destination-meta {
+  color: var(--color-text-caption);
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-xs);
+}
+
+/* Each row's inputs are labelled for screen readers (the header names the
+   column visually), so the visible label is clipped rather than removed. */
+.rates-panel-input label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.rates-panel-input {
+  position: relative;
+  min-width: 140px;
+}
+
+.rates-panel-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-1);
+}
+
+/* A covered area with a route rate of its own, set in under its destination. */
+.rates-panel .custom-table .rates-panel-row--area td:first-child {
+  padding-left: var(--space-10);
+}
+
+@media (max-width: 640px) {
+  .rates-panel-head,
+  .rates-panel-toolbar {
+    padding-left: var(--space-3);
+    padding-right: var(--space-3);
+  }
+
+  .rates-panel-controls,
+  .rates-panel-controls .form-group,
+  .rates-panel-controls .btn {
+    width: 100%;
+  }
+
+  .rates-panel-toolbar {
+    flex-wrap: wrap;
+  }
+
+  .rates-panel-toolbar .search-field {
+    max-width: none;
+  }
+
+  .rates-panel-status {
+    margin-left: 0;
+  }
+
+  /* Narrower cells so less of the table has to scroll sideways. */
+  .rates-panel-destination {
+    min-width: 120px;
+  }
+
+  .rates-panel-input {
+    min-width: 96px;
+  }
+}

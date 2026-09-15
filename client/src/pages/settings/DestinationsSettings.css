@@ -111,6 +111,20 @@
   cursor: pointer;
 }
 
+/* Zone + valley side, between a destination's title and its covered areas.
+   Two fixed-width columns on wide screens, one full-width column on phones. */
+.dest-classification {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 260px));
+  gap: var(--space-3);
+}
+
+@media (max-width: 640px) {
+  .dest-classification {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .dest-areas {
   display: flex;
   flex-wrap: wrap;

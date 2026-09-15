@@ -1248,7 +1248,7 @@ const VendorFormPage: React.FC = () => {
                 <button
                   type="button"
                   className="vfp-rate-config-link"
-                  onClick={() => window.open('/settings?tab=rates', '_blank', 'noopener')}
+                  onClick={() => window.open('/settings?tab=pricing', '_blank', 'noopener')}
                 >
                   <ExternalLink size={14} />
                   Edit default flat rates in Settings

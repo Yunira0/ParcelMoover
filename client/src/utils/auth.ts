@@ -96,9 +96,9 @@ export function isBranchWorkspacePathAllowed(pathname: string): boolean {
     // Includes /branches/settlement/new — a branch creates its own COD statement.
     pathname.startsWith('/branches/settlement/') ||
     pathname === '/branches/billing' ||
-    // Route Rates, scoped server-side to routes originating from the
-    // branch's own hub; only reachable at all if a super_admin also
-    // granted this admin SETTINGS_ACCESS.
+    // Rates, pinned to the branch's own hub as origin. No SETTINGS_ACCESS
+    // needed: the route's RoleGuard lets a branch workspace through, and the
+    // server confines reads and writes to routes out of their own hub.
     pathname === '/settings/delivery-rates'
   );
 }

@@ -164,10 +164,19 @@ export async function upsertDeliveryRate(actor: Actor, input: UpsertDeliveryRate
   return rate;
 }
 
-export async function listDeliveryRates(actor: Actor) {
+export async function listDeliveryRates(actor: Actor, filters?: { originLocationId?: string }) {
   const originScope = await getBranchOriginScope(actor);
+  const requested = filters?.originLocationId;
+  // The rates page asks for one origin at a time, but a branch-scoped admin's
+  // own scope may only ever narrow that - never widen it. Rejected outright
+  // rather than quietly substituting their own origin: returning one branch's
+  // rows under a heading naming another branch is the worse failure.
+  if (originScope && requested && requested !== originScope) {
+    throw new AppError(403, "You can only view delivery rates originating from your own branch");
+  }
+  const effectiveOrigin = originScope ?? requested;
   const rates = await prisma.delivery_rates.findMany({
-    where: originScope ? { origin_location_id: originScope } : {},
+    where: effectiveOrigin ? { origin_location_id: effectiveOrigin } : {},
     include: {
       locations_delivery_rates_origin_location_idTolocations: true,
       locations_delivery_rates_destination_location_idTolocations: true,

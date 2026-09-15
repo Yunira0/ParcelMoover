@@ -104,6 +104,38 @@ describe("listDeliveryRates", () => {
     const args = mockedPrisma.delivery_rates.findMany.mock.calls[0]![0];
     expect(args.where).toEqual({});
   });
+
+  // The rates page shows one origin at a time, so the caller names it - but
+  // that may only narrow an unscoped actor, never widen a scoped one.
+  it("narrows an unscoped actor to the requested origin", async () => {
+    mockedPrisma.delivery_rates.findMany.mockResolvedValue([]);
+
+    await listDeliveryRates({ id: "root-1", roles: ["super_admin"] }, { originLocationId: OTHER_HUB_ID });
+
+    const args = mockedPrisma.delivery_rates.findMany.mock.calls[0]![0];
+    expect(args.where).toEqual({ origin_location_id: OTHER_HUB_ID });
+  });
+
+  it("allows a branch admin to request their own hub explicitly", async () => {
+    mockScopedAdmin();
+    mockedPrisma.delivery_rates.findMany.mockResolvedValue([]);
+
+    await listDeliveryRates(SCOPED_ADMIN, { originLocationId: HUB_ID });
+
+    const args = mockedPrisma.delivery_rates.findMany.mock.calls[0]![0];
+    expect(args.where).toEqual({ origin_location_id: HUB_ID });
+  });
+
+  // Rejected rather than silently substituting their own hub: returning one
+  // branch's rows under a heading naming another branch is the worse failure.
+  it("403s a branch admin asking for another hub's origin", async () => {
+    mockScopedAdmin();
+
+    await expect(
+      listDeliveryRates(SCOPED_ADMIN, { originLocationId: OTHER_HUB_ID }),
+    ).rejects.toMatchObject({ statusCode: 403 });
+    expect(mockedPrisma.delivery_rates.findMany).not.toHaveBeenCalled();
+  });
 });
 
 describe("upsertDeliveryRate", () => {

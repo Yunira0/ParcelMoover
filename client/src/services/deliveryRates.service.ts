@@ -35,8 +35,15 @@ export interface DeliveryQuote {
   extraWeightPercent: number;
 }
 
-export const listDeliveryRates = async (): Promise<{ success: boolean; data: DeliveryRate[] }> => {
-  const response = await api.get('/delivery-rates');
+/** `originLocationId` narrows to one origin's routes. A branch-scoped admin is
+ *  already confined to their own hub server-side, and asking for another one
+ *  is a 403 rather than a silent substitution. */
+export const listDeliveryRates = async (
+  originLocationId?: string,
+): Promise<{ success: boolean; data: DeliveryRate[] }> => {
+  const response = await api.get('/delivery-rates', {
+    params: originLocationId ? { originLocationId } : undefined,
+  });
   return response.data;
 };
 
