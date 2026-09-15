@@ -257,8 +257,6 @@ const VendorFormPage: React.FC = () => {
   // the Sales field is prefilled with their own name and locked.
   const roles = getCurrentUserRoles();
   const isSalesUser = roles.includes('sales') && !roles.includes('admin') && !roles.includes('super_admin');
-  // Only super admins can open the rate-config screen, so the shortcut is theirs.
-  const isSuperAdmin = roles.includes('super_admin');
   // A plain admin's vendors always land in that admin's own hub; the hub
   // field stays free for super_admin (and sales, who have no admin hub).
   const { hubLocked, isPlainAdmin } = useHubLock();
