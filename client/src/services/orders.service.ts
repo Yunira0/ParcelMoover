@@ -152,10 +152,6 @@ export interface ListOrdersParams {
   salesUserId?: string;
   /** Narrows the list to parcels carried by one delivery rider. */
   deliveryRiderId?: string;
-  /** Rider Overview's filter: parcels this rider has ever handled, pickup or
-   *  delivery leg — broader than deliveryRiderId, which is only the current
-   *  delivery leg. */
-  riderId?: string;
   /** Origin/destination hub filters, by location id - matches OrderFilterOptions'
    *  origins/destinations, which are keyed by id for exactly this reason. */
   originLocationId?: string;
@@ -356,7 +352,6 @@ export const getOrders = async (params?: ListOrdersParams, signal?: AbortSignal)
   if (params?.salesUserId) query.salesUserId = params.salesUserId;
   if (params?.search) query.search = params.search;
   if (params?.deliveryRiderId) query.deliveryRiderId = params.deliveryRiderId;
-  if (params?.riderId) query.riderId = params.riderId;
   if (params?.originLocationId) query.originLocationId = params.originLocationId;
   if (params?.destinationLocationId) query.destinationLocationId = params.destinationLocationId;
   if (params?.page !== undefined) query.page = String(params.page);

@@ -142,10 +142,6 @@ export interface ListOrdersQuery {
   salesUserId?: string;
   // Narrows the list to parcels carried by one delivery rider.
   deliveryRiderId?: string;
-  // Rider Overview's filter: parcels this rider has ever handled, pickup or
-  // delivery leg (Rider Management's per-rider totals use the same rule) —
-  // broader than deliveryRiderId, which is only the current delivery leg.
-  riderId?: string;
   // Display-only page hint echoed back in meta; the actual position comes
   // from the keyset cursor, never from a row offset.
   page?: number;

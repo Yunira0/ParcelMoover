@@ -42,8 +42,6 @@ import {
   updateOrderDetailsController,
   updateOrderStatusController,
   merchantOverviewController,
-  salesOverviewController,
-  riderOverviewController,
 } from "../controllers/order.controller";
 import { csrfProtection } from "../middlewares/csrf.middleware";
 import { createRedisRateLimitStore } from "../lib/rateLimitStore";
@@ -264,31 +262,6 @@ orderRouter.get(
   requireStaffPermission("DASHBOARD_ACCESS"),
   orderReadLimiter,
   merchantOverviewController,
-);
-
-// GET /orders/sales-overview — server-side aggregated stats for the Sales
-// Overview page. Admin-side only: a sales actor uses their own SalesDashboard,
-// so they're left off the role list entirely rather than trusted to send a
-// legitimate salesUserId.
-orderRouter.get(
-  "/sales-overview",
-  authMiddleware,
-  authorizeRoles("super_admin", "admin"),
-  requireStaffPermission("DASHBOARD_ACCESS"),
-  orderReadLimiter,
-  salesOverviewController,
-);
-
-// GET /orders/rider-overview — server-side aggregated stats for the Rider
-// Overview page. A rider actor sees only their own parcels (getRiderOverview
-// forces riderId to their own rider profile, ignoring the query param).
-orderRouter.get(
-  "/rider-overview",
-  authMiddleware,
-  authorizeRoles("super_admin", "admin", "rider"),
-  requireStaffPermission("DASHBOARD_ACCESS"),
-  orderReadLimiter,
-  riderOverviewController,
 );
 
 orderRouter.get(

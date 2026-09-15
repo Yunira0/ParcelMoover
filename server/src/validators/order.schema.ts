@@ -256,10 +256,6 @@ export const listOrdersQuerySchema = paginationQuerySchema.extend({
   salesUserId: optionalUuidSchema,
   // Narrows the list to parcels carried by one delivery rider.
   deliveryRiderId: optionalUuidSchema,
-  // Rider Overview's filter: parcels this rider has ever handled, pickup or
-  // delivery leg — broader than deliveryRiderId, which is only the current
-  // delivery leg.
-  riderId: optionalUuidSchema,
   // Origin/destination hub filters from the orders list page. Single-value,
   // matching the dropdown's single-select UI; the service already supports a
   // multi-value form (originLocationIds/destinationLocationIds) for internal
