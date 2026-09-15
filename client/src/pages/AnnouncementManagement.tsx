@@ -138,7 +138,6 @@ const AnnouncementManagement: React.FC = () => {
     <div className="announcement-management-container">
       <PageHeader
         title="ANNOUNCEMENTS"
-        subtitle="Manage the operational notices vendors see on their dashboard."
         actionLabel="Add announcement"
         actionIcon={<Plus size={16} />}
         onAction={() => navigate('/announcements/new')}

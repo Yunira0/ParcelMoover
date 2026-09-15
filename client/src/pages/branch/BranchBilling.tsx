@@ -272,7 +272,7 @@ const BranchBilling: React.FC = () => {
   const amountValue = payAmount ?? suggestedAmount;
 
   return <div className="vendor-finance-page">
-    <PageHeader title={isMasterWorkspace ? 'Branch Payments' : 'Pay Master Branch'} subtitle={isMasterWorkspace ? 'Verify COD remittances submitted by paying branches.' : 'Pay the master branch, attach the receipt, and track verification.'} />
+    <PageHeader title={isMasterWorkspace ? 'Branch Payments' : 'Pay Master Branch'} />
     <SegmentedTabs ariaLabel="Branch billing sections" value={activeTab} onChange={setActiveTab} options={tabs} />
     {error && <p className="vendor-finance-error">{error}</p>}
 

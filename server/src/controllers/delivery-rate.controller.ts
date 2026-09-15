@@ -9,10 +9,15 @@ import {
   setDeliveryRateActive,
   upsertDeliveryRate,
 } from "../services/delivery-rate.service";
+import type { ListDeliveryRatesQuery } from "../validators/delivery-rate.schema";
 
 export async function listDeliveryRatesController(req: Request, res: Response) {
   try {
-    const rates = await listDeliveryRates({ id: req.user!.id, roles: req.user!.roles });
+    const { originLocationId } = req.query as ListDeliveryRatesQuery;
+    const rates = await listDeliveryRates(
+      { id: req.user!.id, roles: req.user!.roles },
+      originLocationId ? { originLocationId } : undefined,
+    );
     return res.status(200).json({ success: true, data: rates });
   } catch (error: any) {
     return res.status(error.statusCode || 500).json({

@@ -262,13 +262,6 @@ const VendorManagement: React.FC = () => {
     <div className="vendor-management-container">
       <PageHeader
         title="VENDOR MANAGEMENT"
-        subtitle={
-          view === 'kyc'
-            ? 'Review and approve vendor onboarding applications.'
-            : view === 'volume-limit'
-              ? 'Set the daily parcel threshold that flags a vendor as high volume.'
-              : 'Oversee client accounts, delivery statistics, and financial tracking.'
-        }
         actionLabel={canCreate && view === 'vendors' ? 'Add new' : undefined}
         actionIcon={canCreate && view === 'vendors' ? <Plus size={16} /> : undefined}
         onAction={canCreate && view === 'vendors' ? () => navigate('/vendors/new') : undefined}

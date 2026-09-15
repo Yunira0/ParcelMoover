@@ -18,7 +18,7 @@ const NotAuthorized: React.FC = () => {
         padding: 'var(--space-6)',
       }}
     >
-      <ShieldAlert size={56} style={{ color: 'var(--color-text-danger, #dc2626)' }} />
+      <ShieldAlert size={56} style={{ color: 'var(--color-danger-text)' }} />
       <h1 style={{ margin: 0, fontSize: '1.4rem', color: 'var(--color-text-default)' }}>
         Not Authorized
       </h1>

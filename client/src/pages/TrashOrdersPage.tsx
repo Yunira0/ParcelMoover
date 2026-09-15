@@ -184,7 +184,6 @@ const TrashOrdersPage: React.FC = () => {
     <div className="trash-page">
       <PageHeader
         title="Trash"
-        subtitle="Deleted orders, plus anything cancelled for more than 7 days. Restoring puts an order back into the orders list."
       />
 
       <div className="trash-page-toolbar">

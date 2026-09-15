@@ -13,7 +13,6 @@ import SearchableSelectAsync from '../components/SearchableSelectAsync';
 import Button from '../components/Button';
 import SegmentedTabs from '../components/SegmentedTabs';
 import PageHeader from '../components/PageHeader';
-import TicketCategoryButton from '../components/TicketCategoryButton';
 import Pagination from '../components/Pagination';
 import QuickRemarkPopup from '../components/QuickRemarkPopup';
 import {
@@ -628,9 +627,7 @@ const DispatchOperations: React.FC = () => {
 
   return (
     <div className="dispatch-operations-container">
-      <PageHeader title="Local Dispatch" subtitle="Oversee and monitor your dispatch orders throughout the hub network.">
-        <TicketCategoryButton category="delivery" notificationType="dispatch" />
-      </PageHeader>
+      <PageHeader title="Local Dispatch" />
 
       <SegmentedTabs
         ariaLabel="Dispatch operation filters"

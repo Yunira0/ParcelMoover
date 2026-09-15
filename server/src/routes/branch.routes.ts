@@ -9,14 +9,14 @@ import { validate } from "../middlewares/validate.middleware";
 import { createRedisRateLimitStore } from "../lib/rateLimitStore";
 import { paymentProofUpload } from "../lib/billingUpload";
 import {
-  branchSettlementIdSchema, branchSettlementQuerySchema, branchTrackingQuerySchema, createBranchSchema,
+  branchSettlementIdSchema, branchSettlementQuerySchema, branchTrackingQuerySchema, createBranchSchema, updateBranchSchema,
   branchBillingPaymentSchema, branchBillingQuerySchema, branchBillingReviewSchema, createBranchSettlementSchema, payBranchSettlementSchema,
 } from "../validators/branch.schema";
 import {
   branchOrdersController, branchOrdersExportController, branchOverviewController, createBranchController,
   createBranchSettlementController, getBranchSettlementController, listBranchesController,
   getBranchBillingStatusController, listBranchBalancesController, listBranchPaymentsController, listBranchSettlementsController,
-  payBranchSettlementController, reviewBranchPaymentController, submitBranchPaymentController,
+  payBranchSettlementController, reviewBranchPaymentController, submitBranchPaymentController, updateBranchController,
 } from "../controllers/branch.controller";
 
 const router = Router();
@@ -45,6 +45,7 @@ router.get("/overview", branchReadLimiter, requireAdminPermission("BRANCH_TRACKI
 router.get("/orders", branchReadLimiter, requireBranchWorkflowAccess, validate(branchTrackingQuerySchema, "query"), branchOrdersController);
 router.get("/orders/export", branchReadLimiter, requireAdminPermission("BRANCH_TRACKING_READ"), validate(branchTrackingQuerySchema, "query"), branchOrdersExportController);
 router.post("/", csrfProtection, branchWriteLimiter, requireAdminPermission("BRANCH_TRACKING_WRITE"), validate(createBranchSchema), createBranchController);
+router.patch("/:id", csrfProtection, branchWriteLimiter, requireAdminPermission("BRANCH_TRACKING_WRITE"), validate(branchSettlementIdSchema, "params"), validate(updateBranchSchema), updateBranchController);
 router.get("/settlements", branchReadLimiter, requireBranchWorkflowAccess, validate(branchSettlementQuerySchema, "query"), listBranchSettlementsController);
 router.post("/settlements", csrfProtection, branchWriteLimiter, requireBranchWorkflowAccess, validate(createBranchSettlementSchema), createBranchSettlementController);
 router.get("/settlements/:id", branchReadLimiter, requireBranchWorkflowAccess, validate(branchSettlementIdSchema, "params"), getBranchSettlementController);

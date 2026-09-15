@@ -159,7 +159,6 @@ const VendorCodSettlementRequests: React.FC = () => {
     <div className="vcr-page">
       <PageHeader
         title="COD Settlement"
-        subtitle="Request a payout of the COD we are holding for you, and track what happened to it."
       />
 
       {error && <Banner tone="danger">{error}</Banner>}

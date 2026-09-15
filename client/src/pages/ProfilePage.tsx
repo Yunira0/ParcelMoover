@@ -178,7 +178,6 @@ const ProfilePage: React.FC = () => {
     <div className="profile-page">
       <PageHeader
         title="My Profile"
-        subtitle="Manage your account information and security settings."
       />
 
       <div className="profile-overview">

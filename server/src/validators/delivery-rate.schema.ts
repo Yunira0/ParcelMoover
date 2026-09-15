@@ -60,6 +60,16 @@ export const bulkImportDeliveryRatesSchema = z.object({
 
 export type BulkImportDeliveryRatesInput = z.infer<typeof bulkImportDeliveryRatesSchema>;
 
+// ── List delivery rates (query params) ───────────────────────────────────────
+// The rates page shows one origin at a time. A branch-scoped admin's own scope
+// still wins over whatever is asked for here - see listDeliveryRates.
+
+export const listDeliveryRatesQuerySchema = z.object({
+  originLocationId: uuidSchema.optional(),
+});
+
+export type ListDeliveryRatesQuery = z.infer<typeof listDeliveryRatesQuerySchema>;
+
 // ── Get delivery quote (query params) ────────────────────────────────────────
 
 export const deliveryQuoteQuerySchema = z.object({

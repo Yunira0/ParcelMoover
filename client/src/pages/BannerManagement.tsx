@@ -158,7 +158,6 @@ const BannerManagement: React.FC = () => {
     <div className="banner-management-container">
       <PageHeader
         title="BANNER MANAGEMENT"
-        subtitle="Manage the image notices vendors see on their dashboard — modal popups and the permanent hero strip."
         actionLabel="Add banner"
         actionIcon={<Plus size={16} />}
         onAction={() => navigate('/banners/new')}

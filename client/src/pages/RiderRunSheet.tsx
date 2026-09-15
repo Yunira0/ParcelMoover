@@ -388,7 +388,6 @@ const RiderRunSheet: React.FC = () => {
     <div className="runsheet-container">
       <PageHeader
         title="Rider Run Sheet"
-        subtitle="Every hand-off batch sent out for delivery - one numbered sheet per rider trip."
       />
 
       <div className="runsheet-stats">

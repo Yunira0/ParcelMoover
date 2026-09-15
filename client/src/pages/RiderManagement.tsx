@@ -190,7 +190,6 @@ const RiderManagement: React.FC = () => {
     <div className="rider-management-container">
       <PageHeader
         title="RIDER MANAGEMENT"
-        subtitle="Manage rider accounts, monitor delivery metrics"
         actionLabel="Add new"
         actionIcon={<Plus size={16} />}
         onAction={() => navigate('/riders/new')}

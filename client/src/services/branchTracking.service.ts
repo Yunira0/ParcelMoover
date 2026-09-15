@@ -9,6 +9,13 @@ export interface Branch {
   isActive: boolean;
   commissionPerParcel: number;
   coveredAreaCount: number;
+  /** Other branches this one virtually covers. */
+  virtualBranches: { id: string; name: string }[];
+}
+
+export async function updateBranch(id: string, input: { virtualBranchIds: string[]; commissionPerParcel: number }) {
+  const response = await api.patch(`/branches/${id}`, input);
+  return response.data;
 }
 
 export type BranchMetricKey =

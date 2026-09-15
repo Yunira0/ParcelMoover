@@ -197,3 +197,9 @@ select.bop-cell-input { cursor: pointer; min-width: 110px; }
 @media (prefers-reduced-motion: reduce) {
   .bop-back, .bop-dropzone { transition: none; }
 }
+
+/* A field spanning the whole sender grid (the vendor picker). */
+.bop-field-full { grid-column: 1 / -1; }
+
+/* The failed-orders table scrolls sideways on a phone instead of overflowing the card. */
+.bop-result-errors { overflow-x: auto; }

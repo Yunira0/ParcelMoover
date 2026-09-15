@@ -333,13 +333,13 @@ const SettlementCreatePage: React.FC = () => {
                           onChange={toggleAll}
                         />
                       </th>
-                      <th style={{ textAlign: 'left' }}>Order ID</th>
-                      <th style={{ textAlign: 'left' }}>Tracking ID</th>
-                      <th style={{ textAlign: 'left' }}>Receiver</th>
-                      <th style={{ textAlign: 'left' }}>Number</th>
-                      <th style={{ textAlign: 'left' }}>Order Type</th>
-                      {payeeType === 'vendor' && <th style={{ textAlign: 'left' }}>Destination</th>}
-                      {payeeType === 'rider' && <th style={{ textAlign: 'left' }}>Location</th>}
+                      <th>Order ID</th>
+                      <th>Tracking ID</th>
+                      <th>Receiver</th>
+                      <th>Number</th>
+                      <th>Order Type</th>
+                      {payeeType === 'vendor' && <th>Destination</th>}
+                      {payeeType === 'rider' && <th>Location</th>}
                       {/* Rider rows have no delivery-charge deduction, so COD and
                           collected are always the same figure - one column, not two.
                           The cell holds a label/value block rather than a bare number,
@@ -348,8 +348,8 @@ const SettlementCreatePage: React.FC = () => {
                       <th className="scp-cod-head">COD</th>
                       {payeeType === 'vendor' && (
                         <>
-                          <th style={{ textAlign: 'right' }}>Delivery Charge</th>
-                          <th style={{ textAlign: 'right' }}>Net Payable</th>
+                          <th className="scp-num">Delivery Charge</th>
+                          <th className="scp-num">Net Payable</th>
                         </>
                       )}
                     </tr>
@@ -392,10 +392,10 @@ const SettlementCreatePage: React.FC = () => {
                         </td>
                         {payeeType === 'vendor' && (
                           <>
-                            <td className="scp-num" style={{ textAlign: 'right' }}>
+                            <td className="scp-num">
                               Rs. {order.deliveryCharge.toLocaleString()}
                             </td>
-                            <td className="scp-num scp-num-strong" style={{ textAlign: 'right' }}>
+                            <td className="scp-num scp-num-strong">
                               Rs. {order.netPayable.toLocaleString()}
                             </td>
                           </>

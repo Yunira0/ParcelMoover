@@ -23,7 +23,7 @@
 .return-action-msg {
   margin: 0;
   font-size: 0.85rem;
-  color: var(--color-text-danger, #dc2626);
+  color: var(--color-danger-text);
 }
 
 .return-search {
@@ -217,7 +217,7 @@
 }
 
 .return-manifest-no {
-  font-family: var(--typography-font-family-monospace, monospace);
+  font-family: var(--typography-font-family-mono, monospace);
   font-weight: var(--font-weight-semi-bold);
 }
 

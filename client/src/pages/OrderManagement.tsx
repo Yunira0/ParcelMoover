@@ -1039,7 +1039,7 @@ const OrderManagement: React.FC = () => {
 
   return (
     <div className="order-management-container">
-      <PageHeader title="Orders" subtitle="Manage and track package orders across the network." />
+      <PageHeader title="Orders" />
 
       <SegmentedTabs
         ariaLabel="Order status filters"

@@ -8,10 +8,18 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-4);
+  gap: var(--space-3);
   flex-wrap: wrap;
 }
 
-.settings-body {
-  margin-top: var(--space-2);
+/* Compact tabs scroll sideways on a phone rather than wrapping into a stack. */
+.settings-toolbar .segmented-tabs {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+@media (max-width: 640px) {
+  .settings-toolbar > .btn {
+    width: 100%;
+  }
 }

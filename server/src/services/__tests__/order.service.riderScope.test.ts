@@ -374,6 +374,83 @@ describe("a force-revert out of dispatched undoes the location move too", () => 
   });
 });
 
+// The return a confirmed exchange delivery raises starts wherever the parcel
+// physically is - the hub that ran the delivery. Copying the exchange's
+// destination_location_id instead pointed it at the customer's delivery zone
+// ("INSIDE VALLEY - KTM"), a top-level location no hub covers, so the return
+// was invisible to every branch-scoped admin (reported: an Imadol vendor's
+// exchange return showed for super_admin only).
+describe("the exchange-raised return starts at the delivering hub", () => {
+  // The auto-created return needs create/lookup mocks the shared makeMockTx
+  // doesn't carry, since no other transition writes a second parcel.
+  function makeExchangeTx() {
+    const base = makeMockTx();
+    return {
+      ...base,
+      parcels: {
+        ...base.parcels,
+        findFirst: vi.fn().mockResolvedValue(null),
+        findUnique: vi.fn().mockResolvedValue(null),
+        create: vi.fn().mockResolvedValue({ id: "return-1", tracking_id: "TRK-RET-1" }),
+      },
+      cod_collections: { ...base.cod_collections, create: vi.fn() },
+      pickup_tasks: { ...base.pickup_tasks, create: vi.fn() },
+    };
+  }
+
+  const exchangeParcel = (overrides: Record<string, unknown> = {}) =>
+    makeFakeParcel({
+      status: "sent_for_delivery",
+      order_type: "exchange",
+      delivery_rider_id: RIDER_ID,
+      origin_location_id: "loc-imadol",
+      current_location_id: "loc-imadol",
+      destination_location_id: "zone-inside-valley-ktm",
+      parties_parcels_sender_idToparties: { name: "Vendor" },
+      parties_parcels_receiver_idToparties: { name: "Customer" },
+      ...overrides,
+    });
+
+  it("uses the source parcel's current hub as the return's origin, not the delivery zone", async () => {
+    const tx = makeExchangeTx();
+    mockedPrisma.$transaction.mockImplementation((fn: (t: unknown) => Promise<unknown>) => fn(tx));
+    mockedPrisma.parcels.findFirst.mockResolvedValue(exchangeParcel());
+
+    await updateParcelStatus({ id: "admin-1", roles: ["admin"] }, "parcel-1", {
+      status: "delivered",
+      exchangeReturnReceived: true,
+    });
+
+    expect(tx.parcels.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          order_type: "return",
+          origin_location_id: "loc-imadol",
+          current_location_id: "loc-imadol",
+          destination_location_id: "loc-imadol",
+        }),
+      }),
+    );
+  });
+
+  it("falls back to the delivery destination when the source has no current location", async () => {
+    const tx = makeExchangeTx();
+    mockedPrisma.$transaction.mockImplementation((fn: (t: unknown) => Promise<unknown>) => fn(tx));
+    mockedPrisma.parcels.findFirst.mockResolvedValue(exchangeParcel({ current_location_id: null }));
+
+    await updateParcelStatus({ id: "admin-1", roles: ["admin"] }, "parcel-1", {
+      status: "delivered",
+      exchangeReturnReceived: true,
+    });
+
+    expect(tx.parcels.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ origin_location_id: "zone-inside-valley-ktm" }),
+      }),
+    );
+  });
+});
+
 // The pickup-leg mirror. Nothing cleared pickup_rider_id anywhere, so a rider
 // who failed a pickup and released it back into the pool kept listing a parcel
 // that was no longer theirs - and had no action available on it.

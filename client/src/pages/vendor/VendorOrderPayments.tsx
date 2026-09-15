@@ -117,7 +117,6 @@ const VendorOrderPayments: React.FC = () => {
     <div className="vendor-finance-page">
       <PageHeader
         title="Order's COD"
-        subtitle="Oversee and monitor your package orders based on the order-wise payment system for cash on delivery."
       />
 
       <div className="vendor-finance-toolbar">

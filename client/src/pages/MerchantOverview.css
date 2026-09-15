@@ -264,3 +264,10 @@
   word-break: break-word;
   text-align: center;
 }
+
+/* On a phone the order count and download button wrap. */
+@media (max-width: 640px) {
+  .merchant-overview-page .order-toolbar {
+    flex-wrap: wrap;
+  }
+}

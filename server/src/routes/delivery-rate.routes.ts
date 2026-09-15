@@ -10,6 +10,7 @@ import { uuidParamSchema } from "../validators/common";
 import {
   upsertDeliveryRateSchema,
   deliveryQuoteQuerySchema,
+  listDeliveryRatesQuerySchema,
   setDeliveryRateActiveSchema,
   bulkImportDeliveryRatesSchema,
 } from "../validators/delivery-rate.schema";
@@ -126,6 +127,7 @@ deliveryRateRouter.get(
   authorizeRoles("super_admin", "admin", "vendor", "vendor_staff"),
   requireStaffPermission("DELIVERY_CHARGES_ACCESS"),
   ratesReadLimiter,
+  validate(listDeliveryRatesQuerySchema, "query"),
   listDeliveryRatesController,
 );
 

@@ -198,7 +198,7 @@ const UnclosedRemarks: React.FC<UnclosedRemarksProps> = ({ author }) => {
 
   return (
     <div className="ucr-container">
-      <PageHeader title={AUTHOR_COPY[author].title} subtitle={AUTHOR_COPY[author].subtitle} />
+      <PageHeader title={AUTHOR_COPY[author].title} />
 
       <div className="ucr-stats">
         <div className="ucr-stat-chip">

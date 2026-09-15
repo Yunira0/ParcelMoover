@@ -262,7 +262,7 @@ th.acc-num {
 
 .acc-line {
   display: grid;
-  grid-template-columns: var(--size-6) 1fr auto auto;
+  grid-template-columns: var(--space-6) 1fr auto auto;
   gap: var(--space-3);
   font-size: var(--font-size-sm);
   line-height: var(--line-height-sm);

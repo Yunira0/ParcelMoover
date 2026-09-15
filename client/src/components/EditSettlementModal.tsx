@@ -113,7 +113,7 @@ const EditSettlementModal: React.FC<EditSettlementModalProps> = ({
 
   return (
     <div className="modal-overlay">
-      <div className="modal-content" style={{ maxWidth: '640px' }}>
+      <div className="modal-content" style={{ width: '640px' }}>
         <div className="modal-header">
           <h2>Edit Statement</h2>
           <Button variant="ghost" size="icon" className="modal-close-btn" onClick={onClose}>

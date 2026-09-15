@@ -15,7 +15,6 @@ import Button from '../components/Button';
 import QuickRemarkPopup from '../components/QuickRemarkPopup';
 import SegmentedTabs from '../components/SegmentedTabs';
 import PageHeader from '../components/PageHeader';
-import TicketCategoryButton from '../components/TicketCategoryButton';
 import Pagination from '../components/Pagination';
 import {
   getOrders,
@@ -821,9 +820,7 @@ const PickupOperations: React.FC = () => {
 
   return (
     <div className="pickup-operations-container">
-      <PageHeader title="Pickup Operations" subtitle="Manage and track your pickup orders across the hub network.">
-        <TicketCategoryButton category="pickup" notificationType="pickup" />
-      </PageHeader>
+      <PageHeader title="Pickup Operations" />
 
       <SegmentedTabs
         ariaLabel="Pickup operation filters"

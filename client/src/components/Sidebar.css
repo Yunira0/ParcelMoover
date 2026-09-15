@@ -48,7 +48,7 @@
 
 .sidebar-toggle-btn:hover {
   background-color: var(--color-background-elevated, #f3f4f6);
-  border-color: var(--color-border-hover, #9ca3af);
+  border-color: var(--color-text-placeholder);
 }
 
 /* ── Scrollable nav area ───────────────────────────────────────────────────── */

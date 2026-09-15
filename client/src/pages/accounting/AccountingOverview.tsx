@@ -11,7 +11,6 @@ const AccountingOverview: React.FC = () => (
   <div className="acc-page">
     <PageHeader
       title="Accounting Overview"
-      subtitle="Where the money is, and what it did this period"
     />
     <SummaryTab />
   </div>

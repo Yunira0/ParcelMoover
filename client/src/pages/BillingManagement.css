@@ -1,6 +1,6 @@
 .billing-doc-link {
   align-items: center;
-  color: var(--color-text-link, var(--color-border-primary));
+  color: var(--color-primary, var(--color-border-primary));
   display: inline-flex;
   font-size: var(--font-size-xs);
   gap: var(--space-1);

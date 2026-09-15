@@ -163,3 +163,51 @@ describe("matchNcmBranch — regression: Jhiljhile must not match Hile/Bahundang
     expect(matchNcmBranch(undefined, BRANCHES_DEMO_SINGLE as any)).toBeUndefined();
   });
 });
+
+describe("matchNcmBranch — regression: Khalanga/Darchula must not book to Amargadhi/Dadeldhura", () => {
+  // Real prod incident (NCM order #25301800): our "Khalanga - Darchula" hub
+  // (district Darchula) was routed to NCM's AMARGADHI branch (district
+  // Dadeldhura) because AMARGADHI's covered_areas list contains "KHALANGA" —
+  // the HQ-town name shared by many far/mid-west districts. The weak
+  // place-name tiers are now rejected when hub and branch districts disagree.
+  const FARWEST: Branch[] = [
+    { name: "DHANGADHI", district: "Kailali", covered_areas: "ATTARIYA, GODAWARI" },
+    { name: "MAHENDRANAGAR", district: "Kanchanpur", covered_areas: "BHIMDATT, DAIJI" },
+    { name: "AMARGADHI", district: "Dadeldhura", covered_areas: "KHALANGA, JOGBUDHA, PARSHURAM" },
+  ];
+
+  it("Khalanga - Darchula => no match (covered_areas hit is in a different district)", () => {
+    const dest = { name: "Khalanga - Darchula", district: "Darchula" as string | null };
+    expect(matchNcmBranch(dest as any, FARWEST as any)).toBeUndefined();
+  });
+
+  it("Khalanga - Darchula => matches a real DARCHULA branch when NCM has one (tier 1)", () => {
+    const withDarchula: Branch[] = [
+      ...FARWEST,
+      { name: "GOKULESHWOR", district: "Darchula", covered_areas: "KHALANGA, MAHAKALI" },
+    ];
+    const dest = { name: "Khalanga - Darchula", district: "Darchula" as string | null };
+    expect(matchNcmBranch(dest as any, withDarchula as any)?.name).toBe("GOKULESHWOR");
+  });
+
+  it("exact branch-name tier (2) is district-gated: Khalanga - Darchula vs a KHALANGA branch in Salyan => no match", () => {
+    const dest = { name: "Khalanga - Darchula", district: "Darchula" as string | null };
+    const branches: Branch[] = [{ name: "KHALANGA", district: "Salyan", covered_areas: "SHARADA, KALIMATI" }];
+    expect(matchNcmBranch(dest as any, branches as any)).toBeUndefined();
+  });
+
+  it("name-token tier (3b) is district-gated: multi-word place, token hits a branch in another district => no match", () => {
+    const dest = { name: "Amargadhi Chowk - Darchula", district: "Darchula" as string | null };
+    // placeName "AMARGADHI CHOWK" -> token "AMARGADHI" equals the branch name,
+    // but that branch is in Dadeldhura, not Darchula.
+    expect(matchNcmBranch(dest as any, FARWEST as any)).toBeUndefined();
+  });
+
+  it("covered_areas tier still fires when hub and branch districts agree", () => {
+    const dest = { name: "Jhiljhile - Jhapa", district: "Jhapa" as string | null };
+    // multi-branch Jhapa so tier 1 is ambiguous and the covered_areas tier is what resolves it
+    const m = matchNcmBranch(dest as any, BRANCHES_JHAPA_MULTI as any);
+    expect(m?.name).toBe("DAMAK");
+  });
+
+});

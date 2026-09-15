@@ -140,7 +140,6 @@ const VendorDeliveryCharges: React.FC = () => {
     <div className="vendor-delivery-page">
       <PageHeader
         title="Delivery Charges"
-        subtitle="The delivery rates that apply to your shipments, based on your assigned pricing plan."
       />
 
       {data && (

@@ -160,7 +160,6 @@ const KycManagement: React.FC<KycManagementProps> = ({ embedded = false }) => {
       {!embedded && (
         <PageHeader
           title="KYC Applications"
-          subtitle="Review and approve vendor onboarding applications"
         />
       )}
 

@@ -104,7 +104,6 @@ const CreateOrderPage: React.FC = () => {
   } | null;
   const prefillInitialData = navState?.initialData;
   const editOrderId = navState?.mode === 'edit' ? navState.orderId : undefined;
-  const editTrackingId = navState?.mode === 'edit' ? navState.trackingId : undefined;
   const isEditMode = Boolean(editOrderId);
 
   const isVendorActor = isVendorSide();
@@ -284,14 +283,16 @@ const CreateOrderPage: React.FC = () => {
   const originIsBranch = !isVendorActor && Boolean(fixedOriginId) && Boolean(imadolHub) && fixedOriginId !== imadolHub!.id;
 
   // Auto-calculate the payable amount so the displayed number matches what the
-  // server will save: branch origin → route rate; otherwise the vendor's model.
+  // server will save. With a vendor, the server's quote runs the same ladder as
+  // order creation (a branch flat vendor's inside/outside-branch rate, else the
+  // branch route rate, else the vendor's model). Without one, a branch order
+  // prices off the route rate.
   useEffect(() => {
     // For admin actors, use form.vendorId directly (set synchronously on selection).
     // For vendor actors, use selectedVendor.id resolved from their own profile.
     const vendorId = isVendorActor ? selectedVendor?.id : form.vendorId;
-    // Need a destination and weight; the vendor model also needs a vendor, the
-    // branch route model does not.
-    if (!form.destinationLocationId || !weightKgNumber || (!isVendorActor && !originIsBranch && !form.vendorId)) {
+    const useVendorQuote = isVendorActor || Boolean(form.vendorId);
+    if (!form.destinationLocationId || !weightKgNumber || (!useVendorQuote && !originIsBranch)) {
       setQuote(null);
       setQuoteError('');
       return;
@@ -301,12 +302,18 @@ const CreateOrderPage: React.FC = () => {
     setQuoteError('');
     const timer = setTimeout(async () => {
       try {
-        const res = originIsBranch
-          ? await getRouteQuote(fixedOriginId!, form.destinationLocationId, weightKgNumber, {
+        const res = useVendorQuote
+          ? await getVendorQuote(
+              form.destinationLocationId,
+              weightKgNumber,
+              vendorId,
+              form.serviceType,
+              form.orderType === 'return',
+            )
+          : await getRouteQuote(fixedOriginId!, form.destinationLocationId, weightKgNumber, {
               serviceType: form.serviceType,
               isReturn: form.orderType === 'return',
-            })
-          : await getVendorQuote(form.destinationLocationId, weightKgNumber, vendorId, form.serviceType);
+            });
         if (!cancelled && res?.success) {
           setQuote(res.data);
         }
@@ -607,9 +614,6 @@ const CreateOrderPage: React.FC = () => {
     <div className="create-order-page">
       <PageHeader
         title={isEditMode ? 'Edit Order' : 'Create Order'}
-        subtitle={isEditMode
-          ? `Update parcel details for ${editTrackingId || 'this order'}. Changes are recorded in the parcel history.`
-          : 'Set up and submit new package orders through the system. (Enter item value for parcel exceeding Rs 5000)'}
       />
 
       {!isEditMode && <BillingStatusBanner />}

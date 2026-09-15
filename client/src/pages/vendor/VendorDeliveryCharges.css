@@ -70,3 +70,10 @@
   font-size: var(--font-size-sm);
   line-height: var(--line-height-sm);
 }
+
+/* On a phone the search and its actions stack instead of overflowing. */
+@media (max-width: 640px) {
+  .vendor-delivery-search {
+    flex-wrap: wrap;
+  }
+}

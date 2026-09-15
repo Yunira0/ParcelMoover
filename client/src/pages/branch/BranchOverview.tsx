@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Download, Plus } from 'lucide-react';
+import { ChevronDown, Download, Pencil, Plus } from 'lucide-react';
 import PageHeader from '../../components/PageHeader';
 import Table from '../../components/Table';
 import Pagination from '../../components/Pagination';
@@ -16,6 +16,7 @@ import {
   getBranchOrders,
   getBranchOverview,
   type BranchFilters,
+  type Branch,
   type BranchMetricKey,
   type BranchMetrics,
 } from '../../services/branchTracking.service';
@@ -34,7 +35,7 @@ const hubName = (loc: string) => loc.split(' - ')[0];
 const PAGE_SIZE = 20;
 
 const BranchOverview: React.FC = () => {
-  const { fromBranchId, toBranchId, setFromBranchId, setToBranchId, refreshBranches } = useBranchScope();
+  const { fromBranchId, toBranchId, setFromBranchId, setToBranchId, refreshBranches, branches } = useBranchScope();
   const { isSuperAdmin } = useBranchAccess();
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
@@ -47,6 +48,9 @@ const BranchOverview: React.FC = () => {
   const [error, setError] = useState('');
   const [selectedIds, setSelectedIds] = useState<Set<string | number>>(new Set());
   const [addBranchOpen, setAddBranchOpen] = useState(false);
+  const [editingBranch, setEditingBranch] = useState<Branch | null>(null);
+  // Collapsed by default so the branch list doesn't push the order report down.
+  const [branchListOpen, setBranchListOpen] = useState(false);
   const [pageSize, setPageSize] = useState(PAGE_SIZE);
   const pager = useCursorPagination();
 
@@ -202,11 +206,49 @@ const BranchOverview: React.FC = () => {
     <div className="order-management-container merchant-overview-page branch-overview-page">
       <PageHeader
         title="Branch Overview"
-        subtitle="Order and cash-flow snapshot for a branch pair, or all branches."
         actionLabel={isSuperAdmin ? 'New Branch' : undefined}
         actionIcon={<Plus size={16} />}
         onAction={() => setAddBranchOpen(true)}
       />
+
+      {isSuperAdmin && (
+        <section className="branch-list-panel">
+          <button
+            type="button"
+            className="branch-list-toggle"
+            aria-expanded={branchListOpen}
+            onClick={() => setBranchListOpen((open) => !open)}
+          >
+            <span>Branches ({branches.length})</span>
+            <ChevronDown size={16} className={branchListOpen ? 'is-open' : undefined} />
+          </button>
+          {branchListOpen && <Table
+            columns={[
+              { header: 'Branch', accessor: (b: Branch) => <strong>{b.name}</strong> },
+              {
+                header: 'Virtual branches',
+                accessor: (b: Branch) => (b.virtualBranches.length ? b.virtualBranches.map((v) => v.name).join(', ') : '—'),
+              },
+              { header: 'Commission / parcel', accessor: (b: Branch) => `Rs. ${b.commissionPerParcel}` },
+              {
+                header: 'Status',
+                accessor: (b: Branch) => <StatusChip tone={b.isActive ? 'success' : 'neutral'}>{b.isActive ? 'Active' : 'Inactive'}</StatusChip>,
+              },
+              {
+                header: '',
+                accessor: (b: Branch) => (
+                  <Button variant="outline" size="sm" onClick={() => setEditingBranch(b)}>
+                    <Pencil size={14} /> Edit
+                  </Button>
+                ),
+              },
+            ]}
+            data={branches}
+            selectable={false}
+            emptyMessage="No branches yet. Use New Branch to set one up."
+          />}
+        </section>
+      )}
 
       <BranchOverviewFilterBar
         dateFrom={dateFrom}
@@ -268,8 +310,9 @@ const BranchOverview: React.FC = () => {
       />
 
       <AddBranchModal
-        isOpen={addBranchOpen}
-        onClose={() => setAddBranchOpen(false)}
+        isOpen={addBranchOpen || Boolean(editingBranch)}
+        branch={editingBranch}
+        onClose={() => { setAddBranchOpen(false); setEditingBranch(null); }}
         onSuccess={refreshBranches}
       />
     </div>

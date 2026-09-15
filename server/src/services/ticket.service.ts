@@ -203,17 +203,30 @@ async function vendorOrgCreatorIds(actor: Actor): Promise<string[]> {
 // (clients); riders see only their own.
 async function scopeWhere(actor: Actor, extra: Record<string, unknown> = {}) {
   if (isStaff(actor)) {
-    // A branch-scoped admin sees only tickets raised by their own branch's
-    // staff. Tickets carry no parcel link (see the sales branch below), so
-    // creator is the only signal - the same approach sales uses for its
-    // vendors.
+    // A branch-scoped admin sees tickets raised by their own branch's staff
+    // and by the vendors (owner and staff accounts) registered at their branch,
+    // since the branch onboards and supports those vendors. Tickets carry no
+    // parcel link (see the sales branch below), so creator is the only signal.
+    // Deleted vendors and disabled staff are kept so their older tickets stay
+    // visible.
     const branchIds = await adminBranchScopeIds(actor);
     if (!branchIds) return extra;
-    const branchAdmins = await prisma.admins.findMany({
-      where: { location_id: { in: branchIds } },
-      select: { user_id: true },
-    });
-    const creatorIds = [...new Set([actor.id, ...branchAdmins.map((a) => a.user_id)])];
+    const [branchAdmins, branchVendors] = await Promise.all([
+      prisma.admins.findMany({
+        where: { location_id: { in: branchIds } },
+        select: { user_id: true },
+      }),
+      prisma.vendors.findMany({
+        where: { location_id: { in: branchIds } },
+        select: { user_id: true, vendor_staff: { select: { user_id: true } } },
+      }),
+    ]);
+    const vendorUserIds = branchVendors.flatMap((v) => [v.user_id, ...v.vendor_staff.map((s) => s.user_id)]);
+    const creatorIds = [
+      ...new Set(
+        [actor.id, ...branchAdmins.map((a) => a.user_id), ...vendorUserIds].filter((id): id is string => Boolean(id)),
+      ),
+    ];
     return { ...extra, created_by: { in: creatorIds } };
   }
 

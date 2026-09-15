@@ -164,11 +164,6 @@ const Dashboard: React.FC = () => {
 
       <DashboardHeader
         user={getCurrentUser()?.fullName || ''}
-        subtitle={
-          isBranch
-            ? `${getCurrentUser()?.locationName?.trim() || 'Your branch'} — orders, operations and COD at a glance.`
-            : 'Operational overview for Parcel Moover across the Nepal network.'
-        }
       />
 
       <div className="overview-section">
