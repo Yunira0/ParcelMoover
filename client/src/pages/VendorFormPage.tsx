@@ -365,11 +365,12 @@ const VendorFormPage: React.FC = () => {
       .split(' - ')[0]
       .replace(/\s*branch\s*$/i, '')
       .trim() || 'the branch';
-  // A vendor assigned to a non-central branch (e.g. Hetauda) is priced off the
-  // branch route table, not the Kathmandu-valley split - regardless of who is
-  // filling in this form (branch admin, sales rep, or super admin). Drop valley
-  // wording and the valley-only inputs for them; the "inside/outside" pair is
-  // relabelled to the branch name.
+  // A vendor assigned to a non-central branch (e.g. Hetauda) isn't priced by the
+  // Kathmandu-valley split: on the flat model its inside/outside pair means
+  // inside/outside that branch's coverage (blank falls back to the branch's
+  // route rates), otherwise it prices off those route rates. Drop valley
+  // wording and the valley-only inputs for them; the pair is relabelled to the
+  // branch name.
   const useBranchRateModel = Boolean(selectedHub) && !selectedHub!.isMasterHub;
   const insideLabel = useBranchRateModel ? `inside ${branchLabel}` : 'inside valley';
   const outsideLabel = useBranchRateModel ? `outside ${branchLabel}` : 'outside valley';

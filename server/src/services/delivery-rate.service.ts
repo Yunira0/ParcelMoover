@@ -2,7 +2,9 @@ import prisma from "../lib/prisma";
 import redis from "../lib/redis";
 import { AppError } from "../utils/AppError";
 import { DeliveryQuote, UpsertDeliveryRateInput } from "../types/delivery-rate.type";
+import { resolveBranchCoverageIds } from "../lib/branchScope";
 import {
+  getBranchVendorFlatQuote,
   getVendorQuote,
   getPricingSettings,
   RateType,
@@ -569,6 +571,7 @@ export async function getVendorSelfRates(actor: Actor) {
   const settings = await getPricingSettings();
   const overrides = buildVendorOverrides(vendor);
   const rateType = (vendor.rate_type as RateType) ?? "flat";
+  const pricer = await vendorPricer(vendor.location_id, rateType, overrides);
 
   // Destinations are top-level, active locations (covered areas price off their parent).
   const destinations = await prisma.locations.findMany({
@@ -598,12 +601,12 @@ export async function getVendorSelfRates(actor: Actor) {
       let branchRate: number | null = null;
       let note: string | null = null;
       try {
-        homeRate = (await getVendorQuote(rateType, dest.id, 1, overrides, "home_delivery")).baseCharge;
+        homeRate = (await pricer(dest.id, 1, "home_delivery")).baseCharge;
       } catch (err) {
         note = err instanceof AppError ? err.message : "Rate not configured";
       }
       try {
-        branchRate = (await getVendorQuote(rateType, dest.id, 1, overrides, "branch_delivery")).baseCharge;
+        branchRate = (await pricer(dest.id, 1, "branch_delivery")).baseCharge;
       } catch {
         // Branch rate optional; leave null if unset.
       }
@@ -646,6 +649,52 @@ export async function getVendorSingleQuote(
 
   const overrides = buildVendorOverrides(vendor);
   const rateType = (vendor.rate_type as RateType) ?? "flat";
+  const pricer = await vendorPricer(vendor.location_id, rateType, overrides);
 
-  return getVendorQuote(rateType, destinationLocationId, weightKg, overrides, serviceType);
+  return pricer(destinationLocationId, weightKg, serviceType);
+}
+
+// Imadol's id, cached. Duplicates order.service's getMasterHubId because
+// importing it here would be circular (order.service imports this module).
+let masterHubIdCache: string | null | undefined;
+async function masterHubId(): Promise<string | null> {
+  if (masterHubIdCache !== undefined) return masterHubIdCache;
+  const hub = await prisma.locations.findFirst({
+    where: { code: { equals: "IMADOL", mode: "insensitive" }, parent_id: null, is_hub: true },
+    select: { id: true },
+  });
+  masterHubIdCache = hub?.id ?? null;
+  return masterHubIdCache;
+}
+
+// Prices this vendor's orders the way order creation does: a vendor on a
+// branch like Hetauda pays its own inside/outside-branch flat rate (flat
+// model), else that branch's route rate; a head-office vendor pays by its own
+// rate model. Branch coverage is resolved once, so a whole rate card of
+// destinations doesn't re-query it per row.
+async function vendorPricer(
+  vendorHubId: string | null,
+  rateType: RateType,
+  overrides: VendorRateOverrides,
+) {
+  const hub = await masterHubId();
+  if (!vendorHubId || !hub || vendorHubId === hub) {
+    return (destinationLocationId: string, weightKg: number, serviceType: "home_delivery" | "branch_delivery") =>
+      getVendorQuote(rateType, destinationLocationId, weightKg, overrides, serviceType);
+  }
+
+  let coverage: string[] | null = null;
+  if (rateType === "flat") {
+    try {
+      coverage = await resolveBranchCoverageIds(vendorHubId);
+    } catch (error) {
+      if (!(error instanceof AppError && error.statusCode === 404)) throw error;
+    }
+  }
+  return async (destinationLocationId: string, weightKg: number, serviceType: "home_delivery" | "branch_delivery") => {
+    const flat = coverage
+      ? await getBranchVendorFlatQuote(vendorHubId, destinationLocationId, weightKg, overrides, serviceType, false, coverage)
+      : null;
+    return flat ?? getDeliveryQuote(vendorHubId, destinationLocationId, weightKg, serviceType);
+  };
 }

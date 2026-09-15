@@ -62,7 +62,13 @@ function parseOrderNumber(term: string): number | null {
 }
 
 import { getDeliveryQuote, getReturnRouteQuote } from "./delivery-rate.service";
-import { getVendorQuote, getReturnDeliveryQuote, RateType, ServiceType } from "./pricing.service";
+import {
+  getBranchVendorFlatQuote,
+  getReturnDeliveryQuote,
+  getVendorQuote,
+  RateType,
+  ServiceType,
+} from "./pricing.service";
 import { resolveLabelSize } from "./vendorPrintSettings.service";
 import { HANDOFF_REMARK_PREFIX as NCM_HANDOFF_REMARK_PREFIX } from "./ncm.service";
 import { HANDOFF_REMARK_PREFIX as UPAYA_HANDOFF_REMARK_PREFIX } from "./upaya.service";
@@ -86,13 +92,63 @@ function branchOverrides(v: {
     branchReturnOutsideValleyPercent: n(v.branch_return_outside_valley_percent),
   };
 }
+
+type VendorRateRow = Parameters<typeof branchOverrides>[0] & {
+  flat_inside_valley: unknown; flat_outside_valley: unknown;
+  zone_major_cities: unknown; zone_urban_areas: unknown;
+  zone_remote_areas: unknown; zone_inside_valley: unknown;
+  inside_valley_flat_rate: unknown; extra_weight_percent: unknown;
+  return_inside_valley_percent: unknown; return_outside_valley_percent: unknown;
+};
+
+// The overrides order creation and repricing both price a vendor with. Kept as
+// the exact field set those two paths already used inline, so head-office
+// pricing is unchanged by sharing it.
+function vendorRateOverrides(v: VendorRateRow) {
+  const n = (x: unknown) => (x === null || x === undefined ? null : Number(x));
+  return {
+    flatInsideValley: n(v.flat_inside_valley),
+    flatOutsideValley: n(v.flat_outside_valley),
+    zoneMajorCities: n(v.zone_major_cities),
+    zoneUrbanAreas: n(v.zone_urban_areas),
+    zoneRemoteAreas: n(v.zone_remote_areas),
+    zoneInsideValley: n(v.zone_inside_valley),
+    insideValleyFlatRate: n(v.inside_valley_flat_rate),
+    extraWeightPercent: n(v.extra_weight_percent),
+    ...branchOverrides(v),
+    returnInsideValleyPercent: n(v.return_inside_valley_percent),
+    returnOutsideValleyPercent: n(v.return_outside_valley_percent),
+  };
+}
+
+// A branch vendor on the flat model is charged its own inside/outside-branch
+// rate; null when that side isn't set, so the caller keeps the route-rate price.
+async function branchVendorFlatCharge(
+  vendor: (VendorRateRow & { rate_type: string | null }) | null | undefined,
+  originLocationId: string,
+  destinationLocationId: string,
+  weightKg: number,
+  serviceType: ServiceType,
+  isReturn: boolean,
+): Promise<number | null> {
+  if (!vendor || vendor.rate_type !== "flat") return null;
+  const quote = await getBranchVendorFlatQuote(
+    originLocationId,
+    destinationLocationId,
+    weightKg,
+    vendorRateOverrides(vendor),
+    serviceType,
+    isReturn,
+  );
+  return quote ? quote.totalPayable : null;
+}
 import { createNotification } from "./notification.service";
 
 // The central master hub (Imadol). An order that originates anywhere else is a
 // branch-origin order and prices off the (branch → destination) route table.
 // Cached for the process; hub identity does not change at runtime.
 let masterHubIdCache: string | null | undefined;
-async function getMasterHubId(): Promise<string | null> {
+export async function getMasterHubId(): Promise<string | null> {
   if (masterHubIdCache !== undefined) return masterHubIdCache;
   const hub = await prisma.locations.findFirst({
     where: { code: { equals: "IMADOL", mode: "insensitive" }, parent_id: null, is_hub: true },
@@ -124,9 +180,23 @@ export async function computeReturnCharge(
   destinationLocationId: string,
   weightKg: number | null,
   serviceType: string,
+  /** The parcel's origin. From a branch, a flat vendor's return prices off its inside/outside-branch rate. */
+  originLocationId?: string | null,
 ): Promise<number | null> {
   const n = (x: unknown) => (x === null || x === undefined ? null : Number(x));
   try {
+    const masterHubId = originLocationId ? await getMasterHubId() : null;
+    if (vendor && originLocationId && masterHubId && originLocationId !== masterHubId) {
+      const flatCharge = await branchVendorFlatCharge(
+        vendor,
+        originLocationId,
+        destinationLocationId,
+        weightKg === null ? 1 : weightKg,
+        serviceType as ServiceType,
+        true,
+      );
+      if (flatCharge !== null) return flatCharge;
+    }
     const quote = await getReturnDeliveryQuote(
       (vendor?.rate_type as RateType) ?? "flat",
       destinationLocationId,
@@ -152,6 +222,15 @@ export async function computeReturnCharge(
   } catch {
     return null;
   }
+}
+
+// The hub an actor's new order ships from before any vendor is considered: a
+// plain (non-super) admin's own hub, else null. Shared with the price preview
+// so it resolves origin exactly the way order creation does.
+export async function resolveOrderOriginHub(actor: OrderActor): Promise<string | null> {
+  if (!isStaffActor(actor) || actor.roles.includes("super_admin")) return null;
+  const admin = await prisma.admins.findFirst({ where: { user_id: actor.id }, select: { location_id: true } });
+  return admin?.location_id ?? null;
 }
 
 export type OrderActor = {
@@ -1038,7 +1117,14 @@ async function _createOrderImpl(
   if (originIsBranch && resolvedDestinationLocationId) {
     const serviceType = (data.serviceType as ServiceType) || "home_delivery";
     try {
-      const quote = isReturnOrder
+      // A branch vendor on the flat model pays its own inside/outside-branch
+      // rate; without one set, the branch route rate applies as before.
+      const flatCharge = await branchVendorFlatCharge(
+        vendor, resolvedOriginLocationId!, resolvedDestinationLocationId, weightKg, serviceType, isReturnOrder,
+      );
+      const quote = flatCharge !== null
+        ? { totalPayable: flatCharge }
+        : isReturnOrder
         ? await getReturnRouteQuote(resolvedOriginLocationId!, resolvedDestinationLocationId, weightKg, serviceType)
         : await getDeliveryQuote(resolvedOriginLocationId!, resolvedDestinationLocationId, weightKg, serviceType);
       deliveryCharge = quote.totalPayable;
@@ -1052,19 +1138,7 @@ async function _createOrderImpl(
       throw error;
     }
   } else if (vendor && resolvedDestinationLocationId) {
-    const overrides = {
-      flatInsideValley: vendor.flat_inside_valley === null ? null : Number(vendor.flat_inside_valley),
-      flatOutsideValley: vendor.flat_outside_valley === null ? null : Number(vendor.flat_outside_valley),
-      zoneMajorCities: vendor.zone_major_cities === null ? null : Number(vendor.zone_major_cities),
-      zoneUrbanAreas: vendor.zone_urban_areas === null ? null : Number(vendor.zone_urban_areas),
-      zoneRemoteAreas: vendor.zone_remote_areas === null ? null : Number(vendor.zone_remote_areas),
-      zoneInsideValley: vendor.zone_inside_valley === null ? null : Number(vendor.zone_inside_valley),
-      insideValleyFlatRate: vendor.inside_valley_flat_rate === null ? null : Number(vendor.inside_valley_flat_rate),
-      extraWeightPercent: vendor.extra_weight_percent === null ? null : Number(vendor.extra_weight_percent),
-      ...branchOverrides(vendor),
-      returnInsideValleyPercent: vendor.return_inside_valley_percent === null ? null : Number(vendor.return_inside_valley_percent),
-      returnOutsideValleyPercent: vendor.return_outside_valley_percent === null ? null : Number(vendor.return_outside_valley_percent),
-    };
+    const overrides = vendorRateOverrides(vendor);
     const serviceType = (data.serviceType as ServiceType) || "home_delivery";
     const quote = isReturnOrder
       ? await getReturnDeliveryQuote(vendor.rate_type as RateType, resolvedDestinationLocationId, weightKg, overrides, serviceType)
@@ -1415,7 +1489,12 @@ export async function updateOrderDetails(
       // friendly 400 when the branch route has no rate configured.
       const serviceType = (data.serviceType ?? parcel.service_type) as ServiceType;
       try {
-        const quote = effectiveOrderType === "return"
+        const flatCharge = await branchVendorFlatCharge(
+          effectiveVendor, originLocationId, destinationLocationId, weightKg, serviceType, effectiveOrderType === "return",
+        );
+        const quote = flatCharge !== null
+          ? { totalPayable: flatCharge }
+          : effectiveOrderType === "return"
           ? await getReturnRouteQuote(originLocationId, destinationLocationId, weightKg, serviceType)
           : await getDeliveryQuote(originLocationId, destinationLocationId, weightKg, serviceType);
         deliveryCharge = quote.totalPayable;
@@ -1430,19 +1509,7 @@ export async function updateOrderDetails(
       }
     } else if (effectiveVendor) {
       const vendor = effectiveVendor;
-      const overrides = {
-        flatInsideValley: vendor.flat_inside_valley === null ? null : Number(vendor.flat_inside_valley),
-        flatOutsideValley: vendor.flat_outside_valley === null ? null : Number(vendor.flat_outside_valley),
-        zoneMajorCities: vendor.zone_major_cities === null ? null : Number(vendor.zone_major_cities),
-        zoneUrbanAreas: vendor.zone_urban_areas === null ? null : Number(vendor.zone_urban_areas),
-        zoneRemoteAreas: vendor.zone_remote_areas === null ? null : Number(vendor.zone_remote_areas),
-        zoneInsideValley: vendor.zone_inside_valley === null ? null : Number(vendor.zone_inside_valley),
-        insideValleyFlatRate: vendor.inside_valley_flat_rate === null ? null : Number(vendor.inside_valley_flat_rate),
-        extraWeightPercent: vendor.extra_weight_percent === null ? null : Number(vendor.extra_weight_percent),
-        ...branchOverrides(vendor),
-        returnInsideValleyPercent: vendor.return_inside_valley_percent === null ? null : Number(vendor.return_inside_valley_percent),
-        returnOutsideValleyPercent: vendor.return_outside_valley_percent === null ? null : Number(vendor.return_outside_valley_percent),
-      };
+      const overrides = vendorRateOverrides(vendor);
       const serviceType = (data.serviceType ?? parcel.service_type) as ServiceType;
       // Return orders re-price at the vendor's return percent of the normal rate.
       const quote = effectiveOrderType === "return"
@@ -4533,35 +4600,17 @@ async function _updateParcelStatusImpl(
   // Done before the delivery txn since the quote runs its own reads.
   let returnCharge = 0;
   if (shouldRaiseReturn && parcel.vendor_id && parcel.destination_location_id) {
-    const v = parcel.vendors;
-    try {
-      const quote = await getReturnDeliveryQuote(
-        (v?.rate_type as RateType) ?? "flat",
+    // Same pricing an RTO gets (including a branch flat vendor's inside/outside
+    // branch rate). An unpriceable destination or missing rate is a free
+    // return rather than blocking the exchange delivery itself.
+    returnCharge =
+      (await computeReturnCharge(
+        parcel.vendors,
         parcel.destination_location_id,
-        parcel.weight_kg === null ? 1 : Number(parcel.weight_kg),
-        v
-          ? {
-              flatInsideValley: v.flat_inside_valley === null ? null : Number(v.flat_inside_valley),
-              flatOutsideValley: v.flat_outside_valley === null ? null : Number(v.flat_outside_valley),
-              zoneMajorCities: v.zone_major_cities === null ? null : Number(v.zone_major_cities),
-              zoneUrbanAreas: v.zone_urban_areas === null ? null : Number(v.zone_urban_areas),
-              zoneRemoteAreas: v.zone_remote_areas === null ? null : Number(v.zone_remote_areas),
-              zoneInsideValley: v.zone_inside_valley === null ? null : Number(v.zone_inside_valley),
-              insideValleyFlatRate: v.inside_valley_flat_rate === null ? null : Number(v.inside_valley_flat_rate),
-              extraWeightPercent: v.extra_weight_percent === null ? null : Number(v.extra_weight_percent),
-              ...branchOverrides(v),
-              returnInsideValleyPercent: v.return_inside_valley_percent === null ? null : Number(v.return_inside_valley_percent),
-              returnOutsideValleyPercent: v.return_outside_valley_percent === null ? null : Number(v.return_outside_valley_percent),
-            }
-          : {},
-        parcel.service_type as ServiceType,
-      );
-      returnCharge = quote.totalPayable;
-    } catch {
-      // Unclassified destination / missing rate: fall back to a free return
-      // rather than blocking the exchange delivery itself.
-      returnCharge = 0;
-    }
+        parcel.weight_kg === null ? null : Number(parcel.weight_kg),
+        parcel.service_type,
+        parcel.origin_location_id,
+      )) ?? 0;
   }
 
   // A plain RTO (order_type "delivery" bounced back to returned_to_vendor)
@@ -4576,6 +4625,7 @@ async function _updateParcelStatusImpl(
       parcel.destination_location_id,
       parcel.weight_kg === null ? null : Number(parcel.weight_kg),
       parcel.service_type,
+      parcel.origin_location_id,
     );
   }
 
@@ -5505,6 +5555,7 @@ async function _bulkUpdateParcelStatusImpl(
             p.destination_location_id!,
             p.weight_kg === null ? null : Number(p.weight_kg),
             p.service_type,
+            p.origin_location_id,
           );
           if (charge !== null) rtoReturnCharges.set(p.id, charge);
         }),
