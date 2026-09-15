@@ -4861,6 +4861,14 @@ async function _updateParcelStatusImpl(
         const customerParty = parcel.parties_parcels_receiver_idToparties;
         const vendorParty = parcel.parties_parcels_sender_idToparties;
         const now = new Date();
+        // The return leg starts at the hub that ran this delivery - where the
+        // rider carrying it back reports - which is current_location_id, not
+        // destination_location_id. The latter is the customer's delivery zone
+        // (e.g. "INSIDE VALLEY - KTM"), a top-level location no hub covers, so
+        // using it left the return invisible to every branch-scoped admin
+        // (branchHandlesFilter matches origin/current against hub coverage) and
+        // made any later transit stage or reprice key off a non-hub origin.
+        const returnHubId = parcel.current_location_id ?? parcel.destination_location_id;
         const ret = await tx.parcels.create({
           data: {
             tracking_id: returnTrackingId,
@@ -4869,8 +4877,8 @@ async function _updateParcelStatusImpl(
             // Goods flow customer → vendor: swap the exchange order's parties/route.
             sender_id: parcel.receiver_id,
             receiver_id: parcel.sender_id,
-            origin_location_id: parcel.destination_location_id,
-            current_location_id: parcel.destination_location_id,
+            origin_location_id: returnHubId,
+            current_location_id: returnHubId,
             destination_location_id: parcel.origin_location_id,
             order_type: "return",
             service_type: parcel.service_type,
