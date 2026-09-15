@@ -40,7 +40,8 @@ const WeightRules: React.FC<Props> = ({ canEdit }) => {
     setMsg('');
     try {
       await updatePricingSettings({
-        freeWeightKg: draft.freeWeightKg === '' ? null : Number(draft.freeWeightKg),
+        // Free weight is required on the server, so a blank field leaves it unchanged.
+        freeWeightKg: draft.freeWeightKg === '' ? undefined : Number(draft.freeWeightKg),
         extraWeightPercent: draft.extraWeightPercent === '' ? null : Number(draft.extraWeightPercent),
       });
       setSaved(draft);
