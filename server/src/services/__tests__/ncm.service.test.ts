@@ -31,8 +31,8 @@ describe("matchNcmBranch — regression: Jhiljhile must not match Hile/Bahundang
       { name: "DAMAK", district: "Jhapa" },
     ];
     const m = matchNcmBranch(dest as any, branches as any);
-    // With single Jhapa branch DAMAK, district tier returns DAMAK, not HILE
-    expect(m?.name).toBe("DAMAK");
+    // District alone must not route the parcel to DAMAK.
+    expect(m).toBeUndefined();
   });
 
   it("JHILJHILE vs HILE with no district — must not match via substring", () => {
@@ -42,8 +42,8 @@ describe("matchNcmBranch — regression: Jhiljhile must not match Hile/Bahundang
       { name: "DAMAK", district: "Jhapa", covered_areas: "JHILJHILE" },
     ];
     const m = matchNcmBranch(dest as any, branches as any);
-    // covered_areas exact match should pick DAMAK, not HILE
-    expect(m?.name).toBe("DAMAK");
+    // A covered-area match without a destination district is unsafe.
+    expect(m).toBeUndefined();
   });
 
   it("JHILJHILE (Jhapa) with multiple Jhapa branches — must NOT pick first Jhapa (BAHUNDANGI) via district", () => {
@@ -72,17 +72,24 @@ describe("matchNcmBranch — regression: Jhiljhile must not match Hile/Bahundang
     expect(m).toBeUndefined();
   });
 
-  it("demo: single Jhapa branch DAMAK — district tier returns DAMAK (not ambiguous)", () => {
+  it("single branch in a district is not enough when destination does not match", () => {
     const dest = { name: "Jhiljhile", district: "Jhapa" as string | null };
     const m = matchNcmBranch(dest as any, BRANCHES_DEMO_SINGLE as any);
-    expect(m?.name).toBe("DAMAK");
+    expect(m).toBeUndefined();
   });
 
-  it("Pokhara Branch -> POKHARA via word-boundary token, not substring", () => {
+  it("does not use a branch-name token as a fallback", () => {
     const dest = { name: "Pokhara Branch", district: null };
     const branches: Branch[] = [{ name: "POKHARA", district: "Kaski" }];
     const m = matchNcmBranch(dest as any, branches as any);
-    expect(m?.name).toBe("POKHARA");
+    expect(m).toBeUndefined();
+  });
+
+  it("allows an exact branch-name match without a district", () => {
+    const dest = { name: "Pokhara", district: null };
+    const branches: Branch[] = [{ name: "POKHARA", district: "Kaski" }];
+
+    expect(matchNcmBranch(dest as any, branches as any)?.name).toBe("POKHARA");
   });
 
   it("Jhiljhile - Jhapa (with dash suffix) still matches via covered_areas", () => {
@@ -108,11 +115,47 @@ describe("matchNcmBranch — regression: Jhiljhile must not match Hile/Bahundang
     expect(m?.name).toBe("DAMAK");
   });
 
-  it("district exact single match wins even when name differs", () => {
+  it("Kerabari Morang must not match a covered area named Kerabari in Bandipur", () => {
+    const dest = { name: "KERABARI - MORANG", district: "MORANG" as string | null };
+    const branches: Branch[] = [
+      // NCM currently returns BANDIPUR before the correct branch, and its
+      // Tanahu coverage list happens to contain another KERABARI.
+      { name: "BANDIPUR", district: "TANAHU", covered_areas: "GURDUM, KERABARI, KHAREY" },
+      { name: "DAMAULI", district: "TANAHU", covered_areas: "BHATGAUN, KERABARI" },
+      { name: "BELBARI", district: "MORANG", covered_areas: "KANEPOKHARI" },
+      { name: "KERABARI MORANG", district: "MORANG", covered_areas: "BAGAICHHA, AMJUNGI" },
+    ];
+
+    const m = matchNcmBranch(dest as any, branches as any);
+    expect(m?.name).toBe("KERABARI MORANG");
+  });
+
+  it("covered-area fallback never crosses a known destination district", () => {
+    const dest = { name: "DUPLICATE PLACE - MORANG", district: "MORANG" as string | null };
+    const branches: Branch[] = [
+      { name: "WRONG", district: "TANAHU", covered_areas: "DUPLICATE PLACE" },
+      { name: "MORANG HUB A", district: "MORANG", covered_areas: "SOMEWHERE ELSE" },
+      { name: "MORANG HUB B", district: "MORANG", covered_areas: "ANOTHER PLACE" },
+    ];
+
+    expect(matchNcmBranch(dest as any, branches as any)).toBeUndefined();
+  });
+
+  it("district exact single match does not win when destination differs", () => {
     const dest = { name: "Random Village", district: "Kaski" as string | null };
     const branches: Branch[] = [{ name: "POKHARA", district: "Kaski" }];
     const m = matchNcmBranch(dest as any, branches as any);
-    expect(m?.name).toBe("POKHARA");
+    expect(m).toBeUndefined();
+  });
+
+  it("ambiguous same-district covered-area matches are ignored", () => {
+    const dest = { name: "Shared Place - Jhapa", district: "Jhapa" as string | null };
+    const branches: Branch[] = [
+      { name: "DAMAK", district: "Jhapa", covered_areas: "SHARED PLACE" },
+      { name: "BIRTAMODE", district: "Jhapa", covered_areas: "SHARED PLACE" },
+    ];
+
+    expect(matchNcmBranch(dest as any, branches as any)).toBeUndefined();
   });
 
   it("no destination => undefined", () => {
@@ -160,12 +203,6 @@ describe("matchNcmBranch — regression: Khalanga/Darchula must not book to Amar
     expect(matchNcmBranch(dest as any, FARWEST as any)).toBeUndefined();
   });
 
-  it("name-token tier (3b) still fires when districts agree (Pokhara Branch -> POKHARA)", () => {
-    const dest = { name: "Pokhara Branch - Kaski", district: "Kaski" as string | null };
-    const branches: Branch[] = [{ name: "POKHARA", district: "Kaski" }];
-    expect(matchNcmBranch(dest as any, branches as any)?.name).toBe("POKHARA");
-  });
-
   it("covered_areas tier still fires when hub and branch districts agree", () => {
     const dest = { name: "Jhiljhile - Jhapa", district: "Jhapa" as string | null };
     // multi-branch Jhapa so tier 1 is ambiguous and the covered_areas tier is what resolves it
@@ -173,14 +210,4 @@ describe("matchNcmBranch — regression: Khalanga/Darchula must not book to Amar
     expect(m?.name).toBe("DAMAK");
   });
 
-  it("no regression when the hub has no district — gate falls back to allowing the match", () => {
-    const dest = { name: "Khalanga", district: null };
-    expect(matchNcmBranch(dest as any, FARWEST as any)?.name).toBe("AMARGADHI");
-  });
-
-  it("no regression when the branch carries no district — gate falls back to allowing the match", () => {
-    const dest = { name: "Khalanga - Darchula", district: "Darchula" as string | null };
-    const branches: Branch[] = [{ name: "AMARGADHI", covered_areas: "KHALANGA, JOGBUDHA" }];
-    expect(matchNcmBranch(dest as any, branches as any)?.name).toBe("AMARGADHI");
-  });
 });
