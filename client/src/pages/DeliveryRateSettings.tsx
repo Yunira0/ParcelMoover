@@ -127,7 +127,7 @@ const DeliveryRateSettings: React.FC<Props> = ({ embedded = false }) => {
   if (!canConfigure) {
     return (
       <div className="rates-page">
-        <PageHeader title="Rates" subtitle="Rates are only available to super admins or admins granted settings access." />
+        <PageHeader title="Rates" />
       </div>
     );
   }
@@ -140,7 +140,6 @@ const DeliveryRateSettings: React.FC<Props> = ({ embedded = false }) => {
     return <Navigate to={`/settings?tab=rates${origin ? `&origin=${encodeURIComponent(origin)}` : ''}`} replace />;
   }
 
-  const originName = originOptions.find((o) => o.id === selectedOrigin)?.label ?? '';
   const showImportButton = !isHeadOfficeView || canEditHeadOffice;
 
   const toggleImport = () => {
@@ -191,7 +190,7 @@ const DeliveryRateSettings: React.FC<Props> = ({ embedded = false }) => {
   return (
     <div className="rates-page">
       {!embedded && (
-        <PageHeader title="Rates" subtitle="The rate from your branch to every destination." />
+        <PageHeader title="Rates" />
       )}
 
       {loadError && <Banner tone="danger">{loadError}</Banner>}
@@ -203,7 +202,6 @@ const DeliveryRateSettings: React.FC<Props> = ({ embedded = false }) => {
         destinations={destinations}
         isHeadOffice={isHeadOfficeView}
         originLocationId={selectedOrigin}
-        originName={originName}
         rates={rates}
         loading={loadingDestinations || loadingRates}
         canEditRates={isHeadOfficeView ? canEditHeadOffice : canConfigure}

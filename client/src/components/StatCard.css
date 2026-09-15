@@ -62,7 +62,7 @@
   color: var(--color-text-primary);
   font-size: var(--font-size-xl);
   font-weight: var(--font-weight-bold);
-  line-height: var(--line-height-xl);
+  line-height: var(--line-height-lg);
   /* Figures in a row of cards should line up digit for digit. */
   font-variant-numeric: tabular-nums;
 }

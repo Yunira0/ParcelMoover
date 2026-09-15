@@ -220,7 +220,6 @@ const SalesOverview: React.FC = () => {
     <div className="order-management-container merchant-overview-page sales-overview-page">
       <PageHeader
         title="Sales Overview"
-        subtitle="Order and cash-flow snapshot for a sales rep's vendors, or all of them."
       />
 
       <SalesOverviewFilterBar

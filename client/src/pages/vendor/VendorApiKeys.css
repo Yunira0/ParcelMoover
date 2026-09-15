@@ -39,7 +39,7 @@
 }
 
 .api-key-status.active {
-  color: #16a34a;
+  color: var(--color-success-default);
 }
 
 .api-key-status.revoked {

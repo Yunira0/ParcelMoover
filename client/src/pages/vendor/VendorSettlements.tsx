@@ -99,7 +99,7 @@ const VendorSettlements: React.FC = () => {
 
   return (
     <div className="vendor-finance-page">
-      <PageHeader title="Settlements" subtitle="Oversee and monitor your payouts throughout the settlement network." />
+      <PageHeader title="Settlements" />
 
       <div className="vendor-finance-toolbar">
         <div className="vendor-finance-date-range">

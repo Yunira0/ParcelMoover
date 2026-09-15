@@ -303,7 +303,6 @@ const BillingManagement: React.FC = () => {
     <div className="vendor-finance-page">
       <PageHeader
         title="Billing & Credit Control"
-        subtitle="Verify vendor payments, review outstanding balances, and set the credit thresholds."
       />
 
       <SegmentedTabs

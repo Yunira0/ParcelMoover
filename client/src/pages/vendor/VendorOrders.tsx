@@ -522,7 +522,7 @@ const VendorOrders: React.FC = () => {
 
   return (
     <div className="vendor-orders-page">
-      <PageHeader title="Orders" subtitle="Track and manage your package orders across all hubs." />
+      <PageHeader title="Orders" />
 
       {loadError && <p className="vo-load-error">{loadError}</p>}
 

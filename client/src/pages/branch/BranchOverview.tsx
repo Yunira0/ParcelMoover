@@ -206,7 +206,6 @@ const BranchOverview: React.FC = () => {
     <div className="order-management-container merchant-overview-page branch-overview-page">
       <PageHeader
         title="Branch Overview"
-        subtitle="Order and cash-flow snapshot for a branch pair, or all branches."
         actionLabel={isSuperAdmin ? 'New Branch' : undefined}
         actionIcon={<Plus size={16} />}
         onAction={() => setAddBranchOpen(true)}

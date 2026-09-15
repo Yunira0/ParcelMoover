@@ -80,7 +80,7 @@ const RevertSettlementModal: React.FC<RevertSettlementModalProps> = ({
 
   return (
     <div className="modal-overlay">
-      <div className="modal-content" style={{ maxWidth: '480px' }}>
+      <div className="modal-content" style={{ width: '480px' }}>
         <div className="modal-header">
           <h2>{copy.title}</h2>
           <Button variant="ghost" size="icon" className="modal-close-btn" onClick={onClose}>

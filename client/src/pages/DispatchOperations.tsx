@@ -628,7 +628,7 @@ const DispatchOperations: React.FC = () => {
 
   return (
     <div className="dispatch-operations-container">
-      <PageHeader title="Local Dispatch" subtitle="Oversee and monitor your dispatch orders throughout the hub network.">
+      <PageHeader title="Local Dispatch">
         <TicketCategoryButton category="delivery" notificationType="dispatch" />
       </PageHeader>
 

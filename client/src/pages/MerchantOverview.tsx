@@ -286,7 +286,6 @@ const MerchantOverview: React.FC = () => {
     <div className="order-management-container merchant-overview-page">
       <PageHeader
         title="Vendor Overview"
-        subtitle="Order and cash-flow snapshot for a single vendor, or all of them."
       />
 
       <MerchantFilterBar

@@ -821,7 +821,7 @@ const PickupOperations: React.FC = () => {
 
   return (
     <div className="pickup-operations-container">
-      <PageHeader title="Pickup Operations" subtitle="Manage and track your pickup orders across the hub network.">
+      <PageHeader title="Pickup Operations">
         <TicketCategoryButton category="pickup" notificationType="pickup" />
       </PageHeader>
 

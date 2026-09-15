@@ -49,7 +49,7 @@
 }
 
 .rates-panel-toolbar .search-field {
-  max-width: 420px;
+  flex: 1;
 }
 
 .rates-panel-status {
@@ -123,6 +123,7 @@
 .rates-panel-input {
   position: relative;
   min-width: 140px;
+  max-width: 240px;
 }
 
 .rates-panel-actions {

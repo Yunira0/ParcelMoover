@@ -23,7 +23,6 @@ const JournalPage: React.FC = () => {
     <div className="acc-page">
       <PageHeader
         title="Journal Entries"
-        subtitle="Every entry the books hold, newest first"
         actionLabel={canWrite ? 'New entry' : undefined}
         actionIcon={<Plus size={16} />}
         onAction={() => setNewEntryOpen(true)}

@@ -104,7 +104,6 @@ const CreateOrderPage: React.FC = () => {
   } | null;
   const prefillInitialData = navState?.initialData;
   const editOrderId = navState?.mode === 'edit' ? navState.orderId : undefined;
-  const editTrackingId = navState?.mode === 'edit' ? navState.trackingId : undefined;
   const isEditMode = Boolean(editOrderId);
 
   const isVendorActor = isVendorSide();
@@ -615,9 +614,6 @@ const CreateOrderPage: React.FC = () => {
     <div className="create-order-page">
       <PageHeader
         title={isEditMode ? 'Edit Order' : 'Create Order'}
-        subtitle={isEditMode
-          ? `Update parcel details for ${editTrackingId || 'this order'}. Changes are recorded in the parcel history.`
-          : 'Set up and submit new package orders through the system. (Enter item value for parcel exceeding Rs 5000)'}
       />
 
       {!isEditMode && <BillingStatusBanner />}

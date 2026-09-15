@@ -600,7 +600,7 @@ const OOVOperations: React.FC = () => {
 
   return (
     <div className="oov-operations-container">
-      <PageHeader title="Transit Operations" subtitle="Keep track of your parcel orders across the entire hub network." />
+      <PageHeader title="Transit Operations" />
 
       <SegmentedTabs
         ariaLabel="Order operation filters"

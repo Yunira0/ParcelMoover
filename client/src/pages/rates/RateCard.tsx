@@ -35,7 +35,6 @@ interface Props {
   /** True for head office, whose rates live on the destinations themselves. */
   isHeadOffice: boolean;
   originLocationId: string;
-  originName: string;
   /** Branch views only - every route rate out of this origin. */
   rates: DeliveryRate[];
   loading: boolean;
@@ -62,7 +61,6 @@ const RateCard: React.FC<Props> = ({
   destinations,
   isHeadOffice,
   originLocationId,
-  originName,
   rates,
   loading,
   canEditRates,
@@ -265,6 +263,7 @@ const RateCard: React.FC<Props> = ({
   const columns = [
     {
       header: 'Destination',
+      width: canEditRates ? '36%' : '40%',
       accessor: (row: Row) => (
         <div className="rates-panel-destination">
           <span className="rates-panel-destination-name">{row.name}</span>
@@ -280,12 +279,12 @@ const RateCard: React.FC<Props> = ({
     {
       header: isHeadOffice ? 'Per-destination rate (Rs.)' : 'Rate (Rs.)',
       accessor: (row: Row) => rateInput(row, 'rate', 'Rate', 'e.g. 155'),
-      width: '180px',
+      width: canEditRates ? '26%' : '30%',
     },
     {
       header: 'Branch rate (Rs.)',
       accessor: (row: Row) => rateInput(row, 'branchRate', 'Branch rate', 'e.g. 100'),
-      width: '180px',
+      width: canEditRates ? '26%' : '30%',
     },
     ...(canEditRates
       ? [{
@@ -320,7 +319,7 @@ const RateCard: React.FC<Props> = ({
               </div>
             );
           },
-          width: '120px',
+          width: '12%',
         }]
       : []),
   ];
@@ -356,6 +355,9 @@ const RateCard: React.FC<Props> = ({
             columns={columns}
             data={pagedRows}
             selectable={false}
+            // Fixed layout with a share per column keeps the spacing even; below
+            // this width the table scrolls sideways instead of squeezing inputs.
+            minWidth="720px"
             loading={loading}
             loadingMessage="Loading rates…"
             emptyMessage={

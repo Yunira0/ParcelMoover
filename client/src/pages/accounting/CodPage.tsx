@@ -21,11 +21,9 @@ import './Accounting.css';
 const HEADINGS = {
   rider: {
     title: 'Rider COD',
-    subtitle: 'COD statements settled with each rider',
   },
   vendor: {
     title: 'Vendor COD',
-    subtitle: 'COD statements paid out to each vendor',
   },
 } as const;
 
@@ -36,7 +34,6 @@ const CodPage: React.FC<{ payeeType: 'rider' | 'vendor' }> = ({ payeeType }) => 
     <div className="acc-page">
       <PageHeader
         title={HEADINGS[payeeType].title}
-        subtitle={HEADINGS[payeeType].subtitle}
         actionLabel="Add settlement"
         actionIcon={<Plus size={16} />}
         onAction={() => navigate(`/finance/settlements/new?type=${payeeType}`)}

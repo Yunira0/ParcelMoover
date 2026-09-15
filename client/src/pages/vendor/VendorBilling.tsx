@@ -117,7 +117,6 @@ const VendorBilling: React.FC = () => {
     <div className="vendor-finance-page">
       <PageHeader
         title="Billing & Payments"
-        subtitle="Your account balance with us, and how to clear outstanding delivery charges."
       />
 
       {loading ? (

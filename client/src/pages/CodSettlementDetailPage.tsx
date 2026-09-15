@@ -170,7 +170,7 @@ const CodSettlementDetailPage: React.FC = () => {
 
   return (
     <div className="cod-detail-page">
-      <PageHeader title={meta.title} subtitle={meta.description} onBack={() => navigate('/dashboard')}>
+      <PageHeader title={meta.title} onBack={() => navigate('/dashboard')}>
         <Button variant="secondary" onClick={handleExport} disabled={loading || rows.length === 0}>
           <Download size={14} /> Download
         </Button>

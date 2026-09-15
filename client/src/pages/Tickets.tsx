@@ -288,7 +288,6 @@ const Tickets: React.FC = () => {
     <div className="tickets-container">
       <PageHeader
         title="CX / Tickets"
-        subtitle="Manage customer tickets, track status and resolve issues."
         actionLabel={vendorSide ? 'Create ticket' : undefined}
         actionIcon={vendorSide ? <Plus size={16} /> : undefined}
         onAction={vendorSide ? () => setIsCreateOpen(true) : undefined}

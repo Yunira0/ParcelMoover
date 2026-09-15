@@ -609,7 +609,7 @@ const BulkOrderPage: React.FC = () => {
             <p role="alert" className="bop-error">{senderError}</p>
           ) : actingForVendor ? (
             <div className="bop-sender-fields">
-              <div style={{ gridColumn: '1 / -1' }}>
+              <div className="bop-field-full">
                 <label>
                   Vendor <span className="required">*</span>
                 </label>

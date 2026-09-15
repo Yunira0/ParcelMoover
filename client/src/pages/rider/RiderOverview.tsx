@@ -221,7 +221,6 @@ const RiderOverview: React.FC = () => {
     <div className="order-management-container merchant-overview-page rider-overview-page">
       <PageHeader
         title="Rider Overview"
-        subtitle="Order and cash-flow snapshot for a single rider, or all of them."
       />
 
       <RiderOverviewFilterBar

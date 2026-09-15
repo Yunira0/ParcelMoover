@@ -249,10 +249,6 @@ const DestinationsSettings: React.FC = () => {
   return (
     <div className="dest-settings">
       <div className="dest-settings-head">
-        <div>
-          <h2>Destinations &amp; Covered Areas</h2>
-          <p>Add a destination (hub/branch), then list the areas it covers. Both become selectable when creating orders.</p>
-        </div>
         <Button variant="primary" onClick={openAddDest}>
           <Plus size={16} /> Add Destination
         </Button>
