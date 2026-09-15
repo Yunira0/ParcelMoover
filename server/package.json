@@ -7,7 +7,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "build": "prisma generate && tsc",
-    "start": "prisma migrate deploy && node dist/index.js",
+    "start": "prisma migrate deploy && (node dist/scripts/repoint-branch-deposits.js --commit --once || true) && node dist/index.js",
     "redis": "redis-server --save \"\" --appendonly no",
     "prisma:generate:soft": "prisma generate || echo \"WARN: prisma generate failed (engine locked?) - generated client may be stale\"",
     "server:dev": "npm run prisma:generate:soft && nodemon -L ./src/index.ts",
