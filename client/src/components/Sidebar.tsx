@@ -399,7 +399,7 @@ const BranchSidebar: React.FC = () => {
         <SidebarSection label="Management" />
         <SidebarItem to="/vendors" icon={Store} label="Vendor Management" />
         <SidebarItem to="/riders" icon={Bike} label="Rider Management" />
-        <SidebarItem to="/settings/delivery-rates" icon={Route} label="Rates" />
+        <SidebarItem to="/branches/destinations" icon={MapPin} label="Destinations & Rates" />
 
         <SidebarSection label="Finance" />
         <SidebarItem to="/branches/settlement" icon={Banknote} label="Branch COD" />

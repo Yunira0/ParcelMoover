@@ -479,3 +479,8 @@
   background: var(--color-danger-surface);
   color: var(--color-danger-default);
 }
+
+/* A covered area shown read-only (branch view): not clickable. */
+.dest-area-chip--static {
+  cursor: default;
+}

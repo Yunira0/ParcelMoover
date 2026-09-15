@@ -132,12 +132,13 @@ const DeliveryRateSettings: React.FC<Props> = ({ embedded = false }) => {
     );
   }
 
-  // Rates live inside Destination Management now. This standalone route stays
-  // only for branch-workspace admins, who can't open /settings (it also holds
-  // destination CRUD and global pricing); everyone else is sent to the tab.
-  if (!embedded && !isBranchWorkspace) {
+  // Rates live as a tab: head office's Destination Management, or the branch
+  // workspace's Destinations & Rates page. This old standalone route only
+  // forwards bookmarks to whichever one the viewer can open.
+  if (!embedded) {
     const origin = searchParams.get('origin');
-    return <Navigate to={`/settings?tab=rates${origin ? `&origin=${encodeURIComponent(origin)}` : ''}`} replace />;
+    const base = isBranchWorkspace ? '/branches/destinations' : '/settings';
+    return <Navigate to={`${base}?tab=rates${origin && !isBranchWorkspace ? `&origin=${encodeURIComponent(origin)}` : ''}`} replace />;
   }
 
   const showImportButton = !isHeadOfficeView || canEditHeadOffice;
@@ -189,10 +190,6 @@ const DeliveryRateSettings: React.FC<Props> = ({ embedded = false }) => {
 
   return (
     <div className="rates-page">
-      {!embedded && (
-        <PageHeader title="Rates" />
-      )}
-
       {loadError && <Banner tone="danger">{loadError}</Banner>}
 
       <RateCard

@@ -64,6 +64,7 @@ const CashBankVoucherPage = lazy(() => import('./pages/finance/CashBankVoucherPa
 const MastersPage = lazy(() => import('./pages/finance/MastersPage'))
 const SettlementPayPage = lazy(() => import('./pages/SettlementPayPage'))
 const DeliveryRateSettings = lazy(() => import('./pages/DeliveryRateSettings'))
+const BranchDestinations = lazy(() => import('./pages/branch/BranchDestinations'))
 const Settings = lazy(() => import('./pages/settings/Settings'))
 const SlaSettings = lazy(() => import('./pages/SlaSettings'))
 const PickupTimeSlots = lazy(() => import('./pages/PickupTimeSlots'))
@@ -297,6 +298,10 @@ function App() {
           <Route
             path="/settings"
             element={<RoleGuard allowedRoles={['super_admin', 'admin']} adminPermission="SETTINGS_ACCESS"><Settings /></RoleGuard>}
+          />
+          <Route
+            path="/branches/destinations"
+            element={<RoleGuard allowedRoles={['admin']} adminPermission="SETTINGS_ACCESS" allowBranchWorkspace><BranchDestinations /></RoleGuard>}
           />
           <Route
             path="/settings/delivery-rates"

@@ -96,6 +96,8 @@ export function isBranchWorkspacePathAllowed(pathname: string): boolean {
     // Includes /branches/settlement/new — a branch creates its own COD statement.
     pathname.startsWith('/branches/settlement/') ||
     pathname === '/branches/billing' ||
+    // Read-only destination network (editing stays in head-office Settings).
+    pathname === '/branches/destinations' ||
     // Rates, pinned to the branch's own hub as origin. No SETTINGS_ACCESS
     // needed: the route's RoleGuard lets a branch workspace through, and the
     // server confines reads and writes to routes out of their own hub.
