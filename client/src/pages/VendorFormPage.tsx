@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, CheckCircle, Upload, X, Building2, User, FileText, CreditCard, Lock, Tag, ExternalLink } from 'lucide-react';
+import { ArrowLeft, CheckCircle, Upload, X, Building2, User, FileText, CreditCard, Lock, Tag, ExternalLink, Receipt } from 'lucide-react';
 import Button from '../components/Button';
 import FormField from '../components/FormField';
 import {
@@ -98,8 +98,8 @@ interface VendorFormInput {
   branchZoneUrbanAreas: string;
   branchZoneRemoteAreas: string;
   branchZoneInsideValley: string;
+  companyName: string;
   registeredAddress: string;
-  registrationNo: string;
   panVatNo: string;
   citizenshipDoc: File | null;
   panVatDoc: File | null;
@@ -145,8 +145,8 @@ const emptyForm: VendorFormInput = {
   branchZoneUrbanAreas: '',
   branchZoneRemoteAreas: '',
   branchZoneInsideValley: '',
+  companyName: '',
   registeredAddress: '',
-  registrationNo: '',
   panVatNo: '',
   citizenshipDoc: null,
   panVatDoc: null,
@@ -449,7 +449,7 @@ const VendorFormPage: React.FC = () => {
           branchZoneRemoteAreas: s(d.branchZoneRemoteAreas),
           branchZoneInsideValley: s(d.branchZoneInsideValley),
           pickupLandmark: s(d.pickupLandmark),
-          registrationNo: s(d.registrationNo),
+          companyName: s(d.billingBusinessName),
           panVatNo: s(d.panVatNo),
           bankName: s(d.bankName),
           bankAccountNo: s(d.bankAccountNo),
@@ -517,8 +517,8 @@ const VendorFormPage: React.FC = () => {
     if (!form.joinedAt.trim()) errors.joinedAt = 'Joined date is required';
     if (!form.registeredAddress.trim()) errors.registeredAddress = 'Address is required';
     // Optional identity/bank fields: validate format only when provided.
-    if (form.registrationNo.trim() && !/^[\p{L}\d\s/-]+$/u.test(form.registrationNo.trim()))
-      errors.registrationNo = 'Enter a valid registration number';
+    if (form.companyName.trim() && !hasLetter(form.companyName))
+      errors.companyName = 'Company name must contain letters';
     if (form.panVatNo.trim() && !isDigits(form.panVatNo, 9, 9)) errors.panVatNo = 'PAN/VAT must be 9 digits';
     // Bank details are required, not optional like the identity fields above.
     // Every COD payout is a transfer to this account, and the vendor's own
@@ -612,8 +612,7 @@ const VendorFormPage: React.FC = () => {
           branchZoneRemoteAreas: form.branchZoneRemoteAreas,
           branchZoneInsideValley: form.branchZoneInsideValley,
           pickupLandmark: form.pickupLandmark,
-          billingBusinessName: form.onlineBusinessName,
-          registrationNo: form.registrationNo,
+          billingBusinessName: form.companyName,
           panVatNo: form.panVatNo,
           bankName: form.bankName,
           bankAccountNo: form.bankAccountNo,
@@ -689,8 +688,7 @@ const VendorFormPage: React.FC = () => {
             }
           : {}),
         pickupLandmark: form.pickupLandmark,
-        billingBusinessName: form.onlineBusinessName,
-        registrationNo: form.registrationNo,
+        billingBusinessName: form.companyName,
         panVatNo: form.panVatNo,
         bankName: form.bankName,
         bankAccountNo: form.bankAccountNo,
@@ -826,6 +824,26 @@ const VendorFormPage: React.FC = () => {
                 {fieldErrors.sales && (
                   <span className="vfp-field-error">{fieldErrors.sales}</span>
                 )}
+              </div>
+            </section>
+
+            {/* Billing Details */}
+            <section className="vfp-section">
+              <SectionHeader
+                icon={<Receipt size={18} />}
+                title="Billing Details"
+                description="Company name, address & tax details used for invoicing"
+              />
+              <div className="vfp-fields">
+                <FormField
+                  label="Company Name"
+                  value={form.companyName}
+                  onChange={set('companyName')}
+                  placeholder="Registered / legal company name"
+                />
+                {fieldErrors.companyName && (
+                  <span className="vfp-field-error">{fieldErrors.companyName}</span>
+                )}
                 <FormField
                   label="Registered Address"
                   required
@@ -835,15 +853,6 @@ const VendorFormPage: React.FC = () => {
                 />
                 {fieldErrors.registeredAddress && (
                   <span className="vfp-field-error">{fieldErrors.registeredAddress}</span>
-                )}
-                <FormField
-                  label="Registration No."
-                  value={form.registrationNo}
-                  onChange={set('registrationNo')}
-                  placeholder="Business registration number"
-                />
-                {fieldErrors.registrationNo && (
-                  <span className="vfp-field-error">{fieldErrors.registrationNo}</span>
                 )}
                 <FormField
                   label="PAN / VAT No."
