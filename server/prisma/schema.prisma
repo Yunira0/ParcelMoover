@@ -1053,7 +1053,7 @@ model vendors {
   billing_warn_threshold        Decimal?                  @db.Decimal(12, 2)
   // Positive NPR cap on unpaid delivery charges; the vendor is blocked from
   // new orders once balance <= -credit_limit.
-  credit_limit                  Decimal                   @default(50000) @db.Decimal(12, 2)
+  credit_limit                  Decimal                   @default(3000) @db.Decimal(12, 2)
   // Vendor's own thermal sticker printer/label stock size, in millimeters.
   // Null falls back to the app default (100x75mm) - see
   // vendorPrintSettings.service.ts's resolveLabelSize. Self-service (the
@@ -1268,7 +1268,7 @@ model branch_payments {
 model billing_settings {
   id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   warn_threshold  Decimal  @default(-2000) @db.Decimal(12, 2)
-  default_credit_limit Decimal @default(50000) @db.Decimal(12, 2)
+  default_credit_limit Decimal @default(3000) @db.Decimal(12, 2)
   // Branches remit COD rather than delivery charges, so their limits are
   // intentionally separate and higher than the vendor defaults.
   branch_warn_threshold  Decimal @default(-50000) @db.Decimal(12, 2)

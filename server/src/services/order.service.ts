@@ -2,7 +2,7 @@ import { parcel_status, Prisma } from "../generated/prisma/client";
 import prisma from "../lib/prisma";
 import redis, { scanAndDelete } from "../lib/redis";
 import { AppError } from "../utils/AppError";
-import { getSlaSettings, SLA_GROUPS } from "./sla.service";
+import { getSlaSettings, SLA_GROUPS, BRANCH_COD_SLA_KEY } from "./sla.service";
 import { unclosedRemarksWhere } from "./remark.service";
 import { resolveBranchLocationIds } from "./branch.service";
 import {
@@ -4007,6 +4007,37 @@ async function computeDashboardSummary(
     return vals.length ? Math.min(...vals) : null;
   };
 
+  // Branch COD submission: parcels delivered to a branch whose collected COD is
+  // still not on any branch settlement past the SLA. Same rule branch-billing
+  // uses for a branch's overdue figure, counted here across the whole network
+  // (or the admin's own branches) so it can sit beside the other SLA breaches.
+  let overdueBranchCod = 0;
+  let overdueBranchCodAmount = 0;
+  const branchCodHours = slaSettings[BRANCH_COD_SLA_KEY];
+  if (typeof branchCodHours === "number") {
+    const branchScopeSql =
+      branchLocationIds === undefined
+        ? Prisma.empty
+        : branchLocationIds.length === 0
+        ? Prisma.sql`AND false`
+        : Prisma.sql`AND p.destination_location_id IN (${Prisma.join(branchLocationIds)}::uuid[])`;
+    const rows = await prisma.$queryRaw<Array<{ n: bigint; amount: string }>>(Prisma.sql`
+      SELECT COUNT(*)::bigint AS n,
+             COALESCE(SUM(GREATEST(0::numeric, COALESCE(cc.collected_amount, p.cod_amount))), 0) AS amount
+      FROM parcels p
+      LEFT JOIN cod_collections cc ON cc.parcel_id = p.id
+      WHERE p.deleted_at IS NULL
+        AND p.status::text IN ('delivered', 'partially_delivered')
+        AND p.delivered_at IS NOT NULL
+        AND p.delivered_at < now() - make_interval(hours => ${branchCodHours})
+        AND p.destination_location_id IS NOT NULL
+        AND NOT EXISTS (SELECT 1 FROM branch_settlement_items bsi WHERE bsi.parcel_id = p.id)
+        ${branchScopeSql}
+    `);
+    overdueBranchCod = Number(rows[0]?.n ?? 0);
+    overdueBranchCodAmount = Math.round(Number(rows[0]?.amount ?? 0) * 100) / 100;
+  }
+
   let overdueRemarks = 0;
   const remarksHours = slaSettings["remarks"];
   if (typeof remarksHours === "number") {
@@ -4092,6 +4123,9 @@ async function computeDashboardSummary(
       overdueTransit: sumStatuses(SLA_GROUPS.transit),
       overdueRemarks,
       overdueReturn: sumStatuses(SLA_GROUPS.return),
+      overdueBranchCod,
+      overdueBranchCodAmount,
+      branchCodHours: typeof branchCodHours === "number" ? branchCodHours : null,
       pickupHours: groupHours(SLA_GROUPS.pickup),
       deliveryHours: groupHours(SLA_GROUPS.delivery),
       transitHours: groupHours(SLA_GROUPS.transit),

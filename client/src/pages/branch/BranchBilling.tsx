@@ -10,12 +10,14 @@ import Pagination from '../../components/Pagination';
 import { getCurrentUserLocationId, getCurrentUserRoles, isAdminSide, isBranchWorkspaceUser } from '../../utils/auth';
 import { formatCurrency } from '../../utils/format';
 import { toBsDate } from '../../utils/nepaliDate';
+import CreditUsageBar from '../../components/CreditUsageBar';
+import FormField from '../../components/FormField';
 import { apiErrorMessage } from '../../utils/serverValidation';
 import {
   getBillingSettings, paymentQrUrl, updateBillingSettings, uploadPaymentQr, type BillingSettings,
 } from '../../services/billing.service';
 import {
-  getBranchBillingStatus, listBranchBalances, listBranchPayments, reviewBranchPayment,
+  getBranchBillingStatus, listBranchBalances, listBranchPayments, reviewBranchPayment, updateBranchCreditLimit,
   submitBranchPayment, type BranchBillingStatus, type BranchPayment,
 } from '../../services/branchBilling.service';
 import { getBranchSettlements, type BranchSettlement } from '../../services/branchTracking.service';
@@ -42,7 +44,11 @@ const BranchBilling: React.FC = () => {
   const isMasterWorkspace = isAdminSide() && !isBranchWorkspace;
   const hasAssignedBranch = Boolean(getCurrentUserLocationId());
   const requestedTab = searchParams.get('tab');
-  const initialTab: Tab = !isMasterWorkspace && requestedTab === 'statements'
+  // ?tab=branches opens the balances table directly — the dashboard's branch
+  // COD SLA row links straight here. Only a super admin has that tab.
+  const initialTab: Tab = requestedTab === 'branches' && isSuperAdmin
+    ? 'branches'
+    : !isMasterWorkspace && requestedTab === 'statements'
     ? 'statements'
     : isMasterWorkspace ? 'queue' : 'pay';
   const [activeTab, setActiveTab] = useState<Tab>(initialTab);
@@ -57,6 +63,12 @@ const BranchBilling: React.FC = () => {
   const [reviewing, setReviewing] = useState<string | null>(null);
   const [remarks, setRemarks] = useState<Record<string, string>>({});
   const [previewProof, setPreviewProof] = useState<string | null>(null);
+
+  // Per-branch credit limit editor (super_admin), mirroring the vendor one.
+  const [creditBranch, setCreditBranch] = useState<BranchBillingStatus | null>(null);
+  const [creditValue, setCreditValue] = useState('');
+  const [creditSaving, setCreditSaving] = useState(false);
+  const [creditError, setCreditError] = useState('');
 
   const [branchStatus, setBranchStatus] = useState<BranchBillingStatus | null>(null);
   const [payAmount, setPayAmount] = useState<string | null>(null);
@@ -135,6 +147,33 @@ const BranchBilling: React.FC = () => {
     catch (err) { setError(apiErrorMessage(err, 'Failed to load branch balances.')); }
     finally { setBalancesLoading(false); }
   }, [isSuperAdmin]);
+
+  const openCreditEditor = (branch: BranchBillingStatus) => {
+    setCreditBranch(branch);
+    setCreditValue(String(-branch.blockThreshold));
+    setCreditError('');
+  };
+
+  const closeCreditEditor = () => {
+    setCreditBranch(null);
+    setCreditValue('');
+    setCreditError('');
+  };
+
+  const handleSaveCredit = async () => {
+    if (!creditBranch) return;
+    setCreditSaving(true);
+    setCreditError('');
+    try {
+      await updateBranchCreditLimit(creditBranch.branchId, Number(creditValue));
+      closeCreditEditor();
+      await loadBalances();
+    } catch (err) {
+      setCreditError(apiErrorMessage(err, 'Failed to update branch credit limit.'));
+    } finally {
+      setCreditSaving(false);
+    }
+  };
 
   const loadPendingSettlements = useCallback(async () => {
     if (isMasterWorkspace) return;
@@ -249,13 +288,57 @@ const BranchBilling: React.FC = () => {
     { header: 'STATUS', accessor: (payment: BranchPayment) => <span className={`billing-pill billing-pill-${payment.status}`}>{payment.status === 'verified' && <CheckCircle2 size={12} />}{payment.status === 'pending' && <Clock size={12} />}{PAYMENT_STATUS_LABEL[payment.status]}</span>, width: '180px' },
     { header: 'REMARK', accessor: (payment: BranchPayment) => payment.reviewRemark || '—', width: '190px' },
   ];
+  // Same shape as the vendor balances table: the name, the balance everything
+  // turns on, the figures behind it, the limit with its usage bar, then state.
   const balanceColumns = [
-    { header: 'BRANCH', accessor: (branch: BranchBillingStatus) => branch.branchName, width: '220px' },
+    { header: 'BRANCH', accessor: (branch: BranchBillingStatus) => branch.branchName, width: '200px' },
+    {
+      header: 'BALANCE',
+      accessor: (branch: BranchBillingStatus) => (
+        <span className={branch.balance < 0 ? 'billing-debit' : ''}>{formatCurrency(branch.balance)}</span>
+      ),
+      width: '130px',
+    },
     { header: 'UNSETTLED COD', accessor: (branch: BranchBillingStatus) => formatCurrency(branch.unsettledCod), width: '150px' },
-    { header: 'OVERDUE COD', accessor: (branch: BranchBillingStatus) => <span className={branch.overdueCod > 0 ? 'billing-debit' : ''}>{formatCurrency(branch.overdueCod)}</span>, width: '150px' },
-    { header: 'VERIFIED CREDIT', accessor: (branch: BranchBillingStatus) => formatCurrency(branch.paymentsReceived), width: '160px' },
-    { header: 'OUTSTANDING', accessor: (branch: BranchBillingStatus) => <span className={branch.balance < 0 ? 'billing-debit' : ''}>{formatCurrency(Math.max(0, -branch.balance))}</span>, width: '150px' },
-    { header: 'STATE', accessor: (branch: BranchBillingStatus) => <span className={`billing-pill billing-pill-${branch.state === 'warned' ? 'pending' : branch.state}`}>{branch.state === 'blocked' ? 'Transit blocked' : branch.state === 'warned' ? 'Warning' : 'Clear'}</span>, width: '140px' },
+    {
+      header: 'OVERDUE COD',
+      accessor: (branch: BranchBillingStatus) => (
+        <span className={branch.overdueCod > 0 ? 'billing-debit' : ''}>{formatCurrency(branch.overdueCod)}</span>
+      ),
+      width: '140px',
+    },
+    { header: 'VERIFIED CREDIT', accessor: (branch: BranchBillingStatus) => formatCurrency(branch.paymentsReceived), width: '150px' },
+    {
+      header: 'CREDIT LIMIT',
+      accessor: (branch: BranchBillingStatus) => (
+        <span className="billing-limit-cell">
+          <span className="billing-limit-row">
+            {formatCurrency(-branch.blockThreshold)}
+            {isSuperAdmin && (
+              <button
+                type="button"
+                className="billing-doc-link billing-doc-preview-btn"
+                onClick={() => openCreditEditor(branch)}
+                aria-label={`Edit credit limit for ${branch.branchName}`}
+              >
+                Edit
+              </button>
+            )}
+          </span>
+          <CreditUsageBar balance={branch.balance} creditLimit={-branch.blockThreshold} state={branch.state} />
+        </span>
+      ),
+      width: '190px',
+    },
+    {
+      header: 'STATE',
+      accessor: (branch: BranchBillingStatus) => (
+        <span className={`billing-pill billing-pill-${branch.state === 'ok' ? 'verified' : branch.state === 'warned' ? 'pending' : 'rejected'}`}>
+          {branch.state}
+        </span>
+      ),
+      width: '110px',
+    },
   ];
   const balanceRows = balances.map((branch) => ({ ...branch, id: branch.branchId }));
   const pendingRows = pendingSettlements.map((settlement) => ({ ...settlement, id: settlement.id }));
@@ -307,6 +390,41 @@ const BranchBilling: React.FC = () => {
     {activeTab === 'branches' && isSuperAdmin && <><p className="billing-hint">A branch at its block threshold cannot receive new transit until verified credit clears the hold. Overdue COD is COD past the branch SLA in the SLA settings page{balances[0]?.codSlaHours ? ` (currently ${balances[0].codSlaHours} hours after delivery)` : ''}.</p><Table columns={balanceColumns} data={balanceRows} loading={balancesLoading} loadingMessage="Calculating branch balances…" emptyMessage="No active branches found." minWidth="1100px" /></>}
 
     {activeTab === 'settings' && isSuperAdmin && <div className="billing-grid"><section className="billing-card"><h3>Branch transit thresholds</h3><p className="billing-hint">Both values are negative balances. A branch is warned at the first threshold and cannot receive transit at the block threshold.</p><form className="billing-form" onSubmit={saveThresholds}><label>Warn threshold<input type="number" step="0.01" value={branchWarn} onChange={(event) => setBranchWarn(event.target.value)} disabled={savingSettings} /></label><label>Transit block threshold<input type="number" step="0.01" value={branchBlock} onChange={(event) => setBranchBlock(event.target.value)} disabled={savingSettings} /></label>{settingsError && <p className="vendor-finance-error">{settingsError}</p>}{settingsMessage && <p className="billing-success"><CheckCircle2 size={14} /> {settingsMessage}</p>}<Button type="submit" variant="primary" disabled={savingSettings}>{savingSettings ? 'Saving…' : 'Save thresholds'}</Button></form></section><section className="billing-card"><h3>Branch payment QR</h3><p className="billing-hint">Shown to branch staff before they add money.</p>{settings?.paymentQrPath ? <img className="billing-qr" src={paymentQrUrl(settings.paymentQrPath)} alt="Current payment QR" /> : <p className="billing-hint">No QR uploaded yet.</p>}<FileField label={settings?.paymentQrPath ? 'Replace with a new QR' : 'Upload a QR'} hint="JPG, PNG, or WebP · max 5 MB" file={qrFile} onChange={(file) => { setQrFile(file); setQrError(''); setQrMessage(''); }} />{qrError && <p className="vendor-finance-error">{qrError}</p>}{qrMessage && <p className="billing-success"><CheckCircle2 size={14} /> {qrMessage}</p>}{qrFile && <div className="billing-review-actions"><Button variant="secondary" onClick={() => setQrFile(null)} disabled={qrUploading}>Cancel</Button><Button variant="primary" onClick={() => void replaceQr()} disabled={qrUploading}>{qrUploading ? 'Uploading…' : 'Replace QR'}</Button></div>}</section></div>}
+
+    {creditBranch && (
+      <div className="modal-overlay" onClick={closeCreditEditor}>
+        <div className="modal-content" role="dialog" aria-modal="true" aria-label={`Edit credit limit for ${creditBranch.branchName}`} onClick={(e) => e.stopPropagation()}>
+          <div className="modal-header">
+            <h2>Credit limit — {creditBranch.branchName}</h2>
+            <Button variant="ghost" size="icon" className="modal-close-btn" onClick={closeCreditEditor} aria-label="Close">
+              <X size={18} />
+            </Button>
+          </div>
+          <p className="modal-desc">
+            Unsettled COD past this amount stops the branch receiving new transit
+            until verified credit clears the hold.
+          </p>
+          <div className="form-grid">
+            <FormField
+              label="Credit limit (NPR)"
+              required
+              type="decimal"
+              value={creditValue}
+              onChange={(v) => { setCreditValue(v); setCreditError(''); }}
+              placeholder="10000"
+              hint="Only this branch changes."
+            />
+          </div>
+          {creditError && <p role="alert" className="error-text">{creditError}</p>}
+          <div className="modal-footer">
+            <Button variant="secondary" onClick={closeCreditEditor} disabled={creditSaving}>Cancel</Button>
+            <Button variant="primary" onClick={() => void handleSaveCredit()} disabled={creditSaving}>
+              {creditSaving ? 'Saving…' : 'Save limit'}
+            </Button>
+          </div>
+        </div>
+      </div>
+    )}
 
     {previewProof && <div className="modal-overlay" onClick={() => setPreviewProof(null)}><div className="billing-proof-modal" onClick={(event) => event.stopPropagation()}><div className="billing-proof-modal-header"><span>Branch payment proof</span><button type="button" className="billing-proof-modal-close" onClick={() => setPreviewProof(null)} aria-label="Close preview"><X size={18} /></button></div><img src={uploadUrl(previewProof)} alt="Submitted branch payment proof" /><a href={uploadUrl(previewProof)} target="_blank" rel="noreferrer" className="billing-doc-link">Open full size <ExternalLink size={12} /></a></div></div>}
   </div>;
