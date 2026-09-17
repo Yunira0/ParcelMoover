@@ -31,7 +31,10 @@ export interface BillingStatus {
   /** Negative = the vendor owes the office. */
   balance: number;
   warnThreshold: number;
+  /** Kept for compatibility: always -creditLimit. Prefer creditLimit. */
   blockThreshold: number;
+  /** This vendor's own credit limit (positive NPR). */
+  creditLimit: number;
   state: VendorBillingState;
   /** How much would lift a block. Zero when not blocked. */
   amountToClearBlock: number;
@@ -65,7 +68,8 @@ export interface VendorPaymentsResponse {
 export interface BillingSettings {
   id: string;
   warnThreshold: number;
-  blockThreshold: number;
+  /** System default credit limit assigned to every new vendor (positive NPR). */
+  defaultCreditLimit: number;
   branchWarnThreshold: number;
   branchBlockThreshold: number;
   paymentQrPath: string | null;
@@ -135,12 +139,21 @@ export const getBillingSettings = async (): Promise<BillingSettings> => {
 
 export const updateBillingSettings = async (input: {
   warnThreshold?: number;
-  blockThreshold?: number;
+  defaultCreditLimit?: number;
   branchWarnThreshold?: number;
   branchBlockThreshold?: number;
   paymentNote?: string | null;
 }): Promise<BillingSettings> => {
   const response = await api.patch('/billing/settings', input);
+  return response.data.data;
+};
+
+/** Override one vendor's credit limit. Touches only that vendor. */
+export const updateVendorCreditLimit = async (
+  vendorId: string,
+  creditLimit: number,
+): Promise<BillingStatus> => {
+  const response = await api.patch(`/billing/vendors/${vendorId}/credit-limit`, { creditLimit });
   return response.data.data;
 };
 

@@ -98,6 +98,15 @@ export const createOrderSchema = z.object({
   // Places the order even though the vendor's account is past its block
   // threshold. Honoured for super_admin only — see assertVendorCanCreateOrder.
   overrideBillingBlock: z.boolean().optional(),
+  // Daraz-style voucher: a claimed voucher's id, or its code (MOVE100).
+  // Mutually exclusive (enforced in _createOrderImpl so every entry point —
+  // dashboard, bulk, partner API — shares the check); resolved to this
+  // vendor's claim inside _createOrderImpl.
+  voucherClaimId: optionalUuidSchema,
+  voucherCode: z.string().trim().min(3).max(32)
+    .transform(v => v.toUpperCase())
+    .refine(v => /^[A-Z0-9][A-Z0-9_-]{2,31}$/.test(v), 'Voucher code is invalid')
+    .optional(),
 });
 
 export type CreateOrderInput = z.infer<typeof createOrderSchema>;

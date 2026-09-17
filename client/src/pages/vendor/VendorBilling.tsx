@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Clock, QrCode } from 'lucide-react';
 import PageHeader from '../../components/PageHeader';
 import Button from '../../components/Button';
+import CreditUsageBar from '../../components/CreditUsageBar';
 import FileField from '../../components/FileField';
 import Pagination from '../../components/Pagination';
 import {
@@ -13,6 +14,7 @@ import {
   type VendorPayment,
 } from '../../services/billing.service';
 import { formatCurrency } from '../../utils/format';
+import { payToClearBlock } from '../../utils/creditUsage';
 import { toBsDate } from '../../utils/nepaliDate';
 import { apiErrorMessage } from '../../utils/serverValidation';
 import './VendorFinance.css';
@@ -75,10 +77,13 @@ const VendorBilling: React.FC = () => {
   }, [load]);
 
   // What the vendor most likely wants to pay: enough to lift a block, or the
-  // whole outstanding balance if they're only warned.
+  // whole outstanding balance if they're only warned. The block line is
+  // inclusive, so the blocked suggestion is a paisa above the server figure —
+  // paying exactly `amountToClearBlock` would land on the line and stay blocked.
+  const payToClear = status ? payToClearBlock(status.amountToClearBlock) : 0;
   const suggestedAmount =
     status && status.state !== 'ok'
-      ? (status.state === 'blocked' ? status.amountToClearBlock : Math.abs(status.balance)).toFixed(2)
+      ? (status.state === 'blocked' ? payToClear : Math.abs(status.balance)).toFixed(2)
       : '';
   const amountValue = amount ?? suggestedAmount;
 
@@ -146,7 +151,7 @@ const VendorBilling: React.FC = () => {
                 <p>
                   {status.state === 'blocked'
                     ? `${formatCurrency(owed)} is outstanding. Pay at least ${formatCurrency(
-                        status.amountToClearBlock,
+                        payToClear,
                       )} to resume placing orders.`
                     : `${formatCurrency(owed)} is outstanding. Order creation pauses at ${formatCurrency(
                         Math.abs(status.blockThreshold),
@@ -173,6 +178,14 @@ const VendorBilling: React.FC = () => {
                   <span className={owed > 0 ? 'billing-debit' : ''}>{formatCurrency(owed)}</span>
                 </div>
               </div>
+              <CreditUsageBar
+                balance={status.balance}
+                creditLimit={status.creditLimit}
+                state={status.state}
+              />
+              <p className="billing-hint">
+                Credit limit {formatCurrency(status.creditLimit)} — order creation pauses past it.
+              </p>
               {status.pendingPaymentAmount > 0 && (
                 <p className="billing-hint">
                   <Clock size={14} /> {formatCurrency(status.pendingPaymentAmount)} submitted and

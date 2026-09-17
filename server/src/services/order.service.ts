@@ -29,6 +29,7 @@ import {
   nepalDayRangeUtc,
 } from "../utils/nepalTime";
 import { resolveOwnVendorId, isStaffActor } from "./vendor-scope.service";
+import { resolveVendorClaimTx } from "./voucher.service";
 import { hasAdminPermission } from "../middlewares/adminPermission.middleware";
 import { invalidateVendorFinanceCache, invalidateRiderFinanceCache } from "./finance.service";
 import { emitWebhookEvent, emitWebhookEventsBatch } from "./webhookDispatch.service";
@@ -1011,6 +1012,9 @@ async function _createOrderImpl(
   if (data.pieces !== undefined && (!Number.isInteger(data.pieces) || data.pieces <= 0)) {
     throw new AppError(400, "pieces must be a positive integer");
   }
+  if (data.voucherClaimId && data.voucherCode) {
+    throw new AppError(400, "Provide either voucherClaimId or voucherCode, not both");
+  }
 
   // Resolves vendor AND vendor_staff actors to their own vendor - previously
   // only the "vendor" role was auto-resolved here, so orders created by a
@@ -1170,7 +1174,7 @@ async function _createOrderImpl(
       findOrCreateParty(tx, data.receiver),
     ]);
 
-    const parcel = await tx.parcels.create({
+    let parcel = await tx.parcels.create({
       data: {
         tracking_id: trackingId,
         search_text: buildSearchText(trackingId, sender, receiver),
@@ -1198,6 +1202,27 @@ async function _createOrderImpl(
         created_by: actor.id,
       },
     });
+
+    // Daraz-style voucher: the pricing trigger forbids a claim on INSERT, so
+    // attach it here with an update in the same transaction — the trigger
+    // reserves the claim and writes gross/discount/net atomically, and a
+    // failure rolls the whole order back with it.
+    if (data.voucherClaimId || data.voucherCode) {
+      if ((data.orderType || 'delivery') !== 'delivery') {
+        throw new AppError(400, 'Vouchers apply to outbound delivery orders only');
+      }
+      const claim = await resolveVendorClaimTx(tx, vendor?.id ?? null, actor.id, {
+        claimId: data.voucherClaimId, code: data.voucherCode,
+      });
+      const minimum = Number(claim.voucher.minimum_charge);
+      if (deliveryCharge < minimum) {
+        throw new AppError(400, `This voucher needs a minimum delivery charge of Rs. ${minimum.toFixed(2)} (this order: Rs. ${deliveryCharge.toFixed(2)})`);
+      }
+      await tx.parcels.update({ where: { id: parcel.id }, data: { voucher_claim_id: claim.id } });
+      const priced = await tx.parcels.findUniqueOrThrow({ where: { id: parcel.id },
+        select: { delivery_charge: true, gross_delivery_charge: true, discount_amount: true, voucher_claim_id: true } });
+      parcel = { ...parcel, ...priced, voucherCode: claim.voucher.code } as typeof parcel & { voucherCode: string };
+    }
 
     // Secondary writes are logically independent, but tx is bound to a
     // single Postgres connection - Promise.all here doesn't run them in
@@ -2456,6 +2481,8 @@ function mapOrder(
     codAmount: Number(parcel.cod_amount),
     itemValue: Number(parcel.item_value),
     deliveryCharge: Number(parcel.delivery_charge),
+    grossDeliveryCharge: Number(parcel.gross_delivery_charge),
+    discountAmount: Number(parcel.discount_amount),
     // Cash actually taken from the receiver, as opposed to cod_amount, which is
     // what was meant to be taken. The two differ on a partial delivery, and
     // collected stays 0 until someone marks the parcel delivered. This is the
@@ -3146,11 +3173,23 @@ export async function getOrderByTrackingId(actor: OrderActor, trackingId: string
     createdAt: entry.created_at.toISOString(),
   }));
 
+  // Attached shipping voucher, if any — one extra indexed lookup on the detail
+  // view only (never on the list path), so the order can name its code.
+  let voucher: { code: string; title: string } | null = null;
+  if (parcel.voucher_claim_id) {
+    const claim = await prisma.voucher_claims.findUnique({ where: { id: parcel.voucher_claim_id } });
+    if (claim) {
+      const offer = await prisma.vouchers.findUnique({ where: { id: claim.voucher_id }, select: { code: true, title: true } });
+      if (offer) voucher = { code: offer.code, title: offer.title };
+    }
+  }
+
   return {
     ...mapOrder(parcel, isStaff, !!vendorId),
     canChangeStatus: isStaff,
     priceLog,
     redirectLog,
+    voucher,
     // Staff see the real author name; vendors/riders see a generic "Staff"
     // label in place of any internal staff member's name (their own / other
     // non-staff authors still show normally).
@@ -3878,22 +3917,57 @@ async function computeDashboardSummary(
   }
 
   const slaCounts: Record<string, number> = {};
+  // Delivery breaches whose destination sits inside the valley, per status.
+  // Only the delivery group is split this way - a pickup is worked by the
+  // origin branch's own riders, so splitting it by valley tells the desk
+  // nothing it doesn't already know from the row it is looking at.
+  // "Inside" is valley = 'inside' on the destination, which covers both sides
+  // of the ring road. The outside-valley figure is the status total minus this,
+  // so a destination outside the valley - or not classified at all - lands in
+  // the outside bucket, the same way pricing treats anything that is not
+  // explicitly inside (resolveDestinationPricing).
+  const slaInsideValleyCounts: Record<string, number> = {};
+  const deliverySlaStatuses: readonly string[] = SLA_GROUPS.delivery;
   if (statusThresholds.length) {
-    const breachColumns = statusThresholds.map(([status, hours]) =>
-      Prisma.sql`COUNT(*) FILTER (
-        WHERE status::text = ${status}
-          AND COALESCE(
-            (SELECT MAX(h.created_at) FROM parcel_status_history h WHERE h.parcel_id = parcels.id),
-            created_at
-          ) < now() - (${hours} * interval '1 hour')
-      ) AS ${Prisma.raw(`c_${status}`)}`,
-    );
+    const breachedSql = (status: string, hours: number) =>
+      Prisma.sql`status = ${status} AND status_since < now() - (${hours} * interval '1 hour')`;
+    const breachColumns = statusThresholds.flatMap(([status, hours]) => {
+      const columns = [
+        Prisma.sql`COUNT(*) FILTER (WHERE ${breachedSql(status, hours)}) AS ${Prisma.raw(`c_${status}`)}`,
+      ];
+      if (deliverySlaStatuses.includes(status)) {
+        columns.push(Prisma.sql`COUNT(*) FILTER (
+          WHERE ${breachedSql(status, hours)} AND destination_valley = 'inside'
+        ) AS ${Prisma.raw(`i_${status}`)}`);
+      }
+      return columns;
+    });
+    // A location's valley falls back to its parent's, the same way pricing
+    // resolves it (resolveDestinationPricing).
     const [row] = await prisma.$queryRaw<Array<Record<string, bigint>>>(Prisma.sql`
       SELECT ${Prisma.join(breachColumns)}
-      FROM parcels
-      WHERE deleted_at IS NULL ${parcelScopeSql}
+      FROM (
+        SELECT
+          status::text AS status,
+          COALESCE(
+            (SELECT MAX(h.created_at) FROM parcel_status_history h WHERE h.parcel_id = parcels.id),
+            created_at
+          ) AS status_since,
+          (
+            SELECT COALESCE(l.valley, pl.valley)
+            FROM locations l LEFT JOIN locations pl ON pl.id = l.parent_id
+            WHERE l.id = parcels.destination_location_id
+          ) AS destination_valley
+        FROM parcels
+        WHERE deleted_at IS NULL
+          AND status::text = ANY(${statusThresholds.map(([status]) => status)})
+          ${parcelScopeSql}
+      ) sla_parcels
     `);
-    for (const [status] of statusThresholds) slaCounts[status] = Number(row?.[`c_${status}`] ?? 0);
+    for (const [status] of statusThresholds) {
+      slaCounts[status] = Number(row?.[`c_${status}`] ?? 0);
+      if (row?.[`i_${status}`] !== undefined) slaInsideValleyCounts[status] = Number(row[`i_${status}`]);
+    }
   }
 
   const sumStatuses = (statuses: readonly string[]) =>
@@ -3906,6 +3980,23 @@ async function computeDashboardSummary(
     statuses
       .map((status) => ({ status, count: slaCounts[status] ?? 0 }))
       .filter((entry) => entry.count > 0);
+
+  // The delivery group split by the destination's valley: inside (both sides of
+  // the ring road) and outside (everything else) - each side with its own total
+  // and per-status breakdown.
+  const breachesByValley = (statuses: readonly string[]) => {
+    const side = (countFor: (status: string) => number) => {
+      const breaches = statuses
+        .map((status) => ({ status, count: countFor(status) }))
+        .filter((entry) => entry.count > 0);
+      return { count: breaches.reduce((n, entry) => n + entry.count, 0), breaches };
+    };
+    const inside = (status: string) => slaInsideValleyCounts[status] ?? 0;
+    return {
+      insideValley: side(inside),
+      outsideValley: side((status) => (slaCounts[status] ?? 0) - inside(status)),
+    };
+  };
 
   // Representative SLA threshold to display for a group row: the tightest
   // (smallest) configured hours among its statuses, or null if none set.
@@ -4010,6 +4101,7 @@ async function computeDashboardSummary(
       deliveryBreaches: breachesByStatus(SLA_GROUPS.delivery),
       transitBreaches: breachesByStatus(SLA_GROUPS.transit),
       returnBreaches: breachesByStatus(SLA_GROUPS.return),
+      deliveryByValley: breachesByValley(SLA_GROUPS.delivery),
     },
     weeklyTrend,
     updatedAt: new Date().toISOString(),

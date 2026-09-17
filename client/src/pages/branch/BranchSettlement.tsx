@@ -240,7 +240,7 @@ const BranchSettlement: React.FC = () => {
           {
             header: 'Settlement date',
             width: '125px',
-            accessor: (item) => toBsDate(item.settlementDate) || item.settlementDate,
+            accessor: (item) => toBsDate(item.settlementDate) || '—',
           },
         ]}
         minWidth="1250px"

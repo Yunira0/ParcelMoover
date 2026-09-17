@@ -460,7 +460,7 @@ const AdminSidebar: React.FC<{ isSuperAdmin: boolean }> = ({ isSuperAdmin }) => 
           <SidebarGroup
             label="System Management"
             icon={Wrench}
-            match={['/pickup-time-slots', '/system-logs', '/sla', '/banners', '/announcements']}
+            match={['/pickup-time-slots', '/system-logs', '/sla', '/banners', '/announcements', '/vouchers']}
           >
             {isSuperAdmin && <SubItem to="/pickup-time-slots" icon={Clock} label="Pickup Time Slots" />}
             {(isSuperAdmin || hasAdminPermission('SYSTEM_LOGS_ACCESS')) && (
@@ -473,6 +473,10 @@ const AdminSidebar: React.FC<{ isSuperAdmin: boolean }> = ({ isSuperAdmin }) => 
             {(isSuperAdmin || hasAdminPermission('SETTINGS_ACCESS')) && (
               <SubItem to="/announcements" icon={Megaphone} label="Announcements" />
             )}
+            {/* Vouchers live here, not under Vendor COD: publishing a shipping
+                offer is occasional configuration, like a banner or a time
+                slot — not a daily settlement screen. */}
+            <SubItem to="/vouchers" icon={Ticket} label="Vouchers" />
           </SidebarGroup>
         )}
 

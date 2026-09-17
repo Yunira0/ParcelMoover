@@ -65,6 +65,13 @@ const IN_DELIVERY_STATUSES: ParcelStatus[] = [
   'ready_to_deliver',
   'sent_for_delivery',
 ];
+// The "In Transit" card: the two statuses that actually mean the parcel is
+// moving - Transit (oov) and In Transit (dispatched). Mirrors
+// IN_TRANSIT_STATUSES in order.service.ts, which is what the card's number
+// counts. Kept separate from IN_DELIVERY_STATUSES above: that wider bucket also
+// holds parcels sitting at a hub or already out for delivery, and listing it
+// behind the In Transit card is exactly the mismatch this page had.
+const IN_TRANSIT_STATUSES: ParcelStatus[] = ['oov', 'dispatched'];
 const PENDING_PICKUP_STATUSES: ParcelStatus[] = ['pickup_ordered', 'rider_assigned'];
 // Return-workflow stages still in progress, i.e. not yet back with the
 // vendor (compare 'rtv-delivered', which is the terminal returned_to_vendor
@@ -95,6 +102,13 @@ export const METRICS: Record<string, MetricConfig> = {
     description: 'Orders returned to vendor.',
     status: ['returned_to_vendor'],
   },
+  'in-transit': {
+    label: 'In Transit',
+    description: 'Orders on the move between hubs — in transit or out on a dispatch.',
+    status: IN_TRANSIT_STATUSES,
+  },
+  // No longer linked from a card (the strip shows In Transit instead), but kept
+  // so bookmarks and older links to the wider in-progress bucket still resolve.
   'in-delivery': {
     label: 'In Progress',
     description: 'Orders picked up and moving through the network towards the customer.',

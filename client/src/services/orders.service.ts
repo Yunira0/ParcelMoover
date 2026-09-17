@@ -61,6 +61,9 @@ export interface CreateOrderInput {
   vendorId?: string;
   /** Set true to bypass the same-day duplicate warning after the user confirms. */
   confirmDuplicate?: boolean;
+  /** Claimed voucher id (from "My Vouchers") or its code — mutually exclusive. */
+  voucherClaimId?: string;
+  voucherCode?: string;
 }
 
 export interface Order {
@@ -91,6 +94,10 @@ export interface Order {
   codAmount: number;
   itemValue: number;
   deliveryCharge: number;
+  grossDeliveryCharge?: number;
+  discountAmount?: number;
+  /** Attached shipping voucher, if any (order detail only). */
+  voucher?: { code: string; title: string } | null;
   /** Cash actually collected from the receiver. 0 until delivered, and below codAmount on a partial. */
   collectedAmount: number;
   packageType?: string;
@@ -232,6 +239,25 @@ export interface SlaStatusBreach {
   count: number;
 }
 
+/** One side of an SLA group's valley split: its total and per-status breakdown. */
+export interface SlaValleySide {
+  count: number;
+  breaches: SlaStatusBreach[];
+}
+
+/** An SLA group split by valley. Inside valley covers both sides of the ring
+ *  road; every other destination - including one with no valley configured -
+ *  counts as outside. */
+export interface SlaValleySplit {
+  insideValley: SlaValleySide;
+  outsideValley: SlaValleySide;
+}
+
+export const EMPTY_VALLEY_SPLIT: SlaValleySplit = {
+  insideValley: { count: 0, breaches: [] },
+  outsideValley: { count: 0, breaches: [] },
+};
+
 export interface DashboardSummary {
   overview: {
     totalOrders: number;
@@ -289,6 +315,10 @@ export interface DashboardSummary {
     deliveryBreaches: SlaStatusBreach[];
     transitBreaches: SlaStatusBreach[];
     returnBreaches: SlaStatusBreach[];
+    /** Delivery breaches split by the destination's valley. Delivery only:
+     *  pickup stays a single count, since a pickup is worked by the origin
+     *  branch's own riders and the split says nothing there. */
+    deliveryByValley: SlaValleySplit;
   };
   codSettlement: {
     totalCod: number;

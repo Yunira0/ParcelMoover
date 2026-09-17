@@ -1,16 +1,20 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Info } from 'lucide-react';
 import FormField from '../components/FormField';
+import Banner from '../components/Banner';
 import SearchableSelectAsync from '../components/SearchableSelectAsync';
 import PageHeader from '../components/PageHeader';
 import BillingStatusBanner from '../components/BillingStatusBanner';
 import Button from '../components/Button';
 import { getLocations, searchVendors } from '../services/users.service';
 import { getVendorQuote } from '../services/pricing.service';
+import { listMyVouchers, lookupVoucher, voucherBenefit, voucherDiscountForFee,
+  type MyVoucher, type VoucherLookup, type VoucherOffer } from '../services/voucher.service';
 import { getDeliveryQuote as getRouteQuote } from '../services/deliveryRates.service';
 import { createOrder, updateOrder, getSenderProfile, type CreateOrderInput, type UpdateOrderInput, type OrderType, type ServiceType } from '../services/orders.service';
 import { getCurrentUser, isVendorSide } from '../utils/auth';
+import { findMasterHub } from '../utils/locations';
+import { apiErrorMessage } from '../utils/serverValidation';
 import './CreateOrderPage.css';
 
 interface VendorOption {
@@ -70,6 +74,7 @@ const defaultFormState = {
   deliveryInstruction: 'Cannot open the parcel',
   deliveryInstructionOther: '',
   remarks: '',
+  voucherCode: '',
 };
 
 type FormState = typeof defaultFormState;
@@ -91,6 +96,7 @@ const SERVER_FIELD_MAP: Record<string, keyof FormState> = {
   itemValue: 'itemValue',
   packageType: 'packageType',
   deliveryInstruction: 'deliveryInstruction',
+  voucherCode: 'voucherCode',
 };
 
 const CreateOrderPage: React.FC = () => {
@@ -226,6 +232,69 @@ const CreateOrderPage: React.FC = () => {
   // implicit - no Vendor picker shown.
   const selectedVendor = isVendorActor ? myVendorProfile ?? undefined : selectedVendorDetails ?? undefined;
 
+  // Daraz-style vouchers: the vendor's usable claims for the fee/discount/
+  // final preview. Admins keying an order in preview the picked vendor's
+  // vouchers; vendors preview their own.
+  const [myVouchers, setMyVouchers] = useState<MyVoucher[]>([]);
+  const [voucherClaimId, setVoucherClaimId] = useState('');
+  const [voucherRefresh, setVoucherRefresh] = useState(0);
+  const voucherVendorId = isVendorActor ? selectedVendor?.id : form.vendorId;
+  useEffect(() => {
+    // Editing never touches vouchers — they attach once, at creation.
+    if (isEditMode || form.orderType !== 'delivery' || !voucherVendorId) { setMyVouchers([]); return; }
+    let cancelled = false;
+    listMyVouchers(isVendorActor ? undefined : voucherVendorId)
+      .then(v => { if (!cancelled) setMyVouchers(v); })
+      .catch(() => { if (!cancelled) setMyVouchers([]); });
+    return () => { cancelled = true; };
+  }, [isEditMode, form.orderType, voucherVendorId, isVendorActor, voucherRefresh]);
+
+  const usableVouchers = myVouchers.filter(v => v.usable);
+  // A vendor switch replaces the list, so a previously picked claim may no
+  // longer belong here — derive validity instead of resetting state in an effect.
+  const effectiveClaimId = usableVouchers.some(v => v.claimId === voucherClaimId) ? voucherClaimId : '';
+  const typedVoucherCode = form.voucherCode.trim().toUpperCase();
+  const typedClaim = typedVoucherCode
+    ? myVouchers.find(v => v.voucher.code === typedVoucherCode) ?? null
+    : null;
+
+  // A code needs no prior claim — placing the order claims it. Look an unclaimed
+  // one up so the discount previews here the same way a claimed one does.
+  const [typedLookup, setTypedLookup] = useState<VoucherLookup | null>(null);
+  const [typedLookupError, setTypedLookupError] = useState('');
+  const [typedLookupLoading, setTypedLookupLoading] = useState(false);
+  useEffect(() => {
+    setTypedLookup(null);
+    setTypedLookupError('');
+    if (isEditMode || form.orderType !== 'delivery' || !voucherVendorId || !typedVoucherCode || typedClaim) {
+      setTypedLookupLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setTypedLookupLoading(true);
+    const timer = setTimeout(() => {
+      lookupVoucher(typedVoucherCode, isVendorActor ? undefined : voucherVendorId)
+        .then(r => { if (!cancelled) setTypedLookup(r); })
+        .catch(e => {
+          if (!cancelled) setTypedLookupError(apiErrorMessage(e, `Voucher ${typedVoucherCode} does not exist`));
+        })
+        .finally(() => { if (!cancelled) setTypedLookupLoading(false); });
+    }, 350);
+    return () => { cancelled = true; clearTimeout(timer); setTypedLookupLoading(false); };
+  }, [typedVoucherCode, typedClaim, isEditMode, form.orderType, voucherVendorId, isVendorActor]);
+
+  // A typed code wins over the dropdown; the server enforces exclusivity too.
+  const pickedVoucher: { voucher: VoucherOffer; usable: boolean; unusableReason: string | null } | null =
+    typedVoucherCode
+      ? typedClaim ?? typedLookup
+      : usableVouchers.find(v => v.claimId === effectiveClaimId) ?? null;
+  const voucherFee = quote?.totalPayable ?? 0;
+  const voucherBelowMinimum = !!pickedVoucher?.usable && !!quote && voucherFee < pickedVoucher.voucher.minimumCharge;
+  const voucherDiscount = pickedVoucher?.usable && quote && !voucherBelowMinimum
+    ? voucherDiscountForFee(pickedVoucher.voucher, voucherFee)
+    : 0;
+  const voucherFinal = quote ? Math.max(0, Math.round((voucherFee - voucherDiscount) * 100) / 100) : null;
+
   // Async search for vendor dropdown — fetches from server on each keystroke.
   const handleVendorSearch = useCallback(async (search: string, offset: number) => {
     const res = await searchVendors(search, 50, offset);
@@ -244,13 +313,10 @@ const CreateOrderPage: React.FC = () => {
     return { results: [], hasMore: false };
   }, []);
 
-  // The Imadol admin hub, matched by code first, name as fallback. Restricted to
-  // top-level locations (no parentId) so a covered area that happens to share the
-  // name "Imadol" under a different destination can't be mistaken for the real hub -
-  // mirrors the server's own `parent_id: null` check in order.service.ts.
-  const imadolHub = locationOptions.find(
-    l => !l.parentId && ((l.code || '').toUpperCase() === 'IMADOL' || l.name.trim().toLowerCase() === 'imadol'),
-  );
+  // The Imadol master hub: top-level IMADOL row matched by code, never a
+  // covered area sharing the name (see findMasterHub — a loose match here
+  // misprices every Imadol-origin order as a branch route with no rate).
+  const imadolHub = findMasterHub(locationOptions);
   // A branch admin's orders originate at their own branch (the server enforces
   // this for every non-super-admin). A hubless head-office admin falls back to
   // Imadol.
@@ -409,6 +475,7 @@ const CreateOrderPage: React.FC = () => {
     }));
     setQuote(null);
     setQuoteError('');
+    setVoucherClaimId('');
     setFieldErrors({});
     setGeneralError('');
     setSuccessMessage('');
@@ -443,6 +510,8 @@ const CreateOrderPage: React.FC = () => {
     try {
       const res = await createOrder(payload);
       resetForm(true);
+      // A spent voucher leaves "My Vouchers" — refresh so it can't be picked twice.
+      setVoucherRefresh(t => t + 1);
       setSuccessMessage(`Order #${res.data.orderNumber} (${res.data.trackingId}) created successfully. You can create another order below.`);
     } catch (err: any) {
       const data = err.response?.data;
@@ -550,6 +619,14 @@ const CreateOrderPage: React.FC = () => {
       deliveryInstruction: effectiveDeliveryInstruction || undefined,
       remarks: form.remarks.trim() || undefined,
       pickupAddress: selectedVendor?.address || undefined,
+      // Vouchers only exist on outbound delivery orders; the server re-checks this.
+      ...(form.orderType === 'delivery'
+        ? typedVoucherCode
+          ? { voucherCode: typedVoucherCode }
+          : effectiveClaimId
+            ? { voucherClaimId: effectiveClaimId }
+            : {}
+        : {}),
     };
 
     if (isEditMode && editOrderId) {
@@ -856,17 +933,71 @@ const CreateOrderPage: React.FC = () => {
             )}
             <div className="order-summary-divider" />
             <div className="order-summary-row order-summary-total">
-              <span>Total Payable</span>
+              <span>{voucherDiscount > 0 ? 'Delivery fee' : 'Total Payable'}</span>
               <span>{quote ? quote.totalPayable.toLocaleString(undefined, { maximumFractionDigits: 2 }) : '-'}</span>
             </div>
-            <div className="order-summary-info">
-              <Info size={16} />
-              <span>
-                {quoteLoading
-                  ? 'Calculating charges...'
-                  : quoteError || 'Charges will be calculated automatically based on the details provided.'}
-              </span>
-            </div>
+            {form.orderType === 'delivery' && !isEditMode && voucherVendorId && quote && !quoteError && (
+              <div className="order-voucher" role="group" aria-labelledby="order-voucher-label">
+                <span className="order-voucher-label" id="order-voucher-label">Voucher (optional)</span>
+                {usableVouchers.length > 0 && (
+                  <FormField
+                    label="Pick a claimed voucher"
+                    hideLabel
+                    type="select"
+                    placeholder="Select a voucher…"
+                    options={usableVouchers.map(v => ({
+                      value: v.claimId,
+                      label: `${v.voucher.code} — ${voucherBenefit(v.voucher)}`,
+                    }))}
+                    value={effectiveClaimId}
+                    disabled={!!typedVoucherCode || submitting}
+                    onChange={value => { setVoucherClaimId(value); if (generalError) setGeneralError(''); }}
+                  />
+                )}
+                <FormField
+                  label="Voucher code"
+                  hideLabel
+                  className="order-voucher-code"
+                  value={form.voucherCode}
+                  disabled={submitting || !!effectiveClaimId}
+                  onChange={value => setField('voucherCode', value.toUpperCase())}
+                  placeholder="Or enter code (e.g. MOVE100)"
+                  maxLength={32}
+                  error={fieldErrors.voucherCode}
+                  hint={typedVoucherCode && typedLookupLoading
+                    ? `Checking ${typedVoucherCode}…`
+                    : effectiveClaimId
+                      ? 'Using the selected voucher — clear the selection above to type a code instead.'
+                      : undefined}
+                />
+                {typedLookupError && <Banner tone="danger">{typedLookupError}</Banner>}
+                {voucherDiscount > 0 && pickedVoucher && (
+                  <>
+                    <div className="order-summary-row order-voucher-discount">
+                      <span>Voucher {pickedVoucher.voucher.code}</span>
+                      <span>− {voucherDiscount.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+                    </div>
+                    <div className="order-summary-row order-summary-total">
+                      <span>Final charge</span>
+                      <span>{voucherFinal?.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+                    </div>
+                  </>
+                )}
+                {pickedVoucher && !pickedVoucher.usable && (
+                  <Banner tone="danger">{pickedVoucher.unusableReason || 'This voucher cannot be used.'}</Banner>
+                )}
+                {pickedVoucher?.usable && voucherBelowMinimum && (
+                  <Banner tone="danger">
+                    {pickedVoucher.voucher.code} needs a minimum delivery charge of Rs. {pickedVoucher.voucher.minimumCharge}.
+                  </Banner>
+                )}
+              </div>
+            )}
+            <Banner tone="primary">
+              {quoteLoading
+                ? 'Calculating charges...'
+                : quoteError || 'Charges will be calculated automatically based on the details provided.'}
+            </Banner>
           </div>
 
           {successMessage && <p className="order-form-success">{successMessage}</p>}

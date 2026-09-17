@@ -8,7 +8,7 @@ import QuickActions from '../components/QuickActions';
 import RecentOrders from '../components/RecentOrders';
 import TopVendors from '../components/TopVendors';
 import NeedsAttention from '../components/NeedsAttention';
-import { getDashboardSummary, type DashboardSummary } from '../services/orders.service';
+import { EMPTY_VALLEY_SPLIT, getDashboardSummary, type DashboardSummary } from '../services/orders.service';
 import { subscribeToRemarkStatusChanged } from '../services/remarks.service';
 import { getCurrentUser, isBranchWorkspaceUser } from '../utils/auth';
 import './Dashboard.css';
@@ -63,6 +63,7 @@ const EMPTY_SUMMARY: DashboardSummary = {
     deliveryBreaches: [],
     transitBreaches: [],
     returnBreaches: [],
+    deliveryByValley: EMPTY_VALLEY_SPLIT,
   },
   codSettlement: {
     totalCod: 0,
