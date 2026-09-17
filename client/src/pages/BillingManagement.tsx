@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { CheckCircle2, ExternalLink, FileText, X } from 'lucide-react';
+import { CheckCircle2, ExternalLink, FileText, Search, X } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import SegmentedTabs from '../components/SegmentedTabs';
 import CreditUsageBar from '../components/CreditUsageBar';
@@ -66,6 +66,7 @@ const BillingManagement: React.FC = () => {
 
   // Vendor balances
   const [balances, setBalances] = useState<VendorBalanceRow[]>([]);
+  const [balanceSearch, setBalanceSearch] = useState('');
   const [balancesLoading, setBalancesLoading] = useState(false);
 
   // Settings
@@ -312,7 +313,10 @@ const BillingManagement: React.FC = () => {
 
   // Table keys rows off `id`; the API returns the vendor key as `vendorId`.
   type BalanceTableRow = VendorBalanceRow & { id: string };
-  const balanceRows: BalanceTableRow[] = balances.map((v) => ({ ...v, id: v.vendorId }));
+  const balanceQuery = balanceSearch.trim().toLowerCase();
+  const balanceRows: BalanceTableRow[] = balances
+    .filter((v) => !balanceQuery || v.vendorName.toLowerCase().includes(balanceQuery))
+    .map((v) => ({ ...v, id: v.vendorId }));
 
   const balanceColumns = [
     { header: 'VENDOR', accessor: (v: VendorBalanceRow) => v.vendorName, width: '200px' },
@@ -407,17 +411,22 @@ const BillingManagement: React.FC = () => {
 
       {activeTab === 'vendors' && (
         <>
-          <p className="billing-hint">
-            Live balances for every vendor, with the credit limit that blocks each
-            one. A vendor whose owing passes their own limit cannot place new orders
-            until a verified payment brings it back down.
-          </p>
+          <div className="search-box billing-search">
+            <Search size={16} style={{ color: 'var(--color-text-caption)' }} />
+            <input
+              type="text"
+              placeholder="Search vendor name..."
+              value={balanceSearch}
+              onChange={(e) => setBalanceSearch(e.target.value)}
+              aria-label="Search vendor balances"
+            />
+          </div>
           <Table
             columns={balanceColumns}
             data={balanceRows}
             loading={balancesLoading}
             loadingMessage="Calculating vendor balances..."
-            emptyMessage="No vendors found."
+            emptyMessage={balanceQuery ? `No vendor matching "${balanceSearch.trim()}".` : 'No vendors found.'}
             minWidth="1040px"
           />
         </>

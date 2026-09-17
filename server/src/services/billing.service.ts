@@ -331,6 +331,9 @@ export function resolveThresholds(
   };
 }
 
+// Worklist order for the credit-control list: the harshest state leads.
+const STATE_ORDER: Record<vendor_billing_state, number> = { blocked: 0, warned: 1, ok: 2 };
+
 export function stateForBalance(balance: number, thresholds: BillingThresholds): vendor_billing_state {
   // Block is checked first: it is the lower (harsher) of the two, so a balance
   // past it is also past the warn line.
@@ -505,7 +508,17 @@ export async function listVendorBalances(
     })
     // Filtered on the live state, not the stored one - the stored value is only
     // what the vendor was last told, and lags until the next evaluation.
-    .filter((row) => !stateFilter || row.state === stateFilter);
+    .filter((row) => !stateFilter || row.state === stateFilter)
+    // Credit control is a worklist: whoever is blocked needs attention first,
+    // and within a state the deepest debt leads. Balance is negative when the
+    // vendor owes, so ascending balance is descending debt. Name breaks ties
+    // so the order is stable between loads.
+    .sort(
+      (a, b) =>
+        STATE_ORDER[a.state] - STATE_ORDER[b.state] ||
+        a.balance - b.balance ||
+        a.vendorName.localeCompare(b.vendorName),
+    );
 }
 
 export async function invalidateVendorBalanceCache(vendorId: string): Promise<void> {

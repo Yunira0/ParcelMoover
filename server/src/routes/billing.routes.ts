@@ -15,6 +15,7 @@ import {
   reviewVendorPaymentController,
   submitVendorPaymentController,
   updateBillingSettingsController,
+  updateBranchCreditLimitController,
   updateVendorCreditLimitController,
   uploadPaymentQrController,
 } from "../controllers/billing.controller";
@@ -162,6 +163,15 @@ billingRouter.get(
 // PATCH /api/billing/vendors/:vendorId/credit-limit — override one vendor's
 // credit limit. Super_admin only, like the thresholds: this decides who can
 // trade.
+billingRouter.patch(
+  "/branches/:branchId/credit-limit",
+  authMiddleware,
+  csrfProtection,
+  authorizeRoles("super_admin"),
+  billingWriteLimiter,
+  updateBranchCreditLimitController,
+);
+
 billingRouter.patch(
   "/vendors/:vendorId/credit-limit",
   authMiddleware,

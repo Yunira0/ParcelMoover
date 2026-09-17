@@ -304,6 +304,11 @@ export interface DashboardSummary {
     overdueTransit: number;
     overdueRemarks: number;
     overdueReturn: number;
+    /** Delivered parcels whose COD is not yet on a branch settlement, past the
+     *  branch COD submission SLA — with the money they represent. */
+    overdueBranchCod: number;
+    overdueBranchCodAmount: number;
+    branchCodHours: number | null;
     /** Representative SLA threshold (hours) per group — null if unset. */
     pickupHours: number | null;
     deliveryHours: number | null;

@@ -190,6 +190,57 @@ export async function getBranchBillingStatus(branchId: string): Promise<BranchBi
   };
 }
 
+/**
+ * Set one branch's credit limit — the balance it is blocked at, stored as the
+ * negative block threshold override. Mirrors updateVendorCreditLimit, except a
+ * branch keeps an explicit threshold pair rather than a positive limit column,
+ * so the sign is applied here and the caller speaks in plain rupees.
+ */
+export async function updateBranchCreditLimit(
+  actorId: string,
+  branchId: string,
+  creditLimit: number,
+): Promise<BranchBillingStatus> {
+  const rounded = money(creditLimit);
+  if (!Number.isFinite(rounded) || rounded <= 0) {
+    throw new AppError(400, "creditLimit must be greater than zero");
+  }
+  if (rounded > 100_000_000) {
+    throw new AppError(400, "creditLimit is unrealistically large");
+  }
+  const branch = await prisma.locations.findFirst({
+    where: { id: branchId, parent_id: null, is_hub: true },
+    select: { id: true, name: true, branch_billing_block_threshold: true },
+  });
+  if (!branch) throw new AppError(404, "Branch not found");
+
+  await prisma.$transaction(async (tx) => {
+    await tx.locations.update({
+      where: { id: branchId },
+      data: { branch_billing_block_threshold: -rounded },
+    });
+    await tx.audit_logs.create({
+      data: {
+        actor_id: actorId,
+        entity_type: "location",
+        entity_id: branchId,
+        action: "UPDATE_BRANCH_CREDIT_LIMIT",
+        old_data: {
+          creditLimit:
+            branch.branch_billing_block_threshold === null
+              ? null
+              : -money(branch.branch_billing_block_threshold),
+        },
+        new_data: { creditLimit: rounded },
+      },
+    });
+  });
+
+  // A raise must lift a block in the same breath, as on the vendor side.
+  await evaluateBranchBilling(branchId);
+  return getBranchBillingStatus(branchId);
+}
+
 /** The authoritative server-side transit gate. */
 export async function assertBranchCanReceiveTransit(branchId: string): Promise<void> {
   const status = await getBranchBillingStatus(branchId);

@@ -499,10 +499,17 @@ const AdminSidebar: React.FC<{ isSuperAdmin: boolean }> = ({ isSuperAdmin }) => 
             so an admin without the grant sees those and nothing else here. */}
         <SidebarSection label="Finance" />
         <div className="sidebar-subnav">
-          {/* Branch COD (statements) and its matching deposits (Branch
-              Payments) are one workflow; kept next to Rider/Vendor COD. */}
-          <SubItem to="/branches/settlement" icon={Building2} label="Branch COD" />
-          <SubItem to="/branches/billing" icon={Wallet} label="Branch Payments" />
+          {/* Branch COD mirrors Vendor COD below: the statements and the
+              deposits that clear them are one conversation, so they sit in one
+              disclosure rather than as two siblings. */}
+          <SidebarGroup
+            label="Branch COD"
+            icon={Building2}
+            match={['/branches/settlement', '/branches/billing']}
+          >
+            <SubItem to="/branches/settlement" icon={Building2} label="COD & Settlements" />
+            <SubItem to="/branches/billing" icon={Receipt} label="Billing & Credit" />
+          </SidebarGroup>
 
           <SubItem to="/accounting/transactions/rider-cod" icon={Bike} label="Rider COD" />
 

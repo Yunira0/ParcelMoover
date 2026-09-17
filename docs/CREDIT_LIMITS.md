@@ -5,7 +5,7 @@ Each vendor carries its own credit limit (positive NPR): the cap on unpaid deliv
 ## Rules
 
 - New vendors are assigned the current system default at creation — stored on their own row, not referenced. Changing the default later applies to later vendors only.
-- The default (`billing_settings.default_credit_limit`, NPR 50,000) is editable under Billing & Credit Control → Thresholds & QR (super_admin).
+- The default (`billing_settings.default_credit_limit`, NPR 3,000) is editable under Billing & Credit Control → Thresholds & QR (super_admin). Vendors are warned at NPR 2,000 owed and blocked at NPR 3,000.
 - An admin override (`PATCH /api/billing/vendors/:vendorId/credit-limit`, super_admin, from the Vendor balances tab) touches only that vendor: the default and every other vendor keep their values. The vendor is re-evaluated at once, so a raise lifts a block immediately.
 - Limits must be greater than zero (cap NPR 100,000,000), and the default must keep the block line harsher than the warn line, or vendors would be blocked before ever being warned.
 - Balances, thresholds, and `amountToClearBlock` keep their existing shapes; responses additionally carry the vendor's `creditLimit`.
