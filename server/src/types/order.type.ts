@@ -54,6 +54,15 @@ export interface CreateOrderInput {
    * assertVendorCanCreateOrder in billing.service.
    */
   overrideBillingBlock?: boolean;
+
+  /**
+   * Daraz-style voucher: either a previously claimed voucher's id (picked from
+   * "My Vouchers") or its code (e.g. MOVE100 — resolved to this vendor's claim
+   * at creation). Mutually exclusive. Delivery orders only; the discount shows
+   * as discount_amount against gross_delivery_charge.
+   */
+  voucherClaimId?: string;
+  voucherCode?: string;
 }
 
 export interface UpdateOrderDetailsInput {

@@ -29,6 +29,7 @@ import {
   nepalDayRangeUtc,
 } from "../utils/nepalTime";
 import { resolveOwnVendorId, isStaffActor } from "./vendor-scope.service";
+import { resolveVendorClaimTx } from "./voucher.service";
 import { hasAdminPermission } from "../middlewares/adminPermission.middleware";
 import { invalidateVendorFinanceCache, invalidateRiderFinanceCache } from "./finance.service";
 import { emitWebhookEvent, emitWebhookEventsBatch } from "./webhookDispatch.service";
@@ -1011,6 +1012,9 @@ async function _createOrderImpl(
   if (data.pieces !== undefined && (!Number.isInteger(data.pieces) || data.pieces <= 0)) {
     throw new AppError(400, "pieces must be a positive integer");
   }
+  if (data.voucherClaimId && data.voucherCode) {
+    throw new AppError(400, "Provide either voucherClaimId or voucherCode, not both");
+  }
 
   // Resolves vendor AND vendor_staff actors to their own vendor - previously
   // only the "vendor" role was auto-resolved here, so orders created by a
@@ -1170,7 +1174,7 @@ async function _createOrderImpl(
       findOrCreateParty(tx, data.receiver),
     ]);
 
-    const parcel = await tx.parcels.create({
+    let parcel = await tx.parcels.create({
       data: {
         tracking_id: trackingId,
         search_text: buildSearchText(trackingId, sender, receiver),
@@ -1198,6 +1202,27 @@ async function _createOrderImpl(
         created_by: actor.id,
       },
     });
+
+    // Daraz-style voucher: the pricing trigger forbids a claim on INSERT, so
+    // attach it here with an update in the same transaction — the trigger
+    // reserves the claim and writes gross/discount/net atomically, and a
+    // failure rolls the whole order back with it.
+    if (data.voucherClaimId || data.voucherCode) {
+      if ((data.orderType || 'delivery') !== 'delivery') {
+        throw new AppError(400, 'Vouchers apply to outbound delivery orders only');
+      }
+      const claim = await resolveVendorClaimTx(tx, vendor?.id ?? null, {
+        claimId: data.voucherClaimId, code: data.voucherCode,
+      });
+      const minimum = Number(claim.voucher.minimum_charge);
+      if (deliveryCharge < minimum) {
+        throw new AppError(400, `This voucher needs a minimum delivery charge of Rs. ${minimum.toFixed(2)} (this order: Rs. ${deliveryCharge.toFixed(2)})`);
+      }
+      await tx.parcels.update({ where: { id: parcel.id }, data: { voucher_claim_id: claim.id } });
+      const priced = await tx.parcels.findUniqueOrThrow({ where: { id: parcel.id },
+        select: { delivery_charge: true, gross_delivery_charge: true, discount_amount: true, voucher_claim_id: true } });
+      parcel = { ...parcel, ...priced, voucherCode: claim.voucher.code } as typeof parcel & { voucherCode: string };
+    }
 
     // Secondary writes are logically independent, but tx is bound to a
     // single Postgres connection - Promise.all here doesn't run them in
@@ -2456,6 +2481,8 @@ function mapOrder(
     codAmount: Number(parcel.cod_amount),
     itemValue: Number(parcel.item_value),
     deliveryCharge: Number(parcel.delivery_charge),
+    grossDeliveryCharge: Number(parcel.gross_delivery_charge),
+    discountAmount: Number(parcel.discount_amount),
     // Cash actually taken from the receiver, as opposed to cod_amount, which is
     // what was meant to be taken. The two differ on a partial delivery, and
     // collected stays 0 until someone marks the parcel delivered. This is the
@@ -3146,11 +3173,23 @@ export async function getOrderByTrackingId(actor: OrderActor, trackingId: string
     createdAt: entry.created_at.toISOString(),
   }));
 
+  // Attached shipping voucher, if any — one extra indexed lookup on the detail
+  // view only (never on the list path), so the order can name its code.
+  let voucher: { code: string; title: string } | null = null;
+  if (parcel.voucher_claim_id) {
+    const claim = await prisma.voucher_claims.findUnique({ where: { id: parcel.voucher_claim_id } });
+    if (claim) {
+      const offer = await prisma.vouchers.findUnique({ where: { id: claim.voucher_id }, select: { code: true, title: true } });
+      if (offer) voucher = { code: offer.code, title: offer.title };
+    }
+  }
+
   return {
     ...mapOrder(parcel, isStaff, !!vendorId),
     canChangeStatus: isStaff,
     priceLog,
     redirectLog,
+    voucher,
     // Staff see the real author name; vendors/riders see a generic "Staff"
     // label in place of any internal staff member's name (their own / other
     // non-staff authors still show normally).

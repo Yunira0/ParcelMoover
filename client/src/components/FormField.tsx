@@ -18,6 +18,9 @@ const PARTIAL_DECIMAL = /^\d*\.?\d*$/;
 interface FormFieldProps {
   label: string;
   required?: boolean;
+  /** Visually hides the label (sr-only) when a visible group label already
+   *  names the control — the label stays associated for screen readers. */
+  hideLabel?: boolean;
   type?: FormFieldType;
   value: string | number | undefined;
   onChange: (value: string) => void;
@@ -27,6 +30,7 @@ interface FormFieldProps {
   max?: number;
   step?: string | number;
   minLength?: number;
+  maxLength?: number;
   autoComplete?: string;
   /** Options for type="select". */
   options?: FormFieldOption[];
@@ -50,6 +54,7 @@ interface FormFieldProps {
 const FormField: React.FC<FormFieldProps> = ({
   label,
   required = false,
+  hideLabel = false,
   type = 'text',
   value,
   onChange,
@@ -59,6 +64,7 @@ const FormField: React.FC<FormFieldProps> = ({
   max,
   step,
   minLength,
+  maxLength,
   autoComplete,
   options = [],
   searchableOptions = [],
@@ -80,7 +86,10 @@ const FormField: React.FC<FormFieldProps> = ({
       style={gridColumn ? { gridColumn } : undefined}
     >
       {label && (
-        <label htmlFor={type === 'searchable-select' || type === 'searchable-select-async' ? undefined : id}>
+        <label
+          htmlFor={type === 'searchable-select' || type === 'searchable-select-async' ? undefined : id}
+          className={hideLabel ? 'sr-only' : undefined}
+        >
           {label}
           {required && <span className="required">*</span>}
         </label>
@@ -213,6 +222,7 @@ const FormField: React.FC<FormFieldProps> = ({
           max={max}
           step={step}
           minLength={minLength}
+          maxLength={maxLength}
           autoComplete={autoComplete}
           value={value ?? ''}
           onChange={(e) => onChange(e.target.value)}

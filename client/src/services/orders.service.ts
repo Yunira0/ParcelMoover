@@ -61,6 +61,9 @@ export interface CreateOrderInput {
   vendorId?: string;
   /** Set true to bypass the same-day duplicate warning after the user confirms. */
   confirmDuplicate?: boolean;
+  /** Claimed voucher id (from "My Vouchers") or its code — mutually exclusive. */
+  voucherClaimId?: string;
+  voucherCode?: string;
 }
 
 export interface Order {
@@ -91,6 +94,10 @@ export interface Order {
   codAmount: number;
   itemValue: number;
   deliveryCharge: number;
+  grossDeliveryCharge?: number;
+  discountAmount?: number;
+  /** Attached shipping voucher, if any (order detail only). */
+  voucher?: { code: string; title: string } | null;
   /** Cash actually collected from the receiver. 0 until delivered, and below codAmount on a partial. */
   collectedAmount: number;
   packageType?: string;

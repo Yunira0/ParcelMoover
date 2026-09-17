@@ -219,8 +219,9 @@ Headers: `Authorization`, `Idempotency-Key` (UUID, required), `Content-Type: app
 | `originLocationId` | UUID | — | Your pickup hub. Optional — vendors normally have one fixed hub, resolved automatically; only set this if you dispatch from more than one. |
 | `destinationLocationId` | UUID or hub name | ✅* | The destination branch/hub ("To") — see below for how to pick one. \*Required unless you set `receiver.locationId` instead; one of the two must be present, and sending both (to the same value) is fine. |
 | `allowPartialDelivery` | boolean | — | Flags that this shipment (e.g. a multi-item order) may be accepted in part without failing the whole delivery. Informational only — the actual outcome is still reported by the rider/ops side; you read it back via `partialDeliveryRemarks`/`partialCodCollected` on the order once it happens. |
+| `voucherCode` | string | — | A shipping voucher you already claimed on the dashboard under **Vouchers** (e.g. `"MOVE100"`). Delivery orders only. The response prices it as `discountAmount` off `grossDeliveryCharge`, so `deliveryCharge` is the final amount. Rejected when the code was never claimed, is expired/paused, is already spent, or the order's delivery charge is below the voucher's minimum. |
 
-The **delivery charge is computed by ParcelMoover** from your vendor rate agreement — you cannot set it. It appears on the order when you fetch it.
+The **delivery charge is computed by ParcelMoover** from your vendor rate agreement — you cannot set it. It appears on the order when you fetch it. A claimed voucher reduces it: the order carries `grossDeliveryCharge` (pre-voucher fee), `discountAmount` (the voucher benefit, capped at the fee), and `deliveryCharge` (the final fee).
 
 #### Picking a destination (the "To" branch/hub)
 
@@ -977,6 +978,7 @@ GET  /api/v1/billing/qr                                  — the Fonepay QR imag
     "balance": -1800,
     "warnThreshold": -1000,
     "blockThreshold": -5000,
+    "creditLimit": 5000,
     "amountToClearBlock": 0,
     "pendingPaymentAmount": 1500,
     "paymentNote": "Please include your business name in the transfer remark."

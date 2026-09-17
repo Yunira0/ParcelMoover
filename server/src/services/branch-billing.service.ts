@@ -89,7 +89,10 @@ async function resolveBranchId(actor: Actor, suppliedId?: string): Promise<strin
 
 function thresholdsForBranch(
   branch: { branch_billing_warn_threshold: Prisma.Decimal | null; branch_billing_block_threshold: Prisma.Decimal | null },
-  defaults: BillingThresholds,
+  // Branch fallbacks come from the branch-level settings, not the vendor
+  // ones: the two scales are intentionally separate (see billing_settings),
+  // and the old vendor block threshold no longer exists.
+  defaults: { warnThreshold: number; blockThreshold: number },
 ): BillingThresholds {
   return {
     warnThreshold: branch.branch_billing_warn_threshold === null ? defaults.warnThreshold : money(branch.branch_billing_warn_threshold),
@@ -171,7 +174,10 @@ export async function getBranchBillingStatus(branchId: string): Promise<BranchBi
   if (!branch) throw new AppError(404, "Branch not found");
   const codSlaHours = slaSettings[BRANCH_COD_SLA_KEY] ?? null;
   const balance = await computeBranchBalance(branchId, codSlaHours);
-  const thresholds = thresholdsForBranch(branch, settings);
+  const thresholds = thresholdsForBranch(branch, {
+    warnThreshold: settings.branchWarnThreshold,
+    blockThreshold: settings.branchBlockThreshold,
+  });
   return {
     branchId: branch.id,
     branchName: branch.name,

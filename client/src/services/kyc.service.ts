@@ -34,6 +34,10 @@ export interface KycApplication {
   id: string;
   sn: number;
   status: 'pending' | 'approved' | 'rejected';
+  /** Verification = an existing vendor proving itself; onboarding = a brand-new vendor. */
+  applicationType: 'verification' | 'onboarding';
+  vendorId: string | null;
+  vendorName: string | null;
   onlineBusinessName: string;
   pickupLocation: string;
   pickupLandmark: string | null;
@@ -103,4 +107,64 @@ export const approveKyc = async (id: string, notes?: string) => {
 export const rejectKyc = async (id: string, rejectionReason: string, notes?: string) => {
   const response = await api.patch(`/kyc/applications/${id}/reject`, { rejectionReason, notes });
   return response.data;
+};
+
+/** Staff start verification for an existing vendor from Vendor Management. */
+export const startVendorKycVerification = async (
+  vendorId: string,
+  fields: Record<string, string> = {},
+  docs: { citizenshipDoc?: File | null; panVatDoc?: File | null; businessCertDoc?: File | null } = {},
+): Promise<{
+  id: string; status: string; vendorId: string; vendorName: string; createdAt: string;
+}> => {
+  const form = new FormData();
+  form.append('vendorId', vendorId);
+  for (const [key, value] of Object.entries(fields)) {
+    if (value.trim()) form.append(key, value);
+  }
+  if (docs.citizenshipDoc) form.append('citizenshipDoc', docs.citizenshipDoc);
+  if (docs.panVatDoc) form.append('panVatDoc', docs.panVatDoc);
+  if (docs.businessCertDoc) form.append('businessCertDoc', docs.businessCertDoc);
+  return (await api.post('/kyc/applications/start', form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })).data.data;
+};
+
+export interface VerificationPrefill {
+  hasApprovedKyc: boolean;
+  pendingApplication: { id: string; createdAt: string } | null;
+  profile: Record<
+    'onlineBusinessName' | 'pickupLocation' | 'pickupLandmark' | 'businessContact' |
+    'ownerName' | 'ownerEmail' | 'ownerContact' | 'billingBusinessName' |
+    'registeredAddress' | 'registrationNo' | 'panVatNo' |
+    'bankName' | 'bankAccountNo' | 'bankAccountHolder',
+    string
+  >;
+  docsOnFile: { citizenship: boolean; panVat: boolean; businessCert: boolean };
+}
+
+/** Whether this vendor can claim vouchers yet, with the verification prefill. */
+export const getMyKycStatus = async (): Promise<VerificationPrefill> =>
+  (await api.get('/kyc/my-status')).data.data;
+
+/** Staff prefill for the manual start form. */
+export const getVerificationPrefill = async (vendorId: string): Promise<VerificationPrefill> =>
+  (await api.get('/kyc/verification-prefill', { params: { vendorId } })).data.data;
+
+// Multipart because of the optional document scans.
+export const submitMyKycVerification = async (
+  fields: Record<string, string>,
+  docs: { citizenshipDoc?: File | null; panVatDoc?: File | null; businessCertDoc?: File | null },
+): Promise<{ id: string }> => {
+  const form = new FormData();
+  for (const [key, value] of Object.entries(fields)) {
+    if (value.trim()) form.append(key, value);
+  }
+  if (docs.citizenshipDoc) form.append('citizenshipDoc', docs.citizenshipDoc);
+  if (docs.panVatDoc) form.append('panVatDoc', docs.panVatDoc);
+  if (docs.businessCertDoc) form.append('businessCertDoc', docs.businessCertDoc);
+  const response = await api.post('/kyc/my-application', form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return response.data.data;
 };
