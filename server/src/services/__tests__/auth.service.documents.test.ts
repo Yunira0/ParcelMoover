@@ -6,6 +6,7 @@ vi.mock("../../lib/prisma", () => ({
     vendors: { findUnique: vi.fn(), findFirst: vi.fn() },
     user_roles: { findFirst: vi.fn(), findMany: vi.fn() },
     roles: { findUnique: vi.fn() },
+    billing_settings: { findFirst: vi.fn() },
     $transaction: vi.fn(),
   },
 }));
@@ -18,15 +19,22 @@ vi.mock("bcrypt", () => ({
 vi.mock("../../lib/branchScope", () => ({
   adminBranchScopeIds: vi.fn().mockResolvedValue(undefined),
 }));
+vi.mock("../../lib/redis", () => ({
+  default: { get: vi.fn(), setex: vi.fn(), del: vi.fn() },
+}));
 
 import { registerUserBySuperAdmin, updateManagedUserProfile } from "../auth.service";
 import prisma from "../../lib/prisma";
+import redis from "../../lib/redis";
+
+const mockedRedis = redis as unknown as { get: ReturnType<typeof vi.fn> };
 
 const mockedPrisma = prisma as unknown as {
   users: { findUnique: ReturnType<typeof vi.fn> };
   vendors: { findUnique: ReturnType<typeof vi.fn>; findFirst: ReturnType<typeof vi.fn> };
   user_roles: { findFirst: ReturnType<typeof vi.fn>; findMany: ReturnType<typeof vi.fn> };
   roles: { findUnique: ReturnType<typeof vi.fn> };
+  billing_settings: { findFirst: ReturnType<typeof vi.fn> };
   $transaction: ReturnType<typeof vi.fn>;
 };
 
@@ -66,6 +74,17 @@ beforeEach(() => {
   // No root super admin in play, and the target holds no protected role.
   mockedPrisma.user_roles.findFirst.mockResolvedValue({ user_id: "root-user" });
   mockedPrisma.user_roles.findMany.mockResolvedValue([]);
+  // New vendors snapshot the current system default credit limit.
+  mockedRedis.get.mockResolvedValue(null);
+  mockedPrisma.billing_settings.findFirst.mockResolvedValue({
+    id: "settings-1",
+    warn_threshold: -2000,
+    default_credit_limit: 50000,
+    branch_warn_threshold: -50000,
+    branch_block_threshold: -75000,
+    payment_qr_path: null,
+    payment_note: null,
+  });
 });
 
 describe("registerUserBySuperAdmin - vendor documents", () => {
@@ -95,6 +114,8 @@ describe("registerUserBySuperAdmin - vendor documents", () => {
           citizenship_doc: "uploads/registration/citizenship.pdf",
           pan_vat_doc: "uploads/registration/pan.pdf",
           business_cert_doc: null,
+          // Assigned, not defaulted: the current system default at creation.
+          credit_limit: 50000,
         }),
       }),
     );

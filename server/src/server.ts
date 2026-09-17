@@ -29,6 +29,8 @@ import PublicApiRoutes from "./routes/publicApi.routes"
 import MeRoutes from "./routes/me.routes"
 import AuditLogRoutes from "./routes/auditLog.routes"
 import BillingRoutes from "./routes/billing.routes"
+import VoucherRoutes from "./routes/voucher.routes"
+import VoucherCampaignRoutes from "./routes/voucher-campaign.routes"
 import AccountingRoutes from "./routes/accounting.routes"
 import VendorPrintSettingsRoutes from "./routes/vendorPrintSettings.routes"
 import BannerRoutes from "./routes/banner.routes"
@@ -162,6 +164,8 @@ app.use("/api/notifications", NotificationRoutes)
 app.use("/api/finance", FinanceRoutes)
 
 app.use("/api/billing", BillingRoutes)
+app.use("/api/vouchers", VoucherRoutes)
+app.use("/api/voucher-campaigns", VoucherCampaignRoutes)
 app.use("/api/banners", BannerRoutes)
 app.use("/api/announcements", AnnouncementRoutes)
 

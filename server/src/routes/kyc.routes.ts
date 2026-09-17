@@ -3,12 +3,17 @@ import {
   approveKycController,
   getKycController,
   listKycController,
+  myKycStatusController,
   rejectKycController,
+  startKycVerificationController,
   submitKycController,
+  submitMyKycController,
+  verificationPrefillController,
 } from "../controllers/kyc.controller";
 import { authMiddleware } from "../middlewares/auth.middleware";
 import { authorizeRoles } from "../middlewares/authorizeRoles.middleware";
 import { requireAdminPermission } from "../middlewares/adminPermission.middleware";
+import { requireStaffPermission } from "../middlewares/staffPermission.middleware";
 import { csrfProtection } from "../middlewares/csrf.middleware";
 import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { createRedisRateLimitStore } from "../lib/rateLimitStore";
@@ -49,8 +54,38 @@ const kycRouter: Router = Router();
 // Public — anyone can submit a KYC application (multipart/form-data for file uploads)
 kycRouter.post("/apply", kycSubmitLimiter, kycUpload, submitKycController);
 
+// A vendor verifies itself, filling the form by hand. Same ORDER_ACCESS gate
+// as the Vouchers page that links here.
+kycRouter.post(
+  "/my-application",
+  authMiddleware,
+  csrfProtection,
+  authorizeRoles("vendor", "vendor_staff"),
+  requireStaffPermission("ORDER_ACCESS"),
+  kycSubmitLimiter,
+  kycUpload,
+  submitMyKycController,
+);
+
+// Whether this vendor can claim vouchers yet, with the form prefill.
+kycRouter.get(
+  "/my-status",
+  authMiddleware,
+  authorizeRoles("vendor", "vendor_staff"),
+  requireStaffPermission("ORDER_ACCESS"),
+  myKycStatusController,
+);
+
 // Protected — super admins, or admins delegated KYC_ACCESS
 const kycReviewAccess = [authorizeRoles("super_admin", "admin"), requireAdminPermission("KYC_ACCESS")] as const;
+
+// Staff prefill for the manual start form.
+kycRouter.get(
+  "/verification-prefill",
+  authMiddleware,
+  ...kycReviewAccess,
+  verificationPrefillController,
+);
 
 kycRouter.get("/applications", authMiddleware, ...kycReviewAccess, listKycController);
 kycRouter.get("/applications/:id", authMiddleware, ...kycReviewAccess, getKycController);
@@ -69,6 +104,18 @@ kycRouter.patch(
   ...kycReviewAccess,
   kycReviewLimiter,
   rejectKycController,
+);
+
+// Staff start verification for an existing vendor, filling the form by hand.
+// Multipart like the vendor's own submission: blanks keep the on-file values.
+kycRouter.post(
+  "/applications/start",
+  authMiddleware,
+  csrfProtection,
+  ...kycReviewAccess,
+  kycReviewLimiter,
+  kycUpload,
+  startKycVerificationController,
 );
 
 export default kycRouter;

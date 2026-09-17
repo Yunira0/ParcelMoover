@@ -41,3 +41,12 @@
   border-color: var(--color-background-success-default);
   color: var(--color-background-success-default);
 }
+
+/* The system's warm note — primary-invert surface with primary text, for
+   neutral callouts that still need the signal color (e.g. the order summary
+   auto-calculation note). Rust stays the only warm hue. */
+.banner-primary {
+  background: var(--color-background-primary-invert-default);
+  border-color: var(--color-border-primary);
+  color: var(--color-text-primary);
+}

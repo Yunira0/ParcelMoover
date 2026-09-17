@@ -75,6 +75,12 @@ export async function publicCreateOrderController(req: Request, res: Response) {
           status: order.status,
           statusLabel: getVendorStatusLabel(order.status),
           createdAt: order.created_at,
+          deliveryCharge: Number(order.delivery_charge),
+          grossDeliveryCharge: Number(order.gross_delivery_charge),
+          discountAmount: Number(order.discount_amount),
+          ...((order as { voucherCode?: string }).voucherCode
+            ? { voucherCode: (order as { voucherCode?: string }).voucherCode }
+            : {}),
         },
       };
 

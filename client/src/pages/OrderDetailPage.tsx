@@ -327,6 +327,9 @@ const OrderDetailPage: React.FC = () => {
           codAmount={order.codAmount}
           itemValue={order.itemValue}
           deliveryCharge={order.deliveryCharge}
+          grossDeliveryCharge={order.grossDeliveryCharge}
+          discountAmount={order.discountAmount}
+          voucher={order.voucher ?? null}
           pieces={order.pieces}
           weightKg={order.weightKg}
           editable={canEditNow}

@@ -1,0 +1,70 @@
+.vouchers-page h2 { font-size: var(--font-size-md); margin: var(--space-6) 0 var(--space-3); }
+.vouchers-page h3 { font-size: var(--font-size-md); margin: 0; }
+.vouchers-page p { max-width: 75ch; margin: 0; }
+.vouchers-fields { border: 0; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); }
+
+.vouchers-claim-row { display: flex; gap: var(--space-3); margin-top: var(--space-3); max-width: 480px; align-items: flex-start; }
+.vouchers-claim-row .form-group { flex: 1 1 0; min-width: 0; }
+.vouchers-claim-row .form-group input { font-family: var(--mono); text-transform: uppercase; }
+.vouchers-claim-row .btn { flex: none; }
+
+.vouchers-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: var(--space-4); margin-top: var(--space-3); }
+.voucher-card { background: var(--color-background-surface); border: 1px solid var(--color-border-default); border-radius: var(--border-radius-modal); padding: var(--space-4); display: flex; flex-direction: column; gap: var(--space-2); }
+.voucher-card-spent { opacity: 0.75; }
+.voucher-card-top { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
+.voucher-code { font-family: ui-monospace, Consolas, monospace; font-weight: 700; letter-spacing: 0.04em; border: 1px dashed var(--color-border-default); border-radius: var(--border-radius-default); padding: var(--space-1) var(--space-2); }
+.voucher-benefit { font-weight: 700; font-size: var(--font-size-md); margin: 0; }
+.voucher-desc { color: var(--color-text-caption); font-size: var(--font-size-sm); }
+.voucher-unusable { color: var(--color-text-caption); font-size: var(--font-size-sm); }
+.voucher-meta { display: flex; flex-wrap: wrap; gap: var(--space-4); margin: var(--space-2) 0 var(--space-3); padding: 0; }
+.voucher-meta dt { font-size: var(--font-size-xs); color: var(--color-text-caption); }
+.voucher-meta dd { margin: var(--space-1) 0 0; font-variant-numeric: tabular-nums; }
+
+.vouchers-cell-sub { color: var(--color-text-caption); font-size: var(--font-size-xs); }
+.vouchers-claimed { display: inline-flex; align-items: center; gap: var(--space-2); font-variant-numeric: tabular-nums; }
+
+.vouchers-row-actions { display: inline-flex; gap: var(--space-2); }
+
+/* Clickable code chip: same dashed mono chip, rust on hover to signal it
+   opens the voucher preview. Resets the global button chrome. */
+button.voucher-code-link {
+  background-color: var(--color-background-surface);
+  cursor: pointer;
+  font-size: inherit;
+}
+button.voucher-code-link:hover {
+  border-color: var(--color-border-primary);
+  color: var(--color-text-primary);
+}
+button.voucher-code-link:focus-visible {
+  outline: none;
+  border-color: var(--color-border-primary);
+  box-shadow: var(--shadow-focus);
+}
+
+/* Campaign directory + detail: same bordered cards, tables and compact
+   controls as the rest of the page — no new visual language. */
+.vouchers-campaigns-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); margin: var(--space-4) 0 var(--space-3); }
+.vouchers-campaigns-head p { margin: 0; color: var(--color-text-caption); font-size: var(--font-size-sm); max-width: 75ch; }
+
+.vouchers-detail-head { margin: var(--space-4) 0 var(--space-2); }
+.vouchers-detail-title { display: flex; align-items: center; gap: var(--space-3); margin: var(--space-2) 0; }
+.vouchers-detail-title h2 { margin: 0; }
+.vouchers-stats { display: flex; flex-wrap: wrap; gap: var(--space-6); margin: 0 0 var(--space-3); padding: 0; }
+.vouchers-stats dt { font-size: var(--font-size-xs); color: var(--color-text-caption); }
+.vouchers-stats dd { margin: var(--space-1) 0 0; font-size: var(--font-size-md); font-weight: 700; font-variant-numeric: tabular-nums; }
+.vouchers-detail-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-bottom: var(--space-4); }
+.vouchers-detail-actions .btn { text-decoration: none; display: inline-flex; align-items: center; }
+
+.vouchers-code-filters { display: grid; grid-template-columns: minmax(0, 1fr) 200px; gap: var(--space-3); margin: var(--space-4) 0 var(--space-3); }
+
+.campaign-wizard-modal { width: 640px; max-width: 94%; }
+.vouchers-codes-preview { font-family: var(--mono); font-size: var(--font-size-sm); color: var(--color-text-caption); word-break: break-all; }
+
+/* Voucher preview: landscape 17:8 piece needs a wider dialog than the
+   default 500px modal, and spacing above the footer actions. */
+.voucher-preview-modal { width: 720px; max-width: 94%; }
+.voucher-preview-modal .voucher-promo { margin-bottom: var(--space-4); }
+.voucher-preview-modal .banner { margin-bottom: var(--space-4); }
+
+@media (max-width: 640px) { .vouchers-fields { grid-template-columns: minmax(0, 1fr); } .vouchers-page .billing-card { padding: var(--space-4); } }

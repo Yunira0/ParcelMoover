@@ -11,6 +11,7 @@ import { ACCESS_TOKEN_AUDIENCE, JWT_ALGORITHM, JWT_ISSUER } from "../utils/jwtCo
 
 import { RegisterUserInput } from "../types/user-registration";
 import { ADMIN_PERMISSIONS, AdminPermission } from "../types/adminPermission.type";
+import { getDefaultCreditLimit } from "./billing.service";
 
 interface IuserLoginData {
   email: string;
@@ -981,6 +982,10 @@ export async function registerUserBySuperAdmin(
 
   validateRegisterInput(data);
 
+  // New vendors are assigned the current system default credit limit as their
+  // own stored value — a later default change applies to later vendors only.
+  const defaultCreditLimit = await getDefaultCreditLimit();
+
   const role = await prisma.roles.findUnique({
     where: { code: data.type },
   });
@@ -1110,6 +1115,7 @@ export async function registerUserBySuperAdmin(
           bank_account_holder: data.bankAccountHolder ?? null,
           status: "active",
           joined_at: data.joinedAt ? new Date(data.joinedAt) : null,
+          credit_limit: defaultCreditLimit,
         },
       });
       await tx.audit_logs.create({

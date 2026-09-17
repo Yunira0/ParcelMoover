@@ -2,13 +2,14 @@ import React from 'react';
 import { AlertTriangle, CheckCircle2, Info } from 'lucide-react';
 import './Banner.css';
 
-export type BannerTone = 'info' | 'warning' | 'danger' | 'success';
+export type BannerTone = 'info' | 'warning' | 'danger' | 'success' | 'primary';
 
 const BANNER_ICON = {
   info: Info,
   warning: AlertTriangle,
   danger: AlertTriangle,
   success: CheckCircle2,
+  primary: Info,
 } as const;
 
 /**

@@ -744,6 +744,7 @@ export function buildOpenApiDocument(baseUrl: string) {
                 balance: { type: "number", description: "Negative means you owe the office." },
                 warnThreshold: { type: "number" },
                 blockThreshold: { type: "number" },
+                creditLimit: { type: "number", description: "This vendor's own credit limit (positive NPR). Block trips at balance <= -creditLimit." },
                 amountToClearBlock: { type: "number" },
                 pendingPaymentAmount: { type: "number", description: "Filed claims not yet verified; not counted in balance." },
                 paymentNote: { type: ["string", "null"] },

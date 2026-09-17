@@ -35,6 +35,20 @@ body {
   width: 100%;
 }
 
+/* Visually hidden but still announced — for control labels covered by a
+   visible group label (e.g. the voucher group in the order summary). */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 #root {
   width: 100%;
   margin: 0;

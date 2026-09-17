@@ -556,6 +556,31 @@ export const getVendorsController = async (req: Request, res: Response) => {
       lastOrderByVendor.set(row.vendor_id, row._max.created_at);
     }
 
+    // KYC verification state per vendor, for the conditional "Start KYC"
+    // action: verified (an approved KYC_APPROVE audit behind them, the same
+    // gate voucher claiming reads), pending (a verification in the queue), or
+    // needed. Two bounded queries over the page's vendor ids — never N+1.
+    const approvedVendorIds = new Set<string>();
+    const pendingVendorIds = new Set<string>();
+    if (vendorIds.length) {
+      const [approvedRows, pendingApps] = await Promise.all([
+        prisma.$queryRaw<Array<{ vendor_id: string }>>`
+          SELECT DISTINCT a.new_data->>'createdVendorId' AS vendor_id
+          FROM audit_logs a
+          JOIN vendor_kyc_applications k ON k.id = a.entity_id
+          WHERE a.action = 'KYC_APPROVE'
+            AND a.entity_type = 'vendor_kyc_application'
+            AND k.status = 'approved'::kyc_status
+            AND a.new_data->>'createdVendorId' = ANY(${vendorIds}::text[])`,
+        prisma.vendor_kyc_applications.findMany({
+          where: { vendor_id: { in: vendorIds }, status: "pending" },
+          select: { vendor_id: true },
+        }),
+      ]);
+      for (const row of approvedRows) approvedVendorIds.add(row.vendor_id);
+      for (const app of pendingApps) if (app.vendor_id) pendingVendorIds.add(app.vendor_id);
+    }
+
     return res.status(200).json({
       success: true,
       data: vendors.map((vendor, index) => ({
@@ -580,6 +605,11 @@ export const getVendorsController = async (req: Request, res: Response) => {
         status: vendor.status,
         joined: formatDate(vendor.joined_at),
         lastOrderedDate: formatDate(lastOrderByVendor.get(vendor.id) ?? vendor.last_ordered_at),
+        kycStatus: approvedVendorIds.has(vendor.id)
+          ? "verified"
+          : pendingVendorIds.has(vendor.id)
+            ? "pending"
+            : "needed",
       })),
       meta: { page, pageSize, total, totalPages: Math.max(1, Math.ceil(total / pageSize)) },
     });

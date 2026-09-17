@@ -17,6 +17,13 @@
   margin-top: 2px;
 }
 
+.kyc-verification-note {
+  display: block;
+  font-size: 0.78rem;
+  color: var(--color-text-caption, #6b7280);
+  margin-top: 4px;
+}
+
 .kyc-view-btn {
   background: none;
   border: none;
