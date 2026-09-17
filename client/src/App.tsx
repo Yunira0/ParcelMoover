@@ -35,6 +35,7 @@ const AdminManagement = lazy(() => import('./pages/AdminManagement'))
 const AdminFormPage = lazy(() => import('./pages/AdminFormPage'))
 const VendorManagement = lazy(() => import('./pages/VendorManagement'))
 const VendorFormPage = lazy(() => import('./pages/VendorFormPage'))
+const VendorKycStartPage = lazy(() => import('./pages/VendorKycStartPage'))
 const RiderManagement = lazy(() => import('./pages/RiderManagement'))
 const RiderFormPage = lazy(() => import('./pages/RiderFormPage'))
 const BannerManagement = lazy(() => import('./pages/BannerManagement'))
@@ -87,6 +88,7 @@ const VendorPendingCod = lazy(() => import('./pages/vendor/VendorPendingCod'))
 const VendorOrderPayments = lazy(() => import('./pages/vendor/VendorOrderPayments'))
 const VendorBilling = lazy(() => import('./pages/vendor/VendorBilling'))
 const BillingManagement = lazy(() => import('./pages/BillingManagement'))
+const Vouchers = lazy(() => import('./pages/Vouchers'))
 const VendorUserManagement = lazy(() => import('./pages/vendor/VendorUserManagement'))
 const VendorDeveloper = lazy(() => import('./pages/vendor/VendorDeveloper'))
 const VendorPrintSettings = lazy(() => import('./pages/vendor/VendorPrintSettings'))
@@ -230,6 +232,12 @@ function App() {
           <Route
             path="/vendors/:id/edit"
             element={<RoleGuard allowedRoles={['super_admin', 'admin', 'sales']}><VendorFormPage /></RoleGuard>}
+          />
+          {/* Staff start-KYC form for one vendor. Same KYC_ACCESS gate as the
+              review queue and the row action that links here. */}
+          <Route
+            path="/vendors/:id/kyc-start"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']} adminPermission="KYC_ACCESS"><VendorKycStartPage /></RoleGuard>}
           />
           {/* KYC review is the second tab of Vendor Management now. The old
               path still resolves so existing links and bookmarks land on it. */}
@@ -413,6 +421,12 @@ function App() {
             path="/finance/billing"
             element={<RoleGuard allowedRoles={['vendor', 'vendor_staff']} requiredPermission="FINANCE_ACCESS"><VendorBilling /></RoleGuard>}
           />
+          <Route
+            path="/vouchers"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'vendor', 'vendor_staff']} requiredPermission="ORDER_ACCESS"><Vouchers /></RoleGuard>}
+          />
+          {/* Parcel Credits became Vouchers — keep old links landing in the right place. */}
+          <Route path="/parcel-credits" element={<Navigate to="/vouchers" replace />} />
           <Route
             path="/billing"
             element={<RoleGuard allowedRoles={['super_admin', 'admin']}><BillingManagement /></RoleGuard>}

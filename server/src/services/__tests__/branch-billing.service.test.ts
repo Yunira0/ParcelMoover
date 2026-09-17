@@ -116,7 +116,12 @@ describe("reviewBranchPayment — verifying an Add money deposit", () => {
     });
     // evaluateBranchBilling runs after the tx (best-effort); wire enough for it
     // to resolve cleanly rather than swallow a thrown DB error.
-    mocks.getBillingSettings.mockResolvedValue({ warnThreshold: -2000, blockThreshold: -3000 });
+    mocks.getBillingSettings.mockResolvedValue({
+      warnThreshold: -2000,
+      blockThreshold: -3000,
+      branchWarnThreshold: -50000,
+      branchBlockThreshold: -75000,
+    });
     mocks.locationFindFirst.mockResolvedValue({
       id: "branch-a", name: "Branch A",
       branch_billing_warn_threshold: null, branch_billing_block_threshold: null,

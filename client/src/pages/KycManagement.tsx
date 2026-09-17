@@ -142,6 +142,11 @@ const KycManagement: React.FC<KycManagementProps> = ({ embedded = false }) => {
       </div>
     )},
     { header: 'Email', accessor: (a: KycApplication) => a.ownerEmail },
+    { header: 'Type', accessor: (a: KycApplication) => (
+      <StatusChip tone={a.applicationType === 'verification' ? 'info' : 'neutral'}>
+        {a.applicationType === 'verification' ? 'Verification' : 'Onboarding'}
+      </StatusChip>
+    ), width: '120px' },
     { header: 'Status', accessor: (a: KycApplication) => (
       <StatusChip tone={a.status === 'approved' ? 'success' : a.status === 'rejected' ? 'danger' : 'warning'}>
         {a.status.charAt(0).toUpperCase() + a.status.slice(1)}
@@ -204,6 +209,11 @@ const KycManagement: React.FC<KycManagementProps> = ({ embedded = false }) => {
                 <StatusChip tone={selected.status === 'approved' ? 'success' : selected.status === 'rejected' ? 'danger' : 'warning'}>
                   {selected.status.charAt(0).toUpperCase() + selected.status.slice(1)}
                 </StatusChip>
+                {selected.applicationType === 'verification' && (
+                  <span className="kyc-verification-note">
+                    Verification for {selected.vendorName || 'an existing vendor'} — approval unlocks vouchers, no new account is created.
+                  </span>
+                )}
               </div>
               <button className="kyc-modal-close" onClick={closeDetail}><X size={18} /></button>
             </div>

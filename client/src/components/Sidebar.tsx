@@ -239,6 +239,7 @@ const VendorSidebar: React.FC = () => {
           <SubItem to="/finance/order-payments" icon={ClipboardList} label="Order Payments" />
           <SubItem to="/finance/pending-cod" icon={Receipt} label="Pending COD" />
           <SubItem to="/finance/billing" icon={Wallet} label="Billing & Payments" />
+          <SubItem to="/vouchers" icon={Ticket} label="Vouchers" />
         </div>
 
         {/* Tickets and Remarks are the two ways a vendor asks us something, so
@@ -297,6 +298,7 @@ const VendorStaffSidebar: React.FC = () => {
               <SubItem to="/finance/order-payments" icon={ClipboardList} label="Order Payments" />
               <SubItem to="/finance/pending-cod" icon={Receipt} label="Pending COD" />
               <SubItem to="/finance/billing" icon={Wallet} label="Billing & Payments" />
+              <SubItem to="/vouchers" icon={Ticket} label="Vouchers" />
             </div>
           </>
         )}
@@ -460,7 +462,7 @@ const AdminSidebar: React.FC<{ isSuperAdmin: boolean }> = ({ isSuperAdmin }) => 
           <SidebarGroup
             label="System Management"
             icon={Wrench}
-            match={['/pickup-time-slots', '/system-logs', '/sla', '/banners', '/announcements']}
+            match={['/pickup-time-slots', '/system-logs', '/sla', '/banners', '/announcements', '/vouchers']}
           >
             {isSuperAdmin && <SubItem to="/pickup-time-slots" icon={Clock} label="Pickup Time Slots" />}
             {(isSuperAdmin || hasAdminPermission('SYSTEM_LOGS_ACCESS')) && (
@@ -473,6 +475,10 @@ const AdminSidebar: React.FC<{ isSuperAdmin: boolean }> = ({ isSuperAdmin }) => 
             {(isSuperAdmin || hasAdminPermission('SETTINGS_ACCESS')) && (
               <SubItem to="/announcements" icon={Megaphone} label="Announcements" />
             )}
+            {/* Vouchers live here, not under Vendor COD: publishing a shipping
+                offer is occasional configuration, like a banner or a time
+                slot — not a daily settlement screen. */}
+            <SubItem to="/vouchers" icon={Ticket} label="Vouchers" />
           </SidebarGroup>
         )}
 

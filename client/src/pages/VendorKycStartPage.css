@@ -1,0 +1,231 @@
+/* Owned entirely by this file: the start-KYC route never loaded the shared
+   billing/modal stylesheets, so every class the page uses is defined here.
+   Same-plane surfaces separate with a 1px border, never a shadow. */
+
+.kyc-start-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  width: 100%;
+}
+
+/* The one surface primitive on this page: white, bordered, quiet. */
+.kyc-surface {
+  background-color: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-default);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  padding: var(--space-6);
+  min-width: 0;
+}
+
+.kyc-start-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: var(--space-6);
+  align-items: start;
+}
+
+/* Sticky so the docs checklist stays visible beside a long form. */
+.kyc-start-aside {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  position: sticky;
+  top: var(--space-4);
+  min-width: 0;
+}
+
+.kyc-aside-card {
+  gap: var(--space-4);
+  padding: var(--space-4);
+}
+
+.kyc-aside-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  margin: 0;
+}
+
+.kyc-aside-title svg {
+  color: var(--color-text-caption);
+  flex-shrink: 0;
+}
+
+.kyc-aside-facts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.kyc-aside-facts > div {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-4);
+  font-size: var(--font-size-sm);
+}
+
+.kyc-aside-facts dt {
+  color: var(--color-text-caption);
+  font-weight: var(--font-weight-regular);
+  flex-shrink: 0;
+}
+
+.kyc-aside-facts dd {
+  color: var(--color-text-default);
+  font-weight: var(--font-weight-medium);
+  text-align: right;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.kyc-doc-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.kyc-doc-list li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+}
+
+/* Status is text first, dot second — never color alone. */
+.kyc-doc-dot {
+  width: 8px;
+  height: 8px;
+  flex-shrink: 0;
+  border-radius: var(--border-radius-full);
+  border: 1px solid var(--color-border-default);
+  background-color: var(--color-background-canvas);
+}
+
+.kyc-doc-dot.is-on-file {
+  border-color: var(--color-success-default);
+  background-color: var(--color-success-default);
+}
+
+.kyc-doc-status {
+  margin-left: auto;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-regular);
+  color: var(--color-text-caption);
+  white-space: nowrap;
+}
+
+.kyc-aside-hint {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-regular);
+  color: var(--color-text-caption);
+  margin: 0;
+}
+
+/* A real sequence — submit, review, unlock — so ordered markers earn their
+   place here, unlike decorative section numbering. */
+.kyc-next-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding-left: var(--space-5);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-regular);
+  color: var(--color-text-default);
+}
+
+.kyc-next-list strong {
+  font-weight: var(--font-weight-semibold);
+}
+
+/* Terminal states teach the next step instead of dead-ending. */
+.kyc-state-card {
+  max-width: 640px;
+}
+
+.kyc-state-text {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  margin: 0;
+}
+
+.kyc-state-actions {
+  display: flex;
+  gap: var(--space-3);
+}
+
+/* Form-shaped loading state — a table-height block would promise the wrong
+   thing. Skeleton shimmer, not a spinner in the middle of content. */
+.kyc-start-loading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: var(--space-6);
+  align-items: start;
+}
+
+.kyc-skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--color-background-canvas) 25%,
+    var(--color-background-elevated) 50%,
+    var(--color-background-canvas) 75%
+  );
+  background-size: 200% 100%;
+  animation: kyc-shimmer 1.5s infinite ease-in-out;
+  border-radius: var(--border-radius-default);
+}
+
+.kyc-skeleton-line {
+  height: 44px;
+}
+
+.kyc-skeleton-block {
+  height: 220px;
+}
+
+.kyc-skeleton-short {
+  height: 140px;
+}
+
+@keyframes kyc-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kyc-skeleton {
+    animation: none;
+  }
+}
+
+@media (max-width: 1024px) {
+  .kyc-start-layout,
+  .kyc-start-loading {
+    grid-template-columns: 1fr;
+  }
+
+  .kyc-start-aside {
+    position: static;
+  }
+}
+
+@media (max-width: 640px) {
+  .kyc-surface {
+    padding: var(--space-4);
+  }
+}

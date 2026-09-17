@@ -116,6 +116,14 @@ export async function createOrderController(req: Request, res: Response) {
           trackingId: order.tracking_id,
           status: order.status,
           createdAt: order.created_at,
+          // The priced fee breakdown, so the client can show delivery fee,
+          // voucher discount and final charge without a second fetch.
+          deliveryCharge: Number(order.delivery_charge),
+          grossDeliveryCharge: Number(order.gross_delivery_charge),
+          discountAmount: Number(order.discount_amount),
+          ...((order as { voucherCode?: string }).voucherCode
+            ? { voucherCode: (order as { voucherCode?: string }).voucherCode }
+            : {}),
         },
       };
 

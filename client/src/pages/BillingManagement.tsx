@@ -2,9 +2,11 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { CheckCircle2, ExternalLink, FileText, X } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import SegmentedTabs from '../components/SegmentedTabs';
+import CreditUsageBar from '../components/CreditUsageBar';
 import Table from '../components/Table';
 import Button from '../components/Button';
 import FileField from '../components/FileField';
+import FormField from '../components/FormField';
 import Pagination from '../components/Pagination';
 import '../components/Modal.css';
 import { getCurrentUserRoles } from '../utils/auth';
@@ -15,6 +17,7 @@ import {
   paymentQrUrl,
   reviewVendorPayment,
   updateBillingSettings,
+  updateVendorCreditLimit,
   uploadPaymentQr,
   type BillingSettings,
   type VendorBalanceRow,
@@ -68,12 +71,18 @@ const BillingManagement: React.FC = () => {
   // Settings
   const [settings, setSettings] = useState<BillingSettings | null>(null);
   const [warn, setWarn] = useState('');
-  const [block, setBlock] = useState('');
+  const [defaultCredit, setDefaultCredit] = useState('');
   const [branchWarn, setBranchWarn] = useState('');
   const [branchBlock, setBranchBlock] = useState('');
   const [savingSettings, setSavingSettings] = useState(false);
   const [settingsMessage, setSettingsMessage] = useState('');
   const [settingsError, setSettingsError] = useState('');
+
+  // Per-vendor credit limit editor (super_admin only, like the thresholds).
+  const [creditVendor, setCreditVendor] = useState<VendorBalanceRow | null>(null);
+  const [creditValue, setCreditValue] = useState('');
+  const [creditSaving, setCreditSaving] = useState(false);
+  const [creditError, setCreditError] = useState('');
 
   // QR replace is staged, not immediate: picking a file only previews it, so
   // a wrong click can't silently swap the QR every vendor pays against.
@@ -120,7 +129,7 @@ const BillingManagement: React.FC = () => {
       const data = await getBillingSettings();
       setSettings(data);
       setWarn(String(data.warnThreshold));
-      setBlock(String(data.blockThreshold));
+      setDefaultCredit(String(data.defaultCreditLimit));
       setBranchWarn(String(data.branchWarnThreshold));
       setBranchBlock(String(data.branchBlockThreshold));
       setNote(data.paymentNote ?? '');
@@ -167,7 +176,7 @@ const BillingManagement: React.FC = () => {
     try {
       const updated = await updateBillingSettings({
         warnThreshold: Number(warn),
-        blockThreshold: Number(block),
+        defaultCreditLimit: Number(defaultCredit),
         branchWarnThreshold: Number(branchWarn),
         branchBlockThreshold: Number(branchBlock),
       });
@@ -192,6 +201,36 @@ const BillingManagement: React.FC = () => {
       setNoteError(apiErrorMessage(err, 'Failed to save note.'));
     } finally {
       setSavingNote(false);
+    }
+  };
+
+  // Overrides one vendor's credit limit. Only that row changes — the system
+  // default and every other vendor keep their values — and the list reloads
+  // so the new state shows immediately.
+  const openCreditEditor = (vendor: VendorBalanceRow) => {
+    setCreditVendor(vendor);
+    setCreditValue(String(vendor.creditLimit));
+    setCreditError('');
+  };
+
+  const closeCreditEditor = () => {
+    setCreditVendor(null);
+    setCreditValue('');
+    setCreditError('');
+  };
+
+  const handleSaveCredit = async () => {
+    if (!creditVendor) return;
+    setCreditSaving(true);
+    setCreditError('');
+    try {
+      await updateVendorCreditLimit(creditVendor.vendorId, Number(creditValue));
+      closeCreditEditor();
+      await loadBalances();
+    } catch (err) {
+      setCreditError(apiErrorMessage(err, 'Failed to update credit limit.'));
+    } finally {
+      setCreditSaving(false);
     }
   };
 
@@ -289,6 +328,28 @@ const BillingManagement: React.FC = () => {
     { header: 'PAID OUT', accessor: (v: VendorBalanceRow) => formatCurrency(v.payouts), width: '120px' },
     { header: 'RECEIVED', accessor: (v: VendorBalanceRow) => formatCurrency(v.paymentsReceived), width: '120px' },
     {
+      header: 'CREDIT LIMIT',
+      accessor: (v: VendorBalanceRow) => (
+        <span className="billing-limit-cell">
+          <span className="billing-limit-row">
+            {formatCurrency(v.creditLimit)}
+            {isSuperAdmin && (
+              <button
+                type="button"
+                className="billing-doc-link billing-doc-preview-btn"
+                onClick={() => openCreditEditor(v)}
+                aria-label={`Edit credit limit for ${v.vendorName}`}
+              >
+                Edit
+              </button>
+            )}
+          </span>
+          <CreditUsageBar balance={v.balance} creditLimit={v.creditLimit} state={v.state} />
+        </span>
+      ),
+      width: '190px',
+    },
+    {
       header: 'STATE',
       accessor: (v: VendorBalanceRow) => (
         <span className={`billing-pill billing-pill-${v.state === 'ok' ? 'verified' : v.state === 'warned' ? 'pending' : 'rejected'}`}>
@@ -347,8 +408,9 @@ const BillingManagement: React.FC = () => {
       {activeTab === 'vendors' && (
         <>
           <p className="billing-hint">
-            Live balances for every vendor. Check this before enforcement goes live — anyone already
-            past the block threshold will be unable to place orders the moment it does.
+            Live balances for every vendor, with the credit limit that blocks each
+            one. A vendor whose owing passes their own limit cannot place new orders
+            until a verified payment brings it back down.
           </p>
           <Table
             columns={balanceColumns}
@@ -366,8 +428,10 @@ const BillingManagement: React.FC = () => {
           <section className="billing-card">
             <h3>Credit thresholds</h3>
             <p className="billing-hint">
-              Both sets are negative account balances. Vendor thresholds pause new order creation;
-              branch thresholds pause transit into a branch with COD remittance overdue.
+              Warn is a negative account balance; the default credit limit is a positive cap.
+              A vendor is warned past the warn line and blocked once what they owe passes
+              their own credit limit. Branch thresholds pause transit into a branch with
+              COD remittance overdue.
             </p>
             <form className="billing-form" onSubmit={handleSaveSettings}>
               <label>
@@ -381,12 +445,13 @@ const BillingManagement: React.FC = () => {
                 />
               </label>
               <label>
-                Block threshold
+                Default credit limit (NPR)
                 <input
                   type="number"
+                  min="0.01"
                   step="0.01"
-                  value={block}
-                  onChange={(e) => setBlock(e.target.value)}
+                  value={defaultCredit}
+                  onChange={(e) => setDefaultCredit(e.target.value)}
                   disabled={!isSuperAdmin || savingSettings}
                 />
               </label>
@@ -514,6 +579,42 @@ const BillingManagement: React.FC = () => {
             <a href={uploadUrl(previewProof)} target="_blank" rel="noreferrer" className="billing-doc-link">
               Open full size <ExternalLink size={12} />
             </a>
+          </div>
+        </div>
+      )}
+
+      {creditVendor && (
+        <div className="modal-overlay" onClick={closeCreditEditor}>
+          <div className="modal-content" role="dialog" aria-modal="true" aria-label={`Edit credit limit for ${creditVendor.vendorName}`} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Credit limit — {creditVendor.vendorName}</h2>
+              <Button variant="ghost" size="icon" className="modal-close-btn" onClick={closeCreditEditor} aria-label="Close">
+                <X size={18} />
+              </Button>
+            </div>
+            <p className="modal-desc">
+              Outstanding delivery charges past this amount block new orders.
+            </p>
+            <div className="form-grid">
+              <FormField
+                label="Credit limit (NPR)"
+                required
+                type="decimal"
+                value={creditValue}
+                onChange={(v) => { setCreditValue(v); setCreditError(''); }}
+                placeholder="50000"
+                hint="Only this vendor changes."
+              />
+            </div>
+            {creditError && <p role="alert" className="error-text">{creditError}</p>}
+            <div className="modal-footer">
+              <Button variant="secondary" onClick={closeCreditEditor} disabled={creditSaving}>
+                Cancel
+              </Button>
+              <Button variant="primary" onClick={() => void handleSaveCredit()} disabled={creditSaving}>
+                {creditSaving ? 'Saving…' : 'Save limit'}
+              </Button>
+            </div>
           </div>
         </div>
       )}
