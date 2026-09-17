@@ -239,6 +239,25 @@ export interface SlaStatusBreach {
   count: number;
 }
 
+/** One side of an SLA group's valley split: its total and per-status breakdown. */
+export interface SlaValleySide {
+  count: number;
+  breaches: SlaStatusBreach[];
+}
+
+/** An SLA group split by valley. Inside valley covers both sides of the ring
+ *  road; every other destination - including one with no valley configured -
+ *  counts as outside. */
+export interface SlaValleySplit {
+  insideValley: SlaValleySide;
+  outsideValley: SlaValleySide;
+}
+
+export const EMPTY_VALLEY_SPLIT: SlaValleySplit = {
+  insideValley: { count: 0, breaches: [] },
+  outsideValley: { count: 0, breaches: [] },
+};
+
 export interface DashboardSummary {
   overview: {
     totalOrders: number;
@@ -296,6 +315,10 @@ export interface DashboardSummary {
     deliveryBreaches: SlaStatusBreach[];
     transitBreaches: SlaStatusBreach[];
     returnBreaches: SlaStatusBreach[];
+    /** Delivery breaches split by the destination's valley. Delivery only:
+     *  pickup stays a single count, since a pickup is worked by the origin
+     *  branch's own riders and the split says nothing there. */
+    deliveryByValley: SlaValleySplit;
   };
   codSettlement: {
     totalCod: number;

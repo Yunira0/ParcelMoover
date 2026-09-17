@@ -3917,22 +3917,57 @@ async function computeDashboardSummary(
   }
 
   const slaCounts: Record<string, number> = {};
+  // Delivery breaches whose destination sits inside the valley, per status.
+  // Only the delivery group is split this way - a pickup is worked by the
+  // origin branch's own riders, so splitting it by valley tells the desk
+  // nothing it doesn't already know from the row it is looking at.
+  // "Inside" is valley = 'inside' on the destination, which covers both sides
+  // of the ring road. The outside-valley figure is the status total minus this,
+  // so a destination outside the valley - or not classified at all - lands in
+  // the outside bucket, the same way pricing treats anything that is not
+  // explicitly inside (resolveDestinationPricing).
+  const slaInsideValleyCounts: Record<string, number> = {};
+  const deliverySlaStatuses: readonly string[] = SLA_GROUPS.delivery;
   if (statusThresholds.length) {
-    const breachColumns = statusThresholds.map(([status, hours]) =>
-      Prisma.sql`COUNT(*) FILTER (
-        WHERE status::text = ${status}
-          AND COALESCE(
-            (SELECT MAX(h.created_at) FROM parcel_status_history h WHERE h.parcel_id = parcels.id),
-            created_at
-          ) < now() - (${hours} * interval '1 hour')
-      ) AS ${Prisma.raw(`c_${status}`)}`,
-    );
+    const breachedSql = (status: string, hours: number) =>
+      Prisma.sql`status = ${status} AND status_since < now() - (${hours} * interval '1 hour')`;
+    const breachColumns = statusThresholds.flatMap(([status, hours]) => {
+      const columns = [
+        Prisma.sql`COUNT(*) FILTER (WHERE ${breachedSql(status, hours)}) AS ${Prisma.raw(`c_${status}`)}`,
+      ];
+      if (deliverySlaStatuses.includes(status)) {
+        columns.push(Prisma.sql`COUNT(*) FILTER (
+          WHERE ${breachedSql(status, hours)} AND destination_valley = 'inside'
+        ) AS ${Prisma.raw(`i_${status}`)}`);
+      }
+      return columns;
+    });
+    // A location's valley falls back to its parent's, the same way pricing
+    // resolves it (resolveDestinationPricing).
     const [row] = await prisma.$queryRaw<Array<Record<string, bigint>>>(Prisma.sql`
       SELECT ${Prisma.join(breachColumns)}
-      FROM parcels
-      WHERE deleted_at IS NULL ${parcelScopeSql}
+      FROM (
+        SELECT
+          status::text AS status,
+          COALESCE(
+            (SELECT MAX(h.created_at) FROM parcel_status_history h WHERE h.parcel_id = parcels.id),
+            created_at
+          ) AS status_since,
+          (
+            SELECT COALESCE(l.valley, pl.valley)
+            FROM locations l LEFT JOIN locations pl ON pl.id = l.parent_id
+            WHERE l.id = parcels.destination_location_id
+          ) AS destination_valley
+        FROM parcels
+        WHERE deleted_at IS NULL
+          AND status::text = ANY(${statusThresholds.map(([status]) => status)})
+          ${parcelScopeSql}
+      ) sla_parcels
     `);
-    for (const [status] of statusThresholds) slaCounts[status] = Number(row?.[`c_${status}`] ?? 0);
+    for (const [status] of statusThresholds) {
+      slaCounts[status] = Number(row?.[`c_${status}`] ?? 0);
+      if (row?.[`i_${status}`] !== undefined) slaInsideValleyCounts[status] = Number(row[`i_${status}`]);
+    }
   }
 
   const sumStatuses = (statuses: readonly string[]) =>
@@ -3945,6 +3980,23 @@ async function computeDashboardSummary(
     statuses
       .map((status) => ({ status, count: slaCounts[status] ?? 0 }))
       .filter((entry) => entry.count > 0);
+
+  // The delivery group split by the destination's valley: inside (both sides of
+  // the ring road) and outside (everything else) - each side with its own total
+  // and per-status breakdown.
+  const breachesByValley = (statuses: readonly string[]) => {
+    const side = (countFor: (status: string) => number) => {
+      const breaches = statuses
+        .map((status) => ({ status, count: countFor(status) }))
+        .filter((entry) => entry.count > 0);
+      return { count: breaches.reduce((n, entry) => n + entry.count, 0), breaches };
+    };
+    const inside = (status: string) => slaInsideValleyCounts[status] ?? 0;
+    return {
+      insideValley: side(inside),
+      outsideValley: side((status) => (slaCounts[status] ?? 0) - inside(status)),
+    };
+  };
 
   // Representative SLA threshold to display for a group row: the tightest
   // (smallest) configured hours among its statuses, or null if none set.
@@ -4049,6 +4101,7 @@ async function computeDashboardSummary(
       deliveryBreaches: breachesByStatus(SLA_GROUPS.delivery),
       transitBreaches: breachesByStatus(SLA_GROUPS.transit),
       returnBreaches: breachesByStatus(SLA_GROUPS.return),
+      deliveryByValley: breachesByValley(SLA_GROUPS.delivery),
     },
     weeklyTrend,
     updatedAt: new Date().toISOString(),
