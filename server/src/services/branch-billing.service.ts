@@ -537,8 +537,22 @@ export async function getBranchBillingForActor(actor: Actor, branchId?: string) 
   return getBranchBillingStatus(await resolveBranchId(actor, branchId));
 }
 
+/** Imadol is the master branch every other branch settles COD *to*, so it has
+ *  no branch balance of its own — there is no settlement it could raise
+ *  against itself. Matched the same way as branch.service's master lookup,
+ *  inline to avoid a branch.service <-> branch-billing.service import cycle. */
+const isMasterBranch = (b: { code: string | null; name: string }) =>
+  (b.code || "").trim().toUpperCase() === "IMADOL" ||
+  (!b.code?.trim() && b.name.trim().toLowerCase() === "imadol");
+
 export async function listBranchBalances(actor: Actor): Promise<BranchBillingStatus[]> {
   if (!isSuperAdmin(actor)) throw new AppError(403, "Only a super admin can view every branch balance");
-  const branches = await prisma.locations.findMany({ where: { parent_id: null, is_hub: true, is_active: true }, select: { id: true }, orderBy: { name: "asc" } });
-  return Promise.all(branches.map((branch) => getBranchBillingStatus(branch.id)));
+  const branches = await prisma.locations.findMany({
+    where: { parent_id: null, is_hub: true, is_active: true },
+    select: { id: true, code: true, name: true },
+    orderBy: { name: "asc" },
+  });
+  return Promise.all(
+    branches.filter((branch) => !isMasterBranch(branch)).map((branch) => getBranchBillingStatus(branch.id)),
+  );
 }

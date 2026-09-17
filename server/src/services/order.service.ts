@@ -4026,12 +4026,19 @@ async function computeDashboardSummary(
              COALESCE(SUM(GREATEST(0::numeric, COALESCE(cc.collected_amount, p.cod_amount))), 0) AS amount
       FROM parcels p
       LEFT JOIN cod_collections cc ON cc.parcel_id = p.id
+      JOIN locations dl ON dl.id = p.destination_location_id
       WHERE p.deleted_at IS NULL
         AND p.status::text IN ('delivered', 'partially_delivered')
         AND p.delivered_at IS NOT NULL
         AND p.delivered_at < now() - make_interval(hours => ${branchCodHours})
         AND p.destination_location_id IS NOT NULL
         AND NOT EXISTS (SELECT 1 FROM branch_settlement_items bsi WHERE bsi.parcel_id = p.id)
+        -- COD on parcels delivered into Imadol is already at the master branch:
+        -- there is no settlement for it to sit on, so it is never overdue.
+        AND COALESCE(dl.parent_id, dl.id) IS DISTINCT FROM (
+          SELECT id FROM locations
+          WHERE upper(code) = 'IMADOL' AND parent_id IS NULL AND is_hub LIMIT 1
+        )
         ${branchScopeSql}
     `);
     overdueBranchCod = Number(rows[0]?.n ?? 0);
