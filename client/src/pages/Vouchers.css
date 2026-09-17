@@ -3,6 +3,14 @@
 .vouchers-page p { max-width: 75ch; margin: 0; }
 .vouchers-fields { border: 0; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); }
 
+/* Create form beside a live voucher preview: the picture carries the meaning,
+   so the fields can stay few and plainly named. */
+.vouchers-create-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 420px); gap: var(--space-6); align-items: start; }
+.vouchers-create-preview { position: sticky; top: var(--space-4); display: grid; gap: var(--space-2); }
+.voucher-field-group { display: grid; gap: var(--space-2); align-content: start; }
+.voucher-field-label { font-size: var(--font-size-sm); font-weight: 600; color: var(--color-text-default); }
+@media (max-width: 960px) { .vouchers-create-body { grid-template-columns: minmax(0, 1fr); } .vouchers-create-preview { position: static; } }
+
 .vouchers-claim-row { display: flex; gap: var(--space-3); margin-top: var(--space-3); max-width: 480px; align-items: flex-start; }
 .vouchers-claim-row .form-group { flex: 1 1 0; min-width: 0; }
 .vouchers-claim-row .form-group input { font-family: var(--mono); text-transform: uppercase; }
@@ -29,6 +37,9 @@
    opens the voucher preview. Resets the global button chrome. */
 button.voucher-code-link {
   background-color: var(--color-background-surface);
+  /* The global button rule paints text in the accent's contrast colour (white),
+     which vanishes against this surface — restate the body colour. */
+  color: var(--color-text-default);
   cursor: pointer;
   font-size: inherit;
 }

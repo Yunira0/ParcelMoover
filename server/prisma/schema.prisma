@@ -1115,6 +1115,7 @@ model vouchers {
   starts_at       DateTime @db.Timestamptz(6)
   expires_at      DateTime @db.Timestamptz(6)
   claim_limit     Int
+  uses_per_vendor  Int                @default(1)
   claimed_count   Int      @default(0)
   is_active       Boolean  @default(true)
   // Bulk-generated campaign codes are unlisted: vendors claim them by code
@@ -1137,7 +1138,7 @@ model voucher_claims {
   claimed_by  String   @db.Uuid
   claimed_at  DateTime @default(now()) @db.Timestamptz(6)
 
-  @@unique([voucher_id, vendor_id])
+  @@index([voucher_id, vendor_id])
   @@index([vendor_id, claimed_at])
 }
 

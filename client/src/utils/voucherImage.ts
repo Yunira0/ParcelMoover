@@ -57,7 +57,16 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
   ctx.closePath();
 }
 
-export async function renderVoucherCanvas(offer: VoucherOffer): Promise<HTMLCanvasElement> {
+/**
+ * `copyPill: false` drops the COPY affordance — meaningless on paper.
+ * `note` draws one instruction line under the code bar; print passes it because
+ * a printed sheet has no HTML caption to lean on. Both default to the
+ * on-screen look, so the preview and the PNG download are unaffected.
+ */
+export async function renderVoucherCanvas(
+  offer: VoucherOffer,
+  opts: { copyPill?: boolean; note?: string } = {},
+): Promise<HTMLCanvasElement> {
   const [headA, headB] = voucherHeadline(offer);
   const art = await loadImage(ART_SRC);
 
@@ -197,21 +206,38 @@ export async function renderVoucherCanvas(offer: VoucherOffer): Promise<HTMLCanv
     (ctx as CanvasRenderingContext2D & { letterSpacing: string }).letterSpacing = '0px';
   } catch { /* noop */ }
 
-  // Compact COPY pill (static on the export).
-  ctx.font = `800 23px ${FONT}`;
-  const copyText = 'COPY';
-  const copyW = ctx.measureText(copyText).width + 44;
-  const copyH = 66;
-  const copyX = barX + barW - copyW - 10;
-  const copyY = barY + (barH - copyH) / 2;
-  ctx.fillStyle = COPY_ORANGE;
-  roundRect(ctx, copyX, copyY, copyW, copyH, 16);
-  ctx.fill();
-  ctx.fillStyle = INK;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(copyText, copyX + copyW / 2, barY + barH / 2 + 1);
-  ctx.textAlign = 'left';
+  // Compact COPY pill (static on the export; omitted for print).
+  if (opts.copyPill !== false) {
+    ctx.font = `800 23px ${FONT}`;
+    const copyText = 'COPY';
+    const copyW = ctx.measureText(copyText).width + 44;
+    const copyH = 66;
+    const copyX = barX + barW - copyW - 10;
+    const copyY = barY + (barH - copyH) / 2;
+    ctx.fillStyle = COPY_ORANGE;
+    roundRect(ctx, copyX, copyY, copyW, copyH, 16);
+    ctx.fill();
+    ctx.fillStyle = INK;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(copyText, copyX + copyW / 2, barY + barH / 2 + 1);
+    ctx.textAlign = 'left';
+  }
+
+  // Print-only instruction, in the open space between the code bar and the
+  // footnotes. Shrinks rather than overflowing the panel on a long string.
+  if (opts.note) {
+    let noteSize = 26;
+    ctx.font = `550 ${noteSize}px ${FONT}`;
+    while (noteSize > 16 && ctx.measureText(opts.note).width > barW) {
+      noteSize -= 2;
+      ctx.font = `550 ${noteSize}px ${FONT}`;
+    }
+    ctx.fillStyle = '#c6c1bd';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillText(opts.note, brandX, barY + barH + 68);
+  }
 
   // Footnotes use small orange markers to create a deliberate bottom rhythm.
   const footY = 750;
@@ -295,11 +321,10 @@ export async function printVoucher(offer: VoucherOffer): Promise<void> {
     .head { font-size: 49pt; font-weight: 900; line-height: .95; letter-spacing: -.04em; white-space: nowrap; }
     .head.compact { font-size: 39pt; } .head b { color: ${ORANGE}; font-weight: 900; }
     .sub { font-size: 14pt; font-weight: 520; color: #dedbd9; margin-top: 7pt; }
-    .bar { display: flex; align-items: center; gap: 13pt; border: 1.5pt solid #36383e; border-radius: 10pt; padding: 5pt 5pt 5pt 10pt; margin-top: 15pt; }
+    .bar { display: flex; align-items: center; gap: 13pt; border: 1.5pt solid #36383e; border-radius: 10pt; padding: 12pt 10pt; margin-top: 15pt; }
     .use { font-size: 10pt; line-height: 1.2; font-weight: 500; color: #aaa6a3; text-transform: uppercase; white-space: nowrap; }
     .use:after { content: ''; display: inline-block; width: 1.5pt; height: 25pt; margin-left: 13pt; background: #36383e; vertical-align: middle; }
     .code { flex: 1; font-size: 15pt; line-height: 1.1; font-weight: 850; letter-spacing: 3pt; color: #ff7124; }
-    .copy { background: ${COPY_ORANGE}; color: #130b07; font-weight: 800; font-size: 9pt; border-radius: 7pt; padding: 8pt 10pt; }
     .foot { display: flex; gap: 34pt; font-size: 9pt; font-weight: 550; color: #c6c1bd; }
     .foot span { display: inline-flex; align-items: center; gap: 5pt; }
     .r { position: relative; flex: 1; border-left: .5pt solid rgba(255,124,52,.45); } .r img { width: 100%; height: 100%; object-fit: cover; display: block; }
@@ -310,7 +335,7 @@ export async function printVoucher(offer: VoucherOffer): Promise<void> {
       <div class="m">
         <div class="head${headA.length > 5 ? ' compact' : ''}">${headA} <b>${headB}</b></div>
         <div class="sub">${escapeHtml(offer.title)}</div>
-        <div class="bar"><span class="use">Use code</span><span class="code">${escapeHtml(offer.code.toUpperCase())}</span><span class="copy">COPY</span></div>
+        <div class="bar"><span class="use">Use code</span><span class="code">${escapeHtml(offer.code.toUpperCase())}</span></div>
       </div>
       <div class="foot"><span>${escapeHtml(voucherFootnoteLeft(offer))}</span><span>${escapeHtml(voucherFootnoteRight(offer))}</span></div>
     </div><div class="r"><img src="${artDataUrl}" alt=""/></div></div>

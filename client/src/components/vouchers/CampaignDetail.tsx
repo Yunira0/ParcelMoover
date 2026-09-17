@@ -97,7 +97,7 @@ export default function CampaignDetail({ campaignId, onBack, onChanged, onPrevie
   function previewCode(row: CampaignCodeRow) {
     if (!campaign) return;
     onPreviewCode({
-      id: row.id, code: row.code, title: row.title, description: row.description,
+      id: row.id, code: row.code, title: row.title, description: row.description, usesPerVendor: 1,
       discountType: campaign.discountType, discountAmount: campaign.discountAmount,
       discountPercent: campaign.discountPercent, maxDiscount: campaign.maxDiscount,
       minimumCharge: campaign.minimumCharge,

@@ -7,7 +7,7 @@ import { csrfProtection } from '../middlewares/csrf.middleware';
 import { rateLimit } from 'express-rate-limit';
 import {
   claimVoucher, createVoucher, listAllVouchers, listAvailableVouchers,
-  listMyVouchers, setVoucherActive,
+  listMyVouchers, lookupVoucher, setVoucherActive,
 } from '../services/voucher.service';
 
 const router = Router();
@@ -38,6 +38,16 @@ router.get('/mine', async (req, res, next) => {
   try {
     const vendorId = typeof req.query.vendorId === 'string' ? req.query.vendorId : undefined;
     res.json({ success: true, data: await listMyVouchers(req.user!, vendorId) });
+  } catch (e) { next(e); }
+});
+
+// GET /api/vouchers/lookup?code=MOVE100 — order-form preview of a typed code.
+// Read-only: the claim itself is taken when the order is created. Staff may
+// pass ?vendorId for the vendor they are keying the order in for.
+router.get('/lookup', async (req, res, next) => {
+  try {
+    const vendorId = typeof req.query.vendorId === 'string' ? req.query.vendorId : undefined;
+    res.json({ success: true, data: await lookupVoucher(req.user!, req.query.code, vendorId) });
   } catch (e) { next(e); }
 });
 

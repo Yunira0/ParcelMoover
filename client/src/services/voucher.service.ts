@@ -14,6 +14,7 @@ export interface VoucherOffer {
   expiresAt: string;
   claimLimit: number;
   claimedCount: number;
+  usesPerVendor: number;
   isActive: boolean;
 }
 
@@ -29,6 +30,15 @@ export interface MyVoucher {
   usable: boolean;
   unusableReason: string | null;
   voucher: VoucherOffer;
+}
+
+/** Order-form preview of a typed code. `claimed` is false for a code the
+ *  vendor has not taken yet — still usable, since placing the order claims it. */
+export interface VoucherLookup {
+  voucher: VoucherOffer;
+  usable: boolean;
+  unusableReason: string | null;
+  claimed: boolean;
 }
 
 export interface VoucherListResult {
@@ -110,6 +120,7 @@ export const createVoucher = async (data: {
   startsAt: string;
   expiresAt: string;
   claimLimit: number;
+  usesPerVendor?: number;
 }): Promise<VoucherOffer> => (await api.post('/vouchers', data)).data.data;
 
 export const setVoucherActive = async (id: string, isActive: boolean): Promise<VoucherOffer> =>
@@ -117,6 +128,9 @@ export const setVoucherActive = async (id: string, isActive: boolean): Promise<V
 
 export const claimVoucher = async (data: { code?: string; voucherId?: string }): Promise<MyVoucher> =>
   (await api.post('/vouchers/claim', data)).data.data;
+
+export const lookupVoucher = async (code: string, vendorId?: string): Promise<VoucherLookup> =>
+  (await api.get('/vouchers/lookup', { params: { code, ...(vendorId ? { vendorId } : {}) } })).data.data;
 
 /** Bulk campaign directory (super_admin/admin). */
 export const listCampaigns = async (page = 1): Promise<CampaignListResult> =>

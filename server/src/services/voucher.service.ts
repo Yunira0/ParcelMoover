@@ -3,16 +3,18 @@ import prisma from '../lib/prisma';
 import { Prisma } from '../generated/prisma/client';
 import { AppError } from '../utils/AppError';
 import { resolveOwnVendorId, type ScopeActor } from './vendor-scope.service';
-import { vendorHasApprovedKyc, type KycApprovalDb } from './kyc.service';
 
 // ── Daraz-style shipping vouchers ────────────────────────────────────────────
-// An admin publishes an offer (MOVE100 — Rs. 100 off). Vendors claim it once
-// into "My Vouchers" and attach the claim while creating an outbound delivery
-// order. The order_voucher_pricing trigger does the actual price math so the
-// status, price, claim state and audit event commit together; this service
-// validates up front so vendors get readable errors instead of raw trigger
-// messages, and owns everything the trigger cannot: publishing, the claim
-// window/limit accounting, and resolving a code to a claim at order time.
+// An admin publishes an offer (MOVE100 — Rs. 100 off). A vendor redeems it by
+// typing the code while creating an outbound delivery order — no KYC, and no
+// separate claim step: if the vendor holds no claim on that code yet, one is
+// created on the spot inside the order transaction. Claims remain the
+// redemption record carrying the claimed/reserved/used state, the claim-limit
+// accounting and the one-per-vendor rule; "My Vouchers" and the browse page
+// stay as an optional way to reserve an offer ahead of time. The
+// order_voucher_pricing trigger does the actual price math so the status,
+// price, claim state and audit event commit together; this service validates
+// up front so vendors get readable errors instead of raw trigger messages.
 
 export const VOUCHER_CODE_REGEX = /^[A-Z0-9][A-Z0-9_-]{2,31}$/;
 
@@ -62,6 +64,7 @@ export const createVoucherSchema = z.object({
   code: codeSchema,
   ...voucherTermsBase.shape,
   claimLimit: z.number().int().min(1).max(100000),
+  usesPerVendor: z.number().int().min(1).max(100).default(1),
   isActive: z.boolean().default(true),
 }).strict().superRefine(refineVoucherTerms);
 
@@ -70,7 +73,7 @@ export type VoucherOffer = {
   discountType: string; discountAmount: number; discountPercent: number | null;
   maxDiscount: number | null; minimumCharge: number;
   startsAt: string; expiresAt: string;
-  claimLimit: number; claimedCount: number; isActive: boolean;
+  claimLimit: number; claimedCount: number; usesPerVendor: number; isActive: boolean;
   campaignId: string | null;
 };
 
@@ -90,7 +93,7 @@ function toOffer(v: {
   discount_type: string; discount_amount: unknown; discount_percent: unknown;
   max_discount: unknown; minimum_charge: unknown;
   starts_at: Date; expires_at: Date;
-  claim_limit: number; claimed_count: number; is_active: boolean;
+  claim_limit: number; claimed_count: number; uses_per_vendor?: number; is_active: boolean;
   campaign_id?: string | null;
 }): VoucherOffer {
   return {
@@ -101,7 +104,8 @@ function toOffer(v: {
     maxDiscount: v.max_discount === null ? null : Number(v.max_discount),
     minimumCharge: Number(v.minimum_charge),
     startsAt: v.starts_at.toISOString(), expiresAt: v.expires_at.toISOString(),
-    claimLimit: v.claim_limit, claimedCount: v.claimed_count, isActive: v.is_active,
+    claimLimit: v.claim_limit, claimedCount: v.claimed_count,
+    usesPerVendor: v.uses_per_vendor ?? 1, isActive: v.is_active,
     campaignId: v.campaign_id ?? null,
   };
 }
@@ -133,15 +137,6 @@ export function voucherUsability(
   return { usable: true, reason: null };
 }
 
-// Claims are a shipping incentive, not cash — but like the Parcel Credits
-// pilot before them they still require a verified identity behind the vendor,
-// so throwaway accounts cannot farm every published offer.
-async function requireApprovedKycVendor(db: KycApprovalDb, vendorId: string): Promise<void> {
-  if (!(await vendorHasApprovedKyc(db, vendorId))) {
-    throw new AppError(400, 'This vendor needs an approved KYC application before claiming vouchers');
-  }
-}
-
 async function resolveOwnVendorOrThrow(actor: ScopeActor): Promise<string> {
   const vendorId = await resolveOwnVendorId(actor);
   if (!vendorId) throw new AppError(403, 'Vouchers are available to vendor accounts');
@@ -165,7 +160,8 @@ export async function createVoucher(actor: ScopeActor, raw: unknown): Promise<Vo
         max_discount: input.maxDiscount ?? null,
         minimum_charge: input.minimumCharge,
         starts_at: starts, expires_at: expires,
-        claim_limit: input.claimLimit, is_active: input.isActive,
+        claim_limit: input.claimLimit, uses_per_vendor: input.usesPerVendor,
+        is_active: input.isActive,
         created_by: actor.id,
       },
     });
@@ -236,6 +232,69 @@ export async function listAvailableVouchers(actor: ScopeActor): Promise<Availabl
   });
 }
 
+/**
+ * Take a claim on this vendor's account, inside the caller's transaction.
+ * Shared by the explicit "claim" action and by order creation, which claims on
+ * the vendor's behalf the first time they type a code — so the window, the
+ * claim limit and the per-campaign cap are enforced identically either way.
+ */
+async function claimVoucherTx(
+  tx: Prisma.TransactionClient,
+  vendorId: string,
+  actorId: string,
+  ref: { code?: string | undefined; voucherId?: string | undefined },
+) {
+  // Serialize concurrent claims on the same vendor account.
+  await tx.$queryRaw`SELECT id FROM vendors WHERE id = ${vendorId}::uuid FOR UPDATE`;
+
+  // Lock the offer before checking its window and remaining spots, so two
+  // vendors racing the last spot cannot both take it.
+  const rows = ref.voucherId
+    ? await tx.$queryRaw<Array<{ id: string }>>`SELECT id FROM vouchers WHERE id = ${ref.voucherId}::uuid FOR UPDATE`
+    : await tx.$queryRaw<Array<{ id: string }>>`SELECT id FROM vouchers WHERE code = ${ref.code} FOR UPDATE`;
+  if (!rows[0]) throw new AppError(404, 'Voucher not found or no longer available');
+  const offer = await tx.vouchers.findUniqueOrThrow({ where: { id: rows[0].id } });
+  const now = new Date();
+  if (!offer.is_active || offer.starts_at > now || offer.expires_at <= now) {
+    throw new AppError(400, `Voucher ${offer.code} is not currently claimable`);
+  }
+  if (offer.claimed_count >= offer.claim_limit) {
+    throw new AppError(409, `Voucher ${offer.code} has been fully claimed`);
+  }
+  // Campaign codes are unique per slip, so the only campaign rule left is that
+  // the campaign is still running.
+  if (offer.campaign_id) {
+    const campaign = await tx.voucher_campaigns.findUnique({ where: { id: offer.campaign_id } });
+    if (!campaign || campaign.status !== 'active') {
+      throw new AppError(400, `Voucher ${offer.code} is not currently claimable`);
+    }
+  }
+  // A standalone code is the same string for everyone, so the per-vendor cap is
+  // a setting rather than a unique constraint: one claim row per use.
+  const mine = await tx.voucher_claims.count({
+    where: { voucher_id: offer.id, vendor_id: vendorId },
+  });
+  if (mine >= offer.uses_per_vendor) {
+    throw new AppError(409, offer.uses_per_vendor === 1
+      ? `You have already used voucher ${offer.code}`
+      : `Voucher ${offer.code} is limited to ${offer.uses_per_vendor} uses per vendor`);
+  }
+
+  const claim = await tx.voucher_claims.create({
+    data: { voucher_id: offer.id, vendor_id: vendorId, claimed_by: actorId },
+  });
+  await tx.vouchers.update({ where: { id: offer.id }, data: { claimed_count: { increment: 1 } } });
+  await tx.voucher_events.create({ data: { claim_id: claim.id, kind: 'claim', discount: 0 } });
+  await tx.audit_logs.create({
+    data: {
+      actor_id: actorId, entity_type: 'voucher_claim', entity_id: claim.id,
+      action: 'VOUCHER_CLAIMED', new_data: { voucherId: offer.id, code: offer.code, vendorId },
+    },
+  });
+  return { claim, offer: { ...offer, claimed_count: offer.claimed_count + 1 } };
+}
+
+/** Optional: reserve an offer from the Vouchers page ahead of ordering. */
 export async function claimVoucher(actor: ScopeActor, raw: unknown): Promise<MyVoucher> {
   const input = z.object({
     code: codeSchema.optional(),
@@ -244,61 +303,11 @@ export async function claimVoucher(actor: ScopeActor, raw: unknown): Promise<MyV
   const vendorId = await resolveOwnVendorOrThrow(actor);
 
   return prisma.$transaction(async tx => {
-    // Serialize concurrent claims on the same vendor account.
-    await tx.$queryRaw`SELECT id FROM vendors WHERE id = ${vendorId}::uuid FOR UPDATE`;
-    await requireApprovedKycVendor(tx as unknown as KycApprovalDb, vendorId);
-
-    // Lock the offer before checking its window and remaining spots, so two
-    // vendors racing the last spot cannot both take it.
-    const rows = input.voucherId
-      ? await tx.$queryRaw<Array<{ id: string }>>`SELECT id FROM vouchers WHERE id = ${input.voucherId}::uuid FOR UPDATE`
-      : await tx.$queryRaw<Array<{ id: string }>>`SELECT id FROM vouchers WHERE code = ${input.code} FOR UPDATE`;
-    if (!rows[0]) throw new AppError(404, 'Voucher not found or no longer available');
-    const offer = await tx.vouchers.findUniqueOrThrow({ where: { id: rows[0].id } });
-    const now = new Date();
-    if (!offer.is_active || offer.starts_at > now || offer.expires_at <= now) {
-      throw new AppError(400, `Voucher ${offer.code} is not currently claimable`);
-    }
-    if (offer.claimed_count >= offer.claim_limit) {
-      throw new AppError(409, `Voucher ${offer.code} has been fully claimed`);
-    }
-    // Campaign codes: the campaign must be running, and each vendor may only
-    // take max_per_vendor codes from one campaign (anti-gaming for flyers).
-    if (offer.campaign_id) {
-      const campaign = await tx.voucher_campaigns.findUnique({ where: { id: offer.campaign_id } });
-      if (!campaign || campaign.status !== 'active') {
-        throw new AppError(400, `Voucher ${offer.code} is not currently claimable`);
-      }
-      const siblingIds = await tx.vouchers.findMany({
-        where: { campaign_id: offer.campaign_id }, select: { id: true },
-      });
-      const mineInCampaign = await tx.voucher_claims.count({
-        where: { vendor_id: vendorId, voucher_id: { in: siblingIds.map(s => s.id) } },
-      });
-      if (mineInCampaign >= campaign.max_per_vendor) {
-        throw new AppError(409, 'You have already claimed a voucher from this campaign');
-      }
-    }
-    if (await tx.voucher_claims.findUnique({
-      where: { voucher_id_vendor_id: { voucher_id: offer.id, vendor_id: vendorId } },
-      select: { id: true },
-    })) {
-      throw new AppError(409, `You have already claimed voucher ${offer.code}`);
-    }
-
-    const claim = await tx.voucher_claims.create({
-      data: { voucher_id: offer.id, vendor_id: vendorId, claimed_by: actor.id },
-    });
-    await tx.vouchers.update({ where: { id: offer.id }, data: { claimed_count: { increment: 1 } } });
-    await tx.voucher_events.create({ data: { claim_id: claim.id, kind: 'claim', discount: 0 } });
-    await tx.audit_logs.create({
-      data: {
-        actor_id: actor.id, entity_type: 'voucher_claim', entity_id: claim.id,
-        action: 'VOUCHER_CLAIMED', new_data: { voucherId: offer.id, code: offer.code, vendorId },
-      },
-    });
-    const full = toOffer({ ...offer, claimed_count: offer.claimed_count + 1 });
-    return { claimId: claim.id, state: claim.state, claimedAt: claim.claimed_at.toISOString(), usable: true, unusableReason: null, voucher: full };
+    const { claim, offer } = await claimVoucherTx(tx, vendorId, actor.id, input);
+    return {
+      claimId: claim.id, state: claim.state, claimedAt: claim.claimed_at.toISOString(),
+      usable: true, unusableReason: null, voucher: toOffer(offer),
+    };
   });
 }
 
@@ -337,15 +346,66 @@ export async function listMyVouchers(actor: ScopeActor, requestedVendorId?: stri
   });
 }
 
+export type VoucherLookup = {
+  voucher: VoucherOffer;
+  usable: boolean;
+  unusableReason: string | null;
+  claimed: boolean;
+};
+
+/**
+ * Read-only check for the order form: does this code work for this vendor, and
+ * what does it take off? Claims nothing — the claim happens when the order is
+ * placed — so an unclaimed code reads as usable while the offer is live and
+ * has a spot left.
+ */
+export async function lookupVoucher(
+  actor: ScopeActor, rawCode: unknown, requestedVendorId?: string,
+): Promise<VoucherLookup> {
+  const vendorId = actor.roles.some(r => ['super_admin', 'admin'].includes(r)) && requestedVendorId
+    ? z.uuid().parse(requestedVendorId)
+    : await resolveOwnVendorOrThrow(actor);
+  const code = codeSchema.parse(rawCode);
+  const offer = await prisma.vouchers.findUnique({ where: { code } });
+  if (!offer) throw new AppError(404, `Voucher ${code} does not exist`);
+  const shaped = toOffer(offer);
+  const [unspent, used] = await Promise.all([
+    prisma.voucher_claims.findFirst({
+      where: { voucher_id: offer.id, vendor_id: vendorId, state: 'claimed' },
+      select: { state: true },
+    }),
+    prisma.voucher_claims.count({ where: { voucher_id: offer.id, vendor_id: vendorId } }),
+  ]);
+  const claim = unspent;
+  if (!claim) {
+    if (used >= offer.uses_per_vendor) {
+      return { voucher: shaped, usable: false, unusableReason: 'Already used', claimed: true };
+    }
+    if (offer.claimed_count >= offer.claim_limit) {
+      return { voucher: shaped, usable: false, unusableReason: 'Fully claimed', claimed: false };
+    }
+  }
+  const campaignActive = shaped.campaignId
+    ? (await prisma.voucher_campaigns.findUnique({
+        where: { id: shaped.campaignId }, select: { status: true },
+      }))?.status === 'active'
+    : null;
+  const { usable, reason } = voucherUsability(claim?.state ?? 'claimed', shaped, new Date(), campaignActive);
+  return { voucher: shaped, usable, unusableReason: reason, claimed: !!claim };
+}
+
 export type VendorClaimRef = { claimId?: string | undefined; code?: string | undefined };
 
 /**
  * Resolve a vendor's claim for order creation, inside the caller's transaction.
- * Throws readable errors; the pricing trigger re-checks everything at write time.
+ * A code the vendor has not claimed is claimed here, so typing it on the order
+ * is the whole redemption flow. Throws readable errors; the pricing trigger
+ * re-checks everything at write time.
  */
 export async function resolveVendorClaimTx(
   tx: Prisma.TransactionClient,
   vendorId: string | null,
+  actorId: string,
   ref: VendorClaimRef,
 ): Promise<{ id: string; state: string; vendor_id: string; voucher: VendorClaimVoucher }> {
   if (!vendorId) throw new AppError(400, 'Vouchers are only available on vendor orders');
@@ -355,11 +415,16 @@ export async function resolveVendorClaimTx(
         const code = ref.code!.trim().toUpperCase();
         const offer = await tx.vouchers.findUnique({ where: { code } });
         if (!offer) throw new AppError(404, `Voucher ${code} does not exist`);
-        const mine = await tx.voucher_claims.findUnique({
-          where: { voucher_id_vendor_id: { voucher_id: offer.id, vendor_id: vendorId } },
+        // An unspent claim the vendor already holds is spent first; otherwise
+        // take a fresh one, which enforces the per-vendor cap. A later failure
+        // in the order transaction — an unmet minimum, a trigger rejection —
+        // rolls that claim back with the order, so nothing is consumed.
+        const unspent = await tx.voucher_claims.findFirst({
+          where: { voucher_id: offer.id, vendor_id: vendorId, state: 'claimed' },
+          orderBy: { claimed_at: 'asc' },
         });
-        if (!mine) throw new AppError(400, `Claim voucher ${code} in My Vouchers before using it`);
-        return mine;
+        if (unspent) return unspent;
+        return (await claimVoucherTx(tx, vendorId, actorId, { code })).claim;
       })();
   if (!claim) throw new AppError(404, 'Voucher claim not found');
   if (claim.vendor_id !== vendorId) throw new AppError(400, 'This voucher belongs to another vendor');

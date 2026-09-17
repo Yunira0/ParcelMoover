@@ -3,7 +3,7 @@ import { X } from 'lucide-react';
 import Button from '../Button';
 import Banner from '../Banner';
 import FormField from '../FormField';
-import VoucherTermsFields, { type VoucherTermsValues } from './VoucherTermsFields';
+import VoucherTermsFields, { deriveHiddenTerms, type VoucherTermsValues } from './VoucherTermsFields';
 import { createCampaign, type VoucherCampaign } from '../../services/voucher.service';
 import { apiErrorMessage } from '../../utils/serverValidation';
 
@@ -28,7 +28,6 @@ export default function CampaignWizard({ onClose, onCreated }: CampaignWizardPro
   const [name, setName] = useState('');
   const [prefix, setPrefix] = useState('');
   const [codeCount, setCodeCount] = useState('100');
-  const [maxPerVendor, setMaxPerVendor] = useState('1');
   const [terms, setTerms] = useState<VoucherTermsValues>(INITIAL_TERMS);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -39,19 +38,19 @@ export default function CampaignWizard({ onClose, onCreated }: CampaignWizardPro
     setSaving(true);
     setError('');
     try {
+      const hidden = deriveHiddenTerms(terms);
       const result = await createCampaign({
         name: name.trim(),
         codePrefix: prefix.trim(),
         codeCount: Number(codeCount),
-        maxPerVendor: Number(maxPerVendor) || 1,
         title: terms.title,
-        description: terms.description,
+        description: hidden.description,
         discountType: terms.discountType,
         ...(terms.discountType === 'fixed'
           ? { discountAmount: Number(terms.discountAmount) }
           : { discountPercent: Number(terms.discountPercent), ...(terms.maxDiscount ? { maxDiscount: Number(terms.maxDiscount) } : {}) }),
         ...(terms.minimumCharge ? { minimumCharge: Number(terms.minimumCharge) } : {}),
-        startsAt: new Date(terms.startsAt).toISOString(),
+        startsAt: hidden.startsAt,
         expiresAt: new Date(terms.expiresAt).toISOString(),
       });
       setCreated(result);
@@ -86,7 +85,6 @@ export default function CampaignWizard({ onClose, onCreated }: CampaignWizardPro
                 placeholder="DASH" hint="Codes print as PREFIX-XXXXXX" maxLength={10}
               />
               <FormField label="How many codes" required type="number" min={1} max={5000} step={1} value={codeCount} onChange={setCodeCount} />
-              <FormField label="Max per vendor" required type="number" min={1} max={10} step={1} value={maxPerVendor} onChange={setMaxPerVendor} hint="Codes one vendor may claim" />
               <VoucherTermsFields values={terms} onChange={patch => setTerms({ ...terms, ...patch })} />
             </fieldset>
             {error && <Banner tone="danger">{error}</Banner>}

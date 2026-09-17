@@ -1211,7 +1211,7 @@ async function _createOrderImpl(
       if ((data.orderType || 'delivery') !== 'delivery') {
         throw new AppError(400, 'Vouchers apply to outbound delivery orders only');
       }
-      const claim = await resolveVendorClaimTx(tx, vendor?.id ?? null, {
+      const claim = await resolveVendorClaimTx(tx, vendor?.id ?? null, actor.id, {
         claimId: data.voucherClaimId, code: data.voucherCode,
       });
       const minimum = Number(claim.voucher.minimum_charge);

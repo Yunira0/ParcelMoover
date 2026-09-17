@@ -8,11 +8,13 @@ import BillingStatusBanner from '../components/BillingStatusBanner';
 import Button from '../components/Button';
 import { getLocations, searchVendors } from '../services/users.service';
 import { getVendorQuote } from '../services/pricing.service';
-import { listMyVouchers, voucherBenefit, voucherDiscountForFee, type MyVoucher } from '../services/voucher.service';
+import { listMyVouchers, lookupVoucher, voucherBenefit, voucherDiscountForFee,
+  type MyVoucher, type VoucherLookup, type VoucherOffer } from '../services/voucher.service';
 import { getDeliveryQuote as getRouteQuote } from '../services/deliveryRates.service';
 import { createOrder, updateOrder, getSenderProfile, type CreateOrderInput, type UpdateOrderInput, type OrderType, type ServiceType } from '../services/orders.service';
 import { getCurrentUser, isVendorSide } from '../utils/auth';
 import { findMasterHub } from '../utils/locations';
+import { apiErrorMessage } from '../utils/serverValidation';
 import './CreateOrderPage.css';
 
 interface VendorOption {
@@ -252,10 +254,40 @@ const CreateOrderPage: React.FC = () => {
   // longer belong here — derive validity instead of resetting state in an effect.
   const effectiveClaimId = usableVouchers.some(v => v.claimId === voucherClaimId) ? voucherClaimId : '';
   const typedVoucherCode = form.voucherCode.trim().toUpperCase();
-  // A typed code wins over the dropdown; the server enforces exclusivity too.
-  const pickedVoucher = typedVoucherCode
+  const typedClaim = typedVoucherCode
     ? myVouchers.find(v => v.voucher.code === typedVoucherCode) ?? null
-    : usableVouchers.find(v => v.claimId === effectiveClaimId) ?? null;
+    : null;
+
+  // A code needs no prior claim — placing the order claims it. Look an unclaimed
+  // one up so the discount previews here the same way a claimed one does.
+  const [typedLookup, setTypedLookup] = useState<VoucherLookup | null>(null);
+  const [typedLookupError, setTypedLookupError] = useState('');
+  const [typedLookupLoading, setTypedLookupLoading] = useState(false);
+  useEffect(() => {
+    setTypedLookup(null);
+    setTypedLookupError('');
+    if (isEditMode || form.orderType !== 'delivery' || !voucherVendorId || !typedVoucherCode || typedClaim) {
+      setTypedLookupLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setTypedLookupLoading(true);
+    const timer = setTimeout(() => {
+      lookupVoucher(typedVoucherCode, isVendorActor ? undefined : voucherVendorId)
+        .then(r => { if (!cancelled) setTypedLookup(r); })
+        .catch(e => {
+          if (!cancelled) setTypedLookupError(apiErrorMessage(e, `Voucher ${typedVoucherCode} does not exist`));
+        })
+        .finally(() => { if (!cancelled) setTypedLookupLoading(false); });
+    }, 350);
+    return () => { cancelled = true; clearTimeout(timer); setTypedLookupLoading(false); };
+  }, [typedVoucherCode, typedClaim, isEditMode, form.orderType, voucherVendorId, isVendorActor]);
+
+  // A typed code wins over the dropdown; the server enforces exclusivity too.
+  const pickedVoucher: { voucher: VoucherOffer; usable: boolean; unusableReason: string | null } | null =
+    typedVoucherCode
+      ? typedClaim ?? typedLookup
+      : usableVouchers.find(v => v.claimId === effectiveClaimId) ?? null;
   const voucherFee = quote?.totalPayable ?? 0;
   const voucherBelowMinimum = !!pickedVoucher?.usable && !!quote && voucherFee < pickedVoucher.voucher.minimumCharge;
   const voucherDiscount = pickedVoucher?.usable && quote && !voucherBelowMinimum
@@ -932,12 +964,13 @@ const CreateOrderPage: React.FC = () => {
                   placeholder="Or enter code (e.g. MOVE100)"
                   maxLength={32}
                   error={fieldErrors.voucherCode}
-                  hint={typedVoucherCode && !pickedVoucher
-                    ? `Claim ${typedVoucherCode} in Vouchers first — the discount is applied when the order is placed.`
+                  hint={typedVoucherCode && typedLookupLoading
+                    ? `Checking ${typedVoucherCode}…`
                     : effectiveClaimId
                       ? 'Using the selected voucher — clear the selection above to type a code instead.'
                       : undefined}
                 />
+                {typedLookupError && <Banner tone="danger">{typedLookupError}</Banner>}
                 {voucherDiscount > 0 && pickedVoucher && (
                   <>
                     <div className="order-summary-row order-voucher-discount">

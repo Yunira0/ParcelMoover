@@ -239,7 +239,6 @@ const VendorSidebar: React.FC = () => {
           <SubItem to="/finance/order-payments" icon={ClipboardList} label="Order Payments" />
           <SubItem to="/finance/pending-cod" icon={Receipt} label="Pending COD" />
           <SubItem to="/finance/billing" icon={Wallet} label="Billing & Payments" />
-          <SubItem to="/vouchers" icon={Ticket} label="Vouchers" />
         </div>
 
         {/* Tickets and Remarks are the two ways a vendor asks us something, so
@@ -298,7 +297,6 @@ const VendorStaffSidebar: React.FC = () => {
               <SubItem to="/finance/order-payments" icon={ClipboardList} label="Order Payments" />
               <SubItem to="/finance/pending-cod" icon={Receipt} label="Pending COD" />
               <SubItem to="/finance/billing" icon={Wallet} label="Billing & Payments" />
-              <SubItem to="/vouchers" icon={Ticket} label="Vouchers" />
             </div>
           </>
         )}

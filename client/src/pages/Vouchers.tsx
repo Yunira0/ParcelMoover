@@ -11,14 +11,14 @@ import Pagination from '../components/Pagination';
 import Table from '../components/Table';
 import KycVerificationForm, { type KycVerificationFiles, type KycVerificationValues } from '../components/KycVerificationForm';
 import VoucherPromo from '../components/VoucherPromo';
-import VoucherTermsFields from '../components/vouchers/VoucherTermsFields';
+import VoucherTermsFields, { defaultVoucherTerms, deriveHiddenTerms } from '../components/vouchers/VoucherTermsFields';
 import CampaignDirectory from '../components/vouchers/CampaignDirectory';
 import CampaignDetail from '../components/vouchers/CampaignDetail';
 import CampaignWizard from '../components/vouchers/CampaignWizard';
 import { getCurrentUserRoles } from '../utils/auth';
 import { formatCurrency } from '../utils/format';
 import { toBsDate } from '../utils/nepaliDate';
-import { apiErrorMessage } from '../utils/serverValidation';
+import { apiErrorMessage, extractServerFieldErrors } from '../utils/serverValidation';
 import {
   claimVoucher, createVoucher, listCampaigns, listMyVouchers, listVouchers, setCampaignStatus, setVoucherActive,
   voucherBenefit,
@@ -78,7 +78,7 @@ export default function Vouchers() {
         businessCertDoc: files.businessCert,
       });
       setKycOpen(false);
-      setNotice('KYC verification submitted — vouchers unlock once our team approves it.');
+      setNotice('KYC verification submitted — our team reviews it shortly.');
       setRevision(v => v + 1);
     } catch (err) {
       setKycFormError(apiErrorMessage(err, 'Could not submit verification.'));
@@ -90,6 +90,9 @@ export default function Vouchers() {
   // Admin create form
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
+  // The API answers a bad publish with a generic "Validation failed" plus a
+  // per-field list. Showing only the former left no way to tell what was wrong.
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   // Campaign directory (bulk-code campaigns for print handouts)
   const [adminView, setAdminView] = useState<'campaigns' | 'standalone'>('campaigns');
@@ -147,11 +150,27 @@ export default function Vouchers() {
       setVoucherBusy(null);
     }
   }
-  const [form, setForm] = useState({
-    code: '', title: '', description: '', discountType: 'fixed' as 'fixed' | 'percent',
-    discountAmount: '', discountPercent: '', maxDiscount: '', minimumCharge: '',
-    startsAt: '', expiresAt: '', claimLimit: '',
-  });
+  const [form, setForm] = useState({ ...defaultVoucherTerms(), code: '', claimLimit: '100', usesPerVendor: '1' });
+
+  // The form's live counterpart, so every field's effect is visible as it is
+  // typed. Blanks stand in as zeroes rather than blowing up the art.
+  const previewOffer: VoucherOffer = {
+    id: 'preview',
+    code: form.code || 'YOURCODE',
+    title: form.title || 'Your offer name',
+    description: '',
+    discountType: form.discountType,
+    discountAmount: Number(form.discountAmount) || 0,
+    discountPercent: form.discountPercent ? Number(form.discountPercent) : null,
+    maxDiscount: form.maxDiscount ? Number(form.maxDiscount) : null,
+    minimumCharge: Number(form.minimumCharge) || 0,
+    startsAt: new Date().toISOString(),
+    expiresAt: form.expiresAt ? new Date(form.expiresAt).toISOString() : new Date().toISOString(),
+    claimLimit: 0,
+    claimedCount: 0,
+    usesPerVendor: Number(form.usesPerVendor) || 1,
+    isActive: true,
+  };
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -189,26 +208,36 @@ export default function Vouchers() {
     event.preventDefault();
     setSaving(true);
     setFormError('');
+    setFieldErrors({});
     setNotice('');
     try {
+      const hidden = deriveHiddenTerms(form);
       const created = await createVoucher({
         code: form.code,
         title: form.title,
-        description: form.description,
+        description: hidden.description,
         discountType: form.discountType,
         ...(form.discountType === 'fixed'
           ? { discountAmount: Number(form.discountAmount) }
           : { discountPercent: Number(form.discountPercent), ...(form.maxDiscount ? { maxDiscount: Number(form.maxDiscount) } : {}) }),
         ...(form.minimumCharge ? { minimumCharge: Number(form.minimumCharge) } : {}),
-        startsAt: new Date(form.startsAt).toISOString(),
+        startsAt: hidden.startsAt,
         expiresAt: new Date(form.expiresAt).toISOString(),
         claimLimit: Number(form.claimLimit),
+        usesPerVendor: Number(form.usesPerVendor) || 1,
       });
       setNotice(`Voucher ${created.code} published.`);
-      setForm({ code: '', title: '', description: '', discountType: 'fixed', discountAmount: '', discountPercent: '', maxDiscount: '', minimumCharge: '', startsAt: '', expiresAt: '', claimLimit: '' });
+      setForm({ ...defaultVoucherTerms(), code: '', claimLimit: '100', usesPerVendor: '1' });
       setRevision(v => v + 1);
     } catch (err) {
-      setFormError(apiErrorMessage(err, 'Could not publish the voucher.'));
+      const detail = extractServerFieldErrors(err, {
+        // Fields the form derives rather than asks for — name the visible
+        // input that feeds them, so the message still points somewhere real.
+        description: 'title',
+        startsAt: 'expiresAt',
+      });
+      setFieldErrors(detail?.fieldErrors ?? {});
+      setFormError(detail?.summary ?? apiErrorMessage(err, 'Could not publish the voucher.'));
     } finally {
       setSaving(false);
     }
@@ -240,12 +269,7 @@ export default function Vouchers() {
       setCode('');
       setRevision(v => v + 1);
     } catch (err) {
-      const message = apiErrorMessage(err, 'Could not claim this voucher.');
-      // Vendors start verification from Vendor Management now — point them at
-      // the office instead of leaving a dead end.
-      setClaimError(/approved KYC/.test(message)
-        ? 'Claiming needs an approved KYC application. Please contact our team to verify your business.'
-        : message);
+      setClaimError(apiErrorMessage(err, 'Could not claim this voucher.'));
     } finally {
       setClaiming(false);
     }
@@ -303,7 +327,7 @@ export default function Vouchers() {
         title="Vouchers"
         subtitle={admin
           ? 'Publish shipping offers vendors claim and spend on outbound delivery orders.'
-          : 'Claim shipping offers, then pick one while creating an order to cut its delivery charge.'}
+          : 'Shipping offers you can use on an outbound order — type the code while creating it, or save one here first.'}
       />
 
       {notice && <Banner tone="success">{notice}</Banner>}
@@ -323,12 +347,12 @@ export default function Vouchers() {
               <p>
                 <StatusChip tone="warning">Under review</StatusChip>
               </p>
-              <p>Submitted {toBsDate(kycPrefill.pendingApplication.createdAt)}. Claiming unlocks as soon as our team approves it.</p>
+              <p>Submitted {toBsDate(kycPrefill.pendingApplication.createdAt)}. Vouchers do not wait on this — approval moves you onto per-destination delivery rates.</p>
             </section>
           ) : (
-            <section className="billing-card" aria-label="KYC verification required">
-              <h2>Verify your business to claim vouchers</h2>
-              <p>Claiming needs an approved KYC application. Fill the verification form yourself — our team reviews it like any other application.</p>
+            <section className="billing-card" aria-label="KYC verification">
+              <h2>Verify your business</h2>
+              <p>Not needed for vouchers — any code works without it. Verified vendors move onto per-destination delivery rates. Fill the form yourself; our team reviews it like any other application.</p>
               <div className="vouchers-claim-row">
                 <Button variant="primary" onClick={() => { setKycFormError(''); setKycOpen(true); }}>Start KYC verification</Button>
               </div>
@@ -337,7 +361,10 @@ export default function Vouchers() {
         )}
         <section className="billing-card" aria-label="Claim with a code">
           <h2>Have a code?</h2>
-          <p>Enter it here to add it to My Vouchers — for example <strong>MOVE100</strong>.</p>
+          <p>
+            Type it straight into the order form to use it — for example <strong>MOVE100</strong>.
+            Saving it to My Vouchers here is optional, and holds it for later.
+          </p>
           <div className="vouchers-claim-row">
             <FormField
               label="Voucher code"
@@ -470,14 +497,55 @@ export default function Vouchers() {
           )
         ) : (
           <>
-            <form className="billing-card" onSubmit={submit}>
-              <h2>Publish a voucher</h2>
-              <p>Example: <strong>MOVE100</strong> — Rs. 100 off, expiring with the campaign. Terms cannot be edited after publishing; pause instead.</p>
-          <fieldset disabled={saving} className="vouchers-fields">
-            <FormField label="Code" required minLength={3} value={form.code} onChange={v => setForm({ ...form, code: v.toUpperCase() })} placeholder="MOVE100" />
-            <VoucherTermsFields values={form} onChange={patch => setForm({ ...form, ...patch })} />
-            <FormField label="Total claims allowed" required type="number" min={1} max={100000} step={1} value={form.claimLimit} onChange={v => setForm({ ...form, claimLimit: v })} />
-          </fieldset>
+            <form className="billing-card vouchers-create" onSubmit={submit}>
+              <h2>Create a voucher</h2>
+              <p>Fill in the offer and publish it. Once it is out, the terms are fixed — to stop it, pause it.</p>
+          <div className="vouchers-create-body">
+            <fieldset disabled={saving} className="vouchers-fields">
+              <FormField
+                label="Code vendors type"
+                required
+                minLength={3}
+                gridColumn="1 / -1"
+                hint="Letters and numbers, no spaces"
+                error={fieldErrors.code}
+                value={form.code}
+                onChange={v => setForm({ ...form, code: v.toUpperCase() })}
+                placeholder="MOVE100"
+              />
+              <VoucherTermsFields values={form} onChange={patch => setForm({ ...form, ...patch })} errors={fieldErrors} />
+              <FormField
+                label="Total uses"
+                required
+                type="number"
+                min={1}
+                max={100000}
+                step={1}
+                hint="Across all vendors"
+                error={fieldErrors.claimLimit}
+                value={form.claimLimit}
+                onChange={v => setForm({ ...form, claimLimit: v })}
+              />
+              <FormField
+                label="Uses per vendor"
+                required
+                type="number"
+                min={1}
+                max={100}
+                step={1}
+                hint="Everyone shares this code, so cap how often one vendor may spend it"
+                error={fieldErrors.usesPerVendor}
+                value={form.usesPerVendor}
+                onChange={v => setForm({ ...form, usesPerVendor: v })}
+              />
+            </fieldset>
+            {/* Seeing the vendor's view as you type does more to explain the
+                fields than any amount of helper text. */}
+            <aside className="vouchers-create-preview" aria-label="Preview">
+              <span className="voucher-field-label">Vendors will see</span>
+              <VoucherPromo offer={previewOffer} copyable={false} />
+            </aside>
+          </div>
           {formError && <p role="alert" className="vendor-finance-error">{formError}</p>}
           <div><Button type="submit" variant="primary" disabled={saving}>{saving ? 'Publishing…' : 'Publish voucher'}</Button></div>
         </form>
