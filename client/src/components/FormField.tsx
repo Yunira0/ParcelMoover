@@ -9,7 +9,9 @@ import './FormField.css';
 
 export type FormFieldOption = { value: string; label: string };
 
-export type FormFieldType = 'text' | 'email' | 'password' | 'number' | 'decimal' | 'date' | 'datetime-local' | 'select' | 'searchable-select' | 'searchable-select-async' | 'combobox' | 'textarea';
+// No 'datetime-local': every date the UI collects goes through type="date",
+// which renders the shared Nepali (BS) picker. Keep it that way.
+export type FormFieldType = 'text' | 'email' | 'password' | 'number' | 'decimal' | 'date' | 'select' | 'searchable-select' | 'searchable-select-async' | 'combobox' | 'textarea';
 
 /** Digits with at most one decimal point. Deliberately permits a trailing "."
  *  and an empty string — both are states you pass through while typing. */

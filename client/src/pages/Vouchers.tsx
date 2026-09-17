@@ -11,7 +11,7 @@ import Pagination from '../components/Pagination';
 import Table from '../components/Table';
 import KycVerificationForm, { type KycVerificationFiles, type KycVerificationValues } from '../components/KycVerificationForm';
 import VoucherPromo from '../components/VoucherPromo';
-import VoucherTermsFields, { defaultVoucherTerms, deriveHiddenTerms } from '../components/vouchers/VoucherTermsFields';
+import VoucherTermsFields, { defaultVoucherTerms, deriveHiddenTerms, expiryIso } from '../components/vouchers/VoucherTermsFields';
 import CampaignDirectory from '../components/vouchers/CampaignDirectory';
 import CampaignDetail from '../components/vouchers/CampaignDetail';
 import CampaignWizard from '../components/vouchers/CampaignWizard';
@@ -165,7 +165,7 @@ export default function Vouchers() {
     maxDiscount: form.maxDiscount ? Number(form.maxDiscount) : null,
     minimumCharge: Number(form.minimumCharge) || 0,
     startsAt: new Date().toISOString(),
-    expiresAt: form.expiresAt ? new Date(form.expiresAt).toISOString() : new Date().toISOString(),
+    expiresAt: form.expiresAt ? expiryIso(form.expiresAt) : new Date().toISOString(),
     claimLimit: 0,
     claimedCount: 0,
     usesPerVendor: Number(form.usesPerVendor) || 1,
@@ -222,7 +222,7 @@ export default function Vouchers() {
           : { discountPercent: Number(form.discountPercent), ...(form.maxDiscount ? { maxDiscount: Number(form.maxDiscount) } : {}) }),
         ...(form.minimumCharge ? { minimumCharge: Number(form.minimumCharge) } : {}),
         startsAt: hidden.startsAt,
-        expiresAt: new Date(form.expiresAt).toISOString(),
+        expiresAt: expiryIso(form.expiresAt),
         claimLimit: Number(form.claimLimit),
         usesPerVendor: Number(form.usesPerVendor) || 1,
       });

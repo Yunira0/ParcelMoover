@@ -15,6 +15,7 @@ import {
   type CodSettlementRequestStatus,
 } from '../services/codSettlementRequests.service';
 import { apiErrorMessage } from '../utils/serverValidation';
+import { toBsDate } from '../utils/nepaliDate';
 import './CodSettlementRequests.css';
 
 // Staff side of vendor COD settlement requests.
@@ -129,7 +130,7 @@ const CodSettlementRequests: React.FC = () => {
       accessor: (r: CodSettlementRequest) => COD_REQUEST_STATUS_LABELS[r.status],
       width: '110px',
     },
-    { header: 'RAISED', accessor: (r: CodSettlementRequest) => r.createdAt.slice(0, 10), width: '110px' },
+    { header: 'RAISED', accessor: (r: CodSettlementRequest) => toBsDate(r.createdAt) || '—', width: '110px' },
     {
       header: 'ACTIONS',
       accessor: (r: CodSettlementRequest) =>

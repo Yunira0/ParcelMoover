@@ -21,12 +21,18 @@ interface VoucherTermsFieldsProps {
   errors?: Record<string, string>;
 }
 
-/** Local datetime-local string (what the inputs speak), offset by days from now. */
-export function localDateTime(daysFromNow = 0): string {
+/** Local AD "YYYY-MM-DD", offset by days from now — the shape FormField's
+ *  type="date" (the shared Nepali date picker) reads and writes. */
+export function localDate(daysFromNow = 0): string {
   const d = new Date(Date.now() + daysFromNow * 86400000);
-  d.setSeconds(0, 0);
   const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/** A voucher is valid for the whole of its last day, so the API's instant is
+ *  that day's local end — not midnight, which would expire it a day early. */
+export function expiryIso(day: string): string {
+  return new Date(`${day}T23:59:59`).toISOString();
 }
 
 /** Starting point for a new offer: live now, running a month. */
@@ -38,8 +44,8 @@ export const defaultVoucherTerms = (): VoucherTermsValues => ({
   discountPercent: '',
   maxDiscount: '',
   minimumCharge: '0',
-  startsAt: localDateTime(0),
-  expiresAt: localDateTime(30),
+  startsAt: localDate(0),
+  expiresAt: localDate(30),
 });
 
 /** Total-use ceiling for callers that do not ask for one (the campaign wizard);
@@ -153,8 +159,8 @@ export default function VoucherTermsFields({ values, onChange, disabled, errors 
       <FormField
         label="Valid till"
         required
-        type="datetime-local"
-        hint="Printed on the voucher"
+        type="date"
+        hint="Printed on the voucher — good for the whole day"
         error={errors.expiresAt}
         value={values.expiresAt}
         onChange={v => set({ expiresAt: v })}
