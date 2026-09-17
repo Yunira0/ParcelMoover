@@ -7,7 +7,7 @@ import VendorOverviewCards from '../../components/vendor/VendorOverviewCards';
 import OrdersTrendDonut from '../../components/vendor/OrdersTrendDonut';
 import VendorOrdersTrendChart from '../../components/vendor/VendorOrdersTrendChart';
 import VendorTodayPanel from '../../components/vendor/VendorTodayPanel';
-import { getDashboardSummary, type DashboardSummary } from '../../services/orders.service';
+import { EMPTY_VALLEY_SPLIT, getDashboardSummary, type DashboardSummary } from '../../services/orders.service';
 import { subscribeToRemarkStatusChanged } from '../../services/remarks.service';
 import { getCurrentUser } from '../../utils/auth';
 import './SalesDashboard.css';
@@ -62,6 +62,7 @@ const EMPTY_SUMMARY: DashboardSummary = {
     deliveryBreaches: [],
     transitBreaches: [],
     returnBreaches: [],
+    deliveryByValley: EMPTY_VALLEY_SPLIT,
   },
   codSettlement: {
     totalCod: 0,
@@ -144,8 +145,8 @@ const SalesDashboard: React.FC = () => {
           deliveredAmount={overview.totalDeliveredAmount}
           rtvDelivered={overview.totalReturnedToVendor}
           rtvDeliveredAmount={overview.totalReturnedToVendorAmount}
-          inDelivery={overview.inDelivery}
-          inDeliveryAmount={overview.inDeliveryAmount}
+          inTransit={overview.inTransit}
+          inTransitAmount={overview.inTransitAmount}
           pendingPickup={overview.awaitingPickup}
           pendingPickupAmount={overview.awaitingPickupAmount}
           returnProcess={overview.pendingReturns}

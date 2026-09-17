@@ -65,6 +65,12 @@ export function isBranchWorkspaceUser(): boolean {
 export function isBranchWorkspacePathAllowed(pathname: string): boolean {
   return (
     pathname === '/dashboard' ||
+    // Drill-downs behind the dashboard's own overview cards (/overview/inTransit
+    // and friends). Without these the In transit card bounced to the unfiltered
+    // /orders list, which reads as "the card opens every in-progress order".
+    // The list itself is GET /orders, already narrowed to the branch's hub
+    // coverage server-side, so this exposes nothing the dashboard did not.
+    pathname.startsWith('/overview/') ||
     pathname === '/orders' ||
     pathname === '/orders/create' ||
     pathname === '/orders/bulk-create' ||

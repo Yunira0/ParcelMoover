@@ -15,8 +15,8 @@ interface VendorOverviewCardsProps {
   deliveredAmount: number;
   rtvDelivered: number;
   rtvDeliveredAmount: number;
-  inDelivery: number;
-  inDeliveryAmount: number;
+  inTransit: number;
+  inTransitAmount: number;
   pendingPickup: number;
   pendingPickupAmount: number;
   returnProcess: number;
@@ -41,8 +41,8 @@ const VendorOverviewCards: React.FC<VendorOverviewCardsProps> = ({
   deliveredAmount,
   rtvDelivered,
   rtvDeliveredAmount,
-  inDelivery,
-  inDeliveryAmount,
+  inTransit,
+  inTransitAmount,
   pendingPickup,
   pendingPickupAmount,
   returnProcess,
@@ -56,7 +56,12 @@ const VendorOverviewCards: React.FC<VendorOverviewCardsProps> = ({
     { icon: Package,       label: 'Total Orders',  value: fmt(totalOrders),  sub: fmtAmount(totalOrderAmount),    accent: 'primary', to: '/dashboard/metric/total-orders' },
     { icon: Truck,         label: 'Delivered',     value: fmt(delivered),    sub: fmtAmount(deliveredAmount),     accent: 'success', to: '/dashboard/metric/delivered' },
     { icon: RotateCcw,     label: 'RTV Delivered', value: fmt(rtvDelivered), sub: fmtAmount(rtvDeliveredAmount),  accent: 'warning', to: '/dashboard/metric/rtv-delivered' },
-    { icon: PackageSearch, label: 'In Progress',   value: fmt(inDelivery),   sub: fmtAmount(inDeliveryAmount),    accent: 'info',    to: '/dashboard/metric/in-delivery' },
+    // Transit only: parcels moving between hubs (Transit/oov) or out on a
+    // dispatch (In Transit/dispatched). Deliberately NOT the whole
+    // picked-up-to-doorstep span - that is the in-delivery bucket this card
+    // used to count, which made "In Transit" open onto parcels still sitting
+    // at a hub or already out for delivery.
+    { icon: PackageSearch, label: 'In Transit',    value: fmt(inTransit),    sub: fmtAmount(inTransitAmount),     accent: 'info',    to: '/dashboard/metric/in-transit' },
     { icon: Clock,         label: 'Pending Pickup',value: fmt(pendingPickup),  sub: fmtAmount(pendingPickupAmount),   accent: 'neutral', to: '/dashboard/metric/pending-pickup' },
     { icon: RefreshCw,     label: 'Return Process',value: fmt(returnProcess),sub: fmtAmount(returnProcessAmount), accent: 'danger',  to: '/dashboard/metric/return-process' },
   ];
