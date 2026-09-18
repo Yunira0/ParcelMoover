@@ -16,6 +16,9 @@ export interface ManagedLocation {
   ringRoad: string | null; // inside | outside - only meaningful when valley = inside
   perDestinationRate: number | null;
   branchPerDestinationRate: number | null;
+  /** Explicit NCM branch override. When set, handoff pins to this branch by
+   *  exact name instead of matching on district and name. */
+  ncmBranch: string | null;
 }
 
 export interface Destination extends ManagedLocation {
@@ -37,6 +40,7 @@ export interface UpsertLocationInput {
   ringRoad?: string | null;
   perDestinationRate?: number | null;
   branchPerDestinationRate?: number | null;
+  ncmBranch?: string | null;
 }
 
 export const listManagedLocations = async (): Promise<{ success: boolean; data: Destination[] }> => {

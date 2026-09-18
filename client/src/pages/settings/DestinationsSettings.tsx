@@ -14,7 +14,7 @@ import {
 import { apiErrorMessage } from '../../utils/serverValidation';
 import './DestinationsSettings.css';
 
-const emptyDest = { name: '', code: '', province: '', district: '', municipality: '' };
+const emptyDest = { name: '', code: '', province: '', district: '', municipality: '', ncmBranch: '' };
 
 // The empty "Not set" option comes from FormField's placeholder.
 const ZONE_OPTIONS = [
@@ -93,6 +93,7 @@ const DestinationsSettings: React.FC = () => {
       province: dest.province || '',
       district: dest.district || '',
       municipality: dest.city || '',
+      ncmBranch: dest.ncmBranch || '',
     });
     setShowDestForm(true);
   };
@@ -116,6 +117,9 @@ const DestinationsSettings: React.FC = () => {
         district: destForm.district || undefined,
         // Municipality lives in the locations.city column server-side.
         city: destForm.municipality || undefined,
+        // null rather than undefined, so clearing the box actually unsets the
+        // override and hands the destination back to automatic matching.
+        ncmBranch: destForm.ncmBranch.trim() || null,
       };
       if (editDestId) {
         await updateLocation(editDestId, payload);
@@ -290,6 +294,13 @@ const DestinationsSettings: React.FC = () => {
           <div className="dest-form-row">
             <FormField label="Municipality" value={destForm.municipality}
               onChange={(v) => setDestForm((p) => ({ ...p, municipality: v }))} placeholder="e.g. Pokhara" />
+            {/* Optional: pins NCM handoff to one of their branches by exact
+                name. A name NCM does not have blocks handoff rather than
+                falling back, so the hint says to leave it blank. */}
+            <FormField label="NCM branch" value={destForm.ncmBranch}
+              onChange={(v) => setDestForm((p) => ({ ...p, ncmBranch: v.toUpperCase() }))}
+              placeholder="e.g. DAMAK"
+              hint="Leave blank to match automatically by district and name." />
           </div>
           <div className="dest-form-actions">
             <Button type="button" variant="outline" onClick={cancelDestForm}>Cancel</Button>
