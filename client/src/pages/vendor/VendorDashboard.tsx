@@ -143,7 +143,7 @@ const VendorDashboard: React.FC = () => {
 
       <div className="vendor-dashboard-card">
 
-        {/* 8 coloured metric cards */}
+        {/* 7 coloured metric cards */}
         <VendorOverviewCards
           totalOrders={overview.totalOrders}
           totalOrderAmount={overview.totalOrderAmount}
@@ -153,6 +153,8 @@ const VendorDashboard: React.FC = () => {
           rtvDeliveredAmount={overview.totalReturnedToVendorAmount}
           inTransit={overview.inTransit}
           inTransitAmount={overview.inTransitAmount}
+          inProgress={overview.inDelivery}
+          inProgressAmount={overview.inDeliveryAmount}
           pendingPickup={overview.awaitingPickup}
           pendingPickupAmount={overview.awaitingPickupAmount}
           returnProcess={overview.pendingReturns}
