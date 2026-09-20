@@ -148,6 +148,9 @@ const OOVOperations: React.FC = () => {
   const [isActionOpen, setIsActionOpen] = useState(false);
   const [selectedNextStatus, setSelectedNextStatus] = useState<ParcelStatus | ''>('');
   const [statusUpdating, setStatusUpdating] = useState(false);
+  // setStatusUpdating only disables the button on the next render, so two
+  // clicks in the same frame both get through and dispatch the batch twice.
+  const submitting = useRef(false);
   const [statusUpdateProgress, setStatusUpdateProgress] = useState<{ completed: number; total: number } | null>(null);
   const [actionError, setActionError] = useState('');
   const [remarkPopupOrder, setRemarkPopupOrder] = useState<Order | null>(null);
@@ -347,6 +350,9 @@ const OOVOperations: React.FC = () => {
       return;
     }
 
+    if (submitting.current) return;
+    submitting.current = true;
+
     const ids = selectedOrders.map(order => String(order.id));
     setStatusUpdating(true);
     setStatusUpdateProgress({ completed: 0, total: ids.length });
@@ -432,6 +438,7 @@ const OOVOperations: React.FC = () => {
           : 'Failed to change order status.';
       setActionError(message);
     } finally {
+      submitting.current = false;
       setStatusUpdating(false);
       setStatusUpdateProgress(null);
     }

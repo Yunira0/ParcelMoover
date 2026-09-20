@@ -440,6 +440,20 @@ export async function handoffParcelsToNcm(
 
     const deliveryType = deliveryTypeOverride ?? defaultDeliveryType(parcel.service_type);
 
+    // Claim the parcel before calling NCM. Every check above is a read, and
+    // the API call that follows is slow, so two handoffs of the same parcel
+    // would both get through and create two real orders on NCM's side — which
+    // no amount of cleanup here can take back. Moving it off 'oov' first means
+    // exactly one caller reaches the API.
+    const claim = await prisma.parcels.updateMany({
+      where: { id: parcel.id, status: "oov" },
+      data: { status: "dispatched" },
+    });
+    if (claim.count === 0) {
+      results.push({ ...base, success: false, error: "Parcel is already being handed over" });
+      continue;
+    }
+
     try {
       const created = await ncmFetch<{ Message: string; orderid: number }>("/api/v1/order/create", {
         method: "POST",
@@ -463,10 +477,6 @@ export async function handoffParcelsToNcm(
       await bumpDailyCreateCounter();
 
       await prisma.$transaction([
-        prisma.parcels.update({
-          where: { id: parcel.id },
-          data: { status: "dispatched" },
-        }),
         prisma.parcel_status_history.create({
           data: {
             parcel_id: parcel.id,
@@ -500,6 +510,13 @@ export async function handoffParcelsToNcm(
 
       results.push({ ...base, success: true, ncmOrderId: created.orderid, branch: branch.name });
     } catch (error) {
+      // NCM never took it, so release the claim and leave the parcel exactly
+      // where it was — in Transit, ready to be retried once the reason is
+      // fixed.
+      await prisma.parcels.updateMany({
+        where: { id: parcel.id, status: "dispatched" },
+        data: { status: "oov" },
+      });
       const message = error instanceof Error ? error.message : String(error);
       results.push({ ...base, success: false, error: message });
     }

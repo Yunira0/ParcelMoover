@@ -61,6 +61,8 @@ const ADMIN = { id: "admin-1", roles: ["admin"] };
 
 function makeMockTx() {
   return {
+    // The FOR UPDATE lock bulkUpdateParcelStatus takes before it writes.
+    $queryRaw: vi.fn().mockResolvedValue([]),
     pickup_tasks: { update: vi.fn(), updateMany: vi.fn() },
     parcels: {
       update: vi.fn().mockResolvedValue({ id: "parcel-1" }),
@@ -143,6 +145,52 @@ beforeEach(() => {
   mockedPrisma.transit_manifests.findUnique.mockImplementation(({ where }: any) =>
     Promise.resolve(where.manifest_no ? null : { id: where.id, manifest_no: "TRM-TEST" }),
   );
+});
+
+// Two dispatches of the same parcel used to race: both read 'oov' before the
+// transaction, both passed the transition check, and both wrote an
+// 'oov -> dispatched' history row — one order in transit twice, at the same
+// moment. The loser of the row lock must now find the parcel already moved and
+// write nothing.
+describe("a second dispatch of the same parcel writes nothing", () => {
+  it("drops a parcel another request already moved under the lock", async () => {
+    givenParcels([oovParcel("parcel-1", "hub-pkr")]);
+
+    const tx = makeMockTx();
+    // What the lock sees: the winner already flipped it to dispatched.
+    tx.$queryRaw.mockResolvedValue([{ id: "parcel-1", status: "dispatched" }]);
+    mockedPrisma.$transaction.mockImplementation((fn: (t: unknown) => Promise<unknown>) => fn(tx));
+
+    const result: any = await bulkUpdateParcelStatus(ADMIN, { ids: ["parcel-1"], status: "dispatched" });
+
+    expect(result.updatedCount).toBe(0);
+    expect(result.alreadyUpToDate).toBe(1);
+    expect(tx.parcels.updateMany).not.toHaveBeenCalled();
+    expect(tx.parcel_status_history.createMany).not.toHaveBeenCalled();
+    expect(tx.dispatches.create).not.toHaveBeenCalled();
+  });
+
+  it("still moves the parcels that nobody else touched", async () => {
+    givenParcels([oovParcel("parcel-1", "hub-pkr"), oovParcel("parcel-2", "hub-pkr")]);
+
+    const tx = makeMockTx();
+    tx.$queryRaw.mockResolvedValue([
+      { id: "parcel-1", status: "dispatched" },
+      { id: "parcel-2", status: "oov" },
+    ]);
+    mockedPrisma.$transaction.mockImplementation((fn: (t: unknown) => Promise<unknown>) => fn(tx));
+
+    const result: any = await bulkUpdateParcelStatus(ADMIN, {
+      ids: ["parcel-1", "parcel-2"],
+      status: "dispatched",
+    });
+
+    expect(result.updatedCount).toBe(1);
+    expect(result.alreadyUpToDate).toBe(1);
+    expect(tx.parcels.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: { in: ["parcel-2"] } } }),
+    );
+  });
 });
 
 describe("dispatching out of Transit opens a manifest for the route", () => {
