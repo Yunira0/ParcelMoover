@@ -100,7 +100,7 @@ export const listVendorPayments = async (params?: {
   return response.data;
 };
 
-// Multipart because of the optional proof screenshot.
+// Multipart because of the proof screenshot.
 export const submitVendorPayment = async (input: {
   amount: number;
   reference?: string;

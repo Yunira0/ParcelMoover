@@ -988,7 +988,7 @@ GET  /api/v1/billing/qr                                  — the Fonepay QR imag
 
 #### Filing a claim
 
-`multipart/form-data`, not JSON — `amount` is required and must be greater than zero; `reference`, `note`, `method` (default `fonepay`) and a `proof` file are optional. Proof may be JPG, PNG, WebP or PDF, up to 5MB.
+`multipart/form-data`, not JSON — `amount` is required and must be greater than zero; a `proof` file is required; `reference`, `note` and `method` (default `fonepay`) are optional. Proof may be JPG, PNG, WebP or PDF, up to 5MB.
 
 ```bash
 curl -X POST "$BASE/api/v1/billing/payments" \

@@ -37,6 +37,13 @@ const uploadUrl = (path: string) =>
 const isImagePath = (path: string) => /\.(jpe?g|png|webp|gif)$/i.test(path);
 
 type Tab = 'queue' | 'vendors' | 'settings';
+type ClaimStatus = VendorPayment['status'];
+
+const CLAIM_STATUS_LABELS: Record<ClaimStatus, string> = {
+  pending: 'Pending',
+  verified: 'Verified',
+  rejected: 'Rejected',
+};
 
 const TAB_LABELS: Record<Tab, string> = {
   queue: 'Payment verification',
@@ -52,7 +59,10 @@ const BillingManagement: React.FC = () => {
 
   // Verification queue
   const [claims, setClaims] = useState<VendorPayment[]>([]);
+  const [claimStatus, setClaimStatus] = useState<ClaimStatus>('pending');
   const [claimsTotal, setClaimsTotal] = useState(0);
+  // The tab badge counts the work waiting, whichever history view is open.
+  const [pendingCount, setPendingCount] = useState(0);
   const [claimsTotalPages, setClaimsTotalPages] = useState(1);
   const [claimsPage, setClaimsPage] = useState(1);
   const [claimsPageSize, setClaimsPageSize] = useState(50);
@@ -101,17 +111,21 @@ const BillingManagement: React.FC = () => {
   const loadClaims = useCallback(async () => {
     setClaimsLoading(true);
     try {
-      const res = await listVendorPayments({ status: 'pending', page: claimsPage, pageSize: claimsPageSize });
+      const [res, pending] = await Promise.all([
+        listVendorPayments({ status: claimStatus, page: claimsPage, pageSize: claimsPageSize }),
+        claimStatus === 'pending' ? null : listVendorPayments({ status: 'pending', page: 1, pageSize: 1 }),
+      ]);
       setClaims(res.data);
       setClaimsTotal(res.meta.total);
       setClaimsTotalPages(res.meta.totalPages);
+      setPendingCount(pending ? pending.meta.total : res.meta.total);
       setError('');
     } catch (err) {
       setError(apiErrorMessage(err, 'Failed to load payment claims.'));
     } finally {
       setClaimsLoading(false);
     }
-  }, [claimsPage, claimsPageSize]);
+  }, [claimStatus, claimsPage, claimsPageSize]);
 
   const loadBalances = useCallback(async () => {
     setBalancesLoading(true);
@@ -279,6 +293,23 @@ const BillingManagement: React.FC = () => {
       width: '110px',
     },
     { header: 'NOTE', accessor: (p: VendorPayment) => p.note || '—', width: '160px' },
+  ];
+
+  const decidedColumns = [
+    ...claimColumns,
+    {
+      header: 'STATUS',
+      accessor: (p: VendorPayment) => (
+        <span className={`billing-pill billing-pill-${p.status}`}>{CLAIM_STATUS_LABELS[p.status]}</span>
+      ),
+      width: '110px',
+    },
+    { header: 'REVIEWED', accessor: (p: VendorPayment) => (p.reviewedAt ? toBsDate(p.reviewedAt) : '—'), width: '110px' },
+    { header: 'REMARK', accessor: (p: VendorPayment) => p.reviewRemark || '—', width: '200px' },
+  ];
+
+  const pendingColumns = [
+    ...claimColumns,
     {
       header: 'DECISION',
       accessor: (p: VendorPayment) => (
@@ -377,7 +408,7 @@ const BillingManagement: React.FC = () => {
         options={(Object.keys(TAB_LABELS) as Tab[]).map((tab) => ({
           value: tab,
           label: TAB_LABELS[tab],
-          ...(tab === 'queue' ? { count: claimsTotal } : {}),
+          ...(tab === 'queue' ? { count: pendingCount } : {}),
         }))}
       />
 
@@ -385,12 +416,30 @@ const BillingManagement: React.FC = () => {
 
       {activeTab === 'queue' && (
         <>
+          <SegmentedTabs
+            ariaLabel="Payment claim status"
+            fullWidth={false}
+            value={claimStatus}
+            onChange={(status) => {
+              setClaimStatus(status);
+              setClaimsPage(1);
+            }}
+            options={(Object.keys(CLAIM_STATUS_LABELS) as ClaimStatus[]).map((status) => ({
+              value: status,
+              label: CLAIM_STATUS_LABELS[status],
+              ...(status === 'pending' ? { count: pendingCount } : {}),
+            }))}
+          />
           <Table
-            columns={claimColumns}
+            columns={claimStatus === 'pending' ? pendingColumns : decidedColumns}
             data={claims}
             loading={claimsLoading}
             loadingMessage="Loading payment claims..."
-            emptyMessage="No payments awaiting verification."
+            emptyMessage={
+              claimStatus === 'pending'
+                ? 'No payments awaiting verification.'
+                : `No ${CLAIM_STATUS_LABELS[claimStatus].toLowerCase()} payments yet.`
+            }
             minWidth="1200px"
           />
           <Pagination
@@ -404,7 +453,7 @@ const BillingManagement: React.FC = () => {
               setClaimsPageSize(size);
               setClaimsPage(1);
             }}
-            summary={`${claimsTotal} claim${claimsTotal === 1 ? '' : 's'} awaiting verification`}
+            summary={`${claimsTotal} ${claimStatus === 'pending' ? '' : `${CLAIM_STATUS_LABELS[claimStatus].toLowerCase()} `}claim${claimsTotal === 1 ? '' : 's'}${claimStatus === 'pending' ? ' awaiting verification' : ''}`}
           />
         </>
       )}

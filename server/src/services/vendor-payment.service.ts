@@ -91,6 +91,11 @@ export async function submitVendorPayment(
   if (!Number.isFinite(input.amount) || input.amount <= 0) {
     throw new AppError(400, "amount must be greater than zero");
   }
+  // The reviewer matches the claim against the merchant statement; without
+  // the screenshot there is nothing to match.
+  if (!input.proofPath) {
+    throw new AppError(400, "A payment screenshot is required");
+  }
 
   const created = await prisma.vendor_payments.create({
     data: {

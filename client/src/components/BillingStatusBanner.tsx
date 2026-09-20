@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { AlertTriangle } from 'lucide-react';
 import { getBillingStatus, type BillingStatus } from '../services/billing.service';
 import { isVendorSide } from '../utils/auth';
-import { creditUsagePct, payToClearBlock } from '../utils/creditUsage';
+import { creditUsagePct } from '../utils/creditUsage';
 import { formatCurrency } from '../utils/format';
 import '../pages/vendor/VendorBilling.css';
 
@@ -40,7 +40,7 @@ const BillingStatusBanner: React.FC = () => {
   if (!status || status.state === 'ok') return null;
 
   const owed = Math.max(0, -status.balance);
-  const payToClear = payToClearBlock(status.amountToClearBlock);
+  const payToClear = status.amountToClearBlock;
   const pct = Math.round(creditUsagePct(status.balance, status.creditLimit));
 
   return (

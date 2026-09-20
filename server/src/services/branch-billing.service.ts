@@ -1,7 +1,7 @@
 import { Prisma } from "../generated/prisma/client";
 import prisma from "../lib/prisma";
 import { AppError } from "../utils/AppError";
-import { getBillingSettings, type BillingThresholds } from "./billing.service";
+import { clearBlockAmount, getBillingSettings, type BillingThresholds } from "./billing.service";
 import { BRANCH_COD_SLA_KEY, getSlaSettings } from "./sla.service";
 
 type Actor = { id: string; roles: string[] };
@@ -184,7 +184,7 @@ export async function getBranchBillingStatus(branchId: string): Promise<BranchBi
     ...balance,
     ...thresholds,
     state: branchStateForBalance(balance.balance, thresholds),
-    amountToClearBlock: Math.max(0, money(thresholds.blockThreshold - balance.balance)),
+    amountToClearBlock: clearBlockAmount(balance.balance, thresholds),
     pendingPaymentAmount: money(pending._sum.amount),
     codSlaHours,
   };
