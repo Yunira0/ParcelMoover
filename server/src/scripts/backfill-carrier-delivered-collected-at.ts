@@ -18,6 +18,14 @@
 // come from this bug - stamping it would record zero cash against a parcel
 // that carried some - so those are only reported, never written.
 //
+// Imports prisma and nothing else on purpose. This runs inside the deploy
+// start chain, where a process that never exits would block the server from
+// booting - and `|| true` does not save you from a hang, only from a non-zero
+// exit. Pulling in finance.service would import lib/redis, which connects
+// eagerly and retries forever, holding the event loop open. The finance cache
+// it would have invalidated has a 30s TTL, so the screens correct themselves
+// well before anyone looks.
+//
 // Usage:
 //   ts-node --transpile-only src/scripts/backfill-carrier-delivered-collected-at.ts
 //   ts-node --transpile-only src/scripts/backfill-carrier-delivered-collected-at.ts --commit
@@ -26,7 +34,6 @@ import "dotenv/config";
 import type { Prisma } from "../generated/prisma/client";
 import { parcel_status } from "../generated/prisma/enums";
 import prisma from "../lib/prisma";
-import { invalidateVendorFinanceCache } from "../services/finance.service";
 
 const DELIVERED: parcel_status[] = [parcel_status.delivered, parcel_status.partially_delivered];
 
@@ -56,7 +63,6 @@ async function main() {
     where,
     select: {
       id: true,
-      vendor_id: true,
       parcels: {
         select: {
           order_number: true,
@@ -106,15 +112,7 @@ async function main() {
     console.log("\nNothing to backfill.");
   } else {
     const res = await prisma.cod_collections.updateMany({ where, data: { collected_at: new Date() } });
-
-    // The settlement and pending-COD screens are cached per vendor, so without
-    // this they keep serving the pre-backfill counts until the TTL lapses.
-    const vendorIds = [...new Set(rows.map((r) => r.vendor_id).filter((v): v is string => !!v))];
-    for (const vendorId of vendorIds) {
-      await invalidateVendorFinanceCache(vendorId);
-    }
-
-    console.log(`\nBackfilled ${res.count} row(s); cleared finance cache for ${vendorIds.length} vendor(s).`);
+    console.log(`\nBackfilled ${res.count} row(s).`);
   }
 
   if (once) {
