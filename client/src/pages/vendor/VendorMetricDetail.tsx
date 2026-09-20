@@ -110,7 +110,7 @@ export const METRICS: Record<string, MetricConfig> = {
   // No longer linked from a card (the strip shows In Transit instead), but kept
   // so bookmarks and older links to the wider in-progress bucket still resolve.
   'in-delivery': {
-    label: 'In Progress',
+    label: 'In Process',
     description: 'Orders picked up and moving through the network towards the customer.',
     status: IN_DELIVERY_STATUSES,
   },
