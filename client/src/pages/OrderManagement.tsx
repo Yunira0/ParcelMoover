@@ -51,7 +51,7 @@ import {
   type OrderSortField,
   type ParcelStatus,
 } from '../services/orders.service';
-import { searchVendors, getAdmins } from '../services/users.service';
+import { searchVendors, getAllAdmins } from '../services/users.service';
 import { printLabels } from '../utils/printLabels';
 import { getCurrentUserRoles } from '../utils/auth';
 import { apiErrorMessage } from '../utils/serverValidation';
@@ -491,14 +491,15 @@ const OrderManagement: React.FC = () => {
     return () => { cancelled = true; };
   }, [filter]);
 
-  // Sales-department admins for the SALES filter dropdown. Fetched once; the
-  // list is small enough that one large page covers every rep.
+  // Sales-department admins for the SALES filter dropdown. Fetched once, across
+  // every page - a single default-sized request would only carry the 20 newest
+  // admins and quietly omit the rest.
   useEffect(() => {
     if (!canFilterBySales) return;
     let cancelled = false;
     (async () => {
       try {
-        const res = await getAdmins({ pageSize: 100, status: 'active' });
+        const res = await getAllAdmins({ status: 'active' });
         if (!cancelled && res?.success && Array.isArray(res.data)) {
           setSalesOptions(
             res.data
