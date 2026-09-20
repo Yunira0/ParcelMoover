@@ -6337,14 +6337,19 @@ export async function applyExternalCarrierStatus(
       // A carrier delivery collects the COD just as an in-house rider does -
       // without this the ledger stays at its order-creation default, and the
       // parcel never becomes settleable to the vendor (both unsettled queries
-      // require collected_amount > 0).
+      // require collected_at IS NOT NULL).
+      //
+      // No cod_amount > 0 guard, matching the in-house paths: a zero-COD
+      // delivery still owes its delivery charge, so it has to enter the ledger
+      // (settling at a negative net payable) rather than sit permanently
+      // unsettleable and never bill that charge.
       //
       // rider_id is whichever rider legitimately still owns this leg, which is
       // null for a real employee (released above, so their COD settlement is
       // not credited with cash they never carried) and the carrier placeholder
       // where one is routing the parcel - that is what cod_from_ncm /
       // cod_from_upaya read to attribute the cash to the carrier.
-      if (targetStatus === "delivered" && Number(parcel.cod_amount) > 0) {
+      if (targetStatus === "delivered") {
         await tx.cod_collections.upsert({
           where: { parcel_id: parcelId },
           create: {
