@@ -342,6 +342,13 @@ export function stateForBalance(balance: number, thresholds: BillingThresholds):
   return "ok";
 }
 
+// The block line is inclusive (balance <= blockThreshold is blocked), so the
+// amount that lifts a block is one paisa past the line, not up to it.
+export function clearBlockAmount(balance: number, thresholds: Pick<BillingThresholds, "blockThreshold">): number {
+  if (balance > thresholds.blockThreshold) return 0;
+  return money(thresholds.blockThreshold - balance + 0.01);
+}
+
 export async function getVendorBillingStatus(
   vendorId: string,
   options: { skipCache?: boolean } = {},
@@ -369,7 +376,7 @@ export async function getVendorBillingStatus(
     ...thresholds,
     creditLimit: money(vendor.credit_limit),
     state: stateForBalance(balance.balance, thresholds),
-    amountToClearBlock: Math.max(0, money(thresholds.blockThreshold - balance.balance)),
+    amountToClearBlock: clearBlockAmount(balance.balance, thresholds),
     pendingPaymentAmount: money(pending._sum.amount),
   };
 }
@@ -399,7 +406,7 @@ export async function getVendorBlockDecision(
   return {
     blocked: stateForBalance(balance.balance, thresholds) === "blocked",
     balance: balance.balance,
-    amountToClearBlock: Math.max(0, money(thresholds.blockThreshold - balance.balance)),
+    amountToClearBlock: clearBlockAmount(balance.balance, thresholds),
   };
 }
 
@@ -502,7 +509,7 @@ export async function listVendorBalances(
         ...thresholds,
         creditLimit: money(row.credit_limit),
         state: stateForBalance(balance, thresholds),
-        amountToClearBlock: Math.max(0, money(thresholds.blockThreshold - balance)),
+        amountToClearBlock: clearBlockAmount(balance, thresholds),
         pendingPaymentAmount: money(row.pending),
       };
     })

@@ -923,7 +923,7 @@ GET  /api/v1/billing/qr                                  — the Fonepay QR imag
   }
 }</code></pre></div>
 <h4 id="filing-a-claim">Filing a claim<a class="anchor" href="#filing-a-claim" aria-label="Link to this section">#</a></h4>
-<p><code>multipart/form-data</code>, not JSON — <code>amount</code> is required and must be greater than zero; <code>reference</code>, <code>note</code>, <code>method</code> (default <code>fonepay</code>) and a <code>proof</code> file are optional. Proof may be JPG, PNG, WebP or PDF, up to 5MB.</p>
+<p><code>multipart/form-data</code>, not JSON — <code>amount</code> is required and must be greater than zero; a <code>proof</code> file is required; <code>reference</code>, <code>note</code> and <code>method</code> (default <code>fonepay</code>) are optional. Proof may be JPG, PNG, WebP or PDF, up to 5MB.</p>
 <div class="code-block"><span class="code-lang">bash</span><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code><span class="t-kw">curl</span> -X POST &quot;<span class="t-var">$BASE</span>/api/v1/billing/payments&quot; \
   -H &quot;Authorization: Bearer <span class="t-var">$KEY</span>&quot; \
   -H &quot;Idempotency-Key: $(uuidgen)&quot; \

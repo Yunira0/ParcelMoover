@@ -21,6 +21,7 @@ vi.mock("../notification.service", () => ({
 
 import {
   assertVendorCanCreateOrder,
+  clearBlockAmount,
   evaluateVendorBilling,
   getDefaultCreditLimit,
   getVendorAccountBalance,
@@ -182,7 +183,18 @@ describe("threshold state", () => {
 
     const status = await getVendorBillingStatus("vendor-1", { skipCache: true });
     expect(status.balance).toBe(-4270);
-    expect(status.amountToClearBlock).toBe(1270);
+    expect(status.amountToClearBlock).toBe(1270.01);
+  });
+
+  it("clearBlockAmount actually lifts the block, including exactly on the line", () => {
+    const thresholds = { warnThreshold: -2000, blockThreshold: -3000 };
+    for (const balance of [-4270, -3000, -3000.5]) {
+      const pay = clearBlockAmount(balance, thresholds);
+      expect(pay).toBeGreaterThan(0);
+      expect(stateForBalance(Math.round((balance + pay) * 100) / 100, thresholds)).not.toBe("blocked");
+      expect(stateForBalance(Math.round((balance + pay - 0.01) * 100) / 100, thresholds)).toBe("blocked");
+    }
+    expect(clearBlockAmount(-2999.99, thresholds)).toBe(0);
   });
 
   it("excludes unverified claims from the balance", async () => {

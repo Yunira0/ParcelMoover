@@ -27,7 +27,7 @@ import {
   type RunSheet,
   type RunSheetParcel,
 } from '../services/orders.service';
-import { getRiders } from '../services/users.service';
+import { getAllRiders } from '../services/users.service';
 import { formatCurrency } from '../utils/format';
 import { toBsDate, toNptTime } from '../utils/nepaliDate';
 import { printRunSheet } from '../utils/printRunSheet';
@@ -244,7 +244,7 @@ const RiderRunSheet: React.FC = () => {
   useEffect(() => {
     (async () => {
       try {
-        const res = await getRiders({ pageSize: 100 });
+        const res = await getAllRiders();
         if (res?.success && Array.isArray(res.data)) {
           setRiders(res.data.filter((r: { status: string }) => r.status === 'active'));
         }

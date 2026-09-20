@@ -6,7 +6,7 @@ import FormField from '../components/FormField';
 import {
   registerUser,
   getLocations,
-  getAdmins,
+  getAllAdmins,
   getManagedUser,
   updateUserProfile,
   getUserDocuments,
@@ -294,7 +294,7 @@ const VendorFormPage: React.FC = () => {
         const [res, me, adminsRes] = await Promise.all([
           getLocations(),
           getCurrentUser().catch(() => null),
-          getAdmins().catch(() => null),
+          getAllAdmins().catch(() => null),
         ]);
         let hubs: Array<{ value: string; label: string; code: string | null; isMasterHub: boolean }> = [];
         if (res && res.success && Array.isArray(res.data)) {

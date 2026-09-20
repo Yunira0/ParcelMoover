@@ -24,6 +24,7 @@
 // forget: the dispatch rows, current_location moves, status history, webhooks
 // and cache invalidation. Reimplementing any of that here would be four money
 // bugs in a trench coat.
+import { Prisma } from "../generated/prisma/client";
 import prisma from "../lib/prisma";
 import { AppError } from "../utils/AppError";
 import { generateTransitManifestNo } from "../utils/transitManifestNo";
@@ -555,9 +556,29 @@ export async function addParcelsToTransitManifest(
     return { added: 0, alreadyOnManifest, rejected, manifest: await getTransitManifestById(actor, manifestId) };
   }
 
-  await prisma.$transaction(async (tx) => {
+  const linked = await prisma.$transaction(async (tx) => {
+    // "Already on manifest X" was decided by a read taken before this
+    // transaction. The only uniqueness the database enforces is
+    // (manifest, parcel), so two scans racing each other can put one parcel on
+    // two manifests — and both then dispatch it. Lock the parcels and re-check
+    // membership under the lock; a parcel someone else claimed first drops out
+    // rather than joining a second hand-over.
+    await tx.$queryRaw(Prisma.sql`
+      SELECT id FROM parcels
+      WHERE id = ANY(ARRAY[${Prisma.join(eligible.map((p) => p.id))}]::uuid[])
+      ORDER BY id
+      FOR UPDATE
+    `);
+    const claimed = await tx.transit_manifest_parcels.findMany({
+      where: { parcel_id: { in: eligible.map((p) => p.id) }, transit_manifests: { status: { in: ["open", "dispatched"] } } },
+      select: { parcel_id: true },
+    });
+    const takenIds = new Set(claimed.map((row) => row.parcel_id));
+    const free = eligible.filter((p) => !takenIds.has(p.id));
+    if (free.length === 0) return [];
+
     await tx.transit_manifest_parcels.createMany({
-      data: eligible.map((p) => ({ transit_manifest_id: manifestId, parcel_id: p.id })),
+      data: free.map((p) => ({ transit_manifest_id: manifestId, parcel_id: p.id })),
       skipDuplicates: true,
     });
     await tx.audit_logs.create({
@@ -566,13 +587,20 @@ export async function addParcelsToTransitManifest(
         entity_type: "transit_manifest",
         entity_id: manifestId,
         action: "ADD_PARCELS",
-        new_data: { manifestNo: manifest.manifest_no, parcelIds: eligible.map((p) => p.id) },
+        new_data: { manifestNo: manifest.manifest_no, parcelIds: free.map((p) => p.id) },
       },
     });
+    return free;
   });
 
+  for (const p of eligible) {
+    if (!linked.some((f) => f.id === p.id)) {
+      rejected.push({ trackingId: p.tracking_id, reason: "Added to another manifest first" });
+    }
+  }
+
   return {
-    added: eligible.length,
+    added: linked.length,
     alreadyOnManifest,
     rejected,
     manifest: await getTransitManifestById(actor, manifestId),
@@ -675,70 +703,97 @@ export async function dispatchTransitManifest(
   }
   if (manifest.to_location_id) await assertBranchCanReceiveTransit(manifest.to_location_id);
 
-  const links = await prisma.transit_manifest_parcels.findMany({
-    where: { transit_manifest_id: manifestId },
-    select: {
-      parcels: { select: { id: true, tracking_id: true, status: true, current_location_id: true } },
-    },
+  // The status check above is a read, so two dispatches of the same manifest
+  // (a double-click, two operators, a retried request) both pass it and both
+  // run the whole body. Claim the manifest first: exactly one caller wins the
+  // conditional update, and the loser stops here instead of writing a second
+  // dispatch row for every parcel.
+  const claim = await prisma.transit_manifests.updateMany({
+    where: { id: manifestId, status: "open" },
+    data: { status: "dispatched", dispatched_at: new Date(), dispatched_by: actor.id },
   });
-
-  const eligible = links
-    .filter((link) => link.parcels.status === MANIFESTABLE_STATUS)
-    .map((link) => link.parcels);
-  const skipped = links
-    .filter((link) => link.parcels.status !== MANIFESTABLE_STATUS)
-    .map((link) => ({ trackingId: link.parcels.tracking_id, status: link.parcels.status }));
-
-  if (eligible.length === 0) {
+  if (claim.count === 0) {
     throw new AppError(
       409,
-      links.length === 0
-        ? `Manifest ${manifest.manifest_no} is empty - add parcels before dispatching it.`
-        : `No parcel on manifest ${manifest.manifest_no} is still in transit.`,
+      `Manifest ${manifest.manifest_no} is already being dispatched.`,
     );
   }
 
-  // bulkUpdateParcelStatus needs one shared origin per call when a destination
-  // hub is set, so parcels staged at different hubs move in one call each -
-  // each still opens its own dispatch row. The first call flips the manifest.
-  const toLocationId = manifest.to_location_id;
-  const groups = new Map<string, typeof eligible>();
-  for (const parcel of eligible) {
-    const key = toLocationId ? parcel.current_location_id || "__none__" : "__all__";
-    const group = groups.get(key);
-    if (group) group.push(parcel);
-    else groups.set(key, [parcel]);
-  }
-
-  let updated = 0;
-  for (const [key, group] of groups) {
-    const result = await bulkUpdateParcelStatus(
-      { id: actor.id, roles: actor.roles },
-      {
-        ids: group.map((p) => p.id),
-        status: "dispatched",
-        ...(toLocationId && key !== "__none__" ? { toLocationId } : {}),
-        transitManifestId: manifestId,
+  try {
+    const links = await prisma.transit_manifest_parcels.findMany({
+      where: { transit_manifest_id: manifestId },
+      select: {
+        parcels: { select: { id: true, tracking_id: true, status: true, current_location_id: true } },
       },
-    );
-    updated += result.updatedCount;
+    });
+
+    const eligible = links
+      .filter((link) => link.parcels.status === MANIFESTABLE_STATUS)
+      .map((link) => link.parcels);
+    const skipped = links
+      .filter((link) => link.parcels.status !== MANIFESTABLE_STATUS)
+      .map((link) => ({ trackingId: link.parcels.tracking_id, status: link.parcels.status }));
+
+    if (eligible.length === 0) {
+      throw new AppError(
+        409,
+        links.length === 0
+          ? `Manifest ${manifest.manifest_no} is empty - add parcels before dispatching it.`
+          : `No parcel on manifest ${manifest.manifest_no} is still in transit.`,
+      );
+    }
+
+    // bulkUpdateParcelStatus needs one shared origin per call when a destination
+    // hub is set, so parcels staged at different hubs move in one call each -
+    // each still opens its own dispatch row. The first call flips the manifest.
+    const toLocationId = manifest.to_location_id;
+    const groups = new Map<string, typeof eligible>();
+    for (const parcel of eligible) {
+      const key = toLocationId ? parcel.current_location_id || "__none__" : "__all__";
+      const group = groups.get(key);
+      if (group) group.push(parcel);
+      else groups.set(key, [parcel]);
+    }
+
+    let updated = 0;
+    for (const [key, group] of groups) {
+      const result = await bulkUpdateParcelStatus(
+        { id: actor.id, roles: actor.roles },
+        {
+          ids: group.map((p) => p.id),
+          status: "dispatched",
+          ...(toLocationId && key !== "__none__" ? { toLocationId } : {}),
+          transitManifestId: manifestId,
+        },
+      );
+      updated += result.updatedCount;
+    }
+
+    await prisma.audit_logs.create({
+      data: {
+        actor_id: actor.id,
+        entity_type: "transit_manifest",
+        entity_id: manifestId,
+        action: "DISPATCH",
+        new_data: { manifestNo: manifest.manifest_no, parcelIds: eligible.map((p) => p.id) },
+      },
+    });
+
+    return {
+      updated,
+      skipped,
+      manifest: await getTransitManifestById(actor, manifestId),
+    };
+  } catch (error) {
+    // The claim already flipped the manifest. If the dispatch itself failed,
+    // put it back rather than stranding it as "dispatched" with its parcels
+    // still at oov, which no later dispatch could ever clear.
+    await prisma.transit_manifests.updateMany({
+      where: { id: manifestId, status: "dispatched" },
+      data: { status: "open", dispatched_at: null, dispatched_by: null },
+    });
+    throw error;
   }
-
-  await prisma.audit_logs.create({
-    data: {
-      actor_id: actor.id,
-      entity_type: "transit_manifest",
-      entity_id: manifestId,
-      action: "DISPATCH",
-      new_data: { manifestNo: manifest.manifest_no, parcelIds: eligible.map((p) => p.id) },
-    },
-  });
-
-  return {
-    updated,
-    skipped,
-    manifest: await getTransitManifestById(actor, manifestId),
-  };
 }
 
 /**

@@ -427,7 +427,7 @@ export function buildOpenApiDocument(baseUrl: string) {
         post: {
           summary: "File a payment claim",
           description:
-            "Records that you have paid the office, optionally with a proof screenshot or PDF (max 5MB; JPG, PNG, WebP, PDF). " +
+            "Records that you have paid the office, with a required proof screenshot or PDF (max 5MB; JPG, PNG, WebP, PDF). " +
             "Filing a claim does not change your balance - an admin must verify it first.",
           operationId: "submitVendorPayment",
           parameters: [idempotencyKeyHeader],
@@ -437,7 +437,7 @@ export function buildOpenApiDocument(baseUrl: string) {
               "multipart/form-data": {
                 schema: {
                   type: "object",
-                  required: ["amount"],
+                  required: ["amount", "proof"],
                   properties: {
                     amount: { type: "number", exclusiveMinimum: 0, description: "Amount paid, in NPR." },
                     reference: { type: "string", description: "Bank/wallet transaction reference." },

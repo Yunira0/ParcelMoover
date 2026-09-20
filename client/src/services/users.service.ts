@@ -329,3 +329,70 @@ export const updateAdminRole = async (adminId: string, superAdmin: boolean) => {
   const response = await api.patch(`/auth/users/admins/${adminId}/role`, { superAdmin });
   return response.data;
 };
+
+/** Mirrors the server's LIST_MAX_PAGE_SIZE; a larger ask is clamped to this. */
+const MAX_PAGE_SIZE = 500;
+
+/** Hard stop on the page walk, so a bad `meta` can't turn a dropdown into a request storm. */
+const MAX_PAGES = 20;
+
+interface PagedListResponse {
+  success?: boolean;
+  // `any` rather than `unknown`, matching the raw responses these wrap - the
+  // call sites annotate their own row shapes.
+  data?: any[];
+  meta?: { page: number; pageSize: number; total: number; totalPages: number };
+  [key: string]: unknown;
+}
+
+type PagedFetcher = (params: Record<string, unknown>) => Promise<PagedListResponse>;
+
+/**
+ * Walk every page of one of the paged user lists and return a single combined
+ * response. Pickers need the whole list: these endpoints default to 20 rows
+ * ordered newest-first, so a one-shot request silently drops everyone older
+ * than the 20 most recent records - they never appear in the dropdown, with
+ * nothing to show they were left out.
+ */
+const fetchAllPages = async (
+  fetchPage: PagedFetcher,
+  params: Record<string, unknown> = {},
+): Promise<PagedListResponse> => {
+  const first = await fetchPage({ ...params, page: 1, pageSize: MAX_PAGE_SIZE });
+  if (!first?.success || !Array.isArray(first.data)) return first;
+
+  const totalPages = Math.min(first.meta?.totalPages ?? 1, MAX_PAGES);
+  if (totalPages <= 1) return first;
+
+  const rest = await Promise.all(
+    Array.from({ length: totalPages - 1 }, (_, i) =>
+      fetchPage({ ...params, page: i + 2, pageSize: MAX_PAGE_SIZE }).catch(() => null),
+    ),
+  );
+
+  // A failed page is skipped rather than failing the whole list - a dropdown
+  // missing a later page still beats one that renders empty.
+  const data = rest.reduce<any[]>(
+    (acc, res) => (res?.success && Array.isArray(res.data) ? acc.concat(res.data) : acc),
+    first.data,
+  );
+
+  return { ...first, data, meta: { page: 1, pageSize: data.length, total: data.length, totalPages: 1 } };
+};
+
+/** Every admin, for the Sales/assignee dropdowns that have to list them all. */
+export const getAllAdmins = (params?: { search?: string; status?: string }) =>
+  fetchAllPages(getAdmins as PagedFetcher, params ?? {});
+
+/** Every rider, for the rider pickers that have to list them all. */
+export const getAllRiders = (params?: { search?: string; status?: string }) =>
+  fetchAllPages(getRiders as PagedFetcher, params ?? {});
+
+/** Every vendor, for the vendor lists that rank or filter across the whole set. */
+export const getAllVendors = (params?: {
+  search?: string;
+  status?: string;
+  company?: string;
+  location?: string;
+  highVolume?: string;
+}) => fetchAllPages(getVendors as PagedFetcher, params ?? {});

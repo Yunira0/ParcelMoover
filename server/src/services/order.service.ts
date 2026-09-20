@@ -5491,9 +5491,9 @@ async function _bulkUpdateParcelStatusImpl(
   // the single-parcel path.
   const isNoOp = (p: (typeof parcels)[number]) =>
     p.status === newStatus && !TERMINAL_STATUSES.includes(p.status as parcel_status);
-  const alreadyDoneCount = parcels.filter(isNoOp).length;
+  let alreadyDoneCount = parcels.filter(isNoOp).length;
   parcels = parcels.filter((p) => !isNoOp(p));
-  const idsToUpdate = parcels.map((p) => p.id);
+  let idsToUpdate = parcels.map((p) => p.id);
 
   if (parcels.length === 0) {
     return { updatedCount: 0, status: newStatus, alreadyUpToDate: alreadyDoneCount };
@@ -5709,6 +5709,38 @@ async function _bulkUpdateParcelStatusImpl(
     : null;
 
   const result = await prisma.$transaction(async (tx) => {
+    // Everything above — the transition check, the no-op filter — ran against
+    // a read taken before this transaction opened. Two requests carrying the
+    // same parcel both passed it, so without a lock both write a history row
+    // and one order goes to dispatched twice at the same moment. Lock the rows
+    // and re-read, in id order so two batches that overlap can't deadlock.
+    const locked = await tx.$queryRaw<Array<{ id: string; status: parcel_status }>>(Prisma.sql`
+      SELECT id, status FROM parcels
+      WHERE id = ANY(ARRAY[${Prisma.join(idsToUpdate)}]::uuid[])
+      ORDER BY id
+      FOR UPDATE
+    `);
+    const lockedStatus = new Map(locked.map((row) => [row.id, row.status]));
+
+    // Whoever held the lock first already moved these. Drop them the same way
+    // the pre-transaction no-op filter would have, rather than failing a batch
+    // where every other parcel is still fine.
+    // Only act on a row the lock actually returned: a live parcel always comes
+    // back, so a missing id means the row is gone, not that it moved.
+    const raced = parcels.filter((p) => {
+      const current = lockedStatus.get(p.id);
+      return current !== undefined && current !== p.status;
+    });
+    if (raced.length > 0) {
+      const racedIds = new Set(raced.map((p) => p.id));
+      parcels = parcels.filter((p) => !racedIds.has(p.id));
+      idsToUpdate = parcels.map((p) => p.id);
+      alreadyDoneCount += raced.length;
+      if (parcels.length === 0) {
+        return { updatedCount: 0, status: newStatus, alreadyUpToDate: alreadyDoneCount };
+      }
+    }
+
     let dispatch: { id: string; dispatch_no: string } | null = null;
 
     if (newStatus === "dispatched" && toLocationId && originLocationId) {

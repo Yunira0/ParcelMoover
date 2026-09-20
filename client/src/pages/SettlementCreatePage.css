@@ -284,6 +284,62 @@
   font-weight: var(--font-weight-bold);
 }
 
+/* Vendor credit balance */
+.scp-credit {
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-default);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-width: 420px;
+  padding: var(--space-3) var(--space-4);
+}
+
+.scp-credit-head {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+}
+
+.scp-credit-title {
+  color: var(--color-text-caption);
+  font-size: var(--font-size-sm);
+}
+
+.scp-credit-balance {
+  font-size: 18px;
+  font-weight: var(--font-weight-bold);
+}
+
+.scp-credit-owed {
+  color: var(--color-danger-text);
+}
+
+.scp-credit-after {
+  align-items: center;
+  border-radius: var(--border-radius-default);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 13px;
+  gap: var(--space-2);
+  justify-content: space-between;
+  padding: var(--space-2) var(--space-4);
+}
+
+.scp-credit-after-warned {
+  background: var(--color-warning-surface);
+}
+
+.scp-credit-after-blocked {
+  background: var(--color-danger-surface);
+}
+
+.scp-credit-note {
+  color: var(--color-danger-text);
+  font-size: var(--font-size-sm);
+  margin: 0;
+}
+
 /* Error banner */
 .scp-error {
   background: var(--color-danger-surface);

@@ -26,7 +26,7 @@ import {
   type ParcelStatus,
 } from '../services/orders.service';
 import { downloadExcel } from '../utils/excel';
-import { getRiders, searchVendors } from '../services/users.service';
+import { getAllRiders, searchVendors } from '../services/users.service';
 import { printLabels } from '../utils/printLabels';
 import { useCursorPagination } from '../hooks/useCursorPagination';
 import { toBsDate, toBsDateTime, toBsDateTimeCell } from '../utils/nepaliDate';
@@ -200,7 +200,7 @@ const DispatchOperations: React.FC = () => {
   useEffect(() => {
     (async () => {
       try {
-        const res = await getRiders({ pageSize: 100 });
+        const res = await getAllRiders();
         if (res?.success && Array.isArray(res.data)) {
           setRiders(res.data.filter((r: { status: string }) => r.status === 'active'));
         }

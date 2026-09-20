@@ -14,7 +14,6 @@ import {
   type VendorPayment,
 } from '../../services/billing.service';
 import { formatCurrency } from '../../utils/format';
-import { payToClearBlock } from '../../utils/creditUsage';
 import { toBsDate } from '../../utils/nepaliDate';
 import { apiErrorMessage } from '../../utils/serverValidation';
 import './VendorFinance.css';
@@ -77,10 +76,8 @@ const VendorBilling: React.FC = () => {
   }, [load]);
 
   // What the vendor most likely wants to pay: enough to lift a block, or the
-  // whole outstanding balance if they're only warned. The block line is
-  // inclusive, so the blocked suggestion is a paisa above the server figure —
-  // paying exactly `amountToClearBlock` would land on the line and stay blocked.
-  const payToClear = status ? payToClearBlock(status.amountToClearBlock) : 0;
+  // whole outstanding balance if they're only warned.
+  const payToClear = status?.amountToClearBlock ?? 0;
   const suggestedAmount =
     status && status.state !== 'ok'
       ? (status.state === 'blocked' ? payToClear : Math.abs(status.balance)).toFixed(2)
@@ -95,6 +92,10 @@ const VendorBilling: React.FC = () => {
     const parsed = Number(amountValue);
     if (!Number.isFinite(parsed) || parsed <= 0) {
       setFormError('Enter the amount you paid.');
+      return;
+    }
+    if (!proof) {
+      setFormError('Attach the payment screenshot.');
       return;
     }
 
@@ -259,7 +260,7 @@ const VendorBilling: React.FC = () => {
                     />
                   </label>
                   <FileField
-                    label="Payment screenshot (optional)"
+                    label="Payment screenshot"
                     hint="JPG, PNG, WebP or PDF · max 5 MB"
                     file={proof}
                     onChange={setProof}

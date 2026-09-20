@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import './Modal.css';
 import Button from './Button';
 import SearchableSelect from './SearchableSelect';
-import { getRiders } from '../services/users.service';
+import { getAllRiders } from '../services/users.service';
 
 interface RiderRecord {
   id: string;
@@ -50,7 +50,7 @@ const RiderAssignModal: React.FC<RiderAssignModalProps> = ({
     setRiderId('');
     if (riders.length > 0) return;
     setLoading(true);
-    getRiders({ pageSize: 100 })
+    getAllRiders()
       .then((res) => {
         if (res?.success && Array.isArray(res.data)) {
           setRiders(res.data.filter((r: RiderRecord) => r.status === 'active'));

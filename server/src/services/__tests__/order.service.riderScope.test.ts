@@ -64,6 +64,8 @@ const RIDER_ACTOR = { id: "rider-user-1", roles: ["rider"] };
 
 function makeMockTx() {
   return {
+    // The FOR UPDATE lock bulkUpdateParcelStatus takes before it writes.
+    $queryRaw: vi.fn().mockResolvedValue([]),
     pickup_tasks: { update: vi.fn(), updateMany: vi.fn() },
     parcels: {
       update: vi.fn().mockResolvedValue({ id: "parcel-1" }),

@@ -24,7 +24,7 @@ import {
   type Order,
   type ParcelStatus,
 } from '../services/orders.service';
-import { getRiders } from '../services/users.service';
+import { getAllRiders } from '../services/users.service';
 import { printLabels } from '../utils/printLabels';
 import { toBsDate, toBsDateTimeCell, toNptTime } from '../utils/nepaliDate';
 import { STATUS_TIMELINE_HEADERS, statusTimelineCells } from '../utils/orderStatus';
@@ -419,7 +419,7 @@ const PickupOperations: React.FC = () => {
   useEffect(() => {
     (async () => {
       try {
-        const res = await getRiders({ pageSize: 100 });
+        const res = await getAllRiders();
         if (res?.success && Array.isArray(res.data)) {
           setRiders(res.data.filter((r: { status: string }) => r.status === 'active'));
         }
