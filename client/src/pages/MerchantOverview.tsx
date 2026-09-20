@@ -140,7 +140,7 @@ const MerchantOverview: React.FC = () => {
 
   const hubNameOnly = (locationName: string) => locationName.split(' - ')[0];
 
-  const formatMoney = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 0 });
+  const formatMoney = (value: number) => value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   // Column widths mirror OrderManagement.tsx (client/src/pages/OrderManagement.tsx:823-892)
   // so the two tables share the same visual rhythm and never overlap.
