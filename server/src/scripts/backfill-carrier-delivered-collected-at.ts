@@ -43,10 +43,25 @@ const DELIVERED: parcel_status[] = [parcel_status.delivered, parcel_status.parti
 // collected_at from being silently settled by a deploy instead of surfacing.
 const ONCE_MARKER = "BACKFILL_CARRIER_COLLECTED_AT_DONE";
 
+// Which database this run is talking to. The output looks the same on any of
+// them, so without this a dev-vs-production mix-up is invisible: "0 rows"
+// reads as "nothing to fix" when it may mean "wrong database". Name and
+// address only, no credentials.
+async function printTarget() {
+  const rows = await prisma.$queryRaw<{ db: string; host: string | null }[]>`
+    SELECT current_database()::text AS db, inet_server_addr()::text AS host
+  `;
+  const info = rows[0];
+  const parcels = await prisma.parcels.count();
+  console.log(`database: ${info?.db ?? "unknown"} @ ${info?.host ?? "local socket"}  (${parcels} parcels total)\n`);
+}
+
 async function main() {
   const args = process.argv.slice(2);
   const dryRun = !args.includes("--commit");
   const once = args.includes("--once");
+
+  await printTarget();
 
   if (once && (await prisma.audit_logs.findFirst({ where: { action: ONCE_MARKER }, select: { id: true } }))) {
     console.log("backfill-carrier-collected-at: already applied, skipping.");

@@ -37,10 +37,25 @@ type Row = {
   settleable: bigint;
 };
 
+// Prints which database this run is actually talking to. This script produces
+// near-identical output on any database, so without it a dev-vs-production
+// mix-up is invisible: a zero result reads as "nothing to fix" when it really
+// means "wrong database". Name and address only, no credentials.
+async function printTarget() {
+  const rows = await prisma.$queryRaw<{ db: string; host: string | null }[]>`
+    SELECT current_database()::text AS db, inet_server_addr()::text AS host
+  `;
+  const info = rows[0];
+  const parcels = await prisma.parcels.count();
+  console.log(`database: ${info?.db ?? "unknown"} @ ${info?.host ?? "local socket"}  (${parcels} parcels total)\n`);
+}
+
 async function main() {
   const args = process.argv.slice(2);
   const vendorArg = args.find((a) => a.startsWith("--vendor="))?.split("=")[1];
   const limit = Number(args.find((a) => a.startsWith("--limit="))?.split("=")[1] ?? 10);
+
+  await printTarget();
 
   const rows = await prisma.$queryRaw<Row[]>`
     SELECT
