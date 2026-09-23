@@ -368,11 +368,11 @@ function App() {
           />
           <Route
             path="/cod-settlement-requests"
-            element={<RoleGuard allowedRoles={['super_admin', 'admin']}><CodSettlementRequests /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'sales']}><CodSettlementRequests /></RoleGuard>}
           />
           <Route
             path="/cod-settlement-requests/:id"
-            element={<RoleGuard allowedRoles={['super_admin', 'admin']}><CodSettlementRequests /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'sales']}><CodSettlementRequests /></RoleGuard>}
           />
           <Route
             path="/remarks"
