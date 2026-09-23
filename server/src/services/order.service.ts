@@ -3537,17 +3537,11 @@ async function computeDashboardSummary(
   };
 
   const TREND_DAYS = trendDays;
-  // The 7-day view is anchored to the current Nepal week (Sunday start) so the
-  // graph always reads Sun -> Sat rather than a rolling window that begins
-  // mid-week. It stays one contiguous week, so the line never wraps backwards.
-  // getUTCDay() on the Nepal calendar date is 0 = Sunday regardless of the
-  // host timezone. The 30-day view keeps its rolling window ending today.
-  const nepalWeekday = new Date(`${formatDate(new Date())}T00:00:00Z`).getUTCDay();
+  // Both views are a rolling window ending today, so today is always the last
+  // point on the graph.
   const trendDayRanges = Array.from({ length: TREND_DAYS }, (_, index) => {
-    const dayDelta =
-      TREND_DAYS === 7 ? index - nepalWeekday : -(TREND_DAYS - 1 - index);
     const start = new Date(todayStart);
-    start.setDate(start.getDate() + dayDelta);
+    start.setDate(start.getDate() - (TREND_DAYS - 1 - index));
     const end = new Date(start);
     end.setDate(end.getDate() + 1);
     return { start, end };
