@@ -24,7 +24,7 @@ vi.mock("../order.service", () => ({
   invalidateOrderCaches: vi.fn(),
 }));
 
-import { processUpayaWebhook } from "../upaya.service";
+import { matchUpayaArea, processUpayaWebhook } from "../upaya.service";
 import prisma from "../../lib/prisma";
 import redis from "../../lib/redis";
 import { applyExternalCarrierFollowUp, applyExternalCarrierStatus } from "../order.service";
@@ -185,5 +185,27 @@ describe("processUpayaWebhook — unrecognized status", () => {
     expect(mockedApplyStatus).not.toHaveBeenCalled();
     expect(mockedApplyFollowUp).not.toHaveBeenCalled();
     expect(mockedPrisma.parcel_remarks.create).not.toHaveBeenCalled();
+  });
+});
+
+describe("matchUpayaArea — explicit area override", () => {
+  const areas = [
+    { id: 11, name: "Dhulikhel", locationId: 1, locationName: "Dhulikhel" },
+    { id: 22, name: "Banepa", locationId: 2, locationName: "Banepa" },
+  ];
+
+  it("pins to the override area even when the name would match another", () => {
+    const dest = { name: "Dhulikhel - Kavrepalanchok", district: null, city: null, upaya_area_id: 22 };
+    expect(matchUpayaArea(dest, areas)?.id).toBe(22);
+  });
+
+  it("returns no match for an override Upaya no longer has, instead of guessing", () => {
+    const dest = { name: "Dhulikhel - Kavrepalanchok", district: null, city: null, upaya_area_id: 99 };
+    expect(matchUpayaArea(dest, areas)).toBeUndefined();
+  });
+
+  it("falls back to name matching when no override is set", () => {
+    const dest = { name: "Dhulikhel - Kavrepalanchok", district: null, city: null, upaya_area_id: null };
+    expect(matchUpayaArea(dest, areas)?.id).toBe(11);
   });
 });

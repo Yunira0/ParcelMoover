@@ -192,6 +192,7 @@ model locations {
   branch_billing_alert_state                                       branch_billing_state   @default(ok)
   branch_billing_alert_at                                          DateTime?              @db.Timestamptz(6)
   ncm_branch                                                       String? // explicit NCM branch override (e.g. "DAMAK") — when set, handoff skips auto-matching and pins to this branch
+  upaya_area_id                                                    Int? // explicit Upaya delivery-area override (Upaya area id) — when set, handoff skips auto-matching and pins to this area
   created_at                                                       DateTime                @default(now()) @db.Timestamptz(6)
   updated_at                                                       DateTime                @default(now()) @updatedAt @db.Timestamptz(6)
   admins                                                           admins[]
