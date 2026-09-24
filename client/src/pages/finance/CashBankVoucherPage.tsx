@@ -26,9 +26,6 @@ import '../accounting/Accounting.css';
  * preview sheet shows exactly that pair before anything posts.
  */
 
-/** Owed to vendors — paying a vendor their COD is a debit against this. */
-const VENDOR_CONTROL = '2000';
-
 type VoucherType = 'payment' | 'receipt';
 const TYPES: VoucherType[] = ['payment', 'receipt'];
 
@@ -44,7 +41,7 @@ const COPY: Record<VoucherType, {
     primaryLabel: 'Paid From',
     counterLabel: 'Paid For',
     partyLabel: 'Paid To',
-    desc: 'Money paid out of cash or a bank account — a cost, or a payout to a vendor.',
+    desc: 'Money paid out of cash or a bank account, against any active ledger account.',
   },
   receipt: {
     heading: 'New Receipt Voucher',
@@ -101,19 +98,12 @@ const CashBankVoucherPage: React.FC = () => {
     [cashBankAccounts],
   );
 
-  // What the "other side" of the entry can be depends on the voucher type: a
-  // Payment only ever pays a cost or the vendor payable; a Receipt is
-  // everything else — any ledger that is not itself cash or bank, since a
-  // transfer between two of our own cash/bank accounts isn't something this
-  // screen posts.
+  // Payments use the full active chart, just like Journal. Custom accounts
+  // can use any code, so a numeric range must not determine eligibility.
+  // Receipts retain their existing exclusion of cash/bank counter accounts.
   const counterOptions = useMemo(() => {
     if (type === 'payment') {
-      return accounts
-        .filter((account) => {
-          const code = Number(account.code);
-          return account.code === VENDOR_CONTROL || (Number.isFinite(code) && code >= 5000 && code <= 5900);
-        })
-        .map((account) => ({ id: account.code, label: `${account.name} · ${account.code}` }));
+      return accounts.map((account) => ({ id: account.code, label: `${account.name} · ${account.code}` }));
     }
     const cashBankCodes = new Set(cashBankAccounts.map((account) => account.code));
     return accounts
