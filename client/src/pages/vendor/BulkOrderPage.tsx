@@ -143,6 +143,11 @@ function parseCSV(text: string): string[][] {
 }
 
 const MAX_ROWS_PER_IMPORT = 100;
+// NCM's create-order API caps `instruction` at 100 characters and rejects the
+// whole order past it — a failure that only surfaces at handoff, well after
+// the import. Caught per row here instead. Our own column and the Partner API
+// both allow 500.
+const DELIVERY_INSTRUCTION_MAX = 100;
 
 // "Home Delivery" / "HOME_DELIVERY" → home_delivery; unrecognized text is kept
 // as-is so validation flags it and the cell can be fixed inline.
@@ -228,6 +233,9 @@ function validateRow(row: DraftRow, index: number, destinations: LocationOption[
   if (row.weightKg.trim() !== '') {
     const parsed = Number(row.weightKg);
     if (!Number.isFinite(parsed) || parsed <= 0) errors.weightKg = 'weight must be a positive number';
+  }
+  if (row.deliveryInstruction.trim().length > DELIVERY_INSTRUCTION_MAX) {
+    errors.deliveryInstruction = `delivery instruction must be ${DELIVERY_INSTRUCTION_MAX} characters or fewer`;
   }
   if (index >= MAX_ROWS_PER_IMPORT) {
     errors._row = `exceeds ${MAX_ROWS_PER_IMPORT} order limit per import — remove extra rows`;
@@ -757,11 +765,14 @@ const BulkOrderPage: React.FC = () => {
                         <td>{cell(i, 'itemValue', { type: 'number', min: 0, step: '1', placeholder: '0' })}</td>
                         <td>
                           <input
-                            className="bop-cell-input bop-cell-input--wide"
+                            className={`bop-cell-input bop-cell-input--wide${errors.deliveryInstruction ? ' bop-cell-input--invalid' : ''}`}
                             value={row.deliveryInstruction}
                             onChange={e => updateCell(i, 'deliveryInstruction', e.target.value)}
                             list="bop-instruction-options"
                             placeholder="—"
+                            maxLength={DELIVERY_INSTRUCTION_MAX}
+                            title={errors.deliveryInstruction}
+                            aria-invalid={Boolean(errors.deliveryInstruction)}
                           />
                         </td>
                         <td>
