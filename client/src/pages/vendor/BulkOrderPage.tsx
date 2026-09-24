@@ -1,8 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import * as XLSX from 'xlsx';
-import { ArrowLeft, CheckCircle2, Download, FileSpreadsheet, Trash2, Upload, XCircle } from 'lucide-react';
+import { ArrowLeft, Download, FileSpreadsheet, Trash2, Upload } from 'lucide-react';
 import Button from '../../components/Button';
+import StatusChip from '../../components/StatusChip';
+import Table from '../../components/Table';
 import FormField from '../../components/FormField';
 import SearchableSelectAsync from '../../components/SearchableSelectAsync';
 import {
@@ -601,54 +603,31 @@ const BulkOrderPage: React.FC = () => {
         <button type="button" className="bop-back" onClick={() => navigate('/orders')}>
           <ArrowLeft size={15} /> Orders
         </button>
-        <section className={`bop-result-card${result.failed === 0 ? ' bop-result-card--complete' : ''}`} aria-labelledby="bop-result-title">
-          <div className="bop-result-heading">
-            <span className="bop-result-icon" aria-hidden="true"><CheckCircle2 size={26} /></span>
-            <div>
-              <h1 id="bop-result-title">Import complete</h1>
-              <p>
-                {result.failed > 0
-                  ? 'Some orders need attention before they can be created.'
-                  : 'Every imported order was created successfully.'}
-              </p>
-            </div>
+        <section className="bop-result-card" aria-labelledby="bop-result-title">
+          <h1 id="bop-result-title">Import results</h1>
+          <div className="bop-result-counts">
+            <StatusChip tone="success">{result.created} created</StatusChip>
+            {result.failed > 0 && <StatusChip tone="danger">{result.failed} failed</StatusChip>}
           </div>
 
-          {result.failed > 0 ? (
-            <div className="bop-result-counts" aria-label="Import outcome">
-              <div className="bop-result-stat bop-result-stat--success">
-                <span className="bop-result-label">Orders created</span>
-                <strong className="bop-result-num">{result.created}</strong>
-              </div>
-              <div className="bop-result-stat bop-result-stat--fail">
-                <span className="bop-result-label">Orders not created</span>
-                <strong className="bop-result-num">{result.failed}</strong>
-              </div>
-            </div>
-          ) : (
-            <p className="bop-result-summary"><strong>{result.created}</strong> order{result.created === 1 ? '' : 's'} created</p>
-          )}
-
           {result.failed > 0 && (
-            <div className="bop-result-errors">
-              <h3>Failed Orders</h3>
-              <table className="bop-result-table">
-                <thead>
-                  <tr><th>ID</th><th>Row</th><th>Reason</th></tr>
-                </thead>
-                <tbody>
-                  {result.results
-                    .filter((r): r is Extract<typeof r, { success: false }> => !r.success)
-                    .map(r => (
-                      <tr key={r.index}>
-                        <td>{r.index + 1}</td>
-                        <td>{submittedRowsRef.current[r.index]?.receiverName ?? '—'}</td>
-                        <td className="bop-result-error-msg">{r.error}</td>
-                      </tr>
-                    ))}
-                </tbody>
-              </table>
-            </div>
+            <Table
+              minWidth="0"
+              emptyMessage=""
+              columns={[
+                { header: 'Row', accessor: 'row', width: '64px' },
+                { header: 'Receiver', accessor: 'receiver' },
+                { header: 'Reason', accessor: 'reason' },
+              ]}
+              data={result.results
+                .filter((r): r is Extract<typeof r, { success: false }> => !r.success)
+                .map(r => ({
+                  id: r.index,
+                  row: r.index + 1,
+                  receiver: submittedRowsRef.current[r.index]?.receiverName ?? '—',
+                  reason: r.error,
+                }))}
+            />
           )}
 
           <div className="bop-result-actions">
@@ -821,9 +800,9 @@ const BulkOrderPage: React.FC = () => {
                 <p>All cells are editable. Invalid fields are highlighted so you can correct them before submitting.</p>
               </div>
               <div className="bop-preview-counts" aria-label="Import summary">
-                <span className="bop-preview-badge bop-preview-badge--neutral">{rows.length} imported</span>
-                <span className="bop-preview-badge bop-preview-badge--ready">{validCount} ready</span>
-                {errorCount > 0 && <span className="bop-preview-badge bop-preview-badge--warn">{errorCount} need attention</span>}
+                <StatusChip tone="neutral">{rows.length} rows</StatusChip>
+                <StatusChip tone="success">{validCount} ready</StatusChip>
+                {errorCount > 0 && <StatusChip tone="danger">{errorCount} errors</StatusChip>}
               </div>
             </div>
 
@@ -896,13 +875,9 @@ const BulkOrderPage: React.FC = () => {
                         </td>
                         <td>
                           {errorMessage ? (
-                            <span className="bop-status bop-status--error" title={errorMessage}>
-                              <XCircle size={14} /> Error
-                            </span>
+                            <span title={errorMessage}><StatusChip tone="danger">Error</StatusChip></span>
                           ) : (
-                            <span className="bop-status bop-status--ok">
-                              <CheckCircle2 size={14} /> Ready
-                            </span>
+                            <StatusChip tone="success">Ready</StatusChip>
                           )}
                         </td>
                         <td className="bop-cell-remove">
