@@ -245,6 +245,106 @@ function validateRow(row: DraftRow, index: number, destinations: LocationOption[
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
+interface DestinationChoice {
+  id: string;
+  label: string;
+  description?: string | undefined;
+}
+
+// Free-typed input with an inline drill-down: matches branch names and their
+// covered areas, so "Gwarko" surfaces Imadol. The list is position: fixed
+// because the table wrapper scrolls sideways and would clip an absolute one.
+const DestinationCell: React.FC<{
+  value: string;
+  options: DestinationChoice[];
+  invalid: boolean;
+  title: string | undefined;
+  onChange: (value: string) => void;
+}> = ({ value, options, invalid, title, onChange }) => {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(0);
+  const [rect, setRect] = useState<{ top: number; left: number; width: number } | null>(null);
+
+  const query = value.trim().toLowerCase();
+  const matches = useMemo(
+    () => (query
+      ? options.filter(o => o.label.toLowerCase().includes(query) || o.description?.toLowerCase().includes(query))
+      : options).slice(0, 30),
+    [options, query],
+  );
+
+  const show = () => {
+    const box = inputRef.current?.getBoundingClientRect();
+    if (box) setRect({ top: box.bottom + 2, left: box.left, width: Math.max(box.width, 260) });
+    setActive(0);
+    setOpen(true);
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    const close = () => setOpen(false);
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    return () => {
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('resize', close);
+    };
+  }, [open]);
+
+  const pick = (choice: DestinationChoice) => {
+    onChange(choice.label);
+    setOpen(false);
+  };
+
+  const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!open && e.key === 'ArrowDown') { show(); e.preventDefault(); return; }
+    if (!open) return;
+    if (e.key === 'ArrowDown') { setActive(a => Math.min(a + 1, matches.length - 1)); e.preventDefault(); }
+    else if (e.key === 'ArrowUp') { setActive(a => Math.max(a - 1, 0)); e.preventDefault(); }
+    else if (e.key === 'Enter' && matches[active]) { pick(matches[active]); e.preventDefault(); }
+    else if (e.key === 'Escape') setOpen(false);
+  };
+
+  return (
+    <>
+      <input
+        ref={inputRef}
+        className={`bop-cell-input${invalid ? ' bop-cell-input--invalid' : ''}`}
+        value={value}
+        onChange={e => { onChange(e.target.value); show(); }}
+        onFocus={show}
+        onBlur={() => setOpen(false)}
+        onKeyDown={onKeyDown}
+        placeholder="Branch or area"
+        title={title}
+        aria-invalid={invalid}
+        aria-expanded={open}
+        role="combobox"
+        aria-autocomplete="list"
+        autoComplete="off"
+      />
+      {open && rect && matches.length > 0 && (
+        <ul className="bop-dest-list" role="listbox" style={{ top: rect.top, left: rect.left, width: rect.width }}>
+          {matches.map((m, idx) => (
+            <li
+              key={m.id}
+              role="option"
+              aria-selected={idx === active}
+              className={`bop-dest-item${idx === active ? ' bop-dest-item--active' : ''}`}
+              onMouseDown={e => { e.preventDefault(); pick(m); }}
+              onMouseEnter={() => setActive(idx)}
+            >
+              <span>{m.label}</span>
+              {m.description && <small>{m.description}</small>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
+  );
+};
+
 const BulkOrderPage: React.FC = () => {
   const navigate = useNavigate();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -362,6 +462,16 @@ const BulkOrderPage: React.FC = () => {
   const destinationOptions = useMemo(
     () => locations.filter(l => !l.parentId),
     [locations],
+  );
+
+  // Same as Create Order's Lookup Branch: each destination carries its covered
+  // areas as the description, so searching "Gwarko" finds Imadol.
+  const lookupBranchOptions = useMemo(
+    () => destinationOptions.map(l => {
+      const areas = locations.filter(a => a.parentId === l.id).map(a => a.name);
+      return { id: l.id, label: l.name, description: areas.length > 0 ? `Covers: ${areas.join(', ')}` : undefined };
+    }),
+    [destinationOptions, locations],
   );
 
   const rowErrors = useMemo(
@@ -604,7 +714,18 @@ const BulkOrderPage: React.FC = () => {
         <p>Upload a spreadsheet, review the rows, then create the valid orders in one request.</p>
       </div>
 
-      <form className="bop-form" onSubmit={handleSubmit} noValidate>
+      <form
+        className="bop-form"
+        onSubmit={handleSubmit}
+        onKeyDown={e => {
+          // Enter in a cell must not submit a 100-row import by accident; Shift+Enter
+          // is the deliberate way. click() on the button respects its disabled state.
+          if (e.key !== 'Enter' || !(e.target instanceof HTMLInputElement)) return;
+          e.preventDefault();
+          if (e.shiftKey) e.currentTarget.querySelector<HTMLButtonElement>('button[type="submit"]')?.click();
+        }}
+        noValidate
+      >
         {/* ── Sender ── */}
         <section className="bop-section">
           <div className="bop-section-heading">
@@ -739,14 +860,12 @@ const BulkOrderPage: React.FC = () => {
                         <td>{cell(i, 'receiverAltPhone', { placeholder: '—' })}</td>
                         <td>{cell(i, 'receiverAddress', { placeholder: 'Address' })}</td>
                         <td>
-                          <input
-                            className={`bop-cell-input${errors.destination ? ' bop-cell-input--invalid' : ''}`}
+                          <DestinationCell
                             value={row.destination}
-                            onChange={e => updateCell(i, 'destination', e.target.value)}
-                            list="bop-destination-options"
-                            placeholder="Branch"
+                            options={lookupBranchOptions}
+                            invalid={Boolean(errors.destination)}
                             title={errors.destination}
-                            aria-invalid={Boolean(errors.destination)}
+                            onChange={value => updateCell(i, 'destination', value)}
                           />
                         </td>
                         <td>{choiceCell(i, 'serviceType', SERVICE_TYPES, { home_delivery: 'Home Delivery', branch_delivery: 'Branch Delivery' })}</td>
@@ -804,9 +923,6 @@ const BulkOrderPage: React.FC = () => {
               </table>
             </div>
 
-            <datalist id="bop-destination-options">
-              {destinationOptions.map(d => <option key={d.id} value={d.name} />)}
-            </datalist>
             <datalist id="bop-package-options">
               {PACKAGE_TYPE_PRESETS.map(p => <option key={p} value={p} />)}
             </datalist>

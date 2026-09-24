@@ -203,3 +203,7 @@ select.bop-cell-input { cursor: pointer; min-width: 110px; }
 
 /* The failed-orders table scrolls sideways on a phone instead of overflowing the card. */
 .bop-result-errors { overflow-x: auto; }
+.bop-dest-list { background: var(--color-background-surface); border: 1px solid var(--color-border-default); border-radius: var(--border-radius-default); box-shadow: var(--app-shadow); list-style: none; margin: 0; max-height: 260px; overflow-y: auto; padding: var(--space-1); position: fixed; z-index: var(--z-modal); }
+.bop-dest-item { border-radius: var(--border-radius-default); cursor: pointer; display: flex; flex-direction: column; gap: 2px; padding: var(--space-2) var(--space-3); }
+.bop-dest-item small { color: var(--color-text-caption); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bop-dest-item--active { background: rgb(226 76 0 / 10%); }
