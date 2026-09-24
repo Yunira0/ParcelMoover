@@ -46,7 +46,22 @@ export function handleScannerPaste(
   setBuffer: (value: string) => void,
 ) {
   const text = event.clipboardData.getData('text');
-  const tokens = text.split(/[\n\r\t,]+/).map(t => t.trim()).filter(Boolean);
+  // Split rows/cells first, then commas - except inside a number Excel shows
+  // with thousands separators ("9,800,000,011"), which is one value, not four.
+  const tokens = text
+    .split(/[\n\r\t]+/)
+    .flatMap(cell => (/^\s*\d{1,3}(,\d{3})+\s*$/.test(cell) ? [cell.replace(/,/g, '')] : cell.split(',')))
+    .map(t => t.replace(/[​-‍⁠﻿]/g, '').trim())
+    .filter(Boolean);
+  if (tokens.length === 1 && tokens[0] !== text.trim()) {
+    // A single value that still needed cleaning - insert the cleaned form.
+    event.preventDefault();
+    const input = event.currentTarget;
+    const start = input.selectionStart ?? input.value.length;
+    const end = input.selectionEnd ?? start;
+    setBuffer(input.value.slice(0, start) + tokens[0] + input.value.slice(end));
+    return;
+  }
   if (tokens.length <= 1) return;
 
   event.preventDefault();

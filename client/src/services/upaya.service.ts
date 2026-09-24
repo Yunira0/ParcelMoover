@@ -31,3 +31,16 @@ export const getUpayaParcelInfo = async (parcelId: string): Promise<{ success: b
   const response = await api.get(`/upaya/parcels/${parcelId}`);
   return response.data;
 };
+
+export interface UpayaDeliveryArea {
+  id: number;
+  name: string;
+  locationId: number;
+  locationName: string;
+  hubName?: string;
+}
+
+export const listUpayaDeliveryAreas = async (): Promise<{ success: boolean; data: UpayaDeliveryArea[] }> => {
+  const response = await api.get('/upaya/delivery-areas');
+  return response.data;
+};

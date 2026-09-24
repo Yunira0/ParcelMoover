@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
+  ChevronDown,
   Download,
   Printer,
   Search,
@@ -31,7 +32,7 @@ import { handoffParcelsToUpaya } from '../services/upaya.service';
 import { addOrdersToBranchManifest } from '../services/transitManifests.service';
 import { listBranches, type Branch } from '../services/branchTracking.service';
 import { toBsDate, toBsDateTimeCell } from '../utils/nepaliDate';
-import { STATUS_TIMELINE_HEADERS, statusTimelineCells } from '../utils/orderStatus';
+import { STATUS_TIMELINE_HEADERS, getOrderStatusTone, statusTimelineCells } from '../utils/orderStatus';
 import { printLabels } from '../utils/printLabels';
 import { commitScannedTerm, handleScannerPaste } from '../utils/scannerInput';
 import { useCursorPagination } from '../hooks/useCursorPagination';
@@ -113,6 +114,21 @@ const formatMoney = (value: number) => value.toLocaleString(undefined, { maximum
 // Cancelling or failing an order requires a reason remark.
 const REASON_REQUIRED_STATUSES: ParcelStatus[] = ['cancelled', 'failed_pickup', 'failed_delivery'];
 
+const matchesSearchTerm = (order: Order, term: string) => {
+  const t = term.toLowerCase();
+  return order.trackingId.toLowerCase() === t || `#${order.orderNumber}` === t || String(order.orderNumber) === t;
+};
+
+const tabForStatus = (status: ParcelStatus): OOVTab | undefined =>
+  (Object.keys(TAB_STATUSES) as OOVTab[]).find(tab => TAB_STATUSES[tab].includes(status));
+
+// A searched id that isn't in the current tab: `order` is where it actually
+// sits, or undefined when it doesn't exist at all.
+interface OutsideTabMatch {
+  term: string;
+  order?: Order;
+}
+
 const OOVOperations: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const [orders, setOrders] = useState<Order[]>([]);
@@ -164,6 +180,8 @@ const OOVOperations: React.FC = () => {
   const [manifestBranchId, setManifestBranchId] = useState('');
   const [manifestNotice, setManifestNotice] = useState('');
   const [tabCounts, setTabCounts] = useState<Record<string, number>>({});
+  const [outsideTab, setOutsideTab] = useState<OutsideTabMatch[]>([]);
+  const [outsideTabOpen, setOutsideTabOpen] = useState(false);
 
   useEffect(() => { listBranches().then(setBranches).catch(() => {}); }, []);
 
@@ -235,6 +253,33 @@ const OOVOperations: React.FC = () => {
         setOrders(res.data);
         setMeta(res.meta ?? null);
         setLoadError('');
+
+        // Scanned ids that aren't in this tab would otherwise just be absent
+        // from the table - look them up across every status to say where they
+        // are. Only when the whole result fits on this page, else a match
+        // could simply be on a later page.
+        const terms = debouncedSearch.split(',').map(t => t.trim()).filter(Boolean);
+        const missing = [...new Map(terms.map(t => [t.toLowerCase(), t])).values()]
+          .filter(term => !res.data.some(order => matchesSearchTerm(order, term)));
+        const allOnPage = res.data.length >= (res.meta?.total ?? res.data.length);
+        const singleTermWithHits = terms.length === 1 && res.data.length > 0;
+        if (missing.length === 0 || !allOnPage || singleTermWithHits) {
+          setOutsideTab([]);
+        } else {
+          const lookup = await getOrders({
+            search: missing.join(', '),
+            pageSize: Math.min(MAX_ORDER_PAGE_SIZE, Math.max(missing.length, PAGE_SIZE)),
+          }).catch(() => null);
+          if (requestId !== loadRequestIdRef.current) return;
+          const found = lookup?.success && Array.isArray(lookup.data) ? lookup.data : [];
+          setOutsideTab(
+            missing
+              .map(term => ({ term, order: found.find(order => matchesSearchTerm(order, term)) }))
+              // A lone free-text term ("Ram") never exact-matches; only a scan
+              // batch is known to be ids, so only there is "not found" meaningful.
+              .filter(match => match.order || terms.length > 1),
+          );
+        }
       }
     } catch {
       if (requestId !== loadRequestIdRef.current) return;
@@ -831,6 +876,45 @@ const OOVOperations: React.FC = () => {
                 </button>
               </span>
             ))}
+          </div>
+        )}
+        {outsideTab.length > 0 && (
+          <div className="oov-outside-tab" role="status">
+            <button
+              type="button"
+              className="oov-outside-tab-title"
+              aria-expanded={outsideTabOpen}
+              onClick={() => setOutsideTabOpen(open => !open)}
+            >
+              {outsideTab.length} not in {TAB_LABELS[activeTab]}
+              <ChevronDown size={16} className={`oov-outside-tab-chevron${outsideTabOpen ? ' is-open' : ''}`} />
+            </button>
+            {outsideTabOpen && (
+            <ul className="oov-outside-tab-list">
+              {outsideTab.map(({ term, order }) => {
+                const otherTab = order ? tabForStatus(order.status) : undefined;
+                return (
+                  <li key={term}>
+                    <span className="oov-outside-tab-id">{order?.trackingId ?? term}</span>
+                    {!order ? (
+                      <StatusChip tone="danger">Not found</StatusChip>
+                    ) : otherTab && otherTab !== activeTab ? (
+                      <button
+                        type="button"
+                        className="oov-outside-tab-switch"
+                        onClick={() => { setView(otherTab); setActiveTab(otherTab); }}
+                        title={`Open ${TAB_LABELS[otherTab]} tab`}
+                      >
+                        <StatusChip tone={getOrderStatusTone(order.status)}>{STATUS_LABELS[order.status]}</StatusChip>
+                      </button>
+                    ) : (
+                      <StatusChip tone={getOrderStatusTone(order.status)}>{STATUS_LABELS[order.status]}</StatusChip>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+            )}
           </div>
         )}
       </div>

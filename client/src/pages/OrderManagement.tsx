@@ -279,7 +279,17 @@ const OrderManagement: React.FC = () => {
   // Tracking ids confirmed by pressing Enter (typically a barcode scanner) -
   // kept separate from the live input buffer so rapid scans never race each
   // other (see utils/scannerInput.ts). Rendered as chips beside the input.
-  const [scannedIds, setScannedIds] = useState<string[]>([]);
+  // A bulk import's "View orders" button lands here with the created tracking
+  // ids: filter to them and pre-select the lot once they load.
+  const importedTrackingIds = useMemo(
+    () => (location.state as { importedTrackingIds?: string[] } | null)?.importedTrackingIds ?? [],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+  const pendingImportSelectRef = useRef<Set<string> | null>(
+    importedTrackingIds.length ? new Set(importedTrackingIds) : null,
+  );
+  const [scannedIds, setScannedIds] = useState<string[]>(importedTrackingIds);
   const combinedSearch = useMemo(
     () => [...scannedIds, trackingSearch.trim()].filter(Boolean).join(', '),
     [scannedIds, trackingSearch],
@@ -611,6 +621,16 @@ const OrderManagement: React.FC = () => {
   useEffect(() => {
     setSelectedIds(new Set());
   }, [filter, pager.request]);
+
+  // Select the freshly imported orders once the filtered list has loaded.
+  useEffect(() => {
+    const pending = pendingImportSelectRef.current;
+    if (!pending || loading) return;
+    const ids = orders.filter(o => pending.has(o.trackingId)).map(o => o.id);
+    if (ids.length === 0) return;
+    pendingImportSelectRef.current = null;
+    setSelectedIds(new Set(ids));
+  }, [orders, loading]);
 
   const handlePrintLabels = useCallback(async () => {
     const labelOrders = selectedIds.size > 0

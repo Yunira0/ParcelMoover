@@ -62,6 +62,40 @@ function parseOrderNumber(term: string): number | null {
   return match ? Number(match[1]) : null;
 }
 
+// Text copied out of Excel/Sheets carries artifacts a typed search never has:
+// zero-width/no-break characters, thousands separators ("9,800,000,011" - which
+// the comma split below would otherwise shred into four terms), and phone
+// punctuation ("980-000-0011") that the stored "+9779800000011" doesn't contain.
+const INVISIBLE_CHARS = /[​-‍⁠﻿]/g;
+const GROUPED_NUMBER = /^\d{1,3}(,\d{3})+$/;
+const PHONE_LIKE = /^\+?[\d\s\-().]+$/;
+// Fewer digits than this is an order number, not a phone.
+const MIN_PHONE_DIGITS = 7;
+
+function cleanSearchText(text: string): string {
+  return text.replace(INVISIBLE_CHARS, "").replace(/ /g, " ").trim();
+}
+
+function normalizeSearchTerm(term: string): string {
+  const cleaned = cleanSearchText(term);
+  const digits = cleaned.replace(/\D/g, "");
+  return PHONE_LIKE.test(cleaned) && digits.length >= MIN_PHONE_DIGITS ? digits : cleaned;
+}
+
+function splitSearchTerms(search: string): string[] {
+  const cleaned = cleanSearchText(search);
+  if (GROUPED_NUMBER.test(cleaned) && cleaned.replace(/\D/g, "").length >= MIN_PHONE_DIGITS) {
+    return [cleaned.replace(/,/g, "")];
+  }
+  return cleaned.split(/[,\r\n\t]+/).map(normalizeSearchTerm).filter(Boolean);
+}
+
+// In a batch, a bare run of digits this long can't be a tracking id or an order
+// id, so it's a phone pasted from a spreadsheet column.
+function isPhoneTerm(term: string): boolean {
+  return term.length >= MIN_PHONE_DIGITS && /^\d+$/.test(term);
+}
+
 import { getDeliveryQuote, getReturnRouteQuote } from "./delivery-rate.service";
 import {
   getBranchVendorFlatQuote,
@@ -2114,9 +2148,9 @@ export function buildOrdersWhere(
     }
   }
 
-  const search = query.search?.trim();
-  if (search) {
-    const terms = search.split(",").map((t) => t.trim()).filter(Boolean);
+  const terms = query.search ? splitSearchTerms(query.search) : [];
+  if (terms.length) {
+    const search = terms[0] ?? "";
     if (terms.length > 1) {
       // A scan batch is tracking ids, but the same box accepts a pasted list of
       // order ids, so "#2980" in the list resolves too. Bare numbers stay
@@ -2129,6 +2163,7 @@ export function buildOrdersWhere(
       conditions.push({
         OR: [
           ...terms.map((t) => ({ tracking_id: { equals: t, mode: "insensitive" as const } })),
+          ...terms.filter(isPhoneTerm).map((t) => ({ search_text: { contains: t } })),
           ...(orderNumbers.length ? [{ order_number: { in: orderNumbers } }] : []),
         ],
       });
@@ -3537,17 +3572,11 @@ async function computeDashboardSummary(
   };
 
   const TREND_DAYS = trendDays;
-  // The 7-day view is anchored to the current Nepal week (Sunday start) so the
-  // graph always reads Sun -> Sat rather than a rolling window that begins
-  // mid-week. It stays one contiguous week, so the line never wraps backwards.
-  // getUTCDay() on the Nepal calendar date is 0 = Sunday regardless of the
-  // host timezone. The 30-day view keeps its rolling window ending today.
-  const nepalWeekday = new Date(`${formatDate(new Date())}T00:00:00Z`).getUTCDay();
+  // Both views are a rolling window ending today, so today is always the last
+  // point on the graph.
   const trendDayRanges = Array.from({ length: TREND_DAYS }, (_, index) => {
-    const dayDelta =
-      TREND_DAYS === 7 ? index - nepalWeekday : -(TREND_DAYS - 1 - index);
     const start = new Date(todayStart);
-    start.setDate(start.getDate() + dayDelta);
+    start.setDate(start.getDate() - (TREND_DAYS - 1 - index));
     const end = new Date(start);
     end.setDate(end.getDate() + 1);
     return { start, end };
@@ -6545,19 +6574,24 @@ export async function getStatusCounts(
   // column the list query uses, plus the order_number equality match that
   // makes "#2980" resolve to one order.
   const searchSql: Prisma.Sql = (() => {
-    const search = filters.search?.trim();
-    if (!search) return Prisma.empty;
+    const terms = filters.search ? splitSearchTerms(filters.search) : [];
+    if (!terms.length) return Prisma.empty;
+    const search = terms[0] ?? "";
 
-    const terms = search.split(",").map((t) => t.trim()).filter(Boolean);
     if (terms.length > 1) {
-      const trackingSql = Prisma.sql`lower(tracking_id) = ANY(${terms.map((t) => t.toLowerCase())})`;
+      const matchSql = [Prisma.sql`lower(tracking_id) = ANY(${terms.map((t) => t.toLowerCase())})`];
+      const phones = terms.filter(isPhoneTerm);
+      if (phones.length) {
+        matchSql.push(Prisma.sql`search_text LIKE ANY(${phones.map((p) => `%${p}%`)})`);
+      }
       const orderNumbers = terms
         .filter((t) => t.startsWith("#"))
         .map(parseOrderNumber)
         .filter((n): n is number => n !== null);
-      return orderNumbers.length
-        ? Prisma.sql`AND (${trackingSql} OR order_number = ANY(${orderNumbers}::int[]))`
-        : Prisma.sql`AND ${trackingSql}`;
+      if (orderNumbers.length) {
+        matchSql.push(Prisma.sql`order_number = ANY(${orderNumbers}::int[])`);
+      }
+      return Prisma.sql`AND (${Prisma.join(matchSql, " OR ")})`;
     }
 
     const orderNumber = parseOrderNumber(search);

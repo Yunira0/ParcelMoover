@@ -55,6 +55,11 @@ const DELIVERY_INSTRUCTION_OPTIONS = [
   'Other',
 ];
 const OTHER_DELIVERY_INSTRUCTION = 'Other';
+// NCM's create-order API caps `instruction` at 100 characters and rejects the
+// whole order past it — a failure that only surfaces at handoff, long after
+// the person who typed it has moved on. Caught here instead, while it can
+// still be reworded. Our own column and the Partner API both allow 500.
+const DELIVERY_INSTRUCTION_MAX = 100;
 
 const defaultFormState = {
   vendorId: '',
@@ -572,6 +577,11 @@ const CreateOrderPage: React.FC = () => {
     if (form.deliveryInstruction === OTHER_DELIVERY_INSTRUCTION && !form.deliveryInstructionOther.trim()) {
       errors.deliveryInstructionOther = 'Please specify the delivery instruction.';
     }
+    // Belt to maxLength's braces: a prefilled copy-of-an-order can arrive
+    // longer than the cap without the field ever being typed into.
+    if (form.deliveryInstructionOther.trim().length > DELIVERY_INSTRUCTION_MAX) {
+      errors.deliveryInstructionOther = `Keep this to ${DELIVERY_INSTRUCTION_MAX} characters — longer instructions are rejected at carrier handoff.`;
+    }
 
     if (Object.keys(errors).length > 0) {
       setFieldErrors(errors);
@@ -892,6 +902,8 @@ const CreateOrderPage: React.FC = () => {
                   onChange={value => setField('deliveryInstructionOther', value)}
                   placeholder="Enter delivery instruction"
                   error={fieldErrors.deliveryInstructionOther}
+                  maxLength={DELIVERY_INSTRUCTION_MAX}
+                  hint={`${form.deliveryInstructionOther.length}/${DELIVERY_INSTRUCTION_MAX} characters`}
                   gridColumn="span 2"
                 />
               )}

@@ -344,6 +344,7 @@ const SalesSidebar: React.FC = () => {
         <SidebarItem to="/dashboard" icon={LayoutDashboard} label="Dashboard" />
         <SidebarItem to="/orders" icon={Package} label="Orders" />
         <SidebarItem to="/vendors" icon={Store} label="Vendor Management" />
+        <SidebarItem to="/cod-settlement-requests" icon={Banknote} label="Settlement Requests" />
 
         <SidebarSection label="Customer Experience" />
         <div className="sidebar-subnav">

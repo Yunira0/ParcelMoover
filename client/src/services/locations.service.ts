@@ -19,6 +19,9 @@ export interface ManagedLocation {
   /** Explicit NCM branch override. When set, handoff pins to this branch by
    *  exact name instead of matching on district and name. */
   ncmBranch: string | null;
+  /** Explicit Upaya delivery-area override (Upaya area id). When set, handoff
+   *  pins to this area instead of matching on name. */
+  upayaAreaId: number | null;
 }
 
 export interface Destination extends ManagedLocation {
@@ -41,6 +44,7 @@ export interface UpsertLocationInput {
   perDestinationRate?: number | null;
   branchPerDestinationRate?: number | null;
   ncmBranch?: string | null;
+  upayaAreaId?: number | null;
 }
 
 export const listManagedLocations = async (): Promise<{ success: boolean; data: Destination[] }> => {

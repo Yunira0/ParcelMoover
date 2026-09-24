@@ -1,8 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import * as XLSX from 'xlsx';
-import { ArrowLeft, CheckCircle2, Download, FileSpreadsheet, Trash2, Upload, XCircle } from 'lucide-react';
+import { ArrowLeft, Download, FileSpreadsheet, Trash2, Upload } from 'lucide-react';
 import Button from '../../components/Button';
+import StatusChip from '../../components/StatusChip';
+import Table from '../../components/Table';
 import FormField from '../../components/FormField';
 import SearchableSelectAsync from '../../components/SearchableSelectAsync';
 import {
@@ -143,6 +145,11 @@ function parseCSV(text: string): string[][] {
 }
 
 const MAX_ROWS_PER_IMPORT = 100;
+// NCM's create-order API caps `instruction` at 100 characters and rejects the
+// whole order past it — a failure that only surfaces at handoff, well after
+// the import. Caught per row here instead. Our own column and the Partner API
+// both allow 500.
+const DELIVERY_INSTRUCTION_MAX = 100;
 
 // "Home Delivery" / "HOME_DELIVERY" → home_delivery; unrecognized text is kept
 // as-is so validation flags it and the cell can be fixed inline.
@@ -229,6 +236,9 @@ function validateRow(row: DraftRow, index: number, destinations: LocationOption[
     const parsed = Number(row.weightKg);
     if (!Number.isFinite(parsed) || parsed <= 0) errors.weightKg = 'weight must be a positive number';
   }
+  if (row.deliveryInstruction.trim().length > DELIVERY_INSTRUCTION_MAX) {
+    errors.deliveryInstruction = `delivery instruction must be ${DELIVERY_INSTRUCTION_MAX} characters or fewer`;
+  }
   if (index >= MAX_ROWS_PER_IMPORT) {
     errors._row = `exceeds ${MAX_ROWS_PER_IMPORT} order limit per import — remove extra rows`;
   }
@@ -236,6 +246,106 @@ function validateRow(row: DraftRow, index: number, destinations: LocationOption[
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
+
+interface DestinationChoice {
+  id: string;
+  label: string;
+  description?: string | undefined;
+}
+
+// Free-typed input with an inline drill-down: matches branch names and their
+// covered areas, so "Gwarko" surfaces Imadol. The list is position: fixed
+// because the table wrapper scrolls sideways and would clip an absolute one.
+const DestinationCell: React.FC<{
+  value: string;
+  options: DestinationChoice[];
+  invalid: boolean;
+  title: string | undefined;
+  onChange: (value: string) => void;
+}> = ({ value, options, invalid, title, onChange }) => {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(0);
+  const [rect, setRect] = useState<{ top: number; left: number; width: number } | null>(null);
+
+  const query = value.trim().toLowerCase();
+  const matches = useMemo(
+    () => (query
+      ? options.filter(o => o.label.toLowerCase().includes(query) || o.description?.toLowerCase().includes(query))
+      : options).slice(0, 30),
+    [options, query],
+  );
+
+  const show = () => {
+    const box = inputRef.current?.getBoundingClientRect();
+    if (box) setRect({ top: box.bottom + 2, left: box.left, width: Math.max(box.width, 260) });
+    setActive(0);
+    setOpen(true);
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    const close = () => setOpen(false);
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    return () => {
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('resize', close);
+    };
+  }, [open]);
+
+  const pick = (choice: DestinationChoice) => {
+    onChange(choice.label);
+    setOpen(false);
+  };
+
+  const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!open && e.key === 'ArrowDown') { show(); e.preventDefault(); return; }
+    if (!open) return;
+    if (e.key === 'ArrowDown') { setActive(a => Math.min(a + 1, matches.length - 1)); e.preventDefault(); }
+    else if (e.key === 'ArrowUp') { setActive(a => Math.max(a - 1, 0)); e.preventDefault(); }
+    else if (e.key === 'Enter' && matches[active]) { pick(matches[active]); e.preventDefault(); }
+    else if (e.key === 'Escape') setOpen(false);
+  };
+
+  return (
+    <>
+      <input
+        ref={inputRef}
+        className={`bop-cell-input${invalid ? ' bop-cell-input--invalid' : ''}`}
+        value={value}
+        onChange={e => { onChange(e.target.value); show(); }}
+        onFocus={show}
+        onBlur={() => setOpen(false)}
+        onKeyDown={onKeyDown}
+        placeholder="Branch or area"
+        title={title}
+        aria-invalid={invalid}
+        aria-expanded={open}
+        role="combobox"
+        aria-autocomplete="list"
+        autoComplete="off"
+      />
+      {open && rect && matches.length > 0 && (
+        <ul className="bop-dest-list" role="listbox" style={{ top: rect.top, left: rect.left, width: rect.width }}>
+          {matches.map((m, idx) => (
+            <li
+              key={m.id}
+              role="option"
+              aria-selected={idx === active}
+              className={`bop-dest-item${idx === active ? ' bop-dest-item--active' : ''}`}
+              onMouseDown={e => { e.preventDefault(); pick(m); }}
+              onMouseEnter={() => setActive(idx)}
+            >
+              <span>{m.label}</span>
+              {m.description && <small>{m.description}</small>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
+  );
+};
 
 const BulkOrderPage: React.FC = () => {
   const navigate = useNavigate();
@@ -354,6 +464,16 @@ const BulkOrderPage: React.FC = () => {
   const destinationOptions = useMemo(
     () => locations.filter(l => !l.parentId),
     [locations],
+  );
+
+  // Same as Create Order's Lookup Branch: each destination carries its covered
+  // areas as the description, so searching "Gwarko" finds Imadol.
+  const lookupBranchOptions = useMemo(
+    () => destinationOptions.map(l => {
+      const areas = locations.filter(a => a.parentId === l.id).map(a => a.name);
+      return { id: l.id, label: l.name, description: areas.length > 0 ? `Covers: ${areas.join(', ')}` : undefined };
+    }),
+    [destinationOptions, locations],
   );
 
   const rowErrors = useMemo(
@@ -483,61 +603,45 @@ const BulkOrderPage: React.FC = () => {
         <button type="button" className="bop-back" onClick={() => navigate('/orders')}>
           <ArrowLeft size={15} /> Orders
         </button>
-        <section className={`bop-result-card${result.failed === 0 ? ' bop-result-card--complete' : ''}`} aria-labelledby="bop-result-title">
-          <div className="bop-result-heading">
-            <span className="bop-result-icon" aria-hidden="true"><CheckCircle2 size={26} /></span>
-            <div>
-              <h1 id="bop-result-title">Import complete</h1>
-              <p>
-                {result.failed > 0
-                  ? 'Some orders need attention before they can be created.'
-                  : 'Every imported order was created successfully.'}
-              </p>
-            </div>
+        <section className="bop-result-card" aria-labelledby="bop-result-title">
+          <h1 id="bop-result-title">Import results</h1>
+          <div className="bop-result-counts">
+            <StatusChip tone="success">{result.created} created</StatusChip>
+            {result.failed > 0 && <StatusChip tone="danger">{result.failed} failed</StatusChip>}
           </div>
 
-          {result.failed > 0 ? (
-            <div className="bop-result-counts" aria-label="Import outcome">
-              <div className="bop-result-stat bop-result-stat--success">
-                <span className="bop-result-label">Orders created</span>
-                <strong className="bop-result-num">{result.created}</strong>
-              </div>
-              <div className="bop-result-stat bop-result-stat--fail">
-                <span className="bop-result-label">Orders not created</span>
-                <strong className="bop-result-num">{result.failed}</strong>
-              </div>
-            </div>
-          ) : (
-            <p className="bop-result-summary"><strong>{result.created}</strong> order{result.created === 1 ? '' : 's'} created</p>
-          )}
-
           {result.failed > 0 && (
-            <div className="bop-result-errors">
-              <h3>Failed Orders</h3>
-              <table className="bop-result-table">
-                <thead>
-                  <tr><th>ID</th><th>Row</th><th>Reason</th></tr>
-                </thead>
-                <tbody>
-                  {result.results
-                    .filter((r): r is Extract<typeof r, { success: false }> => !r.success)
-                    .map(r => (
-                      <tr key={r.index}>
-                        <td>{r.index + 1}</td>
-                        <td>{submittedRowsRef.current[r.index]?.receiverName ?? '—'}</td>
-                        <td className="bop-result-error-msg">{r.error}</td>
-                      </tr>
-                    ))}
-                </tbody>
-              </table>
-            </div>
+            <Table
+              minWidth="0"
+              emptyMessage=""
+              columns={[
+                { header: 'Row', accessor: 'row', width: '64px' },
+                { header: 'Receiver', accessor: 'receiver' },
+                { header: 'Reason', accessor: 'reason' },
+              ]}
+              data={result.results
+                .filter((r): r is Extract<typeof r, { success: false }> => !r.success)
+                .map(r => ({
+                  id: r.index,
+                  row: r.index + 1,
+                  receiver: submittedRowsRef.current[r.index]?.receiverName ?? '—',
+                  reason: r.error,
+                }))}
+            />
           )}
 
           <div className="bop-result-actions">
             <Button variant="secondary" onClick={() => { setResult(null); setRows([]); setFileName(''); }}>
               Import another file
             </Button>
-            <Button variant="primary" onClick={() => navigate('/orders')}>
+            <Button
+              variant="primary"
+              onClick={() => navigate('/orders', {
+                state: {
+                  importedTrackingIds: result.results.flatMap(r => (r.success ? [r.trackingId] : [])),
+                },
+              })}
+            >
               {result.created > 0 ? `View ${result.created} order${result.created === 1 ? '' : 's'}` : 'View orders'}
             </Button>
           </div>
@@ -596,7 +700,18 @@ const BulkOrderPage: React.FC = () => {
         <p>Upload a spreadsheet, review the rows, then create the valid orders in one request.</p>
       </div>
 
-      <form className="bop-form" onSubmit={handleSubmit} noValidate>
+      <form
+        className="bop-form"
+        onSubmit={handleSubmit}
+        onKeyDown={e => {
+          // Enter in a cell must not submit a 100-row import by accident; Shift+Enter
+          // is the deliberate way. click() on the button respects its disabled state.
+          if (e.key !== 'Enter' || !(e.target instanceof HTMLInputElement)) return;
+          e.preventDefault();
+          if (e.shiftKey) e.currentTarget.querySelector<HTMLButtonElement>('button[type="submit"]')?.click();
+        }}
+        noValidate
+      >
         {/* ── Sender ── */}
         <section className="bop-section">
           <div className="bop-section-heading">
@@ -692,9 +807,9 @@ const BulkOrderPage: React.FC = () => {
                 <p>All cells are editable. Invalid fields are highlighted so you can correct them before submitting.</p>
               </div>
               <div className="bop-preview-counts" aria-label="Import summary">
-                <span className="bop-preview-badge bop-preview-badge--neutral">{rows.length} imported</span>
-                <span className="bop-preview-badge bop-preview-badge--ready">{validCount} ready</span>
-                {errorCount > 0 && <span className="bop-preview-badge bop-preview-badge--warn">{errorCount} need attention</span>}
+                <StatusChip tone="neutral">{rows.length} rows</StatusChip>
+                <StatusChip tone="success">{validCount} ready</StatusChip>
+                {errorCount > 0 && <StatusChip tone="danger">{errorCount} errors</StatusChip>}
               </div>
             </div>
 
@@ -731,14 +846,12 @@ const BulkOrderPage: React.FC = () => {
                         <td>{cell(i, 'receiverAltPhone', { placeholder: '—' })}</td>
                         <td>{cell(i, 'receiverAddress', { placeholder: 'Address' })}</td>
                         <td>
-                          <input
-                            className={`bop-cell-input${errors.destination ? ' bop-cell-input--invalid' : ''}`}
+                          <DestinationCell
                             value={row.destination}
-                            onChange={e => updateCell(i, 'destination', e.target.value)}
-                            list="bop-destination-options"
-                            placeholder="Branch"
+                            options={lookupBranchOptions}
+                            invalid={Boolean(errors.destination)}
                             title={errors.destination}
-                            aria-invalid={Boolean(errors.destination)}
+                            onChange={value => updateCell(i, 'destination', value)}
                           />
                         </td>
                         <td>{choiceCell(i, 'serviceType', SERVICE_TYPES, { home_delivery: 'Home Delivery', branch_delivery: 'Branch Delivery' })}</td>
@@ -757,22 +870,21 @@ const BulkOrderPage: React.FC = () => {
                         <td>{cell(i, 'itemValue', { type: 'number', min: 0, step: '1', placeholder: '0' })}</td>
                         <td>
                           <input
-                            className="bop-cell-input bop-cell-input--wide"
+                            className={`bop-cell-input bop-cell-input--wide${errors.deliveryInstruction ? ' bop-cell-input--invalid' : ''}`}
                             value={row.deliveryInstruction}
                             onChange={e => updateCell(i, 'deliveryInstruction', e.target.value)}
                             list="bop-instruction-options"
                             placeholder="—"
+                            maxLength={DELIVERY_INSTRUCTION_MAX}
+                            title={errors.deliveryInstruction}
+                            aria-invalid={Boolean(errors.deliveryInstruction)}
                           />
                         </td>
                         <td>
                           {errorMessage ? (
-                            <span className="bop-status bop-status--error" title={errorMessage}>
-                              <XCircle size={14} /> Error
-                            </span>
+                            <span title={errorMessage}><StatusChip tone="danger">Error</StatusChip></span>
                           ) : (
-                            <span className="bop-status bop-status--ok">
-                              <CheckCircle2 size={14} /> Ready
-                            </span>
+                            <StatusChip tone="success">Ready</StatusChip>
                           )}
                         </td>
                         <td className="bop-cell-remove">
@@ -793,9 +905,6 @@ const BulkOrderPage: React.FC = () => {
               </table>
             </div>
 
-            <datalist id="bop-destination-options">
-              {destinationOptions.map(d => <option key={d.id} value={d.name} />)}
-            </datalist>
             <datalist id="bop-package-options">
               {PACKAGE_TYPE_PRESETS.map(p => <option key={p} value={p} />)}
             </datalist>
