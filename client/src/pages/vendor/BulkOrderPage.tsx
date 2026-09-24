@@ -634,7 +634,14 @@ const BulkOrderPage: React.FC = () => {
             <Button variant="secondary" onClick={() => { setResult(null); setRows([]); setFileName(''); }}>
               Import another file
             </Button>
-            <Button variant="primary" onClick={() => navigate('/orders')}>
+            <Button
+              variant="primary"
+              onClick={() => navigate('/orders', {
+                state: {
+                  importedTrackingIds: result.results.flatMap(r => (r.success ? [r.trackingId] : [])),
+                },
+              })}
+            >
               {result.created > 0 ? `View ${result.created} order${result.created === 1 ? '' : 's'}` : 'View orders'}
             </Button>
           </div>
