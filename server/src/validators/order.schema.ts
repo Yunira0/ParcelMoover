@@ -256,10 +256,6 @@ export const listOrdersQuerySchema = paginationQuerySchema.extend({
   salesUserId: optionalUuidSchema,
   // Narrows the list to parcels carried by one delivery rider.
   deliveryRiderId: optionalUuidSchema,
-  // Rider Overview's filter: parcels this rider has ever handled, pickup or
-  // delivery leg — broader than deliveryRiderId, which is only the current
-  // delivery leg.
-  riderId: optionalUuidSchema,
   // Keyset pagination: opaque cursor + walk direction. A malformed cursor is
   // treated as "no cursor" by the service, so only the length is bounded here.
   cursor: z.string().max(400).optional(),

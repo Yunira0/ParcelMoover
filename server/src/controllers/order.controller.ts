@@ -9,8 +9,6 @@ import {
   getCodSettlementDetail,
   getDashboardSummary,
   getMerchantOverview,
-  getSalesOverview,
-  getRiderOverview,
   getOrderByTrackingId,
   getOrderFilterOptions,
   getOrderCountsByStatus,
@@ -257,16 +255,6 @@ export async function listOrdersController(req: Request, res: Response) {
       salesUserId = source.salesUserId;
     }
 
-    // Rider Overview's filter: parcels this rider has ever handled, pickup or
-    // delivery leg — broader than deliveryRiderId, above.
-    let riderId: string | undefined;
-    if (source.riderId !== undefined) {
-      if (typeof source.riderId !== "string" || !UUID_REGEX.test(source.riderId)) {
-        return res.status(400).json({ success: false, message: "riderId must be a valid uuid" });
-      }
-      riderId = source.riderId;
-    }
-
     let page: number | undefined;
     let pageSize: number | undefined;
     if (source.page !== undefined) {
@@ -326,7 +314,6 @@ export async function listOrdersController(req: Request, res: Response) {
         ...(salesUserId ? { salesUserId } : {}),
         ...(search ? { search } : {}),
         ...(deliveryRiderId ? { deliveryRiderId } : {}),
-        ...(riderId ? { riderId } : {}),
         ...(page !== undefined ? { page } : {}),
         ...(pageSize !== undefined ? { pageSize } : {}),
         ...(cursor !== undefined ? { cursor } : {}),
@@ -1098,62 +1085,6 @@ export async function merchantOverviewController(req: Request, res: Response) {
     return res.status(error.statusCode || 500).json({
       success: false,
       message: error.message || "Failed to load merchant overview",
-    });
-  }
-}
-
-// GET /orders/sales-overview — server-side aggregated stats for the Sales
-// Overview page. Accepts optional salesUserId, dateFrom, dateTo query params.
-export async function salesOverviewController(req: Request, res: Response) {
-  try {
-    if (!req.user) {
-      return res.status(401).json({ success: false, message: "Unauthorized" });
-    }
-
-    const salesUserId = typeof req.query.salesUserId === "string" ? req.query.salesUserId : undefined;
-    const dateFrom = typeof req.query.dateFrom === "string" ? req.query.dateFrom : undefined;
-    const dateTo = typeof req.query.dateTo === "string" ? req.query.dateTo : undefined;
-
-    const summary = await getSalesOverview(
-      { id: req.user.id, roles: req.user.roles },
-      salesUserId,
-      dateFrom,
-      dateTo,
-    );
-
-    return res.status(200).json({ success: true, data: summary });
-  } catch (error: any) {
-    return res.status(error.statusCode || 500).json({
-      success: false,
-      message: error.message || "Failed to load sales overview",
-    });
-  }
-}
-
-// GET /orders/rider-overview — server-side aggregated stats for the Rider
-// Overview page. Accepts optional riderId, dateFrom, dateTo query params.
-export async function riderOverviewController(req: Request, res: Response) {
-  try {
-    if (!req.user) {
-      return res.status(401).json({ success: false, message: "Unauthorized" });
-    }
-
-    const riderId = typeof req.query.riderId === "string" ? req.query.riderId : undefined;
-    const dateFrom = typeof req.query.dateFrom === "string" ? req.query.dateFrom : undefined;
-    const dateTo = typeof req.query.dateTo === "string" ? req.query.dateTo : undefined;
-
-    const summary = await getRiderOverview(
-      { id: req.user.id, roles: req.user.roles },
-      riderId,
-      dateFrom,
-      dateTo,
-    );
-
-    return res.status(200).json({ success: true, data: summary });
-  } catch (error: any) {
-    return res.status(error.statusCode || 500).json({
-      success: false,
-      message: error.message || "Failed to load rider overview",
     });
   }
 }
