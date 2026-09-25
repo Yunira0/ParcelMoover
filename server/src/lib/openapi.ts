@@ -234,6 +234,7 @@ export function buildOpenApiDocument(baseUrl: string) {
       "/rates": {
         get: {
           summary: "Your full rate card",
+          description: "Returns effective rates for each active destination. Central-hub vendors on flat pricing also receive flatRates for insideValley, outsideRingRoad, and outsideValley, including tiers without assigned destinations.",
           operationId: "getRates",
           responses: {
             200: { description: "Rate card across all destinations", content: { "application/json": { schema: { type: "object" } } } },
