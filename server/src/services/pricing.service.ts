@@ -338,6 +338,38 @@ function resolveBaseRate(
   return { rate, basis };
 }
 
+// Show the effective flat-rate agreement even when no active destination is
+// currently assigned to one of these bands. Use the quote resolver so the
+// displayed amounts follow the same override and fallback rules as orders.
+export async function getVendorFlatRateBands(overrides: VendorRateOverrides = {}) {
+  const settings = await getPricingSettings();
+  const bands = [
+    { key: "insideValley", valley: "inside", ringRoad: "inside" },
+    { key: "outsideRingRoad", valley: "inside", ringRoad: "outside" },
+    { key: "outsideValley", valley: "outside", ringRoad: null },
+  ] as const;
+  const rateFor = (band: (typeof bands)[number], serviceType: ServiceType) => {
+    const destination: DestinationPricing = {
+      name: band.key,
+      zone: null,
+      valley: band.valley,
+      ringRoad: band.ringRoad,
+      perDestinationRate: null,
+      branchPerDestinationRate: null,
+    };
+    try {
+      return resolveBaseRate("flat", destination, settings, overrides, serviceType).rate;
+    } catch (error) {
+      if (error instanceof AppError && error.statusCode === 404) return null;
+      throw error;
+    }
+  };
+  return Object.fromEntries(bands.map((band) => [band.key, {
+    homeRate: rateFor(band, "home_delivery"),
+    branchRate: rateFor(band, "branch_delivery"),
+  }])) as Record<(typeof bands)[number]["key"], { homeRate: number | null; branchRate: number | null }>;
+}
+
 // Computes the delivery charge for a vendor's chosen rate model to a destination,
 // honouring per-vendor overrides before falling back to the global defaults.
 export async function getVendorQuote(
