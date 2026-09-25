@@ -59,6 +59,8 @@ import { FAILED_RECOVERY_LABEL, isRecoverableFailure, recoveryTargetFor } from '
 import { commitScannedTerm, handleScannerPaste } from '../utils/scannerInput';
 import { useCursorPagination } from '../hooks/useCursorPagination';
 import './OrderManagement.css';
+import { formatReceiverPhones } from '../utils/format';
+import ReceiverPhones from '../components/ReceiverPhones';
 
 // Mirrors REDIRECT_ALLOWED_STATUSES in order.service.ts — once a parcel is
 // delivered, cancelled or in the RTO chain, its destination is history.
@@ -194,7 +196,7 @@ const matchesKeyword = (order: Order, keyword: string) => {
     order.receiverName,
     order.riderName,
     order.senderPhone,
-    order.receiverPhone,
+    formatReceiverPhones(order.receiverPhone, order.receiverAlternatePhone),
     order.trackingId,
     `#${order.orderNumber}`,
     String(order.orderNumber),
@@ -847,7 +849,7 @@ const OrderManagement: React.FC = () => {
       // fall back to the currently loaded page / selection
     }
 
-    const headers = ['Order ID', 'Tracking ID', 'Origin', 'Sender', 'Receiver', 'Receiver Phone', 'Receiver Address', 'Destination', 'COD', 'Delivery Charge', 'Weight', 'Status', 'Rider', 'Remarks', 'Order Created Date', 'Last Updated By', 'Last Updated At', ...STATUS_TIMELINE_HEADERS];
+    const headers = ['Order ID', 'Tracking ID', 'Origin', 'Sender', 'Receiver', 'Receiver Phone', 'Alternate Number', 'Receiver Address', 'Destination', 'COD', 'Delivery Charge', 'Weight', 'Status', 'Rider', 'Remarks', 'Order Created Date', 'Last Updated By', 'Last Updated At', ...STATUS_TIMELINE_HEADERS];
     const rows = exportOrders.map(order => [
       `#${order.orderNumber}`,
       order.trackingId,
@@ -855,6 +857,7 @@ const OrderManagement: React.FC = () => {
       order.senderName,
       order.receiverName,
       order.receiverPhone || '',
+      order.receiverAlternatePhone || '',
       order.receiverAddress || '',
       order.destination,
       order.codAmount,
@@ -928,7 +931,7 @@ const OrderManagement: React.FC = () => {
       accessor: (order: Order) => (
         <div className="party-cell">
           <span>{order.receiverName}</span>
-          <small>{order.receiverPhone}</small>
+          <small><ReceiverPhones phone={order.receiverPhone} alternate={order.receiverAlternatePhone} /></small>
         </div>
       ),
       width: '140px',

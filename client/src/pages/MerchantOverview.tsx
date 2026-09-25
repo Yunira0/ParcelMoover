@@ -23,6 +23,8 @@ import { toBsDate } from '../utils/nepaliDate';
 import { downloadExcel } from '../utils/excel';
 import { useCursorPagination } from '../hooks/useCursorPagination';
 import './MerchantOverview.css';
+import { formatReceiverPhones } from '../utils/format';
+import ReceiverPhones from '../components/ReceiverPhones';
 
 const PAGE_SIZE = 10;
 
@@ -200,7 +202,7 @@ const MerchantOverview: React.FC = () => {
         accessor: (o: Order) => (
           <div className="party-cell">
             <span title={o.receiverName}>{o.receiverName}</span>
-            <small title={o.receiverPhone}>{o.receiverPhone}</small>
+            <small title={formatReceiverPhones(o.receiverPhone, o.receiverAlternatePhone)}><ReceiverPhones phone={o.receiverPhone} alternate={o.receiverAlternatePhone} /></small>
           </div>
         ),
         width: '140px',
@@ -261,7 +263,7 @@ const MerchantOverview: React.FC = () => {
     }
 
     const headers = [
-      'Order ID', 'Tracking ID', 'Origin', 'Sender', 'Receiver', 'Receiver Phone',
+      'Order ID', 'Tracking ID', 'Origin', 'Sender', 'Receiver', 'Receiver Phone', 'Alternate Number',
       'Receiver Address', 'Destination', 'COD', 'Delivery Charge', 'Weight', 'Status',
     ];
     const sheetRows = rows.map((o) => [
@@ -271,6 +273,7 @@ const MerchantOverview: React.FC = () => {
       o.senderName,
       o.receiverName,
       o.receiverPhone || '',
+      o.receiverAlternatePhone || '',
       o.receiverAddress || '',
       o.destination,
       o.codAmount,

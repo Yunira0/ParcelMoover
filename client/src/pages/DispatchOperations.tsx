@@ -33,6 +33,7 @@ import { toBsDate, toBsDateTime, toBsDateTimeCell } from '../utils/nepaliDate';
 import { STATUS_TIMELINE_HEADERS, statusTimelineCells } from '../utils/orderStatus';
 import { commitScannedTerm, handleScannerPaste } from '../utils/scannerInput';
 import './DispatchOperations.css';
+import ReceiverPhones from '../components/ReceiverPhones';
 
 const formatMoney = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 0 });
 
@@ -586,7 +587,7 @@ const DispatchOperations: React.FC = () => {
       accessor: (order: Order) => (
         <div className="dispatch-party-cell">
           <span>{order.receiverName}</span>
-          <small>{order.receiverPhone}</small>
+          <small><ReceiverPhones phone={order.receiverPhone} alternate={order.receiverAlternatePhone} /></small>
         </div>
       ),
       width: '170px',
