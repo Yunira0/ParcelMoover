@@ -11,9 +11,31 @@ import {
   deleteLocation,
   type Destination,
 } from '../../services/locations.service';
+import { listUpayaDeliveryAreas, type UpayaDeliveryArea } from '../../services/upaya.service';
+import { apiErrorMessage } from '../../utils/serverValidation';
 import './DestinationsSettings.css';
 
-const emptyDest = { name: '', code: '', province: '', district: '', municipality: '' };
+const emptyDest = { name: '', code: '', province: '', district: '', municipality: '', ncmBranch: '', upayaAreaId: '' };
+
+// The empty "Not set" option comes from FormField's placeholder.
+const ZONE_OPTIONS = [
+  { value: 'major_cities', label: 'Major cities' },
+  { value: 'urban_areas', label: 'Urban areas' },
+  { value: 'remote_areas', label: 'Remote areas' },
+  { value: 'inside_valley', label: 'Inside valley' },
+];
+
+// A single control for the combined valley + ring-road classification, since
+// ring road only ever means something alongside "inside valley".
+// "inside_outside_ring" is UI-only: it writes valley="inside" + ringRoad="outside".
+const VALLEY_RING_ROAD_OPTIONS = [
+  { value: 'inside', label: 'Inside valley' },
+  { value: 'inside_outside_ring', label: 'Inside valley — outside ring road' },
+  { value: 'outside', label: 'Outside valley' },
+];
+
+const toValleyRingRoadValue = (dest: Destination) =>
+  dest.valley === 'inside' && dest.ringRoad === 'outside' ? 'inside_outside_ring' : dest.valley || '';
 
 const PAGE_SIZE = 10;
 
@@ -42,6 +64,7 @@ const DestinationsSettings: React.FC = () => {
   // Inline area edit: id being edited + working name
   const [editArea, setEditArea] = useState<{ id: string; name: string } | null>(null);
   const [savingEdit, setSavingEdit] = useState(false);
+  const [savingClassId, setSavingClassId] = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -57,6 +80,33 @@ const DestinationsSettings: React.FC = () => {
 
   useEffect(() => { load(); }, []);
 
+  // Upaya's area list is large and only the form needs it, so it loads the
+  // first time the form opens.
+  const [upayaAreas, setUpayaAreas] = useState<UpayaDeliveryArea[] | null>(null);
+  const [upayaAreasError, setUpayaAreasError] = useState(false);
+  useEffect(() => {
+    if (!showDestForm || upayaAreas) return;
+    listUpayaDeliveryAreas()
+      .then((res) => setUpayaAreas(res.data ?? []))
+      .catch(() => setUpayaAreasError(true));
+  }, [showDestForm, upayaAreas]);
+
+  const upayaAreaOptions = useMemo(() => {
+    const options = [
+      { id: '', label: 'Automatic' },
+      ...(upayaAreas ?? []).map((a) => ({
+        id: String(a.id),
+        label: a.name,
+        description: [a.locationName, a.hubName].filter(Boolean).join(' · '),
+      })),
+    ];
+    // Keep a saved override selectable even if the list failed to load.
+    if (destForm.upayaAreaId && !options.some((o) => o.id === destForm.upayaAreaId)) {
+      options.push({ id: destForm.upayaAreaId, label: `Area #${destForm.upayaAreaId}` });
+    }
+    return options;
+  }, [upayaAreas, destForm.upayaAreaId]);
+
   const openAddDest = () => {
     setEditDestId(null);
     setDestForm(emptyDest);
@@ -71,6 +121,8 @@ const DestinationsSettings: React.FC = () => {
       province: dest.province || '',
       district: dest.district || '',
       municipality: dest.city || '',
+      ncmBranch: dest.ncmBranch || '',
+      upayaAreaId: dest.upayaAreaId ? String(dest.upayaAreaId) : '',
     });
     setShowDestForm(true);
   };
@@ -94,11 +146,16 @@ const DestinationsSettings: React.FC = () => {
         district: destForm.district || undefined,
         // Municipality lives in the locations.city column server-side.
         city: destForm.municipality || undefined,
+        // null rather than undefined, so clearing the box actually unsets the
+        // override and hands the destination back to automatic matching.
+        ncmBranch: destForm.ncmBranch.trim() || null,
+        upayaAreaId: destForm.upayaAreaId ? Number(destForm.upayaAreaId) : null,
       };
       if (editDestId) {
         await updateLocation(editDestId, payload);
       } else {
-        await createLocation({ ...payload, isHub: true });
+        // A destination isn't a branch - only Add Branch (Branch Overview) makes one.
+        await createLocation(payload);
         // The list is newest-first, so jump to page 1 where the new destination shows.
         setPage(1);
       }
@@ -149,6 +206,27 @@ const DestinationsSettings: React.FC = () => {
       setError(err.response?.data?.message || 'Failed to rename area.');
     } finally {
       setSavingEdit(false);
+    }
+  };
+
+  // Zone and valley price every origin's orders (zone and flat vendor models),
+  // so they live with the destination rather than on any one origin's rates.
+  // Saved the moment a select changes; the list is updated optimistically and
+  // put back if the write fails.
+  const saveClassification = async (
+    dest: Destination,
+    patch: { zone?: string | null; valley?: string | null; ringRoad?: string | null },
+  ) => {
+    setError('');
+    setSavingClassId(dest.id);
+    setDestinations((prev) => prev.map((d) => (d.id === dest.id ? { ...d, ...patch } : d)));
+    try {
+      await updateLocation(dest.id, patch);
+    } catch (err) {
+      setDestinations((prev) => prev.map((d) => (d.id === dest.id ? dest : d)));
+      setError(apiErrorMessage(err, `Failed to update ${dest.name}.`));
+    } finally {
+      setSavingClassId(null);
     }
   };
 
@@ -205,10 +283,6 @@ const DestinationsSettings: React.FC = () => {
   return (
     <div className="dest-settings">
       <div className="dest-settings-head">
-        <div>
-          <h2>Destinations &amp; Covered Areas</h2>
-          <p>Add a destination (hub/branch), then list the areas it covers. Both become selectable when creating orders.</p>
-        </div>
         <Button variant="primary" onClick={openAddDest}>
           <Plus size={16} /> Add Destination
         </Button>
@@ -250,6 +324,23 @@ const DestinationsSettings: React.FC = () => {
           <div className="dest-form-row">
             <FormField label="Municipality" value={destForm.municipality}
               onChange={(v) => setDestForm((p) => ({ ...p, municipality: v }))} placeholder="e.g. Pokhara" />
+            {/* Optional: pins NCM handoff to one of their branches by exact
+                name. A name NCM does not have blocks handoff rather than
+                falling back, so the hint says to leave it blank. */}
+            <FormField label="NCM branch" value={destForm.ncmBranch}
+              onChange={(v) => setDestForm((p) => ({ ...p, ncmBranch: v.toUpperCase() }))}
+              placeholder="e.g. DAMAK"
+              hint="Leave blank to match automatically by district and name." />
+          </div>
+          <div className="dest-form-row">
+            <FormField label="Upaya area" type="searchable-select" value={destForm.upayaAreaId}
+              onChange={(v) => setDestForm((p) => ({ ...p, upayaAreaId: v }))}
+              searchableOptions={upayaAreaOptions}
+              placeholder={upayaAreas || upayaAreasError ? 'Automatic' : 'Loading Upaya areas…'}
+              searchPlaceholder="Search Upaya areas…"
+              hint={upayaAreasError
+                ? "Couldn't load Upaya areas. Saved choice is kept."
+                : 'Leave on Automatic to match by name.'} />
           </div>
           <div className="dest-form-actions">
             <Button type="button" variant="outline" onClick={cancelDestForm}>Cancel</Button>
@@ -281,6 +372,7 @@ const DestinationsSettings: React.FC = () => {
                   <MapPin size={16} />
                   <span>{dest.name}</span>
                   {dest.code && <span className="dest-code">{dest.code}</span>}
+                  {dest.isHub && <StatusChip tone="info">Branch</StatusChip>}
                 </div>
                 <div className="dest-card-actions">
                   <button
@@ -333,6 +425,34 @@ const DestinationsSettings: React.FC = () => {
                     </>
                   )}
                 </div>
+              </div>
+
+              <div className="dest-classification">
+                <FormField
+                  label="Zone"
+                  type="select"
+                  value={dest.zone || ''}
+                  onChange={(v) => saveClassification(dest, { zone: v || null })}
+                  placeholder="Not set"
+                  options={ZONE_OPTIONS}
+                  disabled={savingClassId === dest.id}
+                />
+                <FormField
+                  label="Valley"
+                  type="select"
+                  value={toValleyRingRoadValue(dest)}
+                  onChange={(v) =>
+                    saveClassification(
+                      dest,
+                      v === 'inside_outside_ring'
+                        ? { valley: 'inside', ringRoad: 'outside' }
+                        : { valley: v || null, ringRoad: null },
+                    )
+                  }
+                  placeholder="Not set"
+                  options={VALLEY_RING_ROAD_OPTIONS}
+                  disabled={savingClassId === dest.id}
+                />
               </div>
 
               <div className="dest-areas">

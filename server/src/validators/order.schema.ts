@@ -98,6 +98,15 @@ export const createOrderSchema = z.object({
   // Places the order even though the vendor's account is past its block
   // threshold. Honoured for super_admin only — see assertVendorCanCreateOrder.
   overrideBillingBlock: z.boolean().optional(),
+  // Daraz-style voucher: a claimed voucher's id, or its code (MOVE100).
+  // Mutually exclusive (enforced in _createOrderImpl so every entry point —
+  // dashboard, bulk, partner API — shares the check); resolved to this
+  // vendor's claim inside _createOrderImpl.
+  voucherClaimId: optionalUuidSchema,
+  voucherCode: z.string().trim().min(3).max(32)
+    .transform(v => v.toUpperCase())
+    .refine(v => /^[A-Z0-9][A-Z0-9_-]{2,31}$/.test(v), 'Voucher code is invalid')
+    .optional(),
 });
 
 export type CreateOrderInput = z.infer<typeof createOrderSchema>;
@@ -256,6 +265,13 @@ export const listOrdersQuerySchema = paginationQuerySchema.extend({
   salesUserId: optionalUuidSchema,
   // Narrows the list to parcels carried by one delivery rider.
   deliveryRiderId: optionalUuidSchema,
+  // Origin/destination hub filters from the orders list page. Single-value,
+  // matching the dropdown's single-select UI; the service already supports a
+  // multi-value form (originLocationIds/destinationLocationIds) for internal
+  // branch scoping, which the controller feeds this single id into as a
+  // one-element array rather than duplicating that AND-condition logic here.
+  originLocationId: optionalUuidSchema,
+  destinationLocationId: optionalUuidSchema,
   // Keyset pagination: opaque cursor + walk direction. A malformed cursor is
   // treated as "no cursor" by the service, so only the length is bounded here.
   cursor: z.string().max(400).optional(),
@@ -303,6 +319,8 @@ export const orderCountByStatusQuerySchema = z.object({
   salesUserId: listOrdersQuerySchema.shape.salesUserId,
   search: listOrdersQuerySchema.shape.search,
   deliveryRiderId: listOrdersQuerySchema.shape.deliveryRiderId,
+  originLocationId: listOrdersQuerySchema.shape.originLocationId,
+  destinationLocationId: listOrdersQuerySchema.shape.destinationLocationId,
   deliveredToday: listOrdersQuerySchema.shape.deliveredToday,
   dateField: listOrdersQuerySchema.shape.dateField,
   dateFrom: listOrdersQuerySchema.shape.dateFrom,

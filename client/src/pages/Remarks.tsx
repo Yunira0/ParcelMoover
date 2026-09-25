@@ -286,7 +286,6 @@ const Remarks: React.FC = () => {
     <div className="remarks-container">
       <PageHeader
         title="Remarks"
-        subtitle="Handle customer inquiries, monitor progress, and address concerns."
       />
 
       <SegmentedTabs

@@ -2,7 +2,7 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import {
   Package, Truck, RotateCcw,
-  PackageSearch, Clock, RefreshCw,
+  PackageSearch, Clock, RefreshCw, Route,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { formatCurrency } from '../../utils/format';
@@ -17,6 +17,8 @@ interface VendorOverviewCardsProps {
   rtvDeliveredAmount: number;
   inTransit: number;
   inTransitAmount: number;
+  inProgress: number;
+  inProgressAmount: number;
   pendingPickup: number;
   pendingPickupAmount: number;
   returnProcess: number;
@@ -43,6 +45,8 @@ const VendorOverviewCards: React.FC<VendorOverviewCardsProps> = ({
   rtvDeliveredAmount,
   inTransit,
   inTransitAmount,
+  inProgress,
+  inProgressAmount,
   pendingPickup,
   pendingPickupAmount,
   returnProcess,
@@ -62,6 +66,10 @@ const VendorOverviewCards: React.FC<VendorOverviewCardsProps> = ({
     // used to count, which made "In Transit" open onto parcels still sitting
     // at a hub or already out for delivery.
     { icon: PackageSearch, label: 'In Transit',    value: fmt(inTransit),    sub: fmtAmount(inTransitAmount),     accent: 'info',    to: '/dashboard/metric/in-transit' },
+    // The wider bucket In Transit deliberately excludes: everything from pickup
+    // to the doorstep, including parcels resting at a hub or already out for
+    // delivery. Opens the in-delivery drill-down, which is labelled In Process.
+    { icon: Route,         label: 'In Process',   value: fmt(inProgress),   sub: fmtAmount(inProgressAmount),    accent: 'progress', to: '/dashboard/metric/in-delivery' },
     { icon: Clock,         label: 'Pending Pickup',value: fmt(pendingPickup),  sub: fmtAmount(pendingPickupAmount),   accent: 'neutral', to: '/dashboard/metric/pending-pickup' },
     { icon: RefreshCw,     label: 'Return Process',value: fmt(returnProcess),sub: fmtAmount(returnProcessAmount), accent: 'danger',  to: '/dashboard/metric/return-process' },
   ];

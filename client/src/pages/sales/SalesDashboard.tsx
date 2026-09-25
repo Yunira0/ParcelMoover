@@ -52,6 +52,9 @@ const EMPTY_SUMMARY: DashboardSummary = {
     overdueDelivery: 0,
     overdueTransit: 0,
     overdueRemarks: 0,
+    overdueBranchCod: 0,
+    overdueBranchCodAmount: 0,
+    branchCodHours: null,
     overdueReturn: 0,
     pickupHours: null,
     deliveryHours: null,
@@ -147,6 +150,8 @@ const SalesDashboard: React.FC = () => {
           rtvDeliveredAmount={overview.totalReturnedToVendorAmount}
           inTransit={overview.inTransit}
           inTransitAmount={overview.inTransitAmount}
+          inProgress={overview.inDelivery}
+          inProgressAmount={overview.inDeliveryAmount}
           pendingPickup={overview.awaitingPickup}
           pendingPickupAmount={overview.awaitingPickupAmount}
           returnProcess={overview.pendingReturns}

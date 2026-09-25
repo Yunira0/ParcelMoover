@@ -233,7 +233,6 @@ const AdminManagement: React.FC = () => {
     <div className="admin-management-container">
       <PageHeader
         title="ADMIN MANAGEMENT"
-        subtitle="Oversee admin accounts and track performance metrics."
         {...(canManageAdmins
           ? {
               actionLabel: 'Add new',

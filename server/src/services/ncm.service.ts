@@ -220,26 +220,11 @@ function ncmMatchPlaceName(destinationName: string): string {
 //   0. Explicit per-hub override `ncm_branch` if present — ops pins the
 //      correct NCM branch for ambiguous villages where district alone is not
 //      enough (multiple branches share Jhapa/Morang/etc).
-//   1. District exact — only when exactly one branch carries that district.
-//      If district maps to >1 branches (Jhapa→Birtamode/Damak/Bahundangi),
-//      it's genuinely ambiguous and we fall through rather than picking
-//      whichever row the API happened to return first.
-//   2. Place-name exact against branch name (district suffix stripped, case-
-//      insensitive). Handles "Pokhara Branch" still finding branch POKHARA via
-//      a token-exact check below, without the old `includes` bug.
-//   3. Place-name exact against a branch's `covered_areas` tokens (e.g.
-//      Damak covers "Jhiljhile" as one item in its comma list), and a
-//      word-boundary fallback where the branch name equals one whitespace-
-//      separated token of the place name.
-//
-//   Tiers 2 and 3 all match on the hub's town name alone, which is not unique
-//   across Nepal, so they are district-gated: a match is rejected when the hub
-//   and the candidate branch both carry a district and those districts differ
-//   (a missing district on either side falls back to allowing the match, so
-//   incomplete data doesn't regress). "Khalanga" is the HQ-town name of
-//   several far/mid-west districts and sits in the AMARGADHI (Dadeldhura)
-//   branch's covered_areas — without the gate a "Khalanga - Darchula" hub
-//   silently booked to Dadeldhura (NCM order #25301800).
+//   1. Place-name exact against branch name, including NCM's disambiguating
+//      district suffix ("KERABARI - MORANG" -> "KERABARI MORANG").
+//   2. Place-name exact against a same-district branch's `covered_areas`
+//      tokens (e.g. Damak covers "Jhiljhile" as one item in its comma list).
+//      The match must be unique; district by itself never selects a branch.
 //   No match => the caller skips the parcel with "No matching NCM branch…"
 //   and ops can fix via the per-hub override or by correcting district/name.
 export function matchNcmBranch(
@@ -263,58 +248,50 @@ export function matchNcmBranch(
   }
 
   // Normalize "JHAPA DISTRICT" vs "JHAPA" and collapse whitespace so a
-  // minor data-entry variant doesn't silently break tier 1.
+  // minor data-entry variant doesn't silently break candidate scoping.
   const normalizeDistrict = (s: string) =>
     s.trim().toUpperCase().replace(/\s+DISTRICT\s*$/, "").replace(/\s+/g, " ").trim();
   const districtRaw = destination.district?.trim();
   const district = districtRaw ? normalizeDistrict(districtRaw) : "";
-  if (district) {
-    const byDistrict = branches.filter((b) => {
-      const bd = b.district?.trim();
-      return bd ? normalizeDistrict(bd) === district : false;
-    });
-    if (byDistrict.length === 1) return byDistrict[0];
-    // >1 means ambiguous (e.g. Jhapa has Birtamode/Damak/Bahundangi) — don't guess
-    // If ambiguous, still allow covered_areas/name tiers below to disambiguate
-    // (e.g. JHILJHILE is covered by DAMAK even when 3 branches share JHAPA).
-  }
-
-  // The place-name tiers below match on the hub's town name alone, which is
-  // not unique across Nepal — many far/mid-west district HQs are all named
-  // "Khalanga". Reject such a match when we know both districts and they
-  // disagree; a missing district on either side falls back to allowing it
-  // (no regression for incomplete data).
-  const districtAgrees = (branch: NcmBranch): boolean => {
-    if (!district) return true;
-    const bd = branch.district?.trim();
-    if (!bd) return true;
-    return normalizeDistrict(bd) === district;
-  };
+  const byDistrict = district
+    ? branches.filter((b) => {
+        const bd = b.district?.trim();
+        return bd ? normalizeDistrict(bd) === district : false;
+      })
+    : [];
 
   const placeName = ncmMatchPlaceName(destination.name).trim().toUpperCase();
   if (!placeName) return undefined;
 
-  // Tier 2 — direct branch-name exact
-  const byPlaceExact = branches.find((b) => districtAgrees(b) && b.name.trim().toUpperCase() === placeName);
-  if (byPlaceExact) return byPlaceExact;
+  // A known destination district is a hard boundary, never a fallback match.
+  // If NCM has no branch metadata for that district, leave the parcel alone.
+  const candidates = district ? byDistrict : branches;
+  if (district && candidates.length === 0) return undefined;
 
-  // Tier 3a — exact word inside covered_areas (NCM's per-branch locality list)
-  for (const branch of branches) {
-    if (!branch.covered_areas) continue;
-    if (!districtAgrees(branch)) continue;
+  // Tier 1 — direct branch-name exact. NCM sometimes appends the district to
+  // disambiguate duplicate names (e.g. "KERABARI MORANG"), while our location
+  // is stored as "KERABARI - MORANG". Treat that canonical suffix as exact.
+  const placeWithDistrict = district ? `${placeName} ${district}` : "";
+  const exactMatches = candidates.filter((b) => {
+    const branchName = b.name.trim().toUpperCase();
+    return branchName === placeName || (placeWithDistrict !== "" && branchName === placeWithDistrict);
+  });
+  if (exactMatches.length === 1) return exactMatches[0];
+  if (exactMatches.length > 1) return undefined;
+
+  // Tier 2 — covered-area matching without a district is unsafe: the same locality
+  // name can exist in multiple districts even if NCM currently lists it only
+  // once. With a district, accept only one exact same-district coverage hit.
+  if (!district) return undefined;
+  const coveredMatches = candidates.filter((branch) => {
+    if (!branch.covered_areas) return false;
     const tokens = branch.covered_areas
       .split(/[,;/]+/)
       .map((s) => s.trim().toUpperCase())
       .filter(Boolean);
-    if (tokens.includes(placeName)) return branch;
-  }
-
-  // Tier 3b — word-boundary fallback: branch name equals one token of placeName
-  // e.g. "Pokhara Branch" tokens ["POKHARA","BRANCH"] contains branch "POKHARA"
-  // but "JHILJHILE" tokens ["JHILJHILE"] does NOT contain "HILE".
-  const placeTokens = placeName.split(/[\s\-_/]+/).map((s) => s.trim().toUpperCase()).filter(Boolean);
-  const byToken = branches.find((b) => districtAgrees(b) && placeTokens.includes(b.name.trim().toUpperCase()));
-  if (byToken) return byToken;
+    return tokens.includes(placeName);
+  });
+  if (coveredMatches.length === 1) return coveredMatches[0];
 
   return undefined;
 }
@@ -463,6 +440,20 @@ export async function handoffParcelsToNcm(
 
     const deliveryType = deliveryTypeOverride ?? defaultDeliveryType(parcel.service_type);
 
+    // Claim the parcel before calling NCM. Every check above is a read, and
+    // the API call that follows is slow, so two handoffs of the same parcel
+    // would both get through and create two real orders on NCM's side — which
+    // no amount of cleanup here can take back. Moving it off 'oov' first means
+    // exactly one caller reaches the API.
+    const claim = await prisma.parcels.updateMany({
+      where: { id: parcel.id, status: "oov" },
+      data: { status: "dispatched" },
+    });
+    if (claim.count === 0) {
+      results.push({ ...base, success: false, error: "Parcel is already being handed over" });
+      continue;
+    }
+
     try {
       const created = await ncmFetch<{ Message: string; orderid: number }>("/api/v1/order/create", {
         method: "POST",
@@ -486,10 +477,6 @@ export async function handoffParcelsToNcm(
       await bumpDailyCreateCounter();
 
       await prisma.$transaction([
-        prisma.parcels.update({
-          where: { id: parcel.id },
-          data: { status: "dispatched" },
-        }),
         prisma.parcel_status_history.create({
           data: {
             parcel_id: parcel.id,
@@ -523,6 +510,13 @@ export async function handoffParcelsToNcm(
 
       results.push({ ...base, success: true, ncmOrderId: created.orderid, branch: branch.name });
     } catch (error) {
+      // NCM never took it, so release the claim and leave the parcel exactly
+      // where it was — in Transit, ready to be retried once the reason is
+      // fixed.
+      await prisma.parcels.updateMany({
+        where: { id: parcel.id, status: "dispatched" },
+        data: { status: "oov" },
+      });
       const message = error instanceof Error ? error.message : String(error);
       results.push({ ...base, success: false, error: message });
     }
@@ -626,8 +620,9 @@ export async function processNcmWebhook(payload: NcmWebhookPayload): Promise<voi
   if (!status) return;
 
   const orderIds = payload.order_ids ?? (payload.order_id ? [payload.order_id] : []);
+  const isReturn = status === "Sent to Vendor";
   const targetStatus = NCM_STATUS_TO_PARCEL_STATUS[status];
-  if (!targetStatus) {
+  if (!targetStatus && !isReturn) {
     console.log(`[NCM] webhook status '${status}' has no parcel mapping — ignored`);
     return;
   }
@@ -639,9 +634,12 @@ export async function processNcmWebhook(payload: NcmWebhookPayload): Promise<voi
         console.warn(`[NCM] webhook for unknown order ${orderId} — ignored`);
         continue;
       }
-      const result = await applyCarrierStatusWithRetry(parcelId, targetStatus, `${CARRIER_AUTHOR_LABEL}: ${status}`);
+      const remark = `${CARRIER_AUTHOR_LABEL}: ${isReturn ? "Follow-up" : status}`;
+      const result = isReturn
+        ? await applyExternalCarrierFollowUp(parcelId, remark)
+        : await applyCarrierStatusWithRetry(parcelId, targetStatus!, remark);
       if (!result.applied) {
-        console.log(`[NCM] webhook order ${orderId} → '${targetStatus}' skipped: ${result.reason}`);
+        console.log(`[NCM] webhook order ${orderId} → '${isReturn ? "follow_up" : targetStatus}' skipped: ${result.reason}`);
       }
     } catch (error) {
       // One bad order must not block the rest of a bulk payload.
@@ -696,7 +694,7 @@ export async function reconcileNcmStatuses(): Promise<{ checked: number; applied
         // client vendor - that's our follow_up stage, not a further step
         // along the carrier-leg sequence, so it's applied separately.
         if (ncmStatus === "Sent to Vendor") {
-          const result = await applyExternalCarrierFollowUp(parcelId, `${CARRIER_AUTHOR_LABEL}: ${ncmStatus} (reconciled)`);
+          const result = await applyExternalCarrierFollowUp(parcelId, `${CARRIER_AUTHOR_LABEL}: Follow-up (reconciled)`);
           if (result.applied) applied += 1;
           continue;
         }

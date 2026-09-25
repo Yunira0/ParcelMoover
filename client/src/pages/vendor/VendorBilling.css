@@ -73,6 +73,64 @@
   color: var(--color-danger-text);
 }
 
+/* Credit-limit usage — one glanceable bar on every billing surface. Track is
+   the flat elevated layer; fill follows the billing state (green / olive /
+   red). Border-not-shadow throughout; no warm hue beyond the existing
+   warning/ danger tokens. */
+.credit-usage {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1-5);
+}
+
+.credit-usage-track {
+  background-color: var(--color-background-elevated);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-full);
+  height: 6px;
+  overflow: hidden;
+  width: 100%;
+}
+
+.credit-usage-fill {
+  border-radius: var(--border-radius-full);
+  height: 100%;
+  transition: width 200ms ease-out;
+}
+
+.credit-usage-fill-ok {
+  background-color: var(--color-success-default);
+}
+
+.credit-usage-fill-warned {
+  background-color: var(--color-background-warning-default);
+}
+
+.credit-usage-fill-blocked {
+  background-color: var(--color-danger-default);
+}
+
+.credit-usage-label {
+  color: var(--color-text-caption);
+  font-size: var(--font-size-xs);
+  font-variant-numeric: tabular-nums;
+  margin: 0;
+}
+
+.billing-limit-cell {
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-1-5);
+  min-width: 140px;
+}
+
+.billing-limit-row {
+  align-items: baseline;
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
 .billing-hint {
   align-items: center;
   color: var(--color-text-caption);
@@ -83,7 +141,7 @@
 }
 
 .billing-success {
-  color: var(--color-success-text, #1a7f37);
+  color: var(--color-success-default);
   font-size: var(--font-size-sm);
   margin: 0;
 }
@@ -200,7 +258,7 @@
 
 .billing-pill-verified {
   background-color: var(--color-success-surface, #e8f5ec);
-  color: var(--color-success-text, #1a7f37);
+  color: var(--color-success-default);
 }
 
 .billing-pill-rejected {
@@ -270,6 +328,10 @@
 @media (prefers-reduced-motion: reduce) {
   .billing-skeleton {
     animation: none;
+  }
+
+  .credit-usage-fill {
+    transition: none;
   }
 }
 

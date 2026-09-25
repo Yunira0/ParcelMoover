@@ -1115,7 +1115,7 @@ const ReturnOperations: React.FC = () => {
 
   return (
     <div className="return-operations-container">
-      <PageHeader title="Return" subtitle="Manage return orders and failed deliveries going back to the vendor." />
+      <PageHeader title="Return" />
 
       <SegmentedTabs
         ariaLabel="Return operation filters"

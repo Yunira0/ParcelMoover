@@ -55,6 +55,7 @@ function labelHtml(order: Order, qrDataUrl: string, barcodeUrl: string): string 
   const destination = esc(cleanDestination || order.destinationName || order.destination);
   const valleyLabel = order.destinationValley === 'inside' ? 'Inside Valley' : '';
   const fullAddress = order.receiverAddress ? esc(order.receiverAddress) : '—';
+  const alternatePhone = order.receiverAlternatePhone?.trim();
 
   // A single uniform factor - scaling X and Y independently to force-fill a
   // frame with a different aspect ratio than the design (e.g. a vendor's
@@ -97,7 +98,7 @@ function labelHtml(order: Order, qrDataUrl: string, barcodeUrl: string): string 
       <span class="party-label">TO</span>
       <span class="party-name">${esc(order.receiverName)}</span>
       <span class="party-phone">${esc(order.receiverPhone)}</span>
-      ${order.receiverAlternatePhone ? `<span class="party-phone">${esc(order.receiverAlternatePhone)}</span>` : ''}
+      ${alternatePhone ? `<span class="party-phone-alt">${esc(alternatePhone)}</span>` : ''}
       <span class="party-addr">${fullAddress}</span>
     </div>
     <div class="codes">
@@ -248,6 +249,12 @@ body{background:#fff;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif}
   font-size:14px;font-weight:700;color:#000;
   font-family:'Courier New',Consolas,monospace;
   letter-spacing:0.5px;line-height:1.2;
+}
+.party-phone-alt{
+  display:flex;align-items:baseline;gap:1mm;
+  font-size:11px;font-weight:700;color:#000;
+  font-family:'Courier New',Consolas,monospace;
+  letter-spacing:0.35px;line-height:1.15;
 }
 .party-addr{
   font-size:12px;font-weight:700;color:#000;

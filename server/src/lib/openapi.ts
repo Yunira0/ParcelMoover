@@ -234,6 +234,7 @@ export function buildOpenApiDocument(baseUrl: string) {
       "/rates": {
         get: {
           summary: "Your full rate card",
+          description: "Returns effective rates for each active destination. Central-hub vendors on flat pricing also receive flatRates for insideValley, outsideRingRoad, and outsideValley, including tiers without assigned destinations.",
           operationId: "getRates",
           responses: {
             200: { description: "Rate card across all destinations", content: { "application/json": { schema: { type: "object" } } } },
@@ -427,7 +428,7 @@ export function buildOpenApiDocument(baseUrl: string) {
         post: {
           summary: "File a payment claim",
           description:
-            "Records that you have paid the office, optionally with a proof screenshot or PDF (max 5MB; JPG, PNG, WebP, PDF). " +
+            "Records that you have paid the office, with a required proof screenshot or PDF (max 5MB; JPG, PNG, WebP, PDF). " +
             "Filing a claim does not change your balance - an admin must verify it first.",
           operationId: "submitVendorPayment",
           parameters: [idempotencyKeyHeader],
@@ -437,7 +438,7 @@ export function buildOpenApiDocument(baseUrl: string) {
               "multipart/form-data": {
                 schema: {
                   type: "object",
-                  required: ["amount"],
+                  required: ["amount", "proof"],
                   properties: {
                     amount: { type: "number", exclusiveMinimum: 0, description: "Amount paid, in NPR." },
                     reference: { type: "string", description: "Bank/wallet transaction reference." },
@@ -744,6 +745,7 @@ export function buildOpenApiDocument(baseUrl: string) {
                 balance: { type: "number", description: "Negative means you owe the office." },
                 warnThreshold: { type: "number" },
                 blockThreshold: { type: "number" },
+                creditLimit: { type: "number", description: "This vendor's own credit limit (positive NPR). Block trips at balance <= -creditLimit." },
                 amountToClearBlock: { type: "number" },
                 pendingPaymentAmount: { type: "number", description: "Filed claims not yet verified; not counted in balance." },
                 paymentNote: { type: ["string", "null"] },

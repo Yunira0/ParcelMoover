@@ -287,7 +287,7 @@ const HoldOperations: React.FC = () => {
 
   return (
     <div className="hold-operations-container">
-      <PageHeader title="Hold" subtitle="Keep an eye on your dispatch orders across the whole hub network." />
+      <PageHeader title="Hold" />
 
       <div className="hold-toolbar">
         <div />

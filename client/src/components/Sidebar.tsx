@@ -344,6 +344,7 @@ const SalesSidebar: React.FC = () => {
         <SidebarItem to="/dashboard" icon={LayoutDashboard} label="Dashboard" />
         <SidebarItem to="/orders" icon={Package} label="Orders" />
         <SidebarItem to="/vendors" icon={Store} label="Vendor Management" />
+        <SidebarItem to="/cod-settlement-requests" icon={Banknote} label="Settlement Requests" />
 
         <SidebarSection label="Customer Experience" />
         <div className="sidebar-subnav">
@@ -399,7 +400,7 @@ const BranchSidebar: React.FC = () => {
         <SidebarSection label="Management" />
         <SidebarItem to="/vendors" icon={Store} label="Vendor Management" />
         <SidebarItem to="/riders" icon={Bike} label="Rider Management" />
-        <SidebarItem to="/settings/delivery-rates" icon={Route} label="Route Rates" />
+        <SidebarItem to="/branches/destinations" icon={MapPin} label="Destinations & Rates" />
 
         <SidebarSection label="Finance" />
         <SidebarItem to="/branches/settlement" icon={Banknote} label="Branch COD" />
@@ -443,11 +444,11 @@ const AdminSidebar: React.FC<{ isSuperAdmin: boolean }> = ({ isSuperAdmin }) => 
         <SidebarItem to="/admin" icon={UserCheck} label="Admin Management" />
         <SidebarItem to="/vendors" icon={Store} label="Vendor Management" />
         <SidebarItem to="/riders" icon={Bike} label="Rider Management" />
+        {/* Rates are a tab of Destination Management. The standalone Rates
+            entry survives only in the branch workspace menu above, since
+            branch admins can't open /settings. */}
         {(isSuperAdmin || hasAdminPermission('SETTINGS_ACCESS')) && (
           <SidebarItem to="/settings" icon={MapPin} label="Destination Management" />
-        )}
-        {(isSuperAdmin || hasAdminPermission('SETTINGS_ACCESS')) && (
-          <SidebarItem to="/settings/delivery-rates" icon={Route} label="Route Rates" />
         )}
         {/* COD Management used to sit here. It was the rider and vendor
             settlement lists behind a toggle, which is exactly what Rider COD
@@ -460,7 +461,7 @@ const AdminSidebar: React.FC<{ isSuperAdmin: boolean }> = ({ isSuperAdmin }) => 
           <SidebarGroup
             label="System Management"
             icon={Wrench}
-            match={['/pickup-time-slots', '/system-logs', '/sla', '/banners', '/announcements']}
+            match={['/pickup-time-slots', '/system-logs', '/sla', '/banners', '/announcements', '/vouchers']}
           >
             {isSuperAdmin && <SubItem to="/pickup-time-slots" icon={Clock} label="Pickup Time Slots" />}
             {(isSuperAdmin || hasAdminPermission('SYSTEM_LOGS_ACCESS')) && (
@@ -473,6 +474,10 @@ const AdminSidebar: React.FC<{ isSuperAdmin: boolean }> = ({ isSuperAdmin }) => 
             {(isSuperAdmin || hasAdminPermission('SETTINGS_ACCESS')) && (
               <SubItem to="/announcements" icon={Megaphone} label="Announcements" />
             )}
+            {/* Vouchers live here, not under Vendor COD: publishing a shipping
+                offer is occasional configuration, like a banner or a time
+                slot — not a daily settlement screen. */}
+            <SubItem to="/vouchers" icon={Ticket} label="Vouchers" />
           </SidebarGroup>
         )}
 
@@ -495,10 +500,17 @@ const AdminSidebar: React.FC<{ isSuperAdmin: boolean }> = ({ isSuperAdmin }) => 
             so an admin without the grant sees those and nothing else here. */}
         <SidebarSection label="Finance" />
         <div className="sidebar-subnav">
-          {/* Branch COD (statements) and its matching deposits (Branch
-              Payments) are one workflow; kept next to Rider/Vendor COD. */}
-          <SubItem to="/branches/settlement" icon={Building2} label="Branch COD" />
-          <SubItem to="/branches/billing" icon={Wallet} label="Branch Payments" />
+          {/* Branch COD mirrors Vendor COD below: the statements and the
+              deposits that clear them are one conversation, so they sit in one
+              disclosure rather than as two siblings. */}
+          <SidebarGroup
+            label="Branch COD"
+            icon={Building2}
+            match={['/branches/settlement', '/branches/billing']}
+          >
+            <SubItem to="/branches/settlement" icon={Building2} label="COD & Settlements" />
+            <SubItem to="/branches/billing" icon={Receipt} label="Billing & Credit" />
+          </SidebarGroup>
 
           <SubItem to="/accounting/transactions/rider-cod" icon={Bike} label="Rider COD" />
 

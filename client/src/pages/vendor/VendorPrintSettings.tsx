@@ -143,7 +143,6 @@ const VendorPrintSettings: React.FC = () => {
     <div className="print-settings-page">
       <PageHeader
         title="Print Settings"
-        subtitle="Set your sticker size so shipping labels print correctly on your printer."
       />
 
       {loading ? (

@@ -34,6 +34,8 @@ export const kycUpload = multer({
 }).fields([
   { name: "citizenshipDocFront", maxCount: 1 },
   { name: "citizenshipDocBack", maxCount: 1 },
+  // Legacy single-scan verification upload — controllers map it to front.
+  { name: "citizenshipDoc", maxCount: 1 },
   { name: "panVatDoc", maxCount: 1 },
   { name: "businessCertDoc", maxCount: 1 },
 ]);

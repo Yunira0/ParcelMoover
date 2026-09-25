@@ -183,7 +183,6 @@ const ReportsPage: React.FC = () => {
     <div className="reports-page">
       <PageHeader
         title="Reports"
-        subtitle="Pickup, dispatch, transit, and return orders — pending and delivered."
         onBack={() => navigate('/dashboard')}
       />
 

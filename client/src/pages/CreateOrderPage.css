@@ -89,30 +89,13 @@
   font-weight: var(--font-weight-regular);
   color: var(--color-text-caption);
   text-transform: none;
-  text-align: right;
+  text-align: center;
 }
 
 .order-summary-divider {
   height: 1px;
   background: var(--color-border-default);
   margin: var(--space-1) 0;
-}
-
-.order-summary-info {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-3);
-  background: var(--color-background-primary-invert-default);
-  border: 1px solid var(--color-border-primary);
-  border-radius: var(--border-radius-modal);
-  padding: var(--space-2);
-  color: var(--color-background-primary-default);
-  font-size: 12px;
-}
-
-.order-summary-info svg {
-  flex-shrink: 0;
-  margin-top: 2px;
 }
 
 .order-form-error {
@@ -138,6 +121,33 @@
   margin: 0;
 }
 
+/* Voucher picker inside the order summary: FormField controls throughout —
+   same bordered 36px fields, focus ring, and error slot as every other field.
+   The group label names both controls; their own labels are sr-only
+   (see FormField hideLabel). Discount row in success green (a status color,
+   never a second warm accent competing with rust). */
+.order-voucher {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.order-voucher-label {
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-default);
+  text-transform: uppercase;
+}
+
+.order-voucher-code input {
+  font-family: var(--mono);
+  text-transform: uppercase;
+}
+
+.order-voucher-discount {
+  color: var(--color-success-default);
+}
+
 .order-form-warning {
   color: var(--color-background-warning-default);
   font-size: var(--font-size-sm);
@@ -145,7 +155,7 @@
   padding: var(--space-2) var(--space-3);
   border: 1px solid var(--color-background-warning-default);
   border-radius: var(--border-radius-default);
-  background: var(--color-background-warning-subtle, transparent);
+  background: var(--color-warning-surface);
 }
 
 .create-order-actions {

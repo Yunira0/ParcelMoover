@@ -51,7 +51,7 @@ import {
   type OrderSortField,
   type ParcelStatus,
 } from '../services/orders.service';
-import { searchVendors, getAdmins } from '../services/users.service';
+import { searchVendors, getAllAdmins } from '../services/users.service';
 import { printLabels } from '../utils/printLabels';
 import { getCurrentUserRoles } from '../utils/auth';
 import { apiErrorMessage } from '../utils/serverValidation';
@@ -204,19 +204,24 @@ const matchesKeyword = (order: Order, keyword: string) => {
   return haystack.some(field => (field || '').toLowerCase().includes(needle));
 };
 
-// Filters the backend doesn't have a query param for (origin/rider/keyword/
-// destination) - applied client-side on top of whatever page the server
-// already returned for the active tab + search. Status, vendor and the date
-// range are also re-checked here, but only as a no-op safety net: all three
-// are pushed down to the query, so the rows are already narrowed server-side.
-// The sales filter is push-down only (an order carries no sales field to
-// re-check), so it isn't part of the match below.
+// Filters the backend doesn't have a query param for (rider/keyword) -
+// applied client-side on top of whatever page the server already returned
+// for the active tab + search. Status, vendor, origin/destination hub and the
+// date range are also re-checked here, but only as a no-op safety net: all of
+// those are pushed down to the query, so the rows are already narrowed
+// server-side. The sales filter is push-down only (an order carries no sales
+// field to re-check), so it isn't part of the match below.
+//
+// originHub/destinationHub hold a location id (see OrderFilterOptions), so
+// they're compared against the order's own originLocationId/
+// destinationLocationId - not the display name, which two different
+// locations can share.
 
 const matchesSecondaryFilters = (order: Order, filters: SecondaryFilters) => {
-  return (!filters.originHub || order.origin === filters.originHub) &&
+  return (!filters.originHub || order.originLocationId === filters.originHub) &&
     (!filters.riderName || order.riderName === filters.riderName) &&
     matchesKeyword(order, filters.keyword) &&
-    (!filters.destinationHub || order.destination === filters.destinationHub) &&
+    (!filters.destinationHub || order.destinationLocationId === filters.destinationHub) &&
     (filters.currentStatus.length === 0 || filters.currentStatus.includes(order.status)) &&
     (!filters.orderType || order.orderType === filters.orderType) &&
     (filters.vendor.length === 0 || (!!order.vendorId && filters.vendor.includes(order.vendorId)));
@@ -276,7 +281,17 @@ const OrderManagement: React.FC = () => {
   // Tracking ids confirmed by pressing Enter (typically a barcode scanner) -
   // kept separate from the live input buffer so rapid scans never race each
   // other (see utils/scannerInput.ts). Rendered as chips beside the input.
-  const [scannedIds, setScannedIds] = useState<string[]>([]);
+  // A bulk import's "View orders" button lands here with the created tracking
+  // ids: filter to them and pre-select the lot once they load.
+  const importedTrackingIds = useMemo(
+    () => (location.state as { importedTrackingIds?: string[] } | null)?.importedTrackingIds ?? [],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+  const pendingImportSelectRef = useRef<Set<string> | null>(
+    importedTrackingIds.length ? new Set(importedTrackingIds) : null,
+  );
+  const [scannedIds, setScannedIds] = useState<string[]>(importedTrackingIds);
   const combinedSearch = useMemo(
     () => [...scannedIds, trackingSearch.trim()].filter(Boolean).join(', '),
     [scannedIds, trackingSearch],
@@ -407,6 +422,12 @@ const OrderManagement: React.FC = () => {
         // Server joins this through vendors.sales_user_id — the order rows carry
         // no sales field, so it has to be a push-down filter.
         salesUserId: salesUserId || undefined,
+        // Pushed down for the same reason as `vendorId`: filtered client-side
+        // it only ever narrowed the page already fetched (see
+        // matchesSecondaryFilters), so a hub with no parcels on the current
+        // page silently showed an empty table instead of its real matches.
+        originLocationId: originHub || undefined,
+        destinationLocationId: destinationHub || undefined,
         pageSize,
         cursor: pager.request.cursor,
         dir: pager.request.dir,
@@ -425,7 +446,7 @@ const OrderManagement: React.FC = () => {
     } finally {
       if (requestId === loadRequestIdRef.current) setLoading(false);
     }
-  }, [filter, currentStatus, vendor, salesUserId, debouncedSearch, pager.request, sortBy, sortDir, pageSizeChoice, dateField, dateFrom, dateTo]);
+  }, [filter, currentStatus, vendor, salesUserId, originHub, destinationHub, debouncedSearch, pager.request, sortBy, sortDir, pageSizeChoice, dateField, dateFrom, dateTo]);
 
   useEffect(() => { loadOrders(); }, [loadOrders]);
   useEffect(() => subscribeToOrderStatusChanged(loadOrders), [loadOrders]);
@@ -482,14 +503,15 @@ const OrderManagement: React.FC = () => {
     return () => { cancelled = true; };
   }, [filter]);
 
-  // Sales-department admins for the SALES filter dropdown. Fetched once; the
-  // list is small enough that one large page covers every rep.
+  // Sales-department admins for the SALES filter dropdown. Fetched once, across
+  // every page - a single default-sized request would only carry the 20 newest
+  // admins and quietly omit the rest.
   useEffect(() => {
     if (!canFilterBySales) return;
     let cancelled = false;
     (async () => {
       try {
-        const res = await getAdmins({ pageSize: 100, status: 'active' });
+        const res = await getAllAdmins({ status: 'active' });
         if (!cancelled && res?.success && Array.isArray(res.data)) {
           setSalesOptions(
             res.data
@@ -516,6 +538,8 @@ const OrderManagement: React.FC = () => {
         search: debouncedSearch || undefined,
         vendorId: vendor.length ? vendor : undefined,
         salesUserId: salesUserId || undefined,
+        originLocationId: originHub || undefined,
+        destinationLocationId: destinationHub || undefined,
         ...(dateFrom || dateTo ? { dateField } : {}),
         ...(dateFrom ? { dateFrom } : {}),
         ...(dateTo ? { dateTo } : {}),
@@ -525,7 +549,7 @@ const OrderManagement: React.FC = () => {
       // Badges keep their previous numbers; the table below is the source of
       // truth either way, so a failed count fetch shouldn't surface an error.
     }
-  }, [debouncedSearch, vendor, salesUserId, dateField, dateFrom, dateTo]);
+  }, [debouncedSearch, vendor, salesUserId, originHub, destinationHub, dateField, dateFrom, dateTo]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -568,10 +592,13 @@ const OrderManagement: React.FC = () => {
   }, []);
 
   const filterOptions = useMemo(() => {
+    // origins/destinations already came back de-duplicated by location id
+    // (see getOrderFilterOptions); just give them a stable display order.
+    const byName = <T extends { name: string }>(a: T, b: T) => a.name.localeCompare(b.name);
     return {
-      origins: uniqueValues(filterOptionsData.origins),
+      origins: [...filterOptionsData.origins].sort(byName),
       riders: uniqueValues(filterOptionsData.riders),
-      destinations: uniqueValues(filterOptionsData.destinations),
+      destinations: [...filterOptionsData.destinations].sort(byName),
     };
   }, [filterOptionsData]);
 
@@ -596,6 +623,16 @@ const OrderManagement: React.FC = () => {
   useEffect(() => {
     setSelectedIds(new Set());
   }, [filter, pager.request]);
+
+  // Select the freshly imported orders once the filtered list has loaded.
+  useEffect(() => {
+    const pending = pendingImportSelectRef.current;
+    if (!pending || loading) return;
+    const ids = orders.filter(o => pending.has(o.trackingId)).map(o => o.id);
+    if (ids.length === 0) return;
+    pendingImportSelectRef.current = null;
+    setSelectedIds(new Set(ids));
+  }, [orders, loading]);
 
   const handlePrintLabels = useCallback(async () => {
     const labelOrders = selectedIds.size > 0
@@ -1026,7 +1063,7 @@ const OrderManagement: React.FC = () => {
 
   return (
     <div className="order-management-container">
-      <PageHeader title="Orders" subtitle="Manage and track package orders across the network." />
+      <PageHeader title="Orders" />
 
       <SegmentedTabs
         ariaLabel="Order status filters"
@@ -1063,7 +1100,7 @@ const OrderManagement: React.FC = () => {
               value={originHub}
               onChange={setOriginHub}
               placeholder="Select Hub"
-              options={filterOptions.origins.map(value => ({ value, label: value }))}
+              options={filterOptions.origins.map(({ id, name }) => ({ value: id, label: name }))}
             />
             <FilterDropdown
               label="RIDER NAME"
@@ -1087,7 +1124,7 @@ const OrderManagement: React.FC = () => {
               value={destinationHub}
               onChange={setDestinationHub}
               placeholder="Select Hub"
-              options={filterOptions.destinations.map(value => ({ value, label: value }))}
+              options={filterOptions.destinations.map(({ id, name }) => ({ value: id, label: name }))}
             />
             <FilterDropdown
               label="ORDER TYPE"

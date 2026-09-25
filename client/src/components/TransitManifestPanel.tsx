@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ChevronDown, ChevronUp, Plus, Search, Trash2, Truck, X } from 'lucide-react';
 import Table from './Table';
@@ -271,7 +271,13 @@ const TransitManifestPanel: React.FC<TransitManifestPanelProps> = ({ statusFilte
     }
   };
 
+  // `busy` only reaches the button on the next render, so a fast double-click
+  // sends two dispatches for the same manifest.
+  const dispatching = useRef(false);
+
   const handleDispatch = async (manifest: TransitManifestModel) => {
+    if (dispatching.current) return;
+    dispatching.current = true;
     setBusy(true);
     setNotice('');
     setError('');
@@ -284,6 +290,7 @@ const TransitManifestPanel: React.FC<TransitManifestPanelProps> = ({ statusFilte
     } catch (err) {
       setError(apiErrorMessage(err, 'Failed to dispatch the manifest.'));
     } finally {
+      dispatching.current = false;
       setBusy(false);
     }
   };

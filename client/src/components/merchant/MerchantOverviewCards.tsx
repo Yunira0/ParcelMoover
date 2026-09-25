@@ -12,7 +12,7 @@ import {
   Landmark,
   type LucideIcon,
 } from 'lucide-react';
-import { formatMoneyCompact } from '../../utils/format';
+import { formatMoney } from '../../utils/format';
 import {
   MERCHANT_METRIC_LABELS,
   MERCHANT_METRIC_ORDER,
@@ -64,7 +64,7 @@ const MerchantOverviewCards: React.FC<MerchantOverviewCardsProps> = ({ summary, 
               <span className="vendor-card-label">{MERCHANT_METRIC_LABELS[key]}</span>
             </span>
             <span className="vendor-card-value">{loading || !metric ? '…' : metric.count.toLocaleString()}</span>
-            {(!loading && metric) && <span className="vendor-card-hint">{formatMoneyCompact(metric.amount)}</span>}
+            {(!loading && metric) && <span className="vendor-card-hint">{formatMoney(metric.amount)}</span>}
           </button>
         );
       })}

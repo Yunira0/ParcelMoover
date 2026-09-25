@@ -5,10 +5,14 @@ import {
   updatePricingSettings,
   getVendorQuote,
   getVendorChargeSheet,
+  getBranchVendorFlatQuote,
+  getReturnDeliveryQuote,
   RATE_TYPES,
   RateType,
   VendorRateOverrides,
 } from "../services/pricing.service";
+import { getDeliveryQuote, getReturnRouteQuote } from "../services/delivery-rate.service";
+import { getMasterHubId, resolveOrderOriginHub } from "../services/order.service";
 import { isStaffActor, resolveOwnVendorId } from "../services/vendor-scope.service";
 
 const RATE_SELECT = {
@@ -121,6 +125,7 @@ export async function getVendorQuoteController(req: Request, res: Response) {
 
     const RATE_SELECT = {
       rate_type: true,
+      location_id: true,
       flat_inside_valley: true,
       flat_outside_valley: true,
       flat_outside_ring_road: true,
@@ -191,7 +196,27 @@ export async function getVendorQuoteController(req: Request, res: Response) {
 
     const weight = weightKg !== undefined ? Number(weightKg) : 1;
     const svc = serviceType === "branch_delivery" ? "branch_delivery" : "home_delivery";
-    const quote = await getVendorQuote(rateType, destinationLocationId, weight, overrides, svc);
+    const isReturn = req.query.isReturn === "true";
+
+    // Same origin rule and pricing ladder as order creation, so the preview is
+    // what the order will actually be charged: a plain admin's orders ship from
+    // their own hub, anyone else's from the vendor's hub.
+    const origin = (await resolveOrderOriginHub(req.user!)) ?? vendor!.location_id;
+    const masterHubId = await getMasterHubId();
+    if (origin && masterHubId && origin !== masterHubId) {
+      const flat = rateType === "flat"
+        ? await getBranchVendorFlatQuote(origin, destinationLocationId, weight, overrides, svc, isReturn)
+        : null;
+      if (flat) return res.status(200).json({ success: true, data: flat });
+      const route = isReturn
+        ? await getReturnRouteQuote(origin, destinationLocationId, weight, svc)
+        : await getDeliveryQuote(origin, destinationLocationId, weight, svc);
+      return res.status(200).json({ success: true, data: { ...route, rateType, basis: "Branch route rate" } });
+    }
+
+    const quote = isReturn
+      ? await getReturnDeliveryQuote(rateType, destinationLocationId, weight, overrides, svc)
+      : await getVendorQuote(rateType, destinationLocationId, weight, overrides, svc);
     return res.status(200).json({ success: true, data: quote });
   } catch (error: any) {
     return res.status(error.statusCode || 500).json({

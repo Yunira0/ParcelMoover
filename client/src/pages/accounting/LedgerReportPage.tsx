@@ -13,15 +13,15 @@ import './Accounting.css';
 
 type LedgerView = 'vendor' | 'rider' | 'account';
 
-const HEADINGS: Record<LedgerView, { title: string; subtitle: string }> = {
-  vendor: { title: 'Vendor Ledger', subtitle: 'Where the office stands with each vendor' },
-  rider: { title: 'Rider Ledger', subtitle: 'Cash each rider is holding' },
-  account: { title: 'Account Ledger', subtitle: 'Every movement on one account, with a running balance' },
+const HEADINGS: Record<LedgerView, { title: string }> = {
+  vendor: { title: 'Vendor Ledger' },
+  rider: { title: 'Rider Ledger' },
+  account: { title: 'Account Ledger' },
 };
 
 const LedgerReportPage: React.FC<{ view: LedgerView }> = ({ view }) => (
   <div className="acc-page">
-    <PageHeader title={HEADINGS[view].title} subtitle={HEADINGS[view].subtitle}>
+    <PageHeader title={HEADINGS[view].title}>
       {/* Staff have no control account, so they appear on neither list — but
           money is still spent on them, and this is the only way to reach it. */}
       {view !== 'account' && (

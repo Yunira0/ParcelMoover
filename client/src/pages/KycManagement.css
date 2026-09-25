@@ -8,13 +8,20 @@
 .kyc-cell-primary {
   font-size: 0.875rem;
   font-weight: 500;
-  color: var(--color-text, #111);
+  color: var(--color-text-default);
 }
 
 .kyc-cell-sub {
   font-size: 0.78rem;
   color: var(--color-text-caption, #6b7280);
   margin-top: 2px;
+}
+
+.kyc-verification-note {
+  display: block;
+  font-size: 0.78rem;
+  color: var(--color-text-caption, #6b7280);
+  margin-top: 4px;
 }
 
 .kyc-view-btn {
@@ -47,7 +54,7 @@
 }
 
 .kyc-modal {
-  background: #fff;
+  background: var(--color-background-surface);
   border-radius: 12px;
   width: 100%;
   max-width: 560px;
@@ -63,13 +70,13 @@
   justify-content: space-between;
   gap: 16px;
   padding: 20px 24px 16px;
-  border-bottom: 1px solid var(--color-border, #e5e7eb);
+  border-bottom: 1px solid var(--color-border-default);
 }
 
 .kyc-modal-header h2 {
   font-size: 1.1rem;
   font-weight: 700;
-  color: var(--color-text, #111);
+  color: var(--color-text-default);
   margin: 0 0 8px;
 }
 
@@ -101,7 +108,7 @@
 
 .kyc-modal-footer {
   padding: 16px 24px;
-  border-top: 1px solid var(--color-border, #e5e7eb);
+  border-top: 1px solid var(--color-border-default);
   display: flex;
   justify-content: flex-end;
   gap: 10px;
@@ -109,7 +116,7 @@
 
 /* Detail sections */
 .kyc-detail-section {
-  border: 1px solid var(--color-border, #e5e7eb);
+  border: 1px solid var(--color-border-default);
   border-radius: 8px;
   padding: 16px;
 }
@@ -127,7 +134,7 @@
   display: flex;
   gap: 12px;
   padding: 5px 0;
-  border-bottom: 1px solid var(--color-border, #f3f4f6);
+  border-bottom: 1px solid var(--color-border-default);
   font-size: 0.85rem;
 }
 
@@ -142,7 +149,7 @@
 }
 
 .kyc-detail-value {
-  color: var(--color-text, #111);
+  color: var(--color-text-default);
   font-weight: 500;
   word-break: break-word;
 }
@@ -182,7 +189,7 @@
   gap: 12px;
   font-size: 0.85rem;
   padding: 5px 0;
-  border-bottom: 1px solid var(--color-border, #f3f4f6);
+  border-bottom: 1px solid var(--color-border-default);
 }
 
 .kyc-doc-item:last-child { border-bottom: none; }
@@ -200,14 +207,14 @@
   gap: 10px;
   padding: 16px;
   background: var(--color-background-surface, #f9fafb);
-  border: 1px solid var(--color-border, #e5e7eb);
+  border: 1px solid var(--color-border-default);
   border-radius: 8px;
 }
 
 .kyc-action-form label {
   font-size: 0.85rem;
   font-weight: 600;
-  color: var(--color-text, #111);
+  color: var(--color-text-default);
 }
 
 .kyc-action-form .required {
@@ -217,7 +224,7 @@
 .kyc-action-form textarea {
   width: 100%;
   padding: 8px 12px;
-  border: 1.5px solid var(--color-border, #d1d5db);
+  border: 1.5px solid var(--color-border-default);
   border-radius: 6px;
   font-size: 0.875rem;
   resize: vertical;

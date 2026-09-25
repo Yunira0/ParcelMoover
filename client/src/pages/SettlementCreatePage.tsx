@@ -3,14 +3,62 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Users, ListChecks, Download } from 'lucide-react';
 import Button from '../components/Button';
 import FormField from '../components/FormField';
-import StatusChip from '../components/StatusChip';
+import StatusChip, { type StatusChipTone } from '../components/StatusChip';
+import CreditUsageBar from '../components/CreditUsageBar';
 import { getUnsettledOrders, createSettlement, type UnsettledOrderItem } from '../services/finance.service';
-import { getRiders, searchVendors } from '../services/users.service';
+import { getBillingStatus, type BillingStatus, type VendorBillingState } from '../services/billing.service';
+import { getAllRiders, searchVendors } from '../services/users.service';
 import { downloadExcel, type CellValue } from '../utils/excel';
+import { formatCurrency } from '../utils/format';
+import './vendor/VendorBilling.css';
 import './SettlementCreatePage.css';
 import ReceiverPhones from '../components/ReceiverPhones';
 
 type PayeeType = 'rider' | 'vendor';
+
+const CREDIT_STATE: Record<VendorBillingState, { tone: StatusChipTone; label: string }> = {
+  ok: { tone: 'success', label: 'Good standing' },
+  warned: { tone: 'warning', label: 'Warned' },
+  blocked: { tone: 'danger', label: 'Blocked' },
+};
+
+// Mirrors stateForBalance on the server: both lines are inclusive.
+const creditStateFor = (balance: number, credit: BillingStatus): VendorBillingState =>
+  balance <= credit.blockThreshold ? 'blocked' : balance <= credit.warnThreshold ? 'warned' : 'ok';
+
+const balanceLabel = (balance: number) =>
+  balance < 0 ? `Owes ${formatCurrency(-balance)}` : `${formatCurrency(balance)} in credit`;
+
+/**
+ * The vendor's running credit account. Unsettled COD is what covers their
+ * delivery charges, so paying it out can leave charges on non-COD orders
+ * (prepaid, returns) exposed - the operator should see that before settling.
+ */
+const VendorCreditPanel: React.FC<{ credit: BillingStatus }> = ({ credit }) => {
+  const state = CREDIT_STATE[credit.state];
+  return (
+    <div className="scp-credit">
+      <div className="scp-credit-head">
+        <span className="scp-credit-title">Credit balance</span>
+        <StatusChip tone={state.tone}>{state.label}</StatusChip>
+      </div>
+      <div className={`scp-credit-balance${credit.balance < 0 ? ' scp-credit-owed' : ''}`}>
+        {balanceLabel(credit.balance)}
+      </div>
+      <CreditUsageBar
+        balance={credit.balance}
+        creditLimit={credit.creditLimit}
+        state={credit.state}
+        id="scp-credit-usage"
+      />
+      {credit.pendingPaymentAmount > 0 && (
+        <p className="scp-subtext">
+          {formatCurrency(credit.pendingPaymentAmount)} in payment claims awaiting verification (not included).
+        </p>
+      )}
+    </div>
+  );
+};
 
 const SectionHeader: React.FC<{
   icon: React.ReactNode;
@@ -68,13 +116,14 @@ const SettlementCreatePage: React.FC = () => {
   const [fetchingOrders, setFetchingOrders] = useState(false);
   const [settlementDate, setSettlementDate] = useState(new Date().toISOString().split('T')[0]);
   const [error, setError] = useState('');
+  const [credit, setCredit] = useState<BillingStatus | null>(null);
 
   useEffect(() => {
     if (payeeType !== 'rider') return;
     const fetchRiders = async () => {
       setFetching(true);
       try {
-        const res = await getRiders({ pageSize: 100 });
+        const res = await getAllRiders();
         if (res?.success && Array.isArray(res.data)) {
           setEntityOptions(res.data.map((r: any) => ({
             value: r.id,
@@ -130,6 +179,21 @@ const SettlementCreatePage: React.FC = () => {
     fetchOrders();
   }, [selectedEntityId, payeeType]);
 
+  useEffect(() => {
+    setCredit(null);
+    if (payeeType !== 'vendor' || !selectedEntityId) return;
+    let cancelled = false;
+    getBillingStatus(selectedEntityId)
+      .then((status) => {
+        if (!cancelled) setCredit(status);
+      })
+      // Context only - a failure here must not get in the way of settling.
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedEntityId, payeeType]);
+
   const toggleOrder = (codCollectionId: string) => {
     setSelected((prev) => {
       const next = new Set(prev);
@@ -152,6 +216,9 @@ const SettlementCreatePage: React.FC = () => {
     [orders, selected],
   );
   const totalAmount = selectedOrders.reduce((sum, o) => sum + o.netPayable, 0);
+  // The payout comes off the balance once the statement is paid in full.
+  const balanceAfter = credit ? Math.round((credit.balance - totalAmount) * 100) / 100 : null;
+  const stateAfter = credit && balanceAfter !== null ? creditStateFor(balanceAfter, credit) : null;
 
   // Exports what the operator is looking at: the ticked rows once they've
   // started choosing, otherwise the whole unsettled list. The button label says
@@ -297,6 +364,7 @@ const SettlementCreatePage: React.FC = () => {
               />
             </div>
           </div>
+          {payeeType === 'vendor' && credit && <VendorCreditPanel credit={credit} />}
         </section>
 
         {selectedEntityId && (
@@ -335,13 +403,13 @@ const SettlementCreatePage: React.FC = () => {
                           onChange={toggleAll}
                         />
                       </th>
-                      <th style={{ textAlign: 'left' }}>Order ID</th>
-                      <th style={{ textAlign: 'left' }}>Tracking ID</th>
-                      <th style={{ textAlign: 'left' }}>Receiver</th>
-                      <th style={{ textAlign: 'left' }}>Number</th>
-                      <th style={{ textAlign: 'left' }}>Order Type</th>
-                      {payeeType === 'vendor' && <th style={{ textAlign: 'left' }}>Destination</th>}
-                      {payeeType === 'rider' && <th style={{ textAlign: 'left' }}>Location</th>}
+                      <th>Order ID</th>
+                      <th>Tracking ID</th>
+                      <th>Receiver</th>
+                      <th>Number</th>
+                      <th>Order Type</th>
+                      {payeeType === 'vendor' && <th>Destination</th>}
+                      {payeeType === 'rider' && <th>Location</th>}
                       {/* Rider rows have no delivery-charge deduction, so COD and
                           collected are always the same figure - one column, not two.
                           The cell holds a label/value block rather than a bare number,
@@ -350,8 +418,8 @@ const SettlementCreatePage: React.FC = () => {
                       <th className="scp-cod-head">COD</th>
                       {payeeType === 'vendor' && (
                         <>
-                          <th style={{ textAlign: 'right' }}>Delivery Charge</th>
-                          <th style={{ textAlign: 'right' }}>Net Payable</th>
+                          <th className="scp-num">Delivery Charge</th>
+                          <th className="scp-num">Net Payable</th>
                         </>
                       )}
                     </tr>
@@ -394,10 +462,10 @@ const SettlementCreatePage: React.FC = () => {
                         </td>
                         {payeeType === 'vendor' && (
                           <>
-                            <td className="scp-num" style={{ textAlign: 'right' }}>
+                            <td className="scp-num">
                               Rs. {order.deliveryCharge.toLocaleString()}
                             </td>
-                            <td className="scp-num scp-num-strong" style={{ textAlign: 'right' }}>
+                            <td className="scp-num scp-num-strong">
                               Rs. {order.netPayable.toLocaleString()}
                             </td>
                           </>
@@ -414,6 +482,21 @@ const SettlementCreatePage: React.FC = () => {
                 <span>{selected.size} order{selected.size > 1 ? 's' : ''} selected</span>
                 <span className="scp-summary-total">Total: Rs. {totalAmount.toLocaleString()}</span>
               </div>
+            )}
+
+            {selected.size > 0 && credit && balanceAfter !== null && stateAfter && (
+              <div className={`scp-credit-after scp-credit-after-${stateAfter}`}>
+                <span>
+                  Credit balance after this payout: <strong>{balanceLabel(balanceAfter)}</strong>
+                </span>
+                <StatusChip tone={CREDIT_STATE[stateAfter].tone}>{CREDIT_STATE[stateAfter].label}</StatusChip>
+              </div>
+            )}
+            {stateAfter && credit && stateAfter !== 'ok' && credit.state === 'ok' && (
+              <p className="scp-credit-note">
+                Paying this out leaves delivery charges uncovered by COD, so the vendor will be{' '}
+                {stateAfter === 'blocked' ? 'blocked from creating orders' : 'warned about charges due'}.
+              </p>
             )}
           </section>
         )}

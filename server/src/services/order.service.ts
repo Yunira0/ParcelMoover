@@ -1,106 +1,34 @@
-import { parcel_status, Prisma } from "../generated/prisma/client";
-import prisma from "../lib/prisma";
-import redis, { scanAndDelete } from "../lib/redis";
-import { AppError } from "../utils/AppError";
-import { getSlaSettings, SLA_GROUPS } from "./sla.service";
-import { unclosedRemarksWhere } from "./remark.service";
-import { resolveBranchLocationIds } from "./branch.service";
-import {
-  BulkCreateOrderInput,
-  BulkUpdateParcelStatusInput,
-  CreateOrderInput,
-  ListOrdersQuery,
-  OrderPartyInput,
-  OrderSortField,
-  ParcelStatus,
-  RedirectOrderInput,
-  STATUS_TRANSITIONS,
-  UpdateOrderDetailsInput,
-  UpdateParcelStatusInput,
-} from "../types/order.type";
-import { generateTrackingId } from "../utils/trackingId";
-import { generateDispatchNo } from "../utils/dispatchId";
-import { generateRunSheetNo } from "../utils/runSheetNo";
-import { generateTransitManifestNo } from "../utils/transitManifestNo";
-import { MAX_TRANSIT_MANIFEST_PARCELS } from "../types/transitManifest.type";
-import {
-  NEPAL_UTC_OFFSET_MS,
-  formatNepalDate as formatDate,
-  nepalDayRangeUtc,
-} from "../utils/nepalTime";
-import { resolveOwnVendorId, isStaffActor } from "./vendor-scope.service";
-import { hasAdminPermission } from "../middlewares/adminPermission.middleware";
-import { invalidateVendorFinanceCache, invalidateRiderFinanceCache } from "./finance.service";
-import { emitWebhookEvent, emitWebhookEventsBatch } from "./webhookDispatch.service";
-import { getVendorStatusLabel } from "../utils/orderStatusLabel";
-import { displayAuthor, displayRemarkText, stripCarrierStaffTag } from "../utils/carrierRemark";
-import {
-  assertVendorCanCreateOrder,
-  evaluateVendorBillingAsync,
-  evaluateVendorsBillingAsync,
-  statusAffectsBalance,
-} from "./billing.service";
+// Stable public entry point for order services. Internal modules import each other directly.
+export { buildOrdersWhere } from "./orders/where";
 
-type Party = { name: string; phone: string; alternate_phone?: string | null };
-function buildSearchText(trackingId: string, sender: Party, receiver: Party): string {
-  return [
-    trackingId,
-    sender.name, sender.phone, sender.alternate_phone ?? "",
-    receiver.name, receiver.phone, receiver.alternate_phone ?? "",
-  ].join(" ").toLowerCase();
-}
+export { invalidateOrderCaches } from "./orders/cache";
 
-// The list UI labels every row with its order_number as "#2980", so that's what
-// a user types to look one up. order_number is an int column, not part of the
-// search_text trigram blob, so it needs its own equality match.
-// Capped at 9 digits to stay inside int4 - a longer run of digits is a phone
-// number, and passing it to Prisma as an Int would throw.
-const ORDER_NUMBER_TERM = /^#?(\d{1,9})$/;
-function parseOrderNumber(term: string): number | null {
-  const match = ORDER_NUMBER_TERM.exec(term);
-  return match ? Number(match[1]) : null;
-}
+export { notifyAdmins, notifyVendorOfParcel } from "./orders/notifications";
 
-// Text copied out of Excel/Sheets carries artifacts a typed search never has:
-// zero-width/no-break characters, thousands separators ("9,800,000,011" - which
-// the comma split below would otherwise shred into four terms), and phone
-// punctuation ("980-000-0011") that the stored "+9779800000011" doesn't contain.
-const INVISIBLE_CHARS = /[​-‍⁠﻿]/g;
-const GROUPED_NUMBER = /^\d{1,3}(,\d{3})+$/;
-const PHONE_LIKE = /^\+?[\d\s\-().]+$/;
-// Fewer digits than this is an order number, not a phone.
-const MIN_PHONE_DIGITS = 7;
+export { createOrder } from "./orders/create";
 
-function cleanSearchText(text: string): string {
-  return text.replace(INVISIBLE_CHARS, "").replace(/ /g, " ").trim();
-}
+export { updateOrderDetails } from "./orders/edit";
 
-function normalizeSearchTerm(term: string): string {
-  const cleaned = cleanSearchText(term);
-  const digits = cleaned.replace(/\D/g, "");
-  return PHONE_LIKE.test(cleaned) && digits.length >= MIN_PHONE_DIGITS ? digits : cleaned;
-}
+export { redirectOrder } from "./orders/redirect";
 
-function splitSearchTerms(search: string): string[] {
-  const cleaned = cleanSearchText(search);
-  if (GROUPED_NUMBER.test(cleaned) && cleaned.replace(/\D/g, "").length >= MIN_PHONE_DIGITS) {
-    return [cleaned.replace(/,/g, "")];
-  }
-  return cleaned.split(/[,\r\n\t]+/).map(normalizeSearchTerm).filter(Boolean);
-}
+export { bulkCreateOrders } from "./orders/bulkCreate";
 
-// In a batch, a bare run of digits this long can't be a tracking id or an order
-// id, so it's a phone pasted from a spreadsheet column.
-function isPhoneTerm(term: string): boolean {
-  return term.length >= MIN_PHONE_DIGITS && /^\d+$/.test(term);
-}
+export {
+  getOrderFilterOptions,
+  getOrderCountsByStatus,
+  listOrders,
+  HANDOVER_PARCEL_INCLUDE,
+  mapHandoverParcel,
+  getRiderRunSheet,
+} from "./orders/query-core";
 
-import { getDeliveryQuote, getReturnRouteQuote } from "./delivery-rate.service";
-import { getVendorQuote, getReturnDeliveryQuote, RateType, ServiceType } from "./pricing.service";
-import { resolveLabelSize } from "./vendorPrintSettings.service";
-import { HANDOFF_REMARK_PREFIX as NCM_HANDOFF_REMARK_PREFIX } from "./ncm.service";
-import { HANDOFF_REMARK_PREFIX as UPAYA_HANDOFF_REMARK_PREFIX } from "./upaya.service";
+export {
+  getOrderByTrackingId,
+  getPublicOrderTracking,
+  getOrderStatusesByTrackingIds,
+} from "./orders/query-detail";
 
+<<<<<<< HEAD
 // Maps a vendor row's branch-rate override columns to VendorRateOverrides keys.
 function branchOverrides(v: {
   branch_flat_inside_valley: unknown; branch_flat_outside_valley: unknown; branch_flat_outside_ring_road: unknown;
@@ -122,21 +50,20 @@ function branchOverrides(v: {
   };
 }
 import { createNotification } from "./notification.service";
+=======
+export type {
+  OrderFilterOptions,
+  OrderCountsByStatus,
+  OrderCountsByStatusFilters,
+  ListOrdersResult,
+  StatusTimestampMap,
+  HandoverParcelDto,
+} from "./orders/query-core";
+>>>>>>> origin/main
 
-// The central master hub (Imadol). An order that originates anywhere else is a
-// branch-origin order and prices off the (branch → destination) route table.
-// Cached for the process; hub identity does not change at runtime.
-let masterHubIdCache: string | null | undefined;
-async function getMasterHubId(): Promise<string | null> {
-  if (masterHubIdCache !== undefined) return masterHubIdCache;
-  const hub = await prisma.locations.findFirst({
-    where: { code: { equals: "IMADOL", mode: "insensitive" }, parent_id: null, is_hub: true },
-    select: { id: true },
-  });
-  masterHubIdCache = hub?.id ?? null;
-  return masterHubIdCache;
-}
+export { updateParcelStatus } from "./orders/status-single";
 
+<<<<<<< HEAD
 // Prices a parcel's return-to-vendor charge as the vendor's return percent of
 // the normal rate for that destination/weight - the same discounted quote a
 // genuine order_type "return" parcel is priced at from creation (see
@@ -189,100 +116,48 @@ export async function computeReturnCharge(
     return null;
   }
 }
+=======
+export { bulkUpdateParcelStatus } from "./orders/status-bulk";
+>>>>>>> origin/main
 
-export type OrderActor = {
-  id: string;
-  roles: string[];
-};
+export type { BulkUpdateResult } from "./orders/status-bulk";
 
-const MAX_TRACKING_ID_RETRIES = 5;
+export { addOrderRemark } from "./orders/remarks";
 
-// The "Pending pickups" overview card: parcels awaiting pickup or in the
-// pickup/origin phase before they are dispatched onward (picked up at origin,
-// arrived at the origin branch).
-const PICKUP_PENDING_STATUSES: parcel_status[] = [
-  "pickup_ordered",
-  "rider_assigned",
-  "picked_up",
-  "arrived",
-];
+export { getSenderProfile } from "./orders/senderProfile";
 
-// The "In transit" overview card: parcels dispatched and moving between
-// branches (dispatched) or out on the OOV leg (oov).
-const IN_TRANSIT_STATUSES: parcel_status[] = [
-  "dispatched",
-  "oov",
-];
+export { getStatusCounts, getMerchantOverview } from "./orders/operations-reporting";
 
-// The "Pending returns" overview card: parcels in the return flow that haven't
-// been handed back yet - flagged for follow up, ready to return, or already
-// sent to the vendor (returned_to_vendor is terminal and excluded).
-const RETURN_PENDING_STATUSES: parcel_status[] = [
-  "follow_up",
-  "ready_to_return",
-  "sent_to_vendor",
-];
+export type { MerchantOverviewMetric, MerchantOverviewResult } from "./orders/operations-reporting";
 
-// The "Pending deliveries" overview card: parcels that have reached the
-// destination and are in the delivery flow - arrived at destination, ready to
-// deliver, sent out for delivery, or a failed attempt awaiting reattempt.
-// Kept disjoint from IN_TRANSIT_STATUSES so a parcel is counted in exactly one.
-const DELIVERY_PENDING_STATUSES: parcel_status[] = [
-  "arrived_at_branch",
-  "ready_to_deliver",
-  "sent_for_delivery",
-  "failed_delivery",
-];
+export { getDashboardSummary } from "./orders/dashboard";
 
-// The vendor/sales overview cards split the pipeline differently from the
-// admin dashboard: a vendor only calls a parcel "pending pickup" until we
-// physically take it, and everything after that is one "in progress" bucket
-// all the way to the customer's door. The admin cards instead split that span
-// into pending-pickups / in-transit / pending-deliveries by hub stage. Both
-// views are legitimate, so they get their own counters rather than one being
-// bent to fit the other - these two must stay in step with IN_DELIVERY_STATUSES
-// in the client's VendorMetricDetail, which lists the orders behind the card.
-const AWAITING_PICKUP_STATUSES: parcel_status[] = ["pickup_ordered", "rider_assigned"];
+export { COD_DETAIL_BUCKETS, getCodSettlementDetail } from "./orders/cod-detail";
 
-const IN_DELIVERY_STATUSES: parcel_status[] = [
-  "picked_up",
-  "arrived",
-  "oov",
-  "dispatched",
-  "arrived_at_branch",
-  "ready_to_deliver",
-  "sent_for_delivery",
-];
+export type { CodDetailBucket, CodDetailRow } from "./orders/cod-detail";
 
-// Hub-level transitions: confirming hub arrival and building/closing a
-// dispatch manifest are branch operations for admin/hub staff to perform,
-// not something the picking-up rider should be able to trigger themselves.
-const HUB_OPERATION_STATUSES: parcel_status[] = ["arrived", "dispatched", "arrived_at_branch"];
+export {
+  applyExternalCarrierStatus,
+  applyExternalCarrierFollowUp,
+} from "./orders/status-carrier";
 
-// Return-to-Origin workflow stages — staff-only, driven from Return Operations.
-const RETURN_WORKFLOW_STATUSES: parcel_status[] = [
-  "follow_up",
-  "ready_to_return",
-  "sent_to_vendor",
-  "returned_to_vendor",
-];
+export type { CarrierStatusResult } from "./orders/status-carrier";
 
-const TERMINAL_STATUSES: parcel_status[] = [
-  "delivered",
-  "cancelled",
-  "returned_to_vendor",
-];
+export {
+  CANCELLED_TRASH_AFTER_DAYS,
+  TRASH_RESTORE_STAGES,
+  moveOrderToTrash,
+  restoreOrderFromTrash,
+  getPermanentDeleteBlocker,
+  deleteOrderPermanently,
+  sweepCancelledOrdersToTrash,
+} from "./orders/trash";
 
-// The two statuses that mean "the rider handed the parcel over and took the
-// customer's cash" - i.e. the ones that stamp the COD ledger (see the
-// cod_collections upserts in updateParcelStatus / bulkUpdateParcelStatus).
-const DELIVERY_STATUSES: parcel_status[] = ["delivered", "partially_delivered"];
+export type { TrashRestoreStage } from "./orders/trash";
 
-// Hold / Loss & Damage are only reachable from the ops dashboard's dedicated
-// pages (HoldOperations / LossAndDamageOperations), both admin-gated in the
-// UI — the API must enforce the same restriction, not just hide the buttons.
-const OPS_RESTRICTED_STATUSES: parcel_status[] = ["hold", "loss_and_damage"];
+export { getMasterHubId, computeReturnCharge, resolveOrderOriginHub } from "./orders/pricing";
 
+<<<<<<< HEAD
 // Statuses a parcel can only be in once it has physically been picked up -
 // every status except the two pre-pickup ones (pickup_ordered, rider_assigned)
 // and the two that mean the pickup never happened (failed_pickup, cancelled).
@@ -6961,3 +6836,6 @@ export async function getMerchantOverview(
     },
   };
 }
+=======
+export type { OrderActor } from "./orders/types";
+>>>>>>> origin/main

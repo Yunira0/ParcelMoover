@@ -1,31 +1,33 @@
-import React, { lazy, Suspense, useState } from 'react';
+import React, { lazy, Suspense } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Upload } from 'lucide-react';
 import PageHeader from '../../components/PageHeader';
 import SegmentedTabs from '../../components/SegmentedTabs';
-import Button from '../../components/Button';
 import DestinationsSettings from './DestinationsSettings';
-import RateSetup from './RateSetup';
 import { hasAdminPermission } from '../../utils/auth';
 import './Settings.css';
 
-const DestinationsImport = lazy(() => import('./DestinationsImport'));
+const DeliveryRateSettings = lazy(() => import('../DeliveryRateSettings'));
 
 type Tab = 'destinations' | 'rates';
+const TABS: Tab[] = ['destinations', 'rates'];
 
 const Settings: React.FC = () => {
   // super_admin, or an admin the super_admin granted SETTINGS_ACCESS to.
   const canConfigure = hasAdminPermission('SETTINGS_ACCESS');
-  const [searchParams] = useSearchParams();
-  const tabParam = searchParams.get('tab') as Tab | null;
-  const initialTab: Tab = tabParam === 'rates' ? 'rates' : 'destinations';
-  const [tab, setTab] = useState<Tab>(initialTab);
-  const [showImport, setShowImport] = useState(false);
+  // Read from the URL on every render rather than copied into state once, so
+  // a link to ?tab=rates (e.g. a bookmark of the old Route Rates page) switches
+  // tabs even when this page is already open.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabParam = searchParams.get('tab');
+  const tab: Tab = TABS.includes(tabParam as Tab) ? (tabParam as Tab) : 'destinations';
+
+  // The Rates tab's origin is meaningless on the other tabs; don't carry it.
+  const setTab = (next: Tab) => setSearchParams(next === 'destinations' ? {} : { tab: next }, { replace: true });
 
   if (!canConfigure) {
     return (
       <div className="settings-page">
-        <PageHeader title="Destination Management" subtitle="Configuration is only available to super admins or admins granted settings access." />
+        <PageHeader title="Destination Management" />
       </div>
     );
   }
@@ -34,41 +36,27 @@ const Settings: React.FC = () => {
     <div className="settings-page">
       <PageHeader
         title="Destination Management"
-        subtitle="Define destinations, the areas they cover, and the delivery rates between them."
       />
 
       <div className="settings-toolbar">
         <SegmentedTabs
           ariaLabel="Settings sections"
+          fullWidth={false}
           value={tab}
-          onChange={(v) => { setTab(v as Tab); setShowImport(false); }}
+          onChange={(v) => setTab(v as Tab)}
           options={[
             { value: 'destinations', label: 'Destinations & Areas' },
-            { value: 'rates', label: 'Rate Setup' },
+            { value: 'rates', label: 'Rates' },
           ]}
         />
-        <Button
-          variant={showImport ? 'secondary' : 'primary'}
-          onClick={() => setShowImport((v) => !v)}
-        >
-          {showImport ? (
-            <><ArrowLeft size={15} /> Back to {tab === 'rates' ? 'Rate Setup' : 'Destinations'}</>
-          ) : (
-            <><Upload size={15} /> Import</>
-          )}
-        </Button>
       </div>
 
       <div className="settings-body">
-        {showImport ? (
-          <Suspense fallback={<p className="dest-muted">Loading import…</p>}>
-            <DestinationsImport />
+        {tab === 'destinations' && <DestinationsSettings />}
+        {tab === 'rates' && (
+          <Suspense fallback={<p className="dest-muted">Loading rates…</p>}>
+            <DeliveryRateSettings embedded />
           </Suspense>
-        ) : (
-          <>
-            {tab === 'destinations' && <DestinationsSettings />}
-            {tab === 'rates' && <RateSetup />}
-          </>
         )}
       </div>
     </div>

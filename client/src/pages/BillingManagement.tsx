@@ -1,10 +1,12 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { CheckCircle2, ExternalLink, FileText, X } from 'lucide-react';
+import { CheckCircle2, ExternalLink, FileText, Search, X } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import SegmentedTabs from '../components/SegmentedTabs';
+import CreditUsageBar from '../components/CreditUsageBar';
 import Table from '../components/Table';
 import Button from '../components/Button';
 import FileField from '../components/FileField';
+import FormField from '../components/FormField';
 import Pagination from '../components/Pagination';
 import '../components/Modal.css';
 import { getCurrentUserRoles } from '../utils/auth';
@@ -15,6 +17,7 @@ import {
   paymentQrUrl,
   reviewVendorPayment,
   updateBillingSettings,
+  updateVendorCreditLimit,
   uploadPaymentQr,
   type BillingSettings,
   type VendorBalanceRow,
@@ -34,6 +37,13 @@ const uploadUrl = (path: string) =>
 const isImagePath = (path: string) => /\.(jpe?g|png|webp|gif)$/i.test(path);
 
 type Tab = 'queue' | 'vendors' | 'settings';
+type ClaimStatus = VendorPayment['status'];
+
+const CLAIM_STATUS_LABELS: Record<ClaimStatus, string> = {
+  pending: 'Pending',
+  verified: 'Verified',
+  rejected: 'Rejected',
+};
 
 const TAB_LABELS: Record<Tab, string> = {
   queue: 'Payment verification',
@@ -49,7 +59,10 @@ const BillingManagement: React.FC = () => {
 
   // Verification queue
   const [claims, setClaims] = useState<VendorPayment[]>([]);
+  const [claimStatus, setClaimStatus] = useState<ClaimStatus>('pending');
   const [claimsTotal, setClaimsTotal] = useState(0);
+  // The tab badge counts the work waiting, whichever history view is open.
+  const [pendingCount, setPendingCount] = useState(0);
   const [claimsTotalPages, setClaimsTotalPages] = useState(1);
   const [claimsPage, setClaimsPage] = useState(1);
   const [claimsPageSize, setClaimsPageSize] = useState(50);
@@ -63,17 +76,24 @@ const BillingManagement: React.FC = () => {
 
   // Vendor balances
   const [balances, setBalances] = useState<VendorBalanceRow[]>([]);
+  const [balanceSearch, setBalanceSearch] = useState('');
   const [balancesLoading, setBalancesLoading] = useState(false);
 
   // Settings
   const [settings, setSettings] = useState<BillingSettings | null>(null);
   const [warn, setWarn] = useState('');
-  const [block, setBlock] = useState('');
+  const [defaultCredit, setDefaultCredit] = useState('');
   const [branchWarn, setBranchWarn] = useState('');
   const [branchBlock, setBranchBlock] = useState('');
   const [savingSettings, setSavingSettings] = useState(false);
   const [settingsMessage, setSettingsMessage] = useState('');
   const [settingsError, setSettingsError] = useState('');
+
+  // Per-vendor credit limit editor (super_admin only, like the thresholds).
+  const [creditVendor, setCreditVendor] = useState<VendorBalanceRow | null>(null);
+  const [creditValue, setCreditValue] = useState('');
+  const [creditSaving, setCreditSaving] = useState(false);
+  const [creditError, setCreditError] = useState('');
 
   // QR replace is staged, not immediate: picking a file only previews it, so
   // a wrong click can't silently swap the QR every vendor pays against.
@@ -91,17 +111,21 @@ const BillingManagement: React.FC = () => {
   const loadClaims = useCallback(async () => {
     setClaimsLoading(true);
     try {
-      const res = await listVendorPayments({ status: 'pending', page: claimsPage, pageSize: claimsPageSize });
+      const [res, pending] = await Promise.all([
+        listVendorPayments({ status: claimStatus, page: claimsPage, pageSize: claimsPageSize }),
+        claimStatus === 'pending' ? null : listVendorPayments({ status: 'pending', page: 1, pageSize: 1 }),
+      ]);
       setClaims(res.data);
       setClaimsTotal(res.meta.total);
       setClaimsTotalPages(res.meta.totalPages);
+      setPendingCount(pending ? pending.meta.total : res.meta.total);
       setError('');
     } catch (err) {
       setError(apiErrorMessage(err, 'Failed to load payment claims.'));
     } finally {
       setClaimsLoading(false);
     }
-  }, [claimsPage, claimsPageSize]);
+  }, [claimStatus, claimsPage, claimsPageSize]);
 
   const loadBalances = useCallback(async () => {
     setBalancesLoading(true);
@@ -120,7 +144,7 @@ const BillingManagement: React.FC = () => {
       const data = await getBillingSettings();
       setSettings(data);
       setWarn(String(data.warnThreshold));
-      setBlock(String(data.blockThreshold));
+      setDefaultCredit(String(data.defaultCreditLimit));
       setBranchWarn(String(data.branchWarnThreshold));
       setBranchBlock(String(data.branchBlockThreshold));
       setNote(data.paymentNote ?? '');
@@ -167,7 +191,7 @@ const BillingManagement: React.FC = () => {
     try {
       const updated = await updateBillingSettings({
         warnThreshold: Number(warn),
-        blockThreshold: Number(block),
+        defaultCreditLimit: Number(defaultCredit),
         branchWarnThreshold: Number(branchWarn),
         branchBlockThreshold: Number(branchBlock),
       });
@@ -192,6 +216,36 @@ const BillingManagement: React.FC = () => {
       setNoteError(apiErrorMessage(err, 'Failed to save note.'));
     } finally {
       setSavingNote(false);
+    }
+  };
+
+  // Overrides one vendor's credit limit. Only that row changes — the system
+  // default and every other vendor keep their values — and the list reloads
+  // so the new state shows immediately.
+  const openCreditEditor = (vendor: VendorBalanceRow) => {
+    setCreditVendor(vendor);
+    setCreditValue(String(vendor.creditLimit));
+    setCreditError('');
+  };
+
+  const closeCreditEditor = () => {
+    setCreditVendor(null);
+    setCreditValue('');
+    setCreditError('');
+  };
+
+  const handleSaveCredit = async () => {
+    if (!creditVendor) return;
+    setCreditSaving(true);
+    setCreditError('');
+    try {
+      await updateVendorCreditLimit(creditVendor.vendorId, Number(creditValue));
+      closeCreditEditor();
+      await loadBalances();
+    } catch (err) {
+      setCreditError(apiErrorMessage(err, 'Failed to update credit limit.'));
+    } finally {
+      setCreditSaving(false);
     }
   };
 
@@ -239,6 +293,23 @@ const BillingManagement: React.FC = () => {
       width: '110px',
     },
     { header: 'NOTE', accessor: (p: VendorPayment) => p.note || '—', width: '160px' },
+  ];
+
+  const decidedColumns = [
+    ...claimColumns,
+    {
+      header: 'STATUS',
+      accessor: (p: VendorPayment) => (
+        <span className={`billing-pill billing-pill-${p.status}`}>{CLAIM_STATUS_LABELS[p.status]}</span>
+      ),
+      width: '110px',
+    },
+    { header: 'REVIEWED', accessor: (p: VendorPayment) => (p.reviewedAt ? toBsDate(p.reviewedAt) : '—'), width: '110px' },
+    { header: 'REMARK', accessor: (p: VendorPayment) => p.reviewRemark || '—', width: '200px' },
+  ];
+
+  const pendingColumns = [
+    ...claimColumns,
     {
       header: 'DECISION',
       accessor: (p: VendorPayment) => (
@@ -273,7 +344,10 @@ const BillingManagement: React.FC = () => {
 
   // Table keys rows off `id`; the API returns the vendor key as `vendorId`.
   type BalanceTableRow = VendorBalanceRow & { id: string };
-  const balanceRows: BalanceTableRow[] = balances.map((v) => ({ ...v, id: v.vendorId }));
+  const balanceQuery = balanceSearch.trim().toLowerCase();
+  const balanceRows: BalanceTableRow[] = balances
+    .filter((v) => !balanceQuery || v.vendorName.toLowerCase().includes(balanceQuery))
+    .map((v) => ({ ...v, id: v.vendorId }));
 
   const balanceColumns = [
     { header: 'VENDOR', accessor: (v: VendorBalanceRow) => v.vendorName, width: '200px' },
@@ -289,6 +363,28 @@ const BillingManagement: React.FC = () => {
     { header: 'PAID OUT', accessor: (v: VendorBalanceRow) => formatCurrency(v.payouts), width: '120px' },
     { header: 'RECEIVED', accessor: (v: VendorBalanceRow) => formatCurrency(v.paymentsReceived), width: '120px' },
     {
+      header: 'CREDIT LIMIT',
+      accessor: (v: VendorBalanceRow) => (
+        <span className="billing-limit-cell">
+          <span className="billing-limit-row">
+            {formatCurrency(v.creditLimit)}
+            {isSuperAdmin && (
+              <button
+                type="button"
+                className="billing-doc-link billing-doc-preview-btn"
+                onClick={() => openCreditEditor(v)}
+                aria-label={`Edit credit limit for ${v.vendorName}`}
+              >
+                Edit
+              </button>
+            )}
+          </span>
+          <CreditUsageBar balance={v.balance} creditLimit={v.creditLimit} state={v.state} />
+        </span>
+      ),
+      width: '190px',
+    },
+    {
       header: 'STATE',
       accessor: (v: VendorBalanceRow) => (
         <span className={`billing-pill billing-pill-${v.state === 'ok' ? 'verified' : v.state === 'warned' ? 'pending' : 'rejected'}`}>
@@ -303,7 +399,6 @@ const BillingManagement: React.FC = () => {
     <div className="vendor-finance-page">
       <PageHeader
         title="Billing & Credit Control"
-        subtitle="Verify vendor payments, review outstanding balances, and set the credit thresholds."
       />
 
       <SegmentedTabs
@@ -313,7 +408,7 @@ const BillingManagement: React.FC = () => {
         options={(Object.keys(TAB_LABELS) as Tab[]).map((tab) => ({
           value: tab,
           label: TAB_LABELS[tab],
-          ...(tab === 'queue' ? { count: claimsTotal } : {}),
+          ...(tab === 'queue' ? { count: pendingCount } : {}),
         }))}
       />
 
@@ -321,12 +416,30 @@ const BillingManagement: React.FC = () => {
 
       {activeTab === 'queue' && (
         <>
+          <SegmentedTabs
+            ariaLabel="Payment claim status"
+            fullWidth={false}
+            value={claimStatus}
+            onChange={(status) => {
+              setClaimStatus(status);
+              setClaimsPage(1);
+            }}
+            options={(Object.keys(CLAIM_STATUS_LABELS) as ClaimStatus[]).map((status) => ({
+              value: status,
+              label: CLAIM_STATUS_LABELS[status],
+              ...(status === 'pending' ? { count: pendingCount } : {}),
+            }))}
+          />
           <Table
-            columns={claimColumns}
+            columns={claimStatus === 'pending' ? pendingColumns : decidedColumns}
             data={claims}
             loading={claimsLoading}
             loadingMessage="Loading payment claims..."
-            emptyMessage="No payments awaiting verification."
+            emptyMessage={
+              claimStatus === 'pending'
+                ? 'No payments awaiting verification.'
+                : `No ${CLAIM_STATUS_LABELS[claimStatus].toLowerCase()} payments yet.`
+            }
             minWidth="1200px"
           />
           <Pagination
@@ -340,23 +453,29 @@ const BillingManagement: React.FC = () => {
               setClaimsPageSize(size);
               setClaimsPage(1);
             }}
-            summary={`${claimsTotal} claim${claimsTotal === 1 ? '' : 's'} awaiting verification`}
+            summary={`${claimsTotal} ${claimStatus === 'pending' ? '' : `${CLAIM_STATUS_LABELS[claimStatus].toLowerCase()} `}claim${claimsTotal === 1 ? '' : 's'}${claimStatus === 'pending' ? ' awaiting verification' : ''}`}
           />
         </>
       )}
 
       {activeTab === 'vendors' && (
         <>
-          <p className="billing-hint">
-            Live balances for every vendor. Check this before enforcement goes live — anyone already
-            past the block threshold will be unable to place orders the moment it does.
-          </p>
+          <div className="search-box billing-search">
+            <Search size={16} style={{ color: 'var(--color-text-caption)' }} />
+            <input
+              type="text"
+              placeholder="Search vendor name..."
+              value={balanceSearch}
+              onChange={(e) => setBalanceSearch(e.target.value)}
+              aria-label="Search vendor balances"
+            />
+          </div>
           <Table
             columns={balanceColumns}
             data={balanceRows}
             loading={balancesLoading}
             loadingMessage="Calculating vendor balances..."
-            emptyMessage="No vendors found."
+            emptyMessage={balanceQuery ? `No vendor matching "${balanceSearch.trim()}".` : 'No vendors found.'}
             minWidth="1040px"
           />
         </>
@@ -367,8 +486,10 @@ const BillingManagement: React.FC = () => {
           <section className="billing-card">
             <h3>Credit thresholds</h3>
             <p className="billing-hint">
-              Both sets are negative account balances. Vendor thresholds pause new order creation;
-              branch thresholds pause transit into a branch with COD remittance overdue.
+              Warn is a negative account balance; the default credit limit is a positive cap.
+              A vendor is warned past the warn line and blocked once what they owe passes
+              their own credit limit. Branch thresholds pause transit into a branch with
+              COD remittance overdue.
             </p>
             <form className="billing-form" onSubmit={handleSaveSettings}>
               <label>
@@ -382,12 +503,13 @@ const BillingManagement: React.FC = () => {
                 />
               </label>
               <label>
-                Block threshold
+                Default credit limit (NPR)
                 <input
                   type="number"
+                  min="0.01"
                   step="0.01"
-                  value={block}
-                  onChange={(e) => setBlock(e.target.value)}
+                  value={defaultCredit}
+                  onChange={(e) => setDefaultCredit(e.target.value)}
                   disabled={!isSuperAdmin || savingSettings}
                 />
               </label>
@@ -515,6 +637,42 @@ const BillingManagement: React.FC = () => {
             <a href={uploadUrl(previewProof)} target="_blank" rel="noreferrer" className="billing-doc-link">
               Open full size <ExternalLink size={12} />
             </a>
+          </div>
+        </div>
+      )}
+
+      {creditVendor && (
+        <div className="modal-overlay" onClick={closeCreditEditor}>
+          <div className="modal-content" role="dialog" aria-modal="true" aria-label={`Edit credit limit for ${creditVendor.vendorName}`} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Credit limit — {creditVendor.vendorName}</h2>
+              <Button variant="ghost" size="icon" className="modal-close-btn" onClick={closeCreditEditor} aria-label="Close">
+                <X size={18} />
+              </Button>
+            </div>
+            <p className="modal-desc">
+              Outstanding delivery charges past this amount block new orders.
+            </p>
+            <div className="form-grid">
+              <FormField
+                label="Credit limit (NPR)"
+                required
+                type="decimal"
+                value={creditValue}
+                onChange={(v) => { setCreditValue(v); setCreditError(''); }}
+                placeholder="50000"
+                hint="Only this vendor changes."
+              />
+            </div>
+            {creditError && <p role="alert" className="error-text">{creditError}</p>}
+            <div className="modal-footer">
+              <Button variant="secondary" onClick={closeCreditEditor} disabled={creditSaving}>
+                Cancel
+              </Button>
+              <Button variant="primary" onClick={() => void handleSaveCredit()} disabled={creditSaving}>
+                {creditSaving ? 'Saving…' : 'Save limit'}
+              </Button>
+            </div>
           </div>
         </div>
       )}

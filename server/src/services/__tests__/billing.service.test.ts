@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 vi.mock("../../lib/prisma", () => ({
   default: {
     $queryRaw: vi.fn(),
+    $transaction: vi.fn(),
     vendors: { findFirst: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
     vendor_payments: { aggregate: vi.fn() },
     vendor_staff: { findMany: vi.fn() },
@@ -20,11 +21,16 @@ vi.mock("../notification.service", () => ({
 
 import {
   assertVendorCanCreateOrder,
+  clearBlockAmount,
   evaluateVendorBilling,
+  getDefaultCreditLimit,
   getVendorAccountBalance,
   getVendorBillingStatus,
+  resolveThresholds,
   stateForBalance,
   statusAffectsBalance,
+  updateBillingSettings,
+  updateVendorCreditLimit,
 } from "../billing.service";
 import prisma from "../../lib/prisma";
 import redis from "../../lib/redis";
@@ -32,6 +38,7 @@ import { createNotification } from "../notification.service";
 
 const mockedPrisma = prisma as unknown as {
   $queryRaw: ReturnType<typeof vi.fn>;
+  $transaction: ReturnType<typeof vi.fn>;
   vendors: {
     findFirst: ReturnType<typeof vi.fn>;
     update: ReturnType<typeof vi.fn>;
@@ -39,7 +46,7 @@ const mockedPrisma = prisma as unknown as {
   };
   vendor_payments: { aggregate: ReturnType<typeof vi.fn> };
   vendor_staff: { findMany: ReturnType<typeof vi.fn> };
-  billing_settings: { findFirst: ReturnType<typeof vi.fn> };
+  billing_settings: { findFirst: ReturnType<typeof vi.fn>; update: ReturnType<typeof vi.fn> };
 };
 const mockedRedis = redis as unknown as {
   get: ReturnType<typeof vi.fn>;
@@ -75,7 +82,7 @@ beforeEach(() => {
   mockedPrisma.billing_settings.findFirst.mockResolvedValue({
     id: "settings-1",
     warn_threshold: -2000,
-    block_threshold: -3000,
+    default_credit_limit: 3000,
     payment_qr_path: null,
     payment_note: null,
   });
@@ -83,7 +90,7 @@ beforeEach(() => {
     id: "vendor-1",
     user_id: "user-1",
     billing_warn_threshold: null,
-    billing_block_threshold: null,
+    credit_limit: 3000,
     billing_alert_state: "ok",
   });
   mockedPrisma.vendor_payments.aggregate.mockResolvedValue({ _sum: { amount: null } });
@@ -155,17 +162,18 @@ describe("threshold state", () => {
     expect(stateForBalance(-5000, thresholds)).toBe("blocked");
   });
 
-  it("prefers a per-vendor override over the global threshold", async () => {
+  it("prefers a per-vendor credit limit over the system default", async () => {
     mockedPrisma.vendors.findFirst.mockResolvedValue({
       id: "vendor-1",
       user_id: "user-1",
       billing_warn_threshold: -500,
-      billing_block_threshold: -800,
+      credit_limit: 800,
       billing_alert_state: "ok",
     });
     mockBalanceRow({ collected: 0, charges: 900, payouts: 0, payments: 0 });
 
     const status = await getVendorBillingStatus("vendor-1", { skipCache: true });
+    expect(status.creditLimit).toBe(800);
     expect(status.blockThreshold).toBe(-800);
     expect(status.state).toBe("blocked");
   });
@@ -175,7 +183,18 @@ describe("threshold state", () => {
 
     const status = await getVendorBillingStatus("vendor-1", { skipCache: true });
     expect(status.balance).toBe(-4270);
-    expect(status.amountToClearBlock).toBe(1270);
+    expect(status.amountToClearBlock).toBe(1270.01);
+  });
+
+  it("clearBlockAmount actually lifts the block, including exactly on the line", () => {
+    const thresholds = { warnThreshold: -2000, blockThreshold: -3000 };
+    for (const balance of [-4270, -3000, -3000.5]) {
+      const pay = clearBlockAmount(balance, thresholds);
+      expect(pay).toBeGreaterThan(0);
+      expect(stateForBalance(Math.round((balance + pay) * 100) / 100, thresholds)).not.toBe("blocked");
+      expect(stateForBalance(Math.round((balance + pay - 0.01) * 100) / 100, thresholds)).toBe("blocked");
+    }
+    expect(clearBlockAmount(-2999.99, thresholds)).toBe(0);
   });
 
   it("excludes unverified claims from the balance", async () => {
@@ -220,7 +239,7 @@ describe("alert state machine", () => {
       id: "vendor-1",
       user_id: "user-1",
       billing_warn_threshold: null,
-      billing_block_threshold: null,
+      credit_limit: 3000,
       billing_alert_state: "warned",
     });
     mockBalanceRow({ collected: 0, charges: 2500, payouts: 0, payments: 0 });
@@ -259,7 +278,7 @@ describe("alert state machine", () => {
       id: "vendor-1",
       user_id: "user-1",
       billing_warn_threshold: null,
-      billing_block_threshold: null,
+      credit_limit: 3000,
       billing_alert_state: "blocked",
     });
     mockBalanceRow({ collected: 0, charges: 100, payouts: 0, payments: 0 });
@@ -273,6 +292,81 @@ describe("alert state machine", () => {
     mockedPrisma.$queryRaw.mockRejectedValue(new Error("database is down"));
 
     await expect(evaluateVendorBilling("vendor-1")).resolves.toBeNull();
+  });
+});
+
+describe("vendor-wise credit limits", () => {
+  it("derives the block line from the vendor's own limit", () => {
+    expect(resolveThresholds(
+      { billing_warn_threshold: null, credit_limit: 50000 as never },
+      { warnThreshold: -2000 },
+    )).toEqual({ warnThreshold: -2000, blockThreshold: -50000 });
+  });
+
+  it("exposes the system default for creation-time assignment", async () => {
+    await expect(getDefaultCreditLimit()).resolves.toBe(3000);
+  });
+
+  it("saves a new system default without touching any vendor row", async () => {
+    await updateBillingSettings("admin-1", { defaultCreditLimit: 50000 });
+
+    expect(mockedPrisma.billing_settings.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ default_credit_limit: 50000 }) }),
+    );
+    expect(mockedPrisma.vendors.update).not.toHaveBeenCalled();
+  });
+
+  it("rejects a default that would block vendors before warning them", async () => {
+    // Warn fires at -2000; a 1000 limit blocks at -1000 — harsher, so refused.
+    await expect(updateBillingSettings("admin-1", { defaultCreditLimit: 1000 })).rejects.toThrow(
+      "warned before being blocked",
+    );
+    expect(mockedPrisma.billing_settings.update).not.toHaveBeenCalled();
+  });
+
+  it("overrides one vendor, audits it, and re-evaluates them at once", async () => {
+    // Every read in the flow (existence check, re-evaluation, final status)
+    // sees the raised limit, as if reading after the committed update.
+    mockedPrisma.vendors.findFirst.mockResolvedValue({
+      id: "vendor-1",
+      business_name: "Shop",
+      client_name: "Owner",
+      billing_warn_threshold: null,
+      credit_limit: 100000,
+      billing_alert_state: "ok",
+    });
+    const tx = {
+      vendors: { update: vi.fn() },
+      audit_logs: { create: vi.fn() },
+    };
+    mockedPrisma.$transaction.mockImplementation((fn: (tx: unknown) => Promise<unknown>) => fn(tx));
+    mockBalanceRow({ collected: 0, charges: 4270, payouts: 0, payments: 0 });
+
+    const status = await updateVendorCreditLimit("admin-1", "vendor-1", 100000);
+
+    expect(tx.vendors.update).toHaveBeenCalledWith({
+      where: { id: "vendor-1" },
+      data: { credit_limit: 100000 },
+    });
+    expect(tx.audit_logs.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ action: "UPDATE_VENDOR_CREDIT_LIMIT" }) }),
+    );
+    // 4270 owed against a 100000 limit: the raise unblocked them immediately.
+    expect(status.creditLimit).toBe(100000);
+    expect(status.state).toBe("warned");
+  });
+
+  it("rejects non-positive, non-numeric, and absurd limits", async () => {
+    for (const limit of [0, -500, Number.NaN, 100_000_001]) {
+      await expect(updateVendorCreditLimit("admin-1", "vendor-1", limit)).rejects.toThrow("creditLimit");
+    }
+    expect(mockedPrisma.vendors.update).not.toHaveBeenCalled();
+  });
+
+  it("404s for an unknown vendor", async () => {
+    mockedPrisma.vendors.findFirst.mockResolvedValue(null);
+
+    await expect(updateVendorCreditLimit("admin-1", "missing", 50000)).rejects.toMatchObject({ statusCode: 404 });
   });
 });
 

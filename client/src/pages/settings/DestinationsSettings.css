@@ -7,7 +7,7 @@
 .dest-settings-head {
   display: flex;
   align-items: flex-start;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: var(--space-4);
 }
 
@@ -109,6 +109,20 @@
   border: none;
   padding: 0;
   cursor: pointer;
+}
+
+/* Zone + valley side, between a destination's title and its covered areas.
+   Two fixed-width columns on wide screens, one full-width column on phones. */
+.dest-classification {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 260px));
+  gap: var(--space-3);
+}
+
+@media (max-width: 640px) {
+  .dest-classification {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .dest-areas {
@@ -286,7 +300,7 @@
 
 .dest-area-edit-input:focus {
   outline: none;
-  border-color: var(--color-border-strong, var(--color-text-caption));
+  border-color: var(--color-text-caption, var(--color-text-caption));
 }
 
 .dest-area-confirm-text {
@@ -441,7 +455,7 @@
 
 .dest-search-input:focus {
   outline: none;
-  border-color: var(--color-border-strong, var(--color-text-caption));
+  border-color: var(--color-text-caption, var(--color-text-caption));
 }
 
 .dest-search-clear {
@@ -464,4 +478,9 @@
 .dest-search-clear:hover {
   background: var(--color-danger-surface);
   color: var(--color-danger-default);
+}
+
+/* A covered area shown read-only (branch view): not clickable. */
+.dest-area-chip--static {
+  cursor: default;
 }

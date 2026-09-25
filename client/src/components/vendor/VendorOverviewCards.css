@@ -74,6 +74,11 @@
   color: var(--color-text-primary);
 }
 
+.vendor-metric-icon--progress {
+  background-color: var(--color-info-surface);
+  color: var(--color-info-text);
+}
+
 .vendor-metric-icon--neutral {
   background-color: color-mix(in srgb, var(--color-text-caption) 12%, transparent);
   color: var(--color-text-caption);

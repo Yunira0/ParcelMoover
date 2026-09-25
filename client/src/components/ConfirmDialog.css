@@ -17,8 +17,8 @@
   height: 36px;
   flex-shrink: 0;
   border-radius: 50%;
-  background: var(--color-background-danger-subtle, #fdeaea);
-  color: var(--color-text-danger, #b42318);
+  background: var(--color-danger-surface);
+  color: var(--color-danger-text);
 }
 
 .confirm-dialog-title {
@@ -26,7 +26,7 @@
   font-size: var(--font-size-md, 16px);
   font-weight: var(--font-weight-semi-bold);
   line-height: 1.4;
-  color: var(--color-text-heading);
+  color: var(--color-text-default);
 }
 
 .confirm-dialog-message {

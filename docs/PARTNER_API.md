@@ -219,8 +219,9 @@ Headers: `Authorization`, `Idempotency-Key` (UUID, required), `Content-Type: app
 | `originLocationId` | UUID | — | Your pickup hub. Optional — vendors normally have one fixed hub, resolved automatically; only set this if you dispatch from more than one. |
 | `destinationLocationId` | UUID or hub name | ✅* | The destination branch/hub ("To") — see below for how to pick one. \*Required unless you set `receiver.locationId` instead; one of the two must be present, and sending both (to the same value) is fine. |
 | `allowPartialDelivery` | boolean | — | Flags that this shipment (e.g. a multi-item order) may be accepted in part without failing the whole delivery. Informational only — the actual outcome is still reported by the rider/ops side; you read it back via `partialDeliveryRemarks`/`partialCodCollected` on the order once it happens. |
+| `voucherCode` | string | — | A shipping voucher you already claimed on the dashboard under **Vouchers** (e.g. `"MOVE100"`). Delivery orders only. The response prices it as `discountAmount` off `grossDeliveryCharge`, so `deliveryCharge` is the final amount. Rejected when the code was never claimed, is expired/paused, is already spent, or the order's delivery charge is below the voucher's minimum. |
 
-The **delivery charge is computed by ParcelMoover** from your vendor rate agreement — you cannot set it. It appears on the order when you fetch it.
+The **delivery charge is computed by ParcelMoover** from your vendor rate agreement — you cannot set it. It appears on the order when you fetch it. A claimed voucher reduces it: the order carries `grossDeliveryCharge` (pre-voucher fee), `discountAmount` (the voucher benefit, capped at the fee), and `deliveryCharge` (the final fee).
 
 #### Picking a destination (the "To" branch/hub)
 
@@ -726,6 +727,8 @@ GET /api/v1/rates
 
 Returns your full rate card — the home-delivery and branch-delivery base rate to every active destination, under your own rate agreement (flat, zone, or per-destination, whichever ParcelMoover has configured for your account).
 
+For a central-hub vendor on flat pricing, `flatRates` also lists the effective `insideValley`, `outsideRingRoad`, and `outsideValley` tiers. Each tier has `homeRate` and `branchRate`. This shows a configured tier even when no active destination is assigned to it. For branch-hub vendors and other pricing models, `flatRates` is `null`; their destination rows remain the source of their rates. Each destination row also includes `ringRoad` (`inside`, `outside`, or `null`). An outside-ring-road rate applies only when `valley` is `inside` and `ringRoad` is `outside`.
+
 #### Example
 
 ```bash
@@ -741,8 +744,13 @@ curl "$BASE/api/v1/rates" -H "Authorization: Bearer $KEY"
     "rateType": "flat",
     "freeWeightKg": 2,
     "extraWeightPercent": 5,
+    "flatRates": {
+      "insideValley": { "homeRate": 79, "branchRate": 79 },
+      "outsideRingRoad": { "homeRate": 100, "branchRate": 100 },
+      "outsideValley": { "homeRate": 165, "branchRate": 165 }
+    },
     "rates": [
-      { "destinationId": "a350d017-...", "destinationName": "POKHARA", "zone": "urban_areas", "valley": "outside", "homeRate": 150, "branchRate": 150, "note": null }
+      { "destinationId": "a350d017-...", "destinationName": "POKHARA", "zone": "urban_areas", "valley": "outside", "ringRoad": null, "homeRate": 165, "branchRate": 165, "note": null }
     ]
   }
 }
@@ -977,6 +985,7 @@ GET  /api/v1/billing/qr                                  — the Fonepay QR imag
     "balance": -1800,
     "warnThreshold": -1000,
     "blockThreshold": -5000,
+    "creditLimit": 5000,
     "amountToClearBlock": 0,
     "pendingPaymentAmount": 1500,
     "paymentNote": "Please include your business name in the transfer remark."
@@ -986,7 +995,7 @@ GET  /api/v1/billing/qr                                  — the Fonepay QR imag
 
 #### Filing a claim
 
-`multipart/form-data`, not JSON — `amount` is required and must be greater than zero; `reference`, `note`, `method` (default `fonepay`) and a `proof` file are optional. Proof may be JPG, PNG, WebP or PDF, up to 5MB.
+`multipart/form-data`, not JSON — `amount` is required and must be greater than zero; a `proof` file is required; `reference`, `note` and `method` (default `fonepay`) are optional. Proof may be JPG, PNG, WebP or PDF, up to 5MB.
 
 ```bash
 curl -X POST "$BASE/api/v1/billing/payments" \

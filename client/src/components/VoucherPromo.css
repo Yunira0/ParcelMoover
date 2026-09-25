@@ -1,0 +1,196 @@
+/* Vendor-facing voucher. The offer panel uses restrained tonal depth while
+   the Kathmandu artwork stays crisp and exclusive to the image panel.
+   cqi units keep the 1700x800 artwork proportional at any size. */
+.voucher-promo {
+  container-type: inline-size;
+  display: flex;
+  width: 100%;
+  aspect-ratio: 17 / 8;
+  background: #09090b;
+  overflow: hidden;
+  color: #fff;
+  font-family: Inter, system-ui, 'Segoe UI', Roboto, sans-serif;
+  user-select: text;
+}
+
+.vp-left {
+  position: relative;
+  flex: 0 0 70.7%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 2.7cqi 3.05cqi 2.65cqi 4.94cqi;
+  background:
+    radial-gradient(circle at 83% 43%, transparent 0 17%, rgb(248 96 12 / 9%) 17.2% 17.55%, transparent 17.8% 25%, rgb(248 96 12 / 5%) 25.2% 25.45%, transparent 25.7%),
+    radial-gradient(circle at 74% 38%, rgb(248 96 12 / 11%), transparent 34%),
+    linear-gradient(105deg, #09090b 16%, rgb(9 9 11 / 96%) 58%, rgb(9 9 11 / 89%));
+}
+
+.vp-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2cqi;
+}
+
+.vp-brand {
+  font-weight: 750;
+  font-size: 1.88cqi;
+  line-height: 1.2;
+  letter-spacing: -0.025em;
+  color: #fff;
+  white-space: nowrap;
+}
+
+.vp-brand em { font-style: normal; color: #f8600c; }
+
+.vp-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65cqi;
+  font-size: 1.24cqi;
+  font-weight: 650;
+  line-height: 1.2;
+  color: #ffd5bf;
+  background: rgb(248 96 12 / 13%);
+  border: 0.06cqi solid rgb(248 96 12 / 48%);
+  border-radius: 999px;
+  padding: 0.62cqi 1.18cqi;
+  white-space: nowrap;
+}
+
+.vp-tag::before {
+  content: '';
+  width: 0.47cqi;
+  height: 0.47cqi;
+  border-radius: 50%;
+  background: #ff6a18;
+  box-shadow: 0 0 0 0.24cqi rgb(248 96 12 / 14%);
+}
+
+.vp-main {
+  display: flex;
+  flex-direction: column;
+  width: min(100%, 63.4cqi);
+  margin: 0.7cqi 0 0;
+}
+
+.vp-head {
+  margin: 0;
+  font-weight: 900;
+  font-size: 9.35cqi;
+  line-height: 0.95;
+  letter-spacing: -0.03em;
+  white-space: nowrap;
+}
+
+.vp-head-compact { font-size: 7.6cqi; }
+.vp-head-a { color: #fff; }
+.vp-head-b { color: #f8600c; }
+
+.vp-sub {
+  max-width: 47cqi;
+  margin: 1.12cqi 0 0;
+  font-weight: 520;
+  font-size: 2.12cqi;
+  line-height: 1.25;
+  color: #dedbd9;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.vp-codebar {
+  margin-top: 2.35cqi;
+  display: flex;
+  align-items: center;
+  gap: 2.2cqi;
+  border: 0.18cqi solid #36383e;
+  border-radius: 1.35cqi;
+  padding: 0.58cqi 0.58cqi 0.58cqi 1.3cqi;
+}
+
+.vp-use {
+  font-size: 1.55cqi;
+  font-weight: 500;
+  line-height: 1.2;
+  color: #aaa6a3;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.vp-divider {
+  width: 0.18cqi;
+  align-self: stretch;
+  background: #36383e;
+}
+
+.vp-code {
+  flex: 1 1 0;
+  min-width: 0;
+  font-weight: 850;
+  font-size: 2.12cqi;
+  line-height: 1.2;
+  letter-spacing: 0.2em;
+  color: #ff7124;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.vp-copy {
+  flex: none;
+  border: 0;
+  cursor: pointer;
+  background: #fd692d;
+  color: #130b07;
+  font-weight: 800;
+  font-size: 1.35cqi;
+  line-height: 1.2;
+  border-radius: 0.94cqi;
+  padding: 0.82cqi 1.28cqi;
+  transition: background-color 180ms cubic-bezier(0.22, 1, 0.36, 1), color 180ms cubic-bezier(0.22, 1, 0.36, 1);
+  white-space: nowrap;
+}
+
+.vp-copy:hover { background: #ff7530; }
+.vp-copy:active { background: #de4b00; }
+.vp-copy:focus-visible { outline: 0.18cqi solid #fff; outline-offset: -0.35cqi; }
+.vp-copy[data-copied='true'] { background: #fff; color: #17110e; }
+
+.vp-foot {
+  display: flex;
+  align-items: center;
+  gap: 4.6cqi;
+  font-weight: 550;
+  font-size: 1.35cqi;
+  line-height: 1.25;
+  color: #c6c1bd;
+  white-space: nowrap;
+}
+
+.vp-foot span { display: inline-flex; align-items: center; gap: 0.7cqi; }
+.vp-foot span::before { content: ''; width: 0.38cqi; height: 0.38cqi; border-radius: 50%; background: #f8600c; }
+
+.vp-art {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  border-left: 0.04cqi solid rgb(255 124 52 / 45%);
+}
+
+.vp-art::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, rgb(9 9 11 / 26%), transparent 26%);
+  pointer-events: none;
+}
+
+.vp-art img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: center; }
+
+@media (prefers-reduced-motion: reduce) {
+  .vp-copy { transition: none; }
+}

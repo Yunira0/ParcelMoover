@@ -7,6 +7,7 @@ import type {
   BranchSettlementQuery,
   BranchTrackingQuery,
   CreateBranchInput,
+  UpdateBranchInput,
   CreateBranchSettlementInput,
   PayBranchSettlementInput,
 } from "../validators/branch.schema";
@@ -73,6 +74,7 @@ export async function listBranchesForTracking() {
     select: {
       id: true, name: true, code: true, district: true, is_active: true,
       commission_per_parcel: true, _count: { select: { other_locations: true } },
+      branch_virtual_coverage_branch: { select: { covered_branch: { select: { id: true, name: true } } } },
     },
     orderBy: { name: "asc" },
   });
@@ -80,7 +82,68 @@ export async function listBranchesForTracking() {
     id: b.id, name: b.name.split(" - ")[0], code: b.code, district: b.district,
     isActive: b.is_active, commissionPerParcel: money(b.commission_per_parcel),
     coveredAreaCount: b._count.other_locations,
+    virtualBranches: b.branch_virtual_coverage_branch.map((v) => ({
+      id: v.covered_branch.id, name: v.covered_branch.name.split(" - ")[0],
+    })),
   }));
+}
+
+// Edit an existing branch: its commission and the full set of branches it
+// virtually covers (replaced, not appended - Add Branch can only ever add).
+// Covered destinations are re-parented on the Destinations settings page.
+export async function updateBranch(actor: OrderActor, branchId: string, input: UpdateBranchInput) {
+  const virtualBranchIds = [...new Set(input.virtualBranchIds)].filter((id) => id !== branchId);
+  const result = await prisma.$transaction(async (tx) => {
+    const branch = await tx.locations.findFirst({ where: { id: branchId, parent_id: null, is_hub: true }, select: { id: true } });
+    if (!branch) throw new AppError(404, "Branch not found");
+    if (virtualBranchIds.length) {
+      // Only newly added destinations must be active and top-level. One this
+      // branch already covers stays valid even if it was since deactivated or
+      // nested, or every later edit to the branch would fail on it.
+      const alreadyLinked = new Set(
+        (await tx.branch_virtual_coverage.findMany({ where: { branch_id: branchId }, select: { covered_branch_id: true } }))
+          .map((row) => row.covered_branch_id),
+      );
+      const added = virtualBranchIds.filter((id) => !alreadyLinked.has(id));
+      if (added.length) {
+        const valid = await tx.locations.findMany({
+          where: { id: { in: added }, parent_id: null, is_active: true },
+          select: { id: true },
+        });
+        if (valid.length !== added.length) {
+          const validIds = new Set(valid.map((l) => l.id));
+          const names = (await tx.locations.findMany({
+            where: { id: { in: added.filter((id) => !validIds.has(id)) } },
+            select: { name: true },
+          })).map((l) => l.name);
+          throw new AppError(
+            400,
+            `Can't add ${names.length ? names.join(", ") : "an unknown destination"} as a virtual branch - it must be an active, top-level destination.`,
+          );
+        }
+      }
+    }
+    const updated = await tx.locations.update({
+      where: { id: branchId },
+      data: { commission_per_parcel: input.commissionPerParcel },
+    });
+    await tx.branch_virtual_coverage.deleteMany({
+      where: { branch_id: branchId, covered_branch_id: { notIn: virtualBranchIds } },
+    });
+    if (virtualBranchIds.length) {
+      await tx.branch_virtual_coverage.createMany({
+        data: virtualBranchIds.map((covered_branch_id) => ({ branch_id: branchId, covered_branch_id, created_by: actor.id })),
+        skipDuplicates: true,
+      });
+    }
+    await tx.audit_logs.create({ data: {
+      actor_id: actor.id, entity_type: "branch", entity_id: branchId, action: "UPDATE_BRANCH",
+      new_data: { commissionPerParcel: input.commissionPerParcel, virtualBranchIds },
+    } });
+    return updated;
+  });
+  await invalidateDestinationPricingCache();
+  return { id: result.id, name: result.name, commissionPerParcel: money(result.commission_per_parcel) };
 }
 
 export async function resolveBranchLocationIds(branchId?: string) {
@@ -245,17 +308,17 @@ export async function createOrPromoteBranch(actor: OrderActor, input: CreateBran
     }
 
     // Virtual branches are re-checked here rather than trusted from the
-    // client: each id must already be an existing, active branch (is_hub) -
-    // that's what keeps this a side relationship instead of a re-parenting,
-    // since only a branch's own row can be listed, never re-created as one.
+    // client: each id must be an existing, active top-level destination. It's a
+    // side relationship, not a re-parenting - the destination keeps its own
+    // parent, hub status, routing and pricing untouched.
     let virtualBranches: { id: string; name: string }[] = [];
     if (virtualBranchIds.length) {
       virtualBranches = await tx.locations.findMany({
-        where: { id: { in: virtualBranchIds }, parent_id: null, is_hub: true, is_active: true },
+        where: { id: { in: virtualBranchIds }, parent_id: null, is_active: true },
         select: { id: true, name: true },
       });
       if (virtualBranches.length !== virtualBranchIds.length) {
-        throw new AppError(400, "One or more virtual branches are not existing, active branches");
+        throw new AppError(400, "One or more virtual branches are not existing, active destinations");
       }
     }
 

@@ -129,7 +129,6 @@ const PickupTimeSlots: React.FC = () => {
     <div className="pickup-slots-page">
       <PageHeader
         title="Pickup Time Slots"
-        subtitle="Slots vendors can choose from when raising a pickup ticket. Each slot closes 1 hour before it ends; toggle a slot off instead of deleting it if it's only temporary."
       />
 
       {error && <p className="pickup-slots-error">{error}</p>}

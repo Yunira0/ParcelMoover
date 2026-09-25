@@ -15,7 +15,6 @@ import Button from '../components/Button';
 import QuickRemarkPopup from '../components/QuickRemarkPopup';
 import SegmentedTabs from '../components/SegmentedTabs';
 import PageHeader from '../components/PageHeader';
-import TicketCategoryButton from '../components/TicketCategoryButton';
 import Pagination from '../components/Pagination';
 import {
   getOrders,
@@ -25,7 +24,7 @@ import {
   type Order,
   type ParcelStatus,
 } from '../services/orders.service';
-import { getRiders } from '../services/users.service';
+import { getAllRiders } from '../services/users.service';
 import { printLabels } from '../utils/printLabels';
 import { toBsDate, toBsDateTimeCell, toNptTime } from '../utils/nepaliDate';
 import { STATUS_TIMELINE_HEADERS, statusTimelineCells } from '../utils/orderStatus';
@@ -421,7 +420,7 @@ const PickupOperations: React.FC = () => {
   useEffect(() => {
     (async () => {
       try {
-        const res = await getRiders({ pageSize: 100 });
+        const res = await getAllRiders();
         if (res?.success && Array.isArray(res.data)) {
           setRiders(res.data.filter((r: { status: string }) => r.status === 'active'));
         }
@@ -823,9 +822,7 @@ const PickupOperations: React.FC = () => {
 
   return (
     <div className="pickup-operations-container">
-      <PageHeader title="Pickup Operations" subtitle="Manage and track your pickup orders across the hub network.">
-        <TicketCategoryButton category="pickup" notificationType="pickup" />
-      </PageHeader>
+      <PageHeader title="Pickup Operations" />
 
       <SegmentedTabs
         ariaLabel="Pickup operation filters"

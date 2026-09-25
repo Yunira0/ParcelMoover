@@ -20,6 +20,9 @@ interface OrderInfoCardsProps {
   codAmount: number;
   itemValue: number;
   deliveryCharge: number;
+  grossDeliveryCharge?: number;
+  discountAmount?: number;
+  voucher?: { code: string; title: string } | null;
   pieces: number;
   weightKg?: number;
   /** True when the viewer may edit this parcel's details right now. Sender,
@@ -187,6 +190,9 @@ const OrderInfoCards: React.FC<OrderInfoCardsProps> = ({
   codAmount,
   itemValue,
   deliveryCharge,
+  grossDeliveryCharge,
+  discountAmount,
+  voucher,
   pieces,
   weightKg,
   editable = false,
@@ -461,6 +467,10 @@ const OrderInfoCards: React.FC<OrderInfoCardsProps> = ({
           <span className="od-finance-label">Delivery</span>
           <span className="od-finance-value">{money(deliveryCharge)}</span>
         </div>
+        {!!discountAmount && <div className="od-finance-item">
+          <span className="od-finance-label">Voucher{voucher ? ` ${voucher.code}` : ''}</span>
+          <span className="od-finance-value">{money(grossDeliveryCharge ?? deliveryCharge + discountAmount)} − {money(discountAmount)} = {money(deliveryCharge)}</span>
+        </div>}
         <div className="od-finance-item">
           <Package size={14} />
           <span className="od-finance-label">Pieces</span>

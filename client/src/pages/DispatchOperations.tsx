@@ -13,7 +13,6 @@ import SearchableSelectAsync from '../components/SearchableSelectAsync';
 import Button from '../components/Button';
 import SegmentedTabs from '../components/SegmentedTabs';
 import PageHeader from '../components/PageHeader';
-import TicketCategoryButton from '../components/TicketCategoryButton';
 import Pagination from '../components/Pagination';
 import QuickRemarkPopup from '../components/QuickRemarkPopup';
 import {
@@ -27,7 +26,7 @@ import {
   type ParcelStatus,
 } from '../services/orders.service';
 import { downloadExcel } from '../utils/excel';
-import { getRiders, searchVendors } from '../services/users.service';
+import { getAllRiders, searchVendors } from '../services/users.service';
 import { printLabels } from '../utils/printLabels';
 import { useCursorPagination } from '../hooks/useCursorPagination';
 import { toBsDate, toBsDateTime, toBsDateTimeCell } from '../utils/nepaliDate';
@@ -202,7 +201,7 @@ const DispatchOperations: React.FC = () => {
   useEffect(() => {
     (async () => {
       try {
-        const res = await getRiders({ pageSize: 100 });
+        const res = await getAllRiders();
         if (res?.success && Array.isArray(res.data)) {
           setRiders(res.data.filter((r: { status: string }) => r.status === 'active'));
         }
@@ -629,9 +628,7 @@ const DispatchOperations: React.FC = () => {
 
   return (
     <div className="dispatch-operations-container">
-      <PageHeader title="Local Dispatch" subtitle="Oversee and monitor your dispatch orders throughout the hub network.">
-        <TicketCategoryButton category="delivery" notificationType="dispatch" />
-      </PageHeader>
+      <PageHeader title="Local Dispatch" />
 
       <SegmentedTabs
         ariaLabel="Dispatch operation filters"

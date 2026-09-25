@@ -2,7 +2,7 @@ import type { Request, Response } from "express";
 import {
   createBranchSettlement, createOrPromoteBranch, exportBranchOrders, getBranchOverview,
   getBranchSettlementDetail, listBranchesForTracking, listBranchOrders, listBranchSettlements,
-  payBranchSettlement,
+  payBranchSettlement, updateBranch,
 } from "../services/branch.service";
 import {
   getBranchBillingForActor, listBranchBalances, listBranchPayments, reviewBranchPayment, submitBranchPayment,
@@ -31,6 +31,10 @@ export async function branchOrdersExportController(req: Request, res: Response) 
 export async function createBranchController(req: Request, res: Response) {
   try { return res.status(201).json({ success: true, data: await createOrPromoteBranch(actor(req), req.body) }); }
   catch (e) { return fail(res, e, "Failed to save branch"); }
+}
+export async function updateBranchController(req: Request, res: Response) {
+  try { return res.json({ success: true, data: await updateBranch(actor(req), req.params.id as string, req.body) }); }
+  catch (e) { return fail(res, e, "Failed to update branch"); }
 }
 export async function listBranchSettlementsController(req: Request, res: Response) {
   try { return res.json({ success: true, ...(await listBranchSettlements(actor(req), req.query as any)) }); }

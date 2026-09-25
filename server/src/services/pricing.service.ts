@@ -1,6 +1,7 @@
 import prisma from "../lib/prisma";
 import redis, { scanAndDelete } from "../lib/redis";
 import { AppError } from "../utils/AppError";
+import { resolveBranchCoverageIds } from "../lib/branchScope";
 
 // getVendorQuote runs on essentially every vendor order creation - same hot,
 // rarely-changes-but-read-constantly shape as the delivery-rate cache, so it
@@ -337,6 +338,38 @@ function resolveBaseRate(
   return { rate, basis };
 }
 
+// Show the effective flat-rate agreement even when no active destination is
+// currently assigned to one of these bands. Use the quote resolver so the
+// displayed amounts follow the same override and fallback rules as orders.
+export async function getVendorFlatRateBands(overrides: VendorRateOverrides = {}) {
+  const settings = await getPricingSettings();
+  const bands = [
+    { key: "insideValley", valley: "inside", ringRoad: "inside" },
+    { key: "outsideRingRoad", valley: "inside", ringRoad: "outside" },
+    { key: "outsideValley", valley: "outside", ringRoad: null },
+  ] as const;
+  const rateFor = (band: (typeof bands)[number], serviceType: ServiceType) => {
+    const destination: DestinationPricing = {
+      name: band.key,
+      zone: null,
+      valley: band.valley,
+      ringRoad: band.ringRoad,
+      perDestinationRate: null,
+      branchPerDestinationRate: null,
+    };
+    try {
+      return resolveBaseRate("flat", destination, settings, overrides, serviceType).rate;
+    } catch (error) {
+      if (error instanceof AppError && error.statusCode === 404) return null;
+      throw error;
+    }
+  };
+  return Object.fromEntries(bands.map((band) => [band.key, {
+    homeRate: rateFor(band, "home_delivery"),
+    branchRate: rateFor(band, "branch_delivery"),
+  }])) as Record<(typeof bands)[number]["key"], { homeRate: number | null; branchRate: number | null }>;
+}
+
 // Computes the delivery charge for a vendor's chosen rate model to a destination,
 // honouring per-vendor overrides before falling back to the global defaults.
 export async function getVendorQuote(
@@ -369,6 +402,107 @@ export async function getVendorQuote(
     rateType,
     basis,
     valley: dest.valley,
+  };
+}
+
+export type BranchFlatQuote = Awaited<ReturnType<typeof getVendorQuote>> & {
+  insideBranch: boolean;
+  returnPercent?: number;
+  baseDeliveryCharge?: number;
+};
+
+// A branch vendor (one whose hub is a branch like Hetauda, not Imadol) on the
+// flat model is charged one rate inside that branch and one outside it. The
+// pair lives on the vendor itself - flat_inside_valley / flat_outside_valley,
+// which the vendor form labels "Inside Hetauda" / "Outside Hetauda" for such a
+// vendor - so "inside" here means the branch's coverage (the hub, its covered
+// areas, and any branch it virtually covers), not the Kathmandu valley.
+//
+// Returns null when no flat rate applies (the vendor left that side blank, or
+// the branch is inactive), so the caller falls back to the branch's per-
+// destination route rate instead of failing an order that prices fine today.
+export async function getBranchVendorFlatQuote(
+  branchHubId: string,
+  destinationLocationId: string,
+  weightKg: number,
+  overrides: VendorRateOverrides,
+  serviceType: ServiceType,
+  isReturn: boolean,
+  /** Pre-resolved coverage, for callers pricing many destinations at once. */
+  coverageIds?: string[],
+): Promise<BranchFlatQuote | null> {
+  let coverage: string[];
+  try {
+    coverage = coverageIds ?? (await resolveBranchCoverageIds(branchHubId));
+  } catch (error) {
+    if (error instanceof AppError && error.statusCode === 404) return null;
+    throw error;
+  }
+
+  const dest = await resolveDestinationPricing(destinationLocationId);
+  const settings = await getPricingSettings();
+  const pick = (override: number | null | undefined, fallback: number | null) =>
+    override !== undefined && override !== null ? override : fallback;
+
+  const insideBranch = coverage.includes(destinationLocationId);
+  const side = insideBranch ? "inside" : "outside";
+
+  // The vendor form's "Also charge a flat rate for inside-valley deliveries"
+  // takes precedence for Kathmandu-valley destinations, whichever side of the
+  // branch they fall on - that is the whole point of the option for a branch.
+  const valleyOverride =
+    dest.valley === "inside" && overrides.insideValleyFlatRate != null ? overrides.insideValleyFlatRate : null;
+  const sideRate = (insideBranch ? overrides.flatInsideValley : overrides.flatOutsideValley) ?? null;
+
+  // Branch delivery (parcel handed in at a branch) uses its own pair when set,
+  // else the plain inside/outside rate. The valley override is home-delivery
+  // only, matching resolveBaseRate.
+  const isBranchDelivery = serviceType === "branch_delivery";
+  const rate = isBranchDelivery
+    ? pick(insideBranch ? overrides.branchFlatInsideValley : overrides.branchFlatOutsideValley, sideRate)
+    : valleyOverride ?? sideRate;
+  if (rate === null) return null;
+
+  const freeWeightKg = settings.freeWeightKg;
+  const extraWeightPercent = pick(overrides.extraWeightPercent, settings.extraWeightPercent) ?? 0;
+  const weightSurcharge = Math.max(0, weightKg - freeWeightKg) * (rate * (extraWeightPercent / 100));
+  const totalPayable = rate + weightSurcharge;
+  const basis = valleyOverride !== null && !isBranchDelivery
+    ? "Flat inside-valley rate"
+    : `Flat ${isBranchDelivery ? "branch" : "home"} rate (${side} branch)`;
+
+  const delivery: BranchFlatQuote = {
+    baseCharge: rate,
+    weightSurcharge,
+    totalPayable,
+    freeWeightKg,
+    rateType: "flat",
+    basis,
+    valley: dest.valley,
+    insideBranch,
+  };
+  if (!isReturn) return delivery;
+
+  // Return percents are labelled "Return — inside/outside Hetauda" on a branch
+  // vendor's form, so they key off the same inside/outside-branch split. Same
+  // precedence as getReturnDeliveryQuote otherwise.
+  const homePercent = insideBranch
+    ? pick(overrides.returnInsideValleyPercent, settings.returnInsideValleyPercent)
+    : pick(overrides.returnOutsideValleyPercent, settings.returnOutsideValleyPercent);
+  const branchPercent = insideBranch
+    ? pick(overrides.branchReturnInsideValleyPercent, settings.branchReturnInsideValleyPercent)
+    : pick(overrides.branchReturnOutsideValleyPercent, settings.branchReturnOutsideValleyPercent);
+  const percent = (isBranchDelivery ? pick(branchPercent, homePercent) : homePercent) ?? 0;
+  const charge = totalPayable * (percent / 100);
+
+  return {
+    ...delivery,
+    baseCharge: charge,
+    weightSurcharge: 0,
+    totalPayable: charge,
+    basis: `Return rate (${percent}% of delivery, ${side} branch)`,
+    returnPercent: percent,
+    baseDeliveryCharge: totalPayable,
   };
 }
 

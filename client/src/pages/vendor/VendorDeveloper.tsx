@@ -452,7 +452,6 @@ const VendorDeveloper: React.FC = () => {
     <div className="api-keys-page">
       <PageHeader
         title="Developer"
-        subtitle="Manage your Partner API keys and webhook endpoints in one place."
         {...headerProps}
       >
         <a
@@ -611,7 +610,7 @@ const VendorDeveloper: React.FC = () => {
 
       {createKeyOpen && (
         <div className="modal-overlay">
-          <div className="modal-content" style={{ maxWidth: '480px' }}>
+          <div className="modal-content" style={{ width: '480px' }}>
             <div className="modal-header">
               <h2>{createdKey ? 'Your new API key' : 'Generate API key'}</h2>
               <Button variant="ghost" size="icon" className="modal-close-btn" onClick={closeCreateKey}>
@@ -666,7 +665,7 @@ const VendorDeveloper: React.FC = () => {
 
       {createHookOpen && (
         <div className="modal-overlay">
-          <div className="modal-content" style={{ maxWidth: '520px' }}>
+          <div className="modal-content" style={{ width: '520px' }}>
             <div className="modal-header">
               <h2>{revealedSecret ? 'Your webhook secret' : 'Add webhook endpoint'}</h2>
               <Button variant="ghost" size="icon" className="modal-close-btn" onClick={closeCreateHook}>
@@ -731,7 +730,7 @@ const VendorDeveloper: React.FC = () => {
 
       {deliveriesFor && (
         <div className="modal-overlay">
-          <div className="modal-content" style={{ maxWidth: '720px' }}>
+          <div className="modal-content" style={{ width: '720px' }}>
             <div className="modal-header">
               <h2>Deliveries — {deliveriesFor.name}</h2>
               <Button variant="ghost" size="icon" className="modal-close-btn" onClick={closeDeliveries}>

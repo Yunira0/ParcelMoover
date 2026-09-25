@@ -59,5 +59,10 @@ export const submitBranchPayment = async (input: { branchId?: string; settlement
   return (await api.post('/branches/billing/payments', form, { headers: { 'Content-Type': 'multipart/form-data' } })).data.data as BranchPayment;
 };
 
+/** Set one branch's credit limit. Send plain rupees — the server stores it as
+ *  the negative block threshold. super_admin only. */
+export const updateBranchCreditLimit = async (branchId: string, creditLimit: number): Promise<BranchBillingStatus> =>
+  (await api.patch(`/billing/branches/${branchId}/credit-limit`, { creditLimit })).data.data;
+
 export const reviewBranchPayment = async (id: string, decision: 'verified' | 'rejected', remark?: string) =>
   (await api.patch(`/branches/billing/payments/${id}/review`, { decision, remark })).data.data as BranchPayment;

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { AlertTriangle } from 'lucide-react';
 import { getBillingStatus, type BillingStatus } from '../services/billing.service';
 import { isVendorSide } from '../utils/auth';
+import { creditUsagePct } from '../utils/creditUsage';
 import { formatCurrency } from '../utils/format';
 import '../pages/vendor/VendorBilling.css';
 
@@ -39,6 +40,8 @@ const BillingStatusBanner: React.FC = () => {
   if (!status || status.state === 'ok') return null;
 
   const owed = Math.max(0, -status.balance);
+  const payToClear = status.amountToClearBlock;
+  const pct = Math.round(creditUsagePct(status.balance, status.creditLimit));
 
   return (
     <div className={`billing-banner billing-banner-${status.state}`}>
@@ -50,11 +53,12 @@ const BillingStatusBanner: React.FC = () => {
         <p>
           {status.state === 'blocked'
             ? `${formatCurrency(owed)} is outstanding. Pay at least ${formatCurrency(
-                status.amountToClearBlock,
+                payToClear,
               )} to resume placing orders.`
             : `${formatCurrency(owed)} is outstanding. Order creation pauses at ${formatCurrency(
                 Math.abs(status.blockThreshold),
               )} outstanding.`}{' '}
+          {pct}% of {formatCurrency(status.creditLimit)} limit used.{' '}
           <Link to="/finance/billing">Pay now</Link>
         </p>
       </div>

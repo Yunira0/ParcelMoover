@@ -49,7 +49,6 @@ const VendorPendingCod: React.FC = () => {
     <div className="vendor-finance-page">
       <PageHeader
         title="Pending COD Orders"
-        subtitle="Manage and track your package orders within the pending cash on delivery network."
       />
 
       {loading ? (

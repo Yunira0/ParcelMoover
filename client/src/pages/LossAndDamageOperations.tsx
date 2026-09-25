@@ -231,7 +231,6 @@ const LossAndDamageOperations: React.FC = () => {
     <div className="lossdamage-operations-container">
       <PageHeader
         title="Loss and damage"
-        subtitle="Stay vigilant regarding your dispatch orders throughout the entire hub network to prevent loss and damage."
       />
 
       <div className="lossdamage-toolbar">

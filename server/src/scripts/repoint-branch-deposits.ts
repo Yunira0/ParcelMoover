@@ -26,6 +26,7 @@
 //   ts-node --transpile-only src/scripts/repoint-branch-deposits.ts --actor=<superAdminUserId> --dry-run
 //   ts-node --transpile-only src/scripts/repoint-branch-deposits.ts --actor=<superAdminUserId> --branch=<branchLocationId> --dry-run
 //   ts-node --transpile-only src/scripts/repoint-branch-deposits.ts --actor=<superAdminUserId> --commit
+//   node dist/scripts/repoint-branch-deposits.js --commit --once   (deploy start; runs once per database)
 import "dotenv/config";
 import type { Prisma } from "../generated/prisma/client";
 import prisma from "../lib/prisma";
@@ -146,13 +147,36 @@ async function processBranch(
   };
 }
 
+// Written after a committed --once run so later deploys skip it: re-running
+// would also net genuine leftover credit against statements settled since.
+const ONCE_MARKER = "REPOINT_BRANCH_DEPOSITS_BACKFILL_DONE";
+
 async function main() {
   const args = process.argv.slice(2);
   const dryRun = !args.includes("--commit");
-  const actorId = args.find((a) => a.startsWith("--actor="))?.split("=")[1];
+  const once = args.includes("--once");
+  let actorId = args.find((a) => a.startsWith("--actor="))?.split("=")[1];
   const branchArg = args.find((a) => a.startsWith("--branch="))?.split("=")[1];
 
+  if (once && (await prisma.audit_logs.findFirst({ where: { action: ONCE_MARKER }, select: { id: true } }))) {
+    console.log("repoint-branch-deposits: already applied, skipping.");
+    return;
+  }
+
+  // On deploy there is no one to pass --actor, so attribute it to the first super admin.
+  if (!actorId && once) {
+    const superAdmin = await prisma.user_roles.findFirst({
+      where: { roles: { code: "super_admin" } },
+      orderBy: { created_at: "asc" },
+      select: { user_id: true },
+    });
+    actorId = superAdmin?.user_id;
+  }
   if (!actorId) {
+    if (once) {
+      console.log("repoint-branch-deposits: no super admin yet, skipping.");
+      return;
+    }
     console.error("Missing --actor=<userId>. Pass the super-admin user id to attribute the re-point to.");
     process.exit(1);
   }
@@ -209,8 +233,13 @@ async function main() {
     `${dryRun ? "Would touch" : "Touched"} ${touchedBranches} branch(es).  ` +
       `netted ${rs(totalLinkOnly)}, paid down ${rs(totalPaidDown)}, left ${rs(totalLeftover)} as credit.`,
   );
-  if (!dryRun) {
-    console.log("Clear the branch-billing Redis cache (or wait for TTL) so the UI reflects the change.");
+  if (!dryRun && once && !branchArg) {
+    await prisma.audit_logs.create({
+      data: {
+        actor_id: actorId, entity_type: "system", action: ONCE_MARKER,
+        new_data: { touchedBranches, totalLinkOnly, totalPaidDown, totalLeftover },
+      },
+    });
   }
 }
 
@@ -219,4 +248,9 @@ main()
     console.error(error);
     process.exitCode = 1;
   })
-  .finally(() => prisma.$disconnect());
+  .finally(async () => {
+    await prisma.$disconnect();
+    // The imported services open a Redis connection that would keep the
+    // process alive and stall the deploy's `&& node dist/index.js`.
+    process.exit(process.exitCode ?? 0);
+  });

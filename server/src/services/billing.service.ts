@@ -62,14 +62,20 @@ export interface BillingThresholds {
 export interface VendorBillingStatus extends VendorAccountBalance, BillingThresholds {
   vendorId: string;
   state: vendor_billing_state;
+  /** This vendor's own credit limit (positive NPR). Block trips at balance <= -creditLimit. */
+  creditLimit: number;
   /** Convenience for the client: how much would clear the block. */
   amountToClearBlock: number;
   /** Payment claims awaiting admin verification (not yet in the balance). */
   pendingPaymentAmount: number;
 }
 
-export interface BillingSettings extends BillingThresholds {
+export interface BillingSettings extends Omit<BillingThresholds, "blockThreshold"> {
   id: string;
+  /** System default credit limit assigned to every new vendor. The
+      settings-level block threshold is gone; the block line is always
+      -creditLimit, per vendor. */
+  defaultCreditLimit: number;
   branchWarnThreshold: number;
   branchBlockThreshold: number;
   paymentQrPath: string | null;
@@ -100,7 +106,7 @@ export async function getBillingSettings(): Promise<BillingSettings> {
   const result: BillingSettings = {
     id: settings.id,
     warnThreshold: money(settings.warn_threshold),
-    blockThreshold: money(settings.block_threshold),
+    defaultCreditLimit: money(settings.default_credit_limit),
     branchWarnThreshold: money(settings.branch_warn_threshold),
     branchBlockThreshold: money(settings.branch_block_threshold),
     paymentQrPath: settings.payment_qr_path,
@@ -127,7 +133,7 @@ export async function updateBillingSettings(
   actorId: string,
   input: {
     warnThreshold?: number;
-    blockThreshold?: number;
+    defaultCreditLimit?: number;
     branchWarnThreshold?: number;
     branchBlockThreshold?: number;
     paymentQrPath?: string | null;
@@ -136,14 +142,20 @@ export async function updateBillingSettings(
 ): Promise<BillingSettings> {
   const current = await getBillingSettings();
   const warn = input.warnThreshold ?? current.warnThreshold;
-  const block = input.blockThreshold ?? current.blockThreshold;
+  const credit = money(input.defaultCreditLimit ?? current.defaultCreditLimit);
   const branchWarn = input.branchWarnThreshold ?? current.branchWarnThreshold;
   const branchBlock = input.branchBlockThreshold ?? current.branchBlockThreshold;
 
-  // The block threshold must be the harsher of the two, or a vendor could be
-  // blocked before ever being warned.
-  if (block > warn) {
-    throw new AppError(400, "blockThreshold must be less than or equal to warnThreshold");
+  if (!Number.isFinite(credit) || credit <= 0) {
+    throw new AppError(400, "defaultCreditLimit must be greater than zero");
+  }
+  // The block line (-creditLimit) must stay harsher than the warn line, or a
+  // vendor could be blocked before ever being warned.
+  if (-credit > warn) {
+    throw new AppError(
+      400,
+      `defaultCreditLimit must be at least Rs. ${Math.abs(warn).toFixed(2)} so vendors are warned before being blocked`,
+    );
   }
   if (branchBlock > branchWarn) {
     throw new AppError(400, "branchBlockThreshold must be less than or equal to branchWarnThreshold");
@@ -153,7 +165,7 @@ export async function updateBillingSettings(
     where: { id: current.id },
     data: {
       warn_threshold: warn,
-      block_threshold: block,
+      default_credit_limit: credit,
       branch_warn_threshold: branchWarn,
       branch_block_threshold: branchBlock,
       ...(input.paymentQrPath !== undefined ? { payment_qr_path: input.paymentQrPath } : {}),
@@ -167,13 +179,65 @@ export async function updateBillingSettings(
       entity_type: "billing_settings",
       entity_id: current.id,
       action: "UPDATE_BILLING_SETTINGS",
-      old_data: { warnThreshold: current.warnThreshold, blockThreshold: current.blockThreshold, branchWarnThreshold: current.branchWarnThreshold, branchBlockThreshold: current.branchBlockThreshold },
-      new_data: { warnThreshold: warn, blockThreshold: block, branchWarnThreshold: branchWarn, branchBlockThreshold: branchBlock },
+      old_data: { warnThreshold: current.warnThreshold, defaultCreditLimit: current.defaultCreditLimit, branchWarnThreshold: current.branchWarnThreshold, branchBlockThreshold: current.branchBlockThreshold },
+      new_data: { warnThreshold: warn, defaultCreditLimit: credit, branchWarnThreshold: branchWarn, branchBlockThreshold: branchBlock },
     },
   });
 
   await invalidateBillingSettingsCache();
   return getBillingSettings();
+}
+
+// The snapshot every new vendor is assigned. Read live (through the cached
+// settings) at creation time so a default change applies to later vendors
+// only — never retroactively to existing ones.
+export async function getDefaultCreditLimit(): Promise<number> {
+  return (await getBillingSettings()).defaultCreditLimit;
+}
+
+/**
+ * Admin override of one vendor's credit limit. Touches only that row — the
+ * system default and every other vendor keep their values. Re-evaluates the
+ * vendor immediately so a raised limit unblocks them without waiting for
+ * their next delivery (mirrors payment verification).
+ */
+export async function updateVendorCreditLimit(
+  actorId: string,
+  vendorId: string,
+  creditLimit: number,
+): Promise<VendorBillingStatus> {
+  const rounded = money(creditLimit);
+  if (!Number.isFinite(rounded) || rounded <= 0) {
+    throw new AppError(400, "creditLimit must be greater than zero");
+  }
+  if (rounded > 100_000_000) {
+    throw new AppError(400, "creditLimit is unrealistically large");
+  }
+  const vendor = await prisma.vendors.findFirst({
+    where: { id: vendorId, deleted_at: null },
+    select: { id: true, business_name: true, client_name: true, credit_limit: true },
+  });
+  if (!vendor) throw new AppError(404, "Vendor not found");
+
+  await prisma.$transaction(async (tx) => {
+    await tx.vendors.update({ where: { id: vendorId }, data: { credit_limit: rounded } });
+    await tx.audit_logs.create({
+      data: {
+        actor_id: actorId,
+        entity_type: "vendor",
+        entity_id: vendorId,
+        action: "UPDATE_VENDOR_CREDIT_LIMIT",
+        old_data: { creditLimit: money(vendor.credit_limit) },
+        new_data: { creditLimit: rounded },
+      },
+    });
+  });
+
+  await invalidateVendorBalanceCache(vendorId);
+  // Best-effort by contract (see evaluateVendorBilling): a raise must lift a
+  // block in the same breath, and a failure here must not fail the update.
+  await evaluateVendorBilling(vendorId);
+  return getVendorBillingStatus(vendorId, { skipCache: true });
 }
 
 // ── Balance ─────────────────────────────────────────────────────────────────
@@ -254,16 +318,21 @@ export async function getVendorAccountBalance(
 }
 
 export function resolveThresholds(
-  vendor: { billing_warn_threshold: Prisma.Decimal | null; billing_block_threshold: Prisma.Decimal | null },
-  settings: BillingThresholds,
+  vendor: { billing_warn_threshold: Prisma.Decimal | null; credit_limit: Prisma.Decimal },
+  settings: { warnThreshold: number },
 ): BillingThresholds {
   return {
     warnThreshold:
       vendor.billing_warn_threshold === null ? settings.warnThreshold : money(vendor.billing_warn_threshold),
-    blockThreshold:
-      vendor.billing_block_threshold === null ? settings.blockThreshold : money(vendor.billing_block_threshold),
+    // The block line is always this vendor's own credit limit, expressed as
+    // the negative balance that trips it. There is no settings fallback: the
+    // default was snapshotted onto the row at creation.
+    blockThreshold: -money(vendor.credit_limit),
   };
 }
+
+// Worklist order for the credit-control list: the harshest state leads.
+const STATE_ORDER: Record<vendor_billing_state, number> = { blocked: 0, warned: 1, ok: 2 };
 
 export function stateForBalance(balance: number, thresholds: BillingThresholds): vendor_billing_state {
   // Block is checked first: it is the lower (harsher) of the two, so a balance
@@ -273,6 +342,13 @@ export function stateForBalance(balance: number, thresholds: BillingThresholds):
   return "ok";
 }
 
+// The block line is inclusive (balance <= blockThreshold is blocked), so the
+// amount that lifts a block is one paisa past the line, not up to it.
+export function clearBlockAmount(balance: number, thresholds: Pick<BillingThresholds, "blockThreshold">): number {
+  if (balance > thresholds.blockThreshold) return 0;
+  return money(thresholds.blockThreshold - balance + 0.01);
+}
+
 export async function getVendorBillingStatus(
   vendorId: string,
   options: { skipCache?: boolean } = {},
@@ -280,7 +356,7 @@ export async function getVendorBillingStatus(
   const [vendor, settings, balance] = await Promise.all([
     prisma.vendors.findFirst({
       where: { id: vendorId },
-      select: { id: true, billing_warn_threshold: true, billing_block_threshold: true },
+      select: { id: true, billing_warn_threshold: true, credit_limit: true },
     }),
     getBillingSettings(),
     getVendorAccountBalance(vendorId, options),
@@ -298,8 +374,9 @@ export async function getVendorBillingStatus(
     vendorId,
     ...balance,
     ...thresholds,
+    creditLimit: money(vendor.credit_limit),
     state: stateForBalance(balance.balance, thresholds),
-    amountToClearBlock: Math.max(0, money(thresholds.blockThreshold - balance.balance)),
+    amountToClearBlock: clearBlockAmount(balance.balance, thresholds),
     pendingPaymentAmount: money(pending._sum.amount),
   };
 }
@@ -317,7 +394,7 @@ export async function getVendorBlockDecision(
   const [vendor, settings, balance] = await Promise.all([
     prisma.vendors.findFirst({
       where: { id: vendorId },
-      select: { billing_warn_threshold: true, billing_block_threshold: true },
+      select: { billing_warn_threshold: true, credit_limit: true },
     }),
     getBillingSettings(),
     getVendorAccountBalance(vendorId),
@@ -329,7 +406,7 @@ export async function getVendorBlockDecision(
   return {
     blocked: stateForBalance(balance.balance, thresholds) === "blocked",
     balance: balance.balance,
-    amountToClearBlock: Math.max(0, money(thresholds.blockThreshold - balance.balance)),
+    amountToClearBlock: clearBlockAmount(balance.balance, thresholds),
   };
 }
 
@@ -359,7 +436,7 @@ export async function listVendorBalances(
       business_name: string | null;
       billing_alert_state: vendor_billing_state;
       warn_override: Prisma.Decimal | null;
-      block_override: Prisma.Decimal | null;
+      credit_limit: Prisma.Decimal;
       collected: string;
       charges: string;
       payouts: string;
@@ -394,7 +471,7 @@ export async function listVendorBalances(
            v.business_name,
            v.billing_alert_state,
            v.billing_warn_threshold  AS warn_override,
-           v.billing_block_threshold AS block_override,
+           v.credit_limit            AS credit_limit,
            COALESCE(pt.collected, 0) AS collected,
            COALESCE(pt.charges, 0)   AS charges,
            COALESCE(po.payouts, 0)   AS payouts,
@@ -416,7 +493,7 @@ export async function listVendorBalances(
       const paymentsReceived = money(row.payments);
       const balance = money(codCollected - deliveryCharges - payouts + paymentsReceived);
       const thresholds = resolveThresholds(
-        { billing_warn_threshold: row.warn_override, billing_block_threshold: row.block_override },
+        { billing_warn_threshold: row.warn_override, credit_limit: row.credit_limit },
         settings,
       );
 
@@ -430,14 +507,25 @@ export async function listVendorBalances(
         paymentsReceived,
         balance,
         ...thresholds,
+        creditLimit: money(row.credit_limit),
         state: stateForBalance(balance, thresholds),
-        amountToClearBlock: Math.max(0, money(thresholds.blockThreshold - balance)),
+        amountToClearBlock: clearBlockAmount(balance, thresholds),
         pendingPaymentAmount: money(row.pending),
       };
     })
     // Filtered on the live state, not the stored one - the stored value is only
     // what the vendor was last told, and lags until the next evaluation.
-    .filter((row) => !stateFilter || row.state === stateFilter);
+    .filter((row) => !stateFilter || row.state === stateFilter)
+    // Credit control is a worklist: whoever is blocked needs attention first,
+    // and within a state the deepest debt leads. Balance is negative when the
+    // vendor owes, so ascending balance is descending debt. Name breaks ties
+    // so the order is stable between loads.
+    .sort(
+      (a, b) =>
+        STATE_ORDER[a.state] - STATE_ORDER[b.state] ||
+        a.balance - b.balance ||
+        a.vendorName.localeCompare(b.vendorName),
+    );
 }
 
 export async function invalidateVendorBalanceCache(vendorId: string): Promise<void> {

@@ -54,6 +54,9 @@ const EMPTY_SUMMARY: DashboardSummary = {
     overdueDelivery: 0,
     overdueTransit: 0,
     overdueRemarks: 0,
+    overdueBranchCod: 0,
+    overdueBranchCodAmount: 0,
+    branchCodHours: null,
     overdueReturn: 0,
     pickupHours: null,
     deliveryHours: null,
@@ -131,7 +134,6 @@ const VendorDashboard: React.FC = () => {
     <div className="vendor-dashboard">
       <DashboardHeader
         user={getCurrentUser()?.fullName || ''}
-        subtitle="Your orders, deliveries and payouts across the Parcel Moover network."
       />
 
       <VendorNoticeBanner />
@@ -141,7 +143,7 @@ const VendorDashboard: React.FC = () => {
 
       <div className="vendor-dashboard-card">
 
-        {/* 8 coloured metric cards */}
+        {/* 7 coloured metric cards */}
         <VendorOverviewCards
           totalOrders={overview.totalOrders}
           totalOrderAmount={overview.totalOrderAmount}
@@ -151,6 +153,8 @@ const VendorDashboard: React.FC = () => {
           rtvDeliveredAmount={overview.totalReturnedToVendorAmount}
           inTransit={overview.inTransit}
           inTransitAmount={overview.inTransitAmount}
+          inProgress={overview.inDelivery}
+          inProgressAmount={overview.inDeliveryAmount}
           pendingPickup={overview.awaitingPickup}
           pendingPickupAmount={overview.awaitingPickupAmount}
           returnProcess={overview.pendingReturns}

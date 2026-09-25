@@ -379,16 +379,16 @@
 /* Move to trash is the only destructive entry, so it reads apart from the
    others rather than looking like another edit. */
 .actions-cell button.row-action-danger {
-  border-left: 1px solid var(--color-border-default, #e6e6e6);
+  border-left: 1px solid var(--color-border-default);
   border-radius: 0 var(--border-radius-default) var(--border-radius-default) 0;
-  color: var(--color-text-danger, #b42318);
+  color: var(--color-danger-text);
   margin-left: var(--space-1);
   padding-left: var(--space-2);
 }
 
 .actions-cell button.row-action-danger:hover {
-  background: var(--color-background-danger-subtle, #fdeaea);
-  color: var(--color-text-danger, #b42318);
+  background: var(--color-danger-surface);
+  color: var(--color-danger-text);
 }
 
 /* Status Edit — a two-field form, so the shared .modal-content's 500px /

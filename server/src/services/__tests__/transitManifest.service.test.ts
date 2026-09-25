@@ -11,11 +11,14 @@ vi.mock("../../lib/prisma", () => ({
   default: {
     parcels: { findMany: vi.fn() },
     locations: { findFirst: vi.fn(), findMany: vi.fn() },
-    transit_manifests: { findUnique: vi.fn(), findFirst: vi.fn(), create: vi.fn(), delete: vi.fn() },
+    transit_manifests: { findUnique: vi.fn(), findFirst: vi.fn(), create: vi.fn(), delete: vi.fn(), updateMany: vi.fn() },
     transit_manifest_parcels: { findMany: vi.fn(), createMany: vi.fn(), deleteMany: vi.fn() },
     parcel_status_history: { findMany: vi.fn() },
     audit_logs: { create: vi.fn() },
     $transaction: vi.fn(),
+    // The row locks the service takes before it writes (see the concurrency
+    // guards in addParcelsToTransitManifest / bulkUpdateParcelStatus).
+    $queryRaw: vi.fn(),
   },
 }));
 vi.mock("../order.service", () => ({
@@ -54,6 +57,7 @@ const mockedPrisma = prisma as unknown as {
     findFirst: ReturnType<typeof vi.fn>;
     create: ReturnType<typeof vi.fn>;
     delete: ReturnType<typeof vi.fn>;
+    updateMany: ReturnType<typeof vi.fn>;
   };
   transit_manifest_parcels: {
     findMany: ReturnType<typeof vi.fn>;
@@ -63,6 +67,7 @@ const mockedPrisma = prisma as unknown as {
   parcel_status_history: { findMany: ReturnType<typeof vi.fn> };
   audit_logs: { create: ReturnType<typeof vi.fn> };
   $transaction: ReturnType<typeof vi.fn>;
+  $queryRaw: ReturnType<typeof vi.fn>;
 };
 const mockedBulkUpdate = bulkUpdateParcelStatus as unknown as ReturnType<typeof vi.fn>;
 const mockedCoverage = resolveBranchLocationIds as unknown as ReturnType<typeof vi.fn>;
@@ -114,6 +119,11 @@ beforeEach(() => {
   mockedPrisma.$transaction.mockImplementation((fn: (tx: unknown) => Promise<unknown>) =>
     fn(mockedPrisma),
   );
+  // The FOR UPDATE locks return nothing the service reads back by default;
+  // a test that cares about a raced claim stubs the follow-up findMany.
+  mockedPrisma.$queryRaw.mockResolvedValue([]);
+  // One winner claims the manifest unless a test says otherwise.
+  mockedPrisma.transit_manifests.updateMany.mockResolvedValue({ count: 1 });
   // Pokhara covers itself and one covered area by default.
   mockedCoverage.mockResolvedValue([HUB_ID, "area-lakeside"]);
   mockedTransitGate.mockResolvedValue(undefined);

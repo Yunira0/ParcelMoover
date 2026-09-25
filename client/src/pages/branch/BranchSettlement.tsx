@@ -106,7 +106,6 @@ const BranchSettlement: React.FC = () => {
     <div className="acc-page">
       <PageHeader
         title="Branch COD"
-        subtitle="COD statements a collecting branch owes the Imadol master branch"
         {...(canCreateSettlement
           ? { actionLabel: 'Add settlement', actionIcon: <Plus size={16} />, onAction: () => navigate('/branches/settlement/new') }
           : {})}
@@ -241,7 +240,7 @@ const BranchSettlement: React.FC = () => {
           {
             header: 'Settlement date',
             width: '125px',
-            accessor: (item) => toBsDate(item.settlementDate) || item.settlementDate,
+            accessor: (item) => toBsDate(item.settlementDate) || '—',
           },
         ]}
         minWidth="1250px"

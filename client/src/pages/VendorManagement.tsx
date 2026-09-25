@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Plus, Search, ChevronDown, FolderOpen } from 'lucide-react';
+import { Plus, Search, ChevronDown, FolderOpen, ShieldCheck } from 'lucide-react';
 import Table, { TableRowActions } from '../components/Table';
 import { toBsDate } from '../utils/nepaliDate';
 import UserActionModal from '../components/UserActionModal';
@@ -36,6 +36,9 @@ interface VendorUser {
   lastOrderedDate: string;
   salesUserId: string | null;
   salesEditUsed: boolean;
+  /** Verified = approved KYC behind them; pending = a verification in the
+      queue; needed = nothing — the only state that shows the Start KYC action. */
+  kycStatus: 'verified' | 'pending' | 'needed';
 }
 
 // Starting rows-per-page. The selector below the table can change it; the
@@ -250,7 +253,22 @@ const VendorManagement: React.FC = () => {
                       }
                     : undefined
                 }
-              />
+              >
+                {/* KYC verification lives here, not on the Vouchers page: it
+                    shows only while this vendor still needs it — verified
+                    vendors and queued ones get no button. Review access gates
+                    it, matching the server's KYC_ACCESS check. */}
+                {canReviewKyc && item.kycStatus === 'needed' && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => navigate(`/vendors/${item.id}/kyc-start`)}
+                  >
+                    <ShieldCheck size={14} />
+                    Start KYC
+                  </Button>
+                )}
+              </TableRowActions>
             );
           },
           width: '220px',
@@ -262,13 +280,6 @@ const VendorManagement: React.FC = () => {
     <div className="vendor-management-container">
       <PageHeader
         title="VENDOR MANAGEMENT"
-        subtitle={
-          view === 'kyc'
-            ? 'Review and approve vendor onboarding applications.'
-            : view === 'volume-limit'
-              ? 'Set the daily parcel threshold that flags a vendor as high volume.'
-              : 'Oversee client accounts, delivery statistics, and financial tracking.'
-        }
         actionLabel={canCreate && view === 'vendors' ? 'Add new' : undefined}
         actionIcon={canCreate && view === 'vendors' ? <Plus size={16} /> : undefined}
         onAction={canCreate && view === 'vendors' ? () => navigate('/vendors/new') : undefined}

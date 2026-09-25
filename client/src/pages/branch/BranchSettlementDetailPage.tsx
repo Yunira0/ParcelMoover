@@ -98,7 +98,7 @@ const BranchSettlementDetailPage: React.FC = () => {
   const payable = detail.status === 'pending' || detail.status === 'partially_paid';
   const hasVerifiedPayment = detail.status === 'partially_paid' || detail.status === 'settled';
   const paymentColumns = [
-    { header: 'Paid at', accessor: (payment: BranchSettlementDetail['payments'][number]) => toBsDate(payment.paidAt) || payment.paidAt.slice(0, 10), width: '130px' },
+    { header: 'Paid at', accessor: (payment: BranchSettlementDetail['payments'][number]) => toBsDate(payment.paidAt) || '—', width: '130px' },
     { header: 'Method', accessor: (payment: BranchSettlementDetail['payments'][number]) => payment.method, width: '180px' },
     { header: 'Amount', accessor: (payment: BranchSettlementDetail['payments'][number]) => money(payment.amount), width: '140px', className: 'branch-money-cell' },
     { header: 'Breakdown', accessor: (payment: BranchSettlementDetail['payments'][number]) => payment.breakdown.map((line) => `${line.method} · ${money(line.amount)}`).join(' · '), width: '250px' },

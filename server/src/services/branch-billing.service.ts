@@ -1,7 +1,7 @@
 import { Prisma } from "../generated/prisma/client";
 import prisma from "../lib/prisma";
 import { AppError } from "../utils/AppError";
-import { getBillingSettings, type BillingThresholds } from "./billing.service";
+import { clearBlockAmount, getBillingSettings, type BillingThresholds } from "./billing.service";
 import { BRANCH_COD_SLA_KEY, getSlaSettings } from "./sla.service";
 
 type Actor = { id: string; roles: string[] };
@@ -89,7 +89,10 @@ async function resolveBranchId(actor: Actor, suppliedId?: string): Promise<strin
 
 function thresholdsForBranch(
   branch: { branch_billing_warn_threshold: Prisma.Decimal | null; branch_billing_block_threshold: Prisma.Decimal | null },
-  defaults: BillingThresholds,
+  // Branch fallbacks come from the branch-level settings, not the vendor
+  // ones: the two scales are intentionally separate (see billing_settings),
+  // and the old vendor block threshold no longer exists.
+  defaults: { warnThreshold: number; blockThreshold: number },
 ): BillingThresholds {
   return {
     warnThreshold: branch.branch_billing_warn_threshold === null ? defaults.warnThreshold : money(branch.branch_billing_warn_threshold),
@@ -171,17 +174,71 @@ export async function getBranchBillingStatus(branchId: string): Promise<BranchBi
   if (!branch) throw new AppError(404, "Branch not found");
   const codSlaHours = slaSettings[BRANCH_COD_SLA_KEY] ?? null;
   const balance = await computeBranchBalance(branchId, codSlaHours);
-  const thresholds = thresholdsForBranch(branch, settings);
+  const thresholds = thresholdsForBranch(branch, {
+    warnThreshold: settings.branchWarnThreshold,
+    blockThreshold: settings.branchBlockThreshold,
+  });
   return {
     branchId: branch.id,
     branchName: branch.name,
     ...balance,
     ...thresholds,
     state: branchStateForBalance(balance.balance, thresholds),
-    amountToClearBlock: Math.max(0, money(thresholds.blockThreshold - balance.balance)),
+    amountToClearBlock: clearBlockAmount(balance.balance, thresholds),
     pendingPaymentAmount: money(pending._sum.amount),
     codSlaHours,
   };
+}
+
+/**
+ * Set one branch's credit limit — the balance it is blocked at, stored as the
+ * negative block threshold override. Mirrors updateVendorCreditLimit, except a
+ * branch keeps an explicit threshold pair rather than a positive limit column,
+ * so the sign is applied here and the caller speaks in plain rupees.
+ */
+export async function updateBranchCreditLimit(
+  actorId: string,
+  branchId: string,
+  creditLimit: number,
+): Promise<BranchBillingStatus> {
+  const rounded = money(creditLimit);
+  if (!Number.isFinite(rounded) || rounded <= 0) {
+    throw new AppError(400, "creditLimit must be greater than zero");
+  }
+  if (rounded > 100_000_000) {
+    throw new AppError(400, "creditLimit is unrealistically large");
+  }
+  const branch = await prisma.locations.findFirst({
+    where: { id: branchId, parent_id: null, is_hub: true },
+    select: { id: true, name: true, branch_billing_block_threshold: true },
+  });
+  if (!branch) throw new AppError(404, "Branch not found");
+
+  await prisma.$transaction(async (tx) => {
+    await tx.locations.update({
+      where: { id: branchId },
+      data: { branch_billing_block_threshold: -rounded },
+    });
+    await tx.audit_logs.create({
+      data: {
+        actor_id: actorId,
+        entity_type: "location",
+        entity_id: branchId,
+        action: "UPDATE_BRANCH_CREDIT_LIMIT",
+        old_data: {
+          creditLimit:
+            branch.branch_billing_block_threshold === null
+              ? null
+              : -money(branch.branch_billing_block_threshold),
+        },
+        new_data: { creditLimit: rounded },
+      },
+    });
+  });
+
+  // A raise must lift a block in the same breath, as on the vendor side.
+  await evaluateBranchBilling(branchId);
+  return getBranchBillingStatus(branchId);
 }
 
 /** The authoritative server-side transit gate. */
@@ -480,8 +537,22 @@ export async function getBranchBillingForActor(actor: Actor, branchId?: string) 
   return getBranchBillingStatus(await resolveBranchId(actor, branchId));
 }
 
+/** Imadol is the master branch every other branch settles COD *to*, so it has
+ *  no branch balance of its own — there is no settlement it could raise
+ *  against itself. Matched the same way as branch.service's master lookup,
+ *  inline to avoid a branch.service <-> branch-billing.service import cycle. */
+const isMasterBranch = (b: { code: string | null; name: string }) =>
+  (b.code || "").trim().toUpperCase() === "IMADOL" ||
+  (!b.code?.trim() && b.name.trim().toLowerCase() === "imadol");
+
 export async function listBranchBalances(actor: Actor): Promise<BranchBillingStatus[]> {
   if (!isSuperAdmin(actor)) throw new AppError(403, "Only a super admin can view every branch balance");
-  const branches = await prisma.locations.findMany({ where: { parent_id: null, is_hub: true, is_active: true }, select: { id: true }, orderBy: { name: "asc" } });
-  return Promise.all(branches.map((branch) => getBranchBillingStatus(branch.id)));
+  const branches = await prisma.locations.findMany({
+    where: { parent_id: null, is_hub: true, is_active: true },
+    select: { id: true, code: true, name: true },
+    orderBy: { name: "asc" },
+  });
+  return Promise.all(
+    branches.filter((branch) => !isMasterBranch(branch)).map((branch) => getBranchBillingStatus(branch.id)),
+  );
 }

@@ -280,11 +280,21 @@ function upayaMatchPlaceName(destinationName: string): string {
 // hub's district "Sunsari" is a substring of the unrelated area name
 // "RajabasSunsari" (a different place entirely, just also in Sunsari
 // district), which a naive contains-match would wrongly pick.
-function matchUpayaArea(
-  destination: { name: string; district: string | null; city: string | null } | null | undefined,
+// An explicit per-hub `upaya_area_id` override (set in Destination settings)
+// beats both tiers. An override Upaya no longer has is a data error, so it
+// returns undefined rather than falling through to a guessed area.
+export function matchUpayaArea(
+  destination:
+    | { name: string; district: string | null; city: string | null; upaya_area_id?: number | null }
+    | null
+    | undefined,
   areas: UpayaDeliveryArea[],
 ): UpayaDeliveryArea | undefined {
   if (!destination) return undefined;
+
+  if (destination.upaya_area_id) {
+    return areas.find((a) => a.id === destination.upaya_area_id);
+  }
 
   const placeName = upayaMatchPlaceName(destination.name).toUpperCase();
   if (placeName) {
@@ -393,9 +403,11 @@ export async function handoffParcelsToUpaya(
       results.push({
         ...base,
         success: false,
-        error: destination
-          ? `No confident Upaya area match for destination '${destination.name}'`
-          : "Parcel has no destination hub set",
+        error: !destination
+          ? "Parcel has no destination hub set"
+          : destination.upaya_area_id
+            ? `Upaya area override ${destination.upaya_area_id} on '${destination.name}' no longer exists in Upaya`
+            : `No confident Upaya area match for destination '${destination.name}'`,
       });
       continue;
     }

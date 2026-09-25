@@ -53,6 +53,9 @@ const EMPTY_SUMMARY: DashboardSummary = {
     overdueDelivery: 0,
     overdueTransit: 0,
     overdueRemarks: 0,
+    overdueBranchCod: 0,
+    overdueBranchCodAmount: 0,
+    branchCodHours: null,
     overdueReturn: 0,
     pickupHours: null,
     deliveryHours: null,
@@ -114,12 +117,16 @@ const Dashboard: React.FC = () => {
   // Real period-over-period delta for "Delivered today" from the daily trend
   // (last day vs the previous day). Snapshot metrics have no stored history, so
   // they show no delta until the backend supplies previous-period counts.
+  // Found by Nepal date rather than position, so a trend window that doesn't
+  // end today can't compare the wrong two days.
   const deltas = useMemo(() => {
     const t = summary.weeklyTrend;
-    if (t.length < 2) return undefined;
-    const prev = t[t.length - 2].delivered;
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kathmandu' }).format(new Date());
+    const todayIndex = t.findIndex((d) => d.date === today);
+    if (todayIndex < 1) return undefined;
+    const prev = t[todayIndex - 1].delivered;
     if (!prev) return undefined;
-    const pct = Math.round(((t[t.length - 1].delivered - prev) / prev) * 100);
+    const pct = Math.round(((t[todayIndex].delivered - prev) / prev) * 100);
     return { deliveredToday: pct } as const;
   }, [summary.weeklyTrend]);
 
@@ -165,11 +172,6 @@ const Dashboard: React.FC = () => {
 
       <DashboardHeader
         user={getCurrentUser()?.fullName || ''}
-        subtitle={
-          isBranch
-            ? `${getCurrentUser()?.locationName?.trim() || 'Your branch'} — orders, operations and COD at a glance.`
-            : 'Operational overview for Parcel Moover across the Nepal network.'
-        }
       />
 
       <div className="overview-section">

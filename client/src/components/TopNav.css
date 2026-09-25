@@ -318,11 +318,11 @@
 }
 
 .notification-icon-ticket {
-  color: var(--color-text-secondary);
+  color: var(--color-text-caption);
 }
 
 .notification-icon-failed {
-  color: var(--color-background-danger-default);
+  color: var(--color-danger-default);
 }
 
 .notification-panel {

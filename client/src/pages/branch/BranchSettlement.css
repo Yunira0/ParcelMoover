@@ -9,5 +9,5 @@
 .branch-money-stack { display: flex; flex-direction: column; gap: 2px; font-variant-numeric: tabular-nums; }
 .branch-money-cell { font-variant-numeric: tabular-nums; font-weight: var(--font-weight-semi-bold); }
 .branch-balance-due { color: var(--color-danger-text) !important; }
-.branch-balance-clear { color: var(--color-success-text) !important; }
+.branch-balance-clear { color: var(--color-success-default) !important; }
 @media (max-width: 900px) { .branch-ledger-strip { grid-template-columns: repeat(5, minmax(160px, 1fr)); } }

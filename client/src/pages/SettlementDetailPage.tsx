@@ -692,11 +692,11 @@ const SettlementDetailPage: React.FC = () => {
                         <th>Receiver</th>
                         <th>Destination</th>
                         <th>Number</th>
-                        <th style={{ textAlign: 'right' }}>Weight</th>
-                        <th style={{ textAlign: 'right' }}>COD</th>
-                        <th style={{ textAlign: 'right' }}>Collected COD</th>
-                        <th style={{ textAlign: 'right' }}>Delivery Charges</th>
-                        <th style={{ textAlign: 'right' }}>Net Payable</th>
+                        <th className="sdp-num">Weight</th>
+                        <th className="sdp-num">COD</th>
+                        <th className="sdp-num">Collected COD</th>
+                        <th className="sdp-num">Delivery Charges</th>
+                        <th className="sdp-num">Net Payable</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -733,13 +733,13 @@ const SettlementDetailPage: React.FC = () => {
                           </td>
                           <td title={item.destination || '-'}>{hubNameOnly(item.destination || '') || '-'}</td>
                           <td><ReceiverPhones phone={item.receiverPhone} alternate={item.receiverAlternatePhone} /></td>
-                          <td style={{ textAlign: 'right' }}>
+                          <td className="sdp-num">
                             {item.weightKg === null ? '-' : item.weightKg.toFixed(2)}
                           </td>
-                          <td style={{ textAlign: 'right' }}>{money(item.codAmount)}</td>
-                          <td style={{ textAlign: 'right' }}>{money(item.collectedAmount)}</td>
-                          <td style={{ textAlign: 'right' }}>{money(item.deliveryCharge)}</td>
-                          <td className="sdp-cell-strong" style={{ textAlign: 'right' }}>{money(item.settledAmount)}</td>
+                          <td className="sdp-num">{money(item.codAmount)}</td>
+                          <td className="sdp-num">{money(item.collectedAmount)}</td>
+                          <td className="sdp-num">{money(item.deliveryCharge)}</td>
+                          <td className="sdp-cell-strong sdp-num">{money(item.settledAmount)}</td>
                         </tr>
                       ))}
                     </tbody>

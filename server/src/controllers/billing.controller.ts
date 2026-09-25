@@ -4,7 +4,9 @@ import {
   getVendorBillingStatus,
   listVendorBalances,
   updateBillingSettings,
+  updateVendorCreditLimit,
 } from "../services/billing.service";
+import { updateBranchCreditLimit } from "../services/branch-billing.service";
 import { vendor_billing_state } from "../generated/prisma/enums";
 import {
   listVendorPayments,
@@ -103,7 +105,7 @@ export async function updateBillingSettingsController(req: Request, res: Respons
 
     const settings = await updateBillingSettings(req.user.id, {
       warnThreshold: req.body.warnThreshold,
-      blockThreshold: req.body.blockThreshold,
+      defaultCreditLimit: req.body.defaultCreditLimit,
       branchWarnThreshold: req.body.branchWarnThreshold,
       branchBlockThreshold: req.body.branchBlockThreshold,
       paymentNote: req.body.paymentNote,
@@ -276,5 +278,42 @@ export async function listVendorBalancesController(req: Request, res: Response) 
     return res.status(200).json({ success: true, data: rows });
   } catch (error: any) {
     return fail(res, error, "Failed to load vendor balances");
+  }
+}
+
+// PATCH /api/billing/vendors/:vendorId/credit-limit — override one vendor's
+// credit limit (super_admin). Touches only that vendor: the system default
+// and every other vendor keep their values. Multipart bodies arrive as
+// strings, so the number is coerced like the payment amount above.
+/** Same contract as the vendor route, against a hub's block threshold. */
+export async function updateBranchCreditLimitController(req: Request, res: Response) {
+  try {
+    if (!req.user) return res.status(401).json({ success: false, message: "Unauthorized" });
+
+    const { branchId } = req.params;
+    if (typeof branchId !== "string" || !UUID_REGEX.test(branchId)) {
+      return res.status(400).json({ success: false, message: "Invalid branch id" });
+    }
+
+    const status = await updateBranchCreditLimit(req.user.id, branchId, Number(req.body.creditLimit));
+    return res.status(200).json({ success: true, data: status });
+  } catch (error: any) {
+    return fail(res, error, "Failed to update branch credit limit");
+  }
+}
+
+export async function updateVendorCreditLimitController(req: Request, res: Response) {
+  try {
+    if (!req.user) return res.status(401).json({ success: false, message: "Unauthorized" });
+
+    const { vendorId } = req.params;
+    if (typeof vendorId !== "string" || !UUID_REGEX.test(vendorId)) {
+      return res.status(400).json({ success: false, message: "Invalid vendor id" });
+    }
+
+    const status = await updateVendorCreditLimit(req.user.id, vendorId, Number(req.body.creditLimit));
+    return res.status(200).json({ success: true, data: status });
+  } catch (error: any) {
+    return fail(res, error, "Failed to update credit limit");
   }
 }

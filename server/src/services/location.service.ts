@@ -19,6 +19,7 @@ export interface UpsertLocationInput {
   perDestinationRate?: number | null;
   branchPerDestinationRate?: number | null;
   ncmBranch?: string | null; // explicit NCM branch override — pins handoff to this branch
+  upayaAreaId?: number | null; // explicit Upaya delivery-area override — pins handoff to this area
 }
 
 function mapLocation(loc: {
@@ -38,6 +39,7 @@ function mapLocation(loc: {
   per_destination_rate: { toString(): string } | null;
   branch_per_destination_rate: { toString(): string } | null;
   ncm_branch?: string | null;
+  upaya_area_id?: number | null;
 }) {
   return {
     id: loc.id,
@@ -56,6 +58,7 @@ function mapLocation(loc: {
     perDestinationRate: loc.per_destination_rate === null ? null : Number(loc.per_destination_rate),
     branchPerDestinationRate: loc.branch_per_destination_rate === null ? null : Number(loc.branch_per_destination_rate),
     ncmBranch: (loc as any).ncm_branch ?? null,
+    upayaAreaId: loc.upaya_area_id ?? null,
   };
 }
 
@@ -90,6 +93,13 @@ async function assertNameAvailable(name: string, parentId: string | null, ignore
   }
 }
 
+function normalizeUpayaAreaId(value: unknown): number | null {
+  if (value === null || value === "") return null;
+  const id = Number(value);
+  if (!Number.isInteger(id) || id <= 0) throw new AppError(400, "Upaya area must be a valid Upaya area id");
+  return id;
+}
+
 export async function createLocation(input: UpsertLocationInput) {
   const name = input.name?.trim();
   if (!name) throw new AppError(400, "Name is required");
@@ -112,13 +122,15 @@ export async function createLocation(input: UpsertLocationInput) {
       district: input.district?.trim() || null,
       city: input.city?.trim() || null,
       address_line: input.addressLine?.trim() || null,
-      // A destination defaults to a hub; a covered area never is one.
-      is_hub: parentId ? false : input.isHub ?? true,
+      // Only Add Branch (branch.service createOrPromoteBranch) makes a location
+      // a branch. A plain destination isn't one, and a covered area never is.
+      is_hub: parentId ? false : input.isHub ?? false,
       is_active: input.isActive ?? true,
       parent_id: parentId,
       // ncm_branch column is added in 20260830120000; keep writes tolerant before
       // migration is applied (prisma client pre-generate won't select it anyway).
       ...(input.ncmBranch !== undefined ? { ncm_branch: input.ncmBranch?.trim().toUpperCase() || null } as any : {}),
+      ...(input.upayaAreaId !== undefined ? { upaya_area_id: normalizeUpayaAreaId(input.upayaAreaId) } : {}),
     },
   });
 
@@ -282,7 +294,8 @@ export async function bulkImportLocations(rows: BulkImportDestination[]) {
             province: row.province?.trim() || null,
             city: (row.municipality ?? row.city)?.trim() || null,
             district: row.district?.trim() || null,
-            is_hub: true,
+            // An imported destination is not a branch; Add Branch promotes one.
+            is_hub: false,
             is_active: true,
             zone: row.zone || null,
             valley: row.valley || null,
@@ -383,6 +396,7 @@ export async function updateLocation(id: string, input: Partial<UpsertLocationIn
         ? { branch_per_destination_rate: input.branchPerDestinationRate }
         : {}),
       ...(input.ncmBranch !== undefined ? { ncm_branch: input.ncmBranch?.trim().toUpperCase() || null } : {}),
+      ...(input.upayaAreaId !== undefined ? { upaya_area_id: normalizeUpayaAreaId(input.upayaAreaId) } : {}),
       updated_at: new Date(),
     },
   });

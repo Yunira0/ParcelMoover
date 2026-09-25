@@ -15,7 +15,6 @@ const PartySearchPage: React.FC = () => {
     <div className="acc-page">
       <PageHeader
         title="Search Anyone"
-        subtitle="Everything paid to and collected from a rider, vendor or staff member"
         onBack={() => navigate('/accounting/ledgers/vendor')}
       />
       <PartySearchTab />

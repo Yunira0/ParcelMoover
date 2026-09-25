@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { MessageSquare, RotateCcw, ClipboardList, Send, Route, ArrowRight, CheckCircle2 } from 'lucide-react';
+import { MessageSquare, RotateCcw, ClipboardList, Send, Route, ArrowRight, CheckCircle2, Building2 } from 'lucide-react';
 import type { DashboardSummary, SlaStatusBreach, SlaValleySplit } from '../services/orders.service';
 import { ORDER_STATUS_LABELS } from '../utils/orderStatus';
 import './NeedsAttention.css';
@@ -101,6 +101,20 @@ const NeedsAttention: React.FC<NeedsAttentionProps> = ({ sla, loading = false })
       to: '/remarks',
       tone: 'brand',
       icon: <MessageSquare size={18} />,
+    },
+    {
+      // Not a parcel status: COD collected on delivered parcels that the branch
+      // has not yet put on a settlement. Links to the branch COD screen where
+      // the statement is raised.
+      key: 'branch-cod',
+      count: sla.overdueBranchCod,
+      label: 'Branch COD SLA breached',
+      hint: sla.branchCodHours != null
+        ? `unsettled · ${sla.branchCodHours}h SLA · Rs. ${sla.overdueBranchCodAmount.toLocaleString()}`
+        : `unsettled · Rs. ${sla.overdueBranchCodAmount.toLocaleString()}`,
+      to: '/branches/billing?tab=branches',
+      tone: 'danger',
+      icon: <Building2 size={18} />,
     },
     {
       key: 'returns',
