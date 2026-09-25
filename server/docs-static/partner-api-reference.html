@@ -775,6 +775,7 @@ printf(&quot;%d of %d orders&quot;, count(<span class="t-var">$body</span>[<span
 <h3 id="your-rate-card">Your rate card<a class="anchor" href="#your-rate-card" aria-label="Link to this section">#</a></h3>
 <div class="code-block"><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code>GET /api/v1/rates</code></pre></div>
 <p>Returns your full rate card — the home-delivery and branch-delivery base rate to every active destination, under your own rate agreement (flat, zone, or per-destination, whichever ParcelMoover has configured for your account).</p>
+<p>For a central-hub vendor on flat pricing, <code>flatRates</code> also lists the effective <code>insideValley</code>, <code>outsideRingRoad</code>, and <code>outsideValley</code> tiers. Each tier has <code>homeRate</code> and <code>branchRate</code>. This shows a configured tier even when no active destination is assigned to it. For branch-hub vendors and other pricing models, <code>flatRates</code> is <code>null</code>; their destination rows remain the source of their rates. Each destination row also includes <code>ringRoad</code> (<code>inside</code>, <code>outside</code>, or <code>null</code>). An outside-ring-road rate applies only when <code>valley</code> is <code>inside</code> and <code>ringRoad</code> is <code>outside</code>.</p>
 <h4 id="example-4">Example<a class="anchor" href="#example-4" aria-label="Link to this section">#</a></h4>
 <div class="code-block"><span class="code-lang">bash</span><button class="copy-btn" type="button" aria-label="Copy code">Copy</button><pre><code><span class="t-kw">curl</span> &quot;<span class="t-var">$BASE</span>/api/v1/rates&quot; -H &quot;Authorization: Bearer <span class="t-var">$KEY</span>&quot;</code></pre></div>
 <h4 id="response-200-ok-abridged-1">Response — <code>200 OK</code> (abridged)<a class="anchor" href="#response-200-ok-abridged-1" aria-label="Link to this section">#</a></h4>
@@ -784,8 +785,13 @@ printf(&quot;%d of %d orders&quot;, count(<span class="t-var">$body</span>[<span
     &quot;rateType&quot;: &quot;flat&quot;,
     &quot;freeWeightKg&quot;: <span class="t-num">2</span>,
     &quot;extraWeightPercent&quot;: <span class="t-num">5</span>,
+    &quot;flatRates&quot;: {
+      &quot;insideValley&quot;: { &quot;homeRate&quot;: <span class="t-num">79</span>, &quot;branchRate&quot;: <span class="t-num">79</span> },
+      &quot;outsideRingRoad&quot;: { &quot;homeRate&quot;: <span class="t-num">100</span>, &quot;branchRate&quot;: <span class="t-num">100</span> },
+      &quot;outsideValley&quot;: { &quot;homeRate&quot;: <span class="t-num">165</span>, &quot;branchRate&quot;: <span class="t-num">165</span> }
+    },
     &quot;rates&quot;: [
-      { &quot;destinationId&quot;: &quot;a350d017-...&quot;, &quot;destinationName&quot;: &quot;POKHARA&quot;, &quot;zone&quot;: &quot;urban_areas&quot;, &quot;valley&quot;: &quot;outside&quot;, &quot;homeRate&quot;: <span class="t-num">150</span>, &quot;branchRate&quot;: <span class="t-num">150</span>, &quot;note&quot;: <span class="t-lit">null</span> }
+      { &quot;destinationId&quot;: &quot;a350d017-...&quot;, &quot;destinationName&quot;: &quot;POKHARA&quot;, &quot;zone&quot;: &quot;urban_areas&quot;, &quot;valley&quot;: &quot;outside&quot;, &quot;ringRoad&quot;: <span class="t-lit">null</span>, &quot;homeRate&quot;: <span class="t-num">165</span>, &quot;branchRate&quot;: <span class="t-num">165</span>, &quot;note&quot;: <span class="t-lit">null</span> }
     ]
   }
 }</code></pre></div>
