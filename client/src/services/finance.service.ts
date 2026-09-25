@@ -13,6 +13,7 @@ export interface PendingCodItem {
   trackingId: string;
   receiverName: string;
   receiverPhone: string;
+  receiverAlternatePhone?: string;
   destination: string;
   codAmount: number;
   deliveryCharge: number;
@@ -36,6 +37,7 @@ export interface OrderCodItem {
   trackingId: string;
   receiverName: string;
   receiverPhone: string;
+  receiverAlternatePhone?: string;
   createdAt: string;
   deliveredAt: string | null;
   status: CodPaymentFilter;
@@ -285,6 +287,7 @@ export interface UnsettledOrderItem {
   trackingId: string;
   receiverName: string;
   receiverPhone: string;
+  receiverAlternatePhone?: string;
   receiverAddress: string | null;
   destination: string;
   /** Pickup or delivery location for this rider's leg. Null for vendor rows. */
@@ -323,6 +326,7 @@ export interface SettlementDetailItem {
   reference: string | null;
   receiverName: string;
   receiverPhone: string;
+  receiverAlternatePhone?: string;
   receiverAddress: string | null;
   destination: string;
   vendorName: string | null;

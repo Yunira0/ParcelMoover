@@ -281,7 +281,7 @@ export async function getPendingCodBill(actor: Actor, vendorIdParam?: string): P
           order_number: true,
           tracking_id: true,
           delivery_charge: true,
-          parties_parcels_receiver_idToparties: { select: { name: true, phone: true } },
+          parties_parcels_receiver_idToparties: { select: { name: true, phone: true, alternate_phone: true } },
           locations_parcels_destination_location_idTolocations: {
             select: { name: true },
           },
@@ -296,6 +296,7 @@ export async function getPendingCodBill(actor: Actor, vendorIdParam?: string): P
     trackingId: c.parcels.tracking_id,
     receiverName: c.parcels.parties_parcels_receiver_idToparties.name,
     receiverPhone: c.parcels.parties_parcels_receiver_idToparties.phone,
+    receiverAlternatePhone: c.parcels.parties_parcels_receiver_idToparties.alternate_phone || "",
     destination: formatLocation(c.parcels.locations_parcels_destination_location_idTolocations),
     codAmount: Number(c.collected_amount),
     deliveryCharge: Number(c.parcels.delivery_charge),
@@ -370,7 +371,7 @@ export async function listOrderCod(
             delivery_charge: true,
             created_at: true,
             delivered_at: true,
-            parties_parcels_receiver_idToparties: { select: { name: true, phone: true } },
+            parties_parcels_receiver_idToparties: { select: { name: true, phone: true, alternate_phone: true } },
           },
         },
       },
@@ -385,6 +386,7 @@ export async function listOrderCod(
     trackingId: c.parcels.tracking_id,
     receiverName: c.parcels.parties_parcels_receiver_idToparties.name,
     receiverPhone: c.parcels.parties_parcels_receiver_idToparties.phone,
+    receiverAlternatePhone: c.parcels.parties_parcels_receiver_idToparties.alternate_phone || "",
     createdAt: c.parcels.created_at.toISOString(),
     deliveredAt: c.parcels.delivered_at ? c.parcels.delivered_at.toISOString() : null,
     status: c.payment_status === payment_status.paid ? "settled" : "not_settled",
@@ -696,7 +698,7 @@ export async function getUnsettledOrders(
           status: true,
           pickup_rider_id: true,
           delivery_rider_id: true,
-          parties_parcels_receiver_idToparties: { select: { name: true, phone: true, address: true } },
+          parties_parcels_receiver_idToparties: { select: { name: true, phone: true, alternate_phone: true, address: true } },
           locations_parcels_destination_location_idTolocations: {
             select: { name: true },
           },
@@ -740,6 +742,7 @@ export async function getUnsettledOrders(
       trackingId: c.parcels.tracking_id,
       receiverName: c.parcels.parties_parcels_receiver_idToparties.name,
       receiverPhone: c.parcels.parties_parcels_receiver_idToparties.phone,
+      receiverAlternatePhone: c.parcels.parties_parcels_receiver_idToparties.alternate_phone || "",
       receiverAddress: c.parcels.parties_parcels_receiver_idToparties.address,
       destination: formatLocation(c.parcels.locations_parcels_destination_location_idTolocations),
       location,
@@ -1996,7 +1999,7 @@ export async function getSettlementDetail(actor: Actor, settlementId: string): P
                   weight_kg: true,
                   pickup_rider_id: true,
                   delivery_rider_id: true,
-                  parties_parcels_receiver_idToparties: { select: { name: true, phone: true, address: true } },
+                  parties_parcels_receiver_idToparties: { select: { name: true, phone: true, alternate_phone: true, address: true } },
                   vendors: { select: { business_name: true, client_name: true, phone: true } },
                   // Only meaningful for rider statements - which one applies
                   // depends on whether this rider handled the pickup or the
@@ -2076,6 +2079,7 @@ export async function getSettlementDetail(actor: Actor, settlementId: string): P
       reference: null,
       receiverName: parcel.parties_parcels_receiver_idToparties.name,
       receiverPhone: parcel.parties_parcels_receiver_idToparties.phone,
+      receiverAlternatePhone: parcel.parties_parcels_receiver_idToparties.alternate_phone || "",
       receiverAddress: parcel.parties_parcels_receiver_idToparties.address,
       destination: hubNameOnly(formatLocation(parcel.locations_parcels_destination_location_idTolocations)),
       // Same business_name-then-client_name fallback used for payeeName above.

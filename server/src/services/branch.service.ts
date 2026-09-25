@@ -617,7 +617,7 @@ export async function getBranchSettlementDetail(actor: OrderActor, settlementId:
           parcel: {
             select: {
               order_number: true, tracking_id: true, status: true,
-              parties_parcels_receiver_idToparties: { select: { name: true, phone: true } },
+              parties_parcels_receiver_idToparties: { select: { name: true, phone: true, alternate_phone: true } },
               locations_parcels_origin_location_idTolocations: { select: { name: true } },
               locations_parcels_destination_location_idTolocations: { select: { name: true } },
             },
@@ -681,6 +681,7 @@ export async function getBranchSettlementDetail(actor: OrderActor, settlementId:
       status: item.parcel.status,
       receiverName: item.parcel.parties_parcels_receiver_idToparties.name,
       receiverPhone: item.parcel.parties_parcels_receiver_idToparties.phone,
+      receiverAlternatePhone: item.parcel.parties_parcels_receiver_idToparties.alternate_phone || "",
       origin: item.parcel.locations_parcels_origin_location_idTolocations?.name ?? null,
       destination: item.parcel.locations_parcels_destination_location_idTolocations?.name ?? null,
       collectedAmount: money(item.collected_amount),

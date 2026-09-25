@@ -75,6 +75,7 @@ export interface RemarkDetail {
   senderPhone: string;
   receiverName: string;
   receiverPhone: string;
+  receiverAlternatePhone?: string;
   thread: RemarkThreadEntry[];
 }
 

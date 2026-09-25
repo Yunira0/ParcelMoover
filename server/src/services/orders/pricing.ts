@@ -5,7 +5,7 @@ import type { OrderActor } from "./types";
 
 // Maps a vendor row's branch-rate override columns to VendorRateOverrides keys.
 function branchOverrides(v: {
-  branch_flat_inside_valley: unknown; branch_flat_outside_valley: unknown;
+  branch_flat_inside_valley: unknown; branch_flat_outside_valley: unknown; branch_flat_outside_ring_road: unknown;
   branch_zone_major_cities: unknown; branch_zone_urban_areas: unknown;
   branch_zone_remote_areas: unknown; branch_zone_inside_valley: unknown;
   branch_return_inside_valley_percent?: unknown; branch_return_outside_valley_percent?: unknown;
@@ -14,6 +14,7 @@ function branchOverrides(v: {
   return {
     branchFlatInsideValley: n(v.branch_flat_inside_valley),
     branchFlatOutsideValley: n(v.branch_flat_outside_valley),
+    branchFlatOutsideRingRoad: n(v.branch_flat_outside_ring_road),
     branchZoneMajorCities: n(v.branch_zone_major_cities),
     branchZoneUrbanAreas: n(v.branch_zone_urban_areas),
     branchZoneRemoteAreas: n(v.branch_zone_remote_areas),
@@ -24,7 +25,7 @@ function branchOverrides(v: {
 }
 
 type VendorRateRow = Parameters<typeof branchOverrides>[0] & {
-  flat_inside_valley: unknown; flat_outside_valley: unknown;
+  flat_inside_valley: unknown; flat_outside_valley: unknown; flat_outside_ring_road: unknown;
   zone_major_cities: unknown; zone_urban_areas: unknown;
   zone_remote_areas: unknown; zone_inside_valley: unknown;
   inside_valley_flat_rate: unknown; extra_weight_percent: unknown;
@@ -39,6 +40,7 @@ export function vendorRateOverrides(v: VendorRateRow) {
   return {
     flatInsideValley: n(v.flat_inside_valley),
     flatOutsideValley: n(v.flat_outside_valley),
+    flatOutsideRingRoad: n(v.flat_outside_ring_road),
     zoneMajorCities: n(v.zone_major_cities),
     zoneUrbanAreas: n(v.zone_urban_areas),
     zoneRemoteAreas: n(v.zone_remote_areas),
@@ -97,11 +99,11 @@ export async function getMasterHubId(): Promise<string | null> {
 export async function computeReturnCharge(
   vendor: {
     rate_type: string | null;
-    flat_inside_valley: unknown; flat_outside_valley: unknown;
+    flat_inside_valley: unknown; flat_outside_valley: unknown; flat_outside_ring_road: unknown;
     zone_major_cities: unknown; zone_urban_areas: unknown; zone_remote_areas: unknown; zone_inside_valley: unknown;
     inside_valley_flat_rate: unknown; extra_weight_percent: unknown;
     return_inside_valley_percent: unknown; return_outside_valley_percent: unknown;
-    branch_flat_inside_valley: unknown; branch_flat_outside_valley: unknown;
+    branch_flat_inside_valley: unknown; branch_flat_outside_valley: unknown; branch_flat_outside_ring_road: unknown;
     branch_zone_major_cities: unknown; branch_zone_urban_areas: unknown;
     branch_zone_remote_areas: unknown; branch_zone_inside_valley: unknown;
   } | null | undefined,
@@ -133,6 +135,7 @@ export async function computeReturnCharge(
         ? {
             flatInsideValley: n(vendor.flat_inside_valley),
             flatOutsideValley: n(vendor.flat_outside_valley),
+            flatOutsideRingRoad: n(vendor.flat_outside_ring_road),
             zoneMajorCities: n(vendor.zone_major_cities),
             zoneUrbanAreas: n(vendor.zone_urban_areas),
             zoneRemoteAreas: n(vendor.zone_remote_areas),

@@ -749,6 +749,7 @@ export function mapHandoverParcel(parcel: HandoverParcel) {
     status: parcel.status,
     receiverName: receiver.name,
     receiverPhone: receiver.phone,
+    receiverAlternatePhone: receiver.alternate_phone || "",
     address:
       receiver.address ||
       locationName(parcel.locations_parcels_destination_location_idTolocations) ||

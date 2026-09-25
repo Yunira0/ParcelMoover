@@ -15,6 +15,7 @@ import { addOrderRemark } from '../services/orders.service';
 import './RemarkDetail.css';
 import { toBsDate, toBsDateLabel, toNptTime } from '../utils/nepaliDate';
 import './TicketDetail.css';
+import ReceiverPhones from '../components/ReceiverPhones';
 
 const STATUS_TONE: Record<RemarkStatus, StatusChipTone> = {
   pending: 'warning',
@@ -303,7 +304,7 @@ const RemarkDetail: React.FC = () => {
                   </div>
                   <p className="info-name">{remark.receiverName}</p>
                   <p className="info-detail">
-                    <Phone size={14} strokeWidth={1.5} /> {remark.receiverPhone}
+                    <Phone size={14} strokeWidth={1.5} /> <ReceiverPhones phone={remark.receiverPhone} alternate={remark.receiverAlternatePhone} />
                   </p>
                 </div>
               </aside>
