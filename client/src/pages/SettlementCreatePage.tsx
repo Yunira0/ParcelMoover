@@ -8,6 +8,7 @@ import { getUnsettledOrders, createSettlement, type UnsettledOrderItem } from '.
 import { getRiders, searchVendors } from '../services/users.service';
 import { downloadExcel, type CellValue } from '../utils/excel';
 import './SettlementCreatePage.css';
+import ReceiverPhones from '../components/ReceiverPhones';
 
 type PayeeType = 'rider' | 'vendor';
 
@@ -165,7 +166,7 @@ const SettlementCreatePage: React.FC = () => {
       'Order ID',
       'Tracking ID',
       'Receiver',
-      'Receiver Phone',
+      'Receiver Phone', 'Alternate Number',
       'Order Type',
       isVendor ? 'Destination' : 'Location',
       'COD',
@@ -176,7 +177,8 @@ const SettlementCreatePage: React.FC = () => {
       `#${order.orderNumber}`,
       order.trackingId,
       order.receiverName,
-      order.receiverPhone,
+      order.receiverPhone || '',
+      order.receiverAlternatePhone || '',
       order.orderType,
       isVendor ? order.destination : order.location || '-',
       order.codAmount,
@@ -377,7 +379,7 @@ const SettlementCreatePage: React.FC = () => {
                             <div className="scp-subtext">{order.receiverAddress}</div>
                           )}
                         </td>
-                        <td className="scp-mono">{order.receiverPhone}</td>
+                        <td className="scp-mono"><ReceiverPhones phone={order.receiverPhone} alternate={order.receiverAlternatePhone} /></td>
                         <td>
                           {order.isReturnToVendor ? (
                             <StatusChip tone="info">RTV</StatusChip>

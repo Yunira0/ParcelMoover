@@ -11,6 +11,7 @@ import { toBsDateTime } from '../../utils/nepaliDate';
 import { formatMoney } from '../../utils/format';
 import type { Order } from '../../services/orders.service';
 import './MerchantOrdersTable.css';
+import ReceiverPhones from '../ReceiverPhones';
 
 interface MerchantOrdersTableProps {
   orders: Order[];
@@ -73,7 +74,7 @@ const MerchantOrdersTable: React.FC<MerchantOrdersTableProps> = ({
         accessor: (o: Order) => (
           <div>
             <div>{o.receiverName}</div>
-            <span className="merchant-orders-subtext">{o.receiverPhone}</span>
+            <span className="merchant-orders-subtext"><ReceiverPhones phone={o.receiverPhone} alternate={o.receiverAlternatePhone} /></span>
             {o.receiverAddress && (
               <span className="merchant-orders-subtext">{o.receiverAddress}</span>
             )}

@@ -25,6 +25,8 @@ import { toBsDate, toBsDateTime } from '../utils/nepaliDate';
 import { downloadExcel } from '../utils/excel';
 import './vendor/VendorFinance.css';
 import './SettlementDetailPage.css';
+import ReceiverPhones from '../components/ReceiverPhones';
+import { receiverPhonesHtml } from '../utils/format';
 
 const money = (value: number) => `Rs. ${value.toLocaleString()}`;
 const hubNameOnly = (value: string) => ((value || '').split(' - ')[0] ?? '').replace(/\s*Branch\s*$/i, '').trim();
@@ -246,7 +248,7 @@ function buildStatementHtml(detail: SettlementDetail): string {
           }
           <td>${item.receiverName}${item.receiverAddress ? `<div class="sub">${item.receiverAddress}</div>` : ''}</td>
           <td>${item.destination ? hubNameOnly(item.destination) : '-'}</td>
-          <td>${item.receiverPhone}</td>
+          <td>${receiverPhonesHtml(item.receiverPhone, item.receiverAlternatePhone)}</td>
           <td class="r">${item.weightKg === null ? '-' : item.weightKg.toFixed(2)}</td>
           <td class="r">${money(item.codAmount)}</td>
           <td class="r">${money(item.collectedAmount)}</td>
@@ -436,7 +438,7 @@ const SettlementDetailPage: React.FC = () => {
       ...(showVendor ? ['Vendor', 'Vendor Phone'] : []),
       'Receiver',
       'Destination',
-      'Receiver Phone',
+      'Receiver Phone', 'Alternate Number',
       'Receiver Address',
       'Weight',
       'COD',
@@ -450,7 +452,8 @@ const SettlementDetailPage: React.FC = () => {
       ...(showVendor ? [item.vendorName ?? '', item.vendorPhone ?? ''] : []),
       item.receiverName,
       hubNameOnly(item.destination || ''),
-      item.receiverPhone,
+      item.receiverPhone || '',
+      item.receiverAlternatePhone || '',
       item.receiverAddress ?? '',
       item.weightKg === null ? '' : item.weightKg,
       item.codAmount,
@@ -729,7 +732,7 @@ const SettlementDetailPage: React.FC = () => {
                             )}
                           </td>
                           <td title={item.destination || '-'}>{hubNameOnly(item.destination || '') || '-'}</td>
-                          <td>{item.receiverPhone}</td>
+                          <td><ReceiverPhones phone={item.receiverPhone} alternate={item.receiverAlternatePhone} /></td>
                           <td style={{ textAlign: 'right' }}>
                             {item.weightKg === null ? '-' : item.weightKg.toFixed(2)}
                           </td>

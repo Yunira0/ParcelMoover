@@ -219,11 +219,11 @@ const OrderInfoCards: React.FC<OrderInfoCardsProps> = ({
       .finally(() => setDestinationLoading(false));
   };
 
-  const receiverPatch = (next: { name?: string; phone?: string; address?: string }): UpdateOrderInput => ({
+  const receiverPatch = (next: { name?: string; phone?: string; alternatePhone?: string; address?: string }): UpdateOrderInput => ({
     receiver: {
       name: next.name ?? receiverName,
       phone: next.phone ?? receiverPhone,
-      alternatePhone: receiverAlternatePhone || undefined,
+      alternatePhone: (next.alternatePhone ?? receiverAlternatePhone) || undefined,
       address: next.address ?? receiverAddress ?? '',
     },
   });
@@ -293,6 +293,28 @@ const OrderInfoCards: React.FC<OrderInfoCardsProps> = ({
           >
             <p className="od-details-phone">{receiverPhone}</p>
           </EditableValue>
+          {(receiverAlternatePhone || editable) && (
+            <EditableValue
+              editable={editable}
+              value={receiverAlternatePhone || ''}
+              type="tel"
+              ariaLabel="receiver alternate phone"
+              className="od-details-phone"
+              onCommit={(draft) => {
+                if (draft && !/^\+?[0-9]{10,15}$/.test(draft)) return 'Enter 10–15 digits.';
+                if (draft === (receiverAlternatePhone || '')) return null;
+                request({
+                  label: 'Receiver alternate phone',
+                  oldDisplay: receiverAlternatePhone || '—',
+                  newDisplay: draft || '—',
+                  patch: receiverPatch({ alternatePhone: draft }),
+                });
+                return null;
+              }}
+            >
+              <p className="od-details-phone">{receiverAlternatePhone || '—'}</p>
+            </EditableValue>
+          )}
           <EditableValue
             editable={editable}
             value={receiverAddress || ''}

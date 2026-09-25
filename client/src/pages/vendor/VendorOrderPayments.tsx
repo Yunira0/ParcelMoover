@@ -12,6 +12,7 @@ import { formatCurrency as formatCurrencyBase, formatDate } from '../../utils/fo
 import { toBsDateTimeCell } from '../../utils/nepaliDate';
 import { downloadExcel } from '../../utils/excel';
 import './VendorFinance.css';
+import ReceiverPhones from '../../components/ReceiverPhones';
 
 type TabValue = 'all' | CodPaymentFilter;
 // The server caps any value at 200 here (the shared paginationQuerySchema
@@ -72,11 +73,12 @@ const VendorOrderPayments: React.FC = () => {
     downloadExcel(
       `order-cod-${tab}-page-${page}`,
       'Order COD',
-      ['Tracking ID', 'Receiver', 'Phone', 'Created At', 'Delivered Date', 'Status', 'Net Payable'],
+      ['Tracking ID', 'Receiver', 'Phone', 'Alternate Number', 'Created At', 'Delivered Date', 'Status', 'Net Payable'],
       items.map((item) => [
         item.trackingId,
         item.receiverName,
-        item.receiverPhone,
+        item.receiverPhone || '',
+        item.receiverAlternatePhone || '',
         toBsDateTimeCell(item.createdAt) || '',
         toBsDateTimeCell(item.deliveredAt) || '',
         item.status === 'settled' ? 'Settled' : 'Not Settled',
@@ -96,7 +98,7 @@ const VendorOrderPayments: React.FC = () => {
       accessor: (item: OrderCodItem) => (
         <div>
           <div>{item.receiverName}</div>
-          <div className="vendor-finance-subtext">{item.receiverPhone}</div>
+          <div className="vendor-finance-subtext"><ReceiverPhones phone={item.receiverPhone} alternate={item.receiverAlternatePhone} /></div>
         </div>
       ),
     },

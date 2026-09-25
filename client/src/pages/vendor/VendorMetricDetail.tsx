@@ -14,6 +14,7 @@ import {
 import { toBsDate } from '../../utils/nepaliDate';
 import { formatCurrency } from '../../utils/format';
 import './VendorMetricDetail.css';
+import ReceiverPhones from '../../components/ReceiverPhones';
 
 const STATUS_LABELS: Record<ParcelStatus, string> = {
   pickup_ordered: 'Pickup Ordered',
@@ -253,7 +254,7 @@ const VendorMetricDetail: React.FC = () => {
       accessor: (order: Order) => (
         <div className="vmd-receiver-cell">
           <span>{order.receiverName}</span>
-          <small>{order.receiverPhone}</small>
+          <small><ReceiverPhones phone={order.receiverPhone} alternate={order.receiverAlternatePhone} /></small>
         </div>
       ),
       width: '180px',

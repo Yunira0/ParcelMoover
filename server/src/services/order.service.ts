@@ -103,7 +103,7 @@ import { HANDOFF_REMARK_PREFIX as UPAYA_HANDOFF_REMARK_PREFIX } from "./upaya.se
 
 // Maps a vendor row's branch-rate override columns to VendorRateOverrides keys.
 function branchOverrides(v: {
-  branch_flat_inside_valley: unknown; branch_flat_outside_valley: unknown;
+  branch_flat_inside_valley: unknown; branch_flat_outside_valley: unknown; branch_flat_outside_ring_road: unknown;
   branch_zone_major_cities: unknown; branch_zone_urban_areas: unknown;
   branch_zone_remote_areas: unknown; branch_zone_inside_valley: unknown;
   branch_return_inside_valley_percent?: unknown; branch_return_outside_valley_percent?: unknown;
@@ -112,6 +112,7 @@ function branchOverrides(v: {
   return {
     branchFlatInsideValley: n(v.branch_flat_inside_valley),
     branchFlatOutsideValley: n(v.branch_flat_outside_valley),
+    branchFlatOutsideRingRoad: n(v.branch_flat_outside_ring_road),
     branchZoneMajorCities: n(v.branch_zone_major_cities),
     branchZoneUrbanAreas: n(v.branch_zone_urban_areas),
     branchZoneRemoteAreas: n(v.branch_zone_remote_areas),
@@ -147,11 +148,11 @@ async function getMasterHubId(): Promise<string | null> {
 export async function computeReturnCharge(
   vendor: {
     rate_type: string | null;
-    flat_inside_valley: unknown; flat_outside_valley: unknown;
+    flat_inside_valley: unknown; flat_outside_valley: unknown; flat_outside_ring_road: unknown;
     zone_major_cities: unknown; zone_urban_areas: unknown; zone_remote_areas: unknown; zone_inside_valley: unknown;
     inside_valley_flat_rate: unknown; extra_weight_percent: unknown;
     return_inside_valley_percent: unknown; return_outside_valley_percent: unknown;
-    branch_flat_inside_valley: unknown; branch_flat_outside_valley: unknown;
+    branch_flat_inside_valley: unknown; branch_flat_outside_valley: unknown; branch_flat_outside_ring_road: unknown;
     branch_zone_major_cities: unknown; branch_zone_urban_areas: unknown;
     branch_zone_remote_areas: unknown; branch_zone_inside_valley: unknown;
   } | null | undefined,
@@ -169,6 +170,7 @@ export async function computeReturnCharge(
         ? {
             flatInsideValley: n(vendor.flat_inside_valley),
             flatOutsideValley: n(vendor.flat_outside_valley),
+            flatOutsideRingRoad: n(vendor.flat_outside_ring_road),
             zoneMajorCities: n(vendor.zone_major_cities),
             zoneUrbanAreas: n(vendor.zone_urban_areas),
             zoneRemoteAreas: n(vendor.zone_remote_areas),
@@ -1089,6 +1091,7 @@ async function _createOrderImpl(
     const overrides = {
       flatInsideValley: vendor.flat_inside_valley === null ? null : Number(vendor.flat_inside_valley),
       flatOutsideValley: vendor.flat_outside_valley === null ? null : Number(vendor.flat_outside_valley),
+      flatOutsideRingRoad: vendor.flat_outside_ring_road === null ? null : Number(vendor.flat_outside_ring_road),
       zoneMajorCities: vendor.zone_major_cities === null ? null : Number(vendor.zone_major_cities),
       zoneUrbanAreas: vendor.zone_urban_areas === null ? null : Number(vendor.zone_urban_areas),
       zoneRemoteAreas: vendor.zone_remote_areas === null ? null : Number(vendor.zone_remote_areas),
@@ -1467,6 +1470,7 @@ export async function updateOrderDetails(
       const overrides = {
         flatInsideValley: vendor.flat_inside_valley === null ? null : Number(vendor.flat_inside_valley),
         flatOutsideValley: vendor.flat_outside_valley === null ? null : Number(vendor.flat_outside_valley),
+        flatOutsideRingRoad: vendor.flat_outside_ring_road === null ? null : Number(vendor.flat_outside_ring_road),
         zoneMajorCities: vendor.zone_major_cities === null ? null : Number(vendor.zone_major_cities),
         zoneUrbanAreas: vendor.zone_urban_areas === null ? null : Number(vendor.zone_urban_areas),
         zoneRemoteAreas: vendor.zone_remote_areas === null ? null : Number(vendor.zone_remote_areas),
@@ -2823,6 +2827,7 @@ export function mapHandoverParcel(parcel: HandoverParcel) {
     status: parcel.status,
     receiverName: receiver.name,
     receiverPhone: receiver.phone,
+    receiverAlternatePhone: receiver.alternate_phone || "",
     address:
       receiver.address ||
       locationName(parcel.locations_parcels_destination_location_idTolocations) ||
@@ -4587,6 +4592,7 @@ async function _updateParcelStatusImpl(
           ? {
               flatInsideValley: v.flat_inside_valley === null ? null : Number(v.flat_inside_valley),
               flatOutsideValley: v.flat_outside_valley === null ? null : Number(v.flat_outside_valley),
+              flatOutsideRingRoad: v.flat_outside_ring_road === null ? null : Number(v.flat_outside_ring_road),
               zoneMajorCities: v.zone_major_cities === null ? null : Number(v.zone_major_cities),
               zoneUrbanAreas: v.zone_urban_areas === null ? null : Number(v.zone_urban_areas),
               zoneRemoteAreas: v.zone_remote_areas === null ? null : Number(v.zone_remote_areas),

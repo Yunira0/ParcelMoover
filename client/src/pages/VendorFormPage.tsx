@@ -373,6 +373,14 @@ const VendorFormPage: React.FC = () => {
   const useBranchRateModel = Boolean(selectedHub) && !selectedHub!.isMasterHub;
   const insideLabel = useBranchRateModel ? `inside ${branchLabel}` : 'inside valley';
   const outsideLabel = useBranchRateModel ? `outside ${branchLabel}` : 'outside valley';
+  // The inside-valley flat rate toggle is only offered for these models. When
+  // it's hidden, a value left over from an earlier model/hub must not keep
+  // being saved - it would silently override the rates on screen.
+  const insideValleyRateOffered =
+    form.rateType === 'zone'
+    || form.rateType === 'per_destination'
+    || (useBranchRateModel && form.rateType === 'flat');
+  const insideValleyRateActive = insideValleyRateOffered && form.insideValleyEnabled;
 
   // Prefill the per-vendor rate fields with the global defaults from Settings;
   // the creator can then edit them so this vendor gets its own rates. Create
@@ -599,7 +607,7 @@ const VendorFormPage: React.FC = () => {
           zoneUrbanAreas: form.zoneUrbanAreas,
           zoneRemoteAreas: form.zoneRemoteAreas,
           zoneInsideValley: form.zoneInsideValley,
-          insideValleyFlatRate: form.insideValleyEnabled ? form.insideValleyFlatRate : '',
+          insideValleyFlatRate: insideValleyRateActive ? form.insideValleyFlatRate : '',
           returnInsideValleyPercent: form.returnInsideValleyPercent,
           returnOutsideValleyPercent: form.returnOutsideValleyPercent,
           branchReturnInsideValleyPercent: form.branchReturnInsideValleyPercent,
@@ -666,7 +674,7 @@ const VendorFormPage: React.FC = () => {
         ...(form.rateType === 'per_destination'
           ? { extraWeightPercent: form.extraWeightPercent }
           : {}),
-        ...(form.insideValleyEnabled ? { insideValleyFlatRate: form.insideValleyFlatRate } : {}),
+        ...(insideValleyRateActive ? { insideValleyFlatRate: form.insideValleyFlatRate } : {}),
         // Return percents apply regardless of the primary rate model.
         returnInsideValleyPercent: form.returnInsideValleyPercent,
         returnOutsideValleyPercent: form.returnOutsideValleyPercent,
@@ -1144,9 +1152,7 @@ const VendorFormPage: React.FC = () => {
                   applies the same way regardless of the vendor's own hub —
                   including a branch's "flat" model, whose Inside/Outside
                   <branch> pair otherwise has no separate valley rate. */}
-              {(form.rateType === 'zone'
-                || form.rateType === 'per_destination'
-                || (useBranchRateModel && form.rateType === 'flat')) && (
+              {insideValleyRateOffered && (
                 <div className={`vfp-rate-fields vfp-inside-valley-block${form.insideValleyEnabled ? ' is-on' : ''}`}>
                   <label className="vfp-inside-valley-toggle">
                     <input

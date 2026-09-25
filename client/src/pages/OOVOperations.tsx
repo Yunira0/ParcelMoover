@@ -36,6 +36,7 @@ import { printLabels } from '../utils/printLabels';
 import { commitScannedTerm, handleScannerPaste } from '../utils/scannerInput';
 import { useCursorPagination } from '../hooks/useCursorPagination';
 import './OOVOperations.css';
+import ReceiverPhones from '../components/ReceiverPhones';
 
 type OOVTab = 'oov' | 'dispatched';
 
@@ -551,7 +552,7 @@ const OOVOperations: React.FC = () => {
       accessor: (order: Order) => (
         <div className="oov-party-cell">
           <span>{order.receiverName}</span>
-          <small>{order.receiverPhone}</small>
+          <small><ReceiverPhones phone={order.receiverPhone} alternate={order.receiverAlternatePhone} /></small>
         </div>
       ),
       width: '238px',

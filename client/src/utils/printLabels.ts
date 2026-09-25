@@ -97,6 +97,7 @@ function labelHtml(order: Order, qrDataUrl: string, barcodeUrl: string): string 
       <span class="party-label">TO</span>
       <span class="party-name">${esc(order.receiverName)}</span>
       <span class="party-phone">${esc(order.receiverPhone)}</span>
+      ${order.receiverAlternatePhone ? `<span class="party-phone">${esc(order.receiverAlternatePhone)}</span>` : ''}
       <span class="party-addr">${fullAddress}</span>
     </div>
     <div class="codes">

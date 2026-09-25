@@ -6,6 +6,7 @@ import { getPendingCod } from '../../services/finance.service';
 import { formatCurrency } from '../../utils/format';
 import { toBsDate } from '../../utils/nepaliDate';
 import './VendorFinance.css';
+import ReceiverPhones from '../../components/ReceiverPhones';
 
 // The whole bill arrives in one response, so the rows are paged client-side —
 // the totals below always cover every order, not just the visible page.
@@ -98,7 +99,7 @@ const VendorPendingCod: React.FC = () => {
                   <td>{item.trackingId}</td>
                   <td>
                     {item.receiverName}
-                    <div className="vendor-finance-subtext">{item.receiverPhone}</div>
+                    <div className="vendor-finance-subtext"><ReceiverPhones phone={item.receiverPhone} alternate={item.receiverAlternatePhone} /></div>
                     <div className="vendor-finance-subtext">{item.destination}</div>
                   </td>
                   <td>{formatCurrency(item.codAmount)}</td>

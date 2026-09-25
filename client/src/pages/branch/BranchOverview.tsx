@@ -28,6 +28,7 @@ import { useCursorPagination } from '../../hooks/useCursorPagination';
 import '../OrderManagement.css';
 import '../MerchantOverview.css';
 import './BranchOverview.css';
+import ReceiverPhones from '../../components/ReceiverPhones';
 
 const hubName = (loc: string) => loc.split(' - ')[0];
 
@@ -125,7 +126,7 @@ const BranchOverview: React.FC = () => {
         : (await exportBranchOrders({ ...filters, ...(activeCard ? { metric: activeCard } : {}) })).data;
     const headers = [
       'Order ID', 'Tracking ID', 'Created', 'Origin', 'Destination', 'Sender',
-      'Receiver', 'Receiver Phone', 'COD', 'Collected', 'Weight', 'Status',
+      'Receiver', 'Receiver Phone', 'Alternate Number', 'COD', 'Collected', 'Weight', 'Status',
     ];
     const body = picked.map((o) => [
       `#${o.orderNumber}`,
@@ -136,6 +137,7 @@ const BranchOverview: React.FC = () => {
       o.senderName,
       o.receiverName,
       o.receiverPhone || '',
+      o.receiverAlternatePhone || '',
       o.codAmount,
       o.collectedAmount,
       o.weightKg || '',
@@ -174,7 +176,7 @@ const BranchOverview: React.FC = () => {
     {
       header: 'RECEIVER',
       accessor: (o: Order) => (
-        <div className="party-cell"><span>{o.receiverName}</span><small>{o.receiverPhone}</small></div>
+        <div className="party-cell"><span>{o.receiverName}</span><small><ReceiverPhones phone={o.receiverPhone} alternate={o.receiverAlternatePhone} /></small></div>
       ),
       width: '150px',
     },

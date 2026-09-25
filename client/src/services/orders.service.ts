@@ -551,6 +551,7 @@ export interface RunSheetParcel {
   status: ParcelStatus;
   receiverName: string;
   receiverPhone: string;
+  receiverAlternatePhone?: string;
   address: string;
   destination: string;
   pieces: number;

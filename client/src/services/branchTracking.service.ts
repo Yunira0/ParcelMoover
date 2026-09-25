@@ -162,6 +162,7 @@ export interface BranchSettlementDetail extends Omit<BranchSettlement, 'fromBran
     status: string;
     receiverName: string;
     receiverPhone: string;
+    receiverAlternatePhone?: string;
     origin: string | null;
     destination: string | null;
     collectedAmount: number;
