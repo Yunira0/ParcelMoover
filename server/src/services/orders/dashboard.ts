@@ -628,39 +628,49 @@ async function computeDashboardSummary(
     return vals.length ? Math.min(...vals) : null;
   };
 
-  // Branch COD submission: parcels delivered to a branch whose collected COD is
-  // still not on any branch settlement past the SLA. Same rule branch-billing
-  // uses for a branch's overdue figure, counted here across the whole network
-  // (or the admin's own branches) so it can sit beside the other SLA breaches.
+  // Branch COD submission: parcels a branch delivered whose COD is still not on
+  // a branch statement past the SLA - the same rule and net-of-commission amount
+  // branch-billing's overdue figure uses (computeBranchBalance). Only real
+  // branch hubs count; Imadol is the master branch its COD is owed to. A
+  // branch-scoped admin sees their own branch; head office sees every branch.
   let overdueBranchCod = 0;
   let overdueBranchCodAmount = 0;
   const branchCodHours = slaSettings[BRANCH_COD_SLA_KEY];
   if (typeof branchCodHours === "number") {
-    const branchScopeSql =
-      branchLocationIds === undefined
-        ? Prisma.empty
-        : branchLocationIds.length === 0
-        ? Prisma.sql`AND false`
-        : Prisma.sql`AND p.destination_location_id = ANY(${branchLocationIds}::uuid[])`;
+    const ownBranchSql = branchLocationIds === undefined
+      ? Prisma.empty
+      : Prisma.sql`AND (b.id = ANY(${branchLocationIds}::uuid[]) OR EXISTS (
+          SELECT 1 FROM locations m
+          WHERE m.id = ANY(${branchLocationIds}::uuid[]) AND upper(m.code) = 'IMADOL' AND m.parent_id IS NULL
+        ))`;
     const rows = await prisma.$queryRaw<Array<{ n: bigint; amount: string }>>(Prisma.sql`
-      SELECT COUNT(*)::bigint AS n,
-             COALESCE(SUM(GREATEST(0::numeric, COALESCE(cc.collected_amount, p.cod_amount))), 0) AS amount
-      FROM parcels p
-      LEFT JOIN cod_collections cc ON cc.parcel_id = p.id
-      JOIN locations dl ON dl.id = p.destination_location_id
-      WHERE p.deleted_at IS NULL
-        AND p.status::text IN ('delivered', 'partially_delivered')
-        AND p.delivered_at IS NOT NULL
-        AND p.delivered_at < now() - make_interval(hours => ${branchCodHours})
-        AND p.destination_location_id IS NOT NULL
-        AND NOT EXISTS (SELECT 1 FROM branch_settlement_items bsi WHERE bsi.parcel_id = p.id)
-        -- COD on parcels delivered into Imadol is already at the master branch:
-        -- there is no settlement for it to sit on, so it is never overdue.
-        AND COALESCE(dl.parent_id, dl.id) IS DISTINCT FROM (
-          SELECT id FROM locations
-          WHERE upper(code) = 'IMADOL' AND parent_id IS NULL AND is_hub LIMIT 1
-        )
-        ${branchScopeSql}
+      WITH branches AS (
+        SELECT b.id, b.commission_per_parcel FROM locations b
+        WHERE b.parent_id IS NULL AND b.is_hub AND upper(COALESCE(b.code, '')) <> 'IMADOL'
+          ${ownBranchSql}
+      ), branch_locs AS (
+        -- Mirrors computeBranchBalance's branch_locs, for every branch at once.
+        SELECT b.id AS branch_id, b.id AS loc_id FROM branches b
+        UNION SELECT b.id, l.id FROM branches b JOIN locations l ON l.parent_id = b.id AND l.is_active
+        UNION SELECT b.id, vc.covered_branch_id FROM branches b JOIN branch_virtual_coverage vc ON vc.branch_id = b.id
+        UNION SELECT b.id, l.id FROM branches b
+          JOIN branch_virtual_coverage vc ON vc.branch_id = b.id
+          JOIN locations l ON l.parent_id = vc.covered_branch_id AND l.is_active
+      ), overdue AS (
+        -- DISTINCT ON: a parcel covered by two branches is still one parcel.
+        SELECT DISTINCT ON (p.id)
+          GREATEST(0::numeric, COALESCE(cc.collected_amount, p.cod_amount) - COALESCE(b.commission_per_parcel, 0)) AS net_cod
+        FROM parcels p
+        JOIN branch_locs bl ON bl.loc_id = p.destination_location_id
+        JOIN branches b ON b.id = bl.branch_id
+        LEFT JOIN cod_collections cc ON cc.parcel_id = p.id
+        WHERE p.deleted_at IS NULL
+          AND p.status::text IN ('delivered', 'partially_delivered')
+          AND p.delivered_at < now() - make_interval(hours => ${branchCodHours})
+          AND NOT EXISTS (SELECT 1 FROM branch_settlement_items bsi WHERE bsi.parcel_id = p.id)
+        ORDER BY p.id, bl.branch_id
+      )
+      SELECT COUNT(*)::bigint AS n, COALESCE(SUM(net_cod), 0) AS amount FROM overdue
     `);
     overdueBranchCod = Number(rows[0]?.n ?? 0);
     overdueBranchCodAmount = Math.round(Number(rows[0]?.amount ?? 0) * 100) / 100;

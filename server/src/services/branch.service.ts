@@ -191,24 +191,44 @@ async function branchWhere(query: BranchTrackingQuery): Promise<Prisma.parcelsWh
   };
 }
 
+// COD already remitted on partially_paid statements. A part payment can't be
+// pinned to particular orders, so each order is cleared by the fraction of its
+// statement paid so far - the same rule the vendor dashboard uses.
+async function partiallyDeposited(base: Prisma.parcelsWhereInput): Promise<number> {
+  const items = await prisma.branch_settlement_items.findMany({
+    where: { parcel: base, settlement: { status: "partially_paid" } },
+    select: { collected_amount: true, settlement: { select: { paid_amount: true, net_payable: true } } },
+  });
+  return items.reduce((sum, i) => {
+    const net = money(i.settlement.net_payable);
+    const fraction = net > 0 ? Math.min(1, money(i.settlement.paid_amount) / net) : 0;
+    return sum + money(i.collected_amount) * fraction;
+  }, 0);
+}
+
 async function metric(where: Prisma.parcelsWhereInput, statuses?: parcel_status[], settlement?: "settled" | "pending") {
+  const base: Prisma.parcelsWhereInput = { AND: [where, ...(statuses ? [{ status: { in: statuses } }] : [])] };
   const scoped: Prisma.parcelsWhereInput = {
-    AND: [where, ...(statuses ? [{ status: { in: statuses } }] : []),
+    AND: [base,
       ...(settlement === "settled" ? [{ branch_settlement_items: { some: { settlement: { status: "settled" } } } }] : []),
       ...(settlement === "pending" ? [{ branch_settlement_items: { none: { settlement: { status: "settled" } } } }] : [])],
   };
   const aggregate = await prisma.parcels.aggregate({ where: scoped, _count: { _all: true }, _sum: { cod_amount: true } });
   if (settlement === "settled") {
-    const settled = await prisma.branch_settlement_items.aggregate({
-      where: { parcel: scoped, settlement: { status: "settled" } }, _sum: { collected_amount: true },
-    });
-    return { count: aggregate._count._all, amount: money(settled._sum.collected_amount) };
+    const [settled, partial] = await Promise.all([
+      prisma.branch_settlement_items.aggregate({
+        where: { parcel: scoped, settlement: { status: "settled" } }, _sum: { collected_amount: true },
+      }),
+      partiallyDeposited(base),
+    ]);
+    return { count: aggregate._count._all, amount: round2(money(settled._sum.collected_amount) + partial) };
   }
   if (statuses === DELIVERED) {
-    const delivered = await prisma.cod_collections.aggregate({
-      where: { parcels: scoped }, _sum: { collected_amount: true },
-    });
-    return { count: aggregate._count._all, amount: money(delivered._sum.collected_amount) };
+    const [delivered, partial] = await Promise.all([
+      prisma.cod_collections.aggregate({ where: { parcels: scoped }, _sum: { collected_amount: true } }),
+      settlement === "pending" ? partiallyDeposited(base) : Promise.resolve(0),
+    ]);
+    return { count: aggregate._count._all, amount: round2(money(delivered._sum.collected_amount) - partial) };
   }
   return { count: aggregate._count._all, amount: money(aggregate._sum.cod_amount) };
 }
