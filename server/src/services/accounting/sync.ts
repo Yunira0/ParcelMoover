@@ -129,6 +129,7 @@ const SETTLEMENT_POSTING_SELECT = {
   payment_method: true,
   payments: true,
   paid_amount: true,
+  vendor_credit_applied: true,
   settlement_date: true,
   updated_at: true,
   status: true,

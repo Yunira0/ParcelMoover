@@ -765,6 +765,10 @@ model settlements {
   // ABS(payable_amount) once the statement is settled; anything between 0 and
   // that means the statement is partially_paid.
   paid_amount                          Decimal                   @default(0) @db.Decimal(12, 2)
+  // Delivery charges the vendor already paid through Billing (vendor_payments),
+  // handed back on this statement so they are not deducted a second time.
+  // Already included in payable_amount. Vendor statements only.
+  vendor_credit_applied                Decimal                   @default(0) @db.Decimal(12, 2)
   settlement_date                      DateTime?                 @db.Date
   status                               settlement_status         @default(pending)
   remark                               String?
@@ -1224,6 +1228,10 @@ model vendor_payments {
   reviewed_by                               String?               @db.Uuid
   reviewed_at                               DateTime?             @db.Timestamptz(6)
   review_remark                             String?
+  /// Whether a verified payment is credit that vendor statements apply (see
+  /// availableVendorCredit). False for payments verified before that existed,
+  /// which were reconciled against statements by hand.
+  counts_toward_statements                  Boolean               @default(true)
   created_at                                DateTime              @default(now()) @db.Timestamptz(6)
   updated_at                                DateTime              @default(now()) @updatedAt @db.Timestamptz(6)
   vendors                                   vendors               @relation(fields: [vendor_id], references: [id], onDelete: Cascade, onUpdate: NoAction)

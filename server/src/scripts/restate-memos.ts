@@ -55,6 +55,7 @@ async function settlementMemos(): Promise<MemoMap> {
         amount: true,
         payable_amount: true,
         paid_amount: true,
+        vendor_credit_applied: true,
         payment_method: true,
         payments: true,
         settlement_date: true,

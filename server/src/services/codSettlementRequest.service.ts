@@ -339,6 +339,21 @@ export async function updateCodSettlementRequestStatus(
 
   const isTerminal = input.status === "settled" || input.status === "rejected";
 
+  // "Settled" must point at the statement that answers it. Without one the
+  // vendor was told their COD had been processed when no money had moved.
+  let statement: { statement_id: string; status: string; payable_amount: unknown; amount: unknown } | null = null;
+  if (input.status === "settled") {
+    if (!input.settlementId) {
+      throw new AppError(400, "Choose the COD statement that settles this request");
+    }
+    statement = await prisma.settlements.findFirst({
+      where: { id: input.settlementId, payee_type: "vendor", vendor_id: existing.vendor_id },
+      select: { statement_id: true, status: true, payable_amount: true, amount: true },
+    });
+    if (!statement) throw new AppError(400, "That statement does not belong to this vendor");
+    if (statement.status === "cancelled") throw new AppError(400, "That statement has been cancelled");
+  }
+
   const updated = await prisma.cod_settlement_requests.update({
     where: { id },
     data: {
@@ -357,12 +372,19 @@ export async function updateCodSettlementRequestStatus(
   // here is why" both are - and the second is what tells them they may re-raise.
   if (isTerminal && existing.created_by) {
     const settled = input.status === "settled";
+    // Only say "paid" when the statement actually is; otherwise say it was raised.
+    const paidInFull = statement?.status === "settled";
+    const statementAmount = statement ? Math.abs(Number(statement.payable_amount ?? statement.amount)) : 0;
     await createNotification(
       existing.created_by,
       settled
         ? `COD settlement request ${updated.request_no} settled`
         : `COD settlement request ${updated.request_no} rejected`,
-      settled ? "Your COD settlement has been processed." : updated.decision_note || "No reason given.",
+      settled
+        ? paidInFull
+          ? `Statement ${statement!.statement_id} has been paid.`
+          : `Statement ${statement!.statement_id} (Rs. ${statementAmount.toFixed(2)}) has been raised for your request. It shows as paid in Settlements once the transfer is complete.`
+        : updated.decision_note || "No reason given.",
       updated.id,
       "cod_settlement",
       `/vendor/cod-settlement-requests`,

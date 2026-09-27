@@ -319,6 +319,7 @@ function buildStatementHtml(detail: SettlementDetail): string {
       <div><span>Total COD</span><span>${money(totals.cod)}</span></div>
       <div><span>Collected COD</span><span>${money(totals.collected)}</span></div>
       <div><span>Delivery Charges</span><span>${money(totals.deliveryCharge)}</span></div>
+      ${detail.vendorCreditApplied ? `<div><span>Prepaid charges returned</span><span>+${money(detail.vendorCreditApplied)}</span></div>` : ''}
       <div class="payable"><span>${detail.payeeType === 'rider' ? 'Receivable Amount' : 'Payable Amount'}</span><span>${money(detail.payableAmount)}</span></div>
     </div>
   </body></html>`;
@@ -760,6 +761,14 @@ const SettlementDetailPage: React.FC = () => {
                   <span>Delivery Charges</span>
                   <span>{money(totals.deliveryCharge)}</span>
                 </div>
+                {/* Charges the vendor already paid through Billing, handed back
+                    so they are not deducted twice. Included in the payable. */}
+                {detail.vendorCreditApplied ? (
+                  <div>
+                    <span>Prepaid charges returned</span>
+                    <span>+{money(detail.vendorCreditApplied)}</span>
+                  </div>
+                ) : null}
                 <div className="sdp-totals-payable">
                   <span>{detail.payeeType === 'rider' ? 'Receivable Amount' : 'Payable Amount'}</span>
                   <span>{money(detail.payableAmount)}</span>

@@ -308,7 +308,7 @@ async function checkRevenue(): Promise<string[]> {
   `);
 
   const [withheld] = await prisma.$queryRaw<Array<{ charges: string }>>(Prisma.sql`
-    SELECT COALESCE(SUM(s.amount - COALESCE(s.payable_amount, s.amount)), 0) AS charges
+    SELECT COALESCE(SUM(s.amount - COALESCE(s.payable_amount, s.amount) + s.vendor_credit_applied), 0) AS charges
       FROM settlements s
      WHERE s.status::text <> 'cancelled' AND s.payee_type = 'vendor'
   `);

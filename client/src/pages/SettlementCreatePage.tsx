@@ -117,6 +117,8 @@ const SettlementCreatePage: React.FC = () => {
   const [settlementDate, setSettlementDate] = useState(new Date().toISOString().split('T')[0]);
   const [error, setError] = useState('');
   const [credit, setCredit] = useState<BillingStatus | null>(null);
+  // Prepaid delivery charges the server adds to the statement it creates.
+  const [prepaidCredit, setPrepaidCredit] = useState(0);
 
   useEffect(() => {
     if (payeeType !== 'rider') return;
@@ -167,11 +169,14 @@ const SettlementCreatePage: React.FC = () => {
         const res = await getUnsettledOrders(payeeType, selectedEntityId);
         if (res?.success && res.data?.items) {
           setOrders(res.data.items);
+          setPrepaidCredit(payeeType === 'vendor' ? res.data.availableCredit ?? 0 : 0);
         } else {
           setOrders([]);
+          setPrepaidCredit(0);
         }
       } catch {
         setOrders([]);
+        setPrepaidCredit(0);
       } finally {
         setFetchingOrders(false);
       }
@@ -215,7 +220,7 @@ const SettlementCreatePage: React.FC = () => {
     () => orders.filter((o) => selected.has(o.codCollectionId)),
     [orders, selected],
   );
-  const totalAmount = selectedOrders.reduce((sum, o) => sum + o.netPayable, 0);
+  const totalAmount = selectedOrders.reduce((sum, o) => sum + o.netPayable, 0) + (selected.size > 0 ? prepaidCredit : 0);
   // The payout comes off the balance once the statement is paid in full.
   const balanceAfter = credit ? Math.round((credit.balance - totalAmount) * 100) / 100 : null;
   const stateAfter = credit && balanceAfter !== null ? creditStateFor(balanceAfter, credit) : null;
@@ -480,6 +485,9 @@ const SettlementCreatePage: React.FC = () => {
             {selected.size > 0 && (
               <div className="scp-summary">
                 <span>{selected.size} order{selected.size > 1 ? 's' : ''} selected</span>
+                {prepaidCredit > 0 && (
+                  <span>+ Rs. {prepaidCredit.toLocaleString()} delivery charges the vendor prepaid through Billing</span>
+                )}
                 <span className="scp-summary-total">Total: Rs. {totalAmount.toLocaleString()}</span>
               </div>
             )}

@@ -3,7 +3,7 @@ import { AppError } from "../utils/AppError";
 import { createNotification } from "./notification.service";
 import { resolveOwnVendorId } from "./vendor-scope.service";
 import { evaluateVendorBilling, invalidateVendorBalanceCache } from "./billing.service";
-import { invalidateVendorFinanceCache } from "./finance.service";
+import { applyVendorCreditToOpenStatements, invalidateVendorFinanceCache } from "./finance.service";
 import { syncVendorPaymentPostings } from "./accounting/sync";
 
 // ── Vendor -> office payments ────────────────────────────────────────────────
@@ -231,6 +231,12 @@ export async function reviewVendorPayment(
       actorId: actor.id,
       reason: `payment ${decision}`,
     });
+
+    // The money pays down any open statement the vendor owes on, so it is not
+    // left pending for an admin to record the same payment again.
+    if (decision === "verified") {
+      await applyVendorCreditToOpenStatements(tx, existing.vendor_id, actor.id);
+    }
 
     return tx.vendor_payments.findFirstOrThrow({
       where: { id: paymentId },

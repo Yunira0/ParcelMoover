@@ -253,8 +253,10 @@ async function computeDashboardSummary(
       COALESCE(SUM(cod_amount) FILTER (WHERE status::text = ANY(${DELIVERY_PENDING_STATUSES})), 0) AS pending_deliveries_amount,
       COALESCE(SUM(cod_amount) FILTER (WHERE status::text = ANY(${AWAITING_PICKUP_STATUSES})), 0) AS awaiting_pickup_amount,
       COALESCE(SUM(cod_amount) FILTER (WHERE status::text = ANY(${IN_DELIVERY_STATUSES})), 0) AS in_delivery_amount,
-      COALESCE(SUM(cod_amount) FILTER (WHERE status::text = ANY(ARRAY['delivered','partially_delivered']) AND delivered_at >= ${todayStart} ${riderDeliveredSql}), 0) AS todays_delivered_amount,
-      COALESCE(SUM(cod_amount) FILTER (WHERE status::text = ANY(ARRAY['delivered','partially_delivered']) ${riderDeliveredSql}), 0) AS total_delivered_amount,
+      COALESCE(SUM(COALESCE((SELECT cc.collected_amount FROM cod_collections cc WHERE cc.parcel_id = parcels.id), cod_amount)) FILTER (WHERE status::text = ANY(ARRAY['delivered','partially_delivered']) AND delivered_at >= ${todayStart} ${riderDeliveredSql}), 0) AS todays_delivered_amount,
+      -- Delivered amounts are the cash collected, not the declared COD, which
+      -- overstates partial deliveries (and matches the COD card below).
+      COALESCE(SUM(COALESCE((SELECT cc.collected_amount FROM cod_collections cc WHERE cc.parcel_id = parcels.id), cod_amount)) FILTER (WHERE status::text = ANY(ARRAY['delivered','partially_delivered']) ${riderDeliveredSql}), 0) AS total_delivered_amount,
       COALESCE(SUM(cod_amount) FILTER (WHERE ${returnsFilterSql}), 0) AS total_returns_amount,
       COALESCE(SUM(cod_amount) FILTER (WHERE status::text = 'returned_to_vendor'), 0) AS total_returned_to_vendor_amount
     FROM parcels
@@ -434,10 +436,16 @@ async function computeDashboardSummary(
         ? { ...codWhere, rider_payment_status: "pending", collected_amount: { gt: 0 } }
         : { ...codWhere, payment_status: "pending" },
     }),
-    prisma.settlements.findFirst({
-      where: settlementWhere,
-      orderBy: [{ settlement_date: "desc" }, { created_at: "desc" }],
-      select: { amount: true, payable_amount: true, settlement_date: true, created_at: true },
+    // The last money actually paid out: an instalment, so a part payment counts
+    // and the date is when it was paid rather than when the statement was cut.
+    // payable > 0 keeps out statements where the vendor paid us.
+    prisma.settlement_payments.findFirst({
+      where: {
+        amount: { gt: 0 },
+        settlements: { ...settlementWhere, status: { in: ["settled", "partially_paid"] }, payable_amount: { gt: 0 } },
+      },
+      orderBy: { paid_at: "desc" },
+      select: { amount: true, paid_at: true },
     }),
     // Parcels whose status *became* returned_to_vendor today (by status-history
     // timestamp, since parcels has no returned_at column). DISTINCT guards
@@ -730,12 +738,9 @@ async function computeDashboardSummary(
       pendingDeliveryCharge,
       progressPercent: totalCod > 0 ? (settledCod / totalCod) * 100 : 0,
       scopedToRider: Boolean(riderId),
-      // Net amount the vendor was actually paid (collected COD minus delivery
-      // charge - see finance.service.ts's payableAmount), not the gross total.
-      lastAmount: lastSettlement ? moneyToNumber(lastSettlement.payable_amount ?? lastSettlement.amount) : 0,
-      // Full timestamp, not just the (time-less) settlement_date column, so the
-      // UI can show both date and time of when the settlement was created.
-      lastSettledAt: lastSettlement ? lastSettlement.created_at.toISOString() : null,
+      // The last payment made (net of delivery charges, like every payout).
+      lastAmount: lastSettlement ? moneyToNumber(lastSettlement.amount) : 0,
+      lastSettledAt: lastSettlement ? lastSettlement.paid_at.toISOString() : null,
     },
     sla: {
       overduePickup: sumStatuses(SLA_GROUPS.pickup),
