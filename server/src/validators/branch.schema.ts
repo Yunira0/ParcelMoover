@@ -79,6 +79,10 @@ export const payBranchSettlementSchema = z.object({
 
 export const branchSettlementIdSchema = z.object({ id: uuid });
 
+export const cancelBranchSettlementSchema = z.object({
+  remark: z.string().trim().min(1, "Remark is required").max(500),
+});
+
 export const branchBillingQuerySchema = z.object({
   branchId: uuid.optional(),
   status: z.enum(["pending", "verified", "rejected"]).optional(),

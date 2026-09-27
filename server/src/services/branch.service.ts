@@ -800,3 +800,55 @@ export async function payBranchSettlement(
     paymentId: result.paymentId,
   };
 }
+
+// Head office cancels a statement no money has moved on - raised with the
+// wrong orders or commission. Mirrors the vendor cancelSettlement: the row is
+// kept (status -> cancelled) for the audit trail, its items are deleted so the
+// orders can go on a new statement, and its ledger entry comes back out.
+export async function cancelBranchSettlement(actor: OrderActor, settlementId: string, remark: string) {
+  if (!actor.roles.includes("super_admin")) {
+    const [scope, master] = await Promise.all([getActorBranchScope(actor), getImadolMasterBranch()]);
+    if (scope.branchScoped && scope.locationId !== master.id) {
+      throw new AppError(403, "Only head office can cancel a branch statement");
+    }
+  }
+
+  const result = await prisma.$transaction(async (tx) => {
+    await lockBranchSettlement(tx, settlementId);
+    const settlement = await tx.branch_settlements.findUnique({
+      where: { id: settlementId },
+      include: { items: { select: { parcel_id: true } } },
+    });
+    if (!settlement) throw new AppError(404, "Branch settlement not found");
+    if (settlement.status !== "pending" || money(settlement.paid_amount) > 0) {
+      throw new AppError(409, "Only a statement with no payment recorded can be cancelled");
+    }
+    // A receipt the branch submitted against it would otherwise be verified
+    // onto a dead statement.
+    const pendingReceipts = await tx.branch_payments.count({ where: { settlement_id: settlementId, status: "pending" } });
+    if (pendingReceipts > 0) {
+      throw new AppError(409, "A payment receipt for this statement is awaiting review - reject it before cancelling");
+    }
+
+    await tx.branch_settlement_items.deleteMany({ where: { settlement_id: settlementId } });
+    const updated = await tx.branch_settlements.update({
+      where: { id: settlementId },
+      data: { status: "cancelled", remark: remark.trim() },
+    });
+    await tx.audit_logs.create({ data: {
+      actor_id: actor.id,
+      entity_type: "branch_settlement",
+      entity_id: settlementId,
+      action: "CANCEL_BRANCH_SETTLEMENT",
+      old_data: { status: settlement.status, orderIds: settlement.items.map((i) => i.parcel_id), remark: settlement.remark },
+      new_data: { status: "cancelled", remark: remark.trim() },
+    } });
+    await syncBranchSettlementPostings(tx, [settlementId], { actorId: actor.id, reason: "branch statement cancelled" });
+    return updated;
+  }, { maxWait: 10_000, timeout: 20_000 });
+
+  // The orders are unstatemented again, which moves the branch's overdue COD.
+  await evaluateBranchBilling(result.from_branch_id);
+
+  return { id: result.id, statementNo: result.statement_no, status: result.status };
+}
