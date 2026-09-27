@@ -23,6 +23,7 @@ import prisma from "../../lib/prisma";
 import { AppError } from "../../utils/AppError";
 import {
   describeBranchSettlement,
+  describeCarrierSettlement,
   describeExpense,
   describeRiderRemittance,
   describeVendorPaymentVerified,
@@ -261,6 +262,51 @@ export async function syncBranchSettlementPostings(
   return summary;
 }
 
+// ── 3PL carrier settlements ─────────────────────────────────────────────────
+
+/** Same lifecycle as branch statements: posts on creation, restates per instalment, a cancelled one reverses. */
+export async function syncCarrierSettlementPostings(
+  db: Db,
+  settlementIds: string[],
+  options: SyncOptions = {},
+): Promise<SyncSummary> {
+  const summary = noChange();
+  const ids = Array.from(new Set(settlementIds.filter(Boolean)));
+  if (ids.length === 0) return summary;
+
+  const [rows, methodAccounts] = await Promise.all([
+    db.carrier_settlements.findMany({
+      where: { id: { in: ids } },
+      select: {
+        id: true,
+        statement_no: true,
+        carrier_code: true,
+        gross_cod: true,
+        carrier_charges: true,
+        net_receivable: true,
+        paid_amount: true,
+        payment_method: true,
+        payments: true,
+        settlement_date: true,
+        status: true,
+      },
+    }),
+    loadMethodAccounts(db),
+  ]);
+
+  for (const row of rows) {
+    const settlement = { ...row, methodAccounts };
+    const label = `carrier settlement ${settlement.statement_no}`;
+    const desired = settlement.status !== "cancelled" ? resolve(() => describeCarrierSettlement(settlement), label) : null;
+    record(
+      summary,
+      await run(db, label, SOURCE.carrierSettlement(settlement.id), EVENT_KEY.carrierSettlement, desired, options),
+    );
+  }
+
+  return summary;
+}
+
 // ── Vendor payments ─────────────────────────────────────────────────────────
 
 /**
@@ -420,17 +466,19 @@ export async function sweepSettlementPostings(
   options: { since: Date; limit: number } = { since: new Date(Date.now() - 60 * 60 * 1000), limit: 500 },
 ): Promise<SweepResult> {
   const window = { where: { updated_at: { gte: options.since } }, select: { id: true }, orderBy: { updated_at: "asc" as const }, take: options.limit };
-  const [statements, branchStatements] = await Promise.all([
+  const [statements, branchStatements, carrierStatements] = await Promise.all([
     prisma.settlements.findMany(window),
     prisma.branch_settlements.findMany(window),
+    prisma.carrier_settlements.findMany(window),
   ]);
 
   const vendorAndRider = await sweepChunks(statements.map((row) => row.id), syncSettlementPostings, "statement");
   const branch = await sweepChunks(branchStatements.map((row) => row.id), syncBranchSettlementPostings, "branch statement");
+  const carrier = await sweepChunks(carrierStatements.map((row) => row.id), syncCarrierSettlementPostings, "carrier statement");
   return {
-    considered: statements.length + branchStatements.length,
-    repaired: vendorAndRider.repaired + branch.repaired,
-    failed: vendorAndRider.failed + branch.failed,
+    considered: statements.length + branchStatements.length + carrierStatements.length,
+    repaired: vendorAndRider.repaired + branch.repaired + carrier.repaired,
+    failed: vendorAndRider.failed + branch.failed + carrier.failed,
   };
 }
 

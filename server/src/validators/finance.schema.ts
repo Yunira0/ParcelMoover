@@ -67,6 +67,15 @@ export const paySettlementSchema = z.object({
   remark: z.string().trim().max(500).optional(),
 });
 
+export const createCarrierSettlementSchema = z.object({
+  carrier: z.enum(["ncm", "upaya"]),
+  settlementDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "settlementDate must be YYYY-MM-DD"),
+  items: z
+    .array(z.object({ codCollectionId: uuidSchema, carrierCharge: z.number().min(0, "Carrier charge cannot be negative") }))
+    .min(1, "Select at least one order"),
+  remark: z.string().trim().max(500).optional(),
+});
+
 // The service enforces the amount rules that need the statement in hand: the
 // total can be anything from a part payment up to whatever is still
 // outstanding, which this schema can't see.

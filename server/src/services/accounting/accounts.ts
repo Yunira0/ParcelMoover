@@ -20,6 +20,7 @@ export const ACCOUNT = {
   CASH_IN_HAND: "1000",
   CASH_WITH_RIDER: "1010",
   COD_WITH_BRANCH: "1015",
+  COD_WITH_CARRIER: "1020",
   COD_HELD: "2005",
   VENDOR_CONTROL: "2000",
   OPENING_BALANCE_EQUITY: "3000",
@@ -29,6 +30,7 @@ export const ACCOUNT = {
   RETURN_REVENUE: "4020",
   RIDER_COMMISSION: "5000",
   BRANCH_COMMISSION: "5010",
+  CARRIER_CHARGE: "5020",
   FUEL_AND_VEHICLE: "5100",
   VEHICLE_MAINTENANCE: "5110",
   OFFICE_RENT: "5200",
@@ -77,6 +79,14 @@ export const CHART_OF_ACCOUNTS: AccountDefinition[] = [
     subledgerType: "location",
     description:
       "COD a branch has put on a statement to head office but not yet paid. Debited when the statement is raised, cleared as its instalments land - the per-branch balance is what that branch owes head office right now.",
+  },
+  {
+    code: ACCOUNT.COD_WITH_CARRIER,
+    name: "COD with 3PL",
+    type: "asset",
+    normalSide: "debit",
+    description:
+      "COD a 3PL carrier (NCM, Upaya) has put on a statement to us but not yet paid. Debited when the statement is raised, cleared as its instalments land.",
   },
   // Every other place money sits - Prabhu Bank, Kumari Bank, a wallet - is an
   // account created with its payment method, not one listed here. There are no
@@ -158,6 +168,13 @@ export const CHART_OF_ACCOUNTS: AccountDefinition[] = [
     type: "expense",
     normalSide: "debit",
     description: "Per-parcel commission a branch keeps out of the COD it remits to head office.",
+  },
+  {
+    code: ACCOUNT.CARRIER_CHARGE,
+    name: "3PL Delivery Charge",
+    type: "expense",
+    normalSide: "debit",
+    description: "Per-order delivery charge a 3PL carrier keeps out of the COD it remits to us.",
   },
   {
     code: ACCOUNT.FUEL_AND_VEHICLE,

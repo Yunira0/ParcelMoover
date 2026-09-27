@@ -26,16 +26,28 @@ export async function assertCodNotSettled(parcelIds: string[], action: string): 
   const blocked = await prisma.cod_collections.findFirst({
     where: {
       parcel_id: { in: parcelIds },
-      OR: [{ payment_status: "paid" }, { rider_payment_status: "paid" }, { settlement_items: { some: {} } }],
+      OR: [
+        { payment_status: "paid" },
+        { rider_payment_status: "paid" },
+        { carrier_payment_status: "paid" },
+        { settlement_items: { some: {} } },
+        { carrier_settlement_item: { isNot: null } },
+      ],
     },
     select: {
       parcels: { select: { tracking_id: true } },
       settlement_items: { select: { settlements: { select: { statement_id: true, payee_type: true } } }, take: 1 },
+      carrier_settlement_item: { select: { settlement: { select: { statement_no: true, carrier_code: true } } } },
     },
   });
   if (!blocked) return;
   const stmt = blocked.settlement_items[0]?.settlements;
-  const where = stmt ? `${stmt.payee_type} settlement ${stmt.statement_id}` : "a settled statement";
+  const carrierStmt = blocked.carrier_settlement_item?.settlement;
+  const where = stmt
+    ? `${stmt.payee_type} settlement ${stmt.statement_id}`
+    : carrierStmt
+      ? `${carrierStmt.carrier_code.toUpperCase()} statement ${carrierStmt.statement_no}`
+      : "a settled statement";
   throw new AppError(
     409,
     `Cannot ${action} ${blocked.parcels.tracking_id}: its COD is already in ${where}. Void or amend that statement first.`,

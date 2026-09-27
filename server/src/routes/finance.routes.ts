@@ -17,8 +17,19 @@ import {
   updateSettlementSchema,
   revertSettlementSchema,
   cancelSettlementSchema,
+  createCarrierSettlementSchema,
 } from "../validators/finance.schema";
 import { createRedisRateLimitStore } from "../lib/rateLimitStore";
+import { paymentProofUpload } from "../lib/billingUpload";
+import {
+  cancelCarrierSettlementController,
+  carrierCodSummaryController,
+  createCarrierSettlementController,
+  getCarrierSettlementController,
+  listCarrierSettlementsController,
+  payCarrierSettlementController,
+  unsettledCarrierOrdersController,
+} from "../controllers/carrierSettlement.controller";
 import {
   getPendingCodController,
   listOrderCodController,
@@ -223,5 +234,15 @@ financeRouter.get(
   financeReadLimiter,
   getUnsettledOrdersController,
 );
+
+// ── 3PL (NCM / Upaya) COD settlements ── head office only (enforced in the service).
+const carrierStaff = [authMiddleware, authorizeRoles("super_admin", "admin")] as const;
+financeRouter.get("/carrier-cod", ...carrierStaff, financeReadLimiter, carrierCodSummaryController);
+financeRouter.get("/carrier-cod/:carrier/unsettled", ...carrierStaff, financeReadLimiter, unsettledCarrierOrdersController);
+financeRouter.get("/carrier-settlements", ...carrierStaff, financeReadLimiter, listCarrierSettlementsController);
+financeRouter.post("/carrier-settlements", ...carrierStaff, csrfProtection, settlementCreateLimiter, validate(createCarrierSettlementSchema), createCarrierSettlementController);
+financeRouter.get("/carrier-settlements/:id", ...carrierStaff, financeReadLimiter, getCarrierSettlementController);
+financeRouter.post("/carrier-settlements/:id/pay", ...carrierStaff, csrfProtection, settlementCreateLimiter, paymentProofUpload, parseMultipartJson("payments"), validate(paySettlementSchema), payCarrierSettlementController);
+financeRouter.post("/carrier-settlements/:id/cancel", ...carrierStaff, csrfProtection, requireAdminPermission("EDIT_SETTLEMENTS"), settlementCreateLimiter, validate(cancelSettlementSchema), cancelCarrierSettlementController);
 
 export default financeRouter;

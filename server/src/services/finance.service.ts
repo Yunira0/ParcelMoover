@@ -690,6 +690,8 @@ export async function getUnsettledOrders(
     ? {
         rider_id: riderId,
         rider_payment_status: payment_status.pending,
+        // Carrier-delivered COD is settled by a carrier statement instead.
+        carrier_code: null,
         collected_at: { not: null },
         // Not already bundled into a rider statement. The two legs settle the
         // same collection independently, so this is scoped to rider statements
@@ -831,6 +833,8 @@ export async function createSettlement(
           id: { in: codCollectionIds },
           rider_id: target.id,
           rider_payment_status: payment_status.pending,
+          // Carrier-delivered COD is settled by a carrier statement instead.
+          carrier_code: null,
           // Only settle orders that reached a delivery attempt - collected_at
           // is the honest signal (see getUnsettledOrders); collected_amount > 0
           // would wrongly reject settling a corrected-to-0 order at 0.
@@ -1622,6 +1626,8 @@ export async function updateSettlement(
             id: { in: toAddIds },
             rider_id: targetId,
             rider_payment_status: payment_status.pending,
+            // Carrier-delivered COD is settled by a carrier statement instead.
+            carrier_code: null,
             collected_at: { not: null },
             settlement_items: { none: { settlements: { payee_type: "rider" } } },
             parcels: { status: { not: parcel_status.returned_to_vendor }, order_type: { not: order_type.return } },

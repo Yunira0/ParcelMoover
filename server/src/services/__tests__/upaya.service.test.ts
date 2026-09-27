@@ -61,14 +61,14 @@ describe("processUpayaWebhook — parcel resolution", () => {
   it("resolves the parcel via order_reference_id (tracking_id, hyphens stripped) first", async () => {
     await processUpayaWebhook(payload());
     expect(mockedPrisma.$queryRaw).toHaveBeenCalled();
-    expect(mockedApplyStatus).toHaveBeenCalledWith(PARCEL_ID, "arrived_at_branch", expect.any(String));
+    expect(mockedApplyStatus).toHaveBeenCalledWith(PARCEL_ID, "arrived_at_branch", expect.any(String), "upaya");
   });
 
   it("falls back to the Redis order-id cache when order_reference_id doesn't resolve", async () => {
     mockedPrisma.$queryRaw.mockResolvedValue([]);
     mockedRedis.get.mockResolvedValue(PARCEL_ID);
     await processUpayaWebhook(payload({ order_reference_id: undefined }));
-    expect(mockedApplyStatus).toHaveBeenCalledWith(PARCEL_ID, "arrived_at_branch", expect.any(String));
+    expect(mockedApplyStatus).toHaveBeenCalledWith(PARCEL_ID, "arrived_at_branch", expect.any(String), "upaya");
   });
 
   it("no-ops when the parcel can't be resolved at all", async () => {
@@ -95,7 +95,7 @@ describe("processUpayaWebhook — forward carrier-leg statuses", () => {
     ["delivered", "delivered"],
   ])("maps '%s' -> applyExternalCarrierStatus(%s)", async (status, target) => {
     await processUpayaWebhook(payload({ status }));
-    expect(mockedApplyStatus).toHaveBeenCalledWith(PARCEL_ID, target, expect.stringContaining(`${CARRIER_AUTHOR_LABEL}: ${status}`));
+    expect(mockedApplyStatus).toHaveBeenCalledWith(PARCEL_ID, target, expect.stringContaining(`${CARRIER_AUTHOR_LABEL}: ${status}`), "upaya");
     expect(mockedApplyFollowUp).not.toHaveBeenCalled();
   });
 });

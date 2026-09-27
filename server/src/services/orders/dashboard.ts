@@ -2,10 +2,6 @@ import { Prisma } from "../../generated/prisma/client";
 import prisma from "../../lib/prisma";
 import redis from "../../lib/redis";
 import { NEPAL_UTC_OFFSET_MS, formatNepalDate as formatDate } from "../../utils/nepalTime";
-import {
-  HANDOFF_REMARK_PREFIX as NCM_HANDOFF_REMARK_PREFIX,
-  UPAYA_HANDOFF_REMARK_PREFIX,
-} from "../../utils/carrierRemark";
 import { getSlaSettings, SLA_GROUPS, BRANCH_COD_SLA_KEY } from "../sla.service";
 import { unclosedRemarksWhere } from "../remark.service";
 import {
@@ -29,7 +25,7 @@ import {
   AWAITING_PICKUP_STATUSES,
   IN_DELIVERY_STATUSES,
 } from "./status-shared";
-import { PART_PAID_FRACTIONS_SQL } from "./cod-detail";
+import { CARRIER_OWED_SQL, PART_PAID_FRACTIONS_SQL } from "./cod-detail";
 import type { OrderActor } from "./types";
 
 const moneyToNumber = (value?: Prisma.Decimal | null) => value ? Number(value) : 0;
@@ -367,39 +363,18 @@ async function computeDashboardSummary(
         COALESCE(SUM(LEAST(c.remitted_amount + c.collected_amount * pp.vendor_frac, c.collected_amount)), 0) AS settled_to_vendor,
         COALESCE(SUM(LEAST(c.rider_remitted_amount + c.collected_amount * pp.rider_frac, c.collected_amount)), 0) AS settled_to_rider,
         -- Cash a ParcelMoover rider physically holds, not yet remitted to the
-        -- office: c.rider_id is only ever set from parcels.delivery_rider_id,
-        -- which stays NULL for NCM-delivered parcels (see
-        -- applyExternalCarrierStatus) - so rider_id IS NOT NULL is exactly
-        -- "our own rider delivered this," never an NCM handoff. r.carrier_code
-        -- IS NULL excludes placeholder rider rows that stand in for a carrier
-        -- (e.g. "PM Rider U"/"PM Rider N") rather than a real employee.
+        -- office. r.carrier_code IS NULL / c.carrier_code IS NULL leave out the
+        -- carrier placeholder riders ("PM Rider N/U") and anything a 3PL
+        -- delivered - that cash is with the carrier, counted below.
         COALESCE(SUM(c.collected_amount - LEAST(c.rider_remitted_amount + c.collected_amount * pp.rider_frac, c.collected_amount))
-          FILTER (WHERE c.rider_id IS NOT NULL AND r.carrier_code IS NULL), 0) AS cod_from_pm_rider,
-        -- Cash NCM collected on our behalf and hasn't remitted to the office
-        -- yet. Two signals feed this: the durable API handoff remark
-        -- ncm.service.ts writes (see findNcmOrderIdForParcel), and parcels
-        -- routed to NCM manually via the "PM Rider N" placeholder rider
-        -- (r.carrier_code = 'ncm') for cases the API flow doesn't cover. No
-        -- pm-rider ever touches this cash, so rider_remitted_amount is never
-        -- populated for these rows - the full collected amount counts as
-        -- outstanding until NCM's remittance clears it (via the vendor leg,
-        -- remitted_amount, part payments included via pp).
-        COALESCE(SUM(c.collected_amount - LEAST(c.remitted_amount + c.collected_amount * pp.vendor_frac, c.collected_amount))
-          FILTER (WHERE (c.rider_id IS NULL AND EXISTS (
-            SELECT 1 FROM parcel_remarks pr
-            WHERE pr.parcel_id = p.id AND pr.remark LIKE ${NCM_HANDOFF_REMARK_PREFIX + '%'}
-          )) OR r.carrier_code = 'ncm'), 0) AS cod_from_ncm,
-        -- Cash Upaya collected on our behalf. Two signals, same shape as NCM
-        -- above: the durable API handoff remark upaya.service.ts writes for
-        -- real API-driven handoffs, and the "PM Rider U" placeholder rider
-        -- (r.carrier_code = 'upaya') for parcels routed to Upaya manually,
-        -- from before the API integration existed. Same "clears via the
-        -- vendor leg" reasoning as NCM above.
-        COALESCE(SUM(c.collected_amount - LEAST(c.remitted_amount + c.collected_amount * pp.vendor_frac, c.collected_amount))
-          FILTER (WHERE (c.rider_id IS NULL AND EXISTS (
-            SELECT 1 FROM parcel_remarks pr
-            WHERE pr.parcel_id = p.id AND pr.remark LIKE ${UPAYA_HANDOFF_REMARK_PREFIX + '%'}
-          )) OR r.carrier_code = 'upaya'), 0) AS cod_from_upaya,
+          FILTER (WHERE c.rider_id IS NOT NULL AND r.carrier_code IS NULL AND c.carrier_code IS NULL), 0) AS cod_from_pm_rider,
+        -- Cash a 3PL carrier collected on parcels it delivered (c.carrier_code,
+        -- stamped at delivery) and hasn't paid us yet: full COD until it is on a
+        -- carrier statement, then its net less its share of what was paid.
+        COALESCE(SUM(${CARRIER_OWED_SQL})
+          FILTER (WHERE c.carrier_code = 'ncm'), 0) AS cod_from_ncm,
+        COALESCE(SUM(${CARRIER_OWED_SQL})
+          FILTER (WHERE c.carrier_code = 'upaya'), 0) AS cod_from_upaya,
         -- Cleared by the same fraction as the COD above, so the vendor card's
         -- net pending (COD - charge) drops by exactly what was paid out.
         COALESCE(SUM(p.delivery_charge * (1 - pp.vendor_frac)) FILTER (WHERE c.payment_status::text = 'pending'), 0) AS pending_delivery_charge,

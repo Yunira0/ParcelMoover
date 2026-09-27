@@ -106,6 +106,9 @@ const BranchSettlement = lazy(() => import('./pages/branch/BranchSettlement'))
 const BranchSettlementCreatePage = lazy(() => import('./pages/branch/BranchSettlementCreatePage'))
 const BranchSettlementDetailPage = lazy(() => import('./pages/branch/BranchSettlementDetailPage'))
 const BranchBilling = lazy(() => import('./pages/branch/BranchBilling'))
+const CarrierCodPage = lazy(() => import('./pages/carrier/CarrierCodPage'))
+const CarrierSettlementCreatePage = lazy(() => import('./pages/carrier/CarrierSettlementCreatePage'))
+const CarrierSettlementDetailPage = lazy(() => import('./pages/carrier/CarrierSettlementDetailPage'))
 
 function App() {
 
@@ -408,6 +411,18 @@ function App() {
           <Route
             path="/finance/settlements"
             element={<RoleGuard allowedRoles={['vendor', 'vendor_staff']} requiredPermission="FINANCE_ACCESS"><VendorSettlements /></RoleGuard>}
+          />
+          <Route
+            path="/finance/carrier-cod"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']}><CarrierCodPage /></RoleGuard>}
+          />
+          <Route
+            path="/finance/carrier-cod/new"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']}><CarrierSettlementCreatePage /></RoleGuard>}
+          />
+          <Route
+            path="/finance/carrier-cod/:id"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']}><CarrierSettlementDetailPage /></RoleGuard>}
           />
           <Route
             path="/finance/pending-cod"

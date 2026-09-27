@@ -27,6 +27,7 @@ import {
   releasesPickupRider,
 } from "./status-shared";
 import { assertCodNotSettled, writesCollection } from "./codGuards";
+import { resolveDeliveryCarrier } from "./carrier";
 import { withParcelStatusLocks } from "./statusLocks";
 import type { OrderActor } from "./types";
 
@@ -397,7 +398,7 @@ async function _updateParcelStatusImpl(
       (updateData as any).delivery_rider_id = null;
       await tx.cod_collections.updateMany({
         where: { parcel_id: parcel.id },
-        data: { collected_amount: 0, collected_at: null, rider_id: null },
+        data: { collected_amount: 0, collected_at: null, rider_id: null, carrier_code: null },
       });
     }
     // Side-effect: update current_location_id
@@ -459,18 +460,21 @@ async function _updateParcelStatusImpl(
       // genuine zero-cash partial delivery) must still overwrite whatever
       // stale amount is sitting on the row, or the settlement ledger keeps
       // showing cash that was never actually owed.
+      const carrierCode = await resolveDeliveryCarrier(tx, parcel.id, parcel.delivery_rider_id);
       await tx.cod_collections.upsert({
         where: { parcel_id: parcel.id },
         create: {
           parcel_id: parcel.id,
           vendor_id: parcel.vendor_id,
           rider_id: parcel.delivery_rider_id,
+          carrier_code: carrierCode,
           cod_amount: parcel.cod_amount,
           collected_amount: collectedAmount,
           collected_at: new Date(),
         },
         update: {
           rider_id: parcel.delivery_rider_id,
+          carrier_code: carrierCode,
           cod_amount: parcel.cod_amount,
           collected_amount: collectedAmount,
           collected_at: new Date(),

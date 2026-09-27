@@ -12,6 +12,7 @@ import { emitWebhookEventsBatch } from "../webhookDispatch.service";
 import { computeReturnCharge } from "./pricing";
 import { invalidateOrderCaches } from "./cache";
 import { assertCodNotSettled, writesCollection } from "./codGuards";
+import { resolveDeliveryCarrier } from "./carrier";
 import { withParcelStatusLocks } from "./statusLocks";
 import {
   getActorScope, getAdminBranchScope, branchTouchesFilter, resolveActiveRider,
@@ -738,7 +739,7 @@ async function _bulkUpdateParcelStatusImpl(
       });
       await tx.cod_collections.updateMany({
         where: { parcel_id: { in: undeliverIds } },
-        data: { collected_amount: 0, collected_at: null, rider_id: null },
+        data: { collected_amount: 0, collected_at: null, rider_id: null, carrier_code: null },
       });
     }
 
@@ -771,18 +772,21 @@ async function _bulkUpdateParcelStatusImpl(
         // No collectedAmount <= 0 skip here: a COD corrected down to 0 (or a
         // genuine zero-cash partial delivery) must still overwrite whatever
         // stale amount is sitting on the row - see the single-parcel path above.
+        const carrierCode = await resolveDeliveryCarrier(tx, p.id, p.delivery_rider_id);
         await tx.cod_collections.upsert({
           where: { parcel_id: p.id },
           create: {
             parcel_id: p.id,
             vendor_id: p.vendor_id,
             rider_id: p.delivery_rider_id,
+            carrier_code: carrierCode,
             cod_amount: p.cod_amount,
             collected_amount: collectedAmount,
             collected_at: collectedAt,
           },
           update: {
             rider_id: p.delivery_rider_id,
+            carrier_code: carrierCode,
             cod_amount: p.cod_amount,
             collected_amount: collectedAmount,
             collected_at: collectedAt,
