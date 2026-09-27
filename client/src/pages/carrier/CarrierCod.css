@@ -17,3 +17,16 @@
   gap: var(--space-2);
 }
 .scp-bulk .form-group { margin: 0; width: 180px; }
+
+/* Pasted list search on the new-statement page. */
+.ccs-paste {
+  align-items: flex-end;
+  display: flex;
+  gap: var(--space-2);
+}
+.ccs-paste .form-group { flex: 1; margin: 0; }
+.ccs-paste-actions { display: flex; gap: var(--space-2); }
+.ccs-paste-result {
+  color: var(--color-background-success-default);
+  font-size: var(--font-size-sm);
+}
