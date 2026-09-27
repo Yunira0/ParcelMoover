@@ -297,7 +297,10 @@ async function checkRevenue(): Promise<string[]> {
       JOIN journal_entries e ON e.id = l.entry_id AND TRUE /* see ALL_ENTRIES */
       JOIN ledger_accounts a ON a.id = l.account_id
      WHERE a.code IN (${ACCOUNT.DELIVERY_REVENUE}, ${ACCOUNT.RETURN_REVENUE})
-       AND e.source_type = 'settlement'
+       -- A voided settlement entry still counts, so its reversal must too.
+       AND (e.source_type = 'settlement' OR EXISTS (
+         SELECT 1 FROM journal_entries o WHERE o.id = e.reversal_of_id AND o.source_type = 'settlement'
+       ))
   `);
 
   const [withheld] = await prisma.$queryRaw<Array<{ charges: string }>>(Prisma.sql`
