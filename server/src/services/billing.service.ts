@@ -13,7 +13,7 @@ import { createNotification } from "./notification.service";
 //
 //   balance = COD collected on their behalf
 //           - delivery charges earned on their parcels
-//           - payouts already settled to them
+//           - payouts already made to them (part payments included)
 //           + payments they have made back to the office
 //
 // Negative means the vendor owes us. That is the normal direction for a vendor
@@ -242,6 +242,14 @@ export async function updateVendorCreditLimit(
 
 // ── Balance ─────────────────────────────────────────────────────────────────
 
+// What a vendor statement `s` has actually moved so far. A settled one moved its
+// whole payable; a partially_paid one only its instalments, signed like the
+// payable (negative when the vendor was paying a shortfall in).
+const PAYOUT_SQL = Prisma.sql`CASE
+  WHEN s.status::text = 'settled' THEN s.payable_amount
+  ELSE SIGN(COALESCE(s.payable_amount, s.amount)) * s.paid_amount
+END`;
+
 // One round trip for all four components. COD collected and delivery charges
 // both come off the same parcels join so they share a scope (soft-deleted
 // parcels excluded from both) and can never disagree about which parcels count.
@@ -262,11 +270,11 @@ async function computeBalance(vendorId: string): Promise<VendorAccountBalance> {
       pt.collected,
       pt.charges,
       (
-        SELECT COALESCE(SUM(s.payable_amount), 0)
+        SELECT COALESCE(SUM(${PAYOUT_SQL}), 0)
         FROM settlements s
         WHERE s.vendor_id = ${vendorId}::uuid
           AND s.payee_type = 'vendor'
-          AND s.status::text = 'settled'
+          AND s.status::text IN ('settled', 'partially_paid')
       ) AS payouts,
       (
         SELECT COALESCE(SUM(vp.amount), 0)
@@ -454,10 +462,10 @@ export async function listVendorBalances(
       GROUP BY p.vendor_id
     ),
     payout_totals AS (
-      SELECT vendor_id, COALESCE(SUM(payable_amount), 0) AS payouts
-      FROM settlements
-      WHERE payee_type = 'vendor' AND status::text = 'settled' AND vendor_id IS NOT NULL
-      GROUP BY vendor_id
+      SELECT s.vendor_id, COALESCE(SUM(${PAYOUT_SQL}), 0) AS payouts
+      FROM settlements s
+      WHERE s.payee_type = 'vendor' AND s.status::text IN ('settled', 'partially_paid') AND s.vendor_id IS NOT NULL
+      GROUP BY s.vendor_id
     ),
     payment_totals AS (
       SELECT vendor_id,

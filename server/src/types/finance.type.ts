@@ -55,6 +55,9 @@ export interface OrderCodItem {
   deliveredAt: string | null;
   status: CodPaymentFilter;
   netPayable: number;
+  /** The open or paid vendor statement this order is bundled into, if any. `status` stays
+   *  "not_settled" while that statement is only partially_paid - see payForSettlement. */
+  statement: { statementId: string; status: SettlementStatus } | null;
 }
 
 export interface OrderCodListResult {

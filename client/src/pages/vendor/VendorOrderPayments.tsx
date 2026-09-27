@@ -22,6 +22,14 @@ const PAGE_SIZE = 20;
 
 const formatCurrency = (value: number) => formatCurrencyBase(value, 0);
 
+// A part-paid statement leaves its orders "not settled" (a part payment can't be
+// pinned to particular orders), so call that out rather than show plain pending.
+const isPartlyPaid = (item: OrderCodItem) =>
+  item.status === 'not_settled' && item.statement?.status === 'partially_paid';
+
+const statusLabel = (item: OrderCodItem) =>
+  item.status === 'settled' ? 'Settled' : isPartlyPaid(item) ? 'Partially paid' : 'Not Settled';
+
 const VendorOrderPayments: React.FC = () => {
   const [tab, setTab] = useState<TabValue>('all');
   const [page, setPage] = useState(1);
@@ -81,7 +89,7 @@ const VendorOrderPayments: React.FC = () => {
         item.receiverAlternatePhone || '',
         toBsDateTimeCell(item.createdAt) || '',
         toBsDateTimeCell(item.deliveredAt) || '',
-        item.status === 'settled' ? 'Settled' : 'Not Settled',
+        isPartlyPaid(item) ? `Partially paid (${item.statement!.statementId})` : statusLabel(item),
         // Left numeric so the column totals in the sheet.
         item.netPayable,
       ]),
@@ -107,9 +115,15 @@ const VendorOrderPayments: React.FC = () => {
     {
       header: 'STATUS',
       accessor: (item: OrderCodItem) => (
-        <StatusChip variant="solid" tone={item.status === 'settled' ? 'success' : 'warning'}>
-          {item.status === 'settled' ? 'Settled' : 'Not Settled'}
-        </StatusChip>
+        <div>
+          <StatusChip
+            variant="solid"
+            tone={item.status === 'settled' ? 'success' : isPartlyPaid(item) ? 'info' : 'warning'}
+          >
+            {statusLabel(item)}
+          </StatusChip>
+          {isPartlyPaid(item) && <div className="vendor-finance-subtext">{item.statement!.statementId}</div>}
+        </div>
       ),
     },
     { header: 'NET PAYABLE', accessor: (item: OrderCodItem) => formatCurrency(item.netPayable) },
