@@ -291,7 +291,7 @@ body{background:#fff;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif}
   gap:0;
 }
 .fc{
-  flex:1;display:flex;flex-direction:column;
+  flex:1;min-width:0;display:flex;flex-direction:column;
   align-items:center;gap:0;
   padding:0 1.5mm;
   border-right:1px solid #000;

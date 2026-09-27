@@ -833,6 +833,7 @@ export interface BulkCreateOrderRow {
   serviceType?: ServiceType;
   packageType?: string;
   deliveryInstruction?: string;
+  remarks?: string;
   originLocationId?: string;
   destinationLocationId?: string;
   /** Set by admin/super_admin/sales when bulk-importing on behalf of a vendor. */

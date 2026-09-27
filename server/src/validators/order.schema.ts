@@ -86,8 +86,8 @@ export const createOrderSchema = z.object({
   codAmount: z.number().min(0, "codAmount cannot be negative").optional(),
   itemValue: z.number().min(0, "itemValue cannot be negative").optional(),
   deliveryCharge: z.number().min(0, "deliveryCharge cannot be negative").optional(),
-  packageType: z.string().max(50).optional(),
-  deliveryInstruction: z.string().max(500).optional(),
+  packageType: z.string().max(100).optional(),
+  deliveryInstruction: z.string().max(100).optional(),
   remarks: z.string().max(1000).optional(),
   pickupAddress: z.string().max(255).optional(),
   scheduledPickupAt: z.string().datetime({ offset: true }).optional(),
@@ -125,8 +125,8 @@ export const updateOrderDetailsSchema = z
     weightKg: z.number().positive("weightKg must be a positive number").optional(),
     codAmount: z.number().min(0, "codAmount cannot be negative").optional(),
     itemValue: z.number().min(0, "itemValue cannot be negative").optional(),
-    packageType: z.string().max(50).optional(),
-    deliveryInstruction: z.string().max(500).optional(),
+    packageType: z.string().max(100).optional(),
+    deliveryInstruction: z.string().max(100).optional(),
   })
   .refine((data) => Object.values(data).some((v) => v !== undefined), {
     message: "At least one field must be provided",
