@@ -633,7 +633,7 @@ async function computeDashboardSummary(
         ? Prisma.empty
         : branchLocationIds.length === 0
         ? Prisma.sql`AND false`
-        : Prisma.sql`AND p.destination_location_id IN (${Prisma.join(branchLocationIds)}::uuid[])`;
+        : Prisma.sql`AND p.destination_location_id = ANY(${branchLocationIds}::uuid[])`;
     const rows = await prisma.$queryRaw<Array<{ n: bigint; amount: string }>>(Prisma.sql`
       SELECT COUNT(*)::bigint AS n,
              COALESCE(SUM(GREATEST(0::numeric, COALESCE(cc.collected_amount, p.cod_amount))), 0) AS amount
