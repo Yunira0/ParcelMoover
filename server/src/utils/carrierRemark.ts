@@ -90,6 +90,14 @@ export function displayRemarkText(remark: string): string {
   return remark;
 }
 
+/** Which 3PL a stored handoff remark belongs to, or null if it isn't one. */
+export function handoffCarrier(remark: string | null | undefined): "NCM" | "Upaya" | null {
+  if (!remark) return null;
+  if (remark.startsWith(UPAYA_HANDOFF_REMARK_PREFIX)) return "Upaya";
+  if (remark.startsWith(HANDOFF_REMARK_PREFIX)) return "NCM";
+  return null;
+}
+
 export type StrippedRemark = { text: string; isCarrierStaff: boolean };
 
 export function stripCarrierStaffTag(remark: string): StrippedRemark {

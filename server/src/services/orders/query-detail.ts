@@ -3,7 +3,7 @@ import prisma from "../../lib/prisma";
 import { AppError } from "../../utils/AppError";
 import { formatNepalDate as formatDate } from "../../utils/nepalTime";
 import { getVendorStatusLabel } from "../../utils/orderStatusLabel";
-import { displayAuthor, displayRemarkText, stripCarrierStaffTag } from "../../utils/carrierRemark";
+import { displayAuthor, displayRemarkText, handoffCarrier, stripCarrierStaffTag } from "../../utils/carrierRemark";
 import { getActorScope, riderHandledFilter, branchTouchesFilter } from "./scope";
 import { isStaffAuthor } from "./remarkAuthor";
 import { locationName, mapOrder } from "./query-core";
@@ -203,6 +203,9 @@ export async function getOrderByTrackingId(actor: OrderActor, trackingId: string
         // One wording for both carriers, and no carrier's own name - the
         // handoff entry is stored branded on the Upaya side (see carrierRemark).
         remarks: displayRemarkText(entry.remarks || ""),
+        // Staff only: which 3PL took the handoff, read from the stored text
+        // before it is neutralised above (the display text can't tell them apart).
+        carrier: isStaff ? handoffCarrier(entry.remarks) : null,
         riderName: riderName || null,
         changedBy: isStaff ? entry.users?.full_name || "System" : nonStaffLabel,
         changedByType: isStaff ? ("user" as const) : ("branch" as const),

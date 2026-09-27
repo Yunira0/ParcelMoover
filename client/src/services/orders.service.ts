@@ -673,6 +673,8 @@ export interface OrderStatusHistoryEntry {
   oldStatus: ParcelStatus | null;
   newStatus: ParcelStatus;
   remarks: string;
+  /** Staff only: the 3PL this handoff entry went to. */
+  carrier?: 'NCM' | 'Upaya' | null;
   /**
    * The rider tied to this milestone: the pickup rider for "rider_assigned",
    * the delivery rider for "sent_for_delivery". null for every other entry.
