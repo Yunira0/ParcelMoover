@@ -8,6 +8,7 @@ import { invalidateVendorFinanceCache } from "../finance.service";
 import { getReturnDeliveryQuote, getVendorQuote, type RateType, type ServiceType } from "../pricing.service";
 import { resolveOwnVendorId } from "../vendor-scope.service";
 import { invalidateOrderCaches } from "./cache";
+import { assertCodNotSettled } from "./codGuards";
 import { findOrCreateParty } from "./create";
 import { buildSearchText } from "./orderHelpers";
 import { vendorRateOverrides, branchVendorFlatCharge, getMasterHubId } from "./pricing";
@@ -217,6 +218,13 @@ export async function updateOrderDetails(
     if (!isCodOnlyChange || !(await canOverrideCodOnBlockedParcel(actor, parcel.id))) {
       throw new AppError(409, `Order can no longer be edited in status "${parcel.status}"`);
     }
+  }
+
+  // A partial delivery can sit in follow_up/ready_to_return with its cash
+  // already on a statement; repricing or reassigning it then would pull the
+  // order out from under the amount that statement froze.
+  if (["COD amount", "vendor", "weight", "destination", "origin"].some((k) => changedKeys.has(k))) {
+    await assertCodNotSettled([parcel.id], "change the COD, charge or vendor of");
   }
 
   // Weight or destination changes re-price the parcel with the same waterfall

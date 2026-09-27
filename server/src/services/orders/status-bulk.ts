@@ -11,6 +11,7 @@ import { createNotification } from "../notification.service";
 import { emitWebhookEventsBatch } from "../webhookDispatch.service";
 import { computeReturnCharge } from "./pricing";
 import { invalidateOrderCaches } from "./cache";
+import { assertCodNotSettled, writesCollection } from "./codGuards";
 import { withParcelStatusLocks } from "./statusLocks";
 import {
   getActorScope, getAdminBranchScope, branchTouchesFilter, resolveActiveRider,
@@ -405,27 +406,24 @@ async function _bulkUpdateParcelStatusImpl(
     (p) => p.status === "delivered" && !["delivered", "partially_delivered"].includes(newStatus),
   );
   const undeliverIds = reversalParcels.map((p) => p.id);
+  // Cancelling a partial voids cash that may already sit on a statement.
+  const guardedIds =
+    newStatus === "cancelled"
+      ? [...undeliverIds, ...parcels.filter((p) => p.status === "partially_delivered").map((p) => p.id)]
+      : undeliverIds;
 
   // Same guard as the single-parcel path: don't blow away a COD that's
   // already been swept into a settlement - paid, or still pending (whose
   // settlement_items row already froze this collection's amount).
-  if (undeliverIds.length > 0) {
-    const blockingCod = await prisma.cod_collections.findFirst({
-      where: {
-        parcel_id: { in: undeliverIds },
-        OR: [{ rider_payment_status: "paid" }, { payment_status: "paid" }, { settlement_items: { some: {} } }],
-      },
-      include: {
-        parcels: { select: { tracking_id: true } },
-        settlement_items: { select: { settlements: { select: { statement_id: true, payee_type: true } } }, take: 1 },
-      },
-    });
-    if (blockingCod) {
-      const stmt = blockingCod.settlement_items[0]?.settlements;
-      const reason = stmt ? `is part of ${stmt.payee_type} settlement ${stmt.statement_id}` : "has already been settled";
-      throw new AppError(409, `Order ${blockingCod.parcels.tracking_id}'s COD ${reason} — resolve that before undelivering.`);
-    }
-  }
+  await assertCodNotSettled(guardedIds, "move out of a delivered status");
+
+  // Same re-delivery guard as the single-parcel path.
+  await assertCodNotSettled(
+    parcels
+      .filter((p) => writesCollection(p.status, newStatus as parcel_status, p.partial_cod_collected != null))
+      .map((p) => p.id),
+    "re-deliver",
+  );
 
   let toLocationId: string | null = null;
   let originLocationId: string | null = null;
@@ -525,7 +523,9 @@ async function _bulkUpdateParcelStatusImpl(
   if (newStatus === "returned_to_vendor") {
     await Promise.all(
       parcels
-        .filter((p) => p.order_type !== "return" && p.destination_location_id)
+        // A partial was a real delivery: its charge stands (and may already be
+        // frozen on a statement), so only a plain bounce-back is repriced.
+        .filter((p) => p.order_type !== "return" && p.destination_location_id && p.partial_cod_collected == null)
         .map(async (p) => {
           const charge = await computeReturnCharge(
             p.vendors,
