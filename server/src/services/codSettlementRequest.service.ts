@@ -354,8 +354,9 @@ export async function updateCodSettlementRequestStatus(
     if (statement.status === "cancelled") throw new AppError(400, "That statement has been cancelled");
   }
 
-  const updated = await prisma.cod_settlement_requests.update({
-    where: { id },
+  // Compare-and-swap on the live status, so two reviewers can't both close it.
+  const claimed = await prisma.cod_settlement_requests.updateMany({
+    where: { id, status: { in: LIVE_REQUEST_STATUSES } },
     data: {
       status: input.status,
       decision_note: input.decisionNote?.trim() || null,
@@ -364,8 +365,11 @@ export async function updateCodSettlementRequestStatus(
       reviewed_at: new Date(),
       ...(isTerminal ? { closed_at: new Date() } : {}),
     },
-    include: REQUEST_INCLUDE,
   });
+  if (claimed.count === 0) {
+    throw new AppError(409, "This request was already actioned by someone else");
+  }
+  const updated = await prisma.cod_settlement_requests.findUniqueOrThrow({ where: { id }, include: REQUEST_INCLUDE });
 
   // Tell the vendor who raised it. Only on a terminal move: "an admin opened
   // your request" is not news, but "you have been paid" and "we said no,
