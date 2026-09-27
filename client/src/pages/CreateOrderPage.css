@@ -61,6 +61,69 @@
   gap: var(--space-4);
 }
 
+/* Package description + delivery instruction: identical fixed-size boxes side
+   by side (no manual resize, so they can't drift apart), character counter
+   right-aligned under each. Sized for their 100-char limit plus the dropdown. */
+.order-long-text textarea {
+  height: 112px;
+  min-height: 112px;
+  resize: none;
+}
+
+.order-long-text .form-hint {
+  text-align: right;
+}
+
+.order-long-field {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.order-long-field > .form-hint,
+.order-long-field > .form-error {
+  text-align: right;
+}
+
+/* The quick-add dropdown (a regular FormField select) sits inside the top of
+   the delivery instruction box. The text area's FormField is flattened into
+   this grid so the dropdown can share the text area's cell, whatever the
+   label's height; the text area leaves room for it at the top. */
+.order-instruction-box {
+  display: grid;
+  row-gap: var(--space-1);
+}
+
+.order-instruction-box > .order-long-text {
+  display: contents;
+}
+
+.order-instruction-box > .order-long-text > textarea {
+  grid-area: 2 / 1;
+  padding-top: 38px;
+}
+
+.order-instruction-select {
+  grid-area: 2 / 1;
+  align-self: start;
+  justify-self: start;
+  margin: 4px 5px;
+  z-index: 1;
+}
+
+.order-instruction-select select {
+  width: auto;
+  height: 28px;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+@media (max-width: 640px) {
+  .order-field-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .order-summary-card {
   gap: var(--space-2);
 }
