@@ -34,7 +34,7 @@ const VENDOR_EDITABLE_STATUSES: parcel_status[] = [
 // A parcel in EDIT_BLOCKED_STATUSES is otherwise settled paperwork, but a
 // wrong COD amount (customer dispute, data-entry mistake) still needs
 // correcting after delivery/RTV/RTO. Narrow escape hatch: super_admin or an
-// admin holding EDIT_COD_LOCKED may still change codAmount alone, as long as
+// admin holding EDIT_SETTLEMENTS may still change codAmount alone, as long as
 // the money hasn't actually moved yet - once cod_collections.payment_status
 // is "paid" the parcel's COD must never drift from what was already settled.
 // Callers decide "codAmount alone" from the actual before/after diff (see
@@ -42,7 +42,7 @@ const VENDOR_EDITABLE_STATUSES: parcel_status[] = [
 // the full-page edit form always resubmits every field, changed or not.
 async function canOverrideCodOnBlockedParcel(actor: OrderActor, parcelId: string): Promise<boolean> {
   const isPrivileged =
-    actor.roles.includes("super_admin") || (await hasAdminPermission(actor, "EDIT_COD_LOCKED"));
+    actor.roles.includes("super_admin") || (await hasAdminPermission(actor, "EDIT_SETTLEMENTS"));
   if (!isPrivileged) return false;
 
   const collection = await prisma.cod_collections.findFirst({
@@ -418,7 +418,7 @@ export async function updateOrderDetails(
           where: { parcel_id: parcel.id, payment_status: "pending" },
           // Blanket-zeroing collected_amount here used to be safe because
           // EDIT_BLOCKED_STATUSES kept this path off delivered parcels. It no
-          // longer does - EDIT_COD_LOCKED lets staff correct the COD on a
+          // longer does - EDIT_SETTLEMENTS lets staff correct the COD on a
           // delivered/RTV/RTO parcel - so the collected figure has to be
           // resolved by the caller (codSyncCollectedAmount) rather than reset.
           data: {
