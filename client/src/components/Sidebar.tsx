@@ -423,6 +423,7 @@ const BranchSidebar: React.FC = () => {
 const AdminSidebar: React.FC<{ isSuperAdmin: boolean }> = ({ isSuperAdmin }) => {
   const { collapsed, mobileOpen } = useSidebarCollapse();
   const canReadBooks = isSuperAdmin || hasAdminPermission('ACCOUNTING_ACCESS');
+  const canEditMasters = canReadBooks && hasAdminPermission('FINANCE_MASTERS');
   const canOpenSystem =
     isSuperAdmin || hasAdminPermission('SYSTEM_LOGS_ACCESS') || hasAdminPermission('SETTINGS_ACCESS');
   const canViewBranchTracking = isSuperAdmin || hasAdminPermission('BRANCH_TRACKING_READ') || hasAdminPermission('BRANCH_TRACKING_WRITE');
@@ -566,9 +567,9 @@ const AdminSidebar: React.FC<{ isSuperAdmin: boolean }> = ({ isSuperAdmin }) => 
             </>
           )}
 
-          {/* Editing the chart reinterprets posted history, so it is a
-              super_admin job rather than part of the books grant. */}
-          {isSuperAdmin && <SubItem to="/finance/masters" icon={FileText} label="Masters" />}
+          {/* Editing the chart reinterprets posted history, so it is its own
+              grant (FINANCE_MASTERS) rather than part of the books grant. */}
+          {canEditMasters && <SubItem to="/finance/masters" icon={FileText} label="Masters" />}
         </div>
 
         <SidebarSection label="Operations" />

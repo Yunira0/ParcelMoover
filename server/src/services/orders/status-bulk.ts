@@ -1,6 +1,7 @@
 import { parcel_status, Prisma } from "../../generated/prisma/client";
 import prisma from "../../lib/prisma";
 import { AppError } from "../../utils/AppError";
+import { hasAdminPermission } from "../../middlewares/adminPermission.middleware";
 import { generateTransitManifestNo } from "../../utils/transitManifestNo";
 import { MAX_TRANSIT_MANIFEST_PARCELS } from "../../types/transitManifest.type";
 import { BulkUpdateParcelStatusInput, ParcelStatus, STATUS_TRANSITIONS } from "../../types/order.type";
@@ -260,9 +261,10 @@ async function _bulkUpdateParcelStatusImpl(
 ): Promise<BulkUpdateResult> {
   const newStatus = data.status;
   const isAdmin = actor.roles.some((r) => ["super_admin", "admin"].includes(r));
-  // A super_admin may force any status from any status (including out of a
-  // terminal state) - the transition map only constrains everyone else.
-  const isSuperAdmin = actor.roles.includes("super_admin");
+  // A super_admin, or an admin holding FORCE_STATUS_CHANGE, may force any
+  // status from any status (including out of a terminal state) - the
+  // transition map only constrains everyone else.
+  const canForceStatus = await hasAdminPermission(actor, "FORCE_STATUS_CHANGE");
   const isVendorActor =
     actor.roles.includes("vendor") || actor.roles.includes("vendor_staff");
   const isRiderActor = actor.roles.includes("rider") && !isAdmin;
@@ -350,13 +352,13 @@ async function _bulkUpdateParcelStatusImpl(
 
   for (const parcel of parcels) {
     const currentStatus = parcel.status as ParcelStatus;
-    if (!isSuperAdmin && TERMINAL_STATUSES.includes(currentStatus as parcel_status)) {
+    if (!canForceStatus && TERMINAL_STATUSES.includes(currentStatus as parcel_status)) {
       throw new AppError(
         409,
         `Parcel ${parcel.tracking_id} is already '${currentStatus}' (terminal state)`,
       );
     }
-    if (!isSuperAdmin) {
+    if (!canForceStatus) {
       const allowed = STATUS_TRANSITIONS[
         currentStatus as keyof typeof STATUS_TRANSITIONS
       ] as readonly ParcelStatus[];

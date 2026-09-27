@@ -1,6 +1,7 @@
 import { parcel_status, Prisma } from "../../generated/prisma/client";
 import prisma from "../../lib/prisma";
 import { AppError } from "../../utils/AppError";
+import { hasAdminPermission } from "../../middlewares/adminPermission.middleware";
 import { ParcelStatus, STATUS_TRANSITIONS, UpdateParcelStatusInput } from "../../types/order.type";
 import { evaluateVendorBillingAsync, statusAffectsBalance } from "../billing.service";
 import { invalidateVendorFinanceCache, invalidateRiderFinanceCache } from "../finance.service";
@@ -136,9 +137,10 @@ async function _updateParcelStatusImpl(
   }
   const shouldRaiseReturn = isExchangeDelivery && data.exchangeReturnReceived === true;
   const isAdmin = actor.roles.some((r) => ["super_admin", "admin"].includes(r));
-  // A super_admin may force any status from any status (including out of a
-  // terminal state) - the transition map only constrains everyone else.
-  const isSuperAdmin = actor.roles.includes("super_admin");
+  // A super_admin, or an admin holding FORCE_STATUS_CHANGE, may force any
+  // status from any status (including out of a terminal state) - the
+  // transition map only constrains everyone else.
+  const canForceStatus = await hasAdminPermission(actor, "FORCE_STATUS_CHANGE");
 
   // Ownership scoping: vendors/vendor_staff may only touch their own parcels,
   // and riders may only touch parcels they're actually assigned to, and only
@@ -194,7 +196,7 @@ async function _updateParcelStatusImpl(
   }
 
   // cannot transition from a terminal state
-  if (!isSuperAdmin && TERMINAL_STATUSES.includes(currentStatus as parcel_status)) {
+  if (!canForceStatus && TERMINAL_STATUSES.includes(currentStatus as parcel_status)) {
     throw new AppError(
       409,
       `Cannot update status: parcel id already '${currentStatus}' (terminal state)`,
@@ -207,12 +209,12 @@ async function _updateParcelStatusImpl(
   // client rendering it and this request landing (another actor's request,
   // a reconcile sweep, or the caller's own resubmitted scan). Report success
   // instead of 422ing on 'X → X'; there is nothing left to do.
-  if (!isSuperAdmin && currentStatus === newStatus) {
+  if (!canForceStatus && currentStatus === newStatus) {
     return parcel;
   }
 
   // validate the transition is allowed
-  if (!isSuperAdmin) {
+  if (!canForceStatus) {
     const allowed = STATUS_TRANSITIONS[
       currentStatus as keyof typeof STATUS_TRANSITIONS
     ] as readonly ParcelStatus[];

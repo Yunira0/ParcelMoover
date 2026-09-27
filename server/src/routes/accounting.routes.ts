@@ -203,13 +203,15 @@ accountingRouter.patch("/periods/:periodKey", ...write, validate(setPeriodStatus
 //
 // Reading the chart follows the section's own grant. Editing it does not: an
 // account's type and normal side decide how every line ever posted to it is
-// read, so this is a super_admin job rather than something that comes with
-// ACCOUNTING_ACCESS. masters.service refuses the dangerous edits outright once
-// an account has been posted to; this just keeps the door narrower.
+// read, so it takes FINANCE_MASTERS on top of ACCOUNTING_ACCESS rather than
+// coming with the books. masters.service refuses the dangerous edits outright
+// once an account has been posted to; this just keeps the door narrower.
 const masters = [
   authMiddleware,
   csrfProtection,
-  authorizeRoles("super_admin"),
+  authorizeRoles("super_admin", "admin"),
+  requireAdminPermission("ACCOUNTING_ACCESS"),
+  requireAdminPermission("FINANCE_MASTERS"),
   writeLimiter,
 ] as const;
 

@@ -34,6 +34,13 @@ export const ADMIN_PERMISSIONS = [
   // hasAdminPermission so a writer never needs both strings persisted.
   "BRANCH_TRACKING_READ",
   "BRANCH_TRACKING_WRITE",
+  // Edit the chart of accounts and set opening balances (Finance > Masters).
+  // Held on top of ACCOUNTING_ACCESS, not instead of it: an account's type and
+  // normal side reinterpret every entry ever posted to it.
+  "FINANCE_MASTERS",
+  // Force a parcel into any status from any status, bypassing the transition
+  // map and the terminal-state lock - the same override a super_admin has.
+  "FORCE_STATUS_CHANGE",
 ] as const;
 
 export type AdminPermission = (typeof ADMIN_PERMISSIONS)[number];
