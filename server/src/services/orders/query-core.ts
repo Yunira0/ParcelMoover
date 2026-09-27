@@ -5,7 +5,7 @@ import { AppError } from "../../utils/AppError";
 import type { ListOrdersQuery, OrderSortField, ParcelStatus } from "../../types/order.type";
 import { formatNepalDate as formatDate, NEPAL_UTC_OFFSET_MS } from "../../utils/nepalTime";
 import { getVendorStatusLabel } from "../../utils/orderStatusLabel";
-import { remarkTextFor, stripCarrierStaffTag } from "../../utils/carrierRemark";
+import { HANDOFF_NOTE_PREFIXES, remarkTextFor, stripCarrierStaffTag } from "../../utils/carrierRemark";
 import { resolveLabelSize } from "../vendorPrintSettings.service";
 import { buildOrdersWhere } from "./where";
 import {
@@ -18,6 +18,11 @@ import {
   ordersListCacheKey,
 } from "./cache";
 import type { OrderActor } from "./types";
+
+// "Latest remark" columns show the last real remark, never a carrier handoff note.
+const LATEST_REMARK_WHERE: Prisma.parcel_remarksWhereInput = {
+  NOT: HANDOFF_NOTE_PREFIXES.map((prefix) => ({ remark: { startsWith: prefix } })),
+};
 
 // Match the existing list defaults and location/money formatting.
 const MAX_PAGE_SIZE = 500;
@@ -178,6 +183,7 @@ const ORDERS_INCLUDE = {
   riders_parcels_pickup_rider_idToriders: true,
   riders_parcels_delivery_rider_idToriders: true,
   parcel_remarks: {
+    where: LATEST_REMARK_WHERE,
     orderBy: { created_at: "desc" as const },
     take: 1,
   },
@@ -733,6 +739,7 @@ export const HANDOVER_PARCEL_INCLUDE = {
   // whoever signs for the parcel reads the same note the ops list shows - see
   // mapOrder, which takes the latest the same way.
   parcel_remarks: {
+    where: LATEST_REMARK_WHERE,
     orderBy: { created_at: "desc" as const },
     take: 1,
   },

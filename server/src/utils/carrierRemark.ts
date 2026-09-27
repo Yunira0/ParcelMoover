@@ -103,6 +103,16 @@ export function publicRemarkText(remark: string): string {
   return match ? `${HANDOFF_REMARK_PREFIX} — ${match[1]}` : displayRemarkText(remark);
 }
 
+/**
+ * Handoff notes are the parcel -> carrier-order mapping, not conversation: the
+ * timeline already shows the handoff, so remark threads and "latest remark"
+ * columns skip them. "[NCM] Handed off" is the wording older rows used.
+ */
+export const HANDOFF_NOTE_PREFIXES = [HANDOFF_REMARK_PREFIX, UPAYA_HANDOFF_REMARK_PREFIX, "[NCM] Handed off"] as const;
+
+export const isHandoffNote = (remark: string): boolean =>
+  HANDOFF_NOTE_PREFIXES.some((prefix) => remark.startsWith(prefix));
+
 /** A stored remark as a given viewer should read it. */
 export function remarkTextFor(remark: string, isStaff: boolean): string {
   const text = stripCarrierStaffTag(remark).text;

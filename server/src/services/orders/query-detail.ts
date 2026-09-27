@@ -3,7 +3,7 @@ import prisma from "../../lib/prisma";
 import { AppError } from "../../utils/AppError";
 import { formatNepalDate as formatDate } from "../../utils/nepalTime";
 import { getVendorStatusLabel } from "../../utils/orderStatusLabel";
-import { displayAuthor, displayRemarkText, handoffCarrier, publicRemarkText, stripCarrierStaffTag } from "../../utils/carrierRemark";
+import { displayAuthor, displayRemarkText, handoffCarrier, isHandoffNote, publicRemarkText, stripCarrierStaffTag } from "../../utils/carrierRemark";
 import { getActorScope, riderHandledFilter, branchTouchesFilter } from "./scope";
 import { isStaffAuthor } from "./remarkAuthor";
 import { locationName, mapOrder } from "./query-core";
@@ -44,14 +44,6 @@ const ORDER_DETAIL_INCLUDE = {
   // Detail spreads mapOrder, so it needs everything mapOrder reads.
   cod_collections: { select: { collected_amount: true } },
 } satisfies Prisma.parcelsInclude;
-
-// NCM 3PL bookkeeping remarks. The handoff remark is an internal audit/link
-// row (see ncm.service.ts) and must not show in the user-facing thread.
-// Inbound carrier-staff comments carry a bracketed tag we strip for display,
-// attributing them to a generic "Staff" (they have no local user). See
-// utils/carrierRemark.ts - the tag spelling lives there so it cannot drift
-// away from what ncm.service.ts actually writes.
-const NCM_HANDOFF_PREFIX = "[NCM] Handed off";
 
 export async function getOrderByTrackingId(actor: OrderActor, trackingId: string) {
   const { vendorId, vendorIds, riderId, branchLocationIds } = await getActorScope(actor);
@@ -161,7 +153,7 @@ export async function getOrderByTrackingId(actor: OrderActor, trackingId: string
     // label in place of any internal staff member's name (their own / other
     // non-staff authors still show normally).
     remarks: parcel.parcel_remarks
-      .filter((remark) => !remark.remark.startsWith(NCM_HANDOFF_PREFIX))
+      .filter((remark) => !isHandoffNote(remark.remark))
       .map((remark) => {
       const { text: remarkText, isCarrierStaff } = stripCarrierStaffTag(remark.remark);
       const maskAuthor = !isStaff && isStaffAuthor(remark.users);
