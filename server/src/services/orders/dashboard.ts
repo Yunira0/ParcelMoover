@@ -29,6 +29,7 @@ import {
   AWAITING_PICKUP_STATUSES,
   IN_DELIVERY_STATUSES,
 } from "./status-shared";
+import { PART_PAID_FRACTIONS_SQL } from "./cod-detail";
 import type { OrderActor } from "./types";
 
 const moneyToNumber = (value?: Prisma.Decimal | null) => value ? Number(value) : 0;
@@ -406,19 +407,7 @@ async function computeDashboardSummary(
       FROM cod_collections c
       JOIN parcels p ON p.id = c.parcel_id
       LEFT JOIN riders r ON r.id = c.rider_id
-      -- This collection's slice of what its partially_paid statements have
-      -- paid so far. An instalment can't be pinned to particular orders, so it
-      -- clears every bundled order by the same fraction of the statement.
-      LEFT JOIN LATERAL (
-        SELECT
-          LEAST(COALESCE(SUM(s.paid_amount / NULLIF(ABS(COALESCE(s.payable_amount, s.amount)), 0))
-            FILTER (WHERE s.payee_type = 'vendor'), 0), 1) AS vendor_frac,
-          LEAST(COALESCE(SUM(s.paid_amount / NULLIF(ABS(COALESCE(s.payable_amount, s.amount)), 0))
-            FILTER (WHERE s.payee_type = 'rider'), 0), 1) AS rider_frac
-        FROM settlement_items si
-        JOIN settlements s ON s.id = si.settlement_id
-        WHERE si.cod_collection_id = c.id AND s.status::text = 'partially_paid'
-      ) pp ON TRUE
+      LEFT JOIN LATERAL (${PART_PAID_FRACTIONS_SQL}) pp ON TRUE
       WHERE p.deleted_at IS NULL
         -- returned_to_vendor is in scope alongside the delivery statuses: an
         -- RTV/RTO parcel collected no COD (contributes 0 to the cash figures)
