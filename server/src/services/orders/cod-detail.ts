@@ -110,9 +110,9 @@ export async function getCodSettlementDetail(
         : bucket === "pm-rider"
           ? Prisma.sql`AND c.rider_id IS NOT NULL AND r.carrier_code IS NULL AND (c.collected_amount - ${riderSettledSql}) > 0`
           : bucket === "ncm"
-            ? Prisma.sql`AND ((c.rider_id IS NULL AND ${ncmHandoffExistsSql}) OR r.carrier_code = 'ncm') AND (c.collected_amount - LEAST(c.remitted_amount, c.collected_amount)) > 0`
+            ? Prisma.sql`AND ((c.rider_id IS NULL AND ${ncmHandoffExistsSql}) OR r.carrier_code = 'ncm') AND (c.collected_amount - LEAST(c.remitted_amount + c.collected_amount * pp.vendor_frac, c.collected_amount)) > 0`
             : bucket === "upaya"
-              ? Prisma.sql`AND ((c.rider_id IS NULL AND ${upayaHandoffExistsSql}) OR r.carrier_code = 'upaya') AND (c.collected_amount - LEAST(c.remitted_amount, c.collected_amount)) > 0`
+              ? Prisma.sql`AND ((c.rider_id IS NULL AND ${upayaHandoffExistsSql}) OR r.carrier_code = 'upaya') AND (c.collected_amount - LEAST(c.remitted_amount + c.collected_amount * pp.vendor_frac, c.collected_amount)) > 0`
               : Prisma.empty; // 'total' and 'delivery-charge': every in-scope row
 
   // Each bucket's rows must add up to the exact figure on the card, so the
@@ -127,7 +127,7 @@ export async function getCodSettlementDetail(
         : bucket === "pm-rider"
           ? Prisma.sql`c.collected_amount - ${riderSettledSql}`
           : bucket === "ncm" || bucket === "upaya"
-            ? Prisma.sql`c.collected_amount - LEAST(c.remitted_amount, c.collected_amount)`
+            ? Prisma.sql`c.collected_amount - LEAST(c.remitted_amount + c.collected_amount * pp.vendor_frac, c.collected_amount)`
             : bucket === "delivery-charge"
               ? Prisma.sql`p.delivery_charge`
               : pendingExprSql;

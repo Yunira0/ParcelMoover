@@ -383,8 +383,8 @@ async function computeDashboardSummary(
         -- pm-rider ever touches this cash, so rider_remitted_amount is never
         -- populated for these rows - the full collected amount counts as
         -- outstanding until NCM's remittance clears it (via the vendor leg,
-        -- remitted_amount).
-        COALESCE(SUM(c.collected_amount - LEAST(c.remitted_amount, c.collected_amount))
+        -- remitted_amount, part payments included via pp).
+        COALESCE(SUM(c.collected_amount - LEAST(c.remitted_amount + c.collected_amount * pp.vendor_frac, c.collected_amount))
           FILTER (WHERE (c.rider_id IS NULL AND EXISTS (
             SELECT 1 FROM parcel_remarks pr
             WHERE pr.parcel_id = p.id AND pr.remark LIKE ${NCM_HANDOFF_REMARK_PREFIX + '%'}
@@ -395,7 +395,7 @@ async function computeDashboardSummary(
         -- (r.carrier_code = 'upaya') for parcels routed to Upaya manually,
         -- from before the API integration existed. Same "clears via the
         -- vendor leg" reasoning as NCM above.
-        COALESCE(SUM(c.collected_amount - LEAST(c.remitted_amount, c.collected_amount))
+        COALESCE(SUM(c.collected_amount - LEAST(c.remitted_amount + c.collected_amount * pp.vendor_frac, c.collected_amount))
           FILTER (WHERE (c.rider_id IS NULL AND EXISTS (
             SELECT 1 FROM parcel_remarks pr
             WHERE pr.parcel_id = p.id AND pr.remark LIKE ${UPAYA_HANDOFF_REMARK_PREFIX + '%'}
