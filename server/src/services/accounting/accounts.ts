@@ -4,9 +4,10 @@
 // equity, 4xxx revenue, 5xxx expense - so a reader who has seen any other set
 // of books can find their way around this one.
 //
-// Two of these are *control* accounts: their balance is only meaningful broken
+// Three of these are *control* accounts: their balance is only meaningful broken
 // down per party. 1010 answers "how much of our cash is in which rider's
-// pocket right now", and 2000 answers "what is our position with each vendor".
+// pocket right now", 1015 "how much COD does each branch still owe head
+// office", and 2000 "what is our position with each vendor".
 // Everything else is a plain account.
 import { ledger_account_type, ledger_normal_side, ledger_party_type } from "../../generated/prisma/enums";
 import type { Prisma } from "../../generated/prisma/client";
@@ -18,6 +19,7 @@ type Db = Prisma.TransactionClient | typeof prisma;
 export const ACCOUNT = {
   CASH_IN_HAND: "1000",
   CASH_WITH_RIDER: "1010",
+  COD_WITH_BRANCH: "1015",
   COD_HELD: "2005",
   VENDOR_CONTROL: "2000",
   OPENING_BALANCE_EQUITY: "3000",
@@ -26,6 +28,7 @@ export const ACCOUNT = {
   REDIRECT_REVENUE: "4010",
   RETURN_REVENUE: "4020",
   RIDER_COMMISSION: "5000",
+  BRANCH_COMMISSION: "5010",
   FUEL_AND_VEHICLE: "5100",
   VEHICLE_MAINTENANCE: "5110",
   OFFICE_RENT: "5200",
@@ -64,6 +67,16 @@ export const CHART_OF_ACCOUNTS: AccountDefinition[] = [
     subledgerType: "rider",
     description:
       "COD a rider has collected but not yet remitted. Still ours, just not in our hands - the per-rider balance is the cash that rider owes the office right now.",
+  },
+  {
+    code: ACCOUNT.COD_WITH_BRANCH,
+    name: "COD with Branch",
+    type: "asset",
+    normalSide: "debit",
+    isControl: true,
+    subledgerType: "location",
+    description:
+      "COD a branch has put on a statement to head office but not yet paid. Debited when the statement is raised, cleared as its instalments land - the per-branch balance is what that branch owes head office right now.",
   },
   // Every other place money sits - Prabhu Bank, Kumari Bank, a wallet - is an
   // account created with its payment method, not one listed here. There are no
@@ -138,6 +151,13 @@ export const CHART_OF_ACCOUNTS: AccountDefinition[] = [
     type: "expense",
     normalSide: "debit",
     description: "Per-delivery commission and incentives paid to riders.",
+  },
+  {
+    code: ACCOUNT.BRANCH_COMMISSION,
+    name: "Branch Commission",
+    type: "expense",
+    normalSide: "debit",
+    description: "Per-parcel commission a branch keeps out of the COD it remits to head office.",
   },
   {
     code: ACCOUNT.FUEL_AND_VEHICLE,

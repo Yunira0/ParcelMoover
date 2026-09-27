@@ -42,6 +42,8 @@ export interface OrderCodItem {
   deliveredAt: string | null;
   status: CodPaymentFilter;
   netPayable: number;
+  /** Vendor statement this order is bundled into. Optional: cached responses may predate it. */
+  statement?: { statementId: string; status: SettlementStatus } | null;
 }
 
 export interface PageMeta {

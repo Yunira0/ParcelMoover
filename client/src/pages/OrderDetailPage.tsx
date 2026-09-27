@@ -88,9 +88,10 @@ const OrderDetailPage: React.FC = () => {
     };
   }, []);
 
-  // super_admin only: force the parcel into any status, ignoring the
-  // transition map (the server grants the same bypass to super_admin actors).
+  // super_admin or FORCE_STATUS_CHANGE: force the parcel into any status,
+  // ignoring the transition map (the server grants the same bypass).
   const isSuperAdmin = getCurrentUserRoles().includes('super_admin');
+  const canForceStatus = hasAdminPermission('FORCE_STATUS_CHANGE');
   const [overrideStatus, setOverrideStatus] = useState<ParcelStatus | ''>('');
   const [overrideRemarks, setOverrideRemarks] = useState('');
   const [overrideSaving, setOverrideSaving] = useState(false);
@@ -272,11 +273,11 @@ const OrderDetailPage: React.FC = () => {
           onPrint={handlePrint}
         />
 
-        {isSuperAdmin && (
+        {canForceStatus && (
           <div className="od-override">
             <div className="od-override-title">
               <ShieldAlert size={15} />
-              <span>Super admin: force status</span>
+              <span>Force status</span>
             </div>
             <div className="od-override-controls">
               <select

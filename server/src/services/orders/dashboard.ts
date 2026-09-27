@@ -138,15 +138,10 @@ async function computeDashboardSummary(
   };
 
   const TREND_DAYS = trendDays;
-  // The 7-day view is anchored to the current Nepal week (Sunday start) so the
-  // graph always reads Sun -> Sat rather than a rolling window that begins
-  // mid-week. It stays one contiguous week, so the line never wraps backwards.
-  // getUTCDay() on the Nepal calendar date is 0 = Sunday regardless of the
-  // host timezone. The 30-day view keeps its rolling window ending today.
-  const nepalWeekday = new Date(`${formatDate(new Date())}T00:00:00Z`).getUTCDay();
+  // Rolling window ending today. Anchoring the 7-day view to the calendar week
+  // (Sun -> Sat) left every day after today blank, e.g. only Sunday on a Sunday.
   const trendDayRanges = Array.from({ length: TREND_DAYS }, (_, index) => {
-    const dayDelta =
-      TREND_DAYS === 7 ? index - nepalWeekday : -(TREND_DAYS - 1 - index);
+    const dayDelta = -(TREND_DAYS - 1 - index);
     const start = new Date(todayStart);
     start.setDate(start.getDate() + dayDelta);
     const end = new Date(start);
@@ -364,8 +359,10 @@ async function computeDashboardSummary(
     >(Prisma.sql`
       SELECT
         COALESCE(SUM(c.collected_amount), 0) AS total_collected,
-        COALESCE(SUM(LEAST(c.remitted_amount, c.collected_amount)), 0) AS settled_to_vendor,
-        COALESCE(SUM(LEAST(c.rider_remitted_amount, c.collected_amount)), 0) AS settled_to_rider,
+        -- remitted_amount only moves once a statement is paid in full, so a
+        -- partially_paid statement's instalments are counted through pp below.
+        COALESCE(SUM(LEAST(c.remitted_amount + c.collected_amount * pp.vendor_frac, c.collected_amount)), 0) AS settled_to_vendor,
+        COALESCE(SUM(LEAST(c.rider_remitted_amount + c.collected_amount * pp.rider_frac, c.collected_amount)), 0) AS settled_to_rider,
         -- Cash a ParcelMoover rider physically holds, not yet remitted to the
         -- office: c.rider_id is only ever set from parcels.delivery_rider_id,
         -- which stays NULL for NCM-delivered parcels (see
@@ -373,7 +370,7 @@ async function computeDashboardSummary(
         -- "our own rider delivered this," never an NCM handoff. r.carrier_code
         -- IS NULL excludes placeholder rider rows that stand in for a carrier
         -- (e.g. "PM Rider U"/"PM Rider N") rather than a real employee.
-        COALESCE(SUM(c.collected_amount - LEAST(c.rider_remitted_amount, c.collected_amount))
+        COALESCE(SUM(c.collected_amount - LEAST(c.rider_remitted_amount + c.collected_amount * pp.rider_frac, c.collected_amount))
           FILTER (WHERE c.rider_id IS NOT NULL AND r.carrier_code IS NULL), 0) AS cod_from_pm_rider,
         -- Cash NCM collected on our behalf and hasn't remitted to the office
         -- yet. Two signals feed this: the durable API handoff remark
@@ -400,11 +397,26 @@ async function computeDashboardSummary(
             SELECT 1 FROM parcel_remarks pr
             WHERE pr.parcel_id = p.id AND pr.remark LIKE ${UPAYA_HANDOFF_REMARK_PREFIX + '%'}
           )) OR r.carrier_code = 'upaya'), 0) AS cod_from_upaya,
-        COALESCE(SUM(p.delivery_charge) FILTER (WHERE c.payment_status::text = 'pending'), 0) AS pending_delivery_charge,
+        -- Cleared by the same fraction as the COD above, so the vendor card's
+        -- net pending (COD - charge) drops by exactly what was paid out.
+        COALESCE(SUM(p.delivery_charge * (1 - pp.vendor_frac)) FILTER (WHERE c.payment_status::text = 'pending'), 0) AS pending_delivery_charge,
         COALESCE(SUM(p.delivery_charge), 0) AS total_delivery_charge
       FROM cod_collections c
       JOIN parcels p ON p.id = c.parcel_id
       LEFT JOIN riders r ON r.id = c.rider_id
+      -- This collection's slice of what its partially_paid statements have
+      -- paid so far. An instalment can't be pinned to particular orders, so it
+      -- clears every bundled order by the same fraction of the statement.
+      LEFT JOIN LATERAL (
+        SELECT
+          LEAST(COALESCE(SUM(s.paid_amount / NULLIF(ABS(COALESCE(s.payable_amount, s.amount)), 0))
+            FILTER (WHERE s.payee_type = 'vendor'), 0), 1) AS vendor_frac,
+          LEAST(COALESCE(SUM(s.paid_amount / NULLIF(ABS(COALESCE(s.payable_amount, s.amount)), 0))
+            FILTER (WHERE s.payee_type = 'rider'), 0), 1) AS rider_frac
+        FROM settlement_items si
+        JOIN settlements s ON s.id = si.settlement_id
+        WHERE si.cod_collection_id = c.id AND s.status::text = 'partially_paid'
+      ) pp ON TRUE
       WHERE p.deleted_at IS NULL
         -- returned_to_vendor is in scope alongside the delivery statuses: an
         -- RTV/RTO parcel collected no COD (contributes 0 to the cash figures)

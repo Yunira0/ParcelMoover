@@ -53,7 +53,7 @@ import {
 } from '../services/orders.service';
 import { searchVendors, getAllAdmins } from '../services/users.service';
 import { printLabels } from '../utils/printLabels';
-import { getCurrentUserRoles } from '../utils/auth';
+import { getCurrentUserRoles, hasAdminPermission } from '../utils/auth';
 import { apiErrorMessage } from '../utils/serverValidation';
 import { FAILED_RECOVERY_LABEL, isRecoverableFailure, recoveryTargetFor } from '../utils/failedRecovery';
 import { commitScannedTerm, handleScannerPaste } from '../utils/scannerInput';
@@ -729,11 +729,11 @@ const OrderManagement: React.FC = () => {
   const [redirectSaving, setRedirectSaving] = useState(false);
   const [redirectError, setRedirectError] = useState('');
 
-  // super_admin only: force a parcel into any status from the list, ignoring
-  // the transition map (the server grants the same bypass to super_admin
-  // actors) — mirrors the override control on OrderDetailPage.tsx, just
-  // reachable from the row menu instead of a per-order visit.
-  const isSuperAdmin = getCurrentUserRoles().includes('super_admin');
+  // super_admin or FORCE_STATUS_CHANGE: force a parcel into any status from
+  // the list, ignoring the transition map (the server grants the same bypass)
+  // — mirrors the override control on OrderDetailPage.tsx, just reachable
+  // from the row menu instead of a per-order visit.
+  const canForceStatus = hasAdminPermission('FORCE_STATUS_CHANGE');
   const [statusEditOrder, setStatusEditOrder] = useState<Order | null>(null);
   const [statusEditNewStatus, setStatusEditNewStatus] = useState<ParcelStatus | ''>('');
   const [statusEditRemarks, setStatusEditRemarks] = useState('');
@@ -1025,7 +1025,7 @@ const OrderManagement: React.FC = () => {
               <RotateCcw size={14} />
             </button>
           )}
-          {isSuperAdmin && (
+          {canForceStatus && (
             <button
               type="button"
               className="row-action-icon-only"

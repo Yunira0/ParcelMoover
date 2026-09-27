@@ -24,6 +24,7 @@ const mocks = vi.hoisted(() => ({
   txSettlementUpdate: vi.fn(),
   txSettlementPaymentCreate: vi.fn(),
   txAuditCreate: vi.fn(),
+  syncBranchSettlementPostings: vi.fn(),
 }));
 
 vi.mock("../../lib/prisma", () => ({ default: {
@@ -37,6 +38,7 @@ vi.mock("../../lib/prisma", () => ({ default: {
   $transaction: mocks.transaction,
 } }));
 vi.mock("../billing.service", () => ({ getBillingSettings: mocks.getBillingSettings }));
+vi.mock("../accounting/sync", () => ({ syncBranchSettlementPostings: mocks.syncBranchSettlementPostings }));
 
 import { branchStateForBalance, listBranchPayments, reviewBranchPayment } from "../branch-billing.service";
 
@@ -173,6 +175,10 @@ describe("reviewBranchPayment — verifying an Add money deposit", () => {
     expect(mocks.txSettlementUpdate).not.toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ settled_by: expect.anything() }),
     }));
+    // The part payment still moves the books, inside the same transaction.
+    expect(mocks.syncBranchSettlementPostings).toHaveBeenCalledWith(
+      expect.anything(), ["s1"], expect.objectContaining({ actorId: "office-1" }),
+    );
   });
 
   it("waterfalls oldest-first and keeps the remainder as branch credit", async () => {

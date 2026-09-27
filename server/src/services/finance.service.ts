@@ -374,6 +374,12 @@ export async function listOrderCod(
             parties_parcels_receiver_idToparties: { select: { name: true, phone: true, alternate_phone: true } },
           },
         },
+        // A collection sits in at most one live statement per leg; cancelled ones drop their items.
+        settlement_items: {
+          where: { settlements: { payee_type: "vendor", status: { not: settlement_status.cancelled } } },
+          select: { settlements: { select: { statement_id: true, status: true } } },
+          take: 1,
+        },
       },
       orderBy: { created_at: "desc" },
       skip,
@@ -391,6 +397,9 @@ export async function listOrderCod(
     deliveredAt: c.parcels.delivered_at ? c.parcels.delivered_at.toISOString() : null,
     status: c.payment_status === payment_status.paid ? "settled" : "not_settled",
     netPayable: Number(c.collected_amount) - Number(c.parcels.delivery_charge),
+    statement: c.settlement_items[0]
+      ? { statementId: c.settlement_items[0].settlements.statement_id, status: c.settlement_items[0].settlements.status }
+      : null,
   }));
 
   const result: OrderCodListResult = {
@@ -1249,11 +1258,10 @@ export async function payForSettlement(
     await invalidateRiderFinanceCache(riderId);
   } else if (vendorId) {
     await invalidateVendorFinanceCache(vendorId);
-    // A completed payout debits the vendor's running account, so it can push
-    // them across a credit threshold just as a delivery can. A part payment
-    // doesn't - the balance is derived from the collections above, which only
-    // move once the payout clears. Fire-and-forget.
-    if (fullySettled) evaluateVendorBillingAsync(vendorId);
+    // Every instalment debits the vendor's running account (see computeBalance),
+    // so it can push them across a credit threshold just as a delivery can.
+    // Fire-and-forget; also refreshes the cached balance.
+    evaluateVendorBillingAsync(vendorId);
   }
 
   return {
@@ -1750,11 +1758,10 @@ export async function revertSettlement(
     await invalidateRiderFinanceCache(riderId);
   } else if (vendorId) {
     await invalidateVendorFinanceCache(vendorId);
-    // Undoing a completed payout credits the vendor's running account back, so
-    // it can pull them back under a credit threshold just as a payout can push
-    // them over it. Undoing a part payment doesn't move the balance, since it
-    // never moved the collections. Fire-and-forget.
-    if (wasSettled) evaluateVendorBillingAsync(vendorId);
+    // Undoing a payout - full or part - credits the vendor's running account
+    // back, so it can pull them back under a credit threshold just as a payout
+    // can push them over it. Fire-and-forget.
+    evaluateVendorBillingAsync(vendorId);
   }
 
   return {
