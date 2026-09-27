@@ -352,6 +352,7 @@ export async function listOrdersController(req: Request, res: Response) {
         // Both already coerced to real booleans by listOrdersQuerySchema.
         ...(source.withArrival ? { withArrival: true } : {}),
         ...(source.deliveredToday ? { deliveredToday: true } : {}),
+        ...(source.viaTransit ? { viaTransit: true } : {}),
         // Shape already checked by listOrdersQuerySchema (enum + YYYY-MM-DD).
         ...(source.dateField
           ? { dateField: source.dateField as "createdAt" | "lastUpdatedAt" }

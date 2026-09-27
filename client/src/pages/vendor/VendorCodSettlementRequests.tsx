@@ -18,6 +18,8 @@ import {
 } from '../../services/codSettlementRequests.service';
 import { apiErrorMessage } from '../../utils/serverValidation';
 import { formatDate } from '../../utils/format';
+import { settlementStatusLabel } from '../../utils/settlementStatus';
+import type { SettlementStatus } from '../../services/finance.service';
 import './VendorCodSettlementRequests.css';
 
 // Asking to be paid out the COD we're holding.
@@ -146,11 +148,17 @@ const VendorCodSettlementRequests: React.FC = () => {
     },
     {
       header: 'Outcome',
+      // A request is closed once a statement answers it, but the money has only
+      // moved when that statement is paid - so show the statement's own status.
       accessor: (r: CodSettlementRequest) =>
         r.status === 'rejected'
           ? r.decisionNote || 'Rejected'
           : r.status === 'settled'
-            ? r.settlementStatementId || 'Settled'
+            ? r.settlementStatementId
+              ? `${r.settlementStatementId} · ${
+                  r.settlementStatus ? settlementStatusLabel(r.settlementStatus as SettlementStatus) : 'Settled'
+                }`
+              : 'Settled'
             : '—',
     },
   ];

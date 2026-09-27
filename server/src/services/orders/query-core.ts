@@ -5,7 +5,7 @@ import { AppError } from "../../utils/AppError";
 import type { ListOrdersQuery, OrderSortField, ParcelStatus } from "../../types/order.type";
 import { formatNepalDate as formatDate, NEPAL_UTC_OFFSET_MS } from "../../utils/nepalTime";
 import { getVendorStatusLabel } from "../../utils/orderStatusLabel";
-import { stripCarrierStaffTag } from "../../utils/carrierRemark";
+import { HANDOFF_NOTE_PREFIXES, remarkTextFor, stripCarrierStaffTag } from "../../utils/carrierRemark";
 import { resolveLabelSize } from "../vendorPrintSettings.service";
 import { buildOrdersWhere } from "./where";
 import {
@@ -18,6 +18,11 @@ import {
   ordersListCacheKey,
 } from "./cache";
 import type { OrderActor } from "./types";
+
+// "Latest remark" columns show the last real remark, never a carrier handoff note.
+const LATEST_REMARK_WHERE: Prisma.parcel_remarksWhereInput = {
+  NOT: HANDOFF_NOTE_PREFIXES.map((prefix) => ({ remark: { startsWith: prefix } })),
+};
 
 // Match the existing list defaults and location/money formatting.
 const MAX_PAGE_SIZE = 500;
@@ -178,6 +183,7 @@ const ORDERS_INCLUDE = {
   riders_parcels_pickup_rider_idToriders: true,
   riders_parcels_delivery_rider_idToriders: true,
   parcel_remarks: {
+    where: LATEST_REMARK_WHERE,
     orderBy: { created_at: "desc" as const },
     take: 1,
   },
@@ -328,7 +334,7 @@ export function mapOrder(
     labelWidthMm: labelSize.widthMm,
     labelHeightMm: labelSize.heightMm,
     riderName: rider?.name || "",
-    remarks: stripCarrierStaffTag(parcel.parcel_remarks[0]?.remark || "").text,
+    remarks: remarkTextFor(parcel.parcel_remarks[0]?.remark || "", isStaff),
     // The stage the parcel was in right before it was cancelled - only
     // meaningful when that's what the latest history row actually records
     // (a still-cancelled parcel's newest entry is always its cancellation,
@@ -570,7 +576,7 @@ export async function listOrders(
   const isDefaultUnfilteredQuery =
     !paginated && !query.status?.length && !query.orderType && !query.search &&
     !query.vendorId?.length && !query.salesUserId && !query.deliveryRiderId &&
-    !query.sortBy && !query.deliveredToday && !query.trashed && !query.settlement &&
+    !query.sortBy && !query.deliveredToday && !query.viaTransit && !query.trashed && !query.settlement &&
     !query.originLocationIds?.length && !query.destinationLocationIds?.length &&
     !query.branchSettlement && vendorIds === undefined && branchLocationIds === undefined;
   // Export requests (withArrival) skip the shared cache so the enriched rows
@@ -733,6 +739,7 @@ export const HANDOVER_PARCEL_INCLUDE = {
   // whoever signs for the parcel reads the same note the ops list shows - see
   // mapOrder, which takes the latest the same way.
   parcel_remarks: {
+    where: LATEST_REMARK_WHERE,
     orderBy: { created_at: "desc" as const },
     take: 1,
   },

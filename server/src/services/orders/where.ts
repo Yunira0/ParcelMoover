@@ -127,6 +127,9 @@ export function buildOrdersWhere(
     todayStart.setHours(0, 0, 0, 0);
     conditions.push({ delivered_at: { gte: todayStart } });
   }
+  if (query.viaTransit) {
+    conditions.push({ parcel_status_history: { some: { new_status: "oov" } } });
+  }
 
   // Date range, bucketed by Nepal-local day so it agrees with the dates the
   // list itself renders (mapOrder formats createdAt the same way).

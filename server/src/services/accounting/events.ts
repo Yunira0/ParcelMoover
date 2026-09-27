@@ -103,6 +103,8 @@ export interface SettlementForPosting {
    * describeVendorSettlement. Absent is read as nothing paid.
    */
   paid_amount?: Prisma.Decimal | number | string | null;
+  /** Prepaid charges handed back on this statement, already inside payable_amount. */
+  vendor_credit_applied?: Prisma.Decimal | number | string | null;
   payment_method: string | null;
   payments: Prisma.JsonValue | null;
   settlement_date: Date | null;
@@ -370,10 +372,14 @@ export function describeVendorSettlement(settlement: SettlementForPosting): Desc
 
   const gross = decimal(settlement.amount);
   const payable = decimal(settlement.payable_amount ?? settlement.amount);
+  // Prepaid charges handed back: the vendor's Billing payment sits as a credit
+  // in 2000 (describeVendorPaymentVerified), and this statement uses it up.
+  const credit = decimal(settlement.vendor_credit_applied ?? 0);
   // What the office kept: the delivery charges on this statement's parcels.
-  // Taken as gross minus payable rather than re-summed from the items, so the
-  // entry can never disagree with the statement it is posting.
-  const charges = gross.minus(payable);
+  // Taken from the statement's own totals rather than re-summed from the items,
+  // so the entry can never disagree with the statement it is posting. The
+  // credit is inside payable, so it is added back to recover the charges.
+  const charges = gross.minus(payable).plus(credit);
 
   if (gross.isZero() && charges.isZero()) {
     // Nothing was collected and nothing was charged. An entry of zero lines
@@ -410,6 +416,10 @@ export function describeVendorSettlement(settlement: SettlementForPosting): Desc
     if (!returnShare.isZero()) {
       lines.push({ accountCode: ACCOUNT.RETURN_REVENUE, credit: returnShare, memo: "Return charge" });
     }
+  }
+
+  if (!credit.isZero()) {
+    lines.push({ accountCode: ACCOUNT.VENDOR_CONTROL, debit: credit, party: vendor, memo: "Prepaid charges applied" });
   }
 
   // payable > 0: the office pays the vendor out. payable < 0: charges exceeded

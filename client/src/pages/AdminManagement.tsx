@@ -96,7 +96,8 @@ const AdminManagement: React.FC = () => {
 
   const openPermissions = (admin: AdminUser) => {
     setPermError('');
-    setPermDraft(admin.permissions ?? []);
+    // Drop retired codes (e.g. FINANCE_MASTERS) so saving doesn't fail validation.
+    setPermDraft((admin.permissions ?? []).filter((p) => ADMIN_PERMISSIONS.some((perm) => perm.code === p)));
     setSuperAdminDraft(admin.isSuperAdmin ?? false);
     setPermAdmin(admin);
   };

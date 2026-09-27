@@ -247,11 +247,11 @@ const OrderDetailPage: React.FC = () => {
   // that closes once ops has the parcel, since that's a temporary, explainable
   // state worth surfacing rather than a settled one worth hiding.
   const showEditDisabled = !canEditNow && !isEditBlocked && isVendorActor;
-  // Narrow escape hatch: super_admin or an admin holding EDIT_COD_LOCKED may
+  // Narrow escape hatch: super_admin or an admin holding EDIT_SETTLEMENTS may
   // still fix the COD amount on an otherwise-locked (delivered/RTV/RTO)
   // parcel — every other field stays locked. Server re-enforces this exactly;
   // this only decides whether to offer the affordance.
-  const canOverrideCod = isSuperAdmin || hasAdminPermission('EDIT_COD_LOCKED');
+  const canOverrideCod = isSuperAdmin || hasAdminPermission('EDIT_SETTLEMENTS');
   const codEditable = canEditNow || canOverrideCod;
 
   return (

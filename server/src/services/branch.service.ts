@@ -191,24 +191,44 @@ async function branchWhere(query: BranchTrackingQuery): Promise<Prisma.parcelsWh
   };
 }
 
+// COD already remitted on partially_paid statements. A part payment can't be
+// pinned to particular orders, so each order is cleared by the fraction of its
+// statement paid so far - the same rule the vendor dashboard uses.
+async function partiallyDeposited(base: Prisma.parcelsWhereInput): Promise<number> {
+  const items = await prisma.branch_settlement_items.findMany({
+    where: { parcel: base, settlement: { status: "partially_paid" } },
+    select: { collected_amount: true, settlement: { select: { paid_amount: true, net_payable: true } } },
+  });
+  return items.reduce((sum, i) => {
+    const net = money(i.settlement.net_payable);
+    const fraction = net > 0 ? Math.min(1, money(i.settlement.paid_amount) / net) : 0;
+    return sum + money(i.collected_amount) * fraction;
+  }, 0);
+}
+
 async function metric(where: Prisma.parcelsWhereInput, statuses?: parcel_status[], settlement?: "settled" | "pending") {
+  const base: Prisma.parcelsWhereInput = { AND: [where, ...(statuses ? [{ status: { in: statuses } }] : [])] };
   const scoped: Prisma.parcelsWhereInput = {
-    AND: [where, ...(statuses ? [{ status: { in: statuses } }] : []),
+    AND: [base,
       ...(settlement === "settled" ? [{ branch_settlement_items: { some: { settlement: { status: "settled" } } } }] : []),
       ...(settlement === "pending" ? [{ branch_settlement_items: { none: { settlement: { status: "settled" } } } }] : [])],
   };
   const aggregate = await prisma.parcels.aggregate({ where: scoped, _count: { _all: true }, _sum: { cod_amount: true } });
   if (settlement === "settled") {
-    const settled = await prisma.branch_settlement_items.aggregate({
-      where: { parcel: scoped, settlement: { status: "settled" } }, _sum: { collected_amount: true },
-    });
-    return { count: aggregate._count._all, amount: money(settled._sum.collected_amount) };
+    const [settled, partial] = await Promise.all([
+      prisma.branch_settlement_items.aggregate({
+        where: { parcel: scoped, settlement: { status: "settled" } }, _sum: { collected_amount: true },
+      }),
+      partiallyDeposited(base),
+    ]);
+    return { count: aggregate._count._all, amount: round2(money(settled._sum.collected_amount) + partial) };
   }
   if (statuses === DELIVERED) {
-    const delivered = await prisma.cod_collections.aggregate({
-      where: { parcels: scoped }, _sum: { collected_amount: true },
-    });
-    return { count: aggregate._count._all, amount: money(delivered._sum.collected_amount) };
+    const [delivered, partial] = await Promise.all([
+      prisma.cod_collections.aggregate({ where: { parcels: scoped }, _sum: { collected_amount: true } }),
+      settlement === "pending" ? partiallyDeposited(base) : Promise.resolve(0),
+    ]);
+    return { count: aggregate._count._all, amount: round2(money(delivered._sum.collected_amount) - partial) };
   }
   return { count: aggregate._count._all, amount: money(aggregate._sum.cod_amount) };
 }
@@ -779,4 +799,56 @@ export async function payBranchSettlement(
     remainingAmount: round2(result.netPayable - result.newPaidAmount),
     paymentId: result.paymentId,
   };
+}
+
+// Head office cancels a statement no money has moved on - raised with the
+// wrong orders or commission. Mirrors the vendor cancelSettlement: the row is
+// kept (status -> cancelled) for the audit trail, its items are deleted so the
+// orders can go on a new statement, and its ledger entry comes back out.
+export async function cancelBranchSettlement(actor: OrderActor, settlementId: string, remark: string) {
+  if (!actor.roles.includes("super_admin")) {
+    const [scope, master] = await Promise.all([getActorBranchScope(actor), getImadolMasterBranch()]);
+    if (scope.branchScoped && scope.locationId !== master.id) {
+      throw new AppError(403, "Only head office can cancel a branch statement");
+    }
+  }
+
+  const result = await prisma.$transaction(async (tx) => {
+    await lockBranchSettlement(tx, settlementId);
+    const settlement = await tx.branch_settlements.findUnique({
+      where: { id: settlementId },
+      include: { items: { select: { parcel_id: true } } },
+    });
+    if (!settlement) throw new AppError(404, "Branch settlement not found");
+    if (settlement.status !== "pending" || money(settlement.paid_amount) > 0) {
+      throw new AppError(409, "Only a statement with no payment recorded can be cancelled");
+    }
+    // A receipt the branch submitted against it would otherwise be verified
+    // onto a dead statement.
+    const pendingReceipts = await tx.branch_payments.count({ where: { settlement_id: settlementId, status: "pending" } });
+    if (pendingReceipts > 0) {
+      throw new AppError(409, "A payment receipt for this statement is awaiting review - reject it before cancelling");
+    }
+
+    await tx.branch_settlement_items.deleteMany({ where: { settlement_id: settlementId } });
+    const updated = await tx.branch_settlements.update({
+      where: { id: settlementId },
+      data: { status: "cancelled", remark: remark.trim() },
+    });
+    await tx.audit_logs.create({ data: {
+      actor_id: actor.id,
+      entity_type: "branch_settlement",
+      entity_id: settlementId,
+      action: "CANCEL_BRANCH_SETTLEMENT",
+      old_data: { status: settlement.status, orderIds: settlement.items.map((i) => i.parcel_id), remark: settlement.remark },
+      new_data: { status: "cancelled", remark: remark.trim() },
+    } });
+    await syncBranchSettlementPostings(tx, [settlementId], { actorId: actor.id, reason: "branch statement cancelled" });
+    return updated;
+  }, { maxWait: 10_000, timeout: 20_000 });
+
+  // The orders are unstatemented again, which moves the branch's overdue COD.
+  await evaluateBranchBilling(result.from_branch_id);
+
+  return { id: result.id, statementNo: result.statement_no, status: result.status };
 }

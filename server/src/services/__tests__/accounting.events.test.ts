@@ -310,6 +310,44 @@ describe("postVendorSettlement", () => {
     ]);
   });
 
+  it("hands prepaid charges back out of 2000 without shrinking revenue", async () => {
+    // Items net 1320, plus 200 the vendor prepaid through Billing: the payout
+    // is 1520, but the office still earned the full 180 of charges.
+    const db = fakeDb();
+    await postVendorSettlement(asDb(db), {
+      ...base,
+      payable_amount: 1520,
+      paid_amount: 1520,
+      vendor_credit_applied: 200,
+    });
+
+    expect(linesByAccount(db)).toEqual([
+      { code: ACCOUNT.COD_HELD, debit: "1500", credit: "0", party: "vendor:vendor-1" },
+      { code: ACCOUNT.DELIVERY_REVENUE, debit: "0", credit: "180", party: null },
+      { code: ACCOUNT.VENDOR_CONTROL, debit: "200", credit: "0", party: "vendor:vendor-1" },
+      { code: PRABHU_BANK, debit: "0", credit: "1520", party: null },
+    ]);
+  });
+
+  it("closes a statement the vendor owed on entirely out of prepaid credit", async () => {
+    // No COD, 300 of charges, all paid in advance through Billing: nothing
+    // moves in cash, the credit in 2000 is used up and the revenue is booked.
+    const db = fakeDb();
+    await postVendorSettlement(asDb(db), {
+      ...base,
+      amount: 0,
+      payable_amount: 0,
+      paid_amount: 0,
+      vendor_credit_applied: 300,
+      payment_method: null,
+    });
+
+    expect(linesByAccount(db)).toEqual([
+      { code: ACCOUNT.DELIVERY_REVENUE, debit: "0", credit: "300", party: null },
+      { code: ACCOUNT.VENDOR_CONTROL, debit: "300", credit: "0", party: "vendor:vendor-1" },
+    ]);
+  });
+
   it("splits the payout across cash paid and cash still owed", async () => {
     // A part-paid statement. Under the old gate this posted nothing at all
     // until the final instalment landed, so real cash sat outside the books.

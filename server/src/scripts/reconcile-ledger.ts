@@ -48,13 +48,6 @@ import { ACCOUNT } from "../services/accounting/accounts";
 const ZERO = new Prisma.Decimal(0);
 const money = (value: Prisma.Decimal) => value.toFixed(2);
 
-interface Drift {
-  label: string;
-  ledger: Prisma.Decimal;
-  expected: Prisma.Decimal;
-  difference: Prisma.Decimal;
-}
-
 // ── 1. Trial balance ────────────────────────────────────────────────────────
 
 async function checkTrialBalance(): Promise<boolean> {
@@ -304,11 +297,14 @@ async function checkRevenue(): Promise<string[]> {
       JOIN journal_entries e ON e.id = l.entry_id AND TRUE /* see ALL_ENTRIES */
       JOIN ledger_accounts a ON a.id = l.account_id
      WHERE a.code IN (${ACCOUNT.DELIVERY_REVENUE}, ${ACCOUNT.RETURN_REVENUE})
-       AND e.source_type = 'settlement'
+       -- A voided settlement entry still counts, so its reversal must too.
+       AND (e.source_type = 'settlement' OR EXISTS (
+         SELECT 1 FROM journal_entries o WHERE o.id = e.reversal_of_id AND o.source_type = 'settlement'
+       ))
   `);
 
   const [withheld] = await prisma.$queryRaw<Array<{ charges: string }>>(Prisma.sql`
-    SELECT COALESCE(SUM(s.amount - COALESCE(s.payable_amount, s.amount)), 0) AS charges
+    SELECT COALESCE(SUM(s.amount - COALESCE(s.payable_amount, s.amount) + s.vendor_credit_applied), 0) AS charges
       FROM settlements s
      WHERE s.status::text <> 'cancelled' AND s.payee_type = 'vendor'
   `);

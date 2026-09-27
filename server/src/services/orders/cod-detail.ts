@@ -5,6 +5,22 @@ import {
   UPAYA_HANDOFF_REMARK_PREFIX,
 } from "../../utils/carrierRemark";
 import { getActorScope, branchHandlesSql } from "./scope";
+
+/**
+ * Lateral subquery (joined as `pp`, correlated on `c.id`): the fraction of this
+ * collection cleared by partially_paid statements on each leg. A part payment
+ * can't be pinned to particular orders, so it clears every bundled order by the
+ * same fraction of its statement. Shared with the dashboard summary.
+ */
+export const PART_PAID_FRACTIONS_SQL = Prisma.sql`
+  SELECT
+    LEAST(COALESCE(SUM(s.paid_amount / NULLIF(ABS(COALESCE(s.payable_amount, s.amount)), 0))
+      FILTER (WHERE s.payee_type = 'vendor'), 0), 1) AS vendor_frac,
+    LEAST(COALESCE(SUM(s.paid_amount / NULLIF(ABS(COALESCE(s.payable_amount, s.amount)), 0))
+      FILTER (WHERE s.payee_type = 'rider'), 0), 1) AS rider_frac
+  FROM settlement_items si
+  JOIN settlements s ON s.id = si.settlement_id
+  WHERE si.cod_collection_id = c.id AND s.status::text = 'partially_paid'`;
 import type { OrderActor } from "./types";
 
 // ── COD settlement detail (drill-down from the dashboard card) ──────────────
@@ -77,10 +93,11 @@ export async function getCodSettlementDetail(
   // (rider_remitted_amount), everyone else's as cash remitted onward to the
   // vendor (remitted_amount). Reusing one column for both would make a rider's
   // drill-down disagree with the card that linked to it.
-  const remittedColSql: Prisma.Sql = riderId
-    ? Prisma.sql`c.rider_remitted_amount`
-    : Prisma.sql`c.remitted_amount`;
-  const settledExprSql = Prisma.sql`LEAST(${remittedColSql}, c.collected_amount)`;
+  // Part payments count too, through pp - the same rule as the dashboard.
+  const riderSettledSql = Prisma.sql`LEAST(c.rider_remitted_amount + c.collected_amount * pp.rider_frac, c.collected_amount)`;
+  const settledExprSql = riderId
+    ? riderSettledSql
+    : Prisma.sql`LEAST(c.remitted_amount + c.collected_amount * pp.vendor_frac, c.collected_amount)`;
   const pendingExprSql = Prisma.sql`c.collected_amount - ${settledExprSql}`;
 
   // Mirrors the per-bucket formulas in computeDashboardSummary exactly, so a
@@ -91,11 +108,11 @@ export async function getCodSettlementDetail(
       : bucket === "pending"
         ? Prisma.sql`AND ${pendingExprSql} > 0`
         : bucket === "pm-rider"
-          ? Prisma.sql`AND c.rider_id IS NOT NULL AND r.carrier_code IS NULL AND (c.collected_amount - LEAST(c.rider_remitted_amount, c.collected_amount)) > 0`
+          ? Prisma.sql`AND c.rider_id IS NOT NULL AND r.carrier_code IS NULL AND (c.collected_amount - ${riderSettledSql}) > 0`
           : bucket === "ncm"
-            ? Prisma.sql`AND ((c.rider_id IS NULL AND ${ncmHandoffExistsSql}) OR r.carrier_code = 'ncm') AND (c.collected_amount - LEAST(c.remitted_amount, c.collected_amount)) > 0`
+            ? Prisma.sql`AND ((c.rider_id IS NULL AND ${ncmHandoffExistsSql}) OR r.carrier_code = 'ncm') AND (c.collected_amount - LEAST(c.remitted_amount + c.collected_amount * pp.vendor_frac, c.collected_amount)) > 0`
             : bucket === "upaya"
-              ? Prisma.sql`AND ((c.rider_id IS NULL AND ${upayaHandoffExistsSql}) OR r.carrier_code = 'upaya') AND (c.collected_amount - LEAST(c.remitted_amount, c.collected_amount)) > 0`
+              ? Prisma.sql`AND ((c.rider_id IS NULL AND ${upayaHandoffExistsSql}) OR r.carrier_code = 'upaya') AND (c.collected_amount - LEAST(c.remitted_amount + c.collected_amount * pp.vendor_frac, c.collected_amount)) > 0`
               : Prisma.empty; // 'total' and 'delivery-charge': every in-scope row
 
   // Each bucket's rows must add up to the exact figure on the card, so the
@@ -108,9 +125,9 @@ export async function getCodSettlementDetail(
       : bucket === "settled"
         ? settledExprSql
         : bucket === "pm-rider"
-          ? Prisma.sql`c.collected_amount - LEAST(c.rider_remitted_amount, c.collected_amount)`
+          ? Prisma.sql`c.collected_amount - ${riderSettledSql}`
           : bucket === "ncm" || bucket === "upaya"
-            ? Prisma.sql`c.collected_amount - LEAST(c.remitted_amount, c.collected_amount)`
+            ? Prisma.sql`c.collected_amount - LEAST(c.remitted_amount + c.collected_amount * pp.vendor_frac, c.collected_amount)`
             : bucket === "delivery-charge"
               ? Prisma.sql`p.delivery_charge`
               : pendingExprSql;
@@ -149,8 +166,11 @@ export async function getCodSettlementDetail(
     JOIN parties party ON party.id = p.receiver_id
     LEFT JOIN vendors v ON v.id = c.vendor_id
     LEFT JOIN riders r ON r.id = c.rider_id
+    LEFT JOIN LATERAL (${PART_PAID_FRACTIONS_SQL}) pp ON TRUE
     WHERE p.deleted_at IS NULL
-      AND p.status::text IN ('delivered', 'partially_delivered')
+      -- Same scope as the dashboard summary, so rows add up to its cards.
+      AND c.collected_at IS NOT NULL
+      AND p.status::text IN ('delivered', 'partially_delivered', 'returned_to_vendor')
       ${codScopeSql}
       ${bucketFilterSql}
     ORDER BY p.delivered_at DESC NULLS LAST, c.id DESC

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import PageHeader from '../../components/PageHeader';
 import Pagination from '../../components/Pagination';
 import type { PendingCodBill } from '../../services/finance.service';
@@ -41,6 +42,23 @@ const VendorPendingCod: React.FC = () => {
   }, []);
 
   const items = bill?.items ?? [];
+  const onStatements = bill?.onStatements;
+  // Orders move off this bill when they go on a statement, but they are still
+  // unpaid until the statement is - say so, or this total and the dashboard's
+  // "COD Pending" disagree with nothing to explain why.
+  const statementsNote =
+    onStatements && onStatements.count > 0 && onStatements.outstanding !== 0 ? (
+      <p className="vendor-finance-subtext">
+        {onStatements.outstanding > 0
+          ? `Also ${formatCurrency(onStatements.outstanding)} on ${onStatements.count} statement${
+              onStatements.count === 1 ? '' : 's'
+            } waiting to be paid to you.`
+          : `You owe ${formatCurrency(-onStatements.outstanding)} on ${onStatements.count} open statement${
+              onStatements.count === 1 ? '' : 's'
+            }.`}{' '}
+        <Link to="/finance/settlements">See Settlements</Link>
+      </p>
+    ) : null;
   const totalPages = Math.max(1, Math.ceil(items.length / pageSizeChoice));
   const currentPage = Math.min(page, totalPages);
   const pagedItems = items.slice((currentPage - 1) * pageSizeChoice, currentPage * pageSizeChoice);
@@ -56,7 +74,10 @@ const VendorPendingCod: React.FC = () => {
       ) : error ? (
         <p className="vendor-finance-error">{error}</p>
       ) : !bill || bill.items.length === 0 ? (
-        <div className="loading-state">No pending COD orders.</div>
+        <>
+          <div className="loading-state">No pending COD orders.</div>
+          {statementsNote}
+        </>
       ) : (
         <div className="cod-bill">
           <div className="cod-bill-header">
@@ -139,6 +160,7 @@ const VendorPendingCod: React.FC = () => {
               <span>{formatCurrency(bill.totals.payableAmount)}</span>
             </div>
           </div>
+          {statementsNote}
         </div>
       )}
     </div>

@@ -30,7 +30,7 @@ interface OrderInfoCardsProps {
    * identity and charge come from elsewhere (vendor profile / redirect flow). */
   editable?: boolean;
   /** Overrides `editable` for the COD field only — super_admin / an admin
-   * holding EDIT_COD_LOCKED may still fix COD on an otherwise-locked
+   * holding EDIT_SETTLEMENTS may still fix COD on an otherwise-locked
    * (delivered/RTV/RTO) parcel. Falls back to `editable` when unset. */
   codEditable?: boolean;
   /** Set (with editable false) when editing is only temporarily locked, e.g.

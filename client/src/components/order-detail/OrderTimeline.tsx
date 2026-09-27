@@ -85,15 +85,6 @@ function getTimelineClass(entry: OrderStatusHistoryEntry): string {
   return 'timeline-active';
 }
 
-// Carrier handoff isn't a first-class field on the status history entry - it's
-// only recoverable from the remark text the handoff wrote alongside it.
-function detectCarrier(remarks?: string): 'NCM' | 'Upaya' | null {
-  if (!remarks) return null;
-  if (remarks.startsWith('Parcel dispatched to destination')) return 'NCM';
-  if (remarks.startsWith('Parcel dispatched via Upaya')) return 'Upaya';
-  return null;
-}
-
 function formatTimelineTime(dateStr: string): string {
   if (!dateStr) return '';
   // Server sends date-only strings like "2024-01-15" (no time component)
@@ -123,7 +114,7 @@ const OrderTimeline: React.FC<OrderTimelineProps> = ({ statusHistory, showCarrie
         const isTerminal = !isInfoEdit && TERMINAL_STATUSES.has(entry.newStatus);
         const isCurrent = idx === 0;
         const IconComponent = isInfoEdit ? Pencil : (STATUS_ICON[entry.newStatus] || Package);
-        const carrier = showCarrierBadge ? detectCarrier(entry.remarks) : null;
+        const carrier = showCarrierBadge ? entry.carrier : null;
         const isFilledDot = !isInfoEdit && (isTerminal || isCurrent);
 
         return (

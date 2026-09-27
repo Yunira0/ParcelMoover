@@ -85,7 +85,7 @@ describe("status changes preserve settled COD", () => {
 
   it("refuses a single delivered-order reversal before writing anything", async () => {
     db.parcels.findFirst.mockResolvedValue(parcel("p1", "delivered"));
-    db.cod_collections.findMany.mockResolvedValue([{ parcels: settlement.parcels }]);
+    db.cod_collections.findFirst.mockResolvedValue(settlement);
 
     await expect(
       updateParcelStatus(root, "p1", { status: "follow_up" }),

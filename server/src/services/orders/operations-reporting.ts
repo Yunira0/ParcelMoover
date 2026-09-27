@@ -256,7 +256,7 @@ export async function getMerchantOverview(
   // Use same date window as parcels (created_at) for both deposited/pending
   const depositedDateFilter = dateFilter;
 
-  const [depositedRows, pendingRows] = await Promise.all([
+  const [depositedRows, pendingRows, partialRows] = await Promise.all([
     // Deposited: delivered parcels that ARE in a settled settlement
     prisma.$queryRaw<{ cnt: bigint; total: string }[]>`
       SELECT
@@ -294,12 +294,28 @@ export async function getMerchantOverview(
           WHERE si.cod_collection_id = cc.id
         )
     `,
+    // Paid so far on partially_paid statements. A part payment can't be pinned
+    // to orders, so each order is cleared by its statement's paid fraction -
+    // moved from pending to deposited without changing either count.
+    prisma.$queryRaw<{ total: string }[]>`
+      SELECT COALESCE(SUM(si.amount * LEAST(s.paid_amount / NULLIF(ABS(s.payable_amount), 0), 1)), 0)::text AS total
+      FROM parcels p
+      JOIN cod_collections cc ON cc.parcel_id = p.id
+      JOIN settlement_items si ON si.cod_collection_id = cc.id
+      JOIN settlements s ON s.id = si.settlement_id AND s.status = 'partially_paid' AND s.payee_type = 'vendor'
+      WHERE p.deleted_at IS NULL
+        AND p.status IN ('delivered','partially_delivered')
+        ${depositedVendorCondition}
+        ${branchCondition}
+        ${depositedDateFilter}
+    `,
   ]);
 
+  const partialPaid = partialRows[0] ? Number(partialRows[0].total) : 0;
   const depositedCount = depositedRows[0] ? Number(depositedRows[0].cnt) : 0;
-  const depositedAmount = depositedRows[0] ? Number(depositedRows[0].total) : 0;
+  const depositedAmount = (depositedRows[0] ? Number(depositedRows[0].total) : 0) + partialPaid;
   let pendingDepositCount = pendingRows[0] ? Number(pendingRows[0].cnt) : 0;
-  let pendingDepositAmount = pendingRows[0] ? Number(pendingRows[0].total) : 0;
+  let pendingDepositAmount = (pendingRows[0] ? Number(pendingRows[0].total) : 0) - partialPaid;
 
   const row = rows[0];
   if (!row) {
