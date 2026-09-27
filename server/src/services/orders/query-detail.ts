@@ -3,7 +3,7 @@ import prisma from "../../lib/prisma";
 import { AppError } from "../../utils/AppError";
 import { formatNepalDate as formatDate } from "../../utils/nepalTime";
 import { getVendorStatusLabel } from "../../utils/orderStatusLabel";
-import { displayAuthor, displayRemarkText, handoffCarrier, stripCarrierStaffTag } from "../../utils/carrierRemark";
+import { displayAuthor, displayRemarkText, handoffCarrier, publicRemarkText, stripCarrierStaffTag } from "../../utils/carrierRemark";
 import { getActorScope, riderHandledFilter, branchTouchesFilter } from "./scope";
 import { isStaffAuthor } from "./remarkAuthor";
 import { locationName, mapOrder } from "./query-core";
@@ -168,7 +168,7 @@ export async function getOrderByTrackingId(actor: OrderActor, trackingId: string
       const maskParent = !isStaff && isStaffAuthor(remark.parent_remark?.users);
       return {
         id: remark.id,
-        remark: remarkText,
+        remark: isStaff ? remarkText : publicRemarkText(remarkText),
         addedBy: displayAuthor(remark.users?.full_name, isCarrierStaff || maskAuthor),
         createdAt: remark.created_at.toISOString(),
         parentRemarkId: remark.parent_remark_id,
@@ -177,7 +177,7 @@ export async function getOrderByTrackingId(actor: OrderActor, trackingId: string
             ? "Staff"
             : remark.parent_remark.users.full_name
           : null,
-        parentSnippet: remark.parent_remark?.remark || null,
+        parentSnippet: remark.parent_remark ? (isStaff ? remark.parent_remark.remark : publicRemarkText(remark.parent_remark.remark)) : null,
       };
     }),
     // Staff see who (which user) changed the status; vendors/riders see "Staff"
@@ -202,7 +202,7 @@ export async function getOrderByTrackingId(actor: OrderActor, trackingId: string
         newStatus: entry.new_status,
         // One wording for both carriers, and no carrier's own name - the
         // handoff entry is stored branded on the Upaya side (see carrierRemark).
-        remarks: displayRemarkText(entry.remarks || ""),
+        remarks: isStaff ? displayRemarkText(entry.remarks || "") : publicRemarkText(entry.remarks || ""),
         // Staff only: which 3PL took the handoff, read from the stored text
         // before it is neutralised above (the display text can't tell them apart).
         carrier: isStaff ? handoffCarrier(entry.remarks) : null,

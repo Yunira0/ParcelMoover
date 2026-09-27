@@ -5,7 +5,7 @@ import { AppError } from "../../utils/AppError";
 import type { ListOrdersQuery, OrderSortField, ParcelStatus } from "../../types/order.type";
 import { formatNepalDate as formatDate, NEPAL_UTC_OFFSET_MS } from "../../utils/nepalTime";
 import { getVendorStatusLabel } from "../../utils/orderStatusLabel";
-import { stripCarrierStaffTag } from "../../utils/carrierRemark";
+import { remarkTextFor, stripCarrierStaffTag } from "../../utils/carrierRemark";
 import { resolveLabelSize } from "../vendorPrintSettings.service";
 import { buildOrdersWhere } from "./where";
 import {
@@ -328,7 +328,7 @@ export function mapOrder(
     labelWidthMm: labelSize.widthMm,
     labelHeightMm: labelSize.heightMm,
     riderName: rider?.name || "",
-    remarks: stripCarrierStaffTag(parcel.parcel_remarks[0]?.remark || "").text,
+    remarks: remarkTextFor(parcel.parcel_remarks[0]?.remark || "", isStaff),
     // The stage the parcel was in right before it was cancelled - only
     // meaningful when that's what the latest history row actually records
     // (a still-cancelled parcel's newest entry is always its cancellation,

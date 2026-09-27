@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 
-import { displayAuthor, displayRemarkText, handoffCarrier, stripCarrierStaffTag } from "../carrierRemark";
+import { displayAuthor, displayRemarkText, handoffCarrier, publicRemarkText, stripCarrierStaffTag } from "../carrierRemark";
 
 describe("stripCarrierStaffTag", () => {
   // The current tag, written by ncm.service.ts's INBOUND_COMMENT_PREFIX.
@@ -101,5 +101,23 @@ describe("handoffCarrier", () => {
     expect(handoffCarrier("Parcel dispatched to destination — order #123 → POKHARA (Door2Door)")).toBe("NCM");
     expect(handoffCarrier("Marked delivered")).toBeNull();
     expect(handoffCarrier(null)).toBeNull();
+  });
+});
+
+describe("publicRemarkText", () => {
+  it("keeps only the destination of a handoff line", () => {
+    expect(publicRemarkText("Parcel dispatched via Upaya — order #KTMDML8305-2093844 → Damauli")).toBe(
+      "Parcel dispatched to destination — Damauli",
+    );
+    expect(publicRemarkText("Parcel dispatched to destination — order #123 → POKHARA (Branch2Door)")).toBe(
+      "Parcel dispatched to destination — POKHARA",
+    );
+    expect(publicRemarkText("Parcel dispatched to destination — order #123 → Pokhara")).toBe(
+      "Parcel dispatched to destination — Pokhara",
+    );
+  });
+
+  it("leaves any other remark as displayRemarkText would", () => {
+    expect(publicRemarkText("Call before delivery")).toBe("Call before delivery");
   });
 });

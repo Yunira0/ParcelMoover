@@ -90,6 +90,25 @@ export function displayRemarkText(remark: string): string {
   return remark;
 }
 
+// "…— order #X → Place" plus NCM's " (Door2Door)"-style delivery type.
+const HANDOFF_DETAIL_RE = /^Parcel dispatched (?:to destination|via Upaya)\s*—\s*order #\S+\s*→\s*(.+?)(?:\s*\((?:Door2Door|Branch2Door|Branch2Branch|Door2Branch)\))?$/;
+
+/**
+ * Display text for someone outside the office: a handoff line keeps only its
+ * destination ("Parcel dispatched to destination — Damauli"), so the carrier's
+ * order number never reaches a vendor. Everything else as displayRemarkText.
+ */
+export function publicRemarkText(remark: string): string {
+  const match = remark.match(HANDOFF_DETAIL_RE);
+  return match ? `${HANDOFF_REMARK_PREFIX} — ${match[1]}` : displayRemarkText(remark);
+}
+
+/** A stored remark as a given viewer should read it. */
+export function remarkTextFor(remark: string, isStaff: boolean): string {
+  const text = stripCarrierStaffTag(remark).text;
+  return isStaff ? text : publicRemarkText(text);
+}
+
 /** Which 3PL a stored handoff remark belongs to, or null if it isn't one. */
 export function handoffCarrier(remark: string | null | undefined): "NCM" | "Upaya" | null {
   if (!remark) return null;
