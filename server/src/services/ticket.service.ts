@@ -80,47 +80,6 @@ function mapTicket(
   };
 }
 
-// Batched counterpart to resolveTicketVendor, for list views where resolving
-// one vendor query per row would be N+1. A ticket's vendor is whichever
-// vendor its creator is the owner of (vendors.user_id) or staff on
-// (vendor_staff.user_id -> vendor_id) - both link columns are unique per user.
-async function resolveVendorNamesBulk(createdByIds: string[]): Promise<Map<string, string>> {
-  const ids = [...new Set(createdByIds)];
-  const result = new Map<string, string>();
-  if (ids.length === 0) return result;
-
-  const ownedVendors = await prisma.vendors.findMany({
-    where: { user_id: { in: ids }, deleted_at: null },
-    select: { user_id: true, business_name: true, client_name: true },
-  });
-  ownedVendors.forEach((v) => {
-    if (v.user_id) result.set(v.user_id, v.business_name || v.client_name);
-  });
-
-  const remaining = ids.filter((id) => !result.has(id));
-  if (remaining.length > 0) {
-    const staffRows = await prisma.vendor_staff.findMany({
-      where: { user_id: { in: remaining }, deleted_at: null },
-      select: { user_id: true, vendor_id: true },
-    });
-    const vendorIds = [...new Set(staffRows.map((s) => s.vendor_id))];
-    if (vendorIds.length > 0) {
-      const staffVendors = await prisma.vendors.findMany({
-        where: { id: { in: vendorIds }, deleted_at: null },
-        select: { id: true, business_name: true, client_name: true },
-      });
-      const vendorById = new Map(staffVendors.map((v) => [v.id, v.business_name || v.client_name]));
-      staffRows.forEach((s) => {
-        if (!s.user_id) return;
-        const name = vendorById.get(s.vendor_id);
-        if (name) result.set(s.user_id, name);
-      });
-    }
-  }
-
-  return result;
-}
-
 const TICKET_INCLUDE = {
   users_support_tickets_assigned_toTousers: true,
   parcels: { select: { tracking_id: true } },

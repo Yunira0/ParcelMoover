@@ -1206,7 +1206,6 @@ export async function payForSettlement(
     expectedTotal,
     newPaidTotal,
     allPayments,
-    fullySettled,
     riderId,
     vendorId,
   } = await prisma.$transaction(async (tx) => {
@@ -1337,17 +1336,7 @@ export async function payForSettlement(
           ),
         );
       } else {
-        await Promise.all(
-          settlement.settlement_items.map((si) =>
-            tx.cod_collections.update({
-              where: { id: si.cod_collection_id },
-              data: {
-                payment_status: payment_status.paid,
-                remitted_amount: si.cod_collections.collected_amount,
-              },
-            }),
-          ),
-        );
+        await markVendorCollectionsPaid(tx, settlementId);
       }
     }
 
@@ -1388,7 +1377,6 @@ export async function payForSettlement(
       expectedTotal,
       newPaidTotal,
       allPayments,
-      fullySettled,
       riderId: settlement.rider_id,
       vendorId: settlement.vendor_id,
     };
@@ -1783,7 +1771,7 @@ export async function revertSettlement(
   // Read under the row lock: `wasSettled` decides whether the bundled
   // collections get unwound, so reading it before an instalment commits would
   // leave them marked paid against a statement that is pending again.
-  const { settlement: updated, wasSettled, riderId, vendorId } = await prisma.$transaction(async (tx) => {
+  const { settlement: updated, riderId, vendorId } = await prisma.$transaction(async (tx) => {
     await lockSettlement(tx, settlementId);
 
     const settlement = await tx.settlements.findUnique({
@@ -1892,7 +1880,7 @@ export async function revertSettlement(
       reason: "settlement reverted",
     });
 
-    return { settlement: result, wasSettled, riderId: settlement.rider_id, vendorId: settlement.vendor_id };
+    return { settlement: result, riderId: settlement.rider_id, vendorId: settlement.vendor_id };
   }, SETTLEMENT_TX_OPTIONS);
 
   if (riderId) {

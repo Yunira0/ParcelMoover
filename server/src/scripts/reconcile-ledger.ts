@@ -48,13 +48,6 @@ import { ACCOUNT } from "../services/accounting/accounts";
 const ZERO = new Prisma.Decimal(0);
 const money = (value: Prisma.Decimal) => value.toFixed(2);
 
-interface Drift {
-  label: string;
-  ledger: Prisma.Decimal;
-  expected: Prisma.Decimal;
-  difference: Prisma.Decimal;
-}
-
 // ── 1. Trial balance ────────────────────────────────────────────────────────
 
 async function checkTrialBalance(): Promise<boolean> {

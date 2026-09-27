@@ -73,7 +73,6 @@ if (!process.env.DOCUMENT_ENCRYPTION_KEY) {
 }
 
 const app: Express = express();
-const port = process.env.PORT || 3000;
 
 app.use(requestId);
 app.use(helmet({
