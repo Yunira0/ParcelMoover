@@ -12,6 +12,7 @@
 //   4. The float in 1010 equals what riders' own statements say they are still
 //      holding - amount minus paid, summed over every live rider statement -
 //      and is never negative.
+//   4b. The float in 1015 equals net minus paid over every live branch statement.
 //   5. Revenue equals what those statements withheld.
 //
 // (2) is the important one, and it is the check this script used to lack.
@@ -254,6 +255,42 @@ async function checkRiderFloat(): Promise<string[]> {
   return problems;
 }
 
+// ── 4b. Branch float equals what branch statements say is unpaid ────────────
+//
+// Same shape as the rider float: 1015 COD with Branch must equal
+// SUM(net_payable - paid_amount) over every live branch statement.
+async function checkBranchFloat(): Promise<string[]> {
+  const [ledger] = await prisma.$queryRaw<Array<{ balance: string }>>(Prisma.sql`
+    SELECT COALESCE(SUM(l.debit - l.credit), 0) AS balance
+      FROM journal_lines l
+      JOIN journal_entries e ON e.id = l.entry_id AND TRUE /* see ALL_ENTRIES in accounting.service.ts */
+      JOIN ledger_accounts a ON a.id = l.account_id
+     WHERE a.code = ${ACCOUNT.COD_WITH_BRANCH}
+  `);
+
+  const [derived] = await prisma.$queryRaw<Array<{ outstanding: string }>>(Prisma.sql`
+    SELECT COALESCE(SUM(bs.net_payable - bs.paid_amount), 0) AS outstanding
+      FROM branch_settlements bs
+     WHERE bs.status <> 'cancelled'
+  `);
+
+  const held = new Prisma.Decimal(ledger?.balance ?? 0);
+  const expected = new Prisma.Decimal(derived?.outstanding ?? 0);
+
+  console.log("Branch float (1015 COD with Branch)");
+  console.log(`  statements say outstanding ${money(expected).padStart(10)}`);
+  console.log(`  ledger balance             ${money(held).padStart(10)}`);
+
+  if (!held.equals(expected)) {
+    console.log(`  ✗ out by ${money(held.minus(expected))}`);
+    console.log("");
+    return [`Branch float is ${money(held)} but branch statements say ${money(expected)} is still outstanding`];
+  }
+  console.log("  ✓ the float agrees with the branch statements");
+  console.log("");
+  return [];
+}
+
 // ── 5. Revenue equals what the statements withheld ──────────────────────────
 //
 // The office's cut is recognised on the statement that withholds it, so the sum
@@ -308,10 +345,16 @@ async function main() {
   const coverage = await checkSettlementCoverage(limit);
   const float = await checkCodFloat();
   const riderFloat = await checkRiderFloat();
+  const branchFloat = await checkBranchFloat();
   const revenue = await checkRevenue();
 
   const failed =
-    !balanced || coverage.length > 0 || float.length > 0 || riderFloat.length > 0 || revenue.length > 0;
+    !balanced ||
+    coverage.length > 0 ||
+    float.length > 0 ||
+    riderFloat.length > 0 ||
+    branchFloat.length > 0 ||
+    revenue.length > 0;
   if (failed) {
     console.error("✗ Reconciliation FAILED - the ledger does not yet agree with the source data.");
     process.exitCode = 1;

@@ -3,6 +3,7 @@ import prisma from "../lib/prisma";
 import { AppError } from "../utils/AppError";
 import { clearBlockAmount, getBillingSettings, type BillingThresholds } from "./billing.service";
 import { BRANCH_COD_SLA_KEY, getSlaSettings } from "./sla.service";
+import { syncBranchSettlementPostings } from "./accounting/sync";
 
 type Actor = { id: string; roles: string[] };
 const money = (value: unknown) => Math.round(Number(value ?? 0) * 100) / 100;
@@ -369,6 +370,7 @@ async function applyVerifiedCreditToSettlement(
     payments: mergedLines as unknown as Prisma.InputJsonValue,
     ...(settled ? { settled_by: actorId, settled_at: new Date() } : {}),
   } });
+  await syncBranchSettlementPostings(tx, [settlement.id], { actorId, reason: "branch deposit applied" });
   return { applied, settled, statementNo: settlement.statement_no };
 }
 

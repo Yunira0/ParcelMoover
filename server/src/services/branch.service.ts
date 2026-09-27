@@ -14,6 +14,7 @@ import type {
 import { getActivePaymentMethodNames } from "./payment-method.service";
 import { createNotification } from "./notification.service";
 import { evaluateBranchBilling } from "./branch-billing.service";
+import { syncBranchSettlementPostings } from "./accounting/sync";
 
 const DELIVERED: parcel_status[] = ["delivered", "partially_delivered"];
 const METRIC_STATUSES: Record<string, parcel_status[] | undefined> = {
@@ -518,6 +519,7 @@ export async function createBranchSettlement(actor: OrderActor, input: CreateBra
     } });
     await tx.audit_logs.create({ data: { actor_id: actor.id, entity_type: "branch_settlement", entity_id: settlement.id,
       action: "CREATE_BRANCH_SETTLEMENT", new_data: { statementNo, orderIds: ids, netPayable: net.toString(), status: "pending" } } });
+    await syncBranchSettlementPostings(tx, [settlement.id], { actorId: actor.id, reason: "branch statement created" });
     return { id: settlement.id, statementNo, orderCount: ids.length, grossCod: money(gross),
       commissionAmount: money(commissionAmount), netPayable: money(net), paidAmount: 0,
       remainingAmount: money(net), status: settlement.status };
@@ -764,6 +766,7 @@ export async function payBranchSettlement(
       new_data: { statementNo: settlement.statement_no, amount: paymentTotal, paidAmount: newPaidAmount,
         remainingAmount: round2(netPayable - newPaidAmount), paymentMethod: method, status: updated.status },
     } });
+    await syncBranchSettlementPostings(tx, [settlementId], { actorId: actor.id, reason: "branch settlement paid" });
     return { updated, paymentId: payment.id, netPayable, newPaidAmount };
   }, { maxWait: 10_000, timeout: 20_000 });
 

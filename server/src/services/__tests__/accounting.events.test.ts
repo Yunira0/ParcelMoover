@@ -5,6 +5,7 @@ vi.mock("../../lib/redis", () => ({ default: { get: vi.fn(), setex: vi.fn(), del
 
 import { ACCOUNT, CHART_OF_ACCOUNTS, clearAccountCache } from "../accounting/accounts";
 import {
+  postBranchSettlement,
   postOpeningBalance,
   postRiderRemittance,
   postVendorPaymentVerified,
@@ -321,6 +322,97 @@ describe("postVendorSettlement", () => {
       { code: PRABHU_BANK, debit: "0", credit: "500", party: null },
       { code: ACCOUNT.VENDOR_CONTROL, debit: "0", credit: "820", party: "vendor:vendor-1" },
     ]);
+  });
+});
+
+// ── 5b. Branch settlement ───────────────────────────────────────────────────
+
+describe("postBranchSettlement", () => {
+  const base = {
+    id: "brs-1",
+    statement_no: "BRS-001",
+    from_branch_id: "branch-1",
+    to_branch_id: "imadol",
+    gross_cod: 1000,
+    commission_amount: 100,
+    net_payable: 900,
+    paid_amount: 0,
+    payment_method: null,
+    payments: null,
+    settlement_date: new Date("2026-09-01T00:00:00Z"),
+    methodAccounts: METHOD_ACCOUNTS,
+  };
+
+  it("books the commission and leaves the whole net with the branch until paid", async () => {
+    const db = fakeDb();
+    await postBranchSettlement(asDb(db), base);
+
+    expect(linesByAccount(db)).toEqual([
+      { code: ACCOUNT.BRANCH_COMMISSION, debit: "100", credit: "0", party: "location:branch-1" },
+      { code: ACCOUNT.COD_WITH_BRANCH, debit: "900", credit: "0", party: "location:branch-1" },
+      { code: ACCOUNT.CASH_IN_HAND, debit: "0", credit: "1000", party: "location:branch-1" },
+    ]);
+  });
+
+  it("splits the net between cash received and what the branch still owes", async () => {
+    const db = fakeDb();
+    await postBranchSettlement(asDb(db), {
+      ...base,
+      paid_amount: 600,
+      payment_method: "fonepay, Cash",
+      payments: [
+        { method: "fonepay", amount: 400 },
+        { method: "Cash", amount: 200 },
+      ],
+    });
+
+    expect(linesByAccount(db)).toEqual([
+      { code: ACCOUNT.BRANCH_COMMISSION, debit: "100", credit: "0", party: "location:branch-1" },
+      { code: ESEWA, debit: "400", credit: "0", party: "location:branch-1" },
+      { code: ACCOUNT.CASH_IN_HAND, debit: "200", credit: "0", party: "location:branch-1" },
+      { code: ACCOUNT.COD_WITH_BRANCH, debit: "300", credit: "0", party: "location:branch-1" },
+      { code: ACCOUNT.CASH_IN_HAND, debit: "0", credit: "1000", party: "location:branch-1" },
+    ]);
+  });
+
+  it("clears 1015 entirely once the statement is fully paid", async () => {
+    const db = fakeDb();
+    await postBranchSettlement(asDb(db), {
+      ...base,
+      paid_amount: 900,
+      payment_method: "fonepay",
+      payments: [{ method: "fonepay", amount: 900 }],
+    });
+
+    expect(linesByAccount(db).map((line) => line.code)).not.toContain(ACCOUNT.COD_WITH_BRANCH);
+  });
+
+  it("never touches the COD float - riders already brought this COD in", async () => {
+    const db = fakeDb();
+    await postBranchSettlement(asDb(db), { ...base, paid_amount: 300, payment_method: "fonepay" });
+
+    expect(linesByAccount(db).map((line) => line.code)).not.toContain(ACCOUNT.COD_HELD);
+  });
+
+  it("refuses a payment method with no account of its own", async () => {
+    const db = fakeDb();
+    await expect(
+      postBranchSettlement(asDb(db), { ...base, paid_amount: 300, payment_method: "Khalti" }),
+    ).rejects.toThrow(/Khalti/);
+    expect(db.createdLines).toHaveLength(0);
+  });
+
+  it("skips a statement that moves no money", async () => {
+    const db = fakeDb();
+    const outcome = await postBranchSettlement(asDb(db), {
+      ...base,
+      gross_cod: 0,
+      commission_amount: 0,
+      net_payable: 0,
+    });
+
+    expect(wasPosted(outcome)).toBe(false);
+    expect(db.createdLines).toHaveLength(0);
   });
 });
 

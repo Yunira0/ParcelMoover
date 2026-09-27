@@ -1635,13 +1635,18 @@ type RawExpense = Prisma.expensesGetPayload<{ include: typeof EXPENSE_INCLUDE }>
 async function resolvePartyNames(
   parties: Array<{ party_type: string | null; party_id: string | null }>,
 ): Promise<Map<string, string>> {
-  const byType = { rider: new Set<string>(), vendor: new Set<string>(), user: new Set<string>() };
+  const byType = {
+    rider: new Set<string>(),
+    vendor: new Set<string>(),
+    user: new Set<string>(),
+    location: new Set<string>(),
+  };
   for (const row of parties) {
     if (!row.party_type || !row.party_id) continue;
     if (row.party_type in byType) byType[row.party_type as keyof typeof byType].add(row.party_id);
   }
 
-  const [riders, vendors, users] = await Promise.all([
+  const [riders, vendors, users, locations] = await Promise.all([
     byType.rider.size
       ? prisma.riders.findMany({ where: { id: { in: [...byType.rider] } }, select: { id: true, name: true } })
       : [],
@@ -1654,12 +1659,16 @@ async function resolvePartyNames(
     byType.user.size
       ? prisma.users.findMany({ where: { id: { in: [...byType.user] } }, select: { id: true, full_name: true } })
       : [],
+    byType.location.size
+      ? prisma.locations.findMany({ where: { id: { in: [...byType.location] } }, select: { id: true, name: true } })
+      : [],
   ]);
 
   const names = new Map<string, string>();
   for (const r of riders) names.set(`rider:${r.id}`, r.name);
   for (const v of vendors) names.set(`vendor:${v.id}`, v.business_name || v.client_name);
   for (const u of users) names.set(`user:${u.id}`, u.full_name);
+  for (const l of locations) names.set(`location:${l.id}`, l.name);
   return names;
 }
 

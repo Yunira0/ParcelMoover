@@ -20,6 +20,7 @@
 // Usage:
 //   npm run resync:postings -- --source=settlement --all [--dry-run]
 //   npm run resync:postings -- --source=settlement --since=2026-08-01
+//   npm run resync:postings -- --source=branch_settlement --all   (posts branch statements raised before they had entries)
 //   node dist/scripts/resync-postings.js --source=expense --all   (production)
 //
 // Under src/ for the same reason as backfill-ledger.ts and reconcile-ledger.ts:
@@ -29,13 +30,14 @@ import "dotenv/config";
 import prisma from "../lib/prisma";
 import redis from "../lib/redis";
 import {
+  syncBranchSettlementPostings,
   syncExpensePostings,
   syncSettlementPostings,
   syncVendorPaymentPostings,
   type SyncSummary,
 } from "../services/accounting/sync";
 
-type SourceName = "settlement" | "vendor_payment" | "expense";
+type SourceName = "settlement" | "branch_settlement" | "vendor_payment" | "expense";
 
 type Tx = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
 
@@ -66,6 +68,17 @@ const SOURCES: Record<SourceName, Source> = {
         })
       ).map((row) => row.id),
     sync: (tx, ids) => syncSettlementPostings(tx, ids, { reason: "manual resync" }),
+  },
+  branch_settlement: {
+    candidates: async (since) =>
+      (
+        await prisma.branch_settlements.findMany({
+          where: since ? { updated_at: { gte: since } } : {},
+          select: { id: true },
+          orderBy: { updated_at: "asc" },
+        })
+      ).map((row) => row.id),
+    sync: (tx, ids) => syncBranchSettlementPostings(tx, ids, { reason: "manual resync" }),
   },
   vendor_payment: {
     candidates: async (since) =>
