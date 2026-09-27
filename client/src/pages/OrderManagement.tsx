@@ -126,12 +126,13 @@ const TAB_GROUPS: Record<FilterTab, ParcelStatus[]> = {
   all: [],
   // Everything still waiting to be picked up: ordered + rider assigned.
   ready_to_pick: ['pickup_ordered', 'rider_assigned'],
-  inprogress: ['picked_up', 'arrived', 'ready_to_deliver', 'sent_for_delivery', 'oov', 'dispatched', 'arrived_at_branch', 'hold', 'failed_delivery'],
+  // Tabs partition the statuses: every order sits under exactly one tab.
+  inprogress: ['picked_up', 'arrived', 'ready_to_deliver', 'sent_for_delivery', 'oov', 'dispatched', 'arrived_at_branch', 'hold'],
   delivered: ['delivered', 'partially_delivered'],
   failed: ['failed_pickup', 'failed_delivery', 'loss_and_damage'],
   // Returns still being worked: not yet handed back to the vendor.
   return_process: ['follow_up', 'ready_to_return', 'sent_to_vendor'],
-  rtv: ['follow_up', 'ready_to_return', 'sent_to_vendor', 'returned_to_vendor'],
+  rtv: ['returned_to_vendor'],
   cancelled: ['cancelled'],
 };
 
@@ -561,10 +562,8 @@ const OrderManagement: React.FC = () => {
   // updates, scans) the same way the table refreshes itself.
   useEffect(() => subscribeToOrderStatusChanged(() => loadStatusCounts()), [loadStatusCounts]);
 
-  // Tabs are overlapping status groups (failed_delivery sits in both Inprogress
-  // and Failed; Return process is a subset of RTV), so each badge sums its own
-  // group's statuses rather than partitioning one total between them. "All" has
-  // an empty group by convention and counts every status instead.
+  // Each badge sums its own group's statuses. "All" has an empty group by
+  // convention and counts every status instead.
   const tabCounts = useMemo(() => {
     if (!statusCounts) return null;
     const total = Object.values(statusCounts).reduce((sum, n) => sum + n, 0);

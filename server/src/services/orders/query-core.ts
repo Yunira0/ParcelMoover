@@ -570,7 +570,7 @@ export async function listOrders(
   const isDefaultUnfilteredQuery =
     !paginated && !query.status?.length && !query.orderType && !query.search &&
     !query.vendorId?.length && !query.salesUserId && !query.deliveryRiderId &&
-    !query.sortBy && !query.deliveredToday && !query.trashed && !query.settlement &&
+    !query.sortBy && !query.deliveredToday && !query.viaTransit && !query.trashed && !query.settlement &&
     !query.originLocationIds?.length && !query.destinationLocationIds?.length &&
     !query.branchSettlement && vendorIds === undefined && branchLocationIds === undefined;
   // Export requests (withArrival) skip the shared cache so the enriched rows

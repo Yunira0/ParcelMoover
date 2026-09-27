@@ -286,6 +286,8 @@ export const listOrdersQuerySchema = paginationQuerySchema.extend({
   // Narrows to parcels delivered since local midnight, matching the
   // "Delivered today" dashboard card's own count (getDashboardSummary).
   deliveredToday: booleanFlagSchema,
+  // Narrows to parcels that went through transit (ever moved to oov).
+  viaTransit: booleanFlagSchema,
   // Inclusive Nepal-local day range, compared against whichever date
   // `dateField` names. Server-side (not filtered over the fetched page) so a
   // range and its pagination totals describe the same set of orders.

@@ -176,6 +176,8 @@ export interface ListOrdersParams {
   /** Narrow to parcels delivered since local midnight, as the dashboard's
    *  "Delivered today" card counts them. */
   deliveredToday?: boolean;
+  /** Only parcels that went through transit (ever moved to oov). */
+  viaTransit?: boolean;
   /** Which date `dateFrom`/`dateTo` are compared against. */
   dateField?: 'createdAt' | 'lastUpdatedAt';
   /** Inclusive Nepal-local day bounds, "YYYY-MM-DD". */
@@ -397,6 +399,7 @@ export const getOrders = async (params?: ListOrdersParams, signal?: AbortSignal)
   if (params?.sortDir) query.sortDir = params.sortDir;
   if (params?.withArrival) query.withArrival = 'true';
   if (params?.deliveredToday) query.deliveredToday = 'true';
+  if (params?.viaTransit) query.viaTransit = 'true';
   if (params?.dateField) query.dateField = params.dateField;
   if (params?.dateFrom) query.dateFrom = params.dateFrom;
   if (params?.dateTo) query.dateTo = params.dateTo;
