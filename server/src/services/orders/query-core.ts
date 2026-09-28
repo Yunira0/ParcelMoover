@@ -13,7 +13,6 @@ import {
   remarkTextFor,
   stripCarrierStaffTag,
 } from "../../utils/carrierRemark";
-import { isCarrierCode, type CarrierCode } from "./carrier";
 import { resolveLabelSize } from "../vendorPrintSettings.service";
 import { buildOrdersWhere } from "./where";
 import {
@@ -381,7 +380,10 @@ export function mapOrder(
   };
 }
 
+type CarrierCode = "ncm" | "upaya";
 type CarrierMap = Map<string, CarrierCode>;
+
+const isCarrierCode = (value: unknown): value is CarrierCode => value === "ncm" || value === "upaya";
 
 // The 3PL carrying each parcel: a carrier placeholder delivery rider names it,
 // a real delivery rider means we carry it ourselves, and otherwise the latest
