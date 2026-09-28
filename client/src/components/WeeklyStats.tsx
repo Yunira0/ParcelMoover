@@ -116,9 +116,8 @@ const WeeklyStats: React.FC<WeeklyStatsProps> = ({ data, loading, period, onPeri
   const xAt = (i: number) => PAD.left + slotW / 2 + i * slotW;
 
   // Plot the server's order as-is - it builds one contiguous chronological
-  // range, so the line never wraps backwards. The 7-day view is the current
-  // Nepal week (Sunday -> Saturday); the 30-day view is a rolling window
-  // ending today. Do not re-sort by day-of-week here.
+  // range, so the line never wraps backwards. Both views are a rolling window
+  // ending today, so today is the last point. Do not re-sort by day-of-week here.
 
   // Show every tick for 7 days; thin out to ~6 labels for 30 to avoid collisions.
   const labelStride = n <= 10 ? 1 : Math.ceil(n / 6);

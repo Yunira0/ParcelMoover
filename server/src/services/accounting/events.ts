@@ -4,12 +4,13 @@
 // re-querying, so the same mapping serves both the live posting path (called
 // inside the event's own transaction) and the historical backfill.
 //
-// The four events below are the whole of the current money flow:
+// The five events below are the whole of the current money flow:
 //
 //   1. A rider remits to the office  COD comes in and is owed on to vendors
 //   2. A vendor settlement           COD goes out, the office keeps its cut
 //   3. A vendor payment is verified  cash moves from the vendor to the office
 //   4. An expense is recorded        cash leaves the office
+//   5. A branch settlement           a branch sends its COD on to head office
 //
 // Note what is absent: individual parcels. Nothing is posted when a rider
 // collects COD or when a parcel is delivered - only a statement moves the
@@ -179,6 +180,7 @@ export const SOURCE = {
   settlement: (settlementId: string) => ({ sourceType: "settlement", sourceId: settlementId }),
   vendorPayment: (paymentId: string) => ({ sourceType: "vendor_payment", sourceId: paymentId }),
   expense: (expenseId: string) => ({ sourceType: "expense", sourceId: expenseId }),
+  branchSettlement: (settlementId: string) => ({ sourceType: "branch_settlement", sourceId: settlementId }),
 } as const;
 
 export const EVENT_KEY = {
@@ -188,6 +190,7 @@ export const EVENT_KEY = {
   vendorSettlement: "vendor_settlement",
   vendorPayment: "payment_verified",
   expense: "expense_recorded",
+  branchSettlement: "branch_settlement",
 } as const;
 
 async function write(
@@ -224,7 +227,10 @@ interface PaymentSplit {
  * split at the header's payment_method rather than trusting the JSON to be
  * present and well-formed.
  */
-function paymentSplits(settlement: SettlementForPosting, total: Prisma.Decimal): PaymentSplit[] {
+function paymentSplits(
+  settlement: Pick<SettlementForPosting, "payments" | "payment_method">,
+  total: Prisma.Decimal,
+): PaymentSplit[] {
   const raw = settlement.payments;
   if (Array.isArray(raw)) {
     const splits = raw
@@ -526,6 +532,98 @@ export async function postVendorPaymentVerified(
   options: PostOptions = {},
 ): Promise<PostOutcome> {
   return write(db, describeVendorPaymentVerified(payment), SOURCE.vendorPayment(payment.id), EVENT_KEY.vendorPayment, options);
+}
+
+// ── 5b. Branch settlement ───────────────────────────────────────────────────
+
+export interface BranchSettlementForPosting {
+  id: string;
+  statement_no: string;
+  from_branch_id: string;
+  to_branch_id: string;
+  gross_cod: Prisma.Decimal | number | string;
+  commission_amount: Prisma.Decimal | number | string;
+  net_payable: Prisma.Decimal | number | string;
+  paid_amount: Prisma.Decimal | number | string;
+  payment_method: string | null;
+  payments: Prisma.JsonValue | null;
+  settlement_date: Date;
+  from_branch?: PartyName | null;
+  methodAccounts?: MethodAccounts | undefined;
+}
+
+/**
+ * A branch hands the COD it collected on to head office, keeping its commission.
+ *
+ *   Dr  5010 Branch Commission            the branch's cut
+ *   Dr  cash / bank / wallet               what head office has received
+ *   Dr  1015 COD with Branch (branch)      what the branch still owes
+ *   Cr  1000 Cash in Hand (at the branch)  the COD leaving the branch's cash
+ *
+ * No 2005 line, deliberately: the COD already entered the books when the
+ * branch's riders remitted it (describeRiderRemittance), and a vendor statement
+ * at head office takes it off 2005 later. This entry only moves the cash from
+ * the branch to head office, minus what the branch keeps.
+ *
+ * Posted when the statement is created and restated as instalments land, the
+ * same way describeVendorSettlement walks its balance from 2000 into cash.
+ */
+export function describeBranchSettlement(settlement: BranchSettlementForPosting): Described {
+  const commission = decimal(settlement.commission_amount);
+  const net = decimal(settlement.net_payable);
+  if (commission.isZero() && net.isZero()) {
+    return { skip: "statement moves no money" };
+  }
+
+  const branch = { type: "location" as const, id: settlement.from_branch_id };
+  const paid = clampShare(decimal(settlement.paid_amount), net);
+  const owed = net.minus(paid);
+
+  const lines: JournalLineInput[] = [];
+  if (!commission.isZero()) {
+    lines.push({
+      accountCode: ACCOUNT.BRANCH_COMMISSION,
+      debit: commission,
+      party: branch,
+      locationId: settlement.from_branch_id,
+      memo: "Branch commission",
+    });
+  }
+  if (!paid.isZero()) {
+    lines.push(
+      ...cashLines(paymentSplits(settlement, paid), "debit", "COD received from branch", settlement.methodAccounts).map(
+        (line) => ({ ...line, party: branch, locationId: settlement.to_branch_id }),
+      ),
+    );
+  }
+  if (!owed.isZero()) {
+    lines.push({ accountCode: ACCOUNT.COD_WITH_BRANCH, debit: owed, party: branch, memo: "Still with branch" });
+  }
+  // Commission plus net rather than gross_cod, so the entry balances by
+  // construction even if the stored gross ever drifts from its parts.
+  lines.push({
+    accountCode: ACCOUNT.CASH_IN_HAND,
+    credit: commission.plus(net),
+    party: branch,
+    locationId: settlement.from_branch_id,
+    memo: "COD held at branch",
+  });
+
+  return {
+    entryDate: settlement.settlement_date,
+    memo: settlement.from_branch?.name
+      ? `COD remitted by branch ${settlement.from_branch.name}, ${settlement.statement_no}`
+      : `COD remitted by branch, ${settlement.statement_no}`,
+    lines,
+  };
+}
+
+export async function postBranchSettlement(
+  db: Db,
+  settlement: BranchSettlementForPosting,
+  options: PostOptions = {},
+): Promise<PostOutcome> {
+  return write(db, describeBranchSettlement(settlement), SOURCE.branchSettlement(settlement.id), EVENT_KEY.branchSettlement, options);
 }
 
 // ── 6. Expense recorded ─────────────────────────────────────────────────────

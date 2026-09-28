@@ -32,6 +32,7 @@ import { downloadExcel } from '../utils/excel';
 import { formatCurrency } from '../utils/format';
 import { commitScannedTerm, handleScannerPaste } from '../utils/scannerInput';
 import './PickupOperations.css';
+import ReceiverPhones from '../components/ReceiverPhones';
 
 type PickupTab = 'pickup_ordered' | 'rider_assigned' | 'picked_up' | 'arrived' | 'failed' | 'cancelled';
 
@@ -279,7 +280,7 @@ const groupDetailColumns = (group: PickupGroup, onRemarkClick: (order: Order) =>
       <div className="pickup-group-cell">
         <span>{order.receiverName}</span>
         {order.receiverAddress && <small>{order.receiverAddress}</small>}
-        <small>{order.receiverPhone}</small>
+        <small><ReceiverPhones phone={order.receiverPhone} alternate={order.receiverAlternatePhone} /></small>
       </div>
     ),
     width: '200px',
@@ -677,7 +678,7 @@ const PickupOperations: React.FC = () => {
     // Same columns, in the same order, as the group detail table on screen.
     // COD and delivery charge stay numbers so the columns total in the sheet.
     const headers = [
-      'Order ID', 'Date & Time', 'Sender', 'Sender Phone', 'Receiver', 'Receiver Phone',
+      'Order ID', 'Date & Time', 'Sender', 'Sender Phone', 'Receiver', 'Receiver Phone', 'Alternate Number',
       'Receiver Address', 'Pickup Rider', 'Tracking Code', 'Weight (kg)', 'Origin',
       'Destination', 'Delivery Charge', 'COD Amount', 'Last Handle By', 'Order Type', 'Remarks',
       ...STATUS_TIMELINE_HEADERS,
@@ -689,6 +690,7 @@ const PickupOperations: React.FC = () => {
       order.senderPhone || '',
       order.receiverName,
       order.receiverPhone || '',
+      order.receiverAlternatePhone || '',
       order.receiverAddress || '',
       order.riderName || '',
       order.trackingId,

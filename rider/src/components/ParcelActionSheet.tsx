@@ -227,6 +227,13 @@ export default function ParcelActionSheet({ parcel, onClose, onDone }: Props) {
             className="flex items-center gap-[7px] text-rust cursor-pointer active:opacity-70">
             <Phone size={13} /><span className="text-[13.5px] font-medium">{parcel.receiverPhone}</span>
           </button>
+          {parcel.receiverAlternatePhone && parcel.receiverAlternatePhone !== parcel.receiverPhone && (
+            <button type="button" onClick={() => callAndLog(parcel.id, parcel.receiverAlternatePhone!, 'receiver')}
+              style={{ touchAction: 'manipulation' }}
+              className="flex items-center gap-[7px] text-rust cursor-pointer active:opacity-70">
+              <Phone size={13} /><span className="text-[13.5px] font-medium">{parcel.receiverAlternatePhone}</span>
+            </button>
+          )}
           {receiverAddr && (
             <>
               <p className="text-[13px] leading-[1.5] text-ink-2">{receiverAddr}</p>

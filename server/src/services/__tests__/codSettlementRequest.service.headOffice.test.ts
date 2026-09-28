@@ -120,3 +120,31 @@ describe("updateCodSettlementRequestStatus", () => {
     expect(mockedAssertHeadOfficeOnly).not.toHaveBeenCalled();
   });
 });
+
+describe("sales access", () => {
+  const SALES = { id: "sales-1", roles: ["sales"] };
+
+  it("lists only the requests of vendors the sales user owns", async () => {
+    mockedPrisma.cod_settlement_requests.findMany.mockResolvedValue([]);
+    mockedPrisma.cod_settlement_requests.count.mockResolvedValue(0);
+
+    await listCodSettlementRequests(SALES);
+
+    const where = mockedPrisma.cod_settlement_requests.findMany.mock.calls[0]![0].where;
+    expect(where.vendors).toEqual({ sales_user_id: "sales-1" });
+    expect(mockedAssertHeadOfficeOnly).not.toHaveBeenCalled();
+  });
+
+  it("404s a request from a vendor the sales user doesn't own", async () => {
+    mockedPrisma.cod_settlement_requests.findUnique.mockResolvedValue(requestRow());
+    mockedPrisma.vendors.findFirst.mockResolvedValue(null);
+
+    await expect(getCodSettlementRequestById(SALES, "req-1")).rejects.toMatchObject({ statusCode: 404 });
+  });
+
+  it("cannot action a request", async () => {
+    await expect(
+      updateCodSettlementRequestStatus(SALES, "req-1", { status: "settled" } as never),
+    ).rejects.toMatchObject({ statusCode: 403 });
+  });
+});

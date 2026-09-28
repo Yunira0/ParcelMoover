@@ -234,6 +234,7 @@ export function buildOpenApiDocument(baseUrl: string) {
       "/rates": {
         get: {
           summary: "Your full rate card",
+          description: "Returns effective rates for each active destination. Central-hub vendors on flat pricing also receive flatRates for insideValley, outsideRingRoad, and outsideValley, including tiers without assigned destinations.",
           operationId: "getRates",
           responses: {
             200: { description: "Rate card across all destinations", content: { "application/json": { schema: { type: "object" } } } },
@@ -580,6 +581,14 @@ export function buildOpenApiDocument(baseUrl: string) {
                   deliveredAt: { type: ["string", "null"], format: "date-time" },
                   status: { type: "string", enum: ["settled", "not_settled"] },
                   netPayable: { type: "number", description: "Cash collected minus the delivery charge." },
+                  statement: {
+                    type: ["object", "null"],
+                    description: "The vendor statement this order is bundled into, if any. `status` stays `not_settled` while that statement is only `partially_paid`.",
+                    properties: {
+                      statementId: { type: "string" },
+                      status: { type: "string", enum: ["pending", "partially_paid", "settled"] },
+                    },
+                  },
                 },
               },
             },

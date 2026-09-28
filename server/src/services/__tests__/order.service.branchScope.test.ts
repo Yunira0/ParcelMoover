@@ -30,7 +30,10 @@ vi.mock("../vendor-scope.service", () => ({
   isStaffActor: vi.fn().mockReturnValue(true),
 }));
 vi.mock("../notification.service", () => ({ createNotification: vi.fn() }));
-vi.mock("../branch.service", () => ({ resolveBranchLocationIds: vi.fn() }));
+vi.mock("../../lib/branchScope", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../lib/branchScope")>()),
+  resolveBranchCoverageIds: vi.fn(),
+}));
 
 import {
   updateParcelStatus,
@@ -40,7 +43,7 @@ import {
   getRiderRunSheet,
 } from "../order.service";
 import prisma from "../../lib/prisma";
-import { resolveBranchLocationIds } from "../branch.service";
+import { resolveBranchCoverageIds } from "../../lib/branchScope";
 
 const mockedPrisma = prisma as unknown as {
   parcels: { findFirst: ReturnType<typeof vi.fn>; findMany: ReturnType<typeof vi.fn> };
@@ -48,7 +51,7 @@ const mockedPrisma = prisma as unknown as {
   run_sheets: { findMany: ReturnType<typeof vi.fn> };
   $transaction: ReturnType<typeof vi.fn>;
 };
-const mockedResolveBranchLocationIds = resolveBranchLocationIds as unknown as ReturnType<typeof vi.fn>;
+const mockedResolveBranchCoverageIds = resolveBranchCoverageIds as unknown as ReturnType<typeof vi.fn>;
 
 const HUB_ID = "hub-imadol";
 const AREA_ID = "area-lakeside";
@@ -103,7 +106,7 @@ beforeEach(() => {
   mockedPrisma.$transaction.mockImplementation((fn: (t: unknown) => Promise<unknown>) => fn(makeMockTx()));
   // Branch covers itself, one covered area, and nothing else - Chitwan is a
   // different branch entirely.
-  mockedResolveBranchLocationIds.mockResolvedValue([HUB_ID, AREA_ID]);
+  mockedResolveBranchCoverageIds.mockResolvedValue([HUB_ID, AREA_ID]);
 });
 
 describe("a branch-scoped admin (single-parcel path)", () => {

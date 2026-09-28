@@ -11,10 +11,11 @@ import {
   deleteLocation,
   type Destination,
 } from '../../services/locations.service';
+import { listUpayaDeliveryAreas, type UpayaDeliveryArea } from '../../services/upaya.service';
 import { apiErrorMessage } from '../../utils/serverValidation';
 import './DestinationsSettings.css';
 
-const emptyDest = { name: '', code: '', province: '', district: '', municipality: '', ncmBranch: '' };
+const emptyDest = { name: '', code: '', province: '', district: '', municipality: '', ncmBranch: '', upayaAreaId: '' };
 
 // The empty "Not set" option comes from FormField's placeholder.
 const ZONE_OPTIONS = [
@@ -79,6 +80,33 @@ const DestinationsSettings: React.FC = () => {
 
   useEffect(() => { load(); }, []);
 
+  // Upaya's area list is large and only the form needs it, so it loads the
+  // first time the form opens.
+  const [upayaAreas, setUpayaAreas] = useState<UpayaDeliveryArea[] | null>(null);
+  const [upayaAreasError, setUpayaAreasError] = useState(false);
+  useEffect(() => {
+    if (!showDestForm || upayaAreas) return;
+    listUpayaDeliveryAreas()
+      .then((res) => setUpayaAreas(res.data ?? []))
+      .catch(() => setUpayaAreasError(true));
+  }, [showDestForm, upayaAreas]);
+
+  const upayaAreaOptions = useMemo(() => {
+    const options = [
+      { id: '', label: 'Automatic' },
+      ...(upayaAreas ?? []).map((a) => ({
+        id: String(a.id),
+        label: a.name,
+        description: [a.locationName, a.hubName].filter(Boolean).join(' · '),
+      })),
+    ];
+    // Keep a saved override selectable even if the list failed to load.
+    if (destForm.upayaAreaId && !options.some((o) => o.id === destForm.upayaAreaId)) {
+      options.push({ id: destForm.upayaAreaId, label: `Area #${destForm.upayaAreaId}` });
+    }
+    return options;
+  }, [upayaAreas, destForm.upayaAreaId]);
+
   const openAddDest = () => {
     setEditDestId(null);
     setDestForm(emptyDest);
@@ -94,6 +122,7 @@ const DestinationsSettings: React.FC = () => {
       district: dest.district || '',
       municipality: dest.city || '',
       ncmBranch: dest.ncmBranch || '',
+      upayaAreaId: dest.upayaAreaId ? String(dest.upayaAreaId) : '',
     });
     setShowDestForm(true);
   };
@@ -120,6 +149,7 @@ const DestinationsSettings: React.FC = () => {
         // null rather than undefined, so clearing the box actually unsets the
         // override and hands the destination back to automatic matching.
         ncmBranch: destForm.ncmBranch.trim() || null,
+        upayaAreaId: destForm.upayaAreaId ? Number(destForm.upayaAreaId) : null,
       };
       if (editDestId) {
         await updateLocation(editDestId, payload);
@@ -301,6 +331,16 @@ const DestinationsSettings: React.FC = () => {
               onChange={(v) => setDestForm((p) => ({ ...p, ncmBranch: v.toUpperCase() }))}
               placeholder="e.g. DAMAK"
               hint="Leave blank to match automatically by district and name." />
+          </div>
+          <div className="dest-form-row">
+            <FormField label="Upaya area" type="searchable-select" value={destForm.upayaAreaId}
+              onChange={(v) => setDestForm((p) => ({ ...p, upayaAreaId: v }))}
+              searchableOptions={upayaAreaOptions}
+              placeholder={upayaAreas || upayaAreasError ? 'Automatic' : 'Loading Upaya areas…'}
+              searchPlaceholder="Search Upaya areas…"
+              hint={upayaAreasError
+                ? "Couldn't load Upaya areas. Saved choice is kept."
+                : 'Leave on Automatic to match by name.'} />
           </div>
           <div className="dest-form-actions">
             <Button type="button" variant="outline" onClick={cancelDestForm}>Cancel</Button>

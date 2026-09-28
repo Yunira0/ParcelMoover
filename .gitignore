@@ -72,6 +72,15 @@ typings/
 .env
 .env.test
 .env.production
+.env.*
+!.env.example
+!**/.env.example
+!**/.env.*.example
+*.local
+
+# Local scratch output
+/tmp/
+/temp/
 
 # Uploaded KYC/registration documents — sensitive PII, never belongs in git
 # history (see server/src/lib/documentEncryption.ts for how these are

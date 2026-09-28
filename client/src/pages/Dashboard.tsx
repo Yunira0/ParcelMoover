@@ -117,12 +117,16 @@ const Dashboard: React.FC = () => {
   // Real period-over-period delta for "Delivered today" from the daily trend
   // (last day vs the previous day). Snapshot metrics have no stored history, so
   // they show no delta until the backend supplies previous-period counts.
+  // Found by Nepal date rather than position, so a trend window that doesn't
+  // end today can't compare the wrong two days.
   const deltas = useMemo(() => {
     const t = summary.weeklyTrend;
-    if (t.length < 2) return undefined;
-    const prev = t[t.length - 2].delivered;
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kathmandu' }).format(new Date());
+    const todayIndex = t.findIndex((d) => d.date === today);
+    if (todayIndex < 1) return undefined;
+    const prev = t[todayIndex - 1].delivered;
     if (!prev) return undefined;
-    const pct = Math.round(((t[t.length - 1].delivered - prev) / prev) * 100);
+    const pct = Math.round(((t[todayIndex].delivered - prev) / prev) * 100);
     return { deliveredToday: pct } as const;
   }, [summary.weeklyTrend]);
 

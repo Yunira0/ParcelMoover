@@ -26,6 +26,7 @@ import { STATUS_TIMELINE_HEADERS, statusTimelineCells } from '../../utils/orderS
 import NepaliDatePicker from '../../components/NepaliDatePicker';
 import { useCursorPagination } from '../../hooks/useCursorPagination';
 import './VendorOrders.css';
+import ReceiverPhones from '../../components/ReceiverPhones';
 
 const STATUS_LABELS: Record<ParcelStatus, string> = {
   pickup_ordered: 'Pickup Ordered',
@@ -383,7 +384,7 @@ const VendorOrders: React.FC = () => {
     }
 
     const headers = [
-      '#', 'Tracking ID', 'Status', 'Customer', 'Phone', 'Order Type', 'Destination Branch',
+      '#', 'Tracking ID', 'Status', 'Customer', 'Phone', 'Alternate Number', 'Order Type', 'Destination Branch',
       'COD Amount', 'Service Charge', 'Last Comment', 'Order Created Date',
       ...STATUS_TIMELINE_HEADERS,
     ];
@@ -392,7 +393,8 @@ const VendorOrders: React.FC = () => {
       order.trackingId,
       STATUS_LABELS[order.status],
       order.receiverName,
-      order.receiverPhone,
+      order.receiverPhone || '',
+      order.receiverAlternatePhone || '',
       ORDER_TYPE_LABELS[order.orderType],
       order.destination,
       order.codAmount,
@@ -435,7 +437,7 @@ const VendorOrders: React.FC = () => {
       accessor: (order: Order) => (
         <div className="vo-customer-cell">
           <span className="vo-customer-name">{order.receiverName}</span>
-          <span className="vo-customer-phone">{order.receiverPhone}</span>
+          <span className="vo-customer-phone"><ReceiverPhones phone={order.receiverPhone} alternate={order.receiverAlternatePhone} /></span>
           <span className="vo-customer-address">{order.receiverAddress || order.destination}</span>
         </div>
       ),

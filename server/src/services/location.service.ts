@@ -19,6 +19,7 @@ export interface UpsertLocationInput {
   perDestinationRate?: number | null;
   branchPerDestinationRate?: number | null;
   ncmBranch?: string | null; // explicit NCM branch override — pins handoff to this branch
+  upayaAreaId?: number | null; // explicit Upaya delivery-area override — pins handoff to this area
 }
 
 function mapLocation(loc: {
@@ -38,6 +39,7 @@ function mapLocation(loc: {
   per_destination_rate: { toString(): string } | null;
   branch_per_destination_rate: { toString(): string } | null;
   ncm_branch?: string | null;
+  upaya_area_id?: number | null;
 }) {
   return {
     id: loc.id,
@@ -56,6 +58,7 @@ function mapLocation(loc: {
     perDestinationRate: loc.per_destination_rate === null ? null : Number(loc.per_destination_rate),
     branchPerDestinationRate: loc.branch_per_destination_rate === null ? null : Number(loc.branch_per_destination_rate),
     ncmBranch: (loc as any).ncm_branch ?? null,
+    upayaAreaId: loc.upaya_area_id ?? null,
   };
 }
 
@@ -90,6 +93,13 @@ async function assertNameAvailable(name: string, parentId: string | null, ignore
   }
 }
 
+function normalizeUpayaAreaId(value: unknown): number | null {
+  if (value === null || value === "") return null;
+  const id = Number(value);
+  if (!Number.isInteger(id) || id <= 0) throw new AppError(400, "Upaya area must be a valid Upaya area id");
+  return id;
+}
+
 export async function createLocation(input: UpsertLocationInput) {
   const name = input.name?.trim();
   if (!name) throw new AppError(400, "Name is required");
@@ -120,6 +130,7 @@ export async function createLocation(input: UpsertLocationInput) {
       // ncm_branch column is added in 20260830120000; keep writes tolerant before
       // migration is applied (prisma client pre-generate won't select it anyway).
       ...(input.ncmBranch !== undefined ? { ncm_branch: input.ncmBranch?.trim().toUpperCase() || null } as any : {}),
+      ...(input.upayaAreaId !== undefined ? { upaya_area_id: normalizeUpayaAreaId(input.upayaAreaId) } : {}),
     },
   });
 
@@ -385,6 +396,7 @@ export async function updateLocation(id: string, input: Partial<UpsertLocationIn
         ? { branch_per_destination_rate: input.branchPerDestinationRate }
         : {}),
       ...(input.ncmBranch !== undefined ? { ncm_branch: input.ncmBranch?.trim().toUpperCase() || null } : {}),
+      ...(input.upayaAreaId !== undefined ? { upaya_area_id: normalizeUpayaAreaId(input.upayaAreaId) } : {}),
       updated_at: new Date(),
     },
   });

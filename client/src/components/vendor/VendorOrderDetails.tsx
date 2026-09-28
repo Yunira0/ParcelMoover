@@ -10,6 +10,7 @@ import { getOrders } from '../../services/orders.service';
 import { useCursorPagination } from '../../hooks/useCursorPagination';
 import { toBsDateLabel } from '../../utils/nepaliDate';
 import './VendorOrderDetails.css';
+import ReceiverPhones from '../ReceiverPhones';
 
 type DetailsTab = 'all' | 'delivered' | 'return';
 // The selector below the table goes up to 500 (order.service MAX_PAGE_SIZE).
@@ -98,7 +99,7 @@ const VendorOrderDetails: React.FC = () => {
       accessor: (order: Order) => (
         <div>
           <div>{order.receiverName}</div>
-          <div className="vendor-order-details-subtext">{order.receiverPhone}</div>
+          <div className="vendor-order-details-subtext"><ReceiverPhones phone={order.receiverPhone} alternate={order.receiverAlternatePhone} /></div>
         </div>
       ),
     },

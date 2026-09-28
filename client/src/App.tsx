@@ -368,11 +368,11 @@ function App() {
           />
           <Route
             path="/cod-settlement-requests"
-            element={<RoleGuard allowedRoles={['super_admin', 'admin']}><CodSettlementRequests /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'sales']}><CodSettlementRequests /></RoleGuard>}
           />
           <Route
             path="/cod-settlement-requests/:id"
-            element={<RoleGuard allowedRoles={['super_admin', 'admin']}><CodSettlementRequests /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'sales']}><CodSettlementRequests /></RoleGuard>}
           />
           <Route
             path="/remarks"
@@ -517,12 +517,18 @@ function App() {
             path="/finance/ledger/:partyType/:partyId"
             element={<RoleGuard allowedRoles={['super_admin', 'admin']} adminPermission="ACCOUNTING_ACCESS"><SettlementLedgerPage /></RoleGuard>}
           />
-          {/* Masters. Creating and editing accounts is a super-admin job: an
-              account's type and normal side reinterpret every entry ever posted
-              to it, so this is not a grant to hand out with the books. */}
+          {/* Masters. Creating and editing accounts is its own grant on top of
+              the books: an account's type and normal side reinterpret every
+              entry ever posted to it. */}
           <Route
             path="/finance/masters"
-            element={<RoleGuard allowedRoles={['super_admin']}><MastersPage /></RoleGuard>}
+            element={
+              <RoleGuard allowedRoles={['super_admin', 'admin']} adminPermission="ACCOUNTING_ACCESS">
+                <RoleGuard allowedRoles={['super_admin', 'admin']} adminPermission="FINANCE_MASTERS">
+                  <MastersPage />
+                </RoleGuard>
+              </RoleGuard>
+            }
           />
 
           {/* Reached by drilling from a ledger, never from the nav. */}

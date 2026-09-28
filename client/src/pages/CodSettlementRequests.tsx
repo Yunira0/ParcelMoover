@@ -6,6 +6,7 @@ import Table from '../components/Table';
 import FilterDropdown from '../components/FilterDropdown';
 import Pagination from '../components/Pagination';
 import { Banner } from './accounting/ui';
+import { isSalesUser } from '../utils/auth';
 import {
   COD_REQUEST_STATUS_LABELS,
   getCodSettlementRequests,
@@ -35,6 +36,8 @@ const STATUS_FILTER_OPTIONS = [
 const PAGE_SIZE = 20;
 
 const CodSettlementRequests: React.FC = () => {
+  // Sales sees its own vendors' requests read-only; settling stays with admins.
+  const readOnly = isSalesUser();
   const [requests, setRequests] = useState<CodSettlementRequest[]>([]);
   const [status, setStatus] = useState('');
   const [loading, setLoading] = useState(true);
@@ -132,9 +135,9 @@ const CodSettlementRequests: React.FC = () => {
     },
     { header: 'RAISED', accessor: (r: CodSettlementRequest) => toBsDate(r.createdAt) || '—', width: '110px' },
     {
-      header: 'ACTIONS',
+      header: readOnly ? 'OUTCOME' : 'ACTIONS',
       accessor: (r: CodSettlementRequest) =>
-        isLiveCodRequest(r.status) ? (
+        isLiveCodRequest(r.status) && !readOnly ? (
           <div className="cod-request-actions">
             {/* The action this queue exists for, so it takes the brand
                  colour and Reject stays outlined beside it. Without a variant
@@ -165,8 +168,9 @@ const CodSettlementRequests: React.FC = () => {
           <Banknote size={20} /> COD Settlement Requests
         </h1>
         <p>
-          Vendors asking to be paid out. Settling or rejecting a request releases their hold and lets
-          them raise the next one — the payout itself is still recorded through Settlements.
+          {readOnly
+            ? 'Payout requests from your vendors. Head office settles or rejects them.'
+            : 'Vendors asking to be paid out. Settling or rejecting a request releases their hold and lets them raise the next one — the payout itself is still recorded through Settlements.'}
         </p>
       </header>
 

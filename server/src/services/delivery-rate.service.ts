@@ -7,6 +7,7 @@ import {
   getBranchVendorFlatQuote,
   getVendorQuote,
   getPricingSettings,
+  getVendorFlatRateBands,
   RateType,
   VendorRateOverrides,
 } from "./pricing.service";
@@ -627,10 +628,16 @@ export async function getVendorSelfRates(actor: Actor) {
   const extraWeightPercent =
     overrides.extraWeightPercent != null ? overrides.extraWeightPercent : settings.extraWeightPercent ?? 0;
 
+  const centralHubId = await masterHubId();
+  const centralFlatRates = rateType === "flat" && (!vendor.location_id || !centralHubId || vendor.location_id === centralHubId)
+    ? await getVendorFlatRateBands(overrides)
+    : null;
+
   return {
     rateType,
     freeWeightKg: settings.freeWeightKg,
     extraWeightPercent,
+    flatRates: centralFlatRates,
     rates: rows,
   };
 }

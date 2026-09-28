@@ -33,6 +33,7 @@ import { toBsDate, toNptTime } from '../utils/nepaliDate';
 import { printRunSheet } from '../utils/printRunSheet';
 import '../components/Modal.css';
 import './RiderRunSheet.css';
+import ReceiverPhones from '../components/ReceiverPhones';
 
 const ALL_RIDERS = '';
 
@@ -110,7 +111,7 @@ const parcelColumns = [
     accessor: (parcel: RunSheetParcel) => (
       <div className="runsheet-party-cell">
         <span>{parcel.receiverName}</span>
-        <small>{parcel.receiverPhone}</small>
+        <small><ReceiverPhones phone={parcel.receiverPhone} alternate={parcel.receiverAlternatePhone} /></small>
       </div>
     ),
     width: '200px',

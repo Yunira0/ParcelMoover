@@ -51,7 +51,7 @@ const PACKAGE_DESCRIPTION_MAX_LENGTH = 100;
 const DELIVERY_INSTRUCTION_MAX_LENGTH = 100;
 const REMARKS_MAX_LENGTH = 1000;
 
-// Quick-add chips above the free-text delivery instruction. Picking one
+// Quick-add dropdown inside the free-text delivery instruction. Picking one
 // appends it to the text (comma-separated); picking it again removes it.
 const DELIVERY_INSTRUCTION_PRESETS = [
   'Cannot open the parcel',
@@ -576,6 +576,14 @@ const CreateOrderPage: React.FC = () => {
     }
     if (!weightKgNumber) {
       errors.weightKg = 'Package weight is required.';
+    }
+    // Belt to maxLength's braces: a prefilled copy-of-an-order can arrive
+    // longer than the cap without the field ever being typed into.
+    if (form.packageType.trim().length > PACKAGE_DESCRIPTION_MAX_LENGTH) {
+      errors.packageType = `Keep this to ${PACKAGE_DESCRIPTION_MAX_LENGTH} characters — longer descriptions are rejected at carrier handoff.`;
+    }
+    if (form.deliveryInstruction.trim().length > DELIVERY_INSTRUCTION_MAX_LENGTH) {
+      errors.deliveryInstruction = `Keep this to ${DELIVERY_INSTRUCTION_MAX_LENGTH} characters — longer instructions are rejected at carrier handoff.`;
     }
 
     if (Object.keys(errors).length > 0) {

@@ -727,6 +727,8 @@ GET /api/v1/rates
 
 Returns your full rate card — the home-delivery and branch-delivery base rate to every active destination, under your own rate agreement (flat, zone, or per-destination, whichever ParcelMoover has configured for your account).
 
+For a central-hub vendor on flat pricing, `flatRates` also lists the effective `insideValley`, `outsideRingRoad`, and `outsideValley` tiers. Each tier has `homeRate` and `branchRate`. This shows a configured tier even when no active destination is assigned to it. For branch-hub vendors and other pricing models, `flatRates` is `null`; their destination rows remain the source of their rates. Each destination row also includes `ringRoad` (`inside`, `outside`, or `null`). An outside-ring-road rate applies only when `valley` is `inside` and `ringRoad` is `outside`.
+
 #### Example
 
 ```bash
@@ -742,8 +744,13 @@ curl "$BASE/api/v1/rates" -H "Authorization: Bearer $KEY"
     "rateType": "flat",
     "freeWeightKg": 2,
     "extraWeightPercent": 5,
+    "flatRates": {
+      "insideValley": { "homeRate": 79, "branchRate": 79 },
+      "outsideRingRoad": { "homeRate": 100, "branchRate": 100 },
+      "outsideValley": { "homeRate": 165, "branchRate": 165 }
+    },
     "rates": [
-      { "destinationId": "a350d017-...", "destinationName": "POKHARA", "zone": "urban_areas", "valley": "outside", "homeRate": 150, "branchRate": 150, "note": null }
+      { "destinationId": "a350d017-...", "destinationName": "POKHARA", "zone": "urban_areas", "valley": "outside", "ringRoad": null, "homeRate": 165, "branchRate": 165, "note": null }
     ]
   }
 }

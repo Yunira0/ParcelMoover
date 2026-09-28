@@ -45,6 +45,7 @@ import { searchVendors } from '../services/users.service';
 import { apiErrorMessage } from '../utils/serverValidation';
 import { addOrdersToBranchManifest } from '../services/transitManifests.service';
 import './ReturnOperations.css';
+import ReceiverPhones from '../components/ReceiverPhones';
 
 // "manifests" sits between ready_to_return and sent_to_vendor because that is
 // where it sits physically: parcels are marked for return, gathered onto a
@@ -149,7 +150,14 @@ const manifestParcelColumns = (parcels: ReturnManifestParcel[]) => [
     header: 'CONTACT',
     accessor: (p: ReturnManifestParcel) => (
       p.receiverPhone
-        ? <a className="return-contact-link" href={`tel:${p.receiverPhone}`}>{p.receiverPhone}</a>
+        ? (
+          <>
+            <a className="return-contact-link" href={`tel:${p.receiverPhone}`}>{p.receiverPhone}</a>
+            {p.receiverAlternatePhone && p.receiverAlternatePhone !== p.receiverPhone && (
+              <><br /><a className="return-contact-link" href={`tel:${p.receiverAlternatePhone}`}>{p.receiverAlternatePhone}</a></>
+            )}
+          </>
+        )
         : <span className="return-muted">-</span>
     ),
     width: '140px',
@@ -935,7 +943,7 @@ const ReturnOperations: React.FC = () => {
     {
       header: 'RECEIVER',
       accessor: (order: Order) => (
-        <div className="return-party-cell"><span>{order.receiverName}</span><small>{order.receiverPhone}</small></div>
+        <div className="return-party-cell"><span>{order.receiverName}</span><small><ReceiverPhones phone={order.receiverPhone} alternate={order.receiverAlternatePhone} /></small></div>
       ),
       width: '200px',
     },

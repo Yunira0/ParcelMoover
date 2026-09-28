@@ -65,6 +65,10 @@ export interface VendorSelfRates {
   rateType: VendorRateType;
   freeWeightKg: number;
   extraWeightPercent: number;
+  flatRates: Record<'insideValley' | 'outsideRingRoad' | 'outsideValley', {
+    homeRate: number | null;
+    branchRate: number | null;
+  }> | null;
   rates: VendorSelfRate[];
 }
 

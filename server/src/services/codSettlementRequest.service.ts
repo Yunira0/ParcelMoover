@@ -32,6 +32,9 @@ const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 500;
 
 const isStaff = (actor: Actor) => actor.roles.includes("admin") || actor.roles.includes("super_admin");
+// Sales can read the requests of the vendors they own (vendors.sales_user_id),
+// never action them.
+const isPureSales = (actor: Actor) => !isStaff(actor) && actor.roles.includes("sales");
 
 // Vendor COD settlement is handled centrally from Imadol elsewhere in the app
 // (see assertHeadOfficeForVendorSettlement in finance.service.ts) - a request
@@ -245,7 +248,9 @@ export async function listCodSettlementRequests(actor: Actor, params: ListCodSet
   const where: Record<string, unknown> = {};
   if (params.status) where.status = params.status;
 
-  if (!isStaff(actor)) {
+  if (isPureSales(actor)) {
+    where.vendors = { sales_user_id: actor.id };
+  } else if (!isStaff(actor)) {
     const vendorId = await resolveActorVendorId(actor);
     // Not linked to a vendor - show nothing rather than everything.
     if (!vendorId) return { data: [], meta: { page, pageSize, total: 0, totalPages: 0 } };
@@ -285,7 +290,13 @@ export async function getCodSettlementRequestById(actor: Actor, id: string) {
   const row = await prisma.cod_settlement_requests.findUnique({ where: { id }, include: REQUEST_INCLUDE });
   if (!row) throw new AppError(404, "COD settlement request not found");
 
-  if (!isStaff(actor)) {
+  if (isPureSales(actor)) {
+    const owned = await prisma.vendors.findFirst({
+      where: { id: row.vendor_id, sales_user_id: actor.id },
+      select: { id: true },
+    });
+    if (!owned) throw new AppError(404, "COD settlement request not found");
+  } else if (!isStaff(actor)) {
     const vendorId = await resolveActorVendorId(actor);
     if (!vendorId || row.vendor_id !== vendorId) {
       throw new AppError(404, "COD settlement request not found");

@@ -28,6 +28,7 @@ export interface PendingCodItem {
   trackingId: string;
   receiverName: string;
   receiverPhone: string;
+  receiverAlternatePhone: string;
   destination: string;
   codAmount: number;
   deliveryCharge: number;
@@ -49,10 +50,14 @@ export interface OrderCodItem {
   trackingId: string;
   receiverName: string;
   receiverPhone: string;
+  receiverAlternatePhone: string;
   createdAt: string;
   deliveredAt: string | null;
   status: CodPaymentFilter;
   netPayable: number;
+  /** The open or paid vendor statement this order is bundled into, if any. `status` stays
+   *  "not_settled" while that statement is only partially_paid - see payForSettlement. */
+  statement: { statementId: string; status: SettlementStatus } | null;
 }
 
 export interface OrderCodListResult {
@@ -191,6 +196,7 @@ export interface UnsettledOrderItem {
   trackingId: string;
   receiverName: string;
   receiverPhone: string;
+  receiverAlternatePhone: string;
   receiverAddress: string | null;
   destination: string;
   // Pickup or delivery location for this rider's leg of the parcel - null
@@ -224,6 +230,7 @@ export interface SettlementDetailItem {
   reference: string | null;
   receiverName: string;
   receiverPhone: string;
+  receiverAlternatePhone: string;
   receiverAddress: string | null;
   destination: string;
   // Whose money this line is. Null for parcels booked without a vendor

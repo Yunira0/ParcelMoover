@@ -21,6 +21,7 @@ import type { ParcelStatus } from '../../services/orders.service';
 import '../../pages/SettlementCreatePage.css';
 import './BranchSettlement.css';
 import './BranchSettlementDetailPage.css';
+import ReceiverPhones from '../../components/ReceiverPhones';
 
 type PaymentRow = { method: string; amount: string };
 type DetailTab = 'statement' | 'proof';
@@ -107,7 +108,7 @@ const BranchSettlementDetailPage: React.FC = () => {
   const orderColumns = [
     { header: 'Order', accessor: (item: BranchSettlementDetail['items'][number]) => `#${item.orderNumber}`, width: '85px' },
     { header: 'Tracking ID', accessor: (item: BranchSettlementDetail['items'][number]) => item.trackingId, width: '170px' },
-    { header: 'Receiver', accessor: (item: BranchSettlementDetail['items'][number]) => <div className="party-cell"><span>{item.receiverName}</span><small>{item.receiverPhone}</small></div>, width: '185px' },
+    { header: 'Receiver', accessor: (item: BranchSettlementDetail['items'][number]) => <div className="party-cell"><span>{item.receiverName}</span><small><ReceiverPhones phone={item.receiverPhone} alternate={item.receiverAlternatePhone} /></small></div>, width: '185px' },
     { header: 'Route', accessor: (item: BranchSettlementDetail['items'][number]) => `${item.origin || '—'} → ${item.destination || '—'}`, width: '220px' },
     { header: 'Collected', accessor: (item: BranchSettlementDetail['items'][number]) => money(item.collectedAmount), width: '125px', className: 'branch-money-cell' },
     { header: 'Commission credit', accessor: (item: BranchSettlementDetail['items'][number]) => money(item.commissionAmount), width: '145px', className: 'branch-money-cell' },

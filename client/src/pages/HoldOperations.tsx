@@ -23,6 +23,7 @@ import { STATUS_TIMELINE_HEADERS, statusTimelineCells } from '../utils/orderStat
 import { printLabels } from '../utils/printLabels';
 import { isBranchWorkspaceUser } from '../utils/auth';
 import './HoldOperations.css';
+import ReceiverPhones from '../components/ReceiverPhones';
 
 const PAGE_SIZE = 10;
 const SEARCH_DEBOUNCE_MS = 300;
@@ -248,7 +249,7 @@ const HoldOperations: React.FC = () => {
       accessor: (order: Order) => (
         <div className="hold-party-cell">
           <span>{order.receiverName}</span>
-          <small>{order.receiverPhone}</small>
+          <small><ReceiverPhones phone={order.receiverPhone} alternate={order.receiverAlternatePhone} /></small>
         </div>
       ),
       width: '172px',

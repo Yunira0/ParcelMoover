@@ -10,7 +10,10 @@ vi.mock("../../lib/prisma", () => ({
     $transaction: vi.fn(),
   },
 }));
-vi.mock("../branch.service", () => ({ resolveBranchLocationIds: vi.fn() }));
+vi.mock("../../lib/branchScope", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../lib/branchScope")>()),
+  resolveBranchCoverageIds: vi.fn(),
+}));
 vi.mock("../../lib/redis", () => ({
   default: { set: vi.fn(), del: vi.fn(), get: vi.fn() },
   scanAndDelete: vi.fn().mockResolvedValue(undefined),
@@ -40,7 +43,7 @@ import {
 import prisma from "../../lib/prisma";
 import { invalidateVendorFinanceCache, invalidateRiderFinanceCache } from "../finance.service";
 import { emitWebhookEvent } from "../webhookDispatch.service";
-import { resolveBranchLocationIds } from "../branch.service";
+import { resolveBranchCoverageIds } from "../../lib/branchScope";
 
 const mockedPrisma = prisma as unknown as {
   parcels: { findFirst: ReturnType<typeof vi.fn>; findMany: ReturnType<typeof vi.fn> };
@@ -49,7 +52,7 @@ const mockedPrisma = prisma as unknown as {
   admins: { findFirst: ReturnType<typeof vi.fn> };
   $transaction: ReturnType<typeof vi.fn>;
 };
-const mockedResolveBranchLocationIds = resolveBranchLocationIds as unknown as ReturnType<typeof vi.fn>;
+const mockedResolveBranchCoverageIds = resolveBranchCoverageIds as unknown as ReturnType<typeof vi.fn>;
 const mockedVendorCache = invalidateVendorFinanceCache as unknown as ReturnType<typeof vi.fn>;
 const mockedRiderCache = invalidateRiderFinanceCache as unknown as ReturnType<typeof vi.fn>;
 const mockedEmitWebhook = emitWebhookEvent as unknown as ReturnType<typeof vi.fn>;
@@ -470,7 +473,7 @@ describe("branch scoping (loadParcelForTrash, shared by trash/restore/permanent-
   const SCOPED_ADMIN = { id: "admin-1", roles: ["admin"] };
 
   beforeEach(() => {
-    mockedResolveBranchLocationIds.mockResolvedValue([HUB_ID, AREA_ID]);
+    mockedResolveBranchCoverageIds.mockResolvedValue([HUB_ID, AREA_ID]);
   });
 
   it("moveOrderToTrash includes the branch filter for a branch-scoped admin", async () => {

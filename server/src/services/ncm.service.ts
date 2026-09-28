@@ -620,8 +620,9 @@ export async function processNcmWebhook(payload: NcmWebhookPayload): Promise<voi
   if (!status) return;
 
   const orderIds = payload.order_ids ?? (payload.order_id ? [payload.order_id] : []);
+  const isReturn = status === "Sent to Vendor";
   const targetStatus = NCM_STATUS_TO_PARCEL_STATUS[status];
-  if (!targetStatus) {
+  if (!targetStatus && !isReturn) {
     console.log(`[NCM] webhook status '${status}' has no parcel mapping — ignored`);
     return;
   }
@@ -633,9 +634,12 @@ export async function processNcmWebhook(payload: NcmWebhookPayload): Promise<voi
         console.warn(`[NCM] webhook for unknown order ${orderId} — ignored`);
         continue;
       }
-      const result = await applyCarrierStatusWithRetry(parcelId, targetStatus, `${CARRIER_AUTHOR_LABEL}: ${status}`);
+      const remark = `${CARRIER_AUTHOR_LABEL}: ${isReturn ? "Follow-up" : status}`;
+      const result = isReturn
+        ? await applyExternalCarrierFollowUp(parcelId, remark)
+        : await applyCarrierStatusWithRetry(parcelId, targetStatus!, remark);
       if (!result.applied) {
-        console.log(`[NCM] webhook order ${orderId} → '${targetStatus}' skipped: ${result.reason}`);
+        console.log(`[NCM] webhook order ${orderId} → '${isReturn ? "follow_up" : targetStatus}' skipped: ${result.reason}`);
       }
     } catch (error) {
       // One bad order must not block the rest of a bulk payload.
@@ -690,7 +694,7 @@ export async function reconcileNcmStatuses(): Promise<{ checked: number; applied
         // client vendor - that's our follow_up stage, not a further step
         // along the carrier-leg sequence, so it's applied separately.
         if (ncmStatus === "Sent to Vendor") {
-          const result = await applyExternalCarrierFollowUp(parcelId, `${CARRIER_AUTHOR_LABEL}: ${ncmStatus} (reconciled)`);
+          const result = await applyExternalCarrierFollowUp(parcelId, `${CARRIER_AUTHOR_LABEL}: Follow-up (reconciled)`);
           if (result.applied) applied += 1;
           continue;
         }
