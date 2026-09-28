@@ -23,7 +23,6 @@ import { createRedisRateLimitStore } from "../lib/rateLimitStore";
 import { paymentProofUpload } from "../lib/billingUpload";
 import {
   cancelCarrierSettlementController,
-  carrierCodSummaryController,
   createCarrierSettlementController,
   getCarrierSettlementController,
   listCarrierSettlementsController,
@@ -237,7 +236,6 @@ financeRouter.get(
 
 // ── 3PL (NCM / Upaya) COD settlements ── head office only (enforced in the service).
 const carrierStaff = [authMiddleware, authorizeRoles("super_admin", "admin")] as const;
-financeRouter.get("/carrier-cod", ...carrierStaff, financeReadLimiter, carrierCodSummaryController);
 financeRouter.get("/carrier-cod/:carrier/unsettled", ...carrierStaff, financeReadLimiter, unsettledCarrierOrdersController);
 financeRouter.get("/carrier-settlements", ...carrierStaff, financeReadLimiter, listCarrierSettlementsController);
 financeRouter.post("/carrier-settlements", ...carrierStaff, csrfProtection, settlementCreateLimiter, validate(createCarrierSettlementSchema), createCarrierSettlementController);

@@ -1,127 +1,186 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Banknote, Hourglass, Plus, Receipt, Truck } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import PageHeader from '../../components/PageHeader';
-import StatCard from '../../components/StatCard';
-import StatusChip from '../../components/StatusChip';
 import Table from '../../components/Table';
-import Button from '../../components/Button';
-import SegmentedTabs from '../../components/SegmentedTabs';
+import Pagination from '../../components/Pagination';
+import StatusChip from '../../components/StatusChip';
+import FormField from '../../components/FormField';
+import NepaliDatePicker from '../../components/NepaliDatePicker';
 import { Banner } from '../accounting/ui';
 import { money } from '../accounting/format';
 import {
   CARRIERS,
   CARRIER_LABEL,
-  getCarrierCodSummary,
   getCarrierSettlements,
   type CarrierCode,
-  type CarrierCodSummary,
   type CarrierSettlementRow,
+  type CarrierSettlementStatus,
 } from '../../services/carrierCod.service';
 import { settlementStatusLabel, settlementStatusTone } from '../../utils/settlementStatus';
 import { toBsDate } from '../../utils/nepaliDate';
-import { apiErrorMessage } from '../../utils/serverValidation';
 import '../accounting/Accounting.css';
 
-/** COD NCM and Upaya collected for us: what they have paid, kept and still owe. */
+const PAGE_SIZE = 20;
+
+/** 3PL COD statements - the same list as Rider COD and Vendor COD, one row per carrier statement. */
 const CarrierCodPage: React.FC = () => {
   const navigate = useNavigate();
-  const [carrier, setCarrier] = useState<CarrierCode>('ncm');
-  const [summary, setSummary] = useState<CarrierCodSummary[]>([]);
-  const [statements, setStatements] = useState<CarrierSettlementRow[]>([]);
+  const [carrier, setCarrier] = useState<CarrierCode | ''>('');
+  const [status, setStatus] = useState<CarrierSettlementStatus | ''>('');
+  const [settlementDate, setSettlementDate] = useState('');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(PAGE_SIZE);
+  const [items, setItems] = useState<CarrierSettlementRow[]>([]);
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
   useEffect(() => {
-    let live = true;
+    let active = true;
     setLoading(true);
-    Promise.all([getCarrierCodSummary(), getCarrierSettlements({ carrier })])
-      .then(([s, rows]) => {
-        if (!live) return;
-        setSummary(s);
-        setStatements(rows);
-        setError('');
+    setError('');
+    getCarrierSettlements({
+      ...(carrier ? { carrier } : {}),
+      ...(status ? { status } : {}),
+      ...(settlementDate ? { date: settlementDate } : {}),
+      page,
+      pageSize,
+    })
+      .then((res) => {
+        if (!active) return;
+        setItems(res.data);
+        setTotal(res.meta.total);
+        setTotalPages(res.meta.totalPages);
       })
-      .catch((err) => live && setError(apiErrorMessage(err, 'Failed to load 3PL COD.')))
-      .finally(() => live && setLoading(false));
-    return () => { live = false; };
-  }, [carrier]);
+      .catch((err) => active && setError(err?.response?.data?.message || 'Failed to load settlements.'))
+      .finally(() => active && setLoading(false));
+    return () => { active = false; };
+  }, [carrier, status, settlementDate, page, pageSize]);
 
-  const current = summary.find((s) => s.carrier === carrier);
-  const label = CARRIER_LABEL[carrier];
+  const rows = useMemo(
+    () => items.map((item, index) => ({ ...item, sn: (page - 1) * pageSize + index + 1 })),
+    [items, page, pageSize],
+  );
+  type Row = (typeof rows)[number];
+
+  /** Any filter change puts you back on page 1. */
+  const applyFilter = (change: () => void) => {
+    change();
+    setPage(1);
+  };
 
   return (
     <div className="acc-page">
       <PageHeader
         title="3PL COD"
-        actionLabel={`New ${label} statement`}
+        actionLabel="Add settlement"
         actionIcon={<Plus size={16} />}
-        onAction={() => navigate(`/finance/carrier-cod/new?carrier=${carrier}`)}
+        onAction={() => navigate(`/finance/carrier-cod/new${carrier ? `?carrier=${carrier}` : ''}`)}
       />
 
-      <SegmentedTabs
-        ariaLabel="Carrier"
-        fullWidth={false}
-        value={carrier}
-        onChange={setCarrier}
-        options={CARRIERS.map((c) => ({ value: c, label: CARRIER_LABEL[c] }))}
-      />
+      <div className="acc-toolbar">
+        <div className="acc-filters">
+          <label>
+            <span>CARRIER</span>
+            <FormField
+              label=""
+              type="select"
+              value={carrier}
+              onChange={(value) => applyFilter(() => setCarrier(value as CarrierCode | ''))}
+              options={[{ value: '', label: 'All carriers' }, ...CARRIERS.map((c) => ({ value: c, label: CARRIER_LABEL[c] }))]}
+            />
+          </label>
+          <label>
+            <span>SETTLEMENT DATE</span>
+            <NepaliDatePicker value={settlementDate} onChange={(value) => applyFilter(() => setSettlementDate(value))} />
+          </label>
+        </div>
+
+        <label>
+          <span>STATUS</span>
+          <FormField
+            label=""
+            type="select"
+            value={status}
+            onChange={(value) => applyFilter(() => setStatus(value as CarrierSettlementStatus | ''))}
+            options={[
+              { value: '', label: 'All statuses' },
+              { value: 'settled', label: 'Settled' },
+              { value: 'partially_paid', label: 'Partially paid' },
+              { value: 'pending', label: 'Pending' },
+            ]}
+          />
+        </label>
+      </div>
 
       {error && <Banner tone="danger">{error}</Banner>}
-
-      {current && (
-        <div className="acc-cards">
-          <StatCard icon={Truck} label="COD collected" value={money(current.collected)} hint={`On orders ${label} delivered`} />
-          <StatCard icon={Banknote} label="Received" value={money(current.received)} tone="positive" hint={`Cash ${label} has paid us`} />
-          <StatCard icon={Receipt} label={`${label} charges`} value={money(current.charges)} hint="Kept by the carrier, on statements" />
-          <StatCard
-            icon={Hourglass}
-            label="Still to receive"
-            value={money(current.outstanding)}
-            tone={current.outstanding > 0 ? 'negative' : 'default'}
-            hint={current.notOnStatement > 0 ? `${money(current.notOnStatement)} not on a statement yet` : 'Everything delivered is on a statement'}
-          />
-        </div>
-      )}
 
       <Table
         selectable={false}
         loading={loading}
-        loadingMessage="Loading statements…"
-        emptyMessage={`No ${label} statements yet.`}
-        data={statements}
+        loadingMessage="Loading settlements…"
+        data={rows}
         columns={[
+          { header: 'SN', accessor: 'sn', width: '60px' },
           {
-            header: 'Statement',
-            width: '190px',
-            accessor: (s: CarrierSettlementRow) => (
-              <button type="button" className="acc-link acc-entry-no" onClick={() => navigate(`/finance/carrier-cod/${s.id}`)}>
-                {s.statementNo}
+            header: 'Statement ID',
+            width: '185px',
+            accessor: (item: Row) => (
+              <button type="button" className="acc-link acc-entry-no" onClick={() => navigate(`/finance/carrier-cod/${item.id}`)}>
+                {item.statementNo}
               </button>
             ),
           },
-          { header: 'Date', width: '110px', accessor: (s: CarrierSettlementRow) => toBsDate(s.settlementDate) || s.settlementDate },
-          { header: 'Orders', width: '80px', accessor: (s: CarrierSettlementRow) => s.orders },
-          { header: 'COD', width: '120px', className: 'acc-num', accessor: (s: CarrierSettlementRow) => money(s.grossCod) },
-          { header: 'Charges', width: '110px', className: 'acc-num', accessor: (s: CarrierSettlementRow) => money(s.carrierCharges) },
-          { header: 'Net to receive', width: '130px', className: 'acc-num', accessor: (s: CarrierSettlementRow) => money(s.netReceivable) },
-          { header: 'Received / left', width: '170px', accessor: (s: CarrierSettlementRow) => `${money(s.paidAmount)} / ${money(s.remainingAmount)}` },
+          { header: 'Carrier', width: '110px', accessor: (item: Row) => CARRIER_LABEL[item.carrier] },
+          {
+            header: 'Amount',
+            width: '130px',
+            className: 'acc-num',
+            accessor: (item: Row) => <span className="acc-num">{money(item.netReceivable)}</span>,
+          },
+          { header: 'Settlement date', width: '125px', accessor: (item: Row) => toBsDate(item.settlementDate) || '—' },
+          {
+            header: 'Payment',
+            width: '185px',
+            accessor: (item: Row) =>
+              item.paymentBreakdown.length > 0 ? (
+                <>
+                  {item.paymentBreakdown.map((line) => (
+                    <span key={line.method} className="acc-stack">
+                      {line.method} - {money(line.amount)}
+                    </span>
+                  ))}
+                </>
+              ) : (
+                <span className="acc-muted">Not paid</span>
+              ),
+          },
           {
             header: 'Status',
-            width: '130px',
-            accessor: (s: CarrierSettlementRow) => (
-              <StatusChip variant="solid" tone={settlementStatusTone(s.status)}>{settlementStatusLabel(s.status)}</StatusChip>
+            width: '120px',
+            accessor: (item: Row) => (
+              <StatusChip variant="solid" tone={settlementStatusTone(item.status)}>
+                {settlementStatusLabel(item.status)}
+              </StatusChip>
             ),
           },
+          { header: 'Remark', width: '190px', accessor: (item: Row) => item.remark || '—' },
         ]}
-        minWidth="1050px"
+        minWidth="1110px"
+        emptyMessage="No 3PL settlements recorded yet."
       />
 
-      {!loading && current && current.notOnStatement > 0 && (
-        <Button variant="secondary" onClick={() => navigate(`/finance/carrier-cod/new?carrier=${carrier}`)}>
-          Put {money(current.notOnStatement)} of delivered COD on a statement
-        </Button>
-      )}
+      <Pagination
+        ariaLabel="Settlements pagination"
+        page={page}
+        totalPages={totalPages}
+        onPageChange={setPage}
+        pageSize={pageSize}
+        onPageSizeChange={(size) => applyFilter(() => setPageSize(size))}
+        summary={`${total} settlement${total === 1 ? '' : 's'}`}
+      />
     </div>
   );
 };

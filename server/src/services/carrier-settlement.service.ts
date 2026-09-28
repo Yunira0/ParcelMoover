@@ -13,7 +13,6 @@ import { assertHeadOfficeOnly } from "../lib/branchScope";
 import { AppError } from "../utils/AppError";
 import { syncCarrierSettlementPostings } from "./accounting/sync";
 import { CARRIER_CODES, type CarrierCode, isCarrierCode } from "./orders/carrier";
-import { CARRIER_OWED_SQL, PART_PAID_FRACTIONS_SQL } from "./orders/cod-detail";
 import { getActivePaymentMethodNames } from "./payment-method.service";
 
 type Actor = { id: string; roles: string[] };
@@ -56,58 +55,6 @@ const unsettledWhere = (carrier: CarrierCode): Prisma.cod_collectionsWhereInput 
   carrier_settlement_item: { is: null },
   parcels: { deleted_at: null, status: { in: DELIVERED } },
 });
-
-// ── Summary ─────────────────────────────────────────────────────────────────
-
-/**
- * Per carrier: COD it collected, what it has paid us, the charges it kept and
- * what it still owes in cash - the same figure as the dashboard's 3PL line
- * (see CARRIER_OWED_SQL).
- */
-export async function getCarrierCodSummary(actor: Actor) {
-  await assertHeadOfficeOnly(actor, HEAD_OFFICE_ONLY);
-  const [collections, statements] = await Promise.all([
-    prisma.$queryRaw<Array<{ carrier_code: string; collected: string; outstanding: string; not_on_statement: string }>>`
-      SELECT c.carrier_code,
-             COALESCE(SUM(c.collected_amount), 0) AS collected,
-             COALESCE(SUM(${CARRIER_OWED_SQL}), 0) AS outstanding,
-             COALESCE(SUM(c.collected_amount) FILTER (
-               WHERE c.carrier_payment_status::text = 'pending' AND pp.carrier_item_owed IS NULL
-             ), 0) AS not_on_statement
-        FROM cod_collections c
-        JOIN parcels p ON p.id = c.parcel_id
-        LEFT JOIN LATERAL (${PART_PAID_FRACTIONS_SQL}) pp ON TRUE
-       WHERE c.carrier_code IS NOT NULL
-         AND c.collected_at IS NOT NULL
-         AND p.deleted_at IS NULL
-         AND p.status::text IN ('delivered', 'partially_delivered')
-       GROUP BY c.carrier_code
-    `,
-    prisma.carrier_settlements.groupBy({
-      by: ["carrier_code"],
-      where: { status: { not: "cancelled" } },
-      _sum: { paid_amount: true, carrier_charges: true, net_receivable: true },
-      _count: { _all: true },
-    }),
-  ]);
-
-  return CARRIER_CODES.map((carrier) => {
-    const c = collections.find((row) => row.carrier_code === carrier);
-    const s = statements.find((row) => row.carrier_code === carrier);
-    const collected = money(c?.collected);
-    const received = money(s?._sum.paid_amount);
-    return {
-      carrier,
-      collected,
-      received,
-      charges: money(s?._sum.carrier_charges),
-      outstanding: money(c?.outstanding),
-      notOnStatement: money(c?.not_on_statement),
-      onStatementsOwed: round2(money(s?._sum.net_receivable) - received),
-      statements: s?._count._all ?? 0,
-    };
-  });
-}
 
 // ── Orders to settle ────────────────────────────────────────────────────────
 
@@ -220,30 +167,41 @@ export async function createCarrierSettlement(actor: Actor, input: CreateCarrier
 
 // ── Read ────────────────────────────────────────────────────────────────────
 
-export async function listCarrierSettlements(actor: Actor, query: { carrier?: string; status?: string }) {
+export async function listCarrierSettlements(
+  actor: Actor,
+  query: { carrier?: string; status?: string; date?: string; page?: number; pageSize?: number },
+) {
   await assertHeadOfficeOnly(actor, HEAD_OFFICE_ONLY);
-  const rows = await prisma.carrier_settlements.findMany({
-    where: {
-      ...(query.carrier ? { carrier_code: assertCarrier(query.carrier) } : {}),
-      ...(query.status ? { status: query.status } : {}),
-    },
-    orderBy: [{ settlement_date: "desc" }, { created_at: "desc" }],
-    take: 200,
-    include: { _count: { select: { items: true } } },
-  });
-  return rows.map((s) => ({
-    id: s.id,
-    statementNo: s.statement_no,
-    carrier: s.carrier_code,
-    settlementDate: s.settlement_date.toISOString().slice(0, 10),
-    status: s.status,
-    orders: s._count.items,
-    grossCod: money(s.gross_cod),
-    carrierCharges: money(s.carrier_charges),
-    netReceivable: money(s.net_receivable),
-    paidAmount: money(s.paid_amount),
-    remainingAmount: round2(money(s.net_receivable) - money(s.paid_amount)),
-  }));
+  const pageSize = Math.min(100, Math.max(1, query.pageSize || 20));
+  const page = Math.max(1, query.page || 1);
+  const where: Prisma.carrier_settlementsWhereInput = {
+    ...(query.carrier ? { carrier_code: assertCarrier(query.carrier) } : {}),
+    ...(query.status ? { status: query.status } : {}),
+    ...(query.date ? { settlement_date: new Date(`${query.date}T00:00:00.000Z`) } : {}),
+  };
+  const [total, rows] = await Promise.all([
+    prisma.carrier_settlements.count({ where }),
+    prisma.carrier_settlements.findMany({
+      where,
+      orderBy: [{ settlement_date: "desc" }, { created_at: "desc" }],
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    }),
+  ]);
+  return {
+    data: rows.map((s) => ({
+      id: s.id,
+      statementNo: s.statement_no,
+      carrier: s.carrier_code,
+      settlementDate: s.settlement_date.toISOString().slice(0, 10),
+      status: s.status,
+      netReceivable: money(s.net_receivable),
+      paidAmount: money(s.paid_amount),
+      paymentBreakdown: paymentLines(s.payments),
+      remark: s.remark,
+    })),
+    meta: { page, pageSize, total, totalPages: Math.max(1, Math.ceil(total / pageSize)) },
+  };
 }
 
 export async function getCarrierSettlementDetail(actor: Actor, id: string) {

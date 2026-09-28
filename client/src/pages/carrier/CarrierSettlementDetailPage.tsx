@@ -36,7 +36,6 @@ const CarrierSettlementDetailPage: React.FC = () => {
   const [methods, setMethods] = useState<PaymentMethodOption[]>([]);
   const [payments, setPayments] = useState<PaymentRow[]>([{ method: '', amount: '' }]);
   const [remark, setRemark] = useState('');
-  const [proof, setProof] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
   const [showCancel, setShowCancel] = useState(false);
   const [error, setError] = useState('');
@@ -80,10 +79,9 @@ const CarrierSettlementDetailPage: React.FC = () => {
     setSaving(true);
     setError('');
     try {
-      const res = await payCarrierSettlement(detail.id, lines, remark, proof);
+      const res = await payCarrierSettlement(detail.id, lines, remark);
       setNotice(res.data.status === 'settled' ? `${label} statement settled.` : `${money(res.data.remainingAmount)} still to receive on this statement.`);
       setRemark('');
-      setProof(null);
       await load();
     } catch (err) {
       setError(apiErrorMessage(err, 'Failed to record the payment.'));
@@ -144,10 +142,6 @@ const CarrierSettlementDetailPage: React.FC = () => {
                 <span>{entered > 0 ? `${money(entered)} now · ${money(Math.max(0, round2(detail.remainingAmount - entered)))} left after` : `${money(detail.remainingAmount)} to receive`}</span>
               </div>
               <FormField label="Remark" type="textarea" value={remark} onChange={setRemark} rows={2} placeholder="Optional, e.g. the carrier's transfer reference" />
-              <label className="form-group">
-                <span>Payment proof (optional)</span>
-                <input type="file" accept="image/*,application/pdf" onChange={(e) => setProof(e.target.files?.[0] ?? null)} />
-              </label>
               <div className="scp-actions">
                 <Button type="submit" variant="primary" disabled={saving}>
                   {saving ? 'Recording…' : entered === detail.remainingAmount ? 'Settle statement' : 'Record part payment'}

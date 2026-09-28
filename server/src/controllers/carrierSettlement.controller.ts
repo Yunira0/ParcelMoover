@@ -3,7 +3,6 @@ import { flattenMulterFiles, secureUploadedFiles } from "../lib/secureUploadedFi
 import {
   cancelCarrierSettlement,
   createCarrierSettlement,
-  getCarrierCodSummary,
   getCarrierSettlementDetail,
   getUnsettledCarrierOrders,
   listCarrierSettlements,
@@ -14,11 +13,6 @@ const actor = (req: Request) => ({ id: req.user!.id, roles: req.user!.roles });
 const fail = (res: Response, error: any, message: string) =>
   res.status(error.statusCode || 500).json({ success: false, message: error.message || message });
 
-export async function carrierCodSummaryController(req: Request, res: Response) {
-  try { return res.json({ success: true, data: await getCarrierCodSummary(actor(req)) }); }
-  catch (e) { return fail(res, e, "Failed to load 3PL COD summary"); }
-}
-
 export async function unsettledCarrierOrdersController(req: Request, res: Response) {
   try { return res.json({ success: true, data: await getUnsettledCarrierOrders(actor(req), req.params.carrier) }); }
   catch (e) { return fail(res, e, "Failed to load 3PL orders"); }
@@ -26,12 +20,15 @@ export async function unsettledCarrierOrdersController(req: Request, res: Respon
 
 export async function listCarrierSettlementsController(req: Request, res: Response) {
   try {
-    const { carrier, status } = req.query;
-    const data = await listCarrierSettlements(actor(req), {
+    const { carrier, status, date, page, pageSize } = req.query;
+    const result = await listCarrierSettlements(actor(req), {
       ...(typeof carrier === "string" && carrier ? { carrier } : {}),
       ...(typeof status === "string" && status ? { status } : {}),
+      ...(typeof date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(date) ? { date } : {}),
+      page: Number(page) || 1,
+      pageSize: Number(pageSize) || 20,
     });
-    return res.json({ success: true, data });
+    return res.json({ success: true, ...result });
   } catch (e) { return fail(res, e, "Failed to load 3PL statements"); }
 }
 
