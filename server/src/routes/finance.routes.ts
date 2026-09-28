@@ -7,7 +7,7 @@ import { requireAdminPermission } from "../middlewares/adminPermission.middlewar
 import { csrfProtection } from "../middlewares/csrf.middleware";
 import { validate } from "../middlewares/validate.middleware";
 import { parseMultipartJson } from "../middlewares/multipartJson.middleware";
-import { settlementDocsUpload } from "../lib/settlementUpload";
+import { carrierSettlementFileUpload, settlementDocsUpload } from "../lib/settlementUpload";
 import {
   pendingCodQuerySchema,
   orderCodQuerySchema,
@@ -20,9 +20,11 @@ import {
   createCarrierSettlementSchema,
 } from "../validators/finance.schema";
 import { createRedisRateLimitStore } from "../lib/rateLimitStore";
-import { paymentProofUpload } from "../lib/billingUpload";
 import {
+  attachCarrierSettlementDocumentsController,
   cancelCarrierSettlementController,
+  deleteCarrierSettlementDocumentController,
+  getCarrierSettlementDocumentController,
   createCarrierSettlementController,
   getCarrierSettlementController,
   listCarrierSettlementsController,
@@ -240,7 +242,10 @@ financeRouter.get("/carrier-cod/:carrier/unsettled", ...carrierStaff, financeRea
 financeRouter.get("/carrier-settlements", ...carrierStaff, financeReadLimiter, listCarrierSettlementsController);
 financeRouter.post("/carrier-settlements", ...carrierStaff, csrfProtection, settlementCreateLimiter, validate(createCarrierSettlementSchema), createCarrierSettlementController);
 financeRouter.get("/carrier-settlements/:id", ...carrierStaff, financeReadLimiter, getCarrierSettlementController);
-financeRouter.post("/carrier-settlements/:id/pay", ...carrierStaff, csrfProtection, settlementCreateLimiter, paymentProofUpload, parseMultipartJson("payments"), validate(paySettlementSchema), payCarrierSettlementController);
+financeRouter.post("/carrier-settlements/:id/pay", ...carrierStaff, csrfProtection, settlementCreateLimiter, validate(paySettlementSchema), payCarrierSettlementController);
 financeRouter.post("/carrier-settlements/:id/cancel", ...carrierStaff, csrfProtection, requireAdminPermission("EDIT_SETTLEMENTS"), settlementCreateLimiter, validate(cancelSettlementSchema), cancelCarrierSettlementController);
+financeRouter.post("/carrier-settlements/:id/documents", ...carrierStaff, csrfProtection, settlementCreateLimiter, carrierSettlementFileUpload, attachCarrierSettlementDocumentsController);
+financeRouter.get("/carrier-settlements/:id/documents/:documentId", ...carrierStaff, financeReadLimiter, getCarrierSettlementDocumentController);
+financeRouter.delete("/carrier-settlements/:id/documents/:documentId", ...carrierStaff, csrfProtection, settlementCreateLimiter, deleteCarrierSettlementDocumentController);
 
 export default financeRouter;

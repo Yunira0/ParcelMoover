@@ -38,7 +38,8 @@ export interface CarrierSettlementDetail extends CarrierSettlementRow {
   remainingAmount: number;
   createdBy: string | null;
   createdAt: string;
-  payments: Array<{ id: string; amount: number; method: string; breakdown: PaymentLine[]; remark: string | null; proofPath: string | null; paidAt: string; recordedBy: string | null }>;
+  documents: Array<{ id: string; fileName: string | null; isPdf: boolean; uploadedAt: string }>;
+  payments: Array<{ id: string; amount: number; method: string; breakdown: PaymentLine[]; remark: string | null; paidAt: string; recordedBy: string | null }>;
   items: Array<{ codCollectionId: string; orderNumber: number; trackingId: string; vendorName: string; receiverName: string; destination: string | null; collectedAmount: number; carrierCharge: number; netAmount: number }>;
 }
 
@@ -72,15 +73,27 @@ export async function getCarrierSettlement(id: string): Promise<CarrierSettlemen
 }
 
 export async function payCarrierSettlement(id: string, payments: PaymentLine[], remark?: string) {
-  // Multipart, like the other statement pay calls; `payments` travels as JSON text (see parseMultipartJson).
-  const form = new FormData();
-  form.append('payments', JSON.stringify(payments));
-  if (remark?.trim()) form.append('remark', remark.trim());
-  const response = await api.post(`/finance/carrier-settlements/${id}/pay`, form, {
-    headers: { 'Content-Type': 'multipart/form-data' },
+  const response = await api.post(`/finance/carrier-settlements/${id}/pay`, {
+    payments,
+    ...(remark?.trim() ? { remark: remark.trim() } : {}),
   });
   return response.data as { success: boolean; message: string; data: { status: CarrierSettlementStatus; remainingAmount: number } };
 }
+
+export async function attachCarrierSettlementFiles(id: string, files: File[]) {
+  const form = new FormData();
+  files.forEach((file) => form.append('settlementFile', file));
+  // Explicit header: the api instance defaults to JSON, which would turn the Files into {}.
+  await api.post(`/finance/carrier-settlements/${id}/documents`, form, { headers: { 'Content-Type': 'multipart/form-data' } });
+}
+
+export async function deleteCarrierSettlementFile(id: string, documentId: string) {
+  await api.delete(`/finance/carrier-settlements/${id}/documents/${documentId}`);
+}
+
+const API_ROOT = import.meta.env.VITE_API_URL || '/api';
+export const carrierSettlementFileUrl = (id: string, documentId: string) =>
+  `${API_ROOT}/finance/carrier-settlements/${id}/documents/${documentId}`;
 
 export async function cancelCarrierSettlement(id: string, remark: string) {
   return (await api.post(`/finance/carrier-settlements/${id}/cancel`, { remark })).data;

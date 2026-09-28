@@ -1,7 +1,11 @@
 import type { Request, Response } from "express";
-import { flattenMulterFiles, secureUploadedFiles } from "../lib/secureUploadedFiles";
+import { secureUploadedFiles } from "../lib/secureUploadedFiles";
+import { sendEncryptedFile } from "../lib/serveEncryptedDocument";
 import {
+  attachCarrierSettlementDocuments,
   cancelCarrierSettlement,
+  deleteCarrierSettlementDocument,
+  getCarrierSettlementDocumentPath,
   createCarrierSettlement,
   getCarrierSettlementDetail,
   getUnsettledCarrierOrders,
@@ -46,13 +50,9 @@ export async function getCarrierSettlementController(req: Request, res: Response
 
 export async function payCarrierSettlementController(req: Request, res: Response) {
   try {
-    const files = req.files as Record<string, Express.Multer.File[]> | undefined;
-    const proof = files?.proof?.[0];
-    if (proof) await secureUploadedFiles(flattenMulterFiles(files));
     const data = await payCarrierSettlement(actor(req), String(req.params.id), {
       payments: req.body.payments,
       remark: req.body.remark,
-      proofPath: proof ? `uploads/billing/${proof.filename}` : null,
     });
     return res.json({ success: true, message: data.status === "settled" ? "3PL statement settled" : "Part payment recorded", data });
   } catch (e) { return fail(res, e, "Failed to record 3PL payment"); }
@@ -61,4 +61,30 @@ export async function payCarrierSettlementController(req: Request, res: Response
 export async function cancelCarrierSettlementController(req: Request, res: Response) {
   try { return res.json({ success: true, message: "3PL statement cancelled", data: await cancelCarrierSettlement(actor(req), String(req.params.id), req.body.remark) }); }
   catch (e) { return fail(res, e, "Failed to cancel 3PL statement"); }
+}
+
+export async function attachCarrierSettlementDocumentsController(req: Request, res: Response) {
+  try {
+    const files = (req.files as Record<string, Express.Multer.File[]> | undefined)?.settlementFile ?? [];
+    // Verify and encrypt first: secureUploadedFiles can rename a file (HEIC -> JPG).
+    await secureUploadedFiles(files);
+    const data = await attachCarrierSettlementDocuments(
+      actor(req),
+      String(req.params.id),
+      files.map((file) => ({ path: `uploads/settlements/${file.filename}`, name: file.originalname })),
+    );
+    return res.status(201).json({ success: true, message: "File attached", data });
+  } catch (e) { return fail(res, e, "Failed to attach file"); }
+}
+
+export async function getCarrierSettlementDocumentController(req: Request, res: Response) {
+  try { return await sendEncryptedFile(res, await getCarrierSettlementDocumentPath(actor(req), String(req.params.id), String(req.params.documentId))); }
+  catch (e) { return fail(res, e, "Failed to load file"); }
+}
+
+export async function deleteCarrierSettlementDocumentController(req: Request, res: Response) {
+  try {
+    await deleteCarrierSettlementDocument(actor(req), String(req.params.id), String(req.params.documentId));
+    return res.json({ success: true, message: "File removed" });
+  } catch (e) { return fail(res, e, "Failed to remove file"); }
 }

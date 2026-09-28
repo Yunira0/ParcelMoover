@@ -213,6 +213,7 @@ export async function getCarrierSettlementDetail(actor: Actor, id: string) {
     where: { id },
     include: {
       payment_records: { orderBy: { paid_at: "asc" } },
+      documents: { orderBy: { created_at: "asc" } },
       items: {
         orderBy: { created_at: "asc" },
         include: {
@@ -257,13 +258,18 @@ export async function getCarrierSettlementDetail(actor: Actor, id: string) {
     createdBy: nameOf(s.created_by),
     createdAt: s.created_at.toISOString(),
     settledAt: s.settled_at?.toISOString() ?? null,
+    documents: s.documents.map((d) => ({
+      id: d.id,
+      fileName: d.file_name,
+      isPdf: d.file_path.toLowerCase().endsWith(".pdf"),
+      uploadedAt: d.created_at.toISOString(),
+    })),
     payments: s.payment_records.map((p) => ({
       id: p.id,
       amount: money(p.amount),
       method: p.method,
       breakdown: paymentLines(p.breakdown),
       remark: p.remark,
-      proofPath: p.proof_path,
       paidAt: p.paid_at.toISOString(),
       recordedBy: nameOf(p.recorded_by),
     })),
@@ -294,7 +300,6 @@ async function lockCarrierSettlement(tx: Prisma.TransactionClient, id: string) {
 export interface PayCarrierSettlementInput {
   payments: PaymentLine[];
   remark?: string;
-  proofPath?: string | null;
 }
 
 export async function payCarrierSettlement(actor: Actor, id: string, input: PayCarrierSettlementInput) {
@@ -328,7 +333,6 @@ export async function payCarrierSettlement(actor: Actor, id: string, input: PayC
       method: Array.from(new Set(lines.map((l) => l.method))).join(", "),
       breakdown: lines as unknown as Prisma.InputJsonValue,
       remark: input.remark?.trim() || null,
-      proof_path: input.proofPath ?? null,
       recorded_by: actor.id,
     } });
     const updated = await tx.carrier_settlements.update({
@@ -387,4 +391,39 @@ export async function cancelCarrierSettlement(actor: Actor, id: string, remark: 
     await syncCarrierSettlementPostings(tx, [id], { actorId: actor.id, reason: "carrier statement cancelled" });
     return { id, statementNo: updated.statement_no, status: updated.status };
   }, TX_OPTIONS);
+}
+
+// ── Attached files ──────────────────────────────────────────────────────────
+
+/** Adds files (e.g. the carrier's own settlement sheet) to a statement. */
+export async function attachCarrierSettlementDocuments(
+  actor: Actor,
+  id: string,
+  files: Array<{ path: string; name: string }>,
+) {
+  await assertHeadOfficeOnly(actor, HEAD_OFFICE_ONLY);
+  if (files.length === 0) throw new AppError(400, "Choose at least one file");
+  const settlement = await prisma.carrier_settlements.findUnique({ where: { id }, select: { id: true } });
+  if (!settlement) throw new AppError(404, "Carrier statement not found");
+  await prisma.carrier_settlement_documents.createMany({
+    data: files.map((f) => ({ settlement_id: id, file_path: f.path, file_name: f.name, uploaded_by: actor.id })),
+  });
+  return { id, attached: files.length };
+}
+
+export async function deleteCarrierSettlementDocument(actor: Actor, id: string, documentId: string) {
+  await assertHeadOfficeOnly(actor, HEAD_OFFICE_ONLY);
+  const deleted = await prisma.carrier_settlement_documents.deleteMany({ where: { id: documentId, settlement_id: id } });
+  if (deleted.count === 0) throw new AppError(404, "File not found");
+}
+
+/** The stored (encrypted-at-rest) path of one attached file; the controller streams it. */
+export async function getCarrierSettlementDocumentPath(actor: Actor, id: string, documentId: string): Promise<string> {
+  await assertHeadOfficeOnly(actor, HEAD_OFFICE_ONLY);
+  const doc = await prisma.carrier_settlement_documents.findFirst({
+    where: { id: documentId, settlement_id: id },
+    select: { file_path: true },
+  });
+  if (!doc) throw new AppError(404, "File not found");
+  return doc.file_path;
 }

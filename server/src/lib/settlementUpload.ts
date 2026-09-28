@@ -37,7 +37,7 @@ const MAX_FILES_PER_FIELD = 5;
  * handover has neither. Non-multipart (JSON) requests pass straight through, so
  * existing callers that post no files still work.
  */
-export const settlementDocsUpload = multer({
+const settlementMulter = multer({
   storage,
   limits: { fileSize: MAX_SIZE_MB * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
@@ -47,7 +47,14 @@ export const settlementDocsUpload = multer({
       cb(new AppError(400, "Only JPG, PNG, WebP, HEIC, and PDF files are allowed"));
     }
   },
-}).fields([
+});
+
+export const settlementDocsUpload = settlementMulter.fields([
   { name: "paymentReceipt", maxCount: MAX_FILES_PER_FIELD },
   { name: "taxInvoice", maxCount: MAX_FILES_PER_FIELD },
+]);
+
+/** A 3PL carrier's settlement sheet, on POST /finance/carrier-settlements/:id/documents. */
+export const carrierSettlementFileUpload = settlementMulter.fields([
+  { name: "settlementFile", maxCount: MAX_FILES_PER_FIELD },
 ]);

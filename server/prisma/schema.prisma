@@ -530,6 +530,7 @@ model carrier_settlements {
   updated_at      DateTime                      @default(now()) @updatedAt @db.Timestamptz(6)
   items           carrier_settlement_items[]
   payment_records carrier_settlement_payments[]
+  documents       carrier_settlement_documents[]
 
   @@index([carrier_code, status, settlement_date(sort: Desc)], map: "idx_carrier_settlements_carrier_status")
 }
@@ -545,6 +546,19 @@ model carrier_settlement_items {
   cod_collection    cod_collections     @relation(fields: [cod_collection_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
 
   @@id([settlement_id, cod_collection_id])
+}
+
+/// Files attached to a 3PL statement, e.g. the carrier's own settlement sheet.
+model carrier_settlement_documents {
+  id            String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  settlement_id String              @db.Uuid
+  file_path     String
+  file_name     String?
+  uploaded_by   String?             @db.Uuid
+  created_at    DateTime            @default(now()) @db.Timestamptz(6)
+  settlement    carrier_settlements @relation(fields: [settlement_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([settlement_id, created_at], map: "idx_carrier_settlement_documents_settlement")
 }
 
 model carrier_settlement_payments {
