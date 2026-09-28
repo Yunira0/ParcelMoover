@@ -155,6 +155,8 @@ const uniqueValues = (values: string[]) =>
 
 const formatMoney = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 0 });
 
+const CARRIER_LABELS: Record<NonNullable<Order['carrierCode']>, string> = { ncm: 'NCM', upaya: 'Upaya' };
+
 const getStatusTone = (status: ParcelStatus): StatusChipTone => {
   if (status === 'delivered') return 'success';
   if (status === 'partially_delivered') return 'warning';
@@ -950,9 +952,12 @@ const OrderManagement: React.FC = () => {
     {
       header: sortableHeader('STATUS', 'status'),
       accessor: (order: Order) => (
-        <StatusChip tone={getStatusTone(order.status)}>
-          {STATUS_LABELS[order.status]}
-        </StatusChip>
+        <span className="om-status-cell">
+          <StatusChip tone={getStatusTone(order.status)}>
+            {STATUS_LABELS[order.status]}
+          </StatusChip>
+          {order.carrierCode && <span className="om-carrier-chip">{CARRIER_LABELS[order.carrierCode]}</span>}
+        </span>
       ),
       width: '160px',
     },
