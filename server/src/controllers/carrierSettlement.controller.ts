@@ -1,5 +1,5 @@
 import type { Request, Response } from "express";
-import { secureUploadedFiles } from "../lib/secureUploadedFiles";
+import { secureUploadedDocuments } from "../lib/documentUpload";
 import { sendEncryptedFile } from "../lib/serveEncryptedDocument";
 import {
   attachCarrierSettlementDocuments,
@@ -66,8 +66,8 @@ export async function cancelCarrierSettlementController(req: Request, res: Respo
 export async function attachCarrierSettlementDocumentsController(req: Request, res: Response) {
   try {
     const files = (req.files as Record<string, Express.Multer.File[]> | undefined)?.settlementFile ?? [];
-    // Verify and encrypt first: secureUploadedFiles can rename a file (HEIC -> JPG).
-    await secureUploadedFiles(files);
+    // Check each file matches its extension, and encrypt it, before recording it.
+    await secureUploadedDocuments(files);
     const data = await attachCarrierSettlementDocuments(
       actor(req),
       String(req.params.id),

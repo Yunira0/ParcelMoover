@@ -47,7 +47,7 @@ const AttachCard: React.FC<{ settlementId: string; label: string; onDone: () => 
         </div>
       </div>
       <div className="asd-files asd-files-single">
-        <FileField multiple label="Settlement file" hint="JPG, PNG, WebP or PDF · max 5 MB each · add up to 5" files={files} onChange={setFiles} />
+        <FileField multiple label="Settlement file" accept=".pdf,.xlsx,.xls,.docx,.doc,.csv" hint="PDF, Excel, Word or CSV · max 10 MB each · add up to 5" files={files} onChange={setFiles} />
       </div>
       {error && <div className="asd-error" role="alert">{error}</div>}
       <div className="asd-actions">
@@ -82,21 +82,15 @@ const FileCard: React.FC<{ settlementId: string; label: string; document: Docume
   return (
     <div className="settlement-doc-view">
       {document.fileName && <span className="settlement-doc-caption">{document.fileName}</span>}
-      {document.isPdf ? (
+      {document.isPdf && (
         <div className="settlement-doc-frame settlement-doc-pdf-wrap">
           <iframe className="settlement-doc-pdf-frame" src={href} title={label} />
         </div>
-      ) : (
-        <a className="settlement-doc-frame" href={href} target="_blank" rel="noreferrer">
-          <img src={href} alt={label} loading="lazy" />
-        </a>
       )}
-      {document.isPdf && (
-        <a className="settlement-doc-open-link" href={href} target="_blank" rel="noreferrer">
-          <FileText size={14} />
-          Open in new tab
-        </a>
-      )}
+      <a className="settlement-doc-open-link" href={href} download={document.fileName ?? undefined} target="_blank" rel="noreferrer">
+        <FileText size={14} />
+        {document.isPdf ? 'Open in new tab' : `Download ${document.fileName ?? label}`}
+      </a>
       <div className="settlement-doc-actions">
         <button type="button" className="settlement-attach-proof-btn settlement-attach-proof-btn--danger" onClick={remove} disabled={removing}>
           <Trash2 size={14} />

@@ -7,7 +7,8 @@ import { requireAdminPermission } from "../middlewares/adminPermission.middlewar
 import { csrfProtection } from "../middlewares/csrf.middleware";
 import { validate } from "../middlewares/validate.middleware";
 import { parseMultipartJson } from "../middlewares/multipartJson.middleware";
-import { carrierSettlementFileUpload, settlementDocsUpload } from "../lib/settlementUpload";
+import { settlementDocsUpload } from "../lib/settlementUpload";
+import { carrierSettlementFileUpload } from "../lib/documentUpload";
 import {
   pendingCodQuerySchema,
   orderCodQuerySchema,
