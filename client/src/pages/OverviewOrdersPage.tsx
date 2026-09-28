@@ -170,7 +170,7 @@ const OverviewOrdersPage: React.FC = () => {
       '#', 'Tracking ID', 'Status', 'Order Type', 'Service Type', 'Origin', 'Destination',
       'Sender', 'Sender Phone', 'Sender Address',
       'Receiver', 'Receiver Phone', 'Receiver Alt Phone', 'Receiver Address',
-      'Pieces', 'Weight (kg)', 'COD', 'Delivery Charge', 'Package Type', 'Delivery Instruction',
+      'Pieces', 'Weight (kg)', 'COD', 'Delivery Charge', 'Package Description', 'Delivery Instruction',
       'Vendor', 'Rider', 'Attempts', 'Remarks',
       'Order Created Date', 'Last Updated By', 'Last Updated At', ...STATUS_TIMELINE_HEADERS,
     ];

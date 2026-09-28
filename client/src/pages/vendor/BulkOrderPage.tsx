@@ -36,8 +36,8 @@ interface LocationOption {
 
 // ── Row model ─────────────────────────────────────────────────────────────────
 // One editable draft per file row, mirroring every field on the Create Order
-// page (receiver, destination, service/order/package type, weight, COD,
-// instruction). Kept as strings so cells can be edited freely; validation and
+// page (receiver, destination, service/order type, package description,
+// weight, COD, instruction). Kept as strings so cells can be edited freely; validation and
 // the submit payload derive from them.
 
 interface DraftRow {
@@ -53,6 +53,7 @@ interface DraftRow {
   codAmount: string;
   itemValue: string;
   deliveryInstruction: string;
+  remarks: string;
 }
 
 type DraftField = keyof DraftRow;
@@ -60,7 +61,10 @@ type RowErrors = Partial<Record<DraftField | '_row', string>>;
 
 const SERVICE_TYPES: ServiceType[] = ['home_delivery', 'branch_delivery'];
 const ORDER_TYPES: OrderType[] = ['delivery', 'exchange', 'return'];
-const PACKAGE_TYPE_PRESETS = ['Parcel', 'Document', 'Fragile'];
+// Same limits as the Create Order form and the server (100 = what NCM accepts).
+const PACKAGE_DESCRIPTION_MAX_LENGTH = 100;
+const DELIVERY_INSTRUCTION_MAX_LENGTH = 100;
+const REMARKS_MAX_LENGTH = 1000;
 const DELIVERY_INSTRUCTION_PRESETS = [
   'Cannot open the parcel',
   'Can open the parcel',
@@ -83,26 +87,30 @@ const TEMPLATE_HEADERS = [
   'destination',
   'service_type',
   'order_type',
-  'package_type',
+  'package_description',
   'weight_kg',
   'cod_amount',
   'item_value',
   'delivery_instruction',
+  'remarks',
 ] as const;
 
 type TemplateColumn = (typeof TEMPLATE_HEADERS)[number];
 
 const SAMPLE_ROW = [
   '1', 'John Doe', '9801234567', '', 'Gwarko, Lalitpur', 'Imadol', 'home_delivery',
-  'delivery', 'Parcel', '1', '0', '0', 'Call before delivery',
+  'delivery', '2 cotton t-shirts', '1', '0', '0', 'Call before delivery', '',
 ];
+
+// Wider columns for the free-text fields.
+const TEMPLATE_COLUMN_WIDTHS = { package_description: 45, delivery_instruction: 45, remarks: 45 };
 
 // An .xlsx rather than a comma-joined .csv. The template is opened in Excel
 // before it is filled in, and a CSV lands entirely in column A for anyone whose
 // Excel uses ';' as its list separator - which makes the headers unreadable and
 // the file useless as a starting point. The importer below reads both.
 function downloadTemplate() {
-  downloadExcel('bulk_order_template', 'Orders', [...TEMPLATE_HEADERS], [SAMPLE_ROW]);
+  downloadExcel('bulk_order_template', 'Orders', [...TEMPLATE_HEADERS], [SAMPLE_ROW], TEMPLATE_COLUMN_WIDTHS);
 }
 
 // Single-pass parse (not line-split first) so a quoted field containing a
@@ -163,6 +171,10 @@ function matrixToRows(allRows: string[][]): DraftRow[] {
 
   const colIndex = new Map<TemplateColumn, number>();
   TEMPLATE_HEADERS.forEach((col, i) => colIndex.set(col, isHeader ? firstRow.indexOf(col) : i));
+  // Sheets made from the older template call this column package_type.
+  if (isHeader && colIndex.get('package_description') === -1) {
+    colIndex.set('package_description', firstRow.indexOf('package_type'));
+  }
 
   return dataRows.map((cols): DraftRow => {
     const get = (col: TemplateColumn) => {
@@ -177,11 +189,12 @@ function matrixToRows(allRows: string[][]): DraftRow[] {
       destination: get('destination'),
       serviceType: normalizeChoice(get('service_type'), SERVICE_TYPES),
       orderType: normalizeChoice(get('order_type'), ORDER_TYPES),
-      packageType: get('package_type'),
+      packageType: get('package_description'),
       weightKg: get('weight_kg'),
       codAmount: get('cod_amount'),
       itemValue: get('item_value'),
       deliveryInstruction: get('delivery_instruction'),
+      remarks: get('remarks'),
     };
   });
 }
@@ -228,6 +241,15 @@ function validateRow(row: DraftRow, index: number, destinations: LocationOption[
   if (row.weightKg.trim() !== '') {
     const parsed = Number(row.weightKg);
     if (!Number.isFinite(parsed) || parsed <= 0) errors.weightKg = 'weight must be a positive number';
+  }
+  if (row.packageType.trim().length > PACKAGE_DESCRIPTION_MAX_LENGTH) {
+    errors.packageType = `package description must be at most ${PACKAGE_DESCRIPTION_MAX_LENGTH} characters`;
+  }
+  if (row.deliveryInstruction.trim().length > DELIVERY_INSTRUCTION_MAX_LENGTH) {
+    errors.deliveryInstruction = `delivery instruction must be at most ${DELIVERY_INSTRUCTION_MAX_LENGTH} characters`;
+  }
+  if (row.remarks.trim().length > REMARKS_MAX_LENGTH) {
+    errors.remarks = `remarks must be at most ${REMARKS_MAX_LENGTH} characters`;
   }
   if (index >= MAX_ROWS_PER_IMPORT) {
     errors._row = `exceeds ${MAX_ROWS_PER_IMPORT} order limit per import — remove extra rows`;
@@ -435,6 +457,7 @@ const BulkOrderPage: React.FC = () => {
       codAmount: row.codAmount.trim() !== '' ? Number(row.codAmount) : 0,
       itemValue: row.itemValue.trim() !== '' ? Number(row.itemValue) : 0,
       deliveryInstruction: row.deliveryInstruction.trim() || undefined,
+      remarks: row.remarks.trim() || undefined,
     };
   };
 
@@ -717,11 +740,12 @@ const BulkOrderPage: React.FC = () => {
                     <th>Destination</th>
                     <th>Service</th>
                     <th>Type</th>
-                    <th>Package</th>
+                    <th>Package Description</th>
                     <th>Weight (kg)</th>
                     <th>COD</th>
                     <th>Item Value</th>
                     <th>Instruction</th>
+                    <th>Remarks</th>
                     <th>Status</th>
                     <th aria-label="Remove" />
                   </tr>
@@ -752,11 +776,12 @@ const BulkOrderPage: React.FC = () => {
                         <td>{choiceCell(i, 'orderType', ORDER_TYPES, { delivery: 'Delivery', exchange: 'Exchange', return: 'Return' })}</td>
                         <td>
                           <input
-                            className="bop-cell-input"
+                            className={`bop-cell-input bop-cell-input--wide${errors.packageType ? ' bop-cell-input--invalid' : ''}`}
                             value={row.packageType}
                             onChange={e => updateCell(i, 'packageType', e.target.value)}
-                            list="bop-package-options"
-                            placeholder="Parcel"
+                            placeholder="What's inside"
+                            title={errors.packageType}
+                            aria-invalid={Boolean(errors.packageType)}
                           />
                         </td>
                         <td>{cell(i, 'weightKg', { type: 'number', min: 0, step: '0.1', placeholder: '1' })}</td>
@@ -764,11 +789,23 @@ const BulkOrderPage: React.FC = () => {
                         <td>{cell(i, 'itemValue', { type: 'number', min: 0, step: '1', placeholder: '0' })}</td>
                         <td>
                           <input
-                            className="bop-cell-input bop-cell-input--wide"
+                            className={`bop-cell-input bop-cell-input--wide${errors.deliveryInstruction ? ' bop-cell-input--invalid' : ''}`}
                             value={row.deliveryInstruction}
                             onChange={e => updateCell(i, 'deliveryInstruction', e.target.value)}
                             list="bop-instruction-options"
                             placeholder="—"
+                            title={errors.deliveryInstruction}
+                            aria-invalid={Boolean(errors.deliveryInstruction)}
+                          />
+                        </td>
+                        <td>
+                          <input
+                            className={`bop-cell-input bop-cell-input--wide${errors.remarks ? ' bop-cell-input--invalid' : ''}`}
+                            value={row.remarks}
+                            onChange={e => updateCell(i, 'remarks', e.target.value)}
+                            placeholder="—"
+                            title={errors.remarks}
+                            aria-invalid={Boolean(errors.remarks)}
                           />
                         </td>
                         <td>
@@ -802,9 +839,6 @@ const BulkOrderPage: React.FC = () => {
 
             <datalist id="bop-destination-options">
               {destinationOptions.map(d => <option key={d.id} value={d.name} />)}
-            </datalist>
-            <datalist id="bop-package-options">
-              {PACKAGE_TYPE_PRESETS.map(p => <option key={p} value={p} />)}
             </datalist>
             <datalist id="bop-instruction-options">
               {DELIVERY_INSTRUCTION_PRESETS.map(p => <option key={p} value={p} />)}

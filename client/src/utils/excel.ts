@@ -4,18 +4,22 @@ export type CellValue = string | number | null | undefined;
 
 // Downloads an .xlsx workbook with a single sheet built from a header row plus
 // data rows (array-of-arrays). Numbers are kept as numeric cells so Excel can
-// sum/sort them; null/undefined become blank. Column widths auto-fit content.
+// sum/sort them; null/undefined become blank. Column widths auto-fit content,
+// unless `columnWidths` (header → width in characters) sets one explicitly.
 // Matches the SheetJS pattern already used for the import templates.
 export function downloadExcel(
   filename: string,
   sheetName: string,
   headers: string[],
   rows: CellValue[][],
+  columnWidths?: Record<string, number>,
 ): void {
   const aoa: CellValue[][] = [headers, ...rows];
   const ws = XLSX.utils.aoa_to_sheet(aoa);
 
   ws['!cols'] = headers.map((header, col) => {
+    const fixed = columnWidths?.[header];
+    if (fixed) return { wch: fixed };
     const bodyMax = rows.reduce((max, row) => Math.max(max, String(row[col] ?? '').length), 0);
     return { wch: Math.min(Math.max(header.length, bodyMax) + 2, 40) };
   });

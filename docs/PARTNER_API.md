@@ -212,8 +212,8 @@ Headers: `Authorization`, `Idempotency-Key` (UUID, required), `Content-Type: app
 | `pieces` | integer | — | ≥ 1. Number of packages. |
 | `weightKg` | number | ✅ | > 0. Billable weight — this is what your rate is quoted against, so it must be sent explicitly rather than defaulted. |
 | `codAmount` | number | ✅ | ≥ 0. Cash to collect from the receiver on delivery (NPR). Send `0` explicitly for prepaid orders — the field can't be omitted, so a forgotten COD can never silently ship as prepaid. |
-| `packageType` | string | — | Free text, max 50 chars, e.g. `"electronics"`. Defaults to `"Parcel"` if omitted — same as what the dashboard's own order form pre-fills, so an order created via the API looks the same as one created by staff. |
-| `deliveryInstruction` | string | — | Max 500 chars. |
+| `packageType` | string | — | Free-text package description, max 100 chars, e.g. `"2 cotton t-shirts"`. Defaults to `"Parcel"` if omitted — same as what the dashboard's own order form pre-fills, so an order created via the API looks the same as one created by staff. |
+| `deliveryInstruction` | string | — | Max 100 chars. |
 | `pickupAddress` | string | — | Max 255 chars. Overrides the sender address for pickup. |
 | `scheduledPickupAt` | string | — | ISO-8601 datetime with offset, e.g. `2026-07-15T10:00:00+05:45`. |
 | `originLocationId` | UUID | — | Your pickup hub. Optional — vendors normally have one fixed hub, resolved automatically; only set this if you dispatch from more than one. |
