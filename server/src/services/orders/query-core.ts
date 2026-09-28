@@ -5,7 +5,15 @@ import { AppError } from "../../utils/AppError";
 import type { ListOrdersQuery, OrderSortField, ParcelStatus } from "../../types/order.type";
 import { formatNepalDate as formatDate, NEPAL_UTC_OFFSET_MS } from "../../utils/nepalTime";
 import { getVendorStatusLabel } from "../../utils/orderStatusLabel";
-import { HANDOFF_NOTE_PREFIXES, remarkTextFor, stripCarrierStaffTag } from "../../utils/carrierRemark";
+import {
+  HANDOFF_NOTE_PREFIXES,
+  HANDOFF_REMARK_PREFIX,
+  UPAYA_HANDOFF_REMARK_PREFIX,
+  handoffCarrier,
+  remarkTextFor,
+  stripCarrierStaffTag,
+} from "../../utils/carrierRemark";
+import { isCarrierCode, type CarrierCode } from "./carrier";
 import { resolveLabelSize } from "../vendorPrintSettings.service";
 import { buildOrdersWhere } from "./where";
 import {
@@ -240,6 +248,8 @@ export function mapOrder(
   // Only populated for exports, where the caller batch-fetches the moment each
   // parcel first entered every status it has held (see fetchStatusTimestampMap).
   statusTimestampsByParcelId?: StatusTimestampMap,
+  // Staff list views only (see fetchCarrierMap) - vendors never see which 3PL carries a parcel.
+  carrierByParcelId?: CarrierMap,
 ) {
   const latestHistory = parcel.parcel_status_history[0];
   // The delivery rider is who this column is about; the pickup rider only
@@ -367,7 +377,41 @@ export function mapOrder(
       ? { statusTimestamps: statusTimestampsByParcelId.get(parcel.id) ?? {} }
       : {}),
     deliveredAt: parcel.delivered_at ? formatDate(parcel.delivered_at) : "",
+    ...(carrierByParcelId ? { carrierCode: carrierByParcelId.get(parcel.id) ?? null } : {}),
   };
+}
+
+type CarrierMap = Map<string, CarrierCode>;
+
+// The 3PL carrying each parcel: a carrier placeholder delivery rider names it,
+// a real delivery rider means we carry it ourselves, and otherwise the latest
+// API handoff note decides. Mirrors resolveDeliveryCarrier, batched per page.
+async function fetchCarrierMap(
+  parcels: Prisma.parcelsGetPayload<{ include: typeof ORDERS_INCLUDE }>[],
+): Promise<CarrierMap> {
+  const map: CarrierMap = new Map();
+  const unresolved: string[] = [];
+  for (const parcel of parcels) {
+    const rider = parcel.riders_parcels_delivery_rider_idToriders;
+    if (!rider) unresolved.push(parcel.id);
+    else if (isCarrierCode(rider.carrier_code)) map.set(parcel.id, rider.carrier_code);
+  }
+  if (unresolved.length === 0) return map;
+  const notes = await prisma.parcel_remarks.findMany({
+    where: {
+      parcel_id: { in: unresolved },
+      OR: [{ remark: { startsWith: HANDOFF_REMARK_PREFIX } }, { remark: { startsWith: UPAYA_HANDOFF_REMARK_PREFIX } }],
+    },
+    orderBy: { created_at: "desc" },
+    select: { parcel_id: true, remark: true },
+  });
+  // desc order → the first note seen for a parcel is its latest handoff.
+  for (const note of notes) {
+    if (map.has(note.parcel_id)) continue;
+    const carrier = handoffCarrier(note.remark)?.toLowerCase();
+    if (isCarrierCode(carrier)) map.set(note.parcel_id, carrier);
+  }
+  return map;
 }
 
 /** parcel id → { status: ISO timestamp it first entered that status }. */
@@ -606,11 +650,12 @@ export async function listOrders(
         take: DEFAULT_LIST_CAP,
       }),
     ]);
-    const statusTimestamps = query.withArrival
-      ? await fetchStatusTimestampMap(parcels.map((p) => p.id))
-      : undefined;
+    const [statusTimestamps, carriers] = await Promise.all([
+      query.withArrival ? fetchStatusTimestampMap(parcels.map((p) => p.id)) : undefined,
+      isStaff ? fetchCarrierMap(parcels) : undefined,
+    ]);
     const result: ListOrdersResult = {
-      data: parcels.map((p) => mapOrder(p, isStaff, isOwnVendorViewer, statusTimestamps)),
+      data: parcels.map((p) => mapOrder(p, isStaff, isOwnVendorViewer, statusTimestamps, carriers)),
       meta: {
         page: 1,
         pageSize: DEFAULT_LIST_CAP,
@@ -697,12 +742,13 @@ export async function listOrders(
   // silently ignored on every paginated request - which is all of them from
   // the overview export - and "Arrived at Origin" came back empty for rows
   // that had plainly arrived.
-  const keysetStatusTimestamps = query.withArrival
-    ? await fetchStatusTimestampMap(parcels.map((p) => p.id))
-    : undefined;
+  const [keysetStatusTimestamps, keysetCarriers] = await Promise.all([
+    query.withArrival ? fetchStatusTimestampMap(parcels.map((p) => p.id)) : undefined,
+    isStaff ? fetchCarrierMap(parcels) : undefined,
+  ]);
 
   return {
-    data: parcels.map((p) => mapOrder(p, isStaff, isOwnVendorViewer, keysetStatusTimestamps)),
+    data: parcels.map((p) => mapOrder(p, isStaff, isOwnVendorViewer, keysetStatusTimestamps, keysetCarriers)),
     meta: {
       page: pageHint,
       pageSize,
