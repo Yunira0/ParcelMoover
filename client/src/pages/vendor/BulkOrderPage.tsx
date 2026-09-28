@@ -18,7 +18,7 @@ import {
 } from '../../services/orders.service';
 import { getLocations, searchVendors } from '../../services/users.service';
 import { isVendorSide } from '../../utils/auth';
-import { downloadExcel } from '../../utils/excel';
+import { downloadExcelTemplate } from '../../utils/excel';
 import './BulkOrderPage.css';
 
 interface VendorOption {
@@ -103,8 +103,12 @@ const SAMPLE_ROW = [
 // before it is filled in, and a CSV lands entirely in column A for anyone whose
 // Excel uses ';' as its list separator - which makes the headers unreadable and
 // the file useless as a starting point. The importer below reads both.
-function downloadTemplate() {
-  downloadExcel('bulk_order_template', 'Orders', [...TEMPLATE_HEADERS], [SAMPLE_ROW]);
+function downloadTemplate(destinations: LocationOption[]) {
+  return downloadExcelTemplate('bulk_order_template', 'Orders', [...TEMPLATE_HEADERS], [SAMPLE_ROW], {
+    destination: destinations.map(l => l.name).sort((a, b) => a.localeCompare(b)),
+    service_type: SERVICE_TYPES,
+    order_type: ORDER_TYPES,
+  });
 }
 
 // Single-pass parse (not line-split first) so a quoted field containing a
@@ -760,7 +764,12 @@ const BulkOrderPage: React.FC = () => {
               <h2>Upload order list</h2>
               <p>Use one row per order. Each import can contain up to 100 orders.</p>
             </div>
-            <Button type="button" variant="outline" onClick={downloadTemplate}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => downloadTemplate(destinationOptions)
+                .catch(() => setError('Could not generate the template. Please try again.'))}
+            >
               <Download size={15} /> Download Template
             </Button>
           </div>
