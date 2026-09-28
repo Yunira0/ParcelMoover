@@ -29,7 +29,7 @@ import MultiFilterDropdown from '../components/MultiFilterDropdown';
 import MultiFilterDropdownAsync from '../components/MultiFilterDropdownAsync';
 import QuickRemarkPopup from '../components/QuickRemarkPopup';
 import { toBsDate, toBsDateTime, toBsDateTimeCell } from '../utils/nepaliDate';
-import { STATUS_TIMELINE_HEADERS, statusTimelineCells } from '../utils/orderStatus';
+import { CARRIER_LABELS, STATUS_TIMELINE_HEADERS, statusTimelineCells } from '../utils/orderStatus';
 import { downloadExcel } from '../utils/excel';
 import NepaliDatePicker from '../components/NepaliDatePicker';
 import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react';
@@ -154,8 +154,6 @@ const uniqueValues = (values: string[]) =>
   Array.from(new Set(values.filter(Boolean))).sort((a, b) => a.localeCompare(b));
 
 const formatMoney = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 0 });
-
-const CARRIER_LABELS: Record<NonNullable<Order['carrierCode']>, string> = { ncm: 'NCM', upaya: 'Upaya' };
 
 const getStatusTone = (status: ParcelStatus): StatusChipTone => {
   if (status === 'delivered') return 'success';
