@@ -1,194 +1,213 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Ban, CreditCard, Plus, Trash2 } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
+import { ArrowLeft, Ban, CreditCard } from 'lucide-react';
 import Button from '../../components/Button';
-import FormField from '../../components/FormField';
 import StatusChip from '../../components/StatusChip';
-import Table from '../../components/Table';
+import ConfirmBanner from '../../components/ConfirmBanner';
 import RevertSettlementModal from '../../components/RevertSettlementModal';
-import { Banner } from '../accounting/ui';
-import { getCurrentUserRoles, hasAdminPermission } from '../../utils/auth';
+import { hasAdminPermission, hasAnyRole } from '../../utils/auth';
 import {
   CARRIER_LABEL,
   cancelCarrierSettlement,
   getCarrierSettlement,
-  payCarrierSettlement,
   type CarrierSettlementDetail,
 } from '../../services/carrierCod.service';
-import { getPaymentMethods, type PaymentMethodOption } from '../../services/paymentMethods.service';
-import { settlementStatusLabel, settlementStatusTone } from '../../utils/settlementStatus';
-import { toBsDate } from '../../utils/nepaliDate';
-import { apiErrorMessage } from '../../utils/serverValidation';
-import '../SettlementCreatePage.css';
-import '../branch/BranchSettlement.css';
-import '../branch/BranchSettlementDetailPage.css';
+import { isSettlementPayable, settlementStatusLabel, settlementStatusTone } from '../../utils/settlementStatus';
+import { toBsDate, toBsDateTime } from '../../utils/nepaliDate';
+import '../vendor/VendorFinance.css';
+import '../SettlementDetailPage.css';
 
-type PaymentRow = { method: string; amount: string };
-type Detail = CarrierSettlementDetail;
-const money = (n: number) => `Rs. ${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
-const round2 = (n: number) => Math.round(n * 100) / 100;
+const money = (value: number) => `Rs. ${value.toLocaleString()}`;
 
+/** A 3PL statement, laid out like the vendor/rider statement page. */
 const CarrierSettlementDetailPage: React.FC = () => {
   const { id = '' } = useParams();
   const navigate = useNavigate();
-  const canCancel = getCurrentUserRoles().includes('super_admin') || hasAdminPermission('EDIT_SETTLEMENTS');
-  const [detail, setDetail] = useState<Detail | null>(null);
-  const [methods, setMethods] = useState<PaymentMethodOption[]>([]);
-  const [payments, setPayments] = useState<PaymentRow[]>([{ method: '', amount: '' }]);
-  const [remark, setRemark] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [showCancel, setShowCancel] = useState(false);
+  const location = useLocation();
+  const canCancel = hasAnyRole(['super_admin']) || hasAdminPermission('EDIT_SETTLEMENTS');
+  const [detail, setDetail] = useState<CarrierSettlementDetail | null>(null);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
+  const [reloadKey, setReloadKey] = useState(0);
+  const [showCancel, setShowCancel] = useState(false);
+  const [banner, setBanner] = useState<{ title: string; meta?: string } | null>(
+    (location.state as { confirmBanner?: { title: string; meta?: string } } | null)?.confirmBanner ?? null,
+  );
 
-  const activeMethods = useMemo(() => methods.filter((m) => m.isActive), [methods]);
-  const load = useCallback(async () => {
-    try {
-      const [statement, paymentMethods] = await Promise.all([getCarrierSettlement(id), getPaymentMethods()]);
-      setDetail(statement);
-      setMethods(paymentMethods);
-      setPayments([{ method: paymentMethods.find((m) => m.isActive)?.name ?? '', amount: String(statement.remainingAmount) }]);
-      setError('');
-    } catch (err) {
-      setError(apiErrorMessage(err, 'Failed to load this statement.'));
-    }
-  }, [id]);
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    let active = true;
+    getCarrierSettlement(id)
+      .then((data) => active && setDetail(data))
+      .catch((err) => active && setError(err?.response?.data?.message || 'Failed to load this settlement.'))
+      .finally(() => active && setLoading(false));
+    return () => { active = false; };
+  }, [id, reloadKey]);
 
-  if (!detail) {
-    return (
-      <div className="scp-page">
-        <button type="button" className="scp-back" onClick={() => navigate('/finance/carrier-cod')}><ArrowLeft size={15} />3PL COD</button>
-        {error ? <Banner tone="danger">{error}</Banner> : <div className="scp-empty">Loading statement…</div>}
-      </div>
-    );
-  }
-
-  const label = CARRIER_LABEL[detail.carrier];
-  const payable = detail.status === 'pending' || detail.status === 'partially_paid';
-  const entered = round2(payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0));
-  const updatePayment = (index: number, patch: Partial<PaymentRow>) =>
-    setPayments((rows) => rows.map((row, i) => (i === index ? { ...row, ...patch } : row)));
-
-  const recordPayment = async (event: React.FormEvent) => {
-    event.preventDefault();
-    const lines = payments.map((p) => ({ method: p.method.trim(), amount: Number(p.amount) || 0 })).filter((p) => p.amount > 0);
-    if (lines.length === 0) { setError('Enter the amount received.'); return; }
-    if (lines.some((p) => !p.method)) { setError('Choose a payment method for every amount.'); return; }
-    if (entered > detail.remainingAmount) { setError(`That is more than the ${money(detail.remainingAmount)} still to receive.`); return; }
-    setSaving(true);
-    setError('');
-    try {
-      const res = await payCarrierSettlement(detail.id, lines, remark);
-      setNotice(res.data.status === 'settled' ? `${label} statement settled.` : `${money(res.data.remainingAmount)} still to receive on this statement.`);
-      setRemark('');
-      await load();
-    } catch (err) {
-      setError(apiErrorMessage(err, 'Failed to record the payment.'));
-    } finally {
-      setSaving(false);
-    }
-  };
+  const label = detail ? CARRIER_LABEL[detail.carrier] : '';
 
   return (
-    <div className="scp-page bsd-page">
-      <button type="button" className="scp-back" onClick={() => navigate('/finance/carrier-cod')}><ArrowLeft size={15} />3PL COD</button>
-      <div className="bsd-heading">
-        <div>
-          <h1>{detail.statementNo}</h1>
-          <p><strong>{label}</strong> pays the COD it collected, less its delivery charge.{detail.remark ? ` ${detail.remark}` : ''}</p>
-        </div>
-        <div className="bsd-heading-actions">
-          {canCancel && detail.status === 'pending' && detail.paidAmount === 0 && (
-            <Button variant="danger" size="sm" onClick={() => setShowCancel(true)}><Ban size={15} /> Cancel statement</Button>
+    <div className="settlement-detail-page">
+      <div className="settlement-detail-toolbar">
+        <Button variant="ghost" onClick={() => navigate('/finance/carrier-cod')}>
+          <ArrowLeft size={16} /> Back
+        </Button>
+        <div className="settlement-detail-actions">
+          {detail && isSettlementPayable(detail.status) && (
+            <Button variant="primary" onClick={() => navigate(`/finance/carrier-cod/${id}/pay`)}>
+              <CreditCard size={16} /> {detail.status === 'partially_paid' ? 'Record Balance' : 'Record Payment'}
+            </Button>
           )}
-          <StatusChip variant="solid" tone={settlementStatusTone(detail.status)}>{settlementStatusLabel(detail.status)}</StatusChip>
+          {canCancel && detail?.status === 'pending' && (
+            <Button variant="danger" onClick={() => setShowCancel(true)}>
+              <Ban size={16} /> Cancel
+            </Button>
+          )}
         </div>
       </div>
-      {notice && <Banner tone="success">{notice}</Banner>}
-      {error && <Banner tone="danger">{error}</Banner>}
 
-      <section className="bsd-ledger" aria-label="Statement balance">
-        <div><span>COD</span><strong>{money(detail.grossCod)}</strong></div>
-        <div><span>{label} charges</span><strong>{money(detail.carrierCharges)}</strong></div>
-        <div><span>Net to receive</span><strong>{money(detail.netReceivable)}</strong></div>
-        <div><span>Received</span><strong>{money(detail.paidAmount)}</strong></div>
-        <div>
-          <span>Still to receive</span>
-          <strong className={detail.remainingAmount > 0 ? 'branch-balance-due' : 'branch-balance-clear'}>{money(detail.remainingAmount)}</strong>
-          <small>{detail.settledAt ? `Settled ${toBsDate(detail.settledAt)}` : 'Waiting for payment'}</small>
-        </div>
-      </section>
+      {banner && <ConfirmBanner title={banner.title} meta={banner.meta} onDismiss={() => setBanner(null)} />}
 
-      {payable && (
-        <section className="scp-section bsd-payment-section">
-          <div className="scp-section-header">
-            <div className="scp-section-icon"><CreditCard size={18} /></div>
-            <div><h3>Record {label} payment</h3><p>A part payment keeps the statement open until the balance reaches zero.</p></div>
+      {loading ? (
+        <div className="loading-state">Loading statement…</div>
+      ) : error ? (
+        <p className="vendor-finance-error">{error}</p>
+      ) : detail ? (
+        <div className="sdp-bill">
+          <div className="sdp-bill-head">
+            <span className="sdp-avatar">{label.slice(0, 2).toUpperCase()}</span>
+            <div className="sdp-payee-text">
+              <div className="sdp-payee-name-row">
+                <span className="sdp-payee-name">{label}</span>
+                <StatusChip variant="solid" tone={settlementStatusTone(detail.status)}>
+                  {settlementStatusLabel(detail.status)}
+                </StatusChip>
+              </div>
+              <span className="sdp-payee-sub">3PL carrier</span>
+            </div>
           </div>
-          {activeMethods.length === 0 ? (
-            <Banner tone="danger">No active payment method is configured. Add one in Settings first.</Banner>
-          ) : (
-            <form onSubmit={recordPayment} className="bsd-payment-form" noValidate>
-              {payments.map((payment, index) => (
-                <div key={index} className="bsd-payment-row">
-                  <FormField label={index === 0 ? 'Received into' : ''} type="select" value={payment.method} onChange={(v) => updatePayment(index, { method: v })} options={activeMethods.map((m) => ({ value: m.name, label: m.name }))} />
-                  <FormField label={index === 0 ? 'Amount' : ''} type="decimal" value={payment.amount} onChange={(v) => updatePayment(index, { amount: v })} placeholder="0.00" />
-                  <Button type="button" variant="ghost" size="icon" aria-label="Remove payment row" onClick={() => setPayments((rows) => (rows.length > 1 ? rows.filter((_, i) => i !== index) : rows))} disabled={payments.length === 1}><Trash2 size={16} /></Button>
+
+          <div className="sdp-meta">
+            <div>
+              <span>Statement</span>
+              <span className="sdp-mono">{detail.statementNo}</span>
+            </div>
+            <div>
+              <span>Statement date</span>
+              <span>{toBsDate(detail.settlementDate) || '-'}</span>
+            </div>
+            <div>
+              <span>Recorded</span>
+              <span>{toBsDateTime(detail.createdAt) || '-'}</span>
+            </div>
+            {detail.settledAt && (
+              <div>
+                <span>Settled</span>
+                <span>{toBsDateTime(detail.settledAt)}</span>
+              </div>
+            )}
+            {detail.paymentBreakdown.length > 0 && (
+              <div>
+                <span>Payment method</span>
+                <span>{detail.paymentBreakdown.map((p) => `${p.method}: ${money(p.amount)}`).join(', ')}</span>
+              </div>
+            )}
+            {detail.status === 'partially_paid' && (
+              <>
+                <div>
+                  <span>Received so far</span>
+                  <span>{money(detail.paidAmount)}</span>
                 </div>
-              ))}
-              <div className="bsd-payment-actions">
-                <Button type="button" variant="secondary" size="sm" onClick={() => setPayments((rows) => [...rows, { method: activeMethods[0]?.name ?? '', amount: '' }])}><Plus size={14} /> Split payment</Button>
-                <span>{entered > 0 ? `${money(entered)} now · ${money(Math.max(0, round2(detail.remainingAmount - entered)))} left after` : `${money(detail.remainingAmount)} to receive`}</span>
+                <div>
+                  <span>Still outstanding</span>
+                  <span className="sdp-outstanding">{money(detail.remainingAmount)}</span>
+                </div>
+              </>
+            )}
+            {detail.remark && (
+              <div>
+                <span>Remark</span>
+                <span>{detail.remark}</span>
               </div>
-              <FormField label="Remark" type="textarea" value={remark} onChange={setRemark} rows={2} placeholder="Optional, e.g. the carrier's transfer reference" />
-              <div className="scp-actions">
-                <Button type="submit" variant="primary" disabled={saving}>
-                  {saving ? 'Recording…' : entered === detail.remainingAmount ? 'Settle statement' : 'Record part payment'}
-                </Button>
+            )}
+          </div>
+
+          {detail.payments.length > 0 && (
+            <div className="sdp-payments">
+              <h3>Payment history</h3>
+              <div className="sdp-payments-list">
+                {detail.payments.map((payment, index) => (
+                  <div className="sdp-payment" key={payment.id}>
+                    <div className="sdp-payment-head">
+                      <span className="sdp-payment-amount">{money(payment.amount)}</span>
+                      <span className="sdp-payment-date">{toBsDateTime(payment.paidAt) || '-'}</span>
+                    </div>
+                    <div className="sdp-payment-meta">
+                      <span>
+                        {detail.payments.length > 1 ? `Payment ${index + 1} · ` : ''}
+                        {payment.method}
+                      </span>
+                    </div>
+                    {payment.remark && <p className="sdp-payment-remark">{payment.remark}</p>}
+                  </div>
+                ))}
               </div>
-            </form>
+              {detail.remainingAmount > 0 && (
+                <p className="sdp-payments-outstanding">{money(detail.remainingAmount)} still outstanding on this statement.</p>
+              )}
+            </div>
           )}
-        </section>
-      )}
 
-      <section className="scp-section">
-        <div className="scp-section-header"><div><h3>Payments received</h3><p>Every instalment from {label}, including part payments.</p></div></div>
-        <Table
-          selectable={false}
-          data={detail.payments}
-          emptyMessage="Nothing received yet."
-          minWidth="900px"
-          columns={[
-            { header: 'Received', width: '120px', accessor: (p: Detail['payments'][number]) => toBsDate(p.paidAt) || '—' },
-            { header: 'Amount', width: '130px', className: 'branch-money-cell', accessor: (p: Detail['payments'][number]) => money(p.amount) },
-            { header: 'Into', width: '220px', accessor: (p: Detail['payments'][number]) => p.breakdown.map((l) => `${l.method} · ${money(l.amount)}`).join(' · ') },
-            { header: 'Recorded by', width: '160px', accessor: (p: Detail['payments'][number]) => p.recordedBy || '—' },
-            { header: 'Remark', width: '200px', accessor: (p: Detail['payments'][number]) => p.remark || '—' },
-          ]}
-        />
-      </section>
+          <div className="sdp-table-wrap">
+            <table className="sdp-table">
+              <thead>
+                <tr>
+                  <th>SN</th>
+                  <th>Order ID</th>
+                  <th>Transaction ID</th>
+                  <th>Vendor</th>
+                  <th>Receiver</th>
+                  <th>Destination</th>
+                  <th className="sdp-num">Collected COD</th>
+                  <th className="sdp-num">{label} Charge</th>
+                  <th className="sdp-num">Net Receivable</th>
+                </tr>
+              </thead>
+              <tbody>
+                {detail.items.map((item, index) => (
+                  <tr key={item.codCollectionId}>
+                    <td>{index + 1}</td>
+                    <td>#{item.orderNumber}</td>
+                    <td className="sdp-mono">{item.trackingId}</td>
+                    <td>{item.vendorName || '-'}</td>
+                    <td>{item.receiverName}</td>
+                    <td>{item.destination || '-'}</td>
+                    <td className="sdp-num">{money(item.collectedAmount)}</td>
+                    <td className="sdp-num">{money(item.carrierCharge)}</td>
+                    <td className="sdp-cell-strong sdp-num">{money(item.netAmount)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
 
-      <section className="scp-section">
-        <div className="scp-section-header"><div><h3>Orders ({detail.items.length})</h3><p>Delivered by {label}; each carries the charge {label} kept.</p></div></div>
-        <Table
-          selectable={false}
-          data={detail.items.map((i) => ({ ...i, id: i.codCollectionId }))}
-          minWidth="1000px"
-          columns={[
-            { header: 'Order', width: '80px', accessor: (i: Detail['items'][number]) => `#${i.orderNumber}` },
-            { header: 'Tracking ID', width: '170px', accessor: (i: Detail['items'][number]) => i.trackingId },
-            { header: 'Vendor', width: '150px', accessor: (i: Detail['items'][number]) => i.vendorName || '—' },
-            { header: 'Receiver', width: '150px', accessor: (i: Detail['items'][number]) => i.receiverName },
-            { header: 'Destination', width: '130px', accessor: (i: Detail['items'][number]) => i.destination || '—' },
-            { header: 'COD', width: '110px', className: 'branch-money-cell', accessor: (i: Detail['items'][number]) => money(i.collectedAmount) },
-            { header: `${label} charge`, width: '120px', className: 'branch-money-cell', accessor: (i: Detail['items'][number]) => money(i.carrierCharge) },
-            { header: 'Net', width: '110px', className: 'branch-money-cell', accessor: (i: Detail['items'][number]) => money(i.netAmount) },
-          ]}
-        />
-      </section>
+          <div className="sdp-totals">
+            <div>
+              <span>Collected COD</span>
+              <span>{money(detail.grossCod)}</span>
+            </div>
+            <div>
+              <span>{label} Charges</span>
+              <span>{money(detail.carrierCharges)}</span>
+            </div>
+            <div className="sdp-totals-payable">
+              <span>Receivable Amount</span>
+              <span>{money(detail.netReceivable)}</span>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
-      {showCancel && (
+      {showCancel && detail && (
         <RevertSettlementModal
           settlementId={detail.id}
           statementId={detail.statementNo}
@@ -196,8 +215,8 @@ const CarrierSettlementDetailPage: React.FC = () => {
           submit={cancelCarrierSettlement}
           onClose={() => setShowCancel(false)}
           onSuccess={() => {
-            setNotice(`${detail.statementNo} cancelled. Its orders can go on a new statement.`);
-            load();
+            setReloadKey((k) => k + 1);
+            setBanner({ title: `${detail.statementNo} cancelled`, meta: 'Its orders are free for a future statement' });
           }}
         />
       )}

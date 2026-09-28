@@ -28,7 +28,8 @@ const CarrierCodPage: React.FC = () => {
   const navigate = useNavigate();
   const [carrier, setCarrier] = useState<CarrierCode | ''>('');
   const [status, setStatus] = useState<CarrierSettlementStatus | ''>('');
-  const [settlementDate, setSettlementDate] = useState('');
+  const [settledFrom, setSettledFrom] = useState('');
+  const [settledTo, setSettledTo] = useState('');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(PAGE_SIZE);
   const [items, setItems] = useState<CarrierSettlementRow[]>([]);
@@ -44,7 +45,8 @@ const CarrierCodPage: React.FC = () => {
     getCarrierSettlements({
       ...(carrier ? { carrier } : {}),
       ...(status ? { status } : {}),
-      ...(settlementDate ? { date: settlementDate } : {}),
+      ...(settledFrom ? { settledFrom } : {}),
+      ...(settledTo ? { settledTo } : {}),
       page,
       pageSize,
     })
@@ -57,7 +59,7 @@ const CarrierCodPage: React.FC = () => {
       .catch((err) => active && setError(err?.response?.data?.message || 'Failed to load settlements.'))
       .finally(() => active && setLoading(false));
     return () => { active = false; };
-  }, [carrier, status, settlementDate, page, pageSize]);
+  }, [carrier, status, settledFrom, settledTo, page, pageSize]);
 
   const rows = useMemo(
     () => items.map((item, index) => ({ ...item, sn: (page - 1) * pageSize + index + 1 })),
@@ -93,8 +95,12 @@ const CarrierCodPage: React.FC = () => {
             />
           </label>
           <label>
-            <span>SETTLEMENT DATE</span>
-            <NepaliDatePicker value={settlementDate} onChange={(value) => applyFilter(() => setSettlementDate(value))} />
+            <span>SETTLED FROM</span>
+            <NepaliDatePicker value={settledFrom} onChange={(value) => applyFilter(() => setSettledFrom(value))} placeholder="Start date" />
+          </label>
+          <label>
+            <span>TO</span>
+            <NepaliDatePicker value={settledTo} onChange={(value) => applyFilter(() => setSettledTo(value))} placeholder="End date" />
           </label>
         </div>
 
@@ -140,7 +146,7 @@ const CarrierCodPage: React.FC = () => {
             className: 'acc-num',
             accessor: (item: Row) => <span className="acc-num">{money(item.netReceivable)}</span>,
           },
-          { header: 'Settlement date', width: '125px', accessor: (item: Row) => toBsDate(item.settlementDate) || '—' },
+          { header: 'Settled date', width: '125px', accessor: (item: Row) => (item.settledAt ? toBsDate(item.settledAt) : '—') },
           {
             header: 'Payment',
             width: '185px',

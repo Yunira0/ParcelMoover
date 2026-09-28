@@ -14,6 +14,7 @@ import { AppError } from "../utils/AppError";
 import { syncCarrierSettlementPostings } from "./accounting/sync";
 import { CARRIER_CODES, type CarrierCode, isCarrierCode } from "./orders/carrier";
 import { getActivePaymentMethodNames } from "./payment-method.service";
+import { nepalDayRangeUtc } from "../utils/nepalTime";
 
 type Actor = { id: string; roles: string[] };
 type PaymentLine = { method: string; amount: number };
@@ -169,7 +170,7 @@ export async function createCarrierSettlement(actor: Actor, input: CreateCarrier
 
 export async function listCarrierSettlements(
   actor: Actor,
-  query: { carrier?: string; status?: string; date?: string; page?: number; pageSize?: number },
+  query: { carrier?: string; status?: string; settledFrom?: string; settledTo?: string; page?: number; pageSize?: number },
 ) {
   await assertHeadOfficeOnly(actor, HEAD_OFFICE_ONLY);
   const pageSize = Math.min(100, Math.max(1, query.pageSize || 20));
@@ -177,7 +178,8 @@ export async function listCarrierSettlements(
   const where: Prisma.carrier_settlementsWhereInput = {
     ...(query.carrier ? { carrier_code: assertCarrier(query.carrier) } : {}),
     ...(query.status ? { status: query.status } : {}),
-    ...(query.date ? { settlement_date: new Date(`${query.date}T00:00:00.000Z`) } : {}),
+    // By when the statement was settled (Nepal-local days), not the date it was raised.
+    ...(query.settledFrom || query.settledTo ? { settled_at: nepalDayRangeUtc(query.settledFrom, query.settledTo) } : {}),
   };
   const [total, rows] = await Promise.all([
     prisma.carrier_settlements.count({ where }),
@@ -198,6 +200,7 @@ export async function listCarrierSettlements(
       netReceivable: money(s.net_receivable),
       paidAmount: money(s.paid_amount),
       paymentBreakdown: paymentLines(s.payments),
+      settledAt: s.settled_at?.toISOString() ?? null,
       remark: s.remark,
     })),
     meta: { page, pageSize, total, totalPages: Math.max(1, Math.ceil(total / pageSize)) },
@@ -252,6 +255,7 @@ export async function getCarrierSettlementDetail(actor: Actor, id: string) {
     paymentBreakdown: paymentLines(s.payments),
     remark: s.remark,
     createdBy: nameOf(s.created_by),
+    createdAt: s.created_at.toISOString(),
     settledAt: s.settled_at?.toISOString() ?? null,
     payments: s.payment_records.map((p) => ({
       id: p.id,

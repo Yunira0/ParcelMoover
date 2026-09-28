@@ -28,6 +28,7 @@ export interface CarrierSettlementRow {
   netReceivable: number;
   paidAmount: number;
   paymentBreakdown: PaymentLine[];
+  settledAt: string | null;
   remark: string | null;
 }
 
@@ -36,7 +37,7 @@ export interface CarrierSettlementDetail extends CarrierSettlementRow {
   carrierCharges: number;
   remainingAmount: number;
   createdBy: string | null;
-  settledAt: string | null;
+  createdAt: string;
   payments: Array<{ id: string; amount: number; method: string; breakdown: PaymentLine[]; remark: string | null; proofPath: string | null; paidAt: string; recordedBy: string | null }>;
   items: Array<{ codCollectionId: string; orderNumber: number; trackingId: string; vendorName: string; receiverName: string; destination: string | null; collectedAmount: number; carrierCharge: number; netAmount: number }>;
 }
@@ -48,7 +49,8 @@ export async function getUnsettledCarrierOrders(carrier: CarrierCode): Promise<U
 export async function getCarrierSettlements(params: {
   carrier?: CarrierCode;
   status?: CarrierSettlementStatus;
-  date?: string;
+  settledFrom?: string;
+  settledTo?: string;
   page: number;
   pageSize: number;
 }): Promise<{ data: CarrierSettlementRow[]; meta: { total: number; totalPages: number } }> {

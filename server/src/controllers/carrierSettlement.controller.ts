@@ -20,11 +20,13 @@ export async function unsettledCarrierOrdersController(req: Request, res: Respon
 
 export async function listCarrierSettlementsController(req: Request, res: Response) {
   try {
-    const { carrier, status, date, page, pageSize } = req.query;
+    const { carrier, status, settledFrom, settledTo, page, pageSize } = req.query;
+    const isDay = (v: unknown): v is string => typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v);
     const result = await listCarrierSettlements(actor(req), {
       ...(typeof carrier === "string" && carrier ? { carrier } : {}),
       ...(typeof status === "string" && status ? { status } : {}),
-      ...(typeof date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(date) ? { date } : {}),
+      ...(isDay(settledFrom) ? { settledFrom } : {}),
+      ...(isDay(settledTo) ? { settledTo } : {}),
       page: Number(page) || 1,
       pageSize: Number(pageSize) || 20,
     });

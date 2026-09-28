@@ -109,6 +109,7 @@ const BranchBilling = lazy(() => import('./pages/branch/BranchBilling'))
 const CarrierCodPage = lazy(() => import('./pages/carrier/CarrierCodPage'))
 const CarrierSettlementCreatePage = lazy(() => import('./pages/carrier/CarrierSettlementCreatePage'))
 const CarrierSettlementDetailPage = lazy(() => import('./pages/carrier/CarrierSettlementDetailPage'))
+const CarrierSettlementPayPage = lazy(() => import('./pages/carrier/CarrierSettlementPayPage'))
 
 function App() {
 
@@ -423,6 +424,10 @@ function App() {
           <Route
             path="/finance/carrier-cod/:id"
             element={<RoleGuard allowedRoles={['super_admin', 'admin']}><CarrierSettlementDetailPage /></RoleGuard>}
+          />
+          <Route
+            path="/finance/carrier-cod/:id/pay"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']}><CarrierSettlementPayPage /></RoleGuard>}
           />
           <Route
             path="/finance/pending-cod"
