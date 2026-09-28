@@ -1,10 +1,12 @@
    import type { StatusChipTone } from '../components/StatusChip';
-import type { ParcelStatus } from '../services/orders.service';
+import type { Order, ParcelStatus } from '../services/orders.service';
 import { toBsDateTimeCell } from './nepaliDate';
 
 // Canonical parcel-status display labels and chip tones for read-only surfaces
 // (dashboard, reports). Mirrors the mapping the Order Management screen uses so
 // a status reads identically everywhere it appears.
+export const CARRIER_LABELS: Record<NonNullable<Order['carrierCode']>, string> = { ncm: 'NCM', upaya: 'Upaya' };
+
 export const ORDER_STATUS_LABELS: Record<ParcelStatus, string> = {
   pickup_ordered: 'Pickup Ordered',
   rider_assigned: 'Rider Assigned',

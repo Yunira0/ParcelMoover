@@ -29,7 +29,7 @@ import MultiFilterDropdown from '../components/MultiFilterDropdown';
 import MultiFilterDropdownAsync from '../components/MultiFilterDropdownAsync';
 import QuickRemarkPopup from '../components/QuickRemarkPopup';
 import { toBsDate, toBsDateTime, toBsDateTimeCell } from '../utils/nepaliDate';
-import { STATUS_TIMELINE_HEADERS, statusTimelineCells } from '../utils/orderStatus';
+import { CARRIER_LABELS, STATUS_TIMELINE_HEADERS, statusTimelineCells } from '../utils/orderStatus';
 import { downloadExcel } from '../utils/excel';
 import NepaliDatePicker from '../components/NepaliDatePicker';
 import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react';
@@ -950,9 +950,12 @@ const OrderManagement: React.FC = () => {
     {
       header: sortableHeader('STATUS', 'status'),
       accessor: (order: Order) => (
-        <StatusChip tone={getStatusTone(order.status)}>
-          {STATUS_LABELS[order.status]}
-        </StatusChip>
+        <span className="om-status-cell">
+          <StatusChip tone={getStatusTone(order.status)}>
+            {STATUS_LABELS[order.status]}
+          </StatusChip>
+          {order.carrierCode && <span className="om-carrier-chip">{CARRIER_LABELS[order.carrierCode]}</span>}
+        </span>
       ),
       width: '160px',
     },
