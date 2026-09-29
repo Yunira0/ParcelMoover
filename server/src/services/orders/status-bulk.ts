@@ -14,6 +14,7 @@ import { invalidateOrderCaches } from "./cache";
 import { assertCodNotSettled, writesCollection } from "./codGuards";
 import { resolveDeliveryCarrier } from "./carrier";
 import { withParcelStatusLocks } from "./statusLocks";
+import { assertRelayForward } from "./relay";
 import {
   getActorScope, getAdminBranchScope, branchTouchesFilter, resolveActiveRider,
 } from "./scope";
@@ -381,6 +382,9 @@ async function _bulkUpdateParcelStatusImpl(
         if (!skipsTransit && newStatus === "ready_to_deliver") {
           throw new AppError(422, `Parcel ${parcel.tracking_id}: destination is outside the valley, must go to 'Transit' first.`);
         }
+      }
+      if (currentStatus === "arrived_at_branch" && newStatus === "oov") {
+        await assertRelayForward(parcel);
       }
     }
     // Riders may only progress parcels they're actually assigned to, and only

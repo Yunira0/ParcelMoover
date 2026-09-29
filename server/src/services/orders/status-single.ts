@@ -12,6 +12,7 @@ import { buildSearchText, createRunSheet, generateUniqueTrackingId } from "./ord
 import { notifyVendorOfParcel } from "./notifications";
 import { computeReturnCharge } from "./pricing";
 import { getActorScope, getAdminBranchScope, resolveActiveRider } from "./scope";
+import { assertRelayForward } from "./relay";
 import {
   DELIVERY_RIDER_HELD_STATUSES,
   HUB_OPERATION_STATUSES,
@@ -210,6 +211,9 @@ async function _updateParcelStatusImpl(
       if (!skipsTransit && newStatus === "ready_to_deliver") {
         throw new AppError(422, "Destination is outside the valley: this parcel must go to 'Transit' first.");
       }
+    }
+    if (currentStatus === "arrived_at_branch" && newStatus === "oov") {
+      await assertRelayForward(parcel);
     }
   }
 

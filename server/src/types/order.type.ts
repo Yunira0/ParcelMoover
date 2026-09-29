@@ -260,7 +260,9 @@ export const STATUS_TRANSITIONS = {
   // returning to us (their "Sent to Vendor") - not reachable by an internal
   // rider, only by the NCM return action/reconcile sweep (see ncm.service.ts).
   dispatched:        ["arrived_at_branch", "follow_up"],
-  arrived_at_branch: ["ready_to_deliver", "follow_up"],
+  // "oov" is the relay hop: a parcel that reaches Imadol on its way to another
+  // branch is forwarded (see assertRelayForward).
+  arrived_at_branch: ["ready_to_deliver", "follow_up", "oov"],
   ready_to_deliver:  ["sent_for_delivery", "hold", "cancelled"],
   sent_for_delivery: ["delivered", "partially_delivered", "failed_delivery", "follow_up"],
   oov:               ["dispatched","hold", "follow_up"],
