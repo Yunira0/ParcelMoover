@@ -150,12 +150,11 @@ export async function forwardOrder(
     return { parcel: updatedParcel, forward };
   });
 
-  invalidateOrderCaches().catch((err) => console.error("[Redis] cache invalidation failed:", err));
-  if (parcel.vendor_id) {
-    invalidateVendorFinanceCache(parcel.vendor_id).catch((err) =>
-      console.error("[Redis] cache invalidation failed:", err),
-    );
-  }
+  // Awaited so the very next read (the page reloads right after) sees the new charge.
+  await Promise.all([
+    invalidateOrderCaches(),
+    parcel.vendor_id ? invalidateVendorFinanceCache(parcel.vendor_id) : Promise.resolve(),
+  ]).catch((err) => console.error("[Redis] cache invalidation failed:", err));
 
   return {
     id: result.parcel.id,
