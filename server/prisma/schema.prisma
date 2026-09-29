@@ -300,7 +300,9 @@ model parcel_remarks {
 
 // One row per destination change made after booking because the customer moved
 // ("redirect"). Charges are snapshotted so the row still explains itself after
-// the vendor's rates change.
+// the vendor's rates change. A row with status_at_redirect = delivered is a
+// forwarding charge (see orders/forward.ts): redirects are never allowed on a
+// delivered parcel, so that status alone tells the two apart.
 model parcel_redirects {
   id                  String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   parcel_id           String        @db.Uuid

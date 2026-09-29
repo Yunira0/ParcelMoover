@@ -10,6 +10,7 @@ export { createOrder } from "./orders/create";
 export { updateOrderDetails } from "./orders/edit";
 
 export { redirectOrder } from "./orders/redirect";
+export { forwardOrder } from "./orders/forward";
 
 export { bulkCreateOrders } from "./orders/bulkCreate";
 

@@ -11,10 +11,12 @@ import {
   RotateCcw,
   Search,
   Shuffle,
+  Forward,
   Trash2,
   X,
 } from 'lucide-react';
 import RedirectOrderModal from '../components/RedirectOrderModal';
+import ForwardOrderModal from '../components/ForwardOrderModal';
 import ConfirmDialog from '../components/ConfirmDialog';
 import '../components/Modal.css';
 import '../components/FormField.css';
@@ -39,6 +41,7 @@ import {
   getOrderCountsByStatus,
   type OrderCountsByStatus,
   redirectOrder,
+  forwardOrder,
   trashOrder,
   updateOrderStatus,
   subscribeToOrderStatusChanged,
@@ -727,6 +730,10 @@ const OrderManagement: React.FC = () => {
   const [redirectOrderRow, setRedirectOrderRow] = useState<Order | null>(null);
   const [redirectSaving, setRedirectSaving] = useState(false);
   const [redirectError, setRedirectError] = useState('');
+  // Forwarding charge on a delivered parcel — same admin gate as redirect.
+  const [forwardOrderRow, setForwardOrderRow] = useState<Order | null>(null);
+  const [forwardSaving, setForwardSaving] = useState(false);
+  const [forwardError, setForwardError] = useState('');
 
   // super_admin or FORCE_STATUS_CHANGE: force a parcel into any status from
   // the list, ignoring the transition map (the server grants the same bypass)
@@ -782,6 +789,26 @@ const OrderManagement: React.FC = () => {
       setRedirectError(err?.response?.data?.message ?? 'Failed to redirect order');
     } finally {
       setRedirectSaving(false);
+    }
+  };
+
+  const handleForward = async (data: {
+    destinationLocationId: string;
+    forwardingCharge: number;
+    reason?: string;
+  }) => {
+    if (!forwardOrderRow) return;
+    try {
+      setForwardSaving(true);
+      setForwardError('');
+      await forwardOrder(forwardOrderRow.id, data);
+      setForwardOrderRow(null);
+      setNotice(`Forwarding charge added to order ${forwardOrderRow.trackingId}.`);
+      await loadOrders();
+    } catch (err: any) {
+      setForwardError(err?.response?.data?.message ?? 'Failed to add forwarding charge');
+    } finally {
+      setForwardSaving(false);
     }
   };
 
@@ -992,6 +1019,20 @@ const OrderManagement: React.FC = () => {
               }}
             >
               <Shuffle size={14} />
+            </button>
+          )}
+          {canRedirect && order.status === 'delivered' && (
+            <button
+              type="button"
+              className="row-action-icon-only"
+              title="Add Forwarding Charge"
+              aria-label="Add Forwarding Charge"
+              onClick={() => {
+                setForwardError('');
+                setForwardOrderRow(order);
+              }}
+            >
+              <Forward size={14} />
             </button>
           )}
           {canRecoverFailed && isRecoverableFailure(order.status) && (
@@ -1296,6 +1337,19 @@ const OrderManagement: React.FC = () => {
           error={redirectError}
           onClose={() => setRedirectOrderRow(null)}
           onConfirm={handleRedirect}
+        />
+      )}
+
+      {forwardOrderRow && (
+        <ForwardOrderModal
+          isOpen
+          trackingId={forwardOrderRow.trackingId}
+          currentBranch={forwardOrderRow.destination}
+          currentDeliveryCharge={forwardOrderRow.deliveryCharge}
+          busy={forwardSaving}
+          error={forwardError}
+          onClose={() => setForwardOrderRow(null)}
+          onConfirm={handleForward}
         />
       )}
 

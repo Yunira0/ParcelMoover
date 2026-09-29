@@ -93,6 +93,14 @@ export interface RedirectOrderInput {
   redirectCharge: number;
 }
 
+/** Delivered parcel forwarded on to another destination, with a manual charge. */
+export interface ForwardOrderInput {
+  destinationLocationId: string;
+  /** Added on top of the parcel's existing delivery charge. */
+  forwardingCharge: number;
+  reason?: string;
+}
+
 export type ParcelStatus =
   | "pickup_ordered"
   | "rider_assigned"

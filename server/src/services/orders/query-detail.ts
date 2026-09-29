@@ -115,6 +115,9 @@ export async function getOrderByTrackingId(actor: OrderActor, trackingId: string
   // staff member's real name.
   const redirectLog = parcel.parcel_redirects.map((entry) => ({
     id: entry.id,
+    // Redirects are refused once delivered, so a row logged at "delivered" is
+    // a forwarding charge (orders/forward.ts).
+    kind: entry.status_at_redirect === "delivered" ? ("forward" as const) : ("redirect" as const),
     fromBranch: entry.from_location?.name ?? null,
     toBranch: entry.to_location.name,
     fromAddress: entry.from_address,
