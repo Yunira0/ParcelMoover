@@ -2,6 +2,7 @@ import { parcel_status, Prisma } from "../../generated/prisma/client";
 import { ListOrdersQuery } from "../../types/order.type";
 import { nepalDayRangeUtc } from "../../utils/nepalTime";
 import { branchHandlesFilter, riderCustodyFilter } from "./scope";
+import { BRANCH_COD_PARCEL_FILTER } from "./branchCod";
 
 // The list UI labels every row with its order_number as "#2980", so that's what
 // a user types to look one up. order_number is an int column, not part of the
@@ -251,6 +252,8 @@ export function buildOrdersWhere(
     });
   }
 
+  // Branch COD is manifest-transited, non-carrier cash only (see branchCod.ts).
+  if (query.branchSettlement) conditions.push(BRANCH_COD_PARCEL_FILTER);
   if (query.branchSettlement === "settled") {
     conditions.push({ branch_settlement_items: { some: { settlement: { status: "settled" } } } });
   } else if (query.branchSettlement === "pending") {

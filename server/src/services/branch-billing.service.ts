@@ -4,6 +4,7 @@ import { AppError } from "../utils/AppError";
 import { clearBlockAmount, getBillingSettings, type BillingThresholds } from "./billing.service";
 import { BRANCH_COD_SLA_KEY, getSlaSettings } from "./sla.service";
 import { syncBranchSettlementPostings } from "./accounting/sync";
+import { branchCodParcelSql } from "./orders/branchCod";
 
 type Actor = { id: string; roles: string[] };
 const money = (value: unknown) => Math.round(Number(value ?? 0) * 100) / 100;
@@ -138,6 +139,7 @@ async function computeBranchBalance(branchId: string, codSlaHours: number | null
         AND p.status::text IN ('delivered', 'partially_delivered')
         AND p.destination_location_id IN (SELECT id FROM branch_locs)
         AND NOT EXISTS (SELECT 1 FROM branch_settlement_items bsi WHERE bsi.parcel_id = p.id)
+        ${branchCodParcelSql("p.")}
     )
     SELECT
       COALESCE((

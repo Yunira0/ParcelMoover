@@ -27,6 +27,7 @@ import {
 } from "./status-shared";
 import { CARRIER_OWED_SQL, PART_PAID_FRACTIONS_SQL } from "./cod-detail";
 import type { OrderActor } from "./types";
+import { branchCodParcelSql } from "./branchCod";
 
 const moneyToNumber = (value?: Prisma.Decimal | null) => value ? Number(value) : 0;
 
@@ -632,6 +633,7 @@ async function computeDashboardSummary(
           AND p.status::text IN ('delivered', 'partially_delivered')
           AND p.delivered_at < now() - make_interval(hours => ${branchCodHours})
           AND NOT EXISTS (SELECT 1 FROM branch_settlement_items bsi WHERE bsi.parcel_id = p.id)
+          ${branchCodParcelSql("p.")}
         ORDER BY p.id, bl.branch_id
       )
       SELECT COUNT(*)::bigint AS n, COALESCE(SUM(net_cod), 0) AS amount FROM overdue

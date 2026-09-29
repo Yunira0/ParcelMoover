@@ -15,6 +15,7 @@ import { getActivePaymentMethodNames } from "./payment-method.service";
 import { createNotification } from "./notification.service";
 import { evaluateBranchBilling } from "./branch-billing.service";
 import { syncBranchSettlementPostings } from "./accounting/sync";
+import { BRANCH_COD_PARCEL_FILTER } from "./orders/branchCod";
 
 const DELIVERED: parcel_status[] = ["delivered", "partially_delivered"];
 const METRIC_STATUSES: Record<string, parcel_status[] | undefined> = {
@@ -207,7 +208,10 @@ async function partiallyDeposited(base: Prisma.parcelsWhereInput): Promise<numbe
 }
 
 async function metric(where: Prisma.parcelsWhereInput, statuses?: parcel_status[], settlement?: "settled" | "pending") {
-  const base: Prisma.parcelsWhereInput = { AND: [where, ...(statuses ? [{ status: { in: statuses } }] : [])] };
+  // Delivered cards are the branch's COD: manifest-transited, non-carrier only.
+  const base: Prisma.parcelsWhereInput = {
+    AND: [where, ...(statuses ? [{ status: { in: statuses } }] : []), ...(statuses === DELIVERED ? [BRANCH_COD_PARCEL_FILTER] : [])],
+  };
   const scoped: Prisma.parcelsWhereInput = {
     AND: [base,
       ...(settlement === "settled" ? [{ branch_settlement_items: { some: { settlement: { status: "settled" } } } }] : []),
@@ -514,7 +518,8 @@ export async function createBranchSettlement(actor: OrderActor, input: CreateBra
     const parcels = await tx.parcels.findMany({
       where: { id: { in: ids }, deleted_at: null, status: { in: DELIVERED },
         destination_location_id: { in: payingBranchLocationIds! },
-        branch_settlement_items: { none: {} } },
+        branch_settlement_items: { none: {} },
+        ...BRANCH_COD_PARCEL_FILTER },
       select: { id: true, cod_amount: true, cod_collections: { select: { collected_amount: true } } },
     });
     if (parcels.length !== ids.length) throw new AppError(409, "Some selected orders were not delivered by the paying branch or are already in a statement");
