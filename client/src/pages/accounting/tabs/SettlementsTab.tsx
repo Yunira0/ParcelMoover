@@ -59,9 +59,9 @@ const SettlementsTab: React.FC<{ payeeType: 'rider' | 'vendor' }> = ({ payeeType
   // screen this replaced. All three are applied server-side, so they narrow the
   // whole list rather than the page already fetched.
   const [status, setStatus] = useState<SettlementStatusFilter | ''>('');
-  // One date, not a range: settlement_date is a date column, so the same value
-  // goes in as both bounds and matches that day exactly.
-  const [settlementDate, setSettlementDate] = useState('');
+  // Inclusive range on settlement_date; either end can be left open.
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
   const [pageSize, setPageSize] = useState(PAGE_SIZE);
 
   // Back to page 1 when the other tab's party type arrives, or you land past
@@ -130,8 +130,8 @@ const SettlementsTab: React.FC<{ payeeType: 'rider' | 'vendor' }> = ({ payeeType
       payeeId || undefined,
       page,
       pageSize,
-      settlementDate || undefined,
-      settlementDate || undefined,
+      fromDate || undefined,
+      toDate || undefined,
       status || undefined,
     )
       .then((res) => {
@@ -150,7 +150,7 @@ const SettlementsTab: React.FC<{ payeeType: 'rider' | 'vendor' }> = ({ payeeType
     return () => {
       active = false;
     };
-  }, [payeeType, page, payeeId, pageSize, settlementDate, status]);
+  }, [payeeType, page, payeeId, pageSize, fromDate, toDate, status]);
 
   const rows: SettlementRow[] = useMemo(
     () => items.map((item, index) => ({ ...item, sn: (page - 1) * pageSize + index + 1 })),
@@ -165,11 +165,11 @@ const SettlementsTab: React.FC<{ payeeType: 'rider' | 'vendor' }> = ({ payeeType
 
   return (
     <>
-      {/* The drill-down and its date on the left, status on the right.
-          `acc-toolbar` is space-between, so the two left-hand filters have to
-          be one child to stay together — three loose children would spread
-          evenly across the bar and put the date nowhere near the picker it
-          belongs with. */}
+      {/* The drill-down and its date range on the left, status on the right.
+          `acc-toolbar` is space-between, so the left-hand filters have to be
+          one child to stay together — loose children would spread evenly
+          across the bar and put the dates nowhere near the picker they
+          belong with. */}
       <div className="acc-toolbar">
         <div className="acc-filters">
           <label className="acc-filter-wide">
@@ -199,11 +199,24 @@ const SettlementsTab: React.FC<{ payeeType: 'rider' | 'vendor' }> = ({ payeeType
             </div>
           </label>
 
-          <label>
-            <span>SETTLEMENT DATE</span>
+          {/* min/max keep the pair from crossing - a To before From would
+              just return nothing. */}
+          <label aria-label="From date">
+            <span>FROM</span>
             <NepaliDatePicker
-              value={settlementDate}
-              onChange={(value) => applyFilter(() => setSettlementDate(value))}
+              value={fromDate}
+              max={toDate || undefined}
+              onChange={(value) => applyFilter(() => setFromDate(value))}
+              placeholder="Start date"
+            />
+          </label>
+          <label aria-label="To date">
+            <span>TO</span>
+            <NepaliDatePicker
+              value={toDate}
+              min={fromDate || undefined}
+              onChange={(value) => applyFilter(() => setToDate(value))}
+              placeholder="End date"
             />
           </label>
         </div>
@@ -260,10 +273,12 @@ const SettlementsTab: React.FC<{ payeeType: 'rider' | 'vendor' }> = ({ payeeType
             className: 'acc-num',
             accessor: (item) => <span className="acc-num">{money(item.amount)}</span>,
           },
+          // The day the statement was actually paid off, not the date picked
+          // when it was drawn up. Blank while pending or part-paid.
           {
-            header: 'Settlement date',
+            header: 'Settled date',
             width: '125px',
-            accessor: (item) => (item.transferDate ? toBsDate(item.transferDate) : '—'),
+            accessor: (item) => (item.settledDate ? toBsDate(item.settledDate) : '—'),
           },
           // Vendors only, and this is the one place it earns its width: a payout
           // is money the office has to *send* somewhere, so whoever makes the

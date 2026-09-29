@@ -76,6 +76,8 @@ export interface SettlementListItem {
   bankAccountNo: string | null;
   bankAccountHolder: string | null;
   transferDate: string | null;
+  /** Day the statement was fully paid; null until it is settled. */
+  settledDate: string | null;
   createdAt: string;
   orderCount: number;
   amount: number;

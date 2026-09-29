@@ -45,6 +45,7 @@ model admins {
   citizenship_doc       String?
   pan_doc               String?
   experience_letter_doc String?
+  agreement_doc         String? // signed agreement, PDF or DOCX - attached by staff on edit
   bank_name             String?
   bank_account_no       String?
   bank_account_holder   String?
@@ -568,6 +569,7 @@ model riders {
   pan_vat_doc                               String?
   licence_doc                               String?
   bluebook_doc                              String?
+  agreement_doc                             String? // signed agreement, PDF or DOCX - attached by staff on edit
   bank_name                                 String?
   bank_account_no                           String?
   bank_account_holder                       String?
@@ -1042,6 +1044,7 @@ model vendors {
   citizenship_doc_back          String?
   pan_vat_doc                   String?
   business_cert_doc             String?
+  agreement_doc                 String? // signed agreement, PDF or DOCX - attached by staff on edit
   bank_name                     String?
   bank_account_no               String?
   bank_account_holder           String?

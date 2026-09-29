@@ -8,6 +8,8 @@ const EXTENSION_BY_MIME_TYPE: Record<string, string> = {
   "image/png": ".png",
   "image/webp": ".webp",
   "application/pdf": ".pdf",
+  // Agreement slot only (see registrationUpload); served as a download.
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
   // Accepted on upload only - secureUploadedFiles converts every HEIC/HEIF
   // file to JPEG before it's ever encrypted and stored, so this extension
   // only ever names the transient pre-conversion file on disk.

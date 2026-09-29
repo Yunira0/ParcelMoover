@@ -3,7 +3,11 @@ import path from "path";
 import { AppError } from "../utils/AppError";
 import { encryptDocument } from "./documentEncryption";
 
-const ALLOWED_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "application/pdf"]);
+export const DOCX_MIME_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+
+// DOCX is only ever let through by an upload whose multer filter accepts it
+// (the registration agreement slot); every other upload still rejects it there.
+const ALLOWED_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "application/pdf", DOCX_MIME_TYPE]);
 
 // iPhones save camera photos as HEIC by default, and nothing downstream can
 // serve or render one - the /uploads route's Content-Type map only knows the
@@ -135,6 +139,8 @@ function describeExpected(mimetype: string): string {
       return "WebP";
     case "application/pdf":
       return "PDF";
+    case DOCX_MIME_TYPE:
+      return "DOCX";
     case "image/heic":
     case "image/heif":
       return "HEIC";

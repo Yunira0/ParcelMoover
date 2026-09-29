@@ -10,6 +10,7 @@ import {
   getManagedUser,
   updateUserProfile,
   getUserDocuments,
+  AGREEMENT_FILE_ACCEPT,
   type ManagedUserDocument,
 } from '../services/users.service';
 import { getCurrentUser } from '../services/auth.service';
@@ -40,6 +41,7 @@ const DOCUMENT_LABELS: Partial<Record<keyof VendorFormInput, string>> = {
   citizenshipDoc: 'Citizenship document',
   panVatDoc: 'PAN / VAT document',
   businessCertDoc: 'Business certificate',
+  agreementDoc: 'Agreement',
 };
 
 const scrollToFirstFieldError = () => {
@@ -104,6 +106,7 @@ interface VendorFormInput {
   citizenshipDoc: File | null;
   panVatDoc: File | null;
   businessCertDoc: File | null;
+  agreementDoc: File | null;
   bankName: string;
   bankAccountNo: string;
   bankAccountHolder: string;
@@ -151,6 +154,7 @@ const emptyForm: VendorFormInput = {
   citizenshipDoc: null,
   panVatDoc: null,
   businessCertDoc: null,
+  agreementDoc: null,
   bankName: '',
   bankAccountNo: '',
   bankAccountHolder: '',
@@ -165,7 +169,8 @@ const FileInput: React.FC<{
   file: File | null | undefined;
   onChange: (file: File | null) => void;
   accept?: string;
-}> = ({ label, required, file, onChange, accept = 'image/*,.pdf' }) => {
+  hint?: string;
+}> = ({ label, required, file, onChange, accept = 'image/*,.pdf', hint = 'JPG, PNG or PDF · max 5 MB' }) => {
   const ref = useRef<HTMLInputElement>(null);
   const [converting, setConverting] = useState(false);
   const handleFile = async (picked: File | null) => {
@@ -207,7 +212,7 @@ const FileInput: React.FC<{
         style={{ display: 'none' }}
         onChange={(e) => void handleFile(e.target.files?.[0] ?? null)}
       />
-      <span className="vfp-file-hint">JPG, PNG or PDF · max 5 MB</span>
+      <span className="vfp-file-hint">{hint}</span>
     </div>
   );
 };
@@ -672,6 +677,7 @@ const VendorFormPage: React.FC = () => {
                 ...(form.citizenshipDoc ? { citizenshipDoc: form.citizenshipDoc } : {}),
                 ...(form.panVatDoc ? { panVatDoc: form.panVatDoc } : {}),
                 ...(form.businessCertDoc ? { businessCertDoc: form.businessCertDoc } : {}),
+                ...(form.agreementDoc ? { agreementDoc: form.agreementDoc } : {}),
               }
             : {}),
         });
@@ -1053,6 +1059,22 @@ const VendorFormPage: React.FC = () => {
                     <span className="vfp-field-error">{fieldErrors.businessCertDoc}</span>
                   )}
                 </div>
+                {/* Signed after onboarding, so it's only attached on edit. */}
+                {isEdit && (
+                  <div>
+                    <FileInput
+                      label="Agreement"
+                      file={form.agreementDoc}
+                      onChange={setFile('agreementDoc')}
+                      accept={AGREEMENT_FILE_ACCEPT}
+                      hint="PDF or DOCX · max 5 MB"
+                    />
+                    <ExistingDoc docs={existingDocs} slot="agreementDoc" />
+                    {fieldErrors.agreementDoc && (
+                      <span className="vfp-field-error">{fieldErrors.agreementDoc}</span>
+                    )}
+                  </div>
+                )}
               </div>
               {isEdit && (
                 <p className="vfp-hint">
