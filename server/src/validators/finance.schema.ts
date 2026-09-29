@@ -69,7 +69,10 @@ export const paySettlementSchema = z.object({
 
 export const createCarrierSettlementSchema = z.object({
   carrier: z.enum(["ncm", "upaya"]),
-  settlementDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "settlementDate must be YYYY-MM-DD"),
+  settlementDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "settlementDate must be YYYY-MM-DD")
+    .refine((v) => !Number.isNaN(Date.parse(`${v}T00:00:00.000Z`)), "settlementDate is not a real date"),
   items: z
     .array(z.object({ codCollectionId: uuidSchema, carrierCharge: z.number().min(0, "Carrier charge cannot be negative") }))
     .min(1, "Select at least one order"),
