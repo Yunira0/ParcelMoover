@@ -4,6 +4,7 @@ import { evaluateVendorBillingAsync } from "../billing.service";
 import { invalidateVendorFinanceCache } from "../finance.service";
 import { emitWebhookEvent } from "../webhookDispatch.service";
 import { invalidateOrderCaches } from "./cache";
+import type { CarrierCode } from "./carrier";
 import { pickupStampFor } from "./status-shared";
 import { withParcelStatusLocks } from "./statusLocks";
 
@@ -34,6 +35,7 @@ export async function applyExternalCarrierStatus(
   parcelId: string,
   targetStatus: parcel_status,
   remarks: string,
+  carrier?: CarrierCode,
 ): Promise<CarrierStatusResult> {
   return withParcelStatusLocks([parcelId], async (): Promise<CarrierStatusResult> => {
     const parcel = await prisma.parcels.findFirst({
@@ -119,6 +121,7 @@ export async function applyExternalCarrierStatus(
             parcel_id: parcelId,
             vendor_id: parcel.vendor_id,
             rider_id: effectiveRiderId,
+            carrier_code: carrier ?? null,
             cod_amount: parcel.cod_amount,
             collected_amount: parcel.cod_amount,
             collected_at: new Date(),
@@ -132,6 +135,7 @@ export async function applyExternalCarrierStatus(
             // effectiveRiderId, not the raw column, is what guarantees NULL
             // even when a stale employee rider was still attached on arrival.
             rider_id: effectiveRiderId,
+            carrier_code: carrier ?? null,
             cod_amount: parcel.cod_amount,
             collected_amount: parcel.cod_amount,
             collected_at: new Date(),

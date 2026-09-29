@@ -32,13 +32,14 @@ import prisma from "../lib/prisma";
 import redis from "../lib/redis";
 import {
   syncBranchSettlementPostings,
+  syncCarrierSettlementPostings,
   syncExpensePostings,
   syncSettlementPostings,
   syncVendorPaymentPostings,
   type SyncSummary,
 } from "../services/accounting/sync";
 
-type SourceName = "settlement" | "branch_settlement" | "vendor_payment" | "expense";
+type SourceName = "settlement" | "branch_settlement" | "carrier_settlement" | "vendor_payment" | "expense";
 
 type Tx = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
 
@@ -80,6 +81,17 @@ const SOURCES: Record<SourceName, Source> = {
         })
       ).map((row) => row.id),
     sync: (tx, ids) => syncBranchSettlementPostings(tx, ids, { reason: "manual resync" }),
+  },
+  carrier_settlement: {
+    candidates: async (since) =>
+      (
+        await prisma.carrier_settlements.findMany({
+          where: since ? { updated_at: { gte: since } } : {},
+          select: { id: true },
+          orderBy: { updated_at: "asc" },
+        })
+      ).map((row) => row.id),
+    sync: (tx, ids) => syncCarrierSettlementPostings(tx, ids, { reason: "manual resync" }),
   },
   vendor_payment: {
     candidates: async (since) =>

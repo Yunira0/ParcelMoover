@@ -159,6 +159,10 @@ export interface ListOrdersParams {
   salesUserId?: string;
   /** Narrows the list to parcels carried by one delivery rider. */
   deliveryRiderId?: string;
+  /** Rider Overview's filter: parcels this rider has ever handled, pickup or
+   *  delivery leg — broader than deliveryRiderId, which is only the current
+   *  delivery leg. */
+  riderId?: string;
   /** Origin/destination hub filters, by location id - matches OrderFilterOptions'
    *  origins/destinations, which are keyed by id for exactly this reason. */
   originLocationId?: string;
@@ -185,6 +189,8 @@ export interface ListOrdersParams {
   dateTo?: string;
   /** Merchant overview settlement filter — settled = delivered parcels in a settled settlement, pending = delivered not yet settled */
   settlement?: 'settled' | 'pending';
+  /** Whose statements `settlement` refers to; defaults to the vendor's. */
+  settlementPayee?: 'vendor' | 'rider';
 }
 
 export interface OrdersPageMeta {
@@ -389,6 +395,7 @@ export const getOrders = async (params?: ListOrdersParams, signal?: AbortSignal)
   if (params?.salesUserId) query.salesUserId = params.salesUserId;
   if (params?.search) query.search = params.search;
   if (params?.deliveryRiderId) query.deliveryRiderId = params.deliveryRiderId;
+  if (params?.riderId) query.riderId = params.riderId;
   if (params?.originLocationId) query.originLocationId = params.originLocationId;
   if (params?.destinationLocationId) query.destinationLocationId = params.destinationLocationId;
   if (params?.page !== undefined) query.page = String(params.page);
@@ -404,6 +411,7 @@ export const getOrders = async (params?: ListOrdersParams, signal?: AbortSignal)
   if (params?.dateFrom) query.dateFrom = params.dateFrom;
   if (params?.dateTo) query.dateTo = params.dateTo;
   if (params?.settlement) query.settlement = params.settlement;
+  if (params?.settlementPayee) query.settlementPayee = params.settlementPayee;
 
   const response = (params?.search?.length ?? 0) > SEARCH_POST_THRESHOLD
     ? await api.post('/orders/search', query, { signal })
@@ -699,6 +707,8 @@ export interface PriceLogEntry {
 /** One destination change made because the customer moved after booking. */
 export interface RedirectLogEntry {
   id: string;
+  /** "redirect" = customer moved before delivery; "forward" = delivered parcel forwarded with a forwarding charge. */
+  kind: 'redirect' | 'forward';
   fromBranch: string | null;
   toBranch: string;
   fromAddress: string | null;
@@ -799,6 +809,23 @@ export interface RedirectOrderInput {
 export const redirectOrder = async (orderId: string, data: RedirectOrderInput) => {
   const idempotencyKey = uuidv4();
   const response = await api.post(`/orders/${orderId}/redirect`, data, {
+    headers: { 'Idempotency-Key': idempotencyKey },
+  });
+  notifyOrderStatusChanged();
+  return response.data;
+};
+
+export interface ForwardOrderInput {
+  destinationLocationId: string;
+  /** Manual forwarding charge added on top of the existing delivery charge. */
+  forwardingCharge: number;
+  reason?: string;
+}
+
+/** Admin-only: a delivered parcel was forwarded on to another destination. Status stays delivered. */
+export const forwardOrder = async (orderId: string, data: ForwardOrderInput) => {
+  const idempotencyKey = uuidv4();
+  const response = await api.post(`/orders/${orderId}/forward`, data, {
     headers: { 'Idempotency-Key': idempotencyKey },
   });
   notifyOrderStatusChanged();

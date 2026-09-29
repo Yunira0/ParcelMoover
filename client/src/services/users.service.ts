@@ -78,6 +78,8 @@ export interface RegisterUserInput {
   licenceDoc?: File | null;
   bluebookDoc?: File | null;
   businessCertDoc?: File | null;
+  /** Signed agreement - PDF or DOCX only. */
+  agreementDoc?: File | null;
 }
 
 export interface UpdateUserProfileInput {
@@ -151,7 +153,13 @@ export interface UpdateUserProfileInput {
   licenceDoc?: File | null;
   bluebookDoc?: File | null;
   businessCertDoc?: File | null;
+  /** Signed agreement - PDF or DOCX only. */
+  agreementDoc?: File | null;
 }
+
+// File-picker filter for the agreement slot; the server accepts only these.
+export const AGREEMENT_FILE_ACCEPT =
+  '.pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
 export const getManagedUser = async (type: 'admin' | 'vendor' | 'rider', id: string) => {
   const response = await api.get(`/auth/users/${type}/${id}`);

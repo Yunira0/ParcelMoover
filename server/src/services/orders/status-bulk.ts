@@ -12,7 +12,9 @@ import { emitWebhookEventsBatch } from "../webhookDispatch.service";
 import { computeReturnCharge } from "./pricing";
 import { invalidateOrderCaches } from "./cache";
 import { assertCodNotSettled, writesCollection } from "./codGuards";
+import { resolveDeliveryCarrier } from "./carrier";
 import { withParcelStatusLocks } from "./statusLocks";
+import { assertRelayForward } from "./relay";
 import {
   getActorScope, getAdminBranchScope, branchTouchesFilter, resolveActiveRider,
 } from "./scope";
@@ -381,6 +383,9 @@ async function _bulkUpdateParcelStatusImpl(
           throw new AppError(422, `Parcel ${parcel.tracking_id}: destination is outside the valley, must go to 'Transit' first.`);
         }
       }
+      if (currentStatus === "arrived_at_branch" && newStatus === "oov") {
+        await assertRelayForward(parcel);
+      }
     }
     // Riders may only progress parcels they're actually assigned to, and only
     // for the leg (pickup vs delivery) they were assigned for.
@@ -738,7 +743,7 @@ async function _bulkUpdateParcelStatusImpl(
       });
       await tx.cod_collections.updateMany({
         where: { parcel_id: { in: undeliverIds } },
-        data: { collected_amount: 0, collected_at: null, rider_id: null },
+        data: { collected_amount: 0, collected_at: null, rider_id: null, carrier_code: null },
       });
     }
 
@@ -771,18 +776,21 @@ async function _bulkUpdateParcelStatusImpl(
         // No collectedAmount <= 0 skip here: a COD corrected down to 0 (or a
         // genuine zero-cash partial delivery) must still overwrite whatever
         // stale amount is sitting on the row - see the single-parcel path above.
+        const carrierCode = await resolveDeliveryCarrier(tx, p.id, p.delivery_rider_id);
         await tx.cod_collections.upsert({
           where: { parcel_id: p.id },
           create: {
             parcel_id: p.id,
             vendor_id: p.vendor_id,
             rider_id: p.delivery_rider_id,
+            carrier_code: carrierCode,
             cod_amount: p.cod_amount,
             collected_amount: collectedAmount,
             collected_at: collectedAt,
           },
           update: {
             rider_id: p.delivery_rider_id,
+            carrier_code: carrierCode,
             cod_amount: p.cod_amount,
             collected_amount: collectedAmount,
             collected_at: collectedAt,

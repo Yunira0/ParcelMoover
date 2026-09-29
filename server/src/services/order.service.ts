@@ -10,6 +10,7 @@ export { createOrder } from "./orders/create";
 export { updateOrderDetails } from "./orders/edit";
 
 export { redirectOrder } from "./orders/redirect";
+export { forwardOrder } from "./orders/forward";
 
 export { bulkCreateOrders } from "./orders/bulkCreate";
 
@@ -47,7 +48,7 @@ export { addOrderRemark } from "./orders/remarks";
 
 export { getSenderProfile } from "./orders/senderProfile";
 
-export { getStatusCounts, getMerchantOverview } from "./orders/operations-reporting";
+export { getStatusCounts, getMerchantOverview, getSalesOverview, getRiderOverview } from "./orders/operations-reporting";
 
 export type { MerchantOverviewMetric, MerchantOverviewResult } from "./orders/operations-reporting";
 

@@ -39,6 +39,7 @@ import {
   Megaphone,
   Gauge,
   Building2,
+  TrendingUp,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import {
@@ -406,6 +407,7 @@ const BranchSidebar: React.FC = () => {
         <SidebarItem to="/branches/settlement" icon={Banknote} label="Branch COD" />
         <SidebarItem to="/branches/billing" icon={Wallet} label="Branch Payments" />
         <SidebarItem to="/accounting/transactions/rider-cod" icon={Bike} label="Rider COD" />
+        <SidebarItem to="/finance/carrier-cod" icon={Truck} label="3PL COD" />
 
         <SidebarSection label="Customer Experience" />
         <SidebarItem to="/tickets" icon={Ticket} label="Tickets" />
@@ -436,6 +438,8 @@ const AdminSidebar: React.FC<{ isSuperAdmin: boolean }> = ({ isSuperAdmin }) => 
         {canViewBranchTracking && (
           <SidebarItem to="/branches" icon={Building2} label="Branch Overview" />
         )}
+        <SidebarItem to="/rider-overview" icon={Bike} label="Rider Overview" />
+        <SidebarItem to="/sales-overview" icon={TrendingUp} label="Sales Overview" />
 
         <SidebarSection label="Management" />
         {/* Three peers in one column. KYC used to be a fourth entry here; it is
@@ -513,6 +517,7 @@ const AdminSidebar: React.FC<{ isSuperAdmin: boolean }> = ({ isSuperAdmin }) => 
           </SidebarGroup>
 
           <SubItem to="/accounting/transactions/rider-cod" icon={Bike} label="Rider COD" />
+          <SubItem to="/finance/carrier-cod" icon={Truck} label="3PL COD" />
 
           {/* Vendor COD keeps its three screens together: the settlements
               themselves, what the vendor has asked to be paid before any of it

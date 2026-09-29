@@ -9,6 +9,8 @@ import {
   getCodSettlementDetail,
   getDashboardSummary,
   getMerchantOverview,
+  getSalesOverview,
+  getRiderOverview,
   getOrderByTrackingId,
   getOrderFilterOptions,
   getOrderCountsByStatus,
@@ -21,6 +23,7 @@ import {
   getStatusCounts,
   listOrders,
   redirectOrder,
+  forwardOrder,
   updateOrderDetails,
   updateParcelStatus,
 } from "../services/order.service";
@@ -263,6 +266,16 @@ export async function listOrdersController(req: Request, res: Response) {
       salesUserId = source.salesUserId;
     }
 
+    // Rider Overview's filter: parcels this rider has ever handled, pickup or
+    // delivery leg — broader than deliveryRiderId, above.
+    let riderId: string | undefined;
+    if (source.riderId !== undefined) {
+      if (typeof source.riderId !== "string" || !UUID_REGEX.test(source.riderId)) {
+        return res.status(400).json({ success: false, message: "riderId must be a valid uuid" });
+      }
+      riderId = source.riderId;
+    }
+
     // Orders list page's Origin/Destination Hub filters. Single ids from the
     // client, fed into the service's existing multi-value fields below so a
     // second AND-condition branch doesn't need to exist just for this.
@@ -341,6 +354,7 @@ export async function listOrdersController(req: Request, res: Response) {
         ...(salesUserId ? { salesUserId } : {}),
         ...(search ? { search } : {}),
         ...(deliveryRiderId ? { deliveryRiderId } : {}),
+        ...(riderId ? { riderId } : {}),
         ...(originLocationId ? { originLocationIds: [originLocationId] } : {}),
         ...(destinationLocationId ? { destinationLocationIds: [destinationLocationId] } : {}),
         ...(page !== undefined ? { page } : {}),
@@ -362,6 +376,7 @@ export async function listOrdersController(req: Request, res: Response) {
         ...(source.settlement
           ? { settlement: source.settlement as "settled" | "pending" }
           : {}),
+        ...(source.settlementPayee === "rider" ? { settlementPayee: "rider" as const } : {}),
       },
     );
 
@@ -926,6 +941,58 @@ export async function redirectOrderController(req: Request, res: Response) {
   }
 }
 
+export async function forwardOrderController(req: Request, res: Response) {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const rawId = req.params.id;
+    if (typeof rawId !== "string" || !rawId) {
+      return res.status(400).json({ success: false, message: "Invalid order id" });
+    }
+
+    const idempotencyKey = req.headers["idempotency-key"] as string | undefined;
+    if (!idempotencyKey || !UUID_REGEX.test(idempotencyKey)) {
+      return res.status(400).json({ success: false, message: "Valid Idempotency-Key header is required" });
+    }
+
+    const body = await withIdempotency(
+      `order-forward:${rawId}:${idempotencyKey}`,
+      req.body,
+      async () => {
+        const result = await forwardOrder(
+          { id: req.user!.id, roles: req.user!.roles },
+          rawId,
+          req.body,
+        );
+
+        const responseBody = {
+          success: true,
+          message: `Forwarding charge added; order forwarded to ${result.destination}`,
+          data: result,
+        };
+
+        return {
+          result: responseBody,
+          response: {
+            statusCode: 200,
+            body: responseBody,
+            resourceID: result.id,
+          },
+        };
+      },
+    );
+
+    return res.status(200).json(body);
+  } catch (error: any) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to add forwarding charge",
+    });
+  }
+}
+
 export async function updateOrderStatusController(req: Request, res: Response) {
   try {
     if (!req.user) {
@@ -1100,6 +1167,21 @@ export async function getStatusCountsController(req: Request, res: Response) {
   }
 }
 
+// Shared query parsing for the overview endpoints: an optional uuid and an
+// optional YYYY-MM-DD window. Returns an error message for a malformed value.
+function parseOverviewQuery(query: Request["query"], idKey: string) {
+  const str = (key: string) => (typeof query[key] === "string" && query[key] !== "" ? (query[key] as string) : undefined);
+  const id = str(idKey);
+  const dateFrom = str("dateFrom");
+  const dateTo = str("dateTo");
+  const isDay = (v: string) => /^d{4}-d{2}-d{2}$/.test(v) && !Number.isNaN(Date.parse(v));
+  if (id && !UUID_REGEX.test(id)) return { error: `${idKey} must be a valid uuid` } as const;
+  if ((dateFrom && !isDay(dateFrom)) || (dateTo && !isDay(dateTo))) {
+    return { error: "dateFrom and dateTo must be YYYY-MM-DD" } as const;
+  }
+  return { id, dateFrom, dateTo } as const;
+}
+
 // GET /orders/merchant-overview — server-side aggregated stats for the Merchant
 // Overview page. Accepts optional vendorId, dateFrom, dateTo query params.
 export async function merchantOverviewController(req: Request, res: Response) {
@@ -1108,9 +1190,9 @@ export async function merchantOverviewController(req: Request, res: Response) {
       return res.status(401).json({ success: false, message: "Unauthorized" });
     }
 
-    const vendorId = typeof req.query.vendorId === "string" ? req.query.vendorId : undefined;
-    const dateFrom = typeof req.query.dateFrom === "string" ? req.query.dateFrom : undefined;
-    const dateTo = typeof req.query.dateTo === "string" ? req.query.dateTo : undefined;
+    const parsed = parseOverviewQuery(req.query, "vendorId");
+    if ("error" in parsed) return res.status(400).json({ success: false, message: parsed.error });
+    const { id: vendorId, dateFrom, dateTo } = parsed;
 
     const summary = await getMerchantOverview(
       { id: req.user.id, roles: req.user.roles },
@@ -1124,6 +1206,62 @@ export async function merchantOverviewController(req: Request, res: Response) {
     return res.status(error.statusCode || 500).json({
       success: false,
       message: error.message || "Failed to load merchant overview",
+    });
+  }
+}
+
+// GET /orders/sales-overview — server-side aggregated stats for the Sales
+// Overview page. Accepts optional salesUserId, dateFrom, dateTo query params.
+export async function salesOverviewController(req: Request, res: Response) {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const parsed = parseOverviewQuery(req.query, "salesUserId");
+    if ("error" in parsed) return res.status(400).json({ success: false, message: parsed.error });
+    const { id: salesUserId, dateFrom, dateTo } = parsed;
+
+    const summary = await getSalesOverview(
+      { id: req.user.id, roles: req.user.roles },
+      salesUserId,
+      dateFrom,
+      dateTo,
+    );
+
+    return res.status(200).json({ success: true, data: summary });
+  } catch (error: any) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to load sales overview",
+    });
+  }
+}
+
+// GET /orders/rider-overview — server-side aggregated stats for the Rider
+// Overview page. Accepts optional riderId, dateFrom, dateTo query params.
+export async function riderOverviewController(req: Request, res: Response) {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const parsed = parseOverviewQuery(req.query, "riderId");
+    if ("error" in parsed) return res.status(400).json({ success: false, message: parsed.error });
+    const { id: riderId, dateFrom, dateTo } = parsed;
+
+    const summary = await getRiderOverview(
+      { id: req.user.id, roles: req.user.roles },
+      riderId,
+      dateFrom,
+      dateTo,
+    );
+
+    return res.status(200).json({ success: true, data: summary });
+  } catch (error: any) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to load rider overview",
     });
   }
 }

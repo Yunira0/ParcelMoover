@@ -1,9 +1,5 @@
 import { Prisma } from "../../generated/prisma/client";
 import prisma from "../../lib/prisma";
-import {
-  HANDOFF_REMARK_PREFIX as NCM_HANDOFF_REMARK_PREFIX,
-  UPAYA_HANDOFF_REMARK_PREFIX,
-} from "../../utils/carrierRemark";
 import { getActorScope, branchHandlesSql } from "./scope";
 
 /**
@@ -17,10 +13,21 @@ export const PART_PAID_FRACTIONS_SQL = Prisma.sql`
     LEAST(COALESCE(SUM(s.paid_amount / NULLIF(ABS(COALESCE(s.payable_amount, s.amount)), 0))
       FILTER (WHERE s.payee_type = 'vendor'), 0), 1) AS vendor_frac,
     LEAST(COALESCE(SUM(s.paid_amount / NULLIF(ABS(COALESCE(s.payable_amount, s.amount)), 0))
-      FILTER (WHERE s.payee_type = 'rider'), 0), 1) AS rider_frac
+      FILTER (WHERE s.payee_type = 'rider'), 0), 1) AS rider_frac,
+    (SELECT ci.net_amount * (1 - LEAST(COALESCE(cs.paid_amount / NULLIF(cs.net_receivable, 0), 1), 1))
+       FROM carrier_settlement_items ci
+       JOIN carrier_settlements cs ON cs.id = ci.settlement_id
+      WHERE ci.cod_collection_id = c.id) AS carrier_item_owed
   FROM settlement_items si
   JOIN settlements s ON s.id = si.settlement_id
   WHERE si.cod_collection_id = c.id AND s.status::text = 'partially_paid'`;
+
+/**
+ * What a 3PL carrier still owes us in cash on a collection it delivered (needs
+ * `pp`): the full COD until it is on a statement, then that order's net (COD
+ * less the carrier's charge) less its share of what the statement has paid.
+ */
+export const CARRIER_OWED_SQL = Prisma.sql`CASE WHEN c.carrier_payment_status::text = 'paid' THEN 0 ELSE COALESCE(pp.carrier_item_owed, c.collected_amount) END`;
 import type { OrderActor } from "./types";
 
 // ── COD settlement detail (drill-down from the dashboard card) ──────────────
@@ -78,16 +85,6 @@ export async function getCodSettlementDetail(
     ? branchHandlesSql(branchLocationIds, "p.")
     : Prisma.empty;
 
-  // Same durable NCM/Upaya signals as the dashboard summary above - see its comment.
-  const ncmHandoffExistsSql = Prisma.sql`EXISTS (
-    SELECT 1 FROM parcel_remarks pr
-    WHERE pr.parcel_id = p.id AND pr.remark LIKE ${NCM_HANDOFF_REMARK_PREFIX + "%"}
-  )`;
-  const upayaHandoffExistsSql = Prisma.sql`EXISTS (
-    SELECT 1 FROM parcel_remarks pr
-    WHERE pr.parcel_id = p.id AND pr.remark LIKE ${UPAYA_HANDOFF_REMARK_PREFIX + "%"}
-  )`;
-
   // The "settled" leg is scope-dependent, exactly as in computeDashboardSummary:
   // a rider's own dashboard measures settlement as cash remitted to the office
   // (rider_remitted_amount), everyone else's as cash remitted onward to the
@@ -108,12 +105,10 @@ export async function getCodSettlementDetail(
       : bucket === "pending"
         ? Prisma.sql`AND ${pendingExprSql} > 0`
         : bucket === "pm-rider"
-          ? Prisma.sql`AND c.rider_id IS NOT NULL AND r.carrier_code IS NULL AND (c.collected_amount - ${riderSettledSql}) > 0`
-          : bucket === "ncm"
-            ? Prisma.sql`AND ((c.rider_id IS NULL AND ${ncmHandoffExistsSql}) OR r.carrier_code = 'ncm') AND (c.collected_amount - LEAST(c.remitted_amount + c.collected_amount * pp.vendor_frac, c.collected_amount)) > 0`
-            : bucket === "upaya"
-              ? Prisma.sql`AND ((c.rider_id IS NULL AND ${upayaHandoffExistsSql}) OR r.carrier_code = 'upaya') AND (c.collected_amount - LEAST(c.remitted_amount + c.collected_amount * pp.vendor_frac, c.collected_amount)) > 0`
-              : Prisma.empty; // 'total' and 'delivery-charge': every in-scope row
+          ? Prisma.sql`AND c.rider_id IS NOT NULL AND r.carrier_code IS NULL AND c.carrier_code IS NULL AND (c.collected_amount - ${riderSettledSql}) > 0`
+          : bucket === "ncm" || bucket === "upaya"
+            ? Prisma.sql`AND c.carrier_code = ${bucket} AND (${CARRIER_OWED_SQL}) > 0`
+            : Prisma.empty; // 'total' and 'delivery-charge': every in-scope row
 
   // Each bucket's rows must add up to the exact figure on the card, so the
   // per-row amount is the bucket's own measure - the gross collection for
@@ -127,7 +122,7 @@ export async function getCodSettlementDetail(
         : bucket === "pm-rider"
           ? Prisma.sql`c.collected_amount - ${riderSettledSql}`
           : bucket === "ncm" || bucket === "upaya"
-            ? Prisma.sql`c.collected_amount - LEAST(c.remitted_amount + c.collected_amount * pp.vendor_frac, c.collected_amount)`
+            ? CARRIER_OWED_SQL
             : bucket === "delivery-charge"
               ? Prisma.sql`p.delivery_charge`
               : pendingExprSql;

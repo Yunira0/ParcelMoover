@@ -60,7 +60,7 @@ const VendorCreditPanel: React.FC<{ credit: BillingStatus }> = ({ credit }) => {
   );
 };
 
-const SectionHeader: React.FC<{
+export const SectionHeader: React.FC<{
   icon: React.ReactNode;
   title: string;
   description: string;

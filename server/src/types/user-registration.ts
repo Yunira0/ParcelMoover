@@ -85,4 +85,5 @@ export interface RegisterUserInput {
     licenceDocPath?: string;        // rider
     bluebookDocPath?: string;       // rider
     businessCertDocPath?: string;   // vendor
+    agreementDocPath?: string;      // all three - PDF or DOCX
 }

@@ -600,7 +600,7 @@ async function applyCarrierStatusWithRetry(
 ): Promise<{ applied: boolean; reason?: string }> {
   for (let attempt = 0; ; attempt++) {
     try {
-      return await applyExternalCarrierStatus(parcelId, targetStatus, remark);
+      return await applyExternalCarrierStatus(parcelId, targetStatus, remark, "ncm");
     } catch (error) {
       const isLockConflict = error instanceof AppError && error.statusCode === 409;
       if (!isLockConflict || attempt >= 2) throw error;

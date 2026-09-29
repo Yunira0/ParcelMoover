@@ -86,6 +86,11 @@ export interface SettlementListItem {
   bankAccountNo: string | null;
   bankAccountHolder: string | null;
   transferDate: string | null;
+  /**
+   * Day the statement was fully paid (Nepal date, YYYY-MM-DD) — the last
+   * instalment's paid_at. Null until the status is `settled`.
+   */
+  settledDate: string | null;
   createdAt: string;
   orderCount: number;
   amount: number;

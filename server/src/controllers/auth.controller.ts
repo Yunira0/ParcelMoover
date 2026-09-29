@@ -74,9 +74,10 @@ export const registerUserController = async (req: Request, res: Response) => {
       licenceDocPath: docPath(files?.licenceDoc?.[0]),
       bluebookDocPath: docPath(files?.bluebookDoc?.[0]),
       businessCertDocPath: docPath(files?.businessCertDoc?.[0]),
+      agreementDocPath: docPath(files?.agreementDoc?.[0]),
     });
 
-    return sendSuccess(res, 201, `${result.role} registered successfully`, {
+return sendSuccess(res, 201, `${result.role} registered successfully`, {
       user: {
         id: result.user.id,
         fullName: result.user.full_name,
@@ -182,6 +183,7 @@ export const updateManagedUserController = async (req: Request, res: Response) =
       licenceDocPath: docPath(files?.licenceDoc?.[0]),
       bluebookDocPath: docPath(files?.bluebookDoc?.[0]),
       businessCertDocPath: docPath(files?.businessCertDoc?.[0]),
+      agreementDocPath: docPath(files?.agreementDoc?.[0]),
     });
 
     return sendSuccess(res, 200, "User updated successfully");

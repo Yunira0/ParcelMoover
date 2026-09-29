@@ -13,6 +13,7 @@ import {
   remarkTextFor,
   stripCarrierStaffTag,
 } from "../../utils/carrierRemark";
+import { isCarrierCode, type CarrierCode } from "./carrier";
 import { resolveLabelSize } from "../vendorPrintSettings.service";
 import { buildOrdersWhere } from "./where";
 import {
@@ -380,10 +381,7 @@ export function mapOrder(
   };
 }
 
-type CarrierCode = "ncm" | "upaya";
 type CarrierMap = Map<string, CarrierCode>;
-
-const isCarrierCode = (value: unknown): value is CarrierCode => value === "ncm" || value === "upaya";
 
 // The 3PL carrying each parcel: a carrier placeholder delivery rider names it,
 // a real delivery rider means we carry it ourselves, and otherwise the latest
@@ -621,7 +619,7 @@ export async function listOrders(
   // a trash listing would both read and overwrite the live orders cache.
   const isDefaultUnfilteredQuery =
     !paginated && !query.status?.length && !query.orderType && !query.search &&
-    !query.vendorId?.length && !query.salesUserId && !query.deliveryRiderId &&
+    !query.vendorId?.length && !query.salesUserId && !query.deliveryRiderId && !query.riderId &&
     !query.sortBy && !query.deliveredToday && !query.viaTransit && !query.trashed && !query.settlement &&
     !query.originLocationIds?.length && !query.destinationLocationIds?.length &&
     !query.branchSettlement && vendorIds === undefined && branchLocationIds === undefined;
