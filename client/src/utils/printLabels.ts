@@ -230,7 +230,7 @@ body{background:#fff;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif}
   line-height:1;
 }
 .party-name{
-  font-size:13px;font-weight:800;color:#000;
+  font-size:12px;font-weight:800;color:#000;
   line-height:1.2;word-wrap:break-word;overflow-wrap:break-word;
   hyphens:auto;
 }
