@@ -408,28 +408,22 @@ const OrderDetailPage: React.FC = () => {
           <div className="od-section-header od-section-header-divided">
             <h2>Redirect / Forward Log</h2>
             <span className="od-section-count">{order.redirectLog.length}</span>
-            {isAdmin && REDIRECTABLE_STATUSES.includes(order.status) && (
+            {isAdmin && (order.status === 'delivered' || REDIRECTABLE_STATUSES.includes(order.status)) && (
               <button
                 type="button"
                 className="od-section-action"
                 onClick={() => {
-                  setRedirectError('');
-                  setRedirectOpen(true);
+                  // Same slot as redirect: once delivered, the action becomes a forward.
+                  if (order.status === 'delivered') {
+                    setForwardError('');
+                    setForwardOpen(true);
+                  } else {
+                    setRedirectError('');
+                    setRedirectOpen(true);
+                  }
                 }}
               >
-                Redirect order
-              </button>
-            )}
-            {isAdmin && order.status === 'delivered' && (
-              <button
-                type="button"
-                className="od-section-action"
-                onClick={() => {
-                  setForwardError('');
-                  setForwardOpen(true);
-                }}
-              >
-                Add forwarding charge
+                {order.status === 'delivered' ? 'Forward order' : 'Redirect order'}
               </button>
             )}
           </div>

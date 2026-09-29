@@ -4,6 +4,15 @@ import Button from './Button';
 import FormField from './FormField';
 import { getLocations } from '../services/users.service';
 
+// Same shape as RedirectOrderModal: preset reasons plus a free-text "Other".
+const REASON_OPTIONS = [
+  'Forwarded by carrier to another destination',
+  'Customer asked for a different destination',
+  'Wrong destination at delivery',
+  'Other',
+];
+const OTHER_REASON = 'Other';
+
 interface ForwardOrderModalProps {
   isOpen: boolean;
   /** Shown in the heading so the operator can confirm they picked the right parcel. */
@@ -46,14 +55,16 @@ const ForwardOrderModal: React.FC<ForwardOrderModalProps> = ({
   const [loading, setLoading] = useState(false);
   const [destinationId, setDestinationId] = useState('');
   const [charge, setCharge] = useState('');
-  const [reason, setReason] = useState('');
+  const [reason, setReason] = useState(REASON_OPTIONS[0]!);
+  const [reasonOther, setReasonOther] = useState('');
   const [formError, setFormError] = useState('');
 
   useEffect(() => {
     if (!isOpen) return;
     setDestinationId('');
     setCharge('');
-    setReason('');
+    setReason(REASON_OPTIONS[0]!);
+    setReasonOther('');
     setFormError('');
     if (locations.length > 0) return;
     setLoading(true);
@@ -79,6 +90,7 @@ const ForwardOrderModal: React.FC<ForwardOrderModalProps> = ({
     .map((l) => ({ id: l.id, label: l.name }));
 
   const chargeNumber = Number(charge) || 0;
+  const effectiveReason = reason === OTHER_REASON ? reasonOther.trim() : reason;
 
   const handleConfirm = () => {
     if (!destinationId) {
@@ -89,11 +101,15 @@ const ForwardOrderModal: React.FC<ForwardOrderModalProps> = ({
       setFormError('Enter the forwarding charge (more than 0).');
       return;
     }
+    if (!effectiveReason) {
+      setFormError('Enter the reason for this forward.');
+      return;
+    }
     setFormError('');
     onConfirm({
       destinationLocationId: destinationId,
       forwardingCharge: chargeNumber,
-      reason: reason.trim() || undefined,
+      reason: effectiveReason,
     });
   };
 
@@ -101,7 +117,7 @@ const ForwardOrderModal: React.FC<ForwardOrderModalProps> = ({
     <div className="modal-overlay" onClick={() => !busy && onClose()}>
       <div className="modal-content" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <h2>Forwarding Charge</h2>
+          <h2>Forward Order</h2>
           <Button variant="ghost" size="icon" className="modal-close-btn" onClick={onClose} type="button">
             &times;
           </Button>
@@ -137,12 +153,24 @@ const ForwardOrderModal: React.FC<ForwardOrderModalProps> = ({
         />
 
         <FormField
-          label="Remarks"
+          label="Reason"
+          required
+          type="select"
+          options={REASON_OPTIONS.map((r) => ({ value: r, label: r }))}
           value={reason}
           onChange={setReason}
-          placeholder="Optional"
           disabled={busy}
         />
+        {reason === OTHER_REASON && (
+          <FormField
+            label="Specify Reason"
+            required
+            value={reasonOther}
+            onChange={setReasonOther}
+            placeholder="Why is this order being forwarded?"
+            disabled={busy}
+          />
+        )}
 
         {(formError || error) && <p className="error-text">{formError || error}</p>}
 
@@ -151,7 +179,7 @@ const ForwardOrderModal: React.FC<ForwardOrderModalProps> = ({
             Cancel
           </Button>
           <Button type="button" variant="primary" onClick={handleConfirm} disabled={busy}>
-            {busy ? 'Saving…' : 'Add Forwarding Charge'}
+            {busy ? 'Forwarding…' : 'Forward Order'}
           </Button>
         </div>
       </div>

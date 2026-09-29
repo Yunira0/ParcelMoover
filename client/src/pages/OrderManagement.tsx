@@ -1007,32 +1007,24 @@ const OrderManagement: React.FC = () => {
           >
             <Copy size={14} />
           </button>
-          {canRedirect && REDIRECTABLE_STATUSES.includes(order.status) && (
+          {canRedirect && (order.status === 'delivered' || REDIRECTABLE_STATUSES.includes(order.status)) && (
             <button
               type="button"
               className="row-action-icon-only"
-              title="Redirect"
-              aria-label="Redirect"
+              title={order.status === 'delivered' ? 'Forward' : 'Redirect'}
+              aria-label={order.status === 'delivered' ? 'Forward' : 'Redirect'}
               onClick={() => {
-                setRedirectError('');
-                setRedirectOrderRow(order);
+                // Same slot as redirect: once delivered, the action becomes a forward.
+                if (order.status === 'delivered') {
+                  setForwardError('');
+                  setForwardOrderRow(order);
+                } else {
+                  setRedirectError('');
+                  setRedirectOrderRow(order);
+                }
               }}
             >
-              <Shuffle size={14} />
-            </button>
-          )}
-          {canRedirect && order.status === 'delivered' && (
-            <button
-              type="button"
-              className="row-action-icon-only"
-              title="Add Forwarding Charge"
-              aria-label="Add Forwarding Charge"
-              onClick={() => {
-                setForwardError('');
-                setForwardOrderRow(order);
-              }}
-            >
-              <Forward size={14} />
+              {order.status === 'delivered' ? <Forward size={14} /> : <Shuffle size={14} />}
             </button>
           )}
           {canRecoverFailed && isRecoverableFailure(order.status) && (
