@@ -480,7 +480,7 @@ export async function getSalesOverview(
       ${dateFilter}
   `;
 
-  const [depositedRows, pendingRows] = await Promise.all([
+  const [depositedRows, pendingRows, partialRows] = await Promise.all([
     prisma.$queryRaw<{ cnt: bigint; total: string }[]>`
       SELECT
         COUNT(DISTINCT p.id)::bigint AS cnt,
@@ -512,12 +512,28 @@ export async function getSalesOverview(
           WHERE si.cod_collection_id = cc.id
         )
     `,
+    // Paid so far on partially_paid statements, spread over their orders by the
+    // statement's paid fraction (same basis as getMerchantOverview).
+    prisma.$queryRaw<{ total: string }[]>`
+      SELECT COALESCE(SUM(si.amount * LEAST(s.paid_amount / NULLIF(ABS(s.payable_amount), 0), 1)), 0)::text AS total
+      FROM parcels p
+      JOIN cod_collections cc ON cc.parcel_id = p.id
+      JOIN settlement_items si ON si.cod_collection_id = cc.id
+      JOIN settlements s ON s.id = si.settlement_id AND s.status = 'partially_paid' AND s.payee_type = 'vendor'
+      WHERE p.deleted_at IS NULL
+        AND p.status IN ('delivered','partially_delivered')
+        ${salesCondition}
+        ${branchCondition}
+        ${dateFilter}
+    `,
   ]);
 
+  const partialPaid = partialRows[0] ? Number(partialRows[0].total) : 0;
+
   const depositedCount = depositedRows[0] ? Number(depositedRows[0].cnt) : 0;
-  const depositedAmount = depositedRows[0] ? Number(depositedRows[0].total) : 0;
+  const depositedAmount = (depositedRows[0] ? Number(depositedRows[0].total) : 0) + partialPaid;
   const pendingDepositCount = pendingRows[0] ? Number(pendingRows[0].cnt) : 0;
-  const pendingDepositAmount = pendingRows[0] ? Number(pendingRows[0].total) : 0;
+  const pendingDepositAmount = (pendingRows[0] ? Number(pendingRows[0].total) : 0) - partialPaid;
 
   const row = rows[0];
   if (!row) {
