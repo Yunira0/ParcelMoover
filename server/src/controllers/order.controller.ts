@@ -1166,6 +1166,21 @@ export async function getStatusCountsController(req: Request, res: Response) {
   }
 }
 
+// Shared query parsing for the overview endpoints: an optional uuid and an
+// optional YYYY-MM-DD window. Returns an error message for a malformed value.
+function parseOverviewQuery(query: Request["query"], idKey: string) {
+  const str = (key: string) => (typeof query[key] === "string" && query[key] !== "" ? (query[key] as string) : undefined);
+  const id = str(idKey);
+  const dateFrom = str("dateFrom");
+  const dateTo = str("dateTo");
+  const isDay = (v: string) => /^d{4}-d{2}-d{2}$/.test(v) && !Number.isNaN(Date.parse(v));
+  if (id && !UUID_REGEX.test(id)) return { error: `${idKey} must be a valid uuid` } as const;
+  if ((dateFrom && !isDay(dateFrom)) || (dateTo && !isDay(dateTo))) {
+    return { error: "dateFrom and dateTo must be YYYY-MM-DD" } as const;
+  }
+  return { id, dateFrom, dateTo } as const;
+}
+
 // GET /orders/merchant-overview — server-side aggregated stats for the Merchant
 // Overview page. Accepts optional vendorId, dateFrom, dateTo query params.
 export async function merchantOverviewController(req: Request, res: Response) {
@@ -1174,9 +1189,9 @@ export async function merchantOverviewController(req: Request, res: Response) {
       return res.status(401).json({ success: false, message: "Unauthorized" });
     }
 
-    const vendorId = typeof req.query.vendorId === "string" ? req.query.vendorId : undefined;
-    const dateFrom = typeof req.query.dateFrom === "string" ? req.query.dateFrom : undefined;
-    const dateTo = typeof req.query.dateTo === "string" ? req.query.dateTo : undefined;
+    const parsed = parseOverviewQuery(req.query, "vendorId");
+    if ("error" in parsed) return res.status(400).json({ success: false, message: parsed.error });
+    const { id: vendorId, dateFrom, dateTo } = parsed;
 
     const summary = await getMerchantOverview(
       { id: req.user.id, roles: req.user.roles },
@@ -1202,9 +1217,9 @@ export async function salesOverviewController(req: Request, res: Response) {
       return res.status(401).json({ success: false, message: "Unauthorized" });
     }
 
-    const salesUserId = typeof req.query.salesUserId === "string" ? req.query.salesUserId : undefined;
-    const dateFrom = typeof req.query.dateFrom === "string" ? req.query.dateFrom : undefined;
-    const dateTo = typeof req.query.dateTo === "string" ? req.query.dateTo : undefined;
+    const parsed = parseOverviewQuery(req.query, "salesUserId");
+    if ("error" in parsed) return res.status(400).json({ success: false, message: parsed.error });
+    const { id: salesUserId, dateFrom, dateTo } = parsed;
 
     const summary = await getSalesOverview(
       { id: req.user.id, roles: req.user.roles },
@@ -1230,9 +1245,9 @@ export async function riderOverviewController(req: Request, res: Response) {
       return res.status(401).json({ success: false, message: "Unauthorized" });
     }
 
-    const riderId = typeof req.query.riderId === "string" ? req.query.riderId : undefined;
-    const dateFrom = typeof req.query.dateFrom === "string" ? req.query.dateFrom : undefined;
-    const dateTo = typeof req.query.dateTo === "string" ? req.query.dateTo : undefined;
+    const parsed = parseOverviewQuery(req.query, "riderId");
+    if ("error" in parsed) return res.status(400).json({ success: false, message: parsed.error });
+    const { id: riderId, dateFrom, dateTo } = parsed;
 
     const summary = await getRiderOverview(
       { id: req.user.id, roles: req.user.roles },

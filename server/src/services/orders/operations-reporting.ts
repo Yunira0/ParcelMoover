@@ -136,9 +136,20 @@ export async function getMerchantOverview(
   dateFrom?: string,
   dateTo?: string,
 ): Promise<MerchantOverviewResult> {
+  // The caller's own scope first (a vendor sees only their vendor, a rider only
+  // their custody, sales only their book), then the optional vendorId narrows
+  // within it - so a non-admin can never widen or swap the vendor via the query.
+  const scope = await getActorScope(actor);
+  const scopeCondition: Prisma.Sql = scope.vendorId
+    ? Prisma.sql`AND p.vendor_id = ${scope.vendorId}::uuid`
+    : scope.vendorIds
+      ? Prisma.sql`AND p.vendor_id = ANY(${scope.vendorIds}::uuid[])`
+      : scope.riderId
+        ? riderCustodySql(scope.riderId, "p.")
+        : Prisma.empty;
   const vendorCondition = vendorId
-    ? Prisma.sql`AND p.vendor_id = ${vendorId}::uuid`
-    : Prisma.empty;
+    ? Prisma.sql`${scopeCondition} AND p.vendor_id = ${vendorId}::uuid`
+    : scopeCondition;
 
   // A branch-scoped admin's Vendor Overview counts only parcels the branch
   // handles (originated here / physically here), matching the branch order list.
@@ -251,9 +262,7 @@ export async function getMerchantOverview(
   // Pending = delivered parcels not yet linked to a settled settlement.
   // This filters out the empty STL-2024-001 style settlements and ensures
   // money is from real COD collections.
-  const depositedVendorCondition = vendorId
-    ? Prisma.sql`AND p.vendor_id = ${vendorId}::uuid`
-    : Prisma.empty;
+  const depositedVendorCondition = vendorCondition;
   // Use same date window as parcels (created_at) for both deposited/pending
   const depositedDateFilter = dateFilter;
 
