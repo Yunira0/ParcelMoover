@@ -1,5 +1,5 @@
 import api from '../utils/api';
-import { getOrders, type Order, type ParcelStatus } from './orders.service';
+import { getAllOrders, getOrders, type Order, type ParcelStatus } from './orders.service';
 import {
   MERCHANT_METRIC_LABELS,
   MERCHANT_METRIC_ORDER,
@@ -64,3 +64,18 @@ export const fetchSalesOrders = async (
 // Re-exported so the page/cards can reuse Vendor Overview's exact metric →
 // status / settlement mapping without importing across the merchant module.
 export { MERCHANT_METRIC_STATUSES as SALES_METRIC_STATUSES, MERCHANT_METRIC_SETTLEMENT as SALES_METRIC_SETTLEMENT };
+
+/** Every order behind the current cards/filters - for exports, which must not stop at one page. */
+export const fetchAllSalesOrders = (
+  filters: SalesOverviewFilters,
+  opts: { status?: ParcelStatus[]; settlement?: 'settled' | 'pending' } = {},
+): Promise<Order[]> =>
+  getAllOrders({
+    salesUserId: filters.salesUserId,
+    ...(opts.status?.length ? { status: opts.status } : {}),
+    ...(opts.settlement ? { settlement: opts.settlement } : {}),
+    ...(filters.dateFrom || filters.dateTo ? { dateField: 'createdAt' as const } : {}),
+    ...(filters.dateFrom ? { dateFrom: filters.dateFrom } : {}),
+    ...(filters.dateTo ? { dateTo: filters.dateTo } : {}),
+    withArrival: true,
+  });

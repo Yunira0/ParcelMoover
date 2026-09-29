@@ -11,6 +11,7 @@ import MerchantOverviewCards from '../../components/merchant/MerchantOverviewCar
 import {
   getSalesOverview,
   fetchSalesOrders,
+  fetchAllSalesOrders,
   SALES_METRIC_STATUSES,
   SALES_METRIC_SETTLEMENT,
   type SalesMetricKey,
@@ -186,8 +187,7 @@ const SalesOverview: React.FC = () => {
       } else {
         const statusFilter = activeCard ? (SALES_METRIC_STATUSES[activeCard] ?? undefined) : undefined;
         const settlementFilter = activeCard ? (SALES_METRIC_SETTLEMENT[activeCard] ?? undefined) : undefined;
-        const res = await fetchSalesOrders(filters, { pageSize: 100, withArrival: true, status: statusFilter ?? undefined, settlement: settlementFilter ?? undefined });
-        rows = res.data;
+        rows = await fetchAllSalesOrders(filters, { status: statusFilter ?? undefined, settlement: settlementFilter ?? undefined });
       }
     } catch {
       rows = selectedIds.size > 0 ? selectedOrders : orders;

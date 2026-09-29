@@ -3,7 +3,7 @@ import { X } from 'lucide-react';
 import SearchableSelect, { type SearchableSelectOption } from '../SearchableSelect';
 import NepaliDatePicker from '../NepaliDatePicker';
 import Button from '../Button';
-import { getAdmins } from '../../services/users.service';
+import { getAllAdmins } from '../../services/users.service';
 import '../merchant/MerchantFilterBar.css';
 import '../branch/BranchOverviewFilterBar.css';
 
@@ -36,7 +36,7 @@ const SalesOverviewFilterBar: React.FC<SalesOverviewFilterBarProps> = ({
 
   useEffect(() => {
     let active = true;
-    getAdmins({ pageSize: 100, status: 'active' })
+    getAllAdmins({ status: 'active' })
       .then((res) => {
         if (!active) return;
         if (res?.success && Array.isArray(res.data)) {

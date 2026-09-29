@@ -1,5 +1,5 @@
 import api from '../utils/api';
-import { getOrders, type Order, type ParcelStatus } from './orders.service';
+import { getAllOrders, getOrders, type Order, type ParcelStatus } from './orders.service';
 import {
   MERCHANT_METRIC_LABELS,
   MERCHANT_METRIC_ORDER,
@@ -71,3 +71,18 @@ export const RIDER_METRIC_STATUSES: typeof MERCHANT_METRIC_STATUSES = {
   pendingDeposit: null,
 };
 export { MERCHANT_METRIC_SETTLEMENT as RIDER_METRIC_SETTLEMENT };
+
+/** Every order behind the current cards/filters - for exports, which must not stop at one page. */
+export const fetchAllRiderOrders = (
+  filters: RiderOverviewFilters,
+  opts: { status?: ParcelStatus[]; settlement?: 'settled' | 'pending' } = {},
+): Promise<Order[]> =>
+  getAllOrders({
+    riderId: filters.riderId,
+    ...(opts.status?.length ? { status: opts.status } : {}),
+    ...(opts.settlement ? { settlement: opts.settlement, settlementPayee: 'rider' as const } : {}),
+    ...(filters.dateFrom || filters.dateTo ? { dateField: 'createdAt' as const } : {}),
+    ...(filters.dateFrom ? { dateFrom: filters.dateFrom } : {}),
+    ...(filters.dateTo ? { dateTo: filters.dateTo } : {}),
+    withArrival: true,
+  });

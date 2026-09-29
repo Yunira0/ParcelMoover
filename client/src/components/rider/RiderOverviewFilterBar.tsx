@@ -3,7 +3,7 @@ import { X } from 'lucide-react';
 import SearchableSelect, { type SearchableSelectOption } from '../SearchableSelect';
 import NepaliDatePicker from '../NepaliDatePicker';
 import Button from '../Button';
-import { getRiders } from '../../services/users.service';
+import { getAllRiders } from '../../services/users.service';
 import '../merchant/MerchantFilterBar.css';
 import '../branch/BranchOverviewFilterBar.css';
 
@@ -35,7 +35,7 @@ const RiderOverviewFilterBar: React.FC<RiderOverviewFilterBarProps> = ({
 
   useEffect(() => {
     let active = true;
-    getRiders({ pageSize: 100, status: 'active' })
+    getAllRiders({ status: 'active' })
       .then((res) => {
         if (!active) return;
         if (res?.success && Array.isArray(res.data)) {

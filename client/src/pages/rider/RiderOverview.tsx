@@ -11,6 +11,7 @@ import MerchantOverviewCards from '../../components/merchant/MerchantOverviewCar
 import {
   getRiderOverview,
   fetchRiderOrders,
+  fetchAllRiderOrders,
   RIDER_METRIC_STATUSES,
   RIDER_METRIC_SETTLEMENT,
   type RiderMetricKey,
@@ -187,8 +188,7 @@ const RiderOverview: React.FC = () => {
       } else {
         const statusFilter = activeCard ? (RIDER_METRIC_STATUSES[activeCard] ?? undefined) : undefined;
         const settlementFilter = activeCard ? (RIDER_METRIC_SETTLEMENT[activeCard] ?? undefined) : undefined;
-        const res = await fetchRiderOrders(filters, { pageSize: 100, withArrival: true, status: statusFilter ?? undefined, settlement: settlementFilter ?? undefined });
-        rows = res.data;
+        rows = await fetchAllRiderOrders(filters, { status: statusFilter ?? undefined, settlement: settlementFilter ?? undefined });
       }
     } catch {
       rows = selectedIds.size > 0 ? selectedOrders : orders;
