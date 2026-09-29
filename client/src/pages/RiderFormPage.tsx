@@ -340,6 +340,7 @@ const RiderFormPage: React.FC = () => {
         panVatDoc: form.panVatDoc,
         licenceDoc: form.licenceDoc,
         bluebookDoc: form.blueBookDoc,
+        agreementDoc: form.agreementDoc,
         ...(isSuperAdmin ? { carrierCode: form.carrierCode } : {}),
       });
       setSubmitted(true);
@@ -586,6 +587,13 @@ const RiderFormPage: React.FC = () => {
                     label="Blue Book"
                     file={form.blueBookDoc}
                     onChange={setFile('blueBookDoc')}
+                  />
+                  <FileInput
+                    label="Agreement"
+                    file={form.agreementDoc}
+                    onChange={setFile('agreementDoc')}
+                    accept={AGREEMENT_FILE_ACCEPT}
+                    hint="PDF or DOCX · max 5 MB"
                   />
                 </div>
               )}

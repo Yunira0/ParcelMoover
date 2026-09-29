@@ -78,6 +78,8 @@ export interface RegisterUserInput {
   licenceDoc?: File | null;
   bluebookDoc?: File | null;
   businessCertDoc?: File | null;
+  /** Signed agreement - PDF or DOCX only. */
+  agreementDoc?: File | null;
 }
 
 export interface UpdateUserProfileInput {
