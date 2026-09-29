@@ -724,7 +724,14 @@ export async function getRiderOverview(
       ${dateFilter}
   `;
 
-  const [depositedRows, pendingRows] = await Promise.all([
+  // Rider COD, on the same basis as the Rider COD statements page
+  // (finance.service unsettled orders): a rider owes the office what they
+  // collected in full - no delivery-charge deduction, unlike a vendor payout.
+  // Pending = collected, not yet on a rider statement, not carrier COD, on a
+  // live non-return order. Deposited = on a settled rider statement, plus the
+  // paid share of part-paid statements.
+  const riderCollector = effectiveRiderId ? collectorCondition : Prisma.sql`AND cc.rider_id IS NOT NULL`;
+  const [depositedRows, pendingRows, partialRows] = await Promise.all([
     prisma.$queryRaw<{ cnt: bigint; total: string }[]>`
       SELECT
         COUNT(DISTINCT p.id)::bigint AS cnt,
@@ -734,34 +741,57 @@ export async function getRiderOverview(
       JOIN settlement_items si ON si.cod_collection_id = cc.id
       JOIN settlements s ON s.id = si.settlement_id AND s.status = 'settled' AND s.payee_type = 'rider'
       WHERE p.deleted_at IS NULL
-        AND p.status IN ('delivered','partially_delivered')
-        ${collectorCondition}
+        ${riderCollector}
         ${branchCondition}
         ${dateFilter}
     `,
     prisma.$queryRaw<{ cnt: bigint; total: string }[]>`
       SELECT
         COUNT(*)::bigint AS cnt,
-        COALESCE(SUM(COALESCE(cc.collected_amount,0) - COALESCE(p.delivery_charge,0)), 0)::text AS total
+        COALESCE(SUM(COALESCE(cc.collected_amount, 0)), 0)::text AS total
       FROM parcels p
-      LEFT JOIN cod_collections cc ON cc.parcel_id = p.id
+      JOIN cod_collections cc ON cc.parcel_id = p.id
       WHERE p.deleted_at IS NULL
-        AND p.status IN ('delivered','partially_delivered')
-        ${collectorCondition}
+        AND cc.collected_at IS NOT NULL
+        AND cc.rider_payment_status = 'pending'
+        AND cc.carrier_code IS NULL
+        AND p.status NOT IN ('cancelled','returned_to_vendor')
+        AND p.order_type <> 'return'
+        ${riderCollector}
         ${branchCondition}
         ${dateFilter}
         AND NOT EXISTS (
           SELECT 1 FROM settlement_items si
-          JOIN settlements s ON s.id = si.settlement_id AND s.status='settled' AND s.payee_type='rider'
-          WHERE si.cod_collection_id = cc.id
+          JOIN settlements s ON s.id = si.settlement_id AND s.payee_type = 'rider'
+          WHERE si.cod_collection_id = cc.id AND s.status IN ('settled','partially_paid')
         )
+    `,
+    // Part-paid rider statements: each order counts as paid by the statement's
+    // paid fraction; the order stays counted as pending.
+    prisma.$queryRaw<{ cnt: bigint; total: string; paid: string }[]>`
+      SELECT
+        COUNT(DISTINCT p.id)::bigint AS cnt,
+        COALESCE(SUM(si.amount), 0)::text AS total,
+        COALESCE(SUM(si.amount * LEAST(s.paid_amount / NULLIF(ABS(s.payable_amount), 0), 1)), 0)::text AS paid
+      FROM parcels p
+      JOIN cod_collections cc ON cc.parcel_id = p.id
+      JOIN settlement_items si ON si.cod_collection_id = cc.id
+      JOIN settlements s ON s.id = si.settlement_id AND s.status = 'partially_paid' AND s.payee_type = 'rider'
+      WHERE p.deleted_at IS NULL
+        ${riderCollector}
+        ${branchCondition}
+        ${dateFilter}
     `,
   ]);
 
+  const partial = partialRows[0] ?? { cnt: 0, total: "0", paid: "0" };
   const depositedCount = depositedRows[0] ? Number(depositedRows[0].cnt) : 0;
-  const depositedAmount = depositedRows[0] ? Number(depositedRows[0].total) : 0;
-  const pendingDepositCount = pendingRows[0] ? Number(pendingRows[0].cnt) : 0;
-  const pendingDepositAmount = pendingRows[0] ? Number(pendingRows[0].total) : 0;
+  const depositedAmount = (depositedRows[0] ? Number(depositedRows[0].total) : 0) + Number(partial.paid);
+  // Orders already on a pending / part-paid statement are still awaiting
+  // payment, so they stay pending; only the paid share moves to deposited.
+  const pendingDepositCount = (pendingRows[0] ? Number(pendingRows[0].cnt) : 0) + Number(partial.cnt);
+  const pendingDepositAmount =
+    (pendingRows[0] ? Number(pendingRows[0].total) : 0) + Number(partial.total) - Number(partial.paid);
 
   const row = rows[0];
   if (!row) {
