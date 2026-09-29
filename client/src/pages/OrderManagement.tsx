@@ -28,9 +28,9 @@ import FilterDropdown from '../components/FilterDropdown';
 import MultiFilterDropdown from '../components/MultiFilterDropdown';
 import MultiFilterDropdownAsync from '../components/MultiFilterDropdownAsync';
 import QuickRemarkPopup from '../components/QuickRemarkPopup';
-import { toBsDate, toBsDateTime, toBsDateTimeCell } from '../utils/nepaliDate';
-import { CARRIER_LABELS, STATUS_TIMELINE_HEADERS, statusTimelineCells } from '../utils/orderStatus';
-import { downloadExcel } from '../utils/excel';
+import { toBsDate, toBsDateTime } from '../utils/nepaliDate';
+import { CARRIER_LABELS } from '../utils/orderStatus';
+import { downloadOrdersExcel } from '../utils/orderExport';
 import NepaliDatePicker from '../components/NepaliDatePicker';
 import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react';
 import {
@@ -848,29 +848,7 @@ const OrderManagement: React.FC = () => {
       // fall back to the currently loaded page / selection
     }
 
-    const headers = ['Order ID', 'Tracking ID', 'Origin', 'Sender', 'Receiver', 'Receiver Phone', 'Alternate Number', 'Receiver Address', 'Destination', 'COD', 'Delivery Charge', 'Weight', 'Status', 'Rider', 'Remarks', 'Order Created Date', 'Last Updated By', 'Last Updated At', ...STATUS_TIMELINE_HEADERS];
-    const rows = exportOrders.map(order => [
-      `#${order.orderNumber}`,
-      order.trackingId,
-      order.origin,
-      order.senderName,
-      order.receiverName,
-      order.receiverPhone || '',
-      order.receiverAlternatePhone || '',
-      order.receiverAddress || '',
-      order.destination,
-      order.codAmount,
-      order.deliveryCharge,
-      order.weightKg || '',
-      STATUS_LABELS[order.status],
-      order.riderName || '',
-      order.remarks || '',
-      toBsDateTimeCell(order.createdAtRaw || order.createdAt) || '',
-      order.lastUpdatedBy || '',
-      toBsDateTimeCell(order.lastUpdatedAt) || '',
-      ...statusTimelineCells(order.statusTimestamps),
-    ]);
-    downloadExcel('orders.xlsx', 'Orders', headers, rows);
+    downloadOrdersExcel('orders.xlsx', 'Orders', exportOrders, STATUS_LABELS);
   };
 
   const sortableHeader = (label: string, field: OrderSortField) => (

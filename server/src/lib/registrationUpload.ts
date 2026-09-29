@@ -3,6 +3,7 @@ import path from "path";
 import fs from "fs";
 import { randomBytes } from "crypto";
 import { safeUploadExtension } from "./uploadExtension";
+import { DOCX_MIME_TYPE } from "./secureUploadedFiles";
 import { AppError } from "../utils/AppError";
 
 const UPLOAD_DIR = path.join(process.cwd(), "uploads", "registration");
@@ -11,6 +12,7 @@ if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 // HEIC/HEIF (iPhone camera default) is accepted here and converted to JPEG by
 // secureUploadedFiles before it's ever stored.
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "application/pdf", "image/heic", "image/heif"];
+const AGREEMENT_TYPES = ["application/pdf", DOCX_MIME_TYPE];
 const MAX_SIZE_MB = 5;
 
 const storage = multer.diskStorage({
@@ -26,6 +28,13 @@ export const registrationUpload = multer({
   storage,
   limits: { fileSize: MAX_SIZE_MB * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
+    // The agreement is a contract, not a scan: PDF or DOCX only. Every other
+    // slot keeps the image/PDF list.
+    if (file.fieldname === "agreementDoc") {
+      if (AGREEMENT_TYPES.includes(file.mimetype)) cb(null, true);
+      else cb(new AppError(400, "Agreement must be a PDF or DOCX file"));
+      return;
+    }
     if (ALLOWED_TYPES.includes(file.mimetype)) {
       cb(null, true);
     } else {
@@ -33,6 +42,7 @@ export const registrationUpload = multer({
     }
   },
 }).fields([
+  { name: "agreementDoc", maxCount: 1 },
   { name: "idDocument", maxCount: 1 },
   { name: "citizenshipDoc", maxCount: 1 },
   { name: "panDoc", maxCount: 1 },

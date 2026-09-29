@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { paginationQuerySchema } from "./common";
+import { paginationQuerySchema, uuidSchema } from "./common";
 import { MAX_TRANSIT_MANIFEST_PARCELS } from "../types/transitManifest.type";
 
 export const TRANSIT_MANIFEST_STATUSES = ["open", "dispatched", "received"] as const;
@@ -45,8 +45,11 @@ export const createTransitManifestSchema = z
 
 // Selecting orders in a table sends ids; a scanner sends tracking ids. Same
 // endpoint either way - the difference is only how the operator picked them.
+// Ids use the shared uuidSchema, not z.string().uuid(): zod 4's check is
+// RFC-strict and rejects seeded ids like 11111111-0000-0000-0000-000000000003,
+// which Postgres happily stores.
 const parcelIdsSchema = z
-  .array(z.string().uuid("Each parcel id must be a valid uuid"))
+  .array(uuidSchema)
   .min(1, "parcelIds must be a non-empty array")
   .max(MAX_TRANSIT_MANIFEST_PARCELS, `Cannot add more than ${MAX_TRANSIT_MANIFEST_PARCELS} parcels at once`);
 
@@ -66,5 +69,5 @@ export const dispatchTransitManifestSchema = z.object({
 
 export const stageOrdersToBranchSchema = z.object({
   parcelIds: parcelIdsSchema,
-  toBranchId: z.string().uuid("toBranchId must be a valid uuid"),
+  toBranchId: uuidSchema,
 });

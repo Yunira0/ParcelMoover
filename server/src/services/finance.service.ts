@@ -547,6 +547,8 @@ export async function listSettlements(
       where,
       include: {
         settlement_items: { select: { cod_collection_id: true } },
+        // Only the latest instalment - the one that cleared the statement.
+        settlement_payments: { select: { paid_at: true }, orderBy: { paid_at: "desc" }, take: 1 },
         riders: { select: { name: true, phone: true, bank_name: true, bank_account_no: true, bank_account_holder: true } },
         vendors: {
           select: {
@@ -581,6 +583,11 @@ export async function listSettlements(
       bankAccountNo,
       bankAccountHolder,
       transferDate: s.settlement_date ? formatNepalDate(s.settlement_date) : null,
+      // When the statement went to settled: the instalment that paid it off.
+      // Statements settled before instalments were tracked have no payment
+      // rows, so they fall back to the row's last update.
+      settledDate:
+        s.status === "settled" ? formatNepalDate(s.settlement_payments[0]?.paid_at ?? s.updated_at) : null,
       // Full timestamp of when the settlement was recorded, so the UI can show time.
       createdAt: s.created_at.toISOString(),
       orderCount: s.settlement_items.length,
