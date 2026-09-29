@@ -619,7 +619,7 @@ export async function listOrders(
   // a trash listing would both read and overwrite the live orders cache.
   const isDefaultUnfilteredQuery =
     !paginated && !query.status?.length && !query.orderType && !query.search &&
-    !query.vendorId?.length && !query.salesUserId && !query.deliveryRiderId &&
+    !query.vendorId?.length && !query.salesUserId && !query.deliveryRiderId && !query.riderId &&
     !query.sortBy && !query.deliveredToday && !query.viaTransit && !query.trashed && !query.settlement &&
     !query.originLocationIds?.length && !query.destinationLocationIds?.length &&
     !query.branchSettlement && vendorIds === undefined && branchLocationIds === undefined;

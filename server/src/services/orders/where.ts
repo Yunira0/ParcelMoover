@@ -114,6 +114,11 @@ export function buildOrdersWhere(
   if (query.deliveryRiderId) {
     conditions.push({ delivery_rider_id: query.deliveryRiderId });
   }
+  // Rider Overview: every parcel this rider has handled on either leg, not
+  // just the ones currently out for delivery (deliveryRiderId above).
+  if (query.riderId) {
+    conditions.push({ OR: [{ pickup_rider_id: query.riderId }, { delivery_rider_id: query.riderId }] });
+  }
   if (query.originLocationIds?.length) {
     conditions.push({ origin_location_id: { in: query.originLocationIds } });
   }

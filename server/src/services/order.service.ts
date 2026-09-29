@@ -48,7 +48,7 @@ export { addOrderRemark } from "./orders/remarks";
 
 export { getSenderProfile } from "./orders/senderProfile";
 
-export { getStatusCounts, getMerchantOverview } from "./orders/operations-reporting";
+export { getStatusCounts, getMerchantOverview, getSalesOverview, getRiderOverview } from "./orders/operations-reporting";
 
 export type { MerchantOverviewMetric, MerchantOverviewResult } from "./orders/operations-reporting";
 
