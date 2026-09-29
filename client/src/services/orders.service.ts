@@ -694,6 +694,8 @@ export interface PriceLogEntry {
 /** One destination change made because the customer moved after booking. */
 export interface RedirectLogEntry {
   id: string;
+  /** "redirect" = customer moved before delivery; "forward" = delivered parcel forwarded with a forwarding charge. */
+  kind: 'redirect' | 'forward';
   fromBranch: string | null;
   toBranch: string;
   fromAddress: string | null;
@@ -794,6 +796,23 @@ export interface RedirectOrderInput {
 export const redirectOrder = async (orderId: string, data: RedirectOrderInput) => {
   const idempotencyKey = uuidv4();
   const response = await api.post(`/orders/${orderId}/redirect`, data, {
+    headers: { 'Idempotency-Key': idempotencyKey },
+  });
+  notifyOrderStatusChanged();
+  return response.data;
+};
+
+export interface ForwardOrderInput {
+  destinationLocationId: string;
+  /** Manual forwarding charge added on top of the existing delivery charge. */
+  forwardingCharge: number;
+  reason?: string;
+}
+
+/** Admin-only: a delivered parcel was forwarded on to another destination. Status stays delivered. */
+export const forwardOrder = async (orderId: string, data: ForwardOrderInput) => {
+  const idempotencyKey = uuidv4();
+  const response = await api.post(`/orders/${orderId}/forward`, data, {
     headers: { 'Idempotency-Key': idempotencyKey },
   });
   notifyOrderStatusChanged();

@@ -150,6 +150,21 @@ export const redirectOrderSchema = z.object({
 
 export type RedirectOrderInput = z.infer<typeof redirectOrderSchema>;
 
+// ── Forwarding charge on a delivered order ────────────────────────────────────
+// A delivered parcel was forwarded on to another destination. Status stays
+// delivered; the destination changes and a manual forwarding charge is added.
+
+export const forwardOrderSchema = z.object({
+  destinationLocationId: uuidSchema,
+  forwardingCharge: z
+    .number({ error: "Forwarding charge is required" })
+    .positive("Forwarding charge must be more than 0")
+    .max(1_000_000, "Forwarding charge is unrealistically large"),
+  reason: z.string().trim().max(500).optional(),
+});
+
+export type ForwardOrderInput = z.infer<typeof forwardOrderSchema>;
+
 // ── Update single order status ────────────────────────────────────────────────
 
 export const updateOrderStatusSchema = z.object({

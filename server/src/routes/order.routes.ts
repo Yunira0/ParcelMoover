@@ -18,6 +18,7 @@ import {
   addOrderRemarkSchema,
   runSheetQuerySchema,
   redirectOrderSchema,
+  forwardOrderSchema,
 } from "../validators/order.schema";
 import {
   addOrderRemarkController,
@@ -38,6 +39,7 @@ import {
   getStatusCountsController,
   listOrdersController,
   redirectOrderController,
+  forwardOrderController,
   riderRunSheetController,
   updateOrderDetailsController,
   updateOrderStatusController,
@@ -372,6 +374,21 @@ orderRouter.post(
   validate(uuidParamSchema, "params"),
   validate(redirectOrderSchema),
   redirectOrderController,
+);
+
+// POST /orders/:id/forward — a delivered parcel was forwarded on to another
+// destination: change the destination and add a manual forwarding charge.
+// Status stays delivered. Admin-only, like redirect.
+orderRouter.post(
+  "/:id/forward",
+  authMiddleware,
+  csrfProtection,
+  authorizeRoles("super_admin", "admin"),
+  requireStaffPermission("ORDER_ACCESS"),
+  statusUpdateLimiter,
+  validate(uuidParamSchema, "params"),
+  validate(forwardOrderSchema),
+  forwardOrderController,
 );
 
 // POST /orders/:id/remarks - leave a remark on a parcel (visible to anyone with access to it)

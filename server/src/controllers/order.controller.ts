@@ -21,6 +21,7 @@ import {
   getStatusCounts,
   listOrders,
   redirectOrder,
+  forwardOrder,
   updateOrderDetails,
   updateParcelStatus,
 } from "../services/order.service";
@@ -921,6 +922,58 @@ export async function redirectOrderController(req: Request, res: Response) {
     return res.status(error.statusCode || 500).json({
       success: false,
       message: error.message || "Failed to redirect order",
+    });
+  }
+}
+
+export async function forwardOrderController(req: Request, res: Response) {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const rawId = req.params.id;
+    if (typeof rawId !== "string" || !rawId) {
+      return res.status(400).json({ success: false, message: "Invalid order id" });
+    }
+
+    const idempotencyKey = req.headers["idempotency-key"] as string | undefined;
+    if (!idempotencyKey || !UUID_REGEX.test(idempotencyKey)) {
+      return res.status(400).json({ success: false, message: "Valid Idempotency-Key header is required" });
+    }
+
+    const body = await withIdempotency(
+      `order-forward:${rawId}:${idempotencyKey}`,
+      req.body,
+      async () => {
+        const result = await forwardOrder(
+          { id: req.user!.id, roles: req.user!.roles },
+          rawId,
+          req.body,
+        );
+
+        const responseBody = {
+          success: true,
+          message: `Forwarding charge added; order forwarded to ${result.destination}`,
+          data: result,
+        };
+
+        return {
+          result: responseBody,
+          response: {
+            statusCode: 200,
+            body: responseBody,
+            resourceID: result.id,
+          },
+        };
+      },
+    );
+
+    return res.status(200).json(body);
+  } catch (error: any) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to add forwarding charge",
     });
   }
 }
