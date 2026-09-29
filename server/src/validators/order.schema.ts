@@ -318,6 +318,9 @@ export const listOrdersQuerySchema = paginationQuerySchema.extend({
   // parcels not yet in a settled settlement. Authentic — excludes settlements
   // with no items (e.g. STL-2024-001).
   settlement: z.enum(["settled", "pending"]).optional(),
+  // Whose statements `settlement` refers to. Defaults to the vendor's; Rider
+  // Overview passes "rider" so its COD cards and table agree.
+  settlementPayee: z.enum(["vendor", "rider"]).optional(),
 });
 
 export type ListOrdersQuery = z.infer<typeof listOrdersQuerySchema>;

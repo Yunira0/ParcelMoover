@@ -49,7 +49,7 @@ export const fetchRiderOrders = async (
   const res = await getOrders({
     riderId: filters.riderId,
     ...(opts.status?.length ? { status: opts.status } : {}),
-    ...(opts.settlement ? { settlement: opts.settlement } : {}),
+    ...(opts.settlement ? { settlement: opts.settlement, settlementPayee: 'rider' as const } : {}),
     ...(filters.dateFrom || filters.dateTo ? { dateField: 'createdAt' as const } : {}),
     ...(filters.dateFrom ? { dateFrom: filters.dateFrom } : {}),
     ...(filters.dateTo ? { dateTo: filters.dateTo } : {}),
@@ -63,4 +63,11 @@ export const fetchRiderOrders = async (
 
 // Re-exported so the page/cards can reuse Vendor Overview's exact metric →
 // status / settlement mapping without importing across the merchant module.
-export { MERCHANT_METRIC_STATUSES as RIDER_METRIC_STATUSES, MERCHANT_METRIC_SETTLEMENT as RIDER_METRIC_SETTLEMENT };
+// The COD cards count collected cash, not delivered status, so those two rows
+// carry no status filter here (unlike Vendor Overview).
+export const RIDER_METRIC_STATUSES: typeof MERCHANT_METRIC_STATUSES = {
+  ...MERCHANT_METRIC_STATUSES,
+  deposited: null,
+  pendingDeposit: null,
+};
+export { MERCHANT_METRIC_SETTLEMENT as RIDER_METRIC_SETTLEMENT };

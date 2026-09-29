@@ -189,6 +189,8 @@ export interface ListOrdersParams {
   dateTo?: string;
   /** Merchant overview settlement filter — settled = delivered parcels in a settled settlement, pending = delivered not yet settled */
   settlement?: 'settled' | 'pending';
+  /** Whose statements `settlement` refers to; defaults to the vendor's. */
+  settlementPayee?: 'vendor' | 'rider';
 }
 
 export interface OrdersPageMeta {
@@ -409,6 +411,7 @@ export const getOrders = async (params?: ListOrdersParams, signal?: AbortSignal)
   if (params?.dateFrom) query.dateFrom = params.dateFrom;
   if (params?.dateTo) query.dateTo = params.dateTo;
   if (params?.settlement) query.settlement = params.settlement;
+  if (params?.settlementPayee) query.settlementPayee = params.settlementPayee;
 
   const response = (params?.search?.length ?? 0) > SEARCH_POST_THRESHOLD
     ? await api.post('/orders/search', query, { signal })

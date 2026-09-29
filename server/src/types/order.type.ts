@@ -190,6 +190,8 @@ export interface ListOrdersQuery {
   dateTo?: string;
   /** Vendor settlement state used by Merchant Overview. */
   settlement?: "settled" | "pending";
+  /** Which payee's statements `settlement` refers to (default vendor). */
+  settlementPayee?: "vendor" | "rider";
   /** Internal-only branch scope. These are never accepted by GET /orders. */
   originLocationIds?: string[];
   destinationLocationIds?: string[];

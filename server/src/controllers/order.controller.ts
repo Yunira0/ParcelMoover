@@ -376,6 +376,7 @@ export async function listOrdersController(req: Request, res: Response) {
         ...(source.settlement
           ? { settlement: source.settlement as "settled" | "pending" }
           : {}),
+        ...(source.settlementPayee === "rider" ? { settlementPayee: "rider" as const } : {}),
       },
     );
 

@@ -207,7 +207,24 @@ export function buildOrdersWhere(
   // linked via settlement_items to a settled vendor settlement count as
   // deposited. Pending = delivered not in any settled settlement.
   // This filters out empty settlements (e.g. STL-2024-001 with 0 items).
-  if (query.settlement === "settled") {
+  if (query.settlement && query.settlementPayee === "rider") {
+    // Rider COD basis, mirroring getRiderOverview: collected cash that is not
+    // carrier COD, on a live non-return order. Pending = not yet on a settled
+    // rider statement; deposited = on one.
+    const onSettledRiderStatement = { settlements: { status: "settled" as const, payee_type: "rider" as const } };
+    const riderCollection: Prisma.cod_collectionsWhereInput = {
+      collected_at: { not: null },
+      carrier_code: null,
+      rider_id: query.riderId ?? { not: null },
+      ...(query.settlement === "settled"
+        ? { settlement_items: { some: onSettledRiderStatement } }
+        : { rider_payment_status: "pending", settlement_items: { none: onSettledRiderStatement } }),
+    };
+    conditions.push({ cod_collections: riderCollection });
+    if (query.settlement === "pending") {
+      conditions.push({ status: { notIn: ["cancelled", "returned_to_vendor"] }, order_type: { not: "return" } });
+    }
+  } else if (query.settlement === "settled") {
     conditions.push({
       cod_collections: {
         settlement_items: {
