@@ -6,6 +6,10 @@ const serverPackage = JSON.parse(
   readFileSync(resolve(__dirname, "../../../package.json"), "utf8"),
 ) as { scripts?: Record<string, string> };
 const dockerfile = readFileSync(resolve(__dirname, "../../../../Dockerfile"), "utf8");
+const deploymentWorkflow = readFileSync(
+  resolve(__dirname, "../../../../.github/workflows/deployment.yml"),
+  "utf8",
+);
 
 describe("production startup", () => {
   it("delegates the container entrypoint to the canonical server start script", () => {
@@ -21,5 +25,10 @@ describe("production startup", () => {
     expect(diagnosticIndex).toBeGreaterThanOrEqual(0);
     expect(backfillIndex).toBeGreaterThan(diagnosticIndex);
     expect(serverIndex).toBeGreaterThan(backfillIndex);
+  });
+
+  it("allows one-time production repairs to finish before rolling back", () => {
+    expect(deploymentWorkflow).toContain("Health check (retry up to 5m)");
+    expect(deploymentWorkflow).toContain("for i in $(seq 1 60)");
   });
 });
