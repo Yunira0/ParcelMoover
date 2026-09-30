@@ -368,6 +368,7 @@ const AdminFormPage: React.FC = () => {
         idDocument: form.nationalIdDoc,
         citizenshipDoc: form.citizenshipDoc,
         panDoc: form.panDoc,
+        agreementDoc: form.agreementDoc,
       });
       setSubmitted(true);
     } catch (err: any) {
@@ -631,6 +632,13 @@ const AdminFormPage: React.FC = () => {
                     label="PAN"
                     file={form.panDoc}
                     onChange={setFile('panDoc')}
+                  />
+                  <FileInput
+                    label="Agreement"
+                    file={form.agreementDoc}
+                    onChange={setFile('agreementDoc')}
+                    accept={AGREEMENT_FILE_ACCEPT}
+                    hint="PDF or DOCX · max 5 MB"
                   />
                 </div>
               )}

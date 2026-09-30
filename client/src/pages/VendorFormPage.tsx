@@ -750,6 +750,7 @@ const VendorFormPage: React.FC = () => {
         citizenshipDoc: form.citizenshipDoc,
         panVatDoc: form.panVatDoc,
         businessCertDoc: form.businessCertDoc,
+        agreementDoc: form.agreementDoc,
       });
       setSubmitted(true);
     } catch (err: any) {
@@ -1059,22 +1060,19 @@ const VendorFormPage: React.FC = () => {
                     <span className="vfp-field-error">{fieldErrors.businessCertDoc}</span>
                   )}
                 </div>
-                {/* Signed after onboarding, so it's only attached on edit. */}
-                {isEdit && (
-                  <div>
-                    <FileInput
-                      label="Agreement"
-                      file={form.agreementDoc}
-                      onChange={setFile('agreementDoc')}
-                      accept={AGREEMENT_FILE_ACCEPT}
-                      hint="PDF or DOCX · max 5 MB"
-                    />
-                    <ExistingDoc docs={existingDocs} slot="agreementDoc" />
-                    {fieldErrors.agreementDoc && (
-                      <span className="vfp-field-error">{fieldErrors.agreementDoc}</span>
-                    )}
-                  </div>
-                )}
+                <div>
+                  <FileInput
+                    label="Agreement"
+                    file={form.agreementDoc}
+                    onChange={setFile('agreementDoc')}
+                    accept={AGREEMENT_FILE_ACCEPT}
+                    hint="PDF or DOCX · max 5 MB"
+                  />
+                  {isEdit && <ExistingDoc docs={existingDocs} slot="agreementDoc" />}
+                  {fieldErrors.agreementDoc && (
+                    <span className="vfp-field-error">{fieldErrors.agreementDoc}</span>
+                  )}
+                </div>
               </div>
               {isEdit && (
                 <p className="vfp-hint">
