@@ -8,6 +8,7 @@ import { getVendorStatusLabel } from "../../utils/orderStatusLabel";
 import { stripCarrierStaffTag } from "../../utils/carrierRemark";
 import { resolveLabelSize } from "../vendorPrintSettings.service";
 import { buildOrdersWhere } from "./where";
+import { makeSkipsTransitResolver } from "./status-shared";
 import {
   PICKUP_LEG_STATUSES,
   getActorScope,
@@ -379,6 +380,25 @@ export type StatusTimestampMap = Map<string, Record<string, string>>;
 // attempt re-enters failed_delivery). The *first* entry is recorded, matching
 // how the arrival column has always behaved - "when did this parcel reach that
 // stage", not "when did it last bounce off it".
+// Parcels at "Arrived at Origin" carry skipsTransit, so the operations screen
+// offers Ready to Deliver or Transit by the same branch-coverage rule the
+// status update enforces.
+async function withTransitHints<T extends object>(
+  parcels: Array<{
+    status: string;
+    origin_location_id: string | null;
+    locations_parcels_destination_location_idTolocations?: { id: string; valley: string | null; name: string } | null;
+  }>,
+  orders: T[],
+): Promise<Array<T & { skipsTransit?: boolean }>> {
+  const resolve = makeSkipsTransitResolver();
+  return Promise.all(orders.map(async (order, i) => {
+    const p = parcels[i]!;
+    if (p.status !== "arrived") return order;
+    return { ...order, skipsTransit: await resolve(p.origin_location_id, p.locations_parcels_destination_location_idTolocations) };
+  }));
+}
+
 async function fetchStatusTimestampMap(parcelIds: string[]): Promise<StatusTimestampMap> {
   const map: StatusTimestampMap = new Map();
   if (parcelIds.length === 0) return map;
@@ -604,7 +624,7 @@ export async function listOrders(
       ? await fetchStatusTimestampMap(parcels.map((p) => p.id))
       : undefined;
     const result: ListOrdersResult = {
-      data: parcels.map((p) => mapOrder(p, isStaff, isOwnVendorViewer, statusTimestamps)),
+      data: await withTransitHints(parcels, parcels.map((p) => mapOrder(p, isStaff, isOwnVendorViewer, statusTimestamps))),
       meta: {
         page: 1,
         pageSize: DEFAULT_LIST_CAP,
@@ -696,7 +716,7 @@ export async function listOrders(
     : undefined;
 
   return {
-    data: parcels.map((p) => mapOrder(p, isStaff, isOwnVendorViewer, keysetStatusTimestamps)),
+    data: await withTransitHints(parcels, parcels.map((p) => mapOrder(p, isStaff, isOwnVendorViewer, keysetStatusTimestamps))),
     meta: {
       page: pageHint,
       pageSize,

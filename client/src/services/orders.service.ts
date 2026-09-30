@@ -88,6 +88,9 @@ export interface Order {
   destinationLocationId?: string | null;
   /** "inside" | "outside" | null — the destination location's valley classification. */
   destinationValley?: string | null;
+  /** Arrived-at-origin parcels only: destination is in the arrival branch's
+   *  coverage, so it goes to Ready to Deliver rather than Transit. */
+  skipsTransit?: boolean;
   pieces: number;
   weightKg?: number;
   attemptCount: number;
