@@ -13,6 +13,7 @@ import {
 } from '../../services/orders.service';
 import { toBsDate } from '../../utils/nepaliDate';
 import { formatCurrency } from '../../utils/format';
+import { getCurrentUserRoles, hasStaffPermission } from '../../utils/auth';
 import './VendorMetricDetail.css';
 import ReceiverPhones from '../../components/ReceiverPhones';
 
@@ -229,6 +230,7 @@ const VendorMetricDetail: React.FC = () => {
     })();
   }, [metricId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const canSeeCod = !getCurrentUserRoles().includes('vendor_staff') || hasStaffPermission('FINANCE_ACCESS');
   const totalCod = useMemo(() => orders.reduce((sum, o) => sum + o.codAmount, 0), [orders]);
 
   const totalPages = Math.max(1, Math.ceil(orders.length / pageSizeChoice));
@@ -267,9 +269,11 @@ const VendorMetricDetail: React.FC = () => {
       ),
       width: '150px',
     },
-    { header: 'COD AMOUNT', accessor: (order: Order) => formatCurrency(order.codAmount, 0), width: '110px' },
+    ...(canSeeCod
+      ? [{ header: 'COD AMOUNT', accessor: (order: Order) => formatCurrency(order.codAmount, 0), width: '110px' }]
+      : []),
     { header: 'CREATED', accessor: (order: Order) => toBsDate(order.createdAtRaw), width: '110px' },
-  ], [currentPage, pageSizeChoice, pagedOrders]);
+  ], [currentPage, pageSizeChoice, pagedOrders, canSeeCod]);
 
   if (!config) return <Navigate to="/dashboard" replace />;
 
@@ -293,10 +297,12 @@ const VendorMetricDetail: React.FC = () => {
           <span className="vmd-stat-value">{loading ? '—' : `${orders.length.toLocaleString()}${capped ? '+' : ''}`}</span>
           <span className="vmd-stat-label">Orders</span>
         </div>
-        <div className="vmd-stat">
-          <span className="vmd-stat-value">{loading ? '—' : formatCurrency(totalCod, 0)}</span>
-          <span className="vmd-stat-label">Total COD</span>
-        </div>
+        {canSeeCod && (
+          <div className="vmd-stat">
+            <span className="vmd-stat-value">{loading ? '—' : formatCurrency(totalCod, 0)}</span>
+            <span className="vmd-stat-label">Total COD</span>
+          </div>
+        )}
       </div>
 
       {loadError && <p className="vmd-error">{loadError}</p>}
