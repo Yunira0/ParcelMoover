@@ -1,13 +1,15 @@
 import { Prisma } from "../generated/prisma/client";
 import prisma from "../lib/prisma";
 import { AppError } from "../utils/AppError";
+import { hasOfficeFinanceAuthority, isFinanceStaff } from "../utils/financeRoles";
 import { clearBlockAmount, getBillingSettings, type BillingThresholds } from "./billing.service";
 import { BRANCH_COD_SLA_KEY, getSlaSettings } from "./sla.service";
 
 type Actor = { id: string; roles: string[] };
 const money = (value: unknown) => Math.round(Number(value ?? 0) * 100) / 100;
-const isSuperAdmin = (actor: Actor) => actor.roles.includes("super_admin");
-const isOfficeReviewer = (actor: Actor) => actor.roles.some((role) => role === "super_admin" || role === "admin");
+// Office-wide branch billing authority: super_admin or the finance accountant.
+const isSuperAdmin = (actor: Actor) => hasOfficeFinanceAuthority(actor);
+const isOfficeReviewer = (actor: Actor) => isFinanceStaff(actor);
 
 export type BranchBillingState = "ok" | "warned" | "blocked";
 export type BranchPaymentStatusFilter = "pending" | "verified" | "rejected";
@@ -546,7 +548,7 @@ const isMasterBranch = (b: { code: string | null; name: string }) =>
   (!b.code?.trim() && b.name.trim().toLowerCase() === "imadol");
 
 export async function listBranchBalances(actor: Actor): Promise<BranchBillingStatus[]> {
-  if (!isSuperAdmin(actor)) throw new AppError(403, "Only a super admin can view every branch balance");
+  if (!isSuperAdmin(actor)) throw new AppError(403, "Only the office (super admin or accountant) can view every branch balance");
   const branches = await prisma.locations.findMany({
     where: { parent_id: null, is_hub: true, is_active: true },
     select: { id: true, code: true, name: true },

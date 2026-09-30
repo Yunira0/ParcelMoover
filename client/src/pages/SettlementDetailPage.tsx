@@ -360,7 +360,7 @@ const SettlementDetailPage: React.FC = () => {
     return () => clearTimeout(timer);
   }, [banner]);
 
-  const canPay = hasAnyRole(['super_admin', 'admin']);
+  const canPay = hasAnyRole(['super_admin', 'admin', 'accountant']);
   // Correcting a mistake — gated by the delegable EDIT_SETTLEMENTS permission,
   // same pattern as MANAGE_USERS/SETTINGS_ACCESS. Also covers reverting a
   // settled statement back to pending, since it's the same "fix a mistake"

@@ -68,7 +68,7 @@ const billingWriteLimiter = rateLimit({
 billingRouter.get(
   "/status",
   authMiddleware,
-  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "sales"),
+  authorizeRoles("super_admin", "accountant", "admin", "vendor", "vendor_staff", "sales"),
   requireStaffPermission("FINANCE_ACCESS"),
   billingReadLimiter,
   getBillingStatusController,
@@ -78,7 +78,7 @@ billingRouter.get(
 billingRouter.get(
   "/payments",
   authMiddleware,
-  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff"),
+  authorizeRoles("super_admin", "accountant", "admin", "vendor", "vendor_staff"),
   requireStaffPermission("FINANCE_ACCESS"),
   billingReadLimiter,
   listVendorPaymentsController,
@@ -102,7 +102,7 @@ billingRouter.patch(
   "/payments/:id/review",
   authMiddleware,
   csrfProtection,
-  authorizeRoles("super_admin", "admin"),
+  authorizeRoles("super_admin", "accountant", "admin"),
   billingWriteLimiter,
   reviewVendorPaymentController,
 );
@@ -113,7 +113,7 @@ billingRouter.patch(
 billingRouter.get(
   "/qr",
   authMiddleware,
-  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "sales"),
+  authorizeRoles("super_admin", "accountant", "admin", "vendor", "vendor_staff", "sales"),
   requireStaffPermission("FINANCE_ACCESS"),
   billingReadLimiter,
   getPaymentQrFileController,
@@ -123,7 +123,7 @@ billingRouter.get(
 billingRouter.get(
   "/settings",
   authMiddleware,
-  authorizeRoles("super_admin", "admin"),
+  authorizeRoles("super_admin", "accountant", "admin"),
   billingReadLimiter,
   getBillingSettingsController,
 );
@@ -134,7 +134,7 @@ billingRouter.patch(
   "/settings",
   authMiddleware,
   csrfProtection,
-  authorizeRoles("super_admin"),
+  authorizeRoles("super_admin", "accountant"),
   billingWriteLimiter,
   updateBillingSettingsController,
 );
@@ -144,7 +144,7 @@ billingRouter.post(
   "/settings/qr",
   authMiddleware,
   csrfProtection,
-  authorizeRoles("super_admin"),
+  authorizeRoles("super_admin", "accountant"),
   billingWriteLimiter,
   paymentQrUpload,
   uploadPaymentQrController,
@@ -155,7 +155,7 @@ billingRouter.post(
 billingRouter.get(
   "/vendors",
   authMiddleware,
-  authorizeRoles("super_admin", "admin"),
+  authorizeRoles("super_admin", "accountant", "admin"),
   billingReadLimiter,
   listVendorBalancesController,
 );
@@ -167,7 +167,7 @@ billingRouter.patch(
   "/branches/:branchId/credit-limit",
   authMiddleware,
   csrfProtection,
-  authorizeRoles("super_admin"),
+  authorizeRoles("super_admin", "accountant"),
   billingWriteLimiter,
   updateBranchCreditLimitController,
 );
@@ -176,7 +176,7 @@ billingRouter.patch(
   "/vendors/:vendorId/credit-limit",
   authMiddleware,
   csrfProtection,
-  authorizeRoles("super_admin"),
+  authorizeRoles("super_admin", "accountant"),
   billingWriteLimiter,
   updateVendorCreditLimitController,
 );

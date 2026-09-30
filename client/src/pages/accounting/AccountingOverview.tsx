@@ -1,5 +1,7 @@
 import React from 'react';
+import DashboardHeader from '../../components/DashboardHeader';
 import PageHeader from '../../components/PageHeader';
+import { getCurrentUser } from '../../utils/auth';
 import SummaryTab from './tabs/SummaryTab';
 import './Accounting.css';
 
@@ -9,6 +11,7 @@ import './Accounting.css';
 
 const AccountingOverview: React.FC = () => (
   <div className="acc-page">
+    <DashboardHeader user={getCurrentUser()?.fullName || ''} />
     <PageHeader
       title="Accounting Overview"
     />

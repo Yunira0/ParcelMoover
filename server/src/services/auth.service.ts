@@ -4,6 +4,7 @@ import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 
 import { AppError } from "../utils/AppError";
+import { ACCOUNTANT_ROLE } from "../utils/financeRoles";
 import { sendWelcomeEmail } from "../lib/mailer";
 import { revokeAllUserTokens } from "../lib/tokenRevocation";
 import { adminBranchScopeIds, deriveBranchScoped } from "../lib/branchScope";
@@ -157,41 +158,42 @@ function putRate(obj: Record<string, unknown>, key: string, val: string | number
 // creation, and editing it must not silently re-derive RBAC role membership.
 // Role changes for an existing account go through the dedicated role and
 // permissions endpoints (setAdminSuperAdminRole / updateAdminPermissions).
+//
+// The "Accountant" department works the same way for the finance-only
+// `accountant` role (utils/financeRoles.ts): it replaces `admin` so the
+// account reaches the Finance section and nothing else.
+const DEPARTMENT_ROLES: Record<string, string> = {
+  sales: "sales",
+  accountant: ACCOUNTANT_ROLE,
+};
+
 async function syncSalesRoleForDepartment(
   tx: Pick<typeof prisma, "roles" | "user_roles">,
   userId: string,
   department: string | null | undefined,
 ) {
-  const wantsSales = (department ?? "").trim().toLowerCase() === "sales";
-  const [salesRole, adminRole] = await Promise.all([
-    tx.roles.findUnique({ where: { code: "sales" } }),
-    tx.roles.findUnique({ where: { code: "admin" } }),
-  ]);
-  if (!salesRole || !adminRole) return;
+  const wantedCode = DEPARTMENT_ROLES[(department ?? "").trim().toLowerCase()] ?? "admin";
+  const codes = ["admin", ...new Set(Object.values(DEPARTMENT_ROLES))];
+  const roles = await tx.roles.findMany({ where: { code: { in: codes } } });
+  const wanted = roles.find((r) => r.code === wantedCode);
+  if (!wanted) {
+    // Never fall back to leaving `admin` on the account: a Sales/Accountant
+    // user silently kept as a full admin is a privilege escalation. Fail the
+    // creation so the missing role row (unapplied migration/seed) gets fixed.
+    throw new AppError(500, `The "${wantedCode}" role is not set up. Apply the database migrations, then create this account again.`);
+  }
 
-  const [hasSales, hasAdmin] = await Promise.all([
-    tx.user_roles.findUnique({
-      where: { user_id_role_id: { user_id: userId, role_id: salesRole.id } },
-    }),
-    tx.user_roles.findUnique({
-      where: { user_id_role_id: { user_id: userId, role_id: adminRole.id } },
-    }),
-  ]);
-
-  if (wantsSales) {
-    if (!hasSales) await tx.user_roles.create({ data: { user_id: userId, role_id: salesRole.id } });
-    if (hasAdmin) {
+  for (const role of roles) {
+    const held = await tx.user_roles.findUnique({
+      where: { user_id_role_id: { user_id: userId, role_id: role.id } },
+    });
+    if (role.id === wanted.id && !held) {
+      await tx.user_roles.create({ data: { user_id: userId, role_id: role.id } });
+    } else if (role.id !== wanted.id && held) {
       await tx.user_roles.delete({
-        where: { user_id_role_id: { user_id: userId, role_id: adminRole.id } },
+        where: { user_id_role_id: { user_id: userId, role_id: role.id } },
       });
     }
-  } else {
-    if (hasSales) {
-      await tx.user_roles.delete({
-        where: { user_id_role_id: { user_id: userId, role_id: salesRole.id } },
-      });
-    }
-    if (!hasAdmin) await tx.user_roles.create({ data: { user_id: userId, role_id: adminRole.id } });
   }
 }
 

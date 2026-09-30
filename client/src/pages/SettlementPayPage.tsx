@@ -69,7 +69,8 @@ const StepRail: React.FC<{ current: 1 | 2 }> = ({ current }) => (
 const SettlementPayPage: React.FC = () => {
   const { id = '' } = useParams();
   const navigate = useNavigate();
-  const isSuperAdmin = hasAnyRole(['super_admin']);
+  // Managing payment methods is office finance: super_admin or accountant.
+  const isSuperAdmin = hasAnyRole(['super_admin', 'accountant']);
 
   const [detail, setDetail] = useState<SettlementDetail | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(true);

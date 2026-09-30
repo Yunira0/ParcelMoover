@@ -90,7 +90,7 @@ const writeLimiter = rateLimit({
 
 const read = [
   authMiddleware,
-  authorizeRoles("super_admin", "admin"),
+  authorizeRoles("super_admin", "accountant", "admin"),
   requireAdminPermission("ACCOUNTING_ACCESS"),
   readLimiter,
 ] as const;
@@ -98,7 +98,7 @@ const read = [
 const write = [
   authMiddleware,
   csrfProtection,
-  authorizeRoles("super_admin", "admin"),
+  authorizeRoles("super_admin", "accountant", "admin"),
   requireAdminPermission("ACCOUNTING_ACCESS"),
   writeLimiter,
 ] as const;
@@ -209,7 +209,7 @@ accountingRouter.patch("/periods/:periodKey", ...write, validate(setPeriodStatus
 const masters = [
   authMiddleware,
   csrfProtection,
-  authorizeRoles("super_admin"),
+  authorizeRoles("super_admin", "accountant"),
   writeLimiter,
 ] as const;
 

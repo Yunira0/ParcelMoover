@@ -209,7 +209,17 @@ app.use("/api/v1", PublicApiRoutes)
 app.use(
     "/uploads",
     authMiddleware,
-    authorizeRoles("super_admin", "admin"),
+    authorizeRoles("super_admin", "admin", "accountant"),
+    // The accountant reaches payment proofs only (settlement receipts and
+    // billing payment proofs) - never KYC/registration documents.
+    (req, res, next) => {
+        const roles = req.user!.roles;
+        if (roles.includes("super_admin") || roles.includes("admin")) return next();
+        let path = "";
+        try { path = decodeURIComponent(req.path); } catch { /* malformed: refused below */ }
+        if (!path.includes("..") && (path.startsWith("/settlements/") || path.startsWith("/billing/"))) return next();
+        return res.status(403).json({ success: false, message: "Forbidden: Insufficient Privilege" });
+    },
     // Fire-and-forget: who opened which document is worth recording, but a
     // logging failure must never block staff from viewing a file they're entitled to.
     (req, _res, next) => {

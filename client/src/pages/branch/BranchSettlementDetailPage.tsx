@@ -7,7 +7,7 @@ import SegmentedTabs from '../../components/SegmentedTabs';
 import StatusChip from '../../components/StatusChip';
 import Table from '../../components/Table';
 import { Banner } from '../accounting/ui';
-import { getCurrentUserRoles } from '../../utils/auth';
+import { hasAnyRole } from '../../utils/auth';
 import {
   getBranchSettlement,
   payBranchSettlement,
@@ -35,7 +35,7 @@ const BranchSettlementDetailPage: React.FC = () => {
   const { id = '' } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
-  const canRecordOfficePayment = getCurrentUserRoles().includes('super_admin');
+  const canRecordOfficePayment = hasAnyRole(['super_admin', 'accountant']);
   const [detail, setDetail] = useState<BranchSettlementDetail | null>(null);
   const [methods, setMethods] = useState<PaymentMethodOption[]>([]);
   const [payments, setPayments] = useState<PaymentRow[]>([{ method: '', amount: '' }]);

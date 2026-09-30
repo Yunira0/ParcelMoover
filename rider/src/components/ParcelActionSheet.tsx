@@ -94,6 +94,8 @@ export default function ParcelActionSheet({ parcel, onClose, onDone }: Props) {
   // parcel to carry back to the vendor - so we gate "Delivered" behind a
   // confirmation that they actually received it.
   const [exchangePrompt, setExchangePrompt] = useState(false)
+  // "Delivered" can't be undone by the rider, so it always takes a second tap.
+  const [deliveredPrompt, setDeliveredPrompt] = useState(false)
 
   const isExchange = parcel.orderType === 'exchange'
 
@@ -168,11 +170,13 @@ export default function ParcelActionSheet({ parcel, onClose, onDone }: Props) {
   }
 
   // Delivering an exchange order first asks whether the rider received the
-  // exchange parcel to bring back; every other action goes straight through.
+  // exchange parcel to bring back; a normal delivery asks "are you sure?".
+  // Every other action goes straight through.
   function handlePrimaryAction(status: ParcelStatus) {
-    if (status === 'delivered' && isExchange) {
+    if (status === 'delivered') {
       setError('')
-      setExchangePrompt(true)
+      if (isExchange) setExchangePrompt(true)
+      else setDeliveredPrompt(true)
       return
     }
     confirmAction(status)
@@ -338,6 +342,32 @@ export default function ParcelActionSheet({ parcel, onClose, onDone }: Props) {
           </div>
         )}
 
+        {/* Delivered confirmation */}
+        {deliveredPrompt && !done && (
+          <div className="mt-4 flex flex-col gap-3 rounded-md border border-line-strong bg-surface-2 px-4 py-4">
+            <div className="flex items-start gap-2.5">
+              <CheckCheck size={18} className="mt-0.5 shrink-0 text-green" />
+              <div className="flex flex-col gap-1">
+                <p className="text-sm font-bold text-ink">Mark this parcel as delivered?</p>
+                <p className="text-xs leading-snug text-ink-2">
+                  {parcel.codAmount
+                    ? `Only confirm if the parcel is handed over and you collected COD Rs ${fmt(parcel.codAmount)}.`
+                    : 'Only confirm if the parcel has been handed to the receiver.'}
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-col gap-2">
+              <Button loading={loading} onClick={() => confirmAction('delivered')}>
+                <CheckCheck size={17} /> Yes, it's delivered
+              </Button>
+              <button onClick={() => setDeliveredPrompt(false)} disabled={loading} style={{ touchAction: 'manipulation' }}
+                className="flex h-[46px] items-center justify-center rounded-[12px] border border-line-strong bg-surface text-sm font-semibold text-ink-2 cursor-pointer active:bg-surface-2 disabled:opacity-40 transition-colors">
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Exchange gate */}
         {exchangePrompt && !done && (
           <div className="mt-4 flex flex-col gap-3 rounded-md border border-[#C2410C38] bg-rust-tint px-4 py-4">
@@ -366,7 +396,7 @@ export default function ParcelActionSheet({ parcel, onClose, onDone }: Props) {
         )}
 
         {/* Actions */}
-        {!done && !exchangePrompt && !failedSelected && !partialSelected &&
+        {!done && !exchangePrompt && !deliveredPrompt && !failedSelected && !partialSelected &&
          (primary || partialKey || dangers.length > 0 || secondaries.length > 0) && (
           <div className="mt-4 flex flex-col gap-2.5">
             {primary && (() => {
@@ -377,6 +407,16 @@ export default function ParcelActionSheet({ parcel, onClose, onDone }: Props) {
                 </Button>
               )
             })()}
+
+            {/* Kept well apart from Delivered so a tap meant for "failed"
+                can't land on the primary button. */}
+            {primary && (partialKey || dangers.length > 0) && (
+              <div className="mt-3 flex items-center gap-3">
+                <div className="h-px flex-1 bg-line" />
+                <span className="text-[11px] font-medium text-ink-3">Couldn't deliver?</span>
+                <div className="h-px flex-1 bg-line" />
+              </div>
+            )}
 
             {(partialKey || dangers.length > 0) && (
               <div className="flex gap-2.5">
