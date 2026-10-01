@@ -266,11 +266,15 @@ jobs:
             sudo docker builder prune -f >/dev/null 2>&1 || true
           EOF
 
-      - name: Health check (retry up to 60s)
+      # Production startup runs idempotent data repairs before binding the HTTP
+      # port. A legitimate first run can take longer than one minute (the
+      # carrier settlement backfill repaired 768 rows), so do not roll back a
+      # healthy image merely because its one-time repair is still finishing.
+      - name: Health check (retry up to 5m)
         id: health
         run: |
           ssh -i ~/.ssh/deploy_key ubuntu@"$SSH_HOST" bash -s <<'EOF'
-            for i in $(seq 1 12); do
+            for i in $(seq 1 60); do
               if curl -fsS http://127.0.0.1:3000/health >/dev/null 2>&1; then
                 echo "==> Healthy after ~$(( i * 5 ))s"
                 exit 0

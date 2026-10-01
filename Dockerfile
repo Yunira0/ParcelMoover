@@ -81,4 +81,7 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
 
 # tini as PID 1 for correct SIGTERM forwarding / zombie reaping.
 ENTRYPOINT ["/sbin/tini", "--"]
-CMD ["sh", "-c", "npx prisma migrate deploy && (node dist/scripts/repoint-branch-deposits.js --commit --once || true) && node dist/index.js"]
+# Keep migrations and one-time production repairs in the package start script.
+# Duplicating the chain here previously skipped the carrier-delivery backfill,
+# leaving delivered zero-COD orders invisible to vendor settlements.
+CMD ["npm", "start"]
