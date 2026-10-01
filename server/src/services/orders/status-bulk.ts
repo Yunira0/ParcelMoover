@@ -1010,7 +1010,7 @@ async function _bulkUpdateParcelStatusImpl(
     }
     if (newStatus !== "arrived_at_branch") {
       const leavingRoadPool = parcels
-        .filter((p) => p.status === "dispatched")
+        .filter((p) => p.status === "dispatched" || newStatus === "oov")
         .map((p) => p.id);
       if (leavingRoadPool.length) {
         await tx.transit_manifest_parcels.deleteMany({

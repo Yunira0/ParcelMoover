@@ -737,6 +737,17 @@ export async function dispatchTransitManifest(
       .filter((link) => link.parcels.status !== MANIFESTABLE_STATUS)
       .map((link) => ({ trackingId: link.parcels.tracking_id, status: link.parcels.status }));
 
+    // A member that isn't oov any more (handed to a carrier, moved on) isn't on
+    // this truck; keeping its link would block staging it again.
+    if (skipped.length > 0) {
+      await prisma.transit_manifest_parcels.deleteMany({
+        where: {
+          transit_manifest_id: manifestId,
+          parcels: { tracking_id: { in: skipped.map((s) => s.trackingId) } },
+        },
+      });
+    }
+
     if (eligible.length === 0) {
       throw new AppError(
         409,

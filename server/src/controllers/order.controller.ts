@@ -29,6 +29,7 @@ import {
 } from "../services/order.service";
 import { OrderCountsByStatusQuery } from "../validators/order.schema";
 import { syncRemarkToNcm } from "../services/ncm.service";
+import { staffHasPermission } from "../middlewares/staffPermission.middleware";
 import { withIdempotency } from "../services/idempotency.service";
 import { ListOrdersQuery, ORDER_SORT_FIELDS, OrderSortField, OrderType, ParcelStatus, STATUS_TRANSITIONS } from "../types/order.type";
 import { isValidTrackingId } from "../utils/trackingId";
@@ -788,6 +789,34 @@ export async function dashboardSummaryController(req: Request, res: Response) {
       },
       trendDays,
     );
+
+    // COD settlement and order values are finance data; staff without
+    // FINANCE_ACCESS get zeros.
+    if (
+      req.user.roles.includes("vendor_staff") &&
+      !(await staffHasPermission(req.user.id, "FINANCE_ACCESS"))
+    ) {
+      for (const key of Object.keys(summary.overview)) {
+        if (key.endsWith("Amount")) (summary.overview as Record<string, unknown>)[key] = 0;
+      }
+      summary.today.deliveredAmount = 0;
+      summary.sla.overdueBranchCodAmount = 0;
+      summary.codSettlement = {
+        ...summary.codSettlement,
+        totalCod: 0,
+        settledCod: 0,
+        pendingCod: 0,
+        codFromRiders: 0,
+        codFromPmRider: 0,
+        codFromNcm: 0,
+        codFromUpaya: 0,
+        pendingDeliveryCharge: 0,
+        deliveryCharge: 0,
+        progressPercent: 0,
+        lastAmount: 0,
+        lastSettledAt: null,
+      };
+    }
 
     return res.status(200).json({
       success: true,

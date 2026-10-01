@@ -567,7 +567,9 @@ async function _updateParcelStatusImpl(
         where: { parcel_id: parcelId, transit_manifests: { status: "open" } },
       });
     }
-    if (currentStatus === "dispatched") {
+    // Also when forced back to oov from further along (e.g. arrived_at_branch):
+    // the parcel is no longer on that truck, and a lingering link blocks re-staging.
+    if (currentStatus === "dispatched" || newStatus === "oov") {
       await tx.transit_manifest_parcels.deleteMany({
         where: { parcel_id: parcelId, transit_manifests: { status: "dispatched" } },
       });

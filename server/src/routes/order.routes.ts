@@ -170,6 +170,7 @@ orderRouter.get(
   authMiddleware,
   authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider", "sales"),
   requireStaffPermission("DASHBOARD_ACCESS"),
+  requireStaffPermission("FINANCE_ACCESS"),
   orderReadLimiter,
   codSettlementDetailController,
 );
