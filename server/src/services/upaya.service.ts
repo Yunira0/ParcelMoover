@@ -467,6 +467,11 @@ export async function handoffParcelsToUpaya(
 
       await prisma.$transaction([
         prisma.parcels.update({ where: { id: parcel.id }, data: { status: "dispatched" } }),
+        // Handed to the carrier: no longer staged for our own trucks, and a leftover
+        // link would block re-staging it later.
+        prisma.transit_manifest_parcels.deleteMany({
+          where: { parcel_id: parcel.id, transit_manifests: { status: "open" } },
+        }),
         prisma.parcel_status_history.create({
           data: {
             parcel_id: parcel.id,
