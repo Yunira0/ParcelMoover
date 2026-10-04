@@ -30,7 +30,9 @@ pool.on("connect", (client) => {
   });
 });
 
-const adapter = new PrismaPg(pool);
+// Prisma owns this shared pool. Without disposal, CLI startup scripts wait
+// for pg's 30-second idle timer after $disconnect(), delaying HTTP startup.
+const adapter = new PrismaPg(pool, { disposeExternalPool: true });
 
 const prisma = new PrismaClient({ adapter });
 
