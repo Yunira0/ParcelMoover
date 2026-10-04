@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { VoucherOffer } from '../services/voucher.service';
-import { VOUCHER_ART_SRC, voucherFootnoteLeft, voucherFootnoteRight, voucherHeadline } from '../utils/voucherArt';
+import { VOUCHER_ART_SRC, VOUCHER_LOGO_SRC, voucherFootnoteLeft, voucherFootnoteRight, voucherHeadline } from '../utils/voucherArt';
 import './VoucherPromo.css';
 
 interface VoucherPromoProps {
@@ -40,7 +40,10 @@ export default function VoucherPromo({ offer, compact, codeText, copyable = true
     <div className="voucher-promo" role="group" aria-label={`${code}: ${headA} ${headB}`}>
       <div className="vp-left">
         <div className="vp-top">
-          <span className="vp-brand">Parcel<em>moover</em></span>
+          <span className="vp-brand">
+            <img src={VOUCHER_LOGO_SRC} alt="" draggable={false} />
+            <span>Parcel<em>Moover</em></span>
+          </span>
           <span className="vp-tag">Delivery reward</span>
         </div>
         <div className="vp-main">

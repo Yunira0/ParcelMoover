@@ -8,6 +8,7 @@ import { toBsDate } from './nepaliDate';
  */
 
 export const VOUCHER_ART_SRC = `${import.meta.env.BASE_URL}voucher-art-panel.png`;
+export const VOUCHER_LOGO_SRC = `${import.meta.env.BASE_URL}brand/logo-icon.png`;
 
 /** Compact amount for display — drops the trailing .00 (Rs. 100, not Rs. 100.00). */
 export function trimAmount(value: number): string {
