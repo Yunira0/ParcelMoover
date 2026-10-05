@@ -35,12 +35,23 @@
 }
 
 .vp-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.82cqi;
+  flex: none;
   font-weight: 750;
   font-size: 1.88cqi;
   line-height: 1.2;
   letter-spacing: -0.025em;
   color: #fff;
   white-space: nowrap;
+}
+
+.vp-brand img {
+  display: block;
+  width: 4.24cqi;
+  height: 3cqi;
+  object-fit: contain;
 }
 
 .vp-brand em { font-style: normal; color: #f8600c; }

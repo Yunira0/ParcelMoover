@@ -221,12 +221,15 @@ async function main() {
 main()
   .catch((error) => {
     console.error(error);
-    process.exit(1);
+    process.exitCode = 1;
   })
   // sync.ts pulls in services that open the shared Redis client, whose
   // reconnect timer keeps the event loop alive forever - disconnect both or the
   // script prints its results and hangs.
   .finally(async () => {
-    await prisma.$disconnect();
-    redis.disconnect();
+    try {
+      await prisma.$disconnect();
+    } finally {
+      redis.disconnect();
+    }
   });

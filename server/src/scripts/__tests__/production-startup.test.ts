@@ -6,8 +6,8 @@ const serverPackage = JSON.parse(
   readFileSync(resolve(__dirname, "../../../package.json"), "utf8"),
 ) as { scripts?: Record<string, string> };
 const dockerfile = readFileSync(resolve(__dirname, "../../../../Dockerfile"), "utf8");
-const deploymentWorkflow = readFileSync(
-  resolve(__dirname, "../../../../.github/workflows/deployment.yml"),
+const deploymentScript = readFileSync(
+  resolve(__dirname, "../../../../deploy/deploy-app.sh"),
   "utf8",
 );
 
@@ -28,7 +28,7 @@ describe("production startup", () => {
   });
 
   it("allows one-time production repairs to finish before rolling back", () => {
-    expect(deploymentWorkflow).toContain("Health check (retry up to 5m)");
-    expect(deploymentWorkflow).toContain("for i in $(seq 1 60)");
+    expect(deploymentScript).toContain("HEALTH_ATTEMPTS=${HEALTH_ATTEMPTS:-60}");
+    expect(deploymentScript).toContain("HEALTH_INTERVAL=${HEALTH_INTERVAL:-5}");
   });
 });
