@@ -32,6 +32,13 @@ migration/admin connections. Overrides must account for both slots. Prisma
 explicitly disposes its externally supplied pg pool on disconnect, so startup
 CLI scripts exit immediately after their work rather than waiting 30 seconds.
 
+After the switch, the workflow runs `deploy/post-deploy-seo.sh` from the
+runner: it purges the public pages, `robots.txt` and `sitemap.xml` from
+Cloudflare (needs the `CF_API_TOKEN` and `CF_ZONE_ID` secrets; skipped
+without them) and checks that the live canonical, sitemap and robots rules
+name `portal.parcelmoover.com`. The step is advisory and never rolls back a
+release. Run it by hand the same way: `bash deploy/post-deploy-seo.sh`.
+
 Run handover/failure tests with `python3 -m unittest discover -s deploy/tests -v`.
 The server database cleanup test uses the migrated CI database and the compiled
 server. Run `npm run build` before server tests.

@@ -246,3 +246,14 @@ jobs:
             echo "$GHCR_TOKEN" | sudo docker login ghcr.io -u "$GHCR_USER" --password-stdin
             sudo env APP_IMAGE="$APP_IMAGE" bash "$APP_DIR/deploy/deploy-app.sh"
           EOF
+
+      # Runs here, not on the host, so it sees the site through Cloudflare the
+      # way crawlers do. Advisory: a failed SEO check flags the run without
+      # undoing a healthy release. The purge needs the CF_API_TOKEN (Zone >
+      # Cache Purge) and CF_ZONE_ID secrets; without them it only verifies.
+      - name: SEO post-deploy (purge Cloudflare cache, verify live tags)
+        continue-on-error: true
+        env:
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CF_ZONE_ID: ${{ secrets.CF_ZONE_ID }}
+        run: bash deploy/post-deploy-seo.sh
