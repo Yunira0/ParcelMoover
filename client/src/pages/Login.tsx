@@ -3,8 +3,14 @@ import { useNavigate } from 'react-router-dom';
 import { login } from '../services/auth.service';
 import FormField from '../components/FormField';
 import Button from '../components/Button';
+import { usePageMeta } from '../utils/pageMeta';
 
 const Login: React.FC = () => {
+  usePageMeta({
+    title: 'Login | Parcel Moover Portal (ParcelMoover)',
+    description: 'Log in to the Parcel Moover portal to book pickups, follow your parcels and see COD settlements for your business.',
+    path: '/login',
+  });
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');

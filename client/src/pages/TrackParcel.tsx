@@ -6,6 +6,7 @@ import StatusChip from '../components/StatusChip';
 import { trackParcelPublic, type PublicTracking } from '../services/orders.service';
 import { getPublicStatusLabel, getPublicStatusTone } from '../utils/publicParcelStatus';
 import { toBsDateTime } from '../utils/nepaliDate';
+import { usePageMeta } from '../utils/pageMeta';
 import './TrackParcel.css';
 
 type LoadState = 'idle' | 'loading' | 'success' | 'error';
@@ -17,6 +18,13 @@ const SERVICE_LABELS: Record<string, string> = {
 
 const TrackParcel: React.FC = () => {
   const { trackingId } = useParams<{ trackingId: string }>();
+  // One canonical page: a /track/<id> result is one customer's parcel, not
+  // something to index on its own.
+  usePageMeta({
+    title: 'Track Your Parcel | Parcel Moover (ParcelMoover)',
+    description: 'Track any ParcelMoover parcel live with its tracking ID — no account needed. See pickup, transit and delivery status across the Kathmandu valley and Nepal.',
+    path: '/track',
+  });
   const navigate = useNavigate();
   const [state, setState] = useState<LoadState>(trackingId ? 'loading' : 'idle');
   const [data, setData] = useState<PublicTracking | null>(null);

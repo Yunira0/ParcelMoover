@@ -6,6 +6,7 @@ import FormField from '../components/FormField';
 import { submitKycApplication, type KycApplicationInput } from '../services/kyc.service';
 import { hasLetter, isValidEmail, isValidName, isValidPhone } from '../utils/serverValidation';
 import { convertHeicFileIfNeeded } from '../utils/heicConvert';
+import { usePageMeta } from '../utils/pageMeta';
 import './KycApplicationPage.css';
 
 const STEPS = ['Business', 'Owner & Bank', 'Documents'];
@@ -79,6 +80,11 @@ const FileField: React.FC<{
 };
 
 const KycApplicationPage: React.FC = () => {
+  usePageMeta({
+    title: 'Become a Vendor | Ship with Parcel Moover (ParcelMoover)',
+    description: 'Apply to ship with ParcelMoover: courier pickup and delivery across the Kathmandu valley and Nepal, live tracking for your customers, and COD settlement for your business.',
+    path: '/apply',
+  });
   const [step, setStep] = useState(0);
   const [form, setForm] = useState<KycApplicationInput>(emptyForm());
   const [loading, setLoading] = useState(false);
