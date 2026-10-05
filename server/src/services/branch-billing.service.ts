@@ -6,6 +6,7 @@ import { clearBlockAmount, getBillingSettings, type BillingThresholds } from "./
 import { BRANCH_COD_SLA_KEY, getSlaSettings } from "./sla.service";
 import { syncBranchSettlementPostings } from "./accounting/sync";
 import { branchCodParcelSql } from "./orders/branchCod";
+import { notifyFinanceStaff } from "./orders/notifications";
 
 type Actor = { id: string; roles: string[] };
 const money = (value: unknown) => Math.round(Number(value ?? 0) * 100) / 100;
@@ -311,6 +312,14 @@ export async function submitBranchPayment(
     actor_id: actor.id, entity_type: "branch_payment", entity_id: created.id, action: "SUBMIT_BRANCH_PAYMENT",
     new_data: { branchId, settlementId: input.settlementId ?? null, amount: input.amount, reference: created.reference },
   } });
+  await notifyFinanceStaff(
+    "Branch deposit to verify",
+    `${created.branch.name} submitted Rs. ${input.amount.toLocaleString()}${created.settlement ? ` against ${created.settlement.statement_no}` : ""}.`,
+    created.id,
+    "branch_billing",
+    "/branches/billing",
+    actor.id,
+  );
   return mapPayment(created);
 }
 

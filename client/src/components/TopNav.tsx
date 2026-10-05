@@ -209,6 +209,8 @@ const TopNav: React.FC = () => {
         return <AlertCircle size={14} className="notification-icon notification-icon-failed" />;
       case 'cod_settlement':
       case 'branch_settlement':
+      case 'billing':
+      case 'branch_billing':
         return <Banknote size={14} className="notification-icon notification-icon-cod" />;
       case 'ticket':
       case 'ticket_reply':

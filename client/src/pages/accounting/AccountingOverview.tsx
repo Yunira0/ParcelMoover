@@ -4,6 +4,7 @@ import DashboardHeader from '../../components/DashboardHeader';
 import PageHeader from '../../components/PageHeader';
 import { getDashboardSummary, type DashboardSummary } from '../../services/orders.service';
 import { getCurrentUser, isAccountantUser } from '../../utils/auth';
+import AccountantQueue from './AccountantQueue';
 import SummaryTab from './tabs/SummaryTab';
 import './Accounting.css';
 
@@ -55,6 +56,7 @@ const AccountingOverview: React.FC = () => (
     <PageHeader
       title="Accounting Overview"
     />
+    {isAccountantUser() && <AccountantQueue />}
     <SummaryTab />
     {isAccountantUser() && <AccountantCodCard />}
   </div>

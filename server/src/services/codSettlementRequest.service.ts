@@ -19,7 +19,7 @@ import { assertHeadOfficeOnly } from "../lib/branchScope";
 import { getDatePart, randomBase32 } from "../utils/trackingId";
 import { getVendorAccountBalance } from "./billing.service";
 import { createNotification } from "./notification.service";
-import { notifyAdmins } from "./order.service";
+import { notifyFinanceStaff } from "./order.service";
 import {
   CreateCodSettlementRequestInput,
   ListCodSettlementRequestsParams,
@@ -231,7 +231,7 @@ export async function createCodSettlementRequest(actor: Actor, input: CreateCodS
     throw error;
   }
 
-  await notifyAdmins(
+  await notifyFinanceStaff(
     `New COD Settlement Request: ${created.request_no}`,
     `${mapRequest(created).vendorName} has requested a COD settlement`,
     created.id,

@@ -6,6 +6,7 @@ import { resolveOwnVendorId } from "./vendor-scope.service";
 import { evaluateVendorBilling, invalidateVendorBalanceCache } from "./billing.service";
 import { applyVendorCreditToOpenStatements, invalidateVendorFinanceCache } from "./finance.service";
 import { syncVendorPaymentPostings } from "./accounting/sync";
+import { notifyFinanceStaff } from "./orders/notifications";
 
 // ── Vendor -> office payments ────────────────────────────────────────────────
 //
@@ -121,6 +122,15 @@ export async function submitVendorPayment(
       new_data: { vendorId, amount: input.amount, reference: created.reference },
     },
   });
+
+  await notifyFinanceStaff(
+    "Vendor payment to verify",
+    `${created.vendors.business_name || created.vendors.client_name} submitted Rs. ${input.amount.toLocaleString()} with a payment screenshot.`,
+    created.id,
+    "billing",
+    "/billing",
+    actor.id,
+  );
 
   // Deliberately no balance change and no re-evaluation here — a pending claim
   // is not money.

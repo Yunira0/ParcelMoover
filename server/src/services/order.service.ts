@@ -3,7 +3,7 @@ export { buildOrdersWhere } from "./orders/where";
 
 export { invalidateOrderCaches } from "./orders/cache";
 
-export { notifyAdmins, notifyVendorOfParcel } from "./orders/notifications";
+export { notifyAdmins, notifyFinanceStaff, notifyVendorOfParcel } from "./orders/notifications";
 
 export { createOrder } from "./orders/create";
 
