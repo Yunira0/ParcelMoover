@@ -37,10 +37,10 @@
 .vp-brand {
   display: inline-flex;
   align-items: center;
-  gap: 0.82cqi;
+  gap: 1.23cqi;
   flex: none;
   font-weight: 750;
-  font-size: 1.88cqi;
+  font-size: 2.82cqi;
   line-height: 1.2;
   letter-spacing: -0.025em;
   color: #fff;
@@ -49,8 +49,8 @@
 
 .vp-brand img {
   display: block;
-  width: 4.24cqi;
-  height: 3cqi;
+  width: 6.36cqi;
+  height: 4.5cqi;
   object-fit: contain;
 }
 

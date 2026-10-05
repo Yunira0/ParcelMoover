@@ -113,11 +113,11 @@ export async function renderVoucherCanvas(
 
   // Brand row
   ctx.textBaseline = 'alphabetic';
-  ctx.font = `750 32px ${FONT}`;
+  ctx.font = `750 48px ${FONT}`;
   const brandX = 84;
-  const brandY = 78;
-  ctx.drawImage(logo, brandX, 40, 72, 51);
-  const wordmarkX = brandX + 86;
+  const brandY = 83;
+  ctx.drawImage(logo, brandX, 28, 108, 77);
+  const wordmarkX = brandX + 129;
   ctx.fillStyle = '#ffffff';
   const parcelW = ctx.measureText('Parcel').width;
   ctx.fillText('Parcel', wordmarkX, brandY);
@@ -323,7 +323,7 @@ export async function printVoucher(offer: VoucherOffer): Promise<void> {
     .v { display: flex; width: 6in; aspect-ratio: 17/8; background: #09090b; overflow: hidden; color: #fff; }
     .l { position: relative; flex: 0 0 70.7%; padding: .29in .32in .28in .5in; display: flex; flex-direction: column; justify-content: space-between; background: radial-gradient(circle at 78% 40%, rgba(248,96,12,.12), transparent 36%), #09090b; overflow: hidden; }
     .top { display: flex; justify-content: space-between; align-items: center; }
-    .brand { display: inline-flex; align-items: center; gap: 4pt; flex: none; font-size: 11.5pt; font-weight: 750; letter-spacing: -.025em; white-space: nowrap; } .brand img { display: block; width: .255in; height: .18in; object-fit: contain; } .brand em { font-style: normal; color: ${ORANGE}; }
+    .brand { display: inline-flex; align-items: center; gap: 6pt; flex: none; font-size: 17pt; font-weight: 750; letter-spacing: -.025em; white-space: nowrap; } .brand img { display: block; width: .38in; height: .27in; object-fit: contain; } .brand em { font-style: normal; color: ${ORANGE}; }
     .tag { display: inline-flex; align-items: center; gap: 5pt; border: .5pt solid rgba(248,96,12,.48); border-radius: 99pt; background: rgba(248,96,12,.13); color: #ffd5bf; font-size: 9pt; font-weight: 650; padding: 5pt 8pt; }
     .tag:before, .foot span:before { content: ''; width: 3pt; height: 3pt; border-radius: 50%; background: ${ORANGE}; }
     .m { display: flex; flex-direction: column; }
