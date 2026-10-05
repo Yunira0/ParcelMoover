@@ -46,7 +46,7 @@ const writeLimiter = rateLimit({
 paymentMethodRouter.get(
   "/",
   authMiddleware,
-  authorizeRoles("super_admin", "admin"),
+  authorizeRoles("super_admin", "accountant", "admin"),
   readLimiter,
   listPaymentMethodsController,
 );
@@ -56,7 +56,7 @@ paymentMethodRouter.post(
   "/",
   authMiddleware,
   csrfProtection,
-  authorizeRoles("super_admin"),
+  authorizeRoles("super_admin", "accountant"),
   writeLimiter,
   validate(createPaymentMethodSchema),
   createPaymentMethodController,
@@ -67,7 +67,7 @@ paymentMethodRouter.patch(
   "/:id",
   authMiddleware,
   csrfProtection,
-  authorizeRoles("super_admin"),
+  authorizeRoles("super_admin", "accountant"),
   writeLimiter,
   validate(updatePaymentMethodSchema),
   updatePaymentMethodController,

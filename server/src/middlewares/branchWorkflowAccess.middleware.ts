@@ -1,5 +1,6 @@
 import { NextFunction, Request, Response } from "express";
 import prisma from "../lib/prisma";
+import { hasOfficeFinanceAuthority } from "../utils/financeRoles";
 
 /**
  * Lets a branch's assigned admin use the branch settlement and billing
@@ -11,7 +12,8 @@ export async function requireBranchWorkflowAccess(req: Request, res: Response, n
     return res.status(401).json({ success: false, message: "Unauthorized access" });
   }
 
-  if (req.user.roles.includes("super_admin")) return next();
+  // The office accountant settles every branch's COD, like super_admin.
+  if (hasOfficeFinanceAuthority(req.user)) return next();
 
   const admin = await prisma.admins.findUnique({
     where: { user_id: req.user.id },

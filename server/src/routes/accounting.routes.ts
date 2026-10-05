@@ -90,7 +90,7 @@ const writeLimiter = rateLimit({
 
 const read = [
   authMiddleware,
-  authorizeRoles("super_admin", "admin"),
+  authorizeRoles("super_admin", "accountant", "admin"),
   requireAdminPermission("ACCOUNTING_ACCESS"),
   readLimiter,
 ] as const;
@@ -98,7 +98,7 @@ const read = [
 const write = [
   authMiddleware,
   csrfProtection,
-  authorizeRoles("super_admin", "admin"),
+  authorizeRoles("super_admin", "accountant", "admin"),
   requireAdminPermission("ACCOUNTING_ACCESS"),
   writeLimiter,
 ] as const;

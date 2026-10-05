@@ -14,6 +14,7 @@
 // existing settlement flow; a settled request just points at it.
 import prisma from "../lib/prisma";
 import { AppError } from "../utils/AppError";
+import { isFinanceStaff } from "../utils/financeRoles";
 import { assertHeadOfficeOnly } from "../lib/branchScope";
 import { getDatePart, randomBase32 } from "../utils/trackingId";
 import { getVendorAccountBalance } from "./billing.service";
@@ -31,7 +32,7 @@ type Actor = { id: string; roles: string[] };
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 500;
 
-const isStaff = (actor: Actor) => actor.roles.includes("admin") || actor.roles.includes("super_admin");
+const isStaff = (actor: Actor) => isFinanceStaff(actor);
 // Sales can read the requests of the vendors they own (vendors.sales_user_id),
 // never action them.
 const isPureSales = (actor: Actor) => !isStaff(actor) && actor.roles.includes("sales");

@@ -16,6 +16,7 @@ import { createNotification } from "./notification.service";
 import { evaluateBranchBilling } from "./branch-billing.service";
 import { syncBranchSettlementPostings } from "./accounting/sync";
 import { BRANCH_COD_PARCEL_FILTER } from "./orders/branchCod";
+import { hasOfficeFinanceAuthority } from "../utils/financeRoles";
 
 const DELIVERED: parcel_status[] = ["delivered", "partially_delivered"];
 const METRIC_STATUSES: Record<string, parcel_status[] | undefined> = {
@@ -271,7 +272,8 @@ async function orderQuery(query: BranchTrackingQuery) {
  * side and any caller-supplied route filter is dropped.
  */
 async function scopeBranchOrderQuery(actor: OrderActor, query: BranchTrackingQuery): Promise<BranchTrackingQuery> {
-  if (actor.roles.includes("super_admin")) return query;
+  // The office accountant picks the orders for any branch's statement.
+  if (hasOfficeFinanceAuthority(actor)) return query;
   const scope = await getActorBranchScope(actor);
   if (scope.branchScoped) {
     if (!scope.locationId) throw new AppError(403, "Your branch account is not assigned to a branch");
@@ -376,8 +378,8 @@ export async function createOrPromoteBranch(actor: OrderActor, input: CreateBran
 }
 
 export async function listBranchSettlements(actor: OrderActor, query: BranchSettlementQuery) {
-  const ownScope = actor.roles.includes("super_admin") ? null : await getActorBranchScope(actor);
-  if (!actor.roles.includes("super_admin") && !ownScope?.locationId) {
+  const ownScope = hasOfficeFinanceAuthority(actor) ? null : await getActorBranchScope(actor);
+  if (!hasOfficeFinanceAuthority(actor) && !ownScope?.locationId) {
     throw new AppError(403, "Your admin account is not assigned to a branch");
   }
   const ownBranchId = ownScope?.locationId;
@@ -385,15 +387,15 @@ export async function listBranchSettlements(actor: OrderActor, query: BranchSett
   // assigned master branch is the receiver. The default follows the actor's
   // side of the payer -> master workflow.
   const effectiveScope = query.scope ?? (ownScope?.branchScoped ? "outgoing" : "incoming");
-  const ownRouteScope: Prisma.branch_settlementsWhereInput = actor.roles.includes("super_admin") ? {} : {
+  const ownRouteScope: Prisma.branch_settlementsWhereInput = hasOfficeFinanceAuthority(actor) ? {} : {
     ...(effectiveScope === "incoming" ? { to_branch_id: ownBranchId! }
       : effectiveScope === "all" ? { OR: [{ from_branch_id: ownBranchId! }, { to_branch_id: ownBranchId! }] }
       : { from_branch_id: ownBranchId! }),
   };
   const baseWhere: Prisma.branch_settlementsWhereInput = {
-    ...(actor.roles.includes("super_admin") && query.fromBranchId ? { from_branch_id: query.fromBranchId } : {}),
+    ...(hasOfficeFinanceAuthority(actor) && query.fromBranchId ? { from_branch_id: query.fromBranchId } : {}),
     ...ownRouteScope,
-    ...(actor.roles.includes("super_admin") && query.toBranchId ? { to_branch_id: query.toBranchId } : {}),
+    ...(hasOfficeFinanceAuthority(actor) && query.toBranchId ? { to_branch_id: query.toBranchId } : {}),
     ...(query.dateFrom || query.dateTo ? { settlement_date: {
       ...(query.dateFrom ? { gte: new Date(`${query.dateFrom}T00:00:00.000Z`) } : {}),
       ...(query.dateTo ? { lte: new Date(`${query.dateTo}T00:00:00.000Z`) } : {}),
@@ -438,7 +440,7 @@ async function assertCanCreateBranchSettlement(
   masterBranchId: string,
   fromBranchId: string,
 ): Promise<void> {
-  if (actor.roles.includes("super_admin")) return;
+  if (hasOfficeFinanceAuthority(actor)) return;
   const scope = await getActorBranchScope(actor);
   if (!scope.locationId) {
     throw new AppError(403, "Your admin account is not assigned to a branch");
@@ -497,7 +499,7 @@ export async function createBranchSettlement(actor: OrderActor, input: CreateBra
   }
   // A branch workspace can only ever settle its own COD, at its own agreed
   // commission rate - never trust either from that side of the request.
-  const actorScope = actor.roles.includes("super_admin") ? null : await getActorBranchScope(actor);
+  const actorScope = hasOfficeFinanceAuthority(actor) ? null : await getActorBranchScope(actor);
   const isBranchCreator = Boolean(actorScope?.branchScoped && actorScope.locationId);
   const fromBranchId = isBranchCreator ? actorScope!.locationId! : input.fromBranchId;
   if (fromBranchId === masterBranch.id) {
@@ -654,7 +656,7 @@ export async function getBranchSettlementDetail(actor: OrderActor, settlementId:
     },
   });
   if (!settlement) throw new AppError(404, "Branch settlement not found");
-  if (!actor.roles.includes("super_admin")) {
+  if (!hasOfficeFinanceAuthority(actor)) {
     const scope = await getActorBranchScope(actor);
     if (!scope.canRead && (!scope.locationId || (settlement.from_branch_id !== scope.locationId && settlement.to_branch_id !== scope.locationId))) {
       throw new AppError(403, "You can only view settlements involving your assigned branch");
@@ -730,7 +732,7 @@ export async function payBranchSettlement(
   settlementId: string,
   input: PayBranchSettlementInput,
 ) {
-  if (!actor.roles.includes("super_admin")) {
+  if (!hasOfficeFinanceAuthority(actor)) {
     throw new AppError(403, "Only the office can record a settlement payment; branches must submit a receipt through Billing & Credit");
   }
   const activeMethods = new Set((await getActivePaymentMethodNames()).map((method) => method.toLowerCase()));
@@ -811,7 +813,7 @@ export async function payBranchSettlement(
 // kept (status -> cancelled) for the audit trail, its items are deleted so the
 // orders can go on a new statement, and its ledger entry comes back out.
 export async function cancelBranchSettlement(actor: OrderActor, settlementId: string, remark: string) {
-  if (!actor.roles.includes("super_admin")) {
+  if (!hasOfficeFinanceAuthority(actor)) {
     const [scope, master] = await Promise.all([getActorBranchScope(actor), getImadolMasterBranch()]);
     if (scope.branchScoped && scope.locationId !== master.id) {
       throw new AppError(403, "Only head office can cancel a branch statement");

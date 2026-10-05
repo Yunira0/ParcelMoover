@@ -63,9 +63,9 @@ const writeLimiter = rateLimit({
 
 // Vendors raise and track their own; sales read their own vendors'; staff see
 // and action every one.
-const READ_ROLES = ["super_admin", "admin", "sales", "vendor", "vendor_staff"] as const;
+const READ_ROLES = ["super_admin", "accountant", "admin", "sales", "vendor", "vendor_staff"] as const;
 const CREATE_ROLES = ["vendor", "vendor_staff"] as const;
-const ACTION_ROLES = ["super_admin", "admin"] as const;
+const ACTION_ROLES = ["super_admin", "accountant", "admin"] as const;
 
 // GET /api/cod-settlement-requests — list (vendor-scoped in the service)
 codSettlementRequestRouter.get(

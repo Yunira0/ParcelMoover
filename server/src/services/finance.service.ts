@@ -12,6 +12,7 @@ import { syncSettlementPostings } from "./accounting/sync";
 
 import { getActivePaymentMethodNames } from "./payment-method.service";
 import { adminBranchScopeIds, assertHeadOfficeOnly } from "../lib/branchScope";
+import { isFinanceStaff } from "../utils/financeRoles";
 import {
   AttachSettlementDocumentsInput,
   CodPaymentFilter,
@@ -95,7 +96,7 @@ export async function invalidateRiderFinanceCache(riderId: string): Promise<void
 // must explicitly name a vendor - there is no "view everyone's COD" mode here,
 // since this is financial data and an unscoped query would leak across vendors.
 async function resolveVendor(actor: Actor, vendorIdParam?: string) {
-  const isStaff = actor.roles.some((r) => ["super_admin", "admin"].includes(r));
+  const isStaff = isFinanceStaff(actor);
   const isSales = actor.roles.includes("sales") && !isStaff;
 
   // Sales accounts may view finance for one of their own clients only. They must
@@ -144,7 +145,7 @@ async function resolveVendor(actor: Actor, vendorIdParam?: string) {
 // financial-data-leak reason. Sales accounts have no rider visibility at all
 // (matches getUnsettledOrders below).
 async function resolveRider(actor: Actor, riderIdParam?: string) {
-  const isStaff = actor.roles.some((r) => ["super_admin", "admin"].includes(r));
+  const isStaff = isFinanceStaff(actor);
 
   if (actor.roles.includes("rider")) {
     const rider = await prisma.riders.findFirst({
@@ -441,7 +442,7 @@ export async function listSettlements(
   status?: settlement_status,
   search?: string,
 ): Promise<SettlementsListResult> {
-  const isStaff = actor.roles.some((r) => ["super_admin", "admin"].includes(r));
+  const isStaff = isFinanceStaff(actor);
   const isSales = actor.roles.includes("sales") && !isStaff;
 
   let vendorId: string | undefined;
@@ -617,7 +618,7 @@ export async function getUnsettledOrders(
   type: "rider" | "vendor",
   targetId?: string,
 ): Promise<UnsettledOrdersResult> {
-  const isStaff = actor.roles.some((r) => ["super_admin", "admin"].includes(r));
+  const isStaff = isFinanceStaff(actor);
   const isSales = actor.roles.includes("sales") && !isStaff;
 
   let riderId: string | undefined;
@@ -1936,7 +1937,7 @@ async function assertSettlementAccess(
     vendors?: { sales_user_id: string | null } | null;
   },
 ): Promise<void> {
-  const isStaff = actor.roles.some((r) => ["super_admin", "admin"].includes(r));
+  const isStaff = isFinanceStaff(actor);
   if (isStaff) {
     // A branch-scoped admin only reaches its own branch's rider statements;
     // vendor statements are head-office (Imadol) only.

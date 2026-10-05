@@ -7,7 +7,7 @@ import SegmentedTabs from '../../components/SegmentedTabs';
 import StatusChip from '../../components/StatusChip';
 import Table from '../../components/Table';
 import { Banner } from '../accounting/ui';
-import { getCurrentUserRoles, hasAdminPermission } from '../../utils/auth';
+import { hasAdminPermission, hasAnyRole } from '../../utils/auth';
 import RevertSettlementModal from '../../components/RevertSettlementModal';
 import {
   cancelBranchSettlement,
@@ -37,7 +37,7 @@ const BranchSettlementDetailPage: React.FC = () => {
   const { id = '' } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
-  const canRecordOfficePayment = getCurrentUserRoles().includes('super_admin');
+  const canRecordOfficePayment = hasAnyRole(['super_admin', 'accountant']);
   // Same gate as cancelling a vendor statement; the server also limits it to head office.
   const canCancel = canRecordOfficePayment || hasAdminPermission('EDIT_SETTLEMENTS');
   const [showCancel, setShowCancel] = useState(false);

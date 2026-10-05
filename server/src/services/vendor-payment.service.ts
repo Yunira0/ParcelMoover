@@ -1,5 +1,6 @@
 import prisma from "../lib/prisma";
 import { AppError } from "../utils/AppError";
+import { isFinanceStaff } from "../utils/financeRoles";
 import { createNotification } from "./notification.service";
 import { resolveOwnVendorId } from "./vendor-scope.service";
 import { evaluateVendorBilling, invalidateVendorBalanceCache } from "./billing.service";
@@ -42,7 +43,7 @@ export interface VendorPaymentsResult {
   meta: { page: number; pageSize: number; total: number; totalPages: number };
 }
 
-const isStaffActor = (actor: Actor) => actor.roles.some((r) => ["super_admin", "admin"].includes(r));
+const isStaffActor = (actor: Actor) => isFinanceStaff(actor);
 
 function mapPayment(row: {
   id: string;
