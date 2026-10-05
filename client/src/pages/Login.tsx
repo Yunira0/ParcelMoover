@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { isAxiosError } from 'axios';
 import { login } from '../services/auth.service';
 import FormField from '../components/FormField';
 import Button from '../components/Button';
@@ -36,9 +37,11 @@ const Login: React.FC = () => {
       } else {
         setError(response.message || 'Login failed');
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error('Login error details:', err);
-      if (err.response) {
+      if (!isAxiosError<{ message?: string }>(err)) {
+        setError(err instanceof Error && err.message ? err.message : 'An error occurred during login');
+      } else if (err.response) {
         // Server responded with an error
         setError(err.response.data?.message || `Server error: ${err.response.status}`);
       } else if (err.request) {

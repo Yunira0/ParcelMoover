@@ -28,11 +28,15 @@ const CodSettlementDetailPage: React.FC = () => {
   const navigate = useNavigate();
   // Where the COD Settlement card that linked here lives.
   const cardHome = isAccountantUser() ? ACCOUNTANT_HOME : '/dashboard';
-  const [rows, setRows] = useState<CodDetailRow[]>([]);
-  const [capped, setCapped] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  // One result per bucket; while the shown bucket has none yet, it is loading.
+  // Keyed this way so switching buckets needs no reset inside the effect.
+  const [result, setResult] = useState<{ bucket: string; rows: CodDetailRow[]; capped: boolean; error: string } | null>(null);
   const [page, setPage] = useState(1);
+  const [pageFor, setPageFor] = useState(bucket);
+  if (pageFor !== bucket) {
+    setPageFor(bucket);
+    setPage(1);
+  }
   const [pageSize, setPageSize] = useState(PAGE_SIZE);
 
   const validBucket = isCodBucket(bucket) ? bucket : null;
@@ -45,24 +49,23 @@ const CodSettlementDetailPage: React.FC = () => {
       return;
     }
     const controller = new AbortController();
-    setLoading(true);
-    setError('');
-    setPage(1);
     getCodSettlementDetail(validBucket, controller.signal)
       .then((res) => {
-        setRows(res.rows);
-        setCapped(res.capped);
+        setResult({ bucket: validBucket, rows: res.rows, capped: res.capped, error: '' });
       })
       .catch((err) => {
         if (controller.signal.aborted) return;
-        setError('Failed to load COD settlement detail.');
+        setResult({ bucket: validBucket, rows: [], capped: false, error: 'Failed to load COD settlement detail.' });
         console.error(err);
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
   }, [validBucket, navigate, cardHome]);
+
+  const current = result?.bucket === validBucket ? result : null;
+  const rows = useMemo(() => current?.rows ?? [], [current]);
+  const capped = current?.capped ?? false;
+  const error = current?.error ?? '';
+  const loading = current === null;
 
   // Deliberately summed over every row, not the visible page: this is the
   // figure the dashboard card showed, and seeing it reconcile is the reason

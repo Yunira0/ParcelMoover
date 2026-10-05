@@ -4,7 +4,7 @@ import { CheckCircle, ChevronRight, ChevronLeft, Upload, X } from 'lucide-react'
 import Button from '../components/Button';
 import FormField from '../components/FormField';
 import { submitKycApplication, type KycApplicationInput } from '../services/kyc.service';
-import { hasLetter, isValidEmail, isValidName, isValidPhone } from '../utils/serverValidation';
+import { apiErrorMessage, hasLetter, isValidEmail, isValidName, isValidPhone } from '../utils/serverValidation';
 import { convertHeicFileIfNeeded } from '../utils/heicConvert';
 import { usePageMeta } from '../utils/pageMeta';
 import './KycApplicationPage.css';
@@ -150,8 +150,8 @@ const KycApplicationPage: React.FC = () => {
     try {
       await submitKycApplication(form);
       setSubmitted(true);
-    } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to submit application. Please try again.');
+    } catch (err) {
+      setError(apiErrorMessage(err, 'Failed to submit application. Please try again.'));
     } finally {
       setLoading(false);
     }
