@@ -11,6 +11,7 @@ import {
   type CodDetailBucket,
   type CodDetailRow,
 } from '../services/orders.service';
+import { ACCOUNTANT_HOME, isAccountantUser } from '../utils/auth';
 import { COD_BUCKET_META } from '../utils/codBuckets';
 import { downloadExcel } from '../utils/excel';
 import { formatCurrency, formatDate } from '../utils/format';
@@ -25,6 +26,8 @@ const isCodBucket = (value: string | undefined): value is CodDetailBucket =>
 const CodSettlementDetailPage: React.FC = () => {
   const { bucket } = useParams<{ bucket: string }>();
   const navigate = useNavigate();
+  // Where the COD Settlement card that linked here lives.
+  const cardHome = isAccountantUser() ? ACCOUNTANT_HOME : '/dashboard';
   const [rows, setRows] = useState<CodDetailRow[]>([]);
   const [capped, setCapped] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -37,8 +40,8 @@ const CodSettlementDetailPage: React.FC = () => {
 
   useEffect(() => {
     if (!validBucket) {
-      // Unknown bucket in the URL - bounce back to the dashboard.
-      navigate('/dashboard', { replace: true });
+      // Unknown bucket in the URL - bounce back to the card.
+      navigate(cardHome, { replace: true });
       return;
     }
     const controller = new AbortController();
@@ -59,7 +62,7 @@ const CodSettlementDetailPage: React.FC = () => {
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [validBucket, navigate]);
+  }, [validBucket, navigate, cardHome]);
 
   // Deliberately summed over every row, not the visible page: this is the
   // figure the dashboard card showed, and seeing it reconcile is the reason
@@ -170,7 +173,7 @@ const CodSettlementDetailPage: React.FC = () => {
 
   return (
     <div className="cod-detail-page">
-      <PageHeader title={meta.title} onBack={() => navigate('/dashboard')}>
+      <PageHeader title={meta.title} onBack={() => navigate(cardHome)}>
         <Button variant="secondary" onClick={handleExport} disabled={loading || rows.length === 0}>
           <Download size={14} /> Download
         </Button>

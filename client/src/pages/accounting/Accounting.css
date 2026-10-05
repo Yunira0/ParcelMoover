@@ -82,6 +82,11 @@
   gap: var(--space-4);
 }
 
+.acc-cod-card {
+  width: 100%;
+  max-width: 420px;
+}
+
 /* Money has a direction, and it should be readable at a glance. */
 .acc-pos { color: var(--color-background-success-default); }
 .acc-neg { color: var(--color-danger-text); }

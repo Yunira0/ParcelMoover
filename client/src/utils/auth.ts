@@ -132,6 +132,8 @@ export function isAccountantPathAllowed(pathname: string): boolean {
     pathname === '/finance' ||
     pathname.startsWith('/finance/') ||
     pathname === '/billing' ||
+    // Drill-downs behind the COD Settlement card on the finance overview.
+    pathname.startsWith('/cod/') ||
     pathname === '/cod-settlement-requests' ||
     pathname.startsWith('/cod-settlement-requests/') ||
     // Branch COD: the statement list/detail (recording payments), creating a

@@ -154,10 +154,11 @@ orderRouter.post(
   createOrderController,
 );
 
+// The accountant reads it for the COD Settlement card on the finance overview.
 orderRouter.get(
   "/dashboard-summary",
   authMiddleware,
-  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider", "sales"),
+  authorizeRoles("super_admin", "admin", "accountant", "vendor", "vendor_staff", "rider", "sales"),
   requireStaffPermission("DASHBOARD_ACCESS"),
   orderReadLimiter,
   dashboardSummaryController,
@@ -168,7 +169,7 @@ orderRouter.get(
 orderRouter.get(
   "/cod-settlement-detail",
   authMiddleware,
-  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider", "sales"),
+  authorizeRoles("super_admin", "admin", "accountant", "vendor", "vendor_staff", "rider", "sales"),
   requireStaffPermission("DASHBOARD_ACCESS"),
   requireStaffPermission("FINANCE_ACCESS"),
   orderReadLimiter,

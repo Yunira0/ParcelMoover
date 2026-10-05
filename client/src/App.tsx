@@ -193,10 +193,11 @@ function App() {
           />
           {/* Drill-down behind a line of the COD Settlement card. Same audience
               as the card itself (Dashboard.tsx), which DashboardRouter shows to
-              everyone who isn't vendor-side or sales. */}
+              everyone who isn't vendor-side or sales, plus the accountant, who
+              sees it on the finance overview. */}
           <Route
             path="/cod/:bucket"
-            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'rider']}><CodSettlementDetailPage /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'accountant', 'rider']}><CodSettlementDetailPage /></RoleGuard>}
           />
           <Route path="/orders" element={<OrdersRouter />} />
           <Route
@@ -431,19 +432,19 @@ function App() {
           />
           <Route
             path="/finance/carrier-cod"
-            element={<RoleGuard allowedRoles={['super_admin', 'admin']}><CarrierCodPage /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'accountant']}><CarrierCodPage /></RoleGuard>}
           />
           <Route
             path="/finance/carrier-cod/new"
-            element={<RoleGuard allowedRoles={['super_admin', 'admin']}><CarrierSettlementCreatePage /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'accountant']}><CarrierSettlementCreatePage /></RoleGuard>}
           />
           <Route
             path="/finance/carrier-cod/:id"
-            element={<RoleGuard allowedRoles={['super_admin', 'admin']}><CarrierSettlementDetailPage /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'accountant']}><CarrierSettlementDetailPage /></RoleGuard>}
           />
           <Route
             path="/finance/carrier-cod/:id/pay"
-            element={<RoleGuard allowedRoles={['super_admin', 'admin']}><CarrierSettlementPayPage /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'accountant']}><CarrierSettlementPayPage /></RoleGuard>}
           />
           <Route
             path="/finance/pending-cod"
