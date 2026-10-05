@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import CODSettlement from '../../components/CODSettlement';
 import DashboardHeader from '../../components/DashboardHeader';
 import PageHeader from '../../components/PageHeader';
-import { getDashboardSummary, type DashboardSummary } from '../../services/orders.service';
+import { getCodSettlementSummary, type DashboardSummary } from '../../services/orders.service';
 import { getCurrentUser, isAccountantUser } from '../../utils/auth';
 import AccountantQueue from './AccountantQueue';
 import SummaryTab from './tabs/SummaryTab';
@@ -36,8 +36,8 @@ const AccountantCodCard: React.FC = () => {
 
   useEffect(() => {
     let active = true;
-    getDashboardSummary()
-      .then((res) => { if (active && res.success) setCod(res.data.codSettlement); })
+    getCodSettlementSummary()
+      .then((data) => { if (active) setCod(data); })
       .catch(() => { /* the card keeps its zeros */ })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };

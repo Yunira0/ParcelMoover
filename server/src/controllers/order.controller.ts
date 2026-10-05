@@ -830,6 +830,24 @@ export async function dashboardSummaryController(req: Request, res: Response) {
   }
 }
 
+// GET /orders/cod-settlement-summary — only the COD Settlement card's figures,
+// for the finance-only accountant, who has no business with the rest of the
+// dashboard (order counts, trends). Same computation and cache as the summary.
+export async function codSettlementSummaryController(req: Request, res: Response) {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+    const summary = await getDashboardSummary({ id: req.user.id, roles: req.user.roles });
+    return res.status(200).json({ success: true, data: summary.codSettlement });
+  } catch (error: any) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to load COD settlement summary",
+    });
+  }
+}
+
 // GET /orders/cod-settlement-detail?bucket=... — the underlying rows behind
 // one line of the COD Settlement dashboard card (drill-down).
 export async function codSettlementDetailController(req: Request, res: Response) {

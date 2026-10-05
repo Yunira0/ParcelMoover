@@ -25,6 +25,7 @@ import {
   bulkCreateOrdersController,
   bulkUpdateOrderStatusController,
   codSettlementDetailController,
+  codSettlementSummaryController,
   createOrderController,
   dashboardSummaryController,
   getOrderByTrackingIdController,
@@ -154,14 +155,23 @@ orderRouter.post(
   createOrderController,
 );
 
-// The accountant reads it for the COD Settlement card on the finance overview.
 orderRouter.get(
   "/dashboard-summary",
   authMiddleware,
-  authorizeRoles("super_admin", "admin", "accountant", "vendor", "vendor_staff", "rider", "sales"),
+  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider", "sales"),
   requireStaffPermission("DASHBOARD_ACCESS"),
   orderReadLimiter,
   dashboardSummaryController,
+);
+
+// GET /orders/cod-settlement-summary — just the COD Settlement card, for the
+// accountant's finance overview.
+orderRouter.get(
+  "/cod-settlement-summary",
+  authMiddleware,
+  authorizeRoles("super_admin", "accountant"),
+  orderReadLimiter,
+  codSettlementSummaryController,
 );
 
 // GET /orders/cod-settlement-detail — drill-down rows behind one line of the

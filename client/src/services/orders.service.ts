@@ -521,6 +521,12 @@ export const getDashboardSummary = async (trendDays: 7 | 30 = 7) => {
   return response.data;
 };
 
+/** Just the COD Settlement card's figures (the accountant's finance overview). */
+export const getCodSettlementSummary = async (): Promise<DashboardSummary['codSettlement']> => {
+  const response = await api.get('/orders/cod-settlement-summary');
+  return response.data.data;
+};
+
 // ── COD settlement drill-down ───────────────────────────────────────────────
 // One bucket per line of the COD Settlement dashboard card. Carrier buckets
 // ('pm-rider', 'ncm', 'upaya') sit under the "COD to collect from riders"
