@@ -593,7 +593,8 @@ export async function listOrders(
   query: ListOrdersQuery = {},
 ): Promise<ListOrdersResult> {
   const { vendorId, vendorIds, riderId, branchLocationIds } = await getActorScope(actor);
-  const isStaff = actor.roles.includes("super_admin") || actor.roles.includes("admin");
+  // Office view: the accountant reads orders as staff do (it cannot write them).
+  const isStaff = actor.roles.some((role) => role === "super_admin" || role === "admin" || role === "accountant");
   // Own-vendor scope is set only for vendor / vendor_staff actors - never for
   // staff, sales or riders viewing the same parcels.
   const isOwnVendorViewer = !!vendorId;

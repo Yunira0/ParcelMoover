@@ -191,7 +191,7 @@ orderRouter.get(
 orderRouter.get(
   "/status-counts",
   authMiddleware,
-  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider", "sales"),
+  authorizeRoles("super_admin", "admin", "accountant", "vendor", "vendor_staff", "rider", "sales"),
   requireStaffPermission("ORDER_ACCESS"),
   orderReadLimiter,
   getStatusCountsController,
@@ -204,7 +204,7 @@ orderRouter.get(
 orderRouter.post(
   "/status-counts",
   authMiddleware,
-  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider", "sales"),
+  authorizeRoles("super_admin", "admin", "accountant", "vendor", "vendor_staff", "rider", "sales"),
   requireStaffPermission("ORDER_ACCESS"),
   orderReadLimiter,
   getStatusCountsController,
@@ -236,7 +236,7 @@ orderRouter.get(
 orderRouter.get(
   "/filter-options",
   authMiddleware,
-  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider", "sales"),
+  authorizeRoles("super_admin", "admin", "accountant", "vendor", "vendor_staff", "rider", "sales"),
   requireStaffPermission("ORDER_ACCESS"),
   orderReadLimiter,
   validate(orderFilterOptionsQuerySchema, "query"),
@@ -248,7 +248,7 @@ orderRouter.get(
 orderRouter.get(
   "/count-by-status",
   authMiddleware,
-  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider", "sales"),
+  authorizeRoles("super_admin", "admin", "accountant", "vendor", "vendor_staff", "rider", "sales"),
   requireStaffPermission("ORDER_ACCESS"),
   orderReadLimiter,
   validate(orderCountByStatusQuerySchema, "query"),
@@ -274,7 +274,7 @@ orderRouter.get(
 orderRouter.get(
   "/merchant-overview",
   authMiddleware,
-  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider", "sales"),
+  authorizeRoles("super_admin", "admin", "accountant", "vendor", "vendor_staff", "rider", "sales"),
   requireStaffPermission("DASHBOARD_ACCESS"),
   orderReadLimiter,
   merchantOverviewController,
@@ -299,7 +299,7 @@ orderRouter.get(
 orderRouter.get(
   "/rider-overview",
   authMiddleware,
-  authorizeRoles("super_admin", "admin", "rider"),
+  authorizeRoles("super_admin", "admin", "accountant", "rider"),
   requireStaffPermission("DASHBOARD_ACCESS"),
   orderReadLimiter,
   riderOverviewController,
@@ -308,7 +308,7 @@ orderRouter.get(
 orderRouter.get(
   "/",
   authMiddleware,
-  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider", "sales"),
+  authorizeRoles("super_admin", "admin", "accountant", "vendor", "vendor_staff", "rider", "sales"),
   requireStaffPermission("ORDER_ACCESS"),
   orderReadLimiter,
   validate(listOrdersQuerySchema, "query"),
@@ -355,7 +355,7 @@ orderRouter.get(
 orderRouter.get(
   "/track/:trackingId",
   authMiddleware,
-  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider", "sales"),
+  authorizeRoles("super_admin", "admin", "accountant", "vendor", "vendor_staff", "rider", "sales"),
   requireStaffPermission("ORDER_ACCESS"),
   orderReadLimiter,
   getOrderByTrackingIdController,

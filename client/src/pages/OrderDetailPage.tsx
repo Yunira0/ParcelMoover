@@ -15,7 +15,7 @@ import {
   type UpdateOrderInput,
 } from '../services/orders.service';
 import OrderDetailHeader, { STATUS_LABEL } from '../components/order-detail/OrderDetailHeader';
-import { getCurrentUserRoles, isVendorSide, hasAdminPermission } from '../utils/auth';
+import { getCurrentUserRoles, isAccountantUser, isVendorSide, hasAdminPermission } from '../utils/auth';
 import OrderInfoCards from '../components/order-detail/OrderInfoCards';
 import OrderTimeline from '../components/order-detail/OrderTimeline';
 import OrderRemarks from '../components/order-detail/OrderRemarks';
@@ -276,7 +276,9 @@ const OrderDetailPage: React.FC = () => {
   // still fix the COD amount on an otherwise-locked (delivered/RTV/RTO)
   // parcel — every other field stays locked. Server re-enforces this exactly;
   // this only decides whether to offer the affordance.
-  const canOverrideCod = isSuperAdmin || hasAdminPermission('EDIT_SETTLEMENTS');
+  // The accountant holds EDIT_SETTLEMENTS for statements, not orders - the
+  // order edit API refuses it, so the control would only fail.
+  const canOverrideCod = isSuperAdmin || (isAdmin && hasAdminPermission('EDIT_SETTLEMENTS'));
   const codEditable = canEditNow || canOverrideCod;
 
   return (
@@ -390,11 +392,14 @@ const OrderDetailPage: React.FC = () => {
               onReply={handleReply}
               highlightedRemarkId={highlightedRemarkId}
             />
-            <OrderRemarkInput
-              onSubmit={handleAddRemark}
-              replyingTo={replyingTo}
-              onCancelReply={() => setReplyingTo(null)}
-            />
+            {/* The accountant reads orders only; the remark API refuses it. */}
+            {!isAccountantUser() && (
+              <OrderRemarkInput
+                onSubmit={handleAddRemark}
+                replyingTo={replyingTo}
+                onCancelReply={() => setReplyingTo(null)}
+              />
+            )}
           </div>
         </div>
 

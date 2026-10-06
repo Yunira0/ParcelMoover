@@ -208,6 +208,17 @@ export function buildOrdersWhere(
   // linked via settlement_items to a settled vendor settlement count as
   // deposited. Pending = delivered not in any settled settlement.
   // This filters out empty settlements (e.g. STL-2024-001 with 0 items).
+  //
+  // Vendor basis, as VENDOR_COD_PARCEL_SQL in operations-reporting: a returned
+  // parcel belongs here only when a partial delivery left cash on it.
+  if (query.settlement && query.settlementPayee !== "rider") {
+    conditions.push({
+      OR: [
+        { status: { not: "returned_to_vendor" } },
+        { cod_collections: { collected_amount: { gt: 0 } } },
+      ],
+    });
+  }
   if (query.settlement && query.settlementPayee === "rider") {
     // Rider COD basis, mirroring getRiderOverview: collected cash that is not
     // carrier COD, on a live non-return order. Pending = not yet on a settled
@@ -223,7 +234,11 @@ export function buildOrdersWhere(
     };
     conditions.push({ cod_collections: riderCollection });
     if (query.settlement === "pending") {
-      conditions.push({ status: { notIn: ["cancelled", "returned_to_vendor"] }, order_type: { not: "return" } });
+      // A returned partial delivery keeps its cash (riderLegParcelFilter).
+      conditions.push({ status: { not: "cancelled" }, order_type: { not: "return" } });
+      conditions.push({
+        OR: [{ status: { not: "returned_to_vendor" } }, { cod_collections: { collected_amount: { gt: 0 } } }],
+      });
     }
   } else if (query.settlement === "settled") {
     conditions.push({

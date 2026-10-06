@@ -530,8 +530,9 @@ const FinanceNav: React.FC<{ canReadBooks: boolean; showOverview?: boolean }> = 
 );
 
 // ── Accountant sidebar ──────────────────────────────────────────────────────
-// Finance-only account: the whole Finance menu (books included) and nothing
-// else. ProtectedRoute sends any other URL back to the finance overview.
+// Finance-only account: the whole Finance menu (books included) plus read-only
+// orders and overviews. ProtectedRoute sends any other URL back to the finance
+// overview.
 const AccountantSidebar: React.FC = () => {
   const { collapsed, mobileOpen } = useSidebarCollapse();
   return (
@@ -539,6 +540,11 @@ const AccountantSidebar: React.FC = () => {
       <SidebarToggleBtn />
       <div className="sidebar-nav">
         <SidebarItem to="/accounting" icon={LayoutDashboard} label="Finance Overview" end />
+        {/* Read-only: where to check a figure against the orders behind it. */}
+        <SidebarItem to="/orders" icon={Package} label="Orders" />
+        <SidebarItem to="/merchant-overview" icon={Gauge} label="Vendor Overview" />
+        <SidebarItem to="/rider-overview" icon={Bike} label="Rider Overview" />
+        <SidebarItem to="/branches" icon={Building2} label="Branch Overview" end />
         <FinanceNav canReadBooks />
       </div>
 

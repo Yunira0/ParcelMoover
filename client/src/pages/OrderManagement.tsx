@@ -56,7 +56,7 @@ import {
 } from '../services/orders.service';
 import { searchVendors, getAllAdmins } from '../services/users.service';
 import { printLabels } from '../utils/printLabels';
-import { getCurrentUserRoles, hasAdminPermission } from '../utils/auth';
+import { getCurrentUserRoles, hasAdminPermission, isAccountantUser } from '../utils/auth';
 import { apiErrorMessage } from '../utils/serverValidation';
 import { FAILED_RECOVERY_LABEL, isRecoverableFailure, recoveryTargetFor } from '../utils/failedRecovery';
 import { commitScannedTerm, handleScannerPaste } from '../utils/scannerInput';
@@ -727,6 +727,8 @@ const OrderManagement: React.FC = () => {
 
   // Redirect (customer moved) — admin/super_admin only, matching the server route.
   const canRedirect = getCurrentUserRoles().some((r) => ['super_admin', 'admin'].includes(r));
+  // The accountant reads orders only; the remark API refuses it.
+  const readOnlyRemarks = isAccountantUser();
   const [redirectOrderRow, setRedirectOrderRow] = useState<Order | null>(null);
   const [redirectSaving, setRedirectSaving] = useState(false);
   const [redirectError, setRedirectError] = useState('');
@@ -965,7 +967,9 @@ const OrderManagement: React.FC = () => {
       width: '160px',
     },
     { header: 'RIDER', accessor: (order: Order) => order.riderName || '-', width: '140px' },
-    { header: 'REMARKS', accessor: (order: Order) => (
+    { header: 'REMARKS', accessor: (order: Order) => readOnlyRemarks ? (
+      <span title={order.remarks || undefined}>{order.remarks || '-'}</span>
+    ) : (
       <button
         type="button"
         className="remarks-cell-btn"

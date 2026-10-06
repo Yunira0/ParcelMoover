@@ -613,6 +613,26 @@ export async function listSettlements(
   return result;
 }
 
+/**
+ * The parcels whose collected cash a rider statement can take.
+ *
+ * A return leg never carries COD, and a plain RTO never reached a delivery, so
+ * neither has anything for the rider to hand over. A partial delivery whose
+ * remaining items went back to the vendor is different: the cash collected at
+ * the door survives the return, the vendor is paid it on their statement, and
+ * so the rider has to be able to remit it. Excluding every returned_to_vendor
+ * parcel left that cash with the rider while the office paid it out anyway.
+ */
+function riderLegParcelFilter(): Prisma.cod_collectionsWhereInput {
+  return {
+    parcels: { status: { not: parcel_status.cancelled }, order_type: { not: order_type.return } },
+    OR: [
+      { parcels: { status: { not: parcel_status.returned_to_vendor } } },
+      { collected_amount: { gt: 0 } },
+    ],
+  };
+}
+
 export async function getUnsettledOrders(
   actor: Actor,
   type: "rider" | "vendor",
@@ -682,17 +702,7 @@ export async function getUnsettledOrders(
   // even if cash was recorded as collected before the cancellation happened
   // (e.g. a super_admin force-cancelling an already-delivered parcel).
   const notCancelled: Prisma.cod_collectionsWhereInput = { parcels: { status: { not: parcel_status.cancelled } } };
-  // An RTV/RTO parcel (genuine return order_type, or a plain delivery bounced
-  // back to returned_to_vendor) never had COD collected on the rider's leg -
-  // collected_amount is 0 - so there's nothing for the rider to settle for it.
-  // It still owes the vendor a return delivery charge, so it stays visible on
-  // the vendor leg (see isReturnToVendor below) - only excluded here.
-  const riderNotReturned: Prisma.cod_collectionsWhereInput = {
-    parcels: {
-      status: { notIn: [parcel_status.cancelled, parcel_status.returned_to_vendor] },
-      order_type: { not: order_type.return },
-    },
-  };
+  const riderNotReturned = riderLegParcelFilter();
 
   const where: Prisma.cod_collectionsWhereInput = riderId
     ? {
@@ -848,14 +858,8 @@ export async function createSettlement(
           // would wrongly reject settling a corrected-to-0 order at 0.
           collected_at: { not: null },
           settlement_items: { none: { settlements: { payee_type: "rider" } } },
-          // Mirrors getUnsettledOrders' riderNotReturned guard - RTV/RTO
-          // parcels (nothing collected on this leg) must not be settleable
-          // into a rider statement even via a direct createSettlement call
-          // bypassing the picker UI.
-          parcels: {
-            status: { not: parcel_status.returned_to_vendor },
-            order_type: { not: order_type.return },
-          },
+          // The picker's rule, enforced here too for a direct API call.
+          ...riderLegParcelFilter(),
         }
       : {
           id: { in: codCollectionIds },
@@ -1645,7 +1649,7 @@ export async function updateSettlement(
             carrier_code: null,
             collected_at: { not: null },
             settlement_items: { none: { settlements: { payee_type: "rider" } } },
-            parcels: { status: { not: parcel_status.returned_to_vendor }, order_type: { not: order_type.return } },
+            ...riderLegParcelFilter(),
           }
         : {
             id: { in: toAddIds },
