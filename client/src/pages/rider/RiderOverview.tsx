@@ -238,6 +238,7 @@ const RiderOverview: React.FC = () => {
         loading={loading}
         activeKey={activeCard}
         onSelect={setActiveCard}
+        codBasis="gross"
       />
 
       {error && <p className="order-load-error">{error}</p>}

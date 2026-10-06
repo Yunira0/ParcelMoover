@@ -65,8 +65,11 @@ const VendorPendingCod: React.FC = () => {
 
   return (
     <div className="vendor-finance-page">
+      {/* Says which "pending" this is: the dashboard's Pending COD also counts
+          orders already on a statement, and before delivery charges. */}
       <PageHeader
         title="Pending COD Orders"
+        subtitle="Delivered orders not yet on a statement. Payable is after delivery charges."
       />
 
       {loading ? (
