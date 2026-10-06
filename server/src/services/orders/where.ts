@@ -2,6 +2,7 @@ import { parcel_status, Prisma } from "../../generated/prisma/client";
 import { ListOrdersQuery } from "../../types/order.type";
 import { nepalDayRangeUtc } from "../../utils/nepalTime";
 import { branchHandlesFilter, riderCustodyFilter } from "./scope";
+import { BRANCH_COD_PARCEL_FILTER } from "./branchCod";
 
 // The list UI labels every row with its order_number as "#2980", so that's what
 // a user types to look one up. order_number is an int column, not part of the
@@ -114,6 +115,11 @@ export function buildOrdersWhere(
   if (query.deliveryRiderId) {
     conditions.push({ delivery_rider_id: query.deliveryRiderId });
   }
+  // Rider Overview: every parcel this rider has handled on either leg, not
+  // just the ones currently out for delivery (deliveryRiderId above).
+  if (query.riderId) {
+    conditions.push({ OR: [{ pickup_rider_id: query.riderId }, { delivery_rider_id: query.riderId }] });
+  }
   if (query.originLocationIds?.length) {
     conditions.push({ origin_location_id: { in: query.originLocationIds } });
   }
@@ -126,6 +132,9 @@ export function buildOrdersWhere(
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
     conditions.push({ delivered_at: { gte: todayStart } });
+  }
+  if (query.viaTransit) {
+    conditions.push({ parcel_status_history: { some: { new_status: "oov" } } });
   }
 
   // Date range, bucketed by Nepal-local day so it agrees with the dates the
@@ -199,7 +208,24 @@ export function buildOrdersWhere(
   // linked via settlement_items to a settled vendor settlement count as
   // deposited. Pending = delivered not in any settled settlement.
   // This filters out empty settlements (e.g. STL-2024-001 with 0 items).
-  if (query.settlement === "settled") {
+  if (query.settlement && query.settlementPayee === "rider") {
+    // Rider COD basis, mirroring getRiderOverview: collected cash that is not
+    // carrier COD, on a live non-return order. Pending = not yet on a settled
+    // rider statement; deposited = on one.
+    const onSettledRiderStatement = { settlements: { status: "settled" as const, payee_type: "rider" as const } };
+    const riderCollection: Prisma.cod_collectionsWhereInput = {
+      collected_at: { not: null },
+      carrier_code: null,
+      rider_id: query.riderId ?? { not: null },
+      ...(query.settlement === "settled"
+        ? { settlement_items: { some: onSettledRiderStatement } }
+        : { rider_payment_status: "pending", settlement_items: { none: onSettledRiderStatement } }),
+    };
+    conditions.push({ cod_collections: riderCollection });
+    if (query.settlement === "pending") {
+      conditions.push({ status: { notIn: ["cancelled", "returned_to_vendor"] }, order_type: { not: "return" } });
+    }
+  } else if (query.settlement === "settled") {
     conditions.push({
       cod_collections: {
         settlement_items: {
@@ -226,6 +252,8 @@ export function buildOrdersWhere(
     });
   }
 
+  // Branch COD is manifest-transited, non-carrier cash only (see branchCod.ts).
+  if (query.branchSettlement) conditions.push(BRANCH_COD_PARCEL_FILTER);
   if (query.branchSettlement === "settled") {
     conditions.push({ branch_settlement_items: { some: { settlement: { status: "settled" } } } });
   } else if (query.branchSettlement === "pending") {

@@ -13,7 +13,7 @@ import {
 import { getUnclosedRemarksCounts, subscribeToRemarkStatusChanged } from '../services/remarks.service';
 import { useMobileNav } from '../context/MobileNavContext';
 import { useStaffPermissions } from '../context/StaffPermissionsContext';
-import { isBranchWorkspaceUser, isVendorSide } from '../utils/auth';
+import { isAccountantUser, isBranchWorkspaceUser, isVendorSide } from '../utils/auth';
 import { toBsDateLabel, toNptTime } from '../utils/nepaliDate';
 import './TopNav.css';
 
@@ -31,8 +31,11 @@ const TopNav: React.FC = () => {
   const navigate = useNavigate();
   const { toggleMobile } = useMobileNav();
   const isBranchWorkspace = isBranchWorkspaceUser();
+  // The finance-only accountant has no order search and no remark queues.
+  const isAccountant = isAccountantUser();
+  const hideRemarks = isBranchWorkspace || isAccountant;
   // Rider remarks are an internal queue - vendors only work their own comments.
-  const showRiderCmt = !isVendorSide() && !isBranchWorkspace;
+  const showRiderCmt = !isVendorSide() && !hideRemarks;
   const [query, setQuery] = useState('');
   // Below the breakpoint the search field is collapsed to an icon; this
   // expands it to take over the bar, same pattern as most mobile search UIs.
@@ -70,7 +73,7 @@ const TopNav: React.FC = () => {
 
   useEffect(() => {
     refreshUnreadCount();
-    if (!isBranchWorkspace) refreshUnclosedCount();
+    if (!hideRemarks) refreshUnclosedCount();
 
     const unsubscribe = subscribeToNotificationStream((notification) => {
       sseConnectedRef.current = true;
@@ -80,7 +83,7 @@ const TopNav: React.FC = () => {
 
     // Remarks have no SSE stream - refetch immediately whenever a remark is
     // closed/reopened anywhere in this tab (Remarks/UnclosedRemarks/RemarkDetail).
-    const unsubscribeRemarks = isBranchWorkspace
+    const unsubscribeRemarks = hideRemarks
       ? () => {}
       : subscribeToRemarkStatusChanged(refreshUnclosedCount);
 
@@ -89,7 +92,7 @@ const TopNav: React.FC = () => {
     // connection drop).
     const pollTimer = setInterval(() => {
       refreshUnreadCount();
-      if (!isBranchWorkspace) refreshUnclosedCount();
+      if (!hideRemarks) refreshUnclosedCount();
     }, POLL_INTERVAL_MS);
 
     // Coming back to a backgrounded tab, refetch instead of waiting out the
@@ -98,7 +101,7 @@ const TopNav: React.FC = () => {
     const handleVisibilityChange = () => {
       if (document.hidden) return;
       refreshUnreadCount();
-      if (!isBranchWorkspace) refreshUnclosedCount();
+      if (!hideRemarks) refreshUnclosedCount();
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
@@ -108,7 +111,7 @@ const TopNav: React.FC = () => {
       clearInterval(pollTimer);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [isBranchWorkspace, refreshUnreadCount, refreshUnclosedCount]);
+  }, [hideRemarks, refreshUnreadCount, refreshUnclosedCount]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -206,6 +209,8 @@ const TopNav: React.FC = () => {
         return <AlertCircle size={14} className="notification-icon notification-icon-failed" />;
       case 'cod_settlement':
       case 'branch_settlement':
+      case 'billing':
+      case 'branch_billing':
         return <Banknote size={14} className="notification-icon notification-icon-cod" />;
       case 'ticket':
       case 'ticket_reply':
@@ -234,6 +239,7 @@ const TopNav: React.FC = () => {
         </span>
       </div>
 
+      {!isAccountant && (<>
       <form
         className="top-nav-search"
         onSubmit={(event) => { event.preventDefault(); runSearch(); }}
@@ -271,9 +277,10 @@ const TopNav: React.FC = () => {
       >
         <Search size={20} />
       </button>
+      </>)}
 
       <div className="top-nav-profile">
-        {!isBranchWorkspace && (
+        {!hideRemarks && (
           <Button
           variant="outline"
           className="cmt-button"

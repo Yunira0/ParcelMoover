@@ -19,13 +19,14 @@ import { flattenMulterFiles, secureUploadedFiles } from "../lib/secureUploadedFi
 import { sendEncryptedFile } from "../lib/serveEncryptedDocument";
 import prisma from "../lib/prisma";
 import { AppError } from "../utils/AppError";
+import { isFinanceStaff } from "../utils/financeRoles";
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const VALID_PAYMENT_STATUSES: VendorPaymentStatusFilter[] = ["pending", "verified", "rejected"];
 
-const isStaff = (roles: string[]) => roles.some((r) => ["super_admin", "admin"].includes(r));
+const isStaff = (roles: string[]) => isFinanceStaff({ roles });
 
 function fail(res: Response, error: any, fallback: string) {
   return res.status(error?.statusCode || 500).json({

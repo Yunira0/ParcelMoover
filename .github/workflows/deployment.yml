@@ -40,6 +40,9 @@ jobs:
             client/package-lock.json
             rider/package-lock.json
 
+      - name: Test deployment handover and failure recovery
+        run: python3 -m unittest discover -s deploy/tests -v
+
       - name: Install server deps
         working-directory: server
         run: npm ci
@@ -137,7 +140,7 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  # ── Stage 3: ship to EC2 — pull the image, snapshot the DB, restart, verify ──
+  # ── Stage 3: ship to EC2 — pull the image, snapshot the DB, warm replacement, switch traffic ──
   deploy:
     needs: build
     runs-on: ubuntu-latest
@@ -209,14 +212,17 @@ jobs:
             fi
 
             # Remember the exact image currently serving traffic — this is
-            # what the rollback step re-deploys
-            if sudo docker ps --format '{{.Names}}' | grep -qx deploy-app-1; then
+            # also recorded by the handover script for recovery
+            if [ -f "$APP_DIR/deploy/deploy-app.sh" ]; then
+              sudo bash "$APP_DIR/deploy/deploy-app.sh" active-image \
+                | sudo tee "$APP_DIR/deploy/.last-good-image" >/dev/null
+            elif sudo docker ps --format '{{.Names}}' | grep -qx deploy-app-1; then
               sudo docker inspect deploy-app-1 --format '{{.Config.Image}}' \
                 | sudo tee "$APP_DIR/deploy/.last-good-image" >/dev/null
             fi
           EOF
 
-      - name: Sync into live dir, pull image, restart stack
+      - name: Sync release and switch only after replacement is healthy
         id: deploy_stack
         run: |
           ssh -i ~/.ssh/deploy_key ubuntu@"$SSH_HOST" \
@@ -231,96 +237,23 @@ jobs:
               --exclude='deploy/.env.production' \
               --exclude='deploy/.env.production.*' \
               --exclude='deploy/.last-good-image' \
+              --exclude='deploy/.previous-app-port' \
               --exclude='client' \
               --exclude='docs' \
               --exclude='readme.md' \
               /var/www/parcelmoover-staging/ "$APP_DIR"/
 
-            # Sync nginx configs from repo and reload (gzip + cache headers)
-            sudo cp "$APP_DIR/deploy/nginx/nginx.conf" /etc/nginx/nginx.conf
-            sudo cp "$APP_DIR/deploy/nginx/parcelmoover.conf" /etc/nginx/sites-available/parcelmoover.conf
-            sudo ln -sf /etc/nginx/sites-available/parcelmoover.conf /etc/nginx/sites-enabled/parcelmoover.conf
-            sudo nginx -t && sudo systemctl reload nginx
-
             echo "$GHCR_TOKEN" | sudo docker login ghcr.io -u "$GHCR_USER" --password-stdin
-
-            cd "$APP_DIR"
-            sudo env APP_IMAGE="$APP_IMAGE" docker compose \
-              -f deploy/docker-compose.prod.yml \
-              --env-file deploy/.env.production \
-              pull app
-
-            sudo env APP_IMAGE="$APP_IMAGE" docker compose \
-              -f deploy/docker-compose.prod.yml \
-              --env-file deploy/.env.production \
-              up -d
-
-            # verify the data volume didn't get swapped (2026-07-14 incident)
-            sudo docker inspect deploy-db-1 --format '{{range .Mounts}}{{.Name}}{{end}}' \
-              | grep -q deploy_db-data || { echo "WRONG DB VOLUME MOUNTED"; exit 1; }
-
-            # old images pile up fast on a 19GB disk — keep the rollback
-            # target and current, prune the rest (including old tagged images)
-            sudo docker image prune -a -f >/dev/null
-            # also clean build cache that accumulates from manual builds
-            sudo docker builder prune -f >/dev/null 2>&1 || true
+            sudo env APP_IMAGE="$APP_IMAGE" bash "$APP_DIR/deploy/deploy-app.sh"
           EOF
 
-      - name: Health check (retry up to 60s)
-        id: health
-        run: |
-          ssh -i ~/.ssh/deploy_key ubuntu@"$SSH_HOST" bash -s <<'EOF'
-            for i in $(seq 1 12); do
-              if curl -fsS http://127.0.0.1:3000/health >/dev/null 2>&1; then
-                echo "==> Healthy after ~$(( i * 5 ))s"
-                exit 0
-              fi
-              sleep 5
-            done
-            echo "!! App never became healthy — dumping last log lines:"
-            sudo docker logs deploy-app-1 2>&1 | tail -30
-            exit 1
-          EOF
-
-      # ── Automatic rollback: only fires if the restart or health check failed,
-      # never for earlier failures (SSH setup, rsync) where nothing was touched ──
-      - name: Rollback to last good image
-        if: >-
-          failure() &&
-          (steps.deploy_stack.outcome == 'failure' || steps.health.outcome == 'failure')
-        run: |
-          ssh -i ~/.ssh/deploy_key ubuntu@"$SSH_HOST" bash -s <<'EOF'
-            set -euo pipefail
-            APP_DIR=/var/www/express-app
-
-            if [ ! -s "$APP_DIR/deploy/.last-good-image" ]; then
-              echo "!! No recorded last-good image — cannot auto-rollback."
-              echo "!! Restore manually: re-run the workflow from the last good"
-              echo "!! commit, or restore the newest /var/backups/parcelmoover dump."
-              exit 1
-            fi
-
-            LAST_GOOD="$(cat "$APP_DIR/deploy/.last-good-image")"
-            echo "==> Rolling back app to $LAST_GOOD ..."
-
-            cd "$APP_DIR"
-            # force-recreate: image ref may be unchanged if the failure was
-            # mid-deploy, so compose must be told to recreate regardless
-            sudo env APP_IMAGE="$LAST_GOOD" docker compose \
-              -f deploy/docker-compose.prod.yml \
-              --env-file deploy/.env.production \
-              up -d --force-recreate app
-
-            for i in $(seq 1 12); do
-              if curl -fsS http://127.0.0.1:3000/health >/dev/null 2>&1; then
-                echo "==> Rollback OK — $LAST_GOOD is serving again."
-                echo "NOTE: code is rolled back, the DATABASE is not. If the failed"
-                echo "deploy ran a bad migration, restore the newest pre-deploy dump"
-                echo "from /var/backups/parcelmoover/."
-                exit 0
-              fi
-              sleep 5
-            done
-            echo "!! Rollback image is up but never became healthy — manual intervention needed."
-            exit 1
-          EOF
+      # Runs here, not on the host, so it sees the site through Cloudflare the
+      # way crawlers do. Advisory: a failed SEO check flags the run without
+      # undoing a healthy release. The purge needs the CF_API_TOKEN (Zone >
+      # Cache Purge) and CF_ZONE_ID secrets; without them it only verifies.
+      - name: SEO post-deploy (purge Cloudflare cache, verify live tags)
+        continue-on-error: true
+        env:
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CF_ZONE_ID: ${{ secrets.CF_ZONE_ID }}
+        run: bash deploy/post-deploy-seo.sh

@@ -1,7 +1,10 @@
 import React from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import {
+  ACCOUNTANT_HOME,
   getCurrentUser,
+  isAccountantPathAllowed,
+  isAccountantUser,
   isBranchWorkspacePathAllowed,
   isBranchWorkspaceUser,
 } from '../utils/auth';
@@ -30,6 +33,12 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
     if (!isBranchWorkspacePathAllowed(location.pathname)) {
       return <Navigate to="/orders" replace />;
     }
+  }
+
+  // The accountant works the Finance section only; any other URL (including
+  // /dashboard, where every login lands) goes to the finance overview.
+  if (isAccountantUser() && !isAccountantPathAllowed(location.pathname)) {
+    return <Navigate to={ACCOUNTANT_HOME} replace />;
   }
 
   return <>{children}</>;

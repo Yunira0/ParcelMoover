@@ -7,6 +7,7 @@ import {
   subscribeToOrderStatusChanged,
   updateOrderStatus,
   redirectOrder,
+  forwardOrder,
   updateOrder,
   type OrderDetail,
   type OrderRemark,
@@ -22,6 +23,7 @@ import OrderRemarkInput from '../components/order-detail/OrderRemarkInput';
 import OrderPriceLog from '../components/order-detail/OrderPriceLog';
 import OrderRedirectLog from '../components/order-detail/OrderRedirectLog';
 import RedirectOrderModal from '../components/RedirectOrderModal';
+import ForwardOrderModal from '../components/ForwardOrderModal';
 import { printLabels } from '../utils/printLabels';
 import './OrderDetailPage.css';
 
@@ -102,6 +104,10 @@ const OrderDetailPage: React.FC = () => {
   const [redirectOpen, setRedirectOpen] = useState(false);
   const [redirectSaving, setRedirectSaving] = useState(false);
   const [redirectError, setRedirectError] = useState('');
+  // Forwarding charge — a delivered parcel forwarded on to another destination.
+  const [forwardOpen, setForwardOpen] = useState(false);
+  const [forwardSaving, setForwardSaving] = useState(false);
+  const [forwardError, setForwardError] = useState('');
 
   // Edit parcel details — inline, field by field, directly on the details
   // card (OrderInfoCards). Ops staff can edit any non-terminal parcel; a
@@ -206,6 +212,25 @@ const OrderDetailPage: React.FC = () => {
     }
   };
 
+  const handleForward = async (data: {
+    destinationLocationId: string;
+    forwardingCharge: number;
+    reason?: string;
+  }) => {
+    if (!order) return;
+    try {
+      setForwardSaving(true);
+      setForwardError('');
+      await forwardOrder(order.id, data);
+      setForwardOpen(false);
+      await fetchOrder();
+    } catch (err: any) {
+      setForwardError(err?.response?.data?.message ?? 'Failed to add forwarding charge');
+    } finally {
+      setForwardSaving(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="od-page">
@@ -247,11 +272,11 @@ const OrderDetailPage: React.FC = () => {
   // that closes once ops has the parcel, since that's a temporary, explainable
   // state worth surfacing rather than a settled one worth hiding.
   const showEditDisabled = !canEditNow && !isEditBlocked && isVendorActor;
-  // Narrow escape hatch: super_admin or an admin holding EDIT_COD_LOCKED may
+  // Narrow escape hatch: super_admin or an admin holding EDIT_SETTLEMENTS may
   // still fix the COD amount on an otherwise-locked (delivered/RTV/RTO)
   // parcel — every other field stays locked. Server re-enforces this exactly;
   // this only decides whether to offer the affordance.
-  const canOverrideCod = isSuperAdmin || hasAdminPermission('EDIT_COD_LOCKED');
+  const canOverrideCod = isSuperAdmin || hasAdminPermission('EDIT_SETTLEMENTS');
   const codEditable = canEditNow || canOverrideCod;
 
   return (
@@ -381,18 +406,24 @@ const OrderDetailPage: React.FC = () => {
           <OrderPriceLog entries={order.priceLog} />
 
           <div className="od-section-header od-section-header-divided">
-            <h2>Redirect Log</h2>
+            <h2>Redirect / Forward Log</h2>
             <span className="od-section-count">{order.redirectLog.length}</span>
-            {isAdmin && REDIRECTABLE_STATUSES.includes(order.status) && (
+            {isAdmin && (order.status === 'delivered' || REDIRECTABLE_STATUSES.includes(order.status)) && (
               <button
                 type="button"
                 className="od-section-action"
                 onClick={() => {
-                  setRedirectError('');
-                  setRedirectOpen(true);
+                  // Same slot as redirect: once delivered, the action becomes a forward.
+                  if (order.status === 'delivered') {
+                    setForwardError('');
+                    setForwardOpen(true);
+                  } else {
+                    setRedirectError('');
+                    setRedirectOpen(true);
+                  }
                 }}
               >
-                Redirect order
+                {order.status === 'delivered' ? 'Forward order' : 'Redirect order'}
               </button>
             )}
           </div>
@@ -410,6 +441,17 @@ const OrderDetailPage: React.FC = () => {
         error={redirectError}
         onClose={() => setRedirectOpen(false)}
         onConfirm={handleRedirect}
+      />
+
+      <ForwardOrderModal
+        isOpen={forwardOpen}
+        trackingId={order.trackingId}
+        currentBranch={order.destination}
+        currentDeliveryCharge={order.deliveryCharge}
+        busy={forwardSaving}
+        error={forwardError}
+        onClose={() => setForwardOpen(false)}
+        onConfirm={handleForward}
       />
     </div>
   );

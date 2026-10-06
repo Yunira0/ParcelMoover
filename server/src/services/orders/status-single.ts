@@ -12,6 +12,7 @@ import { buildSearchText, createRunSheet, generateUniqueTrackingId } from "./ord
 import { notifyVendorOfParcel } from "./notifications";
 import { computeReturnCharge } from "./pricing";
 import { getActorScope, getAdminBranchScope, resolveActiveRider } from "./scope";
+import { assertRelayForward } from "./relay";
 import {
   DELIVERY_RIDER_HELD_STATUSES,
   HUB_OPERATION_STATUSES,
@@ -26,6 +27,8 @@ import {
   pickupStampFor,
   releasesPickupRider,
 } from "./status-shared";
+import { assertCodNotSettled, writesCollection } from "./codGuards";
+import { resolveDeliveryCarrier } from "./carrier";
 import { withParcelStatusLocks } from "./statusLocks";
 import type { OrderActor } from "./types";
 
@@ -37,34 +40,6 @@ import type { OrderActor } from "./types";
 // re-syncs cod_amount (see updateOrder), the parcel ends up with COD 0 but a
 // non-zero collected amount - still listed as settleable, still counted in the
 // vendor's balance, for cash nobody is holding.
-
-/**
- * Blocks the un-delivery when the COD has already been bundled into a statement
- * or paid on either leg. Real money has moved at that point (and
- * rider_remitted_amount / remitted_amount are frozen copies of the collected
- * amount), so the statement has to be voided first - silently rewriting the
- * ledger underneath a paid settlement would leave the books unbalanced.
- */
-async function assertDeliveryReversible(parcelIds: string[]) {
-  const blocked = await prisma.cod_collections.findMany({
-    where: {
-      parcel_id: { in: parcelIds },
-      OR: [
-        { payment_status: "paid" },
-        { rider_payment_status: "paid" },
-        { settlement_items: { some: {} } },
-      ],
-    },
-    select: { parcels: { select: { tracking_id: true } } },
-  });
-  if (blocked.length > 0) {
-    const tags = blocked.map((c) => c.parcels.tracking_id).join(", ");
-    throw new AppError(
-      409,
-      `Cannot move ${tags} out of a delivered status: its COD is already in a settlement statement. Void or amend that statement first.`,
-    );
-  }
-}
 
 export async function updateParcelStatus(
   actor: OrderActor,
@@ -240,13 +215,23 @@ async function _updateParcelStatusImpl(
         throw new AppError(422, "Destination is outside this branch's coverage area: this parcel must go to 'Transit' first.");
       }
     }
+    if (currentStatus === "arrived_at_branch" && newStatus === "oov") {
+      await assertRelayForward(parcel);
+    }
   }
 
-  // Undoing a delivery (super_admin only, since the transition map has no exit
-  // from delivered) must not leave settled COD behind it.
-  const undelivering = isUndelivering(parcel.status, newStatus);
-  if (undelivering) {
-    await assertDeliveryReversible([parcelId]);
+  // Undoing a delivery, or cancelling a partial one, must not leave settled COD
+  // behind it. A partial moving on to follow_up/ready_to_return/ready_to_deliver
+  // keeps its cash, so a statement it is already on stays correct - blocking
+  // that stranded the parcel once its partial COD was remitted.
+  if (isDeliveryReversal || (isUndelivering(parcel.status, newStatus) && newStatus === "cancelled")) {
+    await assertCodNotSettled([parcelId], "move out of a delivered status");
+  }
+  // Delivering again rewrites collected_amount, so it can't run over a
+  // collection a statement has already frozen. Caught at the re-attempt so the
+  // parcel isn't already out with a rider when it fails.
+  if (writesCollection(currentStatus as parcel_status, newStatus as parcel_status, parcel.partial_cod_collected != null)) {
+    await assertCodNotSettled([parcelId], "re-deliver");
   }
 
   // Cancellation is allowed for admins and vendors (vendors may only cancel their own
@@ -341,8 +326,15 @@ async function _updateParcelStatusImpl(
   // gets, instead of the full outbound delivery_charge - see
   // computeReturnCharge. A genuine return order's delivery_charge is already
   // that discounted amount from creation, so this only applies to plain RTO.
+  // A partial was a real delivery, so its charge stands (and may already be
+  // frozen on a statement).
   let rtoReturnCharge: number | null = null;
-  if (parcel.order_type !== "return" && newStatus === "returned_to_vendor" && parcel.destination_location_id) {
+  if (
+    parcel.order_type !== "return" &&
+    newStatus === "returned_to_vendor" &&
+    parcel.destination_location_id &&
+    parcel.partial_cod_collected == null
+  ) {
     rtoReturnCharge = await computeReturnCharge(
       parcel.vendors,
       parcel.destination_location_id,
@@ -350,32 +342,6 @@ async function _updateParcelStatusImpl(
       parcel.service_type,
       parcel.origin_location_id,
     );
-  }
-
-  // Reversing a delivery must not silently blow away a COD that's already been
-  // swept into a settlement - paid (rider or vendor leg) or still pending.
-  // A pending settlement already froze this collection's amount into its
-  // settlement_items row at creation time; reversing the collection out from
-  // under it would leave that statement showing stale, wrong figures with no
-  // record of why. Staff must remove it via the settlement edit flow first.
-  // Only the money-reversing case is gated: a partial delivery moving on to
-  // follow_up/ready_to_return leaves its collection untouched, so a settlement
-  // it already belongs to stays correct and must not be blocked.
-  if (isDeliveryReversal) {
-    const cod = await prisma.cod_collections.findFirst({
-      where: {
-        parcel_id: parcelId,
-        OR: [{ rider_payment_status: "paid" }, { payment_status: "paid" }, { settlement_items: { some: {} } }],
-      },
-      select: {
-        settlement_items: { select: { settlements: { select: { statement_id: true, payee_type: true } } }, take: 1 },
-      },
-    });
-    if (cod) {
-      const stmt = cod.settlement_items[0]?.settlements;
-      const reason = stmt ? `is part of ${stmt.payee_type} settlement ${stmt.statement_id}` : "has already been settled";
-      throw new AppError(409, `This order's COD ${reason} — resolve that before undelivering.`);
-    }
   }
 
   const updatedParcel = await prisma.$transaction(async (tx) => {
@@ -439,7 +405,7 @@ async function _updateParcelStatusImpl(
       (updateData as any).delivery_rider_id = null;
       await tx.cod_collections.updateMany({
         where: { parcel_id: parcel.id },
-        data: { collected_amount: 0, collected_at: null, rider_id: null },
+        data: { collected_amount: 0, collected_at: null, rider_id: null, carrier_code: null },
       });
     }
     // Side-effect: update current_location_id
@@ -501,18 +467,21 @@ async function _updateParcelStatusImpl(
       // genuine zero-cash partial delivery) must still overwrite whatever
       // stale amount is sitting on the row, or the settlement ledger keeps
       // showing cash that was never actually owed.
+      const carrierCode = await resolveDeliveryCarrier(tx, parcel.id, parcel.delivery_rider_id);
       await tx.cod_collections.upsert({
         where: { parcel_id: parcel.id },
         create: {
           parcel_id: parcel.id,
           vendor_id: parcel.vendor_id,
           rider_id: parcel.delivery_rider_id,
+          carrier_code: carrierCode,
           cod_amount: parcel.cod_amount,
           collected_amount: collectedAmount,
           collected_at: new Date(),
         },
         update: {
           rider_id: parcel.delivery_rider_id,
+          carrier_code: carrierCode,
           cod_amount: parcel.cod_amount,
           collected_amount: collectedAmount,
           collected_at: new Date(),
@@ -601,7 +570,9 @@ async function _updateParcelStatusImpl(
         where: { parcel_id: parcelId, transit_manifests: { status: "open" } },
       });
     }
-    if (currentStatus === "dispatched") {
+    // Also when forced back to oov from further along (e.g. arrived_at_branch):
+    // the parcel is no longer on that truck, and a lingering link blocks re-staging.
+    if (currentStatus === "dispatched" || newStatus === "oov") {
       await tx.transit_manifest_parcels.deleteMany({
         where: { parcel_id: parcelId, transit_manifests: { status: "dispatched" } },
       });

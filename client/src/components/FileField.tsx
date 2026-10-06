@@ -6,6 +6,8 @@ import './FileField.css';
 type FileFieldProps = {
   label: string;
   hint: string;
+  /** File-picker filter; defaults to images and PDF. */
+  accept?: string;
 } & (
   | {
       multiple?: false;
@@ -28,7 +30,7 @@ const isImageFile = (file: File) => file.type.startsWith('image/');
 // Payment flow's proof step, the statement detail page's after-the-fact
 // "attach proof" affordance, and the billing screens.
 const FileField: React.FC<FileFieldProps> = (props) => {
-  const { label, hint } = props;
+  const { label, hint, accept = ACCEPT } = props;
   const ref = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
   const [converting, setConverting] = useState(false);
@@ -140,7 +142,7 @@ const FileField: React.FC<FileFieldProps> = (props) => {
       <input
         ref={ref}
         type="file"
-        accept={ACCEPT}
+        accept={accept}
         multiple={props.multiple}
         style={{ display: 'none' }}
         onChange={(event) => {

@@ -75,9 +75,23 @@ const VendorSettlements: React.FC = () => {
         </button>
       ),
     },
-    { header: 'TRANSFER DATE', accessor: (item: SettlementListItem) => toBsDate(item.transferDate) },
+    // The date the statement was raised - money has only moved once it is paid.
+    { header: 'STATEMENT DATE', accessor: (item: SettlementListItem) => toBsDate(item.transferDate) },
     { header: 'ORDERS', accessor: (item: SettlementListItem) => `${item.orderCount} order(s)` },
-    { header: 'AMOUNT', accessor: (item: SettlementListItem) => formatCurrency(item.amount) },
+    {
+      header: 'AMOUNT',
+      // A negative statement is one where delivery charges beat the COD, so the
+      // money runs from you to us - say that instead of printing a minus sign.
+      accessor: (item: SettlementListItem) =>
+        item.amount < 0 ? (
+          <>
+            {formatCurrency(-item.amount)}
+            <div className="vendor-settlement-status-sub">due from you</div>
+          </>
+        ) : (
+          formatCurrency(item.amount)
+        ),
+    },
     {
       header: 'STATUS',
       accessor: (item: SettlementListItem) => (
@@ -88,7 +102,9 @@ const VendorSettlements: React.FC = () => {
           {/* The chip alone doesn't say how much of the payout has landed. */}
           {item.status === 'partially_paid' && (
             <div className="vendor-settlement-status-sub">
-              {formatCurrency(item.paidAmount)} of {formatCurrency(item.amount)} received
+              {item.amount < 0
+                ? `${formatCurrency(item.paidAmount)} of ${formatCurrency(-item.amount)} paid by you`
+                : `${formatCurrency(item.paidAmount)} of ${formatCurrency(item.amount)} received`}
             </div>
           )}
         </>

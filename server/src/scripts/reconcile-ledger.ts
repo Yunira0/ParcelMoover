@@ -48,13 +48,6 @@ import { ACCOUNT } from "../services/accounting/accounts";
 const ZERO = new Prisma.Decimal(0);
 const money = (value: Prisma.Decimal) => value.toFixed(2);
 
-interface Drift {
-  label: string;
-  ledger: Prisma.Decimal;
-  expected: Prisma.Decimal;
-  difference: Prisma.Decimal;
-}
-
 // ── 1. Trial balance ────────────────────────────────────────────────────────
 
 async function checkTrialBalance(): Promise<boolean> {
@@ -174,9 +167,12 @@ async function checkCodFloat(): Promise<string[]> {
      WHERE a.code = ${ACCOUNT.COD_HELD}
   `);
 
+  // COD comes in through rider statements and, for parcels a 3PL delivered,
+  // through carrier statements.
   const [derived] = await prisma.$queryRaw<Array<{ taken_in: string; released: string }>>(Prisma.sql`
     SELECT
-      COALESCE(SUM(COALESCE(s.payable_amount, s.amount)) FILTER (WHERE s.payee_type = 'rider'), 0) AS taken_in,
+      COALESCE(SUM(COALESCE(s.payable_amount, s.amount)) FILTER (WHERE s.payee_type = 'rider'), 0)
+        + (SELECT COALESCE(SUM(cs.gross_cod), 0) FROM carrier_settlements cs WHERE cs.status <> 'cancelled') AS taken_in,
       COALESCE(SUM(s.amount) FILTER (WHERE s.payee_type = 'vendor'), 0) AS released
       FROM settlements s
      WHERE s.status::text <> 'cancelled'
@@ -291,6 +287,35 @@ async function checkBranchFloat(): Promise<string[]> {
   return [];
 }
 
+// ── 4c. 3PL float equals what carrier statements say is unpaid ──────────────
+async function checkCarrierFloat(): Promise<string[]> {
+  const [ledger] = await prisma.$queryRaw<Array<{ balance: string }>>(Prisma.sql`
+    SELECT COALESCE(SUM(l.debit - l.credit), 0) AS balance
+      FROM journal_lines l
+      JOIN ledger_accounts a ON a.id = l.account_id
+     WHERE a.code = ${ACCOUNT.COD_WITH_CARRIER}
+  `);
+  const [derived] = await prisma.$queryRaw<Array<{ outstanding: string }>>(Prisma.sql`
+    SELECT COALESCE(SUM(cs.net_receivable - cs.paid_amount), 0) AS outstanding
+      FROM carrier_settlements cs
+     WHERE cs.status <> 'cancelled'
+  `);
+
+  const held = new Prisma.Decimal(ledger?.balance ?? 0);
+  const expected = new Prisma.Decimal(derived?.outstanding ?? 0);
+  console.log("3PL float (1020 COD with 3PL)");
+  console.log(`  statements say outstanding ${money(expected).padStart(10)}`);
+  console.log(`  ledger balance             ${money(held).padStart(10)}`);
+  if (!held.equals(expected)) {
+    console.log(`  ✗ out by ${money(held.minus(expected))}`);
+    console.log("");
+    return [`3PL float is ${money(held)} but carrier statements say ${money(expected)} is still outstanding`];
+  }
+  console.log("  ✓ the float agrees with the carrier statements");
+  console.log("");
+  return [];
+}
+
 // ── 5. Revenue equals what the statements withheld ──────────────────────────
 //
 // The office's cut is recognised on the statement that withholds it, so the sum
@@ -304,11 +329,14 @@ async function checkRevenue(): Promise<string[]> {
       JOIN journal_entries e ON e.id = l.entry_id AND TRUE /* see ALL_ENTRIES */
       JOIN ledger_accounts a ON a.id = l.account_id
      WHERE a.code IN (${ACCOUNT.DELIVERY_REVENUE}, ${ACCOUNT.RETURN_REVENUE})
-       AND e.source_type = 'settlement'
+       -- A voided settlement entry still counts, so its reversal must too.
+       AND (e.source_type = 'settlement' OR EXISTS (
+         SELECT 1 FROM journal_entries o WHERE o.id = e.reversal_of_id AND o.source_type = 'settlement'
+       ))
   `);
 
   const [withheld] = await prisma.$queryRaw<Array<{ charges: string }>>(Prisma.sql`
-    SELECT COALESCE(SUM(s.amount - COALESCE(s.payable_amount, s.amount)), 0) AS charges
+    SELECT COALESCE(SUM(s.amount - COALESCE(s.payable_amount, s.amount) + s.vendor_credit_applied), 0) AS charges
       FROM settlements s
      WHERE s.status::text <> 'cancelled' AND s.payee_type = 'vendor'
   `);
@@ -346,6 +374,7 @@ async function main() {
   const float = await checkCodFloat();
   const riderFloat = await checkRiderFloat();
   const branchFloat = await checkBranchFloat();
+  const carrierFloat = await checkCarrierFloat();
   const revenue = await checkRevenue();
 
   const failed =
@@ -354,6 +383,7 @@ async function main() {
     float.length > 0 ||
     riderFloat.length > 0 ||
     branchFloat.length > 0 ||
+    carrierFloat.length > 0 ||
     revenue.length > 0;
   if (failed) {
     console.error("✗ Reconciliation FAILED - the ledger does not yet agree with the source data.");

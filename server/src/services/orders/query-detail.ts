@@ -3,7 +3,7 @@ import prisma from "../../lib/prisma";
 import { AppError } from "../../utils/AppError";
 import { formatNepalDate as formatDate } from "../../utils/nepalTime";
 import { getVendorStatusLabel } from "../../utils/orderStatusLabel";
-import { displayAuthor, displayRemarkText, stripCarrierStaffTag } from "../../utils/carrierRemark";
+import { displayAuthor, displayRemarkText, handoffCarrier, isHandoffNote, publicRemarkText, stripCarrierStaffTag } from "../../utils/carrierRemark";
 import { getActorScope, riderHandledFilter, branchTouchesFilter } from "./scope";
 import { isStaffAuthor } from "./remarkAuthor";
 import { locationName, mapOrder } from "./query-core";
@@ -44,14 +44,6 @@ const ORDER_DETAIL_INCLUDE = {
   // Detail spreads mapOrder, so it needs everything mapOrder reads.
   cod_collections: { select: { collected_amount: true } },
 } satisfies Prisma.parcelsInclude;
-
-// NCM 3PL bookkeeping remarks. The handoff remark is an internal audit/link
-// row (see ncm.service.ts) and must not show in the user-facing thread.
-// Inbound carrier-staff comments carry a bracketed tag we strip for display,
-// attributing them to a generic "Staff" (they have no local user). See
-// utils/carrierRemark.ts - the tag spelling lives there so it cannot drift
-// away from what ncm.service.ts actually writes.
-const NCM_HANDOFF_PREFIX = "[NCM] Handed off";
 
 export async function getOrderByTrackingId(actor: OrderActor, trackingId: string) {
   const { vendorId, vendorIds, riderId, branchLocationIds } = await getActorScope(actor);
@@ -123,6 +115,9 @@ export async function getOrderByTrackingId(actor: OrderActor, trackingId: string
   // staff member's real name.
   const redirectLog = parcel.parcel_redirects.map((entry) => ({
     id: entry.id,
+    // Redirects are refused once delivered, so a row logged at "delivered" is
+    // a forwarding charge (orders/forward.ts).
+    kind: entry.status_at_redirect === "delivered" ? ("forward" as const) : ("redirect" as const),
     fromBranch: entry.from_location?.name ?? null,
     toBranch: entry.to_location.name,
     fromAddress: entry.from_address,
@@ -161,14 +156,14 @@ export async function getOrderByTrackingId(actor: OrderActor, trackingId: string
     // label in place of any internal staff member's name (their own / other
     // non-staff authors still show normally).
     remarks: parcel.parcel_remarks
-      .filter((remark) => !remark.remark.startsWith(NCM_HANDOFF_PREFIX))
+      .filter((remark) => !isHandoffNote(remark.remark))
       .map((remark) => {
       const { text: remarkText, isCarrierStaff } = stripCarrierStaffTag(remark.remark);
       const maskAuthor = !isStaff && isStaffAuthor(remark.users);
       const maskParent = !isStaff && isStaffAuthor(remark.parent_remark?.users);
       return {
         id: remark.id,
-        remark: remarkText,
+        remark: isStaff ? remarkText : publicRemarkText(remarkText),
         addedBy: displayAuthor(remark.users?.full_name, isCarrierStaff || maskAuthor),
         createdAt: remark.created_at.toISOString(),
         parentRemarkId: remark.parent_remark_id,
@@ -177,7 +172,7 @@ export async function getOrderByTrackingId(actor: OrderActor, trackingId: string
             ? "Staff"
             : remark.parent_remark.users.full_name
           : null,
-        parentSnippet: remark.parent_remark?.remark || null,
+        parentSnippet: remark.parent_remark ? (isStaff ? remark.parent_remark.remark : publicRemarkText(remark.parent_remark.remark)) : null,
       };
     }),
     // Staff see who (which user) changed the status; vendors/riders see "Staff"
@@ -202,7 +197,10 @@ export async function getOrderByTrackingId(actor: OrderActor, trackingId: string
         newStatus: entry.new_status,
         // One wording for both carriers, and no carrier's own name - the
         // handoff entry is stored branded on the Upaya side (see carrierRemark).
-        remarks: displayRemarkText(entry.remarks || ""),
+        remarks: isStaff ? displayRemarkText(entry.remarks || "") : publicRemarkText(entry.remarks || ""),
+        // Staff only: which 3PL took the handoff, read from the stored text
+        // before it is neutralised above (the display text can't tell them apart).
+        carrier: isStaff ? handoffCarrier(entry.remarks) : null,
         riderName: riderName || null,
         changedBy: isStaff ? entry.users?.full_name || "System" : nonStaffLabel,
         changedByType: isStaff ? ("user" as const) : ("branch" as const),

@@ -8,6 +8,7 @@ import { csrfProtection } from "../middlewares/csrf.middleware";
 import { validate } from "../middlewares/validate.middleware";
 import { parseMultipartJson } from "../middlewares/multipartJson.middleware";
 import { settlementDocsUpload } from "../lib/settlementUpload";
+import { carrierSettlementFileUpload } from "../lib/documentUpload";
 import {
   pendingCodQuerySchema,
   orderCodQuerySchema,
@@ -17,8 +18,20 @@ import {
   updateSettlementSchema,
   revertSettlementSchema,
   cancelSettlementSchema,
+  createCarrierSettlementSchema,
 } from "../validators/finance.schema";
 import { createRedisRateLimitStore } from "../lib/rateLimitStore";
+import {
+  attachCarrierSettlementDocumentsController,
+  cancelCarrierSettlementController,
+  deleteCarrierSettlementDocumentController,
+  getCarrierSettlementDocumentController,
+  createCarrierSettlementController,
+  getCarrierSettlementController,
+  listCarrierSettlementsController,
+  payCarrierSettlementController,
+  unsettledCarrierOrdersController,
+} from "../controllers/carrierSettlement.controller";
 import {
   getPendingCodController,
   listOrderCodController,
@@ -68,7 +81,7 @@ const settlementCreateLimiter = rateLimit({
 financeRouter.get(
   "/pending-cod",
   authMiddleware,
-  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "sales"),
+  authorizeRoles("super_admin", "accountant", "admin", "vendor", "vendor_staff", "sales"),
   requireStaffPermission("FINANCE_ACCESS"),
   financeReadLimiter,
   validate(pendingCodQuerySchema, "query"),
@@ -79,7 +92,7 @@ financeRouter.get(
 financeRouter.get(
   "/order-cod",
   authMiddleware,
-  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "sales"),
+  authorizeRoles("super_admin", "accountant", "admin", "vendor", "vendor_staff", "sales"),
   requireStaffPermission("FINANCE_ACCESS"),
   financeReadLimiter,
   validate(orderCodQuerySchema, "query"),
@@ -90,7 +103,7 @@ financeRouter.get(
 financeRouter.get(
   "/settlements",
   authMiddleware,
-  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider", "sales"),
+  authorizeRoles("super_admin", "accountant", "admin", "vendor", "vendor_staff", "rider", "sales"),
   requireStaffPermission("FINANCE_ACCESS"),
   financeReadLimiter,
   validate(settlementsQuerySchema, "query"),
@@ -101,7 +114,7 @@ financeRouter.get(
 financeRouter.get(
   "/settlements/:id",
   authMiddleware,
-  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider", "sales"),
+  authorizeRoles("super_admin", "accountant", "admin", "vendor", "vendor_staff", "rider", "sales"),
   requireStaffPermission("FINANCE_ACCESS"),
   financeReadLimiter,
   getSettlementDetailController,
@@ -114,7 +127,7 @@ financeRouter.get(
 financeRouter.get(
   "/settlements/:id/documents/:doc",
   authMiddleware,
-  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider", "sales"),
+  authorizeRoles("super_admin", "accountant", "admin", "vendor", "vendor_staff", "rider", "sales"),
   requireStaffPermission("FINANCE_ACCESS"),
   financeReadLimiter,
   getSettlementDocumentController,
@@ -126,7 +139,7 @@ financeRouter.post(
   "/settlements",
   authMiddleware,
   csrfProtection,
-  authorizeRoles("super_admin", "admin"),
+  authorizeRoles("super_admin", "accountant", "admin"),
   settlementCreateLimiter,
   validate(createSettlementSchema),
   createSettlementController,
@@ -140,7 +153,7 @@ financeRouter.post(
   "/settlements/:id/pay",
   authMiddleware,
   csrfProtection,
-  authorizeRoles("super_admin", "admin"),
+  authorizeRoles("super_admin", "accountant", "admin"),
   settlementCreateLimiter,
   settlementDocsUpload,
   parseMultipartJson("payments"),
@@ -156,7 +169,7 @@ financeRouter.patch(
   "/settlements/:id/documents",
   authMiddleware,
   csrfProtection,
-  authorizeRoles("super_admin", "admin"),
+  authorizeRoles("super_admin", "accountant", "admin"),
   settlementCreateLimiter,
   settlementDocsUpload,
   attachSettlementDocumentsController,
@@ -168,7 +181,7 @@ financeRouter.delete(
   "/settlements/:id/documents/:documentId",
   authMiddleware,
   csrfProtection,
-  authorizeRoles("super_admin", "admin"),
+  authorizeRoles("super_admin", "accountant", "admin"),
   settlementCreateLimiter,
   deleteSettlementDocumentController,
 );
@@ -179,7 +192,7 @@ financeRouter.patch(
   "/settlements/:id",
   authMiddleware,
   csrfProtection,
-  authorizeRoles("super_admin", "admin"),
+  authorizeRoles("super_admin", "accountant", "admin"),
   requireAdminPermission("EDIT_SETTLEMENTS"),
   settlementCreateLimiter,
   validate(updateSettlementSchema),
@@ -193,7 +206,7 @@ financeRouter.post(
   "/settlements/:id/revert",
   authMiddleware,
   csrfProtection,
-  authorizeRoles("super_admin", "admin"),
+  authorizeRoles("super_admin", "accountant", "admin"),
   requireAdminPermission("EDIT_SETTLEMENTS"),
   settlementCreateLimiter,
   validate(revertSettlementSchema),
@@ -207,7 +220,7 @@ financeRouter.post(
   "/settlements/:id/cancel",
   authMiddleware,
   csrfProtection,
-  authorizeRoles("super_admin", "admin"),
+  authorizeRoles("super_admin", "accountant", "admin"),
   requireAdminPermission("EDIT_SETTLEMENTS"),
   settlementCreateLimiter,
   validate(cancelSettlementSchema),
@@ -218,10 +231,24 @@ financeRouter.post(
 financeRouter.get(
   "/unsettled-orders",
   authMiddleware,
-  authorizeRoles("super_admin", "admin", "vendor", "rider", "sales"),
+  authorizeRoles("super_admin", "accountant", "admin", "vendor", "rider", "sales"),
   requireStaffPermission("FINANCE_ACCESS"),
   financeReadLimiter,
   getUnsettledOrdersController,
 );
+
+// ── 3PL (NCM / Upaya) COD settlements ── head office only (enforced in the service).
+// Same gate as the vendor/rider statements above: an admin without Finance
+// access must not be able to read, create or pay carrier statements either.
+const carrierStaff = [authMiddleware, authorizeRoles("super_admin", "admin", "accountant"), requireStaffPermission("FINANCE_ACCESS")] as const;
+financeRouter.get("/carrier-cod/:carrier/unsettled", ...carrierStaff, financeReadLimiter, unsettledCarrierOrdersController);
+financeRouter.get("/carrier-settlements", ...carrierStaff, financeReadLimiter, listCarrierSettlementsController);
+financeRouter.post("/carrier-settlements", ...carrierStaff, csrfProtection, settlementCreateLimiter, validate(createCarrierSettlementSchema), createCarrierSettlementController);
+financeRouter.get("/carrier-settlements/:id", ...carrierStaff, financeReadLimiter, getCarrierSettlementController);
+financeRouter.post("/carrier-settlements/:id/pay", ...carrierStaff, csrfProtection, settlementCreateLimiter, validate(paySettlementSchema), payCarrierSettlementController);
+financeRouter.post("/carrier-settlements/:id/cancel", ...carrierStaff, csrfProtection, requireAdminPermission("EDIT_SETTLEMENTS"), settlementCreateLimiter, validate(cancelSettlementSchema), cancelCarrierSettlementController);
+financeRouter.post("/carrier-settlements/:id/documents", ...carrierStaff, csrfProtection, settlementCreateLimiter, carrierSettlementFileUpload, attachCarrierSettlementDocumentsController);
+financeRouter.get("/carrier-settlements/:id/documents/:documentId", ...carrierStaff, financeReadLimiter, getCarrierSettlementDocumentController);
+financeRouter.delete("/carrier-settlements/:id/documents/:documentId", ...carrierStaff, csrfProtection, settlementCreateLimiter, deleteCarrierSettlementDocumentController);
 
 export default financeRouter;

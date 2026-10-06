@@ -103,6 +103,8 @@ export interface SettlementForPosting {
    * describeVendorSettlement. Absent is read as nothing paid.
    */
   paid_amount?: Prisma.Decimal | number | string | null;
+  /** Prepaid charges handed back on this statement, already inside payable_amount. */
+  vendor_credit_applied?: Prisma.Decimal | number | string | null;
   payment_method: string | null;
   payments: Prisma.JsonValue | null;
   settlement_date: Date | null;
@@ -181,6 +183,7 @@ export const SOURCE = {
   vendorPayment: (paymentId: string) => ({ sourceType: "vendor_payment", sourceId: paymentId }),
   expense: (expenseId: string) => ({ sourceType: "expense", sourceId: expenseId }),
   branchSettlement: (settlementId: string) => ({ sourceType: "branch_settlement", sourceId: settlementId }),
+  carrierSettlement: (settlementId: string) => ({ sourceType: "carrier_settlement", sourceId: settlementId }),
 } as const;
 
 export const EVENT_KEY = {
@@ -191,6 +194,7 @@ export const EVENT_KEY = {
   vendorPayment: "payment_verified",
   expense: "expense_recorded",
   branchSettlement: "branch_settlement",
+  carrierSettlement: "carrier_settlement",
 } as const;
 
 async function write(
@@ -370,10 +374,14 @@ export function describeVendorSettlement(settlement: SettlementForPosting): Desc
 
   const gross = decimal(settlement.amount);
   const payable = decimal(settlement.payable_amount ?? settlement.amount);
+  // Prepaid charges handed back: the vendor's Billing payment sits as a credit
+  // in 2000 (describeVendorPaymentVerified), and this statement uses it up.
+  const credit = decimal(settlement.vendor_credit_applied ?? 0);
   // What the office kept: the delivery charges on this statement's parcels.
-  // Taken as gross minus payable rather than re-summed from the items, so the
-  // entry can never disagree with the statement it is posting.
-  const charges = gross.minus(payable);
+  // Taken from the statement's own totals rather than re-summed from the items,
+  // so the entry can never disagree with the statement it is posting. The
+  // credit is inside payable, so it is added back to recover the charges.
+  const charges = gross.minus(payable).plus(credit);
 
   if (gross.isZero() && charges.isZero()) {
     // Nothing was collected and nothing was charged. An entry of zero lines
@@ -410,6 +418,10 @@ export function describeVendorSettlement(settlement: SettlementForPosting): Desc
     if (!returnShare.isZero()) {
       lines.push({ accountCode: ACCOUNT.RETURN_REVENUE, credit: returnShare, memo: "Return charge" });
     }
+  }
+
+  if (!credit.isZero()) {
+    lines.push({ accountCode: ACCOUNT.VENDOR_CONTROL, debit: credit, party: vendor, memo: "Prepaid charges applied" });
   }
 
   // payable > 0: the office pays the vendor out. payable < 0: charges exceeded
@@ -614,6 +626,61 @@ export function describeBranchSettlement(settlement: BranchSettlementForPosting)
     memo: settlement.from_branch?.name
       ? `COD remitted by branch ${settlement.from_branch.name}, ${settlement.statement_no}`
       : `COD remitted by branch, ${settlement.statement_no}`,
+    lines,
+  };
+}
+
+// ── 5c. 3PL carrier settlement ──────────────────────────────────────────────
+
+export interface CarrierSettlementForPosting {
+  id: string;
+  statement_no: string;
+  carrier_code: string;
+  gross_cod: Prisma.Decimal | number | string;
+  carrier_charges: Prisma.Decimal | number | string;
+  net_receivable: Prisma.Decimal | number | string;
+  paid_amount: Prisma.Decimal | number | string;
+  payment_method: string | null;
+  payments: Prisma.JsonValue | null;
+  settlement_date: Date;
+  methodAccounts?: MethodAccounts | undefined;
+}
+
+/**
+ * A 3PL carrier hands over the COD it collected, keeping its delivery charge.
+ *
+ *   Dr  5020 3PL Delivery Charge    the carrier's cut
+ *   Dr  cash / bank / wallet        what we have received
+ *   Dr  1020 COD with 3PL           what the carrier still owes
+ *   Cr  2005 COD to Pay to Vendor   the COD, now owed on to vendors
+ *
+ * This is where carrier-collected COD enters the float, the way a rider
+ * remittance brings in our own riders' cash. Posted when the statement is
+ * created and restated as instalments land.
+ */
+export function describeCarrierSettlement(settlement: CarrierSettlementForPosting): Described {
+  const gross = decimal(settlement.gross_cod);
+  const charges = decimal(settlement.carrier_charges);
+  const net = decimal(settlement.net_receivable);
+  if (gross.isZero()) return { skip: "statement moves no money" };
+
+  const paid = clampShare(decimal(settlement.paid_amount), net);
+  const owed = net.minus(paid);
+  const lines: JournalLineInput[] = [];
+  if (!charges.isZero()) {
+    lines.push({ accountCode: ACCOUNT.CARRIER_CHARGE, debit: charges, memo: `${settlement.carrier_code.toUpperCase()} delivery charge` });
+  }
+  if (!paid.isZero()) {
+    lines.push(...cashLines(paymentSplits(settlement, paid), "debit", "COD received from 3PL", settlement.methodAccounts));
+  }
+  if (!owed.isZero()) {
+    lines.push({ accountCode: ACCOUNT.COD_WITH_CARRIER, debit: owed, memo: "Still with 3PL" });
+  }
+  lines.push({ accountCode: ACCOUNT.COD_HELD, credit: gross, memo: "COD collected by 3PL" });
+
+  return {
+    entryDate: settlement.settlement_date,
+    memo: `COD remitted by ${settlement.carrier_code.toUpperCase()}, ${settlement.statement_no}`,
     lines,
   };
 }

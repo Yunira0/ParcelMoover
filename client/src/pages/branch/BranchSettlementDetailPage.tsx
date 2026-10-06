@@ -1,14 +1,16 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, CreditCard, ExternalLink, FileText, Plus, Trash2 } from 'lucide-react';
+import { ArrowLeft, Ban, CreditCard, ExternalLink, FileText, Plus, Trash2 } from 'lucide-react';
 import Button from '../../components/Button';
 import FormField from '../../components/FormField';
 import SegmentedTabs from '../../components/SegmentedTabs';
 import StatusChip from '../../components/StatusChip';
 import Table from '../../components/Table';
 import { Banner } from '../accounting/ui';
-import { getCurrentUserRoles } from '../../utils/auth';
+import { hasAdminPermission, hasAnyRole } from '../../utils/auth';
+import RevertSettlementModal from '../../components/RevertSettlementModal';
 import {
+  cancelBranchSettlement,
   getBranchSettlement,
   payBranchSettlement,
   type BranchSettlementDetail,
@@ -35,7 +37,10 @@ const BranchSettlementDetailPage: React.FC = () => {
   const { id = '' } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
-  const canRecordOfficePayment = getCurrentUserRoles().includes('super_admin');
+  const canRecordOfficePayment = hasAnyRole(['super_admin', 'accountant']);
+  // Same gate as cancelling a vendor statement; the server also limits it to head office.
+  const canCancel = canRecordOfficePayment || hasAdminPermission('EDIT_SETTLEMENTS');
+  const [showCancel, setShowCancel] = useState(false);
   const [detail, setDetail] = useState<BranchSettlementDetail | null>(null);
   const [methods, setMethods] = useState<PaymentMethodOption[]>([]);
   const [payments, setPayments] = useState<PaymentRow[]>([{ method: '', amount: '' }]);
@@ -119,7 +124,7 @@ const BranchSettlementDetailPage: React.FC = () => {
   return (
     <div className="scp-page bsd-page">
       <button type="button" className="scp-back" onClick={() => navigate('/branches/settlement')}><ArrowLeft size={15} />Branch COD</button>
-      <div className="bsd-heading"><div><h1>{detail.statementNo}</h1><p><strong>{detail.fromBranch.name}</strong> pays collected COD to master branch <strong>{detail.toBranch.name}</strong>.</p></div><StatusChip variant="solid" tone={settlementStatusTone(detail.status)}>{settlementStatusLabel(detail.status)}</StatusChip></div>
+      <div className="bsd-heading"><div><h1>{detail.statementNo}</h1><p><strong>{detail.fromBranch.name}</strong> pays collected COD to master branch <strong>{detail.toBranch.name}</strong>.</p></div><div className="bsd-heading-actions">{canCancel && detail.status === 'pending' && detail.paidAmount === 0 && <Button variant="danger" size="sm" onClick={() => setShowCancel(true)}><Ban size={15} /> Cancel statement</Button>}<StatusChip variant="solid" tone={settlementStatusTone(detail.status)}>{settlementStatusLabel(detail.status)}</StatusChip></div></div>
       {notice && <Banner tone="success">{notice}</Banner>}
       {error && <Banner tone="danger">{error}</Banner>}
 
@@ -196,6 +201,20 @@ const BranchSettlementDetailPage: React.FC = () => {
           <section className="scp-section"><div className="scp-section-header"><div><h3>Payment history</h3><p>Every transfer remains visible here, including split or partial payments.</p></div></div><Table selectable={false} data={detail.payments} columns={paymentColumns} minWidth="1060px" emptyMessage="No payment has been recorded yet." /></section>
           <section className="scp-section"><div className="scp-section-header"><div><h3>Statement orders ({detail.items.length})</h3><p>These orders are earmarked for this statement and cannot be added to another one.</p></div></div><Table selectable={false} data={detail.items.map((item) => ({ ...item, id: item.parcelId }))} columns={orderColumns} minWidth="1210px" emptyMessage="No orders on this statement." /></section>
         </>
+      )}
+
+      {showCancel && (
+        <RevertSettlementModal
+          settlementId={detail.id}
+          statementId={detail.statementNo}
+          mode="cancel"
+          submit={cancelBranchSettlement}
+          onClose={() => setShowCancel(false)}
+          onSuccess={() => {
+            setNotice(`${detail.statementNo} cancelled. Its orders can go on a new statement.`);
+            load();
+          }}
+        />
       )}
     </div>
   );

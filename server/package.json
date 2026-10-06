@@ -15,6 +15,7 @@
     "docs:build": "ts-node --transpile-only scripts/build-partner-docs.ts",
     "seed:roles": "ts-node --transpile-only prisma/seed-roles.ts",
     "seed:vendors-staff": "ts-node --transpile-only prisma/seed-vendors-staff.ts",
+    "seed:accountant": "ts-node --transpile-only prisma/seed-accountant.ts",
     "seed:accounting": "ts-node --transpile-only prisma/seed-accounting.ts",
     "backfill:ledger": "ts-node --transpile-only src/scripts/backfill-ledger.ts",
     "backfill:carrier-collected-at": "ts-node --transpile-only src/scripts/backfill-carrier-delivered-collected-at.ts",

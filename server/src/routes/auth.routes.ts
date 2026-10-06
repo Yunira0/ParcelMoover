@@ -132,7 +132,8 @@ authRouter.get(
 authRouter.get(
   "/users/vendors/dropdown",
   authMiddleware,
-  authorizeRoles("super_admin", "admin", "sales", "vendor", "vendor_staff"),
+  // accountant: vendor picker for vendor COD settlements (Finance).
+  authorizeRoles("super_admin", "admin", "accountant", "sales", "vendor", "vendor_staff"),
   authReadLimiter,
   getVendorsDropdownController,
 );
@@ -146,7 +147,8 @@ authRouter.get(
 authRouter.get(
   "/users/riders",
   authMiddleware,
-  authorizeRoles("super_admin", "admin"),
+  // accountant: rider picker for rider COD settlements (Finance).
+  authorizeRoles("super_admin", "admin", "accountant"),
   authReadLimiter,
   getRidersController,
 );

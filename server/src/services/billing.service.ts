@@ -245,10 +245,24 @@ export async function updateVendorCreditLimit(
 // What a vendor statement `s` has actually moved so far. A settled one moved its
 // whole payable; a partially_paid one only its instalments, signed like the
 // payable (negative when the vendor was paying a shortfall in).
-const PAYOUT_SQL = Prisma.sql`CASE
+// Cash collected on a cancelled order is never billed or paid out (the pending
+// bill and statements skip it), so it stays out of the balance too - unless it
+// already went onto a statement before the cancellation, in which case the
+// payout that statement makes is counted and the collection must be as well.
+const COUNTED_COLLECTION_SQL = Prisma.sql`
+  p.status::text <> 'cancelled' OR EXISTS (
+    SELECT 1 FROM settlement_items si JOIN settlements s ON s.id = si.settlement_id
+     WHERE si.cod_collection_id = c.id AND s.payee_type = 'vendor' AND s.status::text <> 'cancelled')
+`;
+
+const MOVED_SQL = Prisma.sql`CASE
   WHEN s.status::text = 'settled' THEN s.payable_amount
   ELSE SIGN(COALESCE(s.payable_amount, s.amount)) * s.paid_amount
 END`;
+// A negative payable is the vendor paying a shortfall in, so it is a payment
+// received, not a negative payout. The balance is the same either way.
+const PAYOUT_SQL = Prisma.sql`GREATEST(${MOVED_SQL}, 0)`;
+const STATEMENT_PAYMENT_SQL = Prisma.sql`GREATEST(-(${MOVED_SQL}), 0)`;
 
 // One round trip for all four components. COD collected and delivery charges
 // both come off the same parcels join so they share a scope (soft-deleted
@@ -259,7 +273,7 @@ async function computeBalance(vendorId: string): Promise<VendorAccountBalance> {
   >(Prisma.sql`
     WITH parcel_totals AS (
       SELECT
-        COALESCE(SUM(c.collected_amount), 0) AS collected,
+        COALESCE(SUM(c.collected_amount) FILTER (WHERE ${COUNTED_COLLECTION_SQL}), 0) AS collected,
         COALESCE(SUM(p.delivery_charge) FILTER (WHERE ${EARNED_CHARGE_SQL}), 0) AS charges
       FROM parcels p
       LEFT JOIN cod_collections c ON c.parcel_id = p.id
@@ -281,6 +295,12 @@ async function computeBalance(vendorId: string): Promise<VendorAccountBalance> {
         FROM vendor_payments vp
         WHERE vp.vendor_id = ${vendorId}::uuid
           AND vp.status::text = 'verified'
+      ) + (
+        SELECT COALESCE(SUM(${STATEMENT_PAYMENT_SQL}), 0)
+        FROM settlements s
+        WHERE s.vendor_id = ${vendorId}::uuid
+          AND s.payee_type = 'vendor'
+          AND s.status::text IN ('settled', 'partially_paid')
       ) AS payments
     FROM parcel_totals pt
   `);
@@ -454,7 +474,7 @@ export async function listVendorBalances(
   >(Prisma.sql`
     WITH parcel_totals AS (
       SELECT p.vendor_id,
-             COALESCE(SUM(c.collected_amount), 0) AS collected,
+             COALESCE(SUM(c.collected_amount) FILTER (WHERE ${COUNTED_COLLECTION_SQL}), 0) AS collected,
              COALESCE(SUM(p.delivery_charge) FILTER (WHERE ${EARNED_CHARGE_SQL}), 0) AS charges
       FROM parcels p
       LEFT JOIN cod_collections c ON c.parcel_id = p.id
@@ -462,7 +482,9 @@ export async function listVendorBalances(
       GROUP BY p.vendor_id
     ),
     payout_totals AS (
-      SELECT s.vendor_id, COALESCE(SUM(${PAYOUT_SQL}), 0) AS payouts
+      SELECT s.vendor_id,
+             COALESCE(SUM(${PAYOUT_SQL}), 0) AS payouts,
+             COALESCE(SUM(${STATEMENT_PAYMENT_SQL}), 0) AS statement_payments
       FROM settlements s
       WHERE s.payee_type = 'vendor' AND s.status::text IN ('settled', 'partially_paid') AND s.vendor_id IS NOT NULL
       GROUP BY s.vendor_id
@@ -483,7 +505,7 @@ export async function listVendorBalances(
            COALESCE(pt.collected, 0) AS collected,
            COALESCE(pt.charges, 0)   AS charges,
            COALESCE(po.payouts, 0)   AS payouts,
-           COALESCE(pm.payments, 0)  AS payments,
+           COALESCE(pm.payments, 0) + COALESCE(po.statement_payments, 0) AS payments,
            COALESCE(pm.pending, 0)   AS pending
     FROM vendors v
     LEFT JOIN parcel_totals  pt ON pt.vendor_id = v.id

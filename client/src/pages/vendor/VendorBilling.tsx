@@ -165,6 +165,8 @@ const VendorBilling: React.FC = () => {
           <div className="billing-grid">
             <section className="billing-card">
               <h3>Account balance</h3>
+              {/* Every term of the balance, so the lines add up to the total
+                  shown. Payouts can be negative (statements where you paid us). */}
               <div className="billing-breakdown">
                 <div>
                   <span>COD collected</span>
@@ -174,11 +176,30 @@ const VendorBilling: React.FC = () => {
                   <span>Delivery charges</span>
                   <span className="billing-debit">-{formatCurrency(status.deliveryCharges)}</span>
                 </div>
+                <div>
+                  <span>COD paid out to you</span>
+                  <span className={status.payouts > 0 ? 'billing-debit' : ''}>
+                    {status.payouts >= 0 ? '-' : '+'}
+                    {formatCurrency(Math.abs(status.payouts))}
+                  </span>
+                </div>
+                <div>
+                  <span>Your payments</span>
+                  <span>+{formatCurrency(status.paymentsReceived)}</span>
+                </div>
                 <div className="billing-breakdown-total">
-                  <span>Due delivery charge</span>
-                  <span className={owed > 0 ? 'billing-debit' : ''}>{formatCurrency(owed)}</span>
+                  <span>{owed > 0 ? 'Due delivery charge' : 'Balance in your favour'}</span>
+                  <span className={owed > 0 ? 'billing-debit' : ''}>
+                    {formatCurrency(owed > 0 ? owed : status.balance)}
+                  </span>
                 </div>
               </div>
+              {owed === 0 && status.balance > 0 && (
+                <p className="billing-hint">
+                  Paid out to you through your COD statements, including any delivery charges you
+                  paid here in advance.
+                </p>
+              )}
               <CreditUsageBar
                 balance={status.balance}
                 creditLimit={status.creditLimit}

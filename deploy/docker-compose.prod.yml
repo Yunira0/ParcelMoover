@@ -37,7 +37,7 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  app:
+  app: &app
     image: ${APP_IMAGE:-parcelmoover:latest}
     restart: always
     depends_on:
@@ -52,6 +52,8 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       NODE_ENV: production
+      # Two release slots share Postgres; leave room for migrations/admin.
+      DB_POOL_MAX: ${DB_POOL_MAX:-30}
       TRUST_PROXY: "true"
       # Nginx reaches the container through Docker's private gateway, not the
       # container's loopback interface. Trust only local/private proxy hops;
@@ -69,6 +71,12 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+  app-green:
+    <<: *app
+    profiles: [deployment]
+    ports:
+      - "127.0.0.1:3001:3000"
 
 volumes:
   # The live production data was created by earlier compose runs under the

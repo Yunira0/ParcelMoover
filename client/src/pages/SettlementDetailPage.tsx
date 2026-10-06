@@ -319,6 +319,7 @@ function buildStatementHtml(detail: SettlementDetail): string {
       <div><span>Total COD</span><span>${money(totals.cod)}</span></div>
       <div><span>Collected COD</span><span>${money(totals.collected)}</span></div>
       <div><span>Delivery Charges</span><span>${money(totals.deliveryCharge)}</span></div>
+      ${detail.vendorCreditApplied ? `<div><span>Prepaid charges returned</span><span>+${money(detail.vendorCreditApplied)}</span></div>` : ''}
       <div class="payable"><span>${detail.payeeType === 'rider' ? 'Receivable Amount' : 'Payable Amount'}</span><span>${money(detail.payableAmount)}</span></div>
     </div>
   </body></html>`;
@@ -360,7 +361,7 @@ const SettlementDetailPage: React.FC = () => {
     return () => clearTimeout(timer);
   }, [banner]);
 
-  const canPay = hasAnyRole(['super_admin', 'admin']);
+  const canPay = hasAnyRole(['super_admin', 'admin', 'accountant']);
   // Correcting a mistake — gated by the delegable EDIT_SETTLEMENTS permission,
   // same pattern as MANAGE_USERS/SETTINGS_ACCESS. Also covers reverting a
   // settled statement back to pending, since it's the same "fix a mistake"
@@ -760,6 +761,14 @@ const SettlementDetailPage: React.FC = () => {
                   <span>Delivery Charges</span>
                   <span>{money(totals.deliveryCharge)}</span>
                 </div>
+                {/* Charges the vendor already paid through Billing, handed back
+                    so they are not deducted twice. Included in the payable. */}
+                {detail.vendorCreditApplied ? (
+                  <div>
+                    <span>Prepaid charges returned</span>
+                    <span>+{money(detail.vendorCreditApplied)}</span>
+                  </div>
+                ) : null}
                 <div className="sdp-totals-payable">
                   <span>{detail.payeeType === 'rider' ? 'Receivable Amount' : 'Payable Amount'}</span>
                   <span>{money(detail.payableAmount)}</span>

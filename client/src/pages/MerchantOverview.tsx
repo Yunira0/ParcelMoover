@@ -11,6 +11,7 @@ import PageHeader from '../components/PageHeader';
 import {
   getMerchantOverview,
   fetchMerchantOrders,
+  fetchAllMerchantOrders,
   MERCHANT_METRIC_STATUSES,
   MERCHANT_METRIC_SETTLEMENT,
   type MerchantMetricKey,
@@ -253,8 +254,7 @@ const MerchantOverview: React.FC = () => {
       } else {
         const statusFilter = activeCard ? (MERCHANT_METRIC_STATUSES[activeCard] ?? undefined) : undefined;
         const settlementFilter = activeCard ? (MERCHANT_METRIC_SETTLEMENT[activeCard] ?? undefined) : undefined;
-        const res = await fetchMerchantOrders(filters, { pageSize: 100, withArrival: true, status: statusFilter ?? undefined, settlement: settlementFilter ?? undefined });
-        rows = res.data;
+        rows = await fetchAllMerchantOrders(filters, { status: statusFilter ?? undefined, settlement: settlementFilter ?? undefined });
       }
     } catch {
       rows = selectedIds.size > 0 ? selectedOrders : orders;

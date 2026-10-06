@@ -43,6 +43,12 @@ export interface PendingCodBill {
     deliveryCharges: number;
     payableAmount: number;
   };
+  /**
+   * Orders leave this bill once they are put on a statement, but they are not
+   * paid until that statement is. What those open statements still owe (negative
+   * when the vendor owes us), so this page can account for the dashboard figure.
+   */
+  onStatements: { count: number; outstanding: number };
 }
 
 export interface OrderCodItem {
@@ -226,6 +232,8 @@ export interface UnsettledOrdersResult {
   totalCod: number;
   totalDeliveryCharge: number;
   totalNetPayable: number;
+  /** Vendor leg only: prepaid delivery charges a new statement would hand back. */
+  availableCredit: number;
 }
 
 export interface SettlementDetailItem {
@@ -276,6 +284,8 @@ export interface SettlementDetailResult {
   createdAt: string;
   amount: number;
   payableAmount: number;
+  /** Delivery charges the vendor prepaid through Billing, handed back here. Included in payableAmount. */
+  vendorCreditApplied: number;
   /** Total recorded so far across every instalment. */
   paidAmount: number;
   /** ABS(payableAmount) - paidAmount — what the payee is still owed. */

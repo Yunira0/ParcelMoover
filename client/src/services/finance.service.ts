@@ -28,6 +28,8 @@ export interface PendingCodBill {
     deliveryCharges: number;
     payableAmount: number;
   };
+  /** Open statements' unpaid balance (negative = you owe). Optional: older cached payloads lack it. */
+  onStatements?: { count: number; outstanding: number };
 }
 
 export type CodPaymentFilter = 'settled' | 'not_settled';
@@ -314,6 +316,8 @@ export interface UnsettledOrdersResult {
   totalCod: number;
   totalDeliveryCharge: number;
   totalNetPayable: number;
+  /** Vendor leg: charges prepaid through Billing that the next statement hands back. */
+  availableCredit?: number;
 }
 
 export const getUnsettledOrders = async (
@@ -368,6 +372,8 @@ export interface SettlementDetail {
   createdAt: string;
   amount: number;
   payableAmount: number;
+  /** Delivery charges prepaid through Billing, handed back on this statement. Inside payableAmount. */
+  vendorCreditApplied?: number;
   /** Total recorded so far across every instalment. */
   paidAmount: number;
   /** What the payee is still owed. */

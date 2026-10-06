@@ -7,7 +7,7 @@ import Table from '../../components/Table';
 import Button from '../../components/Button';
 import FileField from '../../components/FileField';
 import Pagination from '../../components/Pagination';
-import { getCurrentUserLocationId, getCurrentUserRoles, isAdminSide, isBranchWorkspaceUser } from '../../utils/auth';
+import { getCurrentUserLocationId, hasAnyRole, isAccountantUser, isAdminSide, isBranchWorkspaceUser } from '../../utils/auth';
 import { formatCurrency } from '../../utils/format';
 import { toBsDate } from '../../utils/nepaliDate';
 import CreditUsageBar from '../../components/CreditUsageBar';
@@ -37,11 +37,12 @@ const PAYMENT_STATUS_LABEL: Record<BranchPayment['status'], string> = {
 
 const BranchBilling: React.FC = () => {
   const [searchParams] = useSearchParams();
-  const isSuperAdmin = getCurrentUserRoles().includes('super_admin');
+  // Office-wide branch billing (every balance, thresholds, QR): super_admin or accountant.
+  const isSuperAdmin = hasAnyRole(['super_admin', 'accountant']);
   const isBranchWorkspace = isBranchWorkspaceUser();
   // Master workspace = head-office admin side, not merely "not a branch user":
   // a non-admin who slips past routing must not land on the office queue.
-  const isMasterWorkspace = isAdminSide() && !isBranchWorkspace;
+  const isMasterWorkspace = (isAdminSide() || isAccountantUser()) && !isBranchWorkspace;
   const hasAssignedBranch = Boolean(getCurrentUserLocationId());
   const requestedTab = searchParams.get('tab');
   // ?tab=branches opens the balances table directly — the dashboard's branch
