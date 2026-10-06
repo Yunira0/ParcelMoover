@@ -396,10 +396,21 @@ async function computeDashboardSummary(
         AND p.status::text IN ('delivered', 'partially_delivered', 'returned_to_vendor')
         ${codScopeSql}
     `),
+    // Counted over the same parcels as the amounts above (collected, at a
+    // delivered / returned status), so "N parcels with COD" describes the
+    // figure beside it - not every order still awaiting payment.
     prisma.cod_collections.count({
-      where: riderId
-        ? { ...codWhere, rider_payment_status: "pending", collected_amount: { gt: 0 } }
-        : { ...codWhere, payment_status: "pending" },
+      where: {
+        ...(riderId
+          ? { ...codWhere, rider_payment_status: "pending" as const, collected_amount: { gt: 0 } }
+          : { ...codWhere, payment_status: "pending" as const }),
+        collected_at: { not: null },
+        parcels: {
+          ...(branchOr ?? {}),
+          deleted_at: null,
+          status: { in: ["delivered", "partially_delivered", "returned_to_vendor"] },
+        },
+      },
     }),
     // The last money actually paid out: an instalment, so a part payment counts
     // and the date is when it was paid rather than when the statement was cut.

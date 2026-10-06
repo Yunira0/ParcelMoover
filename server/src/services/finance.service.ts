@@ -87,6 +87,9 @@ export async function invalidateRiderFinanceCache(riderId: string): Promise<void
   try {
     await scanAndDelete(`finance:rider:${riderId}:*`);
     await scanAndDelete(`finance:all:rider:*`);
+    // A branch-scoped admin's rider list is cached per branch (see
+    // listSettlements' scopeKey) and holds every rider of that branch.
+    await scanAndDelete(`finance:branch:*`);
   } catch (error) {
     console.error("[Redis] Failed to invalidate finance cache:", error);
   }
@@ -325,7 +328,7 @@ export async function getPendingCodBill(actor: Actor, vendorIdParam?: string): P
     totals: {
       totalCod,
       deliveryCharges,
-      payableAmount: totalCod - deliveryCharges,
+      payableAmount: round2(totalCod - deliveryCharges),
     },
     onStatements: { count: openStatements.length, outstanding: onStatementsOutstanding },
   };
