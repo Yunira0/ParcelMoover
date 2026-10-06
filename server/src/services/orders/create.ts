@@ -251,7 +251,8 @@ async function _createOrderImpl(
   //  2. Vendor orders from Imadol price by the vendor's rate model
   //     (per-destination / zone / flat).
   //  3. Non-vendor orders fall back to the legacy origin→destination route rate.
-  //  4. Otherwise a manually supplied charge, else 0.
+  //  4. Otherwise (no vendor and no origin) a manually supplied charge, else 0.
+  //     A destination is always present here - it is required above.
   // Return orders are charged the return percent of the normal rate for the path taken.
   const originIsBranch = Boolean(
     resolvedOriginLocationId && masterHubId && resolvedOriginLocationId !== masterHubId,
