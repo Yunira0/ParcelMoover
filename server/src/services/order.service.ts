@@ -3503,6 +3503,9 @@ async function reconcileCodCollectionOnStatusChange(
   if (currentStatus === newStatus) return;
   const leavingCollected = COD_COLLECTED_STATUSES.includes(currentStatus);
   const enteringCollected = COD_COLLECTED_STATUSES.includes(newStatus);
+  // Continuing a partial delivery does not reverse the cash already collected,
+  // including cash in a settlement. Both single and bulk updates use this helper.
+  if (currentStatus === "partially_delivered" && !enteringCollected) return;
   if (!leavingCollected && !enteringCollected) return;
 
   // Lock the row so a concurrent createSettlement/updateSettlement (which
