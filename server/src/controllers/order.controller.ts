@@ -810,6 +810,7 @@ export async function dashboardSummaryController(req: Request, res: Response) {
         codFromPmRider: 0,
         codFromNcm: 0,
         codFromUpaya: 0,
+        codFromBranches: 0,
         pendingDeliveryCharge: 0,
         deliveryCharge: 0,
         progressPercent: 0,

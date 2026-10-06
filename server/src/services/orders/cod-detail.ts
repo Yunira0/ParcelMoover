@@ -1,6 +1,7 @@
 import { Prisma } from "../../generated/prisma/client";
 import prisma from "../../lib/prisma";
 import { getActorScope, branchHandlesSql } from "./scope";
+import { resolveBranchCoverageIds } from "../../lib/branchScope";
 
 /**
  * Lateral subquery (joined as `pp`, correlated on `c.id`): the fraction of this
@@ -28,6 +29,48 @@ export const PART_PAID_FRACTIONS_SQL = Prisma.sql`
  * less the carrier's charge) less its share of what the statement has paid.
  */
 export const CARRIER_OWED_SQL = Prisma.sql`CASE WHEN c.carrier_payment_status::text = 'paid' THEN 0 ELSE COALESCE(pp.carrier_item_owed, c.collected_amount) END`;
+/**
+ * Lateral subquery (joined as `bs`, correlated on `p.id`): the share of this
+ * parcel's COD a branch has already passed on to head office. Settled branch
+ * statement = all of it; part-paid = its paid fraction; otherwise none.
+ */
+export const BRANCH_CLEARED_SQL = Prisma.sql`
+  SELECT CASE
+    WHEN s.status::text = 'settled' THEN 1
+    WHEN s.status::text = 'partially_paid' THEN LEAST(COALESCE(s.paid_amount / NULLIF(s.net_payable, 0), 1), 1)
+    ELSE 0
+  END AS frac
+  FROM branch_settlement_items bsi
+  JOIN branch_settlements s ON s.id = bsi.settlement_id
+  WHERE bsi.parcel_id = p.id`;
+
+/**
+ * Cash sitting at a branch (needs `pp` and `bs`): what the branch's riders have
+ * remitted to it, less what the branch has passed on to head office. Cash a
+ * rider has not remitted yet is still the rider's, under PM-Rider, so nothing
+ * is counted twice.
+ */
+export const BRANCH_HELD_SQL = Prisma.sql`GREATEST(
+  LEAST(c.rider_remitted_amount + c.collected_amount * pp.rider_frac, c.collected_amount)
+    - c.collected_amount * COALESCE(bs.frac, 0),
+  0)`;
+
+/**
+ * Which collections can be held at a branch: branch COD (reached its branch on
+ * a transit manifest, not 3PL-delivered) outside Imadol's own coverage, since
+ * Imadol is head office and has no branch to remit through.
+ */
+export async function branchHeldFilterSql(): Promise<Prisma.Sql> {
+  const master = await prisma.locations.findFirst({
+    where: { code: { equals: "IMADOL", mode: "insensitive" }, parent_id: null, is_hub: true, is_active: true },
+    select: { id: true },
+  });
+  const masterCoverage = master ? await resolveBranchCoverageIds(master.id) : [];
+  return Prisma.sql`c.carrier_code IS NULL
+    AND EXISTS (SELECT 1 FROM transit_manifest_parcels tmp WHERE tmp.parcel_id = p.id)
+    AND NOT (p.destination_location_id = ANY(${masterCoverage}::uuid[]))`;
+}
+
 import type { OrderActor } from "./types";
 
 // ── COD settlement detail (drill-down from the dashboard card) ──────────────
@@ -39,6 +82,7 @@ export const COD_DETAIL_BUCKETS = [
   "pm-rider",
   "ncm",
   "upaya",
+  "branches",
   "delivery-charge",
 ] as const;
 export type CodDetailBucket = (typeof COD_DETAIL_BUCKETS)[number];
@@ -108,7 +152,9 @@ export async function getCodSettlementDetail(
           ? Prisma.sql`AND c.rider_id IS NOT NULL AND r.carrier_code IS NULL AND c.carrier_code IS NULL AND (c.collected_amount - ${riderSettledSql}) > 0`
           : bucket === "ncm" || bucket === "upaya"
             ? Prisma.sql`AND c.carrier_code = ${bucket} AND (${CARRIER_OWED_SQL}) > 0`
-            : Prisma.empty; // 'total' and 'delivery-charge': every in-scope row
+            : bucket === "branches"
+              ? Prisma.sql`AND ${await branchHeldFilterSql()} AND ${BRANCH_HELD_SQL} > 0`
+              : Prisma.empty; // 'total' and 'delivery-charge': every in-scope row
 
   // Each bucket's rows must add up to the exact figure on the card, so the
   // per-row amount is the bucket's own measure - the gross collection for
@@ -123,7 +169,9 @@ export async function getCodSettlementDetail(
           ? Prisma.sql`c.collected_amount - ${riderSettledSql}`
           : bucket === "ncm" || bucket === "upaya"
             ? CARRIER_OWED_SQL
-            : bucket === "delivery-charge"
+            : bucket === "branches"
+              ? BRANCH_HELD_SQL
+              : bucket === "delivery-charge"
               ? Prisma.sql`p.delivery_charge`
               : pendingExprSql;
 
@@ -162,6 +210,7 @@ export async function getCodSettlementDetail(
     LEFT JOIN vendors v ON v.id = c.vendor_id
     LEFT JOIN riders r ON r.id = c.rider_id
     LEFT JOIN LATERAL (${PART_PAID_FRACTIONS_SQL}) pp ON TRUE
+    LEFT JOIN LATERAL (${BRANCH_CLEARED_SQL}) bs ON TRUE
     WHERE p.deleted_at IS NULL
       -- Same scope as the dashboard summary, so rows add up to its cards.
       AND c.collected_at IS NOT NULL

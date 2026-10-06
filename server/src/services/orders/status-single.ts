@@ -22,7 +22,7 @@ import {
   RIDER_ASSIGNMENT_FIELD,
   TERMINAL_STATUSES,
   assertRiderOwnsLeg,
-  destinationSkipsTransit,
+  makeSkipsTransitResolver,
   isUndelivering,
   pickupStampFor,
   releasesPickupRider,
@@ -200,16 +200,19 @@ async function _updateParcelStatusImpl(
       );
     }
 
-    // From "arrived", destination decides whether the parcel skips Transit
-    // (inside valley + fringe areas) or must go through it (everywhere else) —
+    // From "arrived", the origin branch's coverage decides whether the parcel
+    // skips Transit (destination covered) or must go through it (elsewhere) —
     // only one of the two branch-allowed next statuses is actually valid.
     if (currentStatus === "arrived" && (newStatus === "ready_to_deliver" || newStatus === "oov")) {
-      const skipsTransit = destinationSkipsTransit(parcel.locations_parcels_destination_location_idTolocations);
+      const skipsTransit = await makeSkipsTransitResolver()(
+        parcel.origin_location_id,
+        parcel.locations_parcels_destination_location_idTolocations,
+      );
       if (skipsTransit && newStatus === "oov") {
-        throw new AppError(422, "Destination is inside the valley: this parcel must go to 'Ready to Deliver', not 'Transit'.");
+        throw new AppError(422, "Destination is in this branch's coverage area: this parcel must go to 'Ready to Deliver', not 'Transit'.");
       }
       if (!skipsTransit && newStatus === "ready_to_deliver") {
-        throw new AppError(422, "Destination is outside the valley: this parcel must go to 'Transit' first.");
+        throw new AppError(422, "Destination is outside this branch's coverage area: this parcel must go to 'Transit' first.");
       }
     }
     if (currentStatus === "arrived_at_branch" && newStatus === "oov") {

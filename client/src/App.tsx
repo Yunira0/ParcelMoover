@@ -149,7 +149,7 @@ function App() {
               the waybill table, scoped by a merchant picker and date range. */}
           <Route
             path="/merchant-overview"
-            element={<RoleGuard allowedRoles={['super_admin', 'admin']}><MerchantOverview /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'accountant']}><MerchantOverview /></RoleGuard>}
           />
           {/* Branch Tracking — cross-hub monitoring. Default super_admin only;
               a super_admin may grant a branch admin BRANCH_TRACKING_READ (or
@@ -157,14 +157,14 @@ function App() {
               holding every adminPermission, so the READ gate covers both. */}
           <Route
             path="/branches"
-            element={<RoleGuard allowedRoles={['super_admin', 'admin']} adminPermission="BRANCH_TRACKING_READ"><BranchOverview /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'accountant']} adminPermission="BRANCH_TRACKING_READ"><BranchOverview /></RoleGuard>}
           />
           {/* Per-rider read of the orders list — the same ten roll-up figures
               plus the waybill table as Vendor Overview, scoped by a rider
               picker and date range instead of a vendor. */}
           <Route
             path="/rider-overview"
-            element={<RoleGuard allowedRoles={['super_admin', 'admin']}><RiderOverview /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'accountant']}><RiderOverview /></RoleGuard>}
           />
           {/* Per-sales-rep read of the orders list — scoped to every vendor a
               sales rep owns (vendors.sales_user_id) instead of one vendor.
@@ -225,7 +225,7 @@ function App() {
               any future role added to the system. */}
           <Route
             path="/orders/track/:trackingId"
-            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'vendor', 'vendor_staff', 'sales', 'rider']}><OrderDetailPage /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'accountant', 'vendor', 'vendor_staff', 'sales', 'rider']}><OrderDetailPage /></RoleGuard>}
           />
           <Route
             path="/admin"
@@ -432,19 +432,19 @@ function App() {
           />
           <Route
             path="/finance/carrier-cod"
-            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'accountant']}><CarrierCodPage /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'accountant']} adminPermission="ACCOUNTING_ACCESS"><CarrierCodPage /></RoleGuard>}
           />
           <Route
             path="/finance/carrier-cod/new"
-            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'accountant']}><CarrierSettlementCreatePage /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'accountant']} adminPermission="ACCOUNTING_ACCESS"><CarrierSettlementCreatePage /></RoleGuard>}
           />
           <Route
             path="/finance/carrier-cod/:id"
-            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'accountant']}><CarrierSettlementDetailPage /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'accountant']} adminPermission="ACCOUNTING_ACCESS"><CarrierSettlementDetailPage /></RoleGuard>}
           />
           <Route
             path="/finance/carrier-cod/:id/pay"
-            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'accountant']}><CarrierSettlementPayPage /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'accountant']} adminPermission="ACCOUNTING_ACCESS"><CarrierSettlementPayPage /></RoleGuard>}
           />
           <Route
             path="/finance/pending-cod"

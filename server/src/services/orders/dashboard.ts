@@ -25,7 +25,7 @@ import {
   AWAITING_PICKUP_STATUSES,
   IN_DELIVERY_STATUSES,
 } from "./status-shared";
-import { CARRIER_OWED_SQL, PART_PAID_FRACTIONS_SQL } from "./cod-detail";
+import { BRANCH_CLEARED_SQL, BRANCH_HELD_SQL, CARRIER_OWED_SQL, PART_PAID_FRACTIONS_SQL, branchHeldFilterSql } from "./cod-detail";
 import type { OrderActor } from "./types";
 import { branchCodParcelSql } from "./branchCod";
 
@@ -335,6 +335,7 @@ async function computeDashboardSummary(
     COUNT(DISTINCT h.parcel_id) FILTER (WHERE h.created_at >= ${start} AND h.created_at < ${end}) AS ${Prisma.raw(`d${i}_returned`)}
   `);
 
+  const branchHeldFilter = await branchHeldFilterSql();
   const [todaysRemarks, unclosedComments, codRows, pendingCodCount, lastSettlement, returnedTodayRows, trendReturnedRows] = await Promise.all([
     prisma.parcel_remarks.count({
       where: { created_at: { gte: todayStart }, parcels: parcelWhere },
@@ -353,6 +354,7 @@ async function computeDashboardSummary(
         cod_from_pm_rider: string;
         cod_from_ncm: string;
         cod_from_upaya: string;
+        cod_from_branches: string;
         pending_delivery_charge: string;
         total_delivery_charge: string;
       }>
@@ -376,6 +378,9 @@ async function computeDashboardSummary(
           FILTER (WHERE c.carrier_code = 'ncm'), 0) AS cod_from_ncm,
         COALESCE(SUM(${CARRIER_OWED_SQL})
           FILTER (WHERE c.carrier_code = 'upaya'), 0) AS cod_from_upaya,
+        -- Cash riders handed to a branch that the branch has not yet passed
+        -- on to head office (BRANCH_HELD_SQL).
+        COALESCE(SUM(${BRANCH_HELD_SQL}) FILTER (WHERE ${branchHeldFilter}), 0) AS cod_from_branches,
         -- Cleared by the same fraction as the COD above, so the vendor card's
         -- net pending (COD - charge) drops by exactly what was paid out.
         COALESCE(SUM(p.delivery_charge * (1 - pp.vendor_frac)) FILTER (WHERE c.payment_status::text = 'pending'), 0) AS pending_delivery_charge,
@@ -384,6 +389,7 @@ async function computeDashboardSummary(
       JOIN parcels p ON p.id = c.parcel_id
       LEFT JOIN riders r ON r.id = c.rider_id
       LEFT JOIN LATERAL (${PART_PAID_FRACTIONS_SQL}) pp ON TRUE
+      LEFT JOIN LATERAL (${BRANCH_CLEARED_SQL}) bs ON TRUE
       WHERE p.deleted_at IS NULL
         -- returned_to_vendor is in scope alongside the delivery statuses: an
         -- RTV/RTO parcel collected no COD (contributes 0 to the cash figures)
@@ -396,10 +402,21 @@ async function computeDashboardSummary(
         AND p.status::text IN ('delivered', 'partially_delivered', 'returned_to_vendor')
         ${codScopeSql}
     `),
+    // Counted over the same parcels as the amounts above (collected, at a
+    // delivered / returned status), so "N parcels with COD" describes the
+    // figure beside it - not every order still awaiting payment.
     prisma.cod_collections.count({
-      where: riderId
-        ? { ...codWhere, rider_payment_status: "pending", collected_amount: { gt: 0 } }
-        : { ...codWhere, payment_status: "pending" },
+      where: {
+        ...(riderId
+          ? { ...codWhere, rider_payment_status: "pending" as const, collected_amount: { gt: 0 } }
+          : { ...codWhere, payment_status: "pending" as const }),
+        collected_at: { not: null },
+        parcels: {
+          ...(branchOr ?? {}),
+          deleted_at: null,
+          status: { in: ["delivered", "partially_delivered", "returned_to_vendor"] },
+        },
+      },
     }),
     // The last money actually paid out: an instalment, so a part payment counts
     // and the date is when it was paid rather than when the statement was cut.
@@ -450,8 +467,8 @@ async function computeDashboardSummary(
   const pendingCod = Math.max(totalCod - settledCod, 0);
 
   // Cash currently outstanding, split by who's holding it - shown on the
-  // dashboard card under one "COD to collect from riders" heading, broken
-  // down by carrier beneath it. NCM's figure is a proxy (no NCM
+  // dashboard card under one "COD still to collect" heading, broken
+  // down by who holds it beneath it. NCM's figure is a proxy (no NCM
   // remittance-to-office column exists): it clears the moment the vendor leg
   // settles, same as the rest of "pending" does. The parent total is the sum
   // of the identified carriers, not an independent all-rider_id-null figure -
@@ -460,7 +477,9 @@ async function computeDashboardSummary(
   const codFromPmRider = Number(codRow?.cod_from_pm_rider ?? 0);
   const codFromNcm = Number(codRow?.cod_from_ncm ?? 0);
   const codFromUpaya = Number(codRow?.cod_from_upaya ?? 0);
-  const codFromRiders = codFromPmRider + codFromNcm + codFromUpaya;
+  // A rider's card is about the cash in their own hands, not their branch's.
+  const codFromBranches = riderId ? 0 : Number(codRow?.cod_from_branches ?? 0);
+  const codFromRiders = codFromPmRider + codFromNcm + codFromUpaya + codFromBranches;
 
   // Delivery charge on orders whose COD hasn't been settled to the vendor
   // yet - this is deducted from collected_amount at settlement time (see
@@ -709,6 +728,7 @@ async function computeDashboardSummary(
       codFromPmRider,
       codFromNcm,
       codFromUpaya,
+      codFromBranches,
       deliveryCharge,
       pendingCodCount,
       pendingDeliveryCharge,

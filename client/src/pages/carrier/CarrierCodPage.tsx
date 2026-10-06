@@ -116,6 +116,7 @@ const CarrierCodPage: React.FC = () => {
               { value: 'settled', label: 'Settled' },
               { value: 'partially_paid', label: 'Partially paid' },
               { value: 'pending', label: 'Pending' },
+              { value: 'cancelled', label: 'Cancelled' },
             ]}
           />
         </label>

@@ -20,7 +20,7 @@ import {
 } from "./scope";
 import {
   HUB_OPERATION_STATUSES, RETURN_WORKFLOW_STATUSES, OPS_RESTRICTED_STATUSES,
-  RIDER_ASSIGNMENT_FIELD, destinationSkipsTransit, assertRiderOwnsLeg,
+  RIDER_ASSIGNMENT_FIELD, makeSkipsTransitResolver, assertRiderOwnsLeg,
   DELIVERY_RIDER_HELD_STATUSES, TERMINAL_STATUSES,
   REASON_REQUIRED_STATUSES, releasesPickupRider,
   POST_PICKUP_STATUSES,
@@ -353,6 +353,8 @@ async function _bulkUpdateParcelStatusImpl(
     return { updatedCount: 0, status: newStatus, alreadyUpToDate: alreadyDoneCount };
   }
 
+  // One resolver for the batch: each origin branch's coverage is looked up once.
+  const skipsTransitFor = makeSkipsTransitResolver();
   for (const parcel of parcels) {
     const currentStatus = parcel.status as ParcelStatus;
     if (!canForceStatus && TERMINAL_STATUSES.includes(currentStatus as parcel_status)) {
@@ -372,15 +374,18 @@ async function _bulkUpdateParcelStatusImpl(
         );
       }
 
-      // From "arrived", destination decides whether the parcel skips Transit
-      // (inside valley + fringe areas) or must go through it (everywhere else).
+      // From "arrived", the origin branch's coverage decides whether the parcel
+      // skips Transit (destination covered) or must go through it (elsewhere).
       if (currentStatus === "arrived" && (newStatus === "ready_to_deliver" || newStatus === "oov")) {
-        const skipsTransit = destinationSkipsTransit(parcel.locations_parcels_destination_location_idTolocations);
+        const skipsTransit = await skipsTransitFor(
+          parcel.origin_location_id,
+          parcel.locations_parcels_destination_location_idTolocations,
+        );
         if (skipsTransit && newStatus === "oov") {
-          throw new AppError(422, `Parcel ${parcel.tracking_id}: destination is inside the valley, must go to 'Ready to Deliver', not 'Transit'.`);
+          throw new AppError(422, `Parcel ${parcel.tracking_id}: destination is in this branch's coverage area, must go to 'Ready to Deliver', not 'Transit'.`);
         }
         if (!skipsTransit && newStatus === "ready_to_deliver") {
-          throw new AppError(422, `Parcel ${parcel.tracking_id}: destination is outside the valley, must go to 'Transit' first.`);
+          throw new AppError(422, `Parcel ${parcel.tracking_id}: destination is outside this branch's coverage area, must go to 'Transit' first.`);
         }
       }
       if (currentStatus === "arrived_at_branch" && newStatus === "oov") {

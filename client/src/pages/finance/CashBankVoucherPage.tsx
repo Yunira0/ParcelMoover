@@ -7,10 +7,13 @@ import NepaliDatePicker from '../../components/NepaliDatePicker';
 import PartyPicker, { type PartyKind, type PickedParty } from '../accounting/PartyPicker';
 import {
   createManualEntry,
+  isPostableByHand,
   listAccounts,
   type Account,
 } from '../../services/accounting.service';
 import { formatMoney } from '../../utils/format';
+import { todayNepalAd } from '../../utils/nepaliDate';
+import { useBackOr } from '../../hooks/useBackOr';
 import '../../components/finance/tally.css';
 import '../accounting/Accounting.css';
 
@@ -54,6 +57,7 @@ const COPY: Record<VoucherType, {
 
 const CashBankVoucherPage: React.FC = () => {
   const navigate = useNavigate();
+  const goBack = useBackOr('/finance/cash-bank');
   const [searchParams, setSearchParams] = useSearchParams();
 
   const typeParam = searchParams.get('type');
@@ -61,7 +65,7 @@ const CashBankVoucherPage: React.FC = () => {
 
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [cashBankAccounts, setCashBankAccounts] = useState<Account[]>([]);
-  const [entryDate, setEntryDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [entryDate, setEntryDate] = useState(todayNepalAd);
   const [primaryCode, setPrimaryCode] = useState('');
   const [counterCode, setCounterCode] = useState('');
   const [amount, setAmount] = useState('');
@@ -74,10 +78,12 @@ const CashBankVoucherPage: React.FC = () => {
 
   useEffect(() => {
     listAccounts()
-      .then((rows) => setAccounts(rows.filter((account) => account.isActive)))
+      .then((rows) => setAccounts(rows.filter((account) => account.isActive && isPostableByHand(account))))
       .catch((err) => setError(err));
+    // Active only: a deactivated bank account must not be offered as the
+    // account money moved through.
     listAccounts('cash_bank')
-      .then(setCashBankAccounts)
+      .then((rows) => setCashBankAccounts(rows.filter((account) => account.isActive)))
       .catch((err) => setError(err));
   }, []);
 
@@ -111,23 +117,29 @@ const CashBankVoucherPage: React.FC = () => {
       .map((account) => ({ id: account.code, label: `${account.name} · ${account.code}` }));
   }, [type, accounts, cashBankAccounts]);
 
-  const subledger = byCode.get(counterCode)?.subledgerType ?? null;
+  const counter = byCode.get(counterCode);
+  const subledger = counter?.subledgerType ?? null;
   const partyKinds: PartyKind[] =
     subledger === 'vendor' || subledger === 'rider' ? [subledger] : ['rider', 'vendor', 'user'];
+  // Only a control account (vendor payable, rider COD) needs someone named -
+  // the server refuses those lines without one. Rent or a bank charge has no
+  // rider, vendor or user to pick, so elsewhere it is optional.
+  const partyRequired = Boolean(counter?.isControl);
 
   const selectCounter = (code: string) => {
     setCounterCode(code);
     setParty(null);
   };
 
-  const value = Number(amount) || 0;
+  // Whole paisa, so what posts is the figure the preview shows.
+  const value = Math.round((Number(amount) || 0) * 100) / 100;
   const canSave =
     Boolean(primaryCode) &&
     Boolean(counterCode) &&
     primaryCode !== counterCode &&
     value > 0 &&
     narration.trim().length >= 3 &&
-    Boolean(party) &&
+    (!partyRequired || Boolean(party)) &&
     !saving;
 
   const primaryAccount = byCode.get(primaryCode);
@@ -195,7 +207,7 @@ const CashBankVoucherPage: React.FC = () => {
     { key: 'F6', label: 'Receipt', onSelect: () => setType('receipt'), primary: type === 'receipt' },
     { key: 'F8', label: 'Ledger', onSelect: () => navigate(`/finance/ledger/${primaryCode}`), disabled: !primaryCode },
     { key: 'F9', label: saving ? 'Posting…' : 'Post', onSelect: () => void submit(), disabled: !canSave },
-    { key: 'Escape', label: 'Cancel', onSelect: () => navigate(-1) },
+    { key: 'Escape', label: 'Cancel', onSelect: goBack },
   ];
 
   return (
@@ -239,7 +251,7 @@ const CashBankVoucherPage: React.FC = () => {
           <div className="form-group" style={{ gridColumn: '1 / -1' }}>
             <label>
               {copy.partyLabel}
-              <span className="required">*</span>
+              {partyRequired ? <span className="required">*</span> : <span className="tly-muted"> (optional)</span>}
             </label>
             <PartyPicker types={partyKinds} value={party} onChange={setParty} prompt="" />
           </div>
@@ -300,7 +312,7 @@ const CashBankVoucherPage: React.FC = () => {
         )}
 
         <div className="tly-form-actions">
-          <Button type="button" variant="outline" onClick={() => navigate(-1)}>
+          <Button type="button" variant="outline" onClick={goBack}>
             Cancel
           </Button>
           <Button type="submit" variant="primary" disabled={!canSave}>

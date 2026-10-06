@@ -128,7 +128,7 @@ function parseDateParam(raw: unknown, label: string): { error?: string; date?: D
 }
 
 const VALID_PAYEE_TYPES = ["rider", "vendor"];
-const VALID_SETTLEMENT_STATUSES = ["pending", "settled", "cancelled"];
+const VALID_SETTLEMENT_STATUSES = ["pending", "partially_paid", "settled", "cancelled"];
 
 export async function listSettlementsController(req: Request, res: Response) {
   try {
@@ -180,6 +180,11 @@ export async function listSettlementsController(req: Request, res: Response) {
     }
     const trimmedSearch = search?.trim();
 
+    const dateField = req.query.dateField ?? "transfer";
+    if (dateField !== "transfer" && dateField !== "settled" && dateField !== "created") {
+      return res.status(400).json({ success: false, message: "dateField must be one of: transfer, settled, created" });
+    }
+
     const result = await listSettlements(
       { id: req.user.id, roles: req.user.roles },
       payeeType as "rider" | "vendor",
@@ -190,6 +195,7 @@ export async function listSettlementsController(req: Request, res: Response) {
       toDate,
       status as "pending" | "settled" | "cancelled" | undefined,
       trimmedSearch || undefined,
+      dateField,
     );
     return res.status(200).json({ success: true, ...result });
   } catch (error: any) {

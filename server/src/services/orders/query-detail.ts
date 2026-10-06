@@ -47,7 +47,9 @@ const ORDER_DETAIL_INCLUDE = {
 
 export async function getOrderByTrackingId(actor: OrderActor, trackingId: string) {
   const { vendorId, vendorIds, riderId, branchLocationIds } = await getActorScope(actor);
-  const isStaff = actor.roles.includes("super_admin") || actor.roles.includes("admin");
+  // Office view: the accountant reads orders as staff do, but never changes them.
+  const isStaff = actor.roles.some((role) => role === "super_admin" || role === "admin" || role === "accountant");
+  const canChangeStatus = actor.roles.some((role) => role === "super_admin" || role === "admin");
 
   const parcel = await prisma.parcels.findFirst({
     where: {
@@ -148,7 +150,7 @@ export async function getOrderByTrackingId(actor: OrderActor, trackingId: string
 
   return {
     ...mapOrder(parcel, isStaff, !!vendorId),
-    canChangeStatus: isStaff,
+    canChangeStatus,
     priceLog,
     redirectLog,
     voucher,

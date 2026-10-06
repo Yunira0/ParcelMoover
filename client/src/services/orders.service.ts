@@ -88,6 +88,9 @@ export interface Order {
   destinationLocationId?: string | null;
   /** "inside" | "outside" | null — the destination location's valley classification. */
   destinationValley?: string | null;
+  /** Arrived-at-origin parcels only: destination is in the arrival branch's
+   *  coverage, so it goes to Ready to Deliver rather than Transit. */
+  skipsTransit?: boolean;
   pieces: number;
   weightKg?: number;
   attemptCount: number;
@@ -337,8 +340,8 @@ export interface DashboardSummary {
     totalCod: number;
     settledCod: number;
     pendingCod: number;
-    /** codFromPmRider + codFromNcm (+ future 3PLs) - the umbrella "COD to
-     *  collect from riders" figure; carriers below break it down. */
+    /** codFromPmRider + codFromNcm + codFromUpaya + codFromBranches - the
+     *  umbrella "COD still to collect" figure; the lines below break it down. */
     codFromRiders: number;
     /** Cash a ParcelMoover rider has collected but not yet remitted to the office. */
     codFromPmRider: number;
@@ -346,6 +349,8 @@ export interface DashboardSummary {
     codFromNcm: number;
     /** Cash Upaya's placeholder rider is holding, not yet remitted to the office. */
     codFromUpaya: number;
+    /** Cash riders have handed to a branch that the branch has not yet passed on to head office. */
+    codFromBranches: number;
     /** Delivery charge owed on orders whose COD hasn't been settled yet. */
     pendingDeliveryCharge: number;
     /** Total delivery charges (office cut) on the delivered orders in the COD window. */
@@ -539,6 +544,7 @@ export const COD_DETAIL_BUCKETS = [
   'pm-rider',
   'ncm',
   'upaya',
+  'branches',
   'delivery-charge',
 ] as const;
 export type CodDetailBucket = (typeof COD_DETAIL_BUCKETS)[number];

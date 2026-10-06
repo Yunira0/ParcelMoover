@@ -16,7 +16,7 @@ export function writesCollection(from: parcel_status, to: parcel_status, hadPart
 
 /**
  * Throws 409 when any of these parcels' COD is already on a settlement
- * statement (either leg, any status) or marked paid. Statement items and
+ * statement (rider, vendor, carrier or branch; any status) or marked paid. Statement items and
  * remitted amounts are frozen copies of collected_amount, so a status change
  * that rewrites or voids that collection would leave the statement - or money
  * already paid out - disagreeing with the order behind it.
@@ -32,10 +32,18 @@ export async function assertCodNotSettled(parcelIds: string[], action: string): 
         { carrier_payment_status: "paid" },
         { settlement_items: { some: {} } },
         { carrier_settlement_item: { isNot: null } },
+        // A branch statement freezes the same collected amount. Cancelling one
+        // deletes its items, so membership alone means it is live.
+        { parcels: { branch_settlement_items: { some: {} } } },
       ],
     },
     select: {
-      parcels: { select: { tracking_id: true } },
+      parcels: {
+        select: {
+          tracking_id: true,
+          branch_settlement_items: { select: { settlement: { select: { statement_no: true } } }, take: 1 },
+        },
+      },
       settlement_items: { select: { settlements: { select: { statement_id: true, payee_type: true } } }, take: 1 },
       carrier_settlement_item: { select: { settlement: { select: { statement_no: true, carrier_code: true } } } },
     },
@@ -43,11 +51,14 @@ export async function assertCodNotSettled(parcelIds: string[], action: string): 
   if (!blocked) return;
   const stmt = blocked.settlement_items[0]?.settlements;
   const carrierStmt = blocked.carrier_settlement_item?.settlement;
+  const branchStmt = blocked.parcels.branch_settlement_items?.[0]?.settlement;
   const where = stmt
     ? `${stmt.payee_type} settlement ${stmt.statement_id}`
     : carrierStmt
       ? `${carrierStmt.carrier_code.toUpperCase()} statement ${carrierStmt.statement_no}`
-      : "a settled statement";
+      : branchStmt
+        ? `branch statement ${branchStmt.statement_no}`
+        : "a settled statement";
   throw new AppError(
     409,
     `Cannot ${action} ${blocked.parcels.tracking_id}: its COD is already in ${where}. Void or amend that statement first.`,

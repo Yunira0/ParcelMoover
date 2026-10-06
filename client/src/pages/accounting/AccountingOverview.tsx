@@ -20,6 +20,7 @@ const EMPTY_COD: DashboardSummary['codSettlement'] = {
   codFromPmRider: 0,
   codFromNcm: 0,
   codFromUpaya: 0,
+  codFromBranches: 0,
   pendingDeliveryCharge: 0,
   deliveryCharge: 0,
   progressPercent: 0,
@@ -54,7 +55,7 @@ const AccountingOverview: React.FC = () => (
   <div className="acc-page">
     <DashboardHeader user={getCurrentUser()?.fullName || ''} />
     <PageHeader
-      title="Accounting Overview"
+      title="Finance Overview"
     />
     {isAccountantUser() && <AccountantQueue />}
     <SummaryTab />

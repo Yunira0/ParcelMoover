@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { useParams } from 'react-router-dom';
 import { Banknote } from 'lucide-react';
 import Button from '../components/Button';
 import FormField from '../components/FormField';
@@ -9,6 +10,7 @@ import { Banner } from './accounting/ui';
 import { isSalesUser } from '../utils/auth';
 import {
   COD_REQUEST_STATUS_LABELS,
+  getCodSettlementRequestById,
   getCodSettlementRequests,
   isLiveCodRequest,
   updateCodSettlementRequestStatus,
@@ -81,10 +83,27 @@ const CodSettlementRequests: React.FC = () => {
     void load();
   }, [load]);
 
-  // Changing the status filter resets to the first page of the new result set.
+  // Notifications link to /cod-settlement-requests/:id. The request may be on
+  // any page of the list, so it is fetched on its own and pinned above it.
+  const { id: linkedId } = useParams();
+  const [linked, setLinked] = useState<CodSettlementRequest | null>(null);
   useEffect(() => {
+    if (!linkedId) {
+      setLinked(null);
+      return;
+    }
+    let active = true;
+    getCodSettlementRequestById(linkedId)
+      .then((response) => { if (active) setLinked(response.data); })
+      .catch((err) => { if (active) setError(apiErrorMessage(err, 'Could not open that request')); });
+    return () => { active = false; };
+  }, [linkedId, requests]);
+
+  // Changing the status filter resets to the first page of the new result set.
+  const changeStatus = (next: string) => {
+    setStatus(next);
     setPage(1);
-  }, [status]);
+  };
 
   // Settling/rejecting the last request on a page (other than the first)
   // leaves `page` pointing past the end of the now-shorter list, which reads
@@ -210,7 +229,7 @@ const CodSettlementRequests: React.FC = () => {
           label="STATUS"
           value={status}
           options={STATUS_FILTER_OPTIONS}
-          onChange={setStatus}
+          onChange={changeStatus}
           placeholder="All statuses"
         />
       </div>
@@ -287,7 +306,14 @@ const CodSettlementRequests: React.FC = () => {
         </section>
       )}
 
-      <Table columns={columns} data={requests} loading={loading} minWidth="1080px" />
+      {linked && (
+        <section className="cod-request-card">
+          <h2>{linked.requestNo}</h2>
+          <Table selectable={false} columns={columns} data={[linked]} minWidth="1080px" />
+        </section>
+      )}
+
+      <Table selectable={false} columns={columns} data={requests} loading={loading} minWidth="1080px" />
 
       <Pagination
         ariaLabel="COD settlement requests pagination"

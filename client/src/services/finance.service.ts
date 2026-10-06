@@ -129,6 +129,8 @@ export const getSettlements = async (
   toDate?: string,
   status?: SettlementStatusFilter,
   search?: string,
+  /** What fromDate/toDate filter on: payoff date (default) or creation date. */
+  dateField?: 'settled' | 'created',
 ): Promise<SettlementsListResponse> => {
   const response = await api.get('/finance/settlements', {
     params: {
@@ -140,6 +142,7 @@ export const getSettlements = async (
       ...(toDate ? { toDate } : {}),
       ...(status ? { status } : {}),
       ...(search ? { search } : {}),
+      ...(dateField ? { dateField } : {}),
     },
   });
   return response.data;

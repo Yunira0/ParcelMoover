@@ -94,19 +94,24 @@ const CODSettlement: React.FC<CODSettlementProps> = ({ data, loading = false }) 
         />
 
         {/* Umbrella heading, not a metric of its own: its figure is exactly the
-            sum of the carriers nested beneath it, so there's no separate set of
-            orders to drill into - each carrier owns its own. Future 3PLs slot
-            in here alongside NCM. */}
+            sum of the lines nested beneath it (who is holding the cash), so
+            there's no separate set of orders to drill into - each line owns
+            its own. Future 3PLs slot in here alongside NCM. */}
         <div className="settlement-row settlement-row--heading">
           <div className="status-label">
             <span className="status-dot rider"></span>
-            <span>COD to collect from riders</span>
+            <span>COD still to collect</span>
           </div>
           <span className="status-amount">{loading ? '...' : formatCurrency(data.codFromRiders)}</span>
         </div>
         <RowLink bucket="pm-rider" dot="pm-rider" amount={data.codFromPmRider} loading={loading} nested />
         <RowLink bucket="ncm" dot="ncm" amount={data.codFromNcm} loading={loading} nested />
         <RowLink bucket="upaya" dot="upaya" amount={data.codFromUpaya} loading={loading} nested />
+        {/* A rider's own card is about their own cash; branch holdings are not theirs. */}
+        {!data.scopedToRider && (
+          // `?? 0`: a summary cached just before this field existed lacks it.
+          <RowLink bucket="branches" dot="branches" amount={data.codFromBranches ?? 0} loading={loading} nested />
+        )}
 
         <RowLink
           bucket="delivery-charge"

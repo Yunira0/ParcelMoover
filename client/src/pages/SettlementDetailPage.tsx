@@ -14,7 +14,8 @@ import {
   type SettlementDetail,
   type SettlementDocument,
 } from '../services/finance.service';
-import { hasAnyRole, hasAdminPermission } from '../utils/auth';
+import { hasAnyRole, hasAdminPermission, isSalesUser, isVendorSide } from '../utils/auth';
+import { useBackOr } from '../hooks/useBackOr';
 import {
   hasSettlementPayments,
   isSettlementPayable,
@@ -338,6 +339,14 @@ const SettlementDetailPage: React.FC = () => {
   const [showEdit, setShowEdit] = useState(false);
   const [showRevert, setShowRevert] = useState(false);
   const [showCancel, setShowCancel] = useState(false);
+  // Each audience's own list, for when this statement was opened from a link.
+  const goBack = useBackOr(
+    isVendorSide()
+      ? '/finance/settlements'
+      : isSalesUser()
+        ? '/dashboard'
+        : `/accounting/transactions/${detail?.payeeType === 'vendor' ? 'vendor' : 'rider'}-cod`,
+  );
   const [tab, setTab] = useState<DetailTab>('billing');
   // Acknowledges a money-moving action that just completed - either handed in
   // via router state (a redirect from the pay flow) or set locally once a
@@ -471,7 +480,7 @@ const SettlementDetailPage: React.FC = () => {
   return (
     <div className="settlement-detail-page">
       <div className="settlement-detail-toolbar">
-        <Button variant="ghost" onClick={() => navigate(-1)}>
+        <Button variant="ghost" onClick={goBack}>
           <ArrowLeft size={16} /> Back
         </Button>
         <div className="settlement-detail-actions">

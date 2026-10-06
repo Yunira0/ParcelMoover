@@ -16,6 +16,7 @@ import {
 import { isCarrierCode, type CarrierCode } from "./carrier";
 import { resolveLabelSize } from "../vendorPrintSettings.service";
 import { buildOrdersWhere } from "./where";
+import { makeSkipsTransitResolver } from "./status-shared";
 import {
   PICKUP_LEG_STATUSES,
   getActorScope,
@@ -429,6 +430,25 @@ export type StatusTimestampMap = Map<string, Record<string, string>>;
 // attempt re-enters failed_delivery). The *first* entry is recorded, matching
 // how the arrival column has always behaved - "when did this parcel reach that
 // stage", not "when did it last bounce off it".
+// Parcels at "Arrived at Origin" carry skipsTransit, so the operations screen
+// offers Ready to Deliver or Transit by the same branch-coverage rule the
+// status update enforces.
+async function withTransitHints<T extends object>(
+  parcels: Array<{
+    status: string;
+    origin_location_id: string | null;
+    locations_parcels_destination_location_idTolocations?: { id: string; valley: string | null; name: string } | null;
+  }>,
+  orders: T[],
+): Promise<Array<T & { skipsTransit?: boolean }>> {
+  const resolve = makeSkipsTransitResolver();
+  return Promise.all(orders.map(async (order, i) => {
+    const p = parcels[i]!;
+    if (p.status !== "arrived") return order;
+    return { ...order, skipsTransit: await resolve(p.origin_location_id, p.locations_parcels_destination_location_idTolocations) };
+  }));
+}
+
 async function fetchStatusTimestampMap(parcelIds: string[]): Promise<StatusTimestampMap> {
   const map: StatusTimestampMap = new Map();
   if (parcelIds.length === 0) return map;
@@ -593,7 +613,8 @@ export async function listOrders(
   query: ListOrdersQuery = {},
 ): Promise<ListOrdersResult> {
   const { vendorId, vendorIds, riderId, branchLocationIds } = await getActorScope(actor);
-  const isStaff = actor.roles.includes("super_admin") || actor.roles.includes("admin");
+  // Office view: the accountant reads orders as staff do (it cannot write them).
+  const isStaff = actor.roles.some((role) => role === "super_admin" || role === "admin" || role === "accountant");
   // Own-vendor scope is set only for vendor / vendor_staff actors - never for
   // staff, sales or riders viewing the same parcels.
   const isOwnVendorViewer = !!vendorId;
@@ -655,7 +676,7 @@ export async function listOrders(
       isStaff ? fetchCarrierMap(parcels) : undefined,
     ]);
     const result: ListOrdersResult = {
-      data: parcels.map((p) => mapOrder(p, isStaff, isOwnVendorViewer, statusTimestamps, carriers)),
+      data: await withTransitHints(parcels, parcels.map((p) => mapOrder(p, isStaff, isOwnVendorViewer, statusTimestamps, carriers))),
       meta: {
         page: 1,
         pageSize: DEFAULT_LIST_CAP,
@@ -748,7 +769,7 @@ export async function listOrders(
   ]);
 
   return {
-    data: parcels.map((p) => mapOrder(p, isStaff, isOwnVendorViewer, keysetStatusTimestamps, keysetCarriers)),
+    data: await withTransitHints(parcels, parcels.map((p) => mapOrder(p, isStaff, isOwnVendorViewer, keysetStatusTimestamps, keysetCarriers))),
     meta: {
       page: pageHint,
       pageSize,

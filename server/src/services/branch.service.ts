@@ -410,8 +410,10 @@ export async function listBranchSettlements(actor: OrderActor, query: BranchSett
     prisma.branch_settlements.count({ where }),
     prisma.branch_settlements.findMany({ where, skip, take: query.pageSize, orderBy: [{ settlement_date: "desc" }, { created_at: "desc" }],
       include: { from_branch: { select: { name: true } }, to_branch: { select: { name: true } }, _count: { select: { items: true } } } }),
+    // A cancelled statement keeps its net_payable for the audit trail but owes
+    // nothing, so it must not inflate the outstanding total.
     prisma.branch_settlements.aggregate({
-      where: baseWhere,
+      where: { ...baseWhere, status: { not: "cancelled" } },
       _sum: { gross_cod: true, commission_amount: true, net_payable: true, paid_amount: true },
     }),
     prisma.branch_settlements.count({ where: { ...baseWhere, status: { in: ["pending", "partially_paid"] } } }),
@@ -421,7 +423,8 @@ export async function listBranchSettlements(actor: OrderActor, query: BranchSett
     settlementDate: s.settlement_date.toISOString().slice(0, 10), orderCount: s._count.items,
     grossCod: money(s.gross_cod), commissionAmount: money(s.commission_amount), netPayable: money(s.net_payable),
     commissionPerParcel: money(s.commission_per_parcel), status: s.status,
-    paidAmount: money(s.paid_amount), remainingAmount: money(s.net_payable) - money(s.paid_amount),
+    paidAmount: money(s.paid_amount),
+    remainingAmount: s.status === "cancelled" ? 0 : round2(money(s.net_payable) - money(s.paid_amount)),
     paymentMethod: s.payment_method, paymentBreakdown: paymentLines(s.payments), remark: s.remark,
   })),
   summary: {
@@ -429,7 +432,7 @@ export async function listBranchSettlements(actor: OrderActor, query: BranchSett
     commissionCredit: money(totals._sum.commission_amount),
     netPayable: money(totals._sum.net_payable),
     paid: money(totals._sum.paid_amount),
-    outstanding: money(totals._sum.net_payable) - money(totals._sum.paid_amount),
+    outstanding: round2(money(totals._sum.net_payable) - money(totals._sum.paid_amount)),
     pendingStatements,
   },
   meta: { page: query.page, pageSize: query.pageSize, total, totalPages: Math.max(1, Math.ceil(total / query.pageSize)) } };
@@ -677,7 +680,7 @@ export async function getBranchSettlementDetail(actor: OrderActor, settlementId:
     commissionAmount: money(settlement.commission_amount),
     netPayable,
     paidAmount,
-    remainingAmount: round2(netPayable - paidAmount),
+    remainingAmount: settlement.status === "cancelled" ? 0 : round2(netPayable - paidAmount),
     paymentMethod: settlement.payment_method,
     paymentBreakdown: paymentLines(settlement.payments),
     remark: settlement.remark,
