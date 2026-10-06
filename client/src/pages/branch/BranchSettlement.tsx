@@ -41,7 +41,7 @@ const BranchSettlement: React.FC = () => {
   const ownLocationId = getCurrentUserLocationId();
   const masterBranchId = branches.find((branch) => branch.code?.trim().toUpperCase() === 'IMADOL')?.id;
   const canCreateSettlement = isBranchWorkspace
-    || getCurrentUserRoles().includes('super_admin')
+    || getCurrentUserRoles().some((role) => role === 'super_admin' || role === 'accountant')
     || (Boolean(ownLocationId) && ownLocationId === masterBranchId);
 
   // Branch is the party filter (mirrors the rider/vendor filter on Rider COD);
@@ -159,6 +159,7 @@ const BranchSettlement: React.FC = () => {
               { value: 'pending', label: 'Pending' },
               { value: 'partially_paid', label: 'Partially paid' },
               { value: 'settled', label: 'Settled' },
+              { value: 'cancelled', label: 'Cancelled' },
             ]}
           />
         </label>
@@ -200,7 +201,9 @@ const BranchSettlement: React.FC = () => {
               <>
                 <span className="acc-stack">Paid {money(item.paidAmount)}</span>
                 <span className="acc-stack">
-                  {item.remainingAmount > 0 ? `Due ${money(item.remainingAmount)}` : 'Cleared'}
+                  {item.status === 'cancelled'
+                    ? 'Withdrawn'
+                    : item.remainingAmount > 0 ? `Due ${money(item.remainingAmount)}` : 'Cleared'}
                 </span>
               </>
             ),

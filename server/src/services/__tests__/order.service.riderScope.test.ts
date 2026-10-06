@@ -73,7 +73,8 @@ function makeMockTx() {
       updateMany: vi.fn().mockResolvedValue({ count: 1 }),
     },
     parcel_status_history: { create: vi.fn(), createMany: vi.fn() },
-    parcel_remarks: { create: vi.fn(), createMany: vi.fn() },
+    parcel_remarks: { create: vi.fn(), createMany: vi.fn(), findFirst: vi.fn().mockResolvedValue(null) },
+    riders: { findUnique: vi.fn().mockResolvedValue(null) },
     audit_logs: { create: vi.fn(), createMany: vi.fn() },
     cod_collections: { upsert: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
     run_sheets: {

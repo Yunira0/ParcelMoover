@@ -21,6 +21,7 @@ const ROLE_LABELS: Record<string, string> = {
   super_admin: 'Super Admin',
   admin: 'Admin',
   sales: 'Sales',
+  accountant: 'Accountant',
   vendor: 'Vendor',
   vendor_staff: 'Vendor Staff',
   rider: 'Rider',

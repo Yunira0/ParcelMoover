@@ -10,7 +10,12 @@ import { createBranchSettlement, getBranchOrders } from '../../services/branchTr
 import { apiErrorMessage } from '../../utils/serverValidation';
 import { downloadExcel, type CellValue } from '../../utils/excel';
 import { getCurrentUserLocationId, isBranchWorkspaceUser } from '../../utils/auth';
+import { todayNepalAd } from '../../utils/nepaliDate';
+
+/** The order picker's page; the API caps it here. */
+const ORDER_PAGE_SIZE = 100;
 import '../SettlementCreatePage.css';
+import ReceiverPhones from '../../components/ReceiverPhones';
 
 const SectionHeader: React.FC<{ icon: React.ReactNode; title: string; description: string }> = ({
   icon,
@@ -48,12 +53,13 @@ const BranchSettlementCreatePage: React.FC = () => {
   // commission rate. Both are locked here and re-enforced on the server.
   const [fromBranch, setFromBranch] = useState(isBranchWorkspace && ownLocationId ? ownLocationId : '');
   const toBranch = masterBranchId;
-  const [settlementDate, setSettlementDate] = useState(new Date().toISOString().split('T')[0]);
+  const [settlementDate, setSettlementDate] = useState(todayNepalAd);
   const [commissionPerParcel, setCommissionPerParcel] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
   const [orders, setOrders] = useState<Order[]>([]);
+  const [moreOrders, setMoreOrders] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string | number>>(new Set());
   const [loadingOrders, setLoadingOrders] = useState(false);
 
@@ -63,6 +69,8 @@ const BranchSettlementCreatePage: React.FC = () => {
     async (signal: AbortSignal) => {
       if (!fromBranch) {
         setOrders([]);
+        setMoreOrders(false);
+        setSelectedIds(new Set());
         return;
       }
       setLoadingOrders(true);
@@ -73,15 +81,21 @@ const BranchSettlementCreatePage: React.FC = () => {
           toBranchId: fromBranch,
           metric: 'pendingDeposit',
           availableForSettlement: true,
-          pageSize: 100,
+          pageSize: ORDER_PAGE_SIZE,
         }, signal);
         const list = Array.isArray(res.data) ? res.data : [];
         setOrders(list);
+        setMoreOrders(list.length >= ORDER_PAGE_SIZE);
         setSelectedIds(new Set(list.map((o) => o.id)));
+        setError('');
       } catch {
+        // A superseded request (branch changed again) is not a load failure.
+        if (signal.aborted) return;
+        setOrders([]);
+        setSelectedIds(new Set());
         setError('Failed to load unsettled orders collected by this branch.');
       } finally {
-        setLoadingOrders(false);
+        if (!signal.aborted) setLoadingOrders(false);
       }
     },
     [fromBranch],
@@ -168,20 +182,21 @@ const BranchSettlementCreatePage: React.FC = () => {
   const exportRows = selectedOrders.length > 0 ? selectedOrders : orders;
   const downloadOrdersExcel = async () => {
     if (exportRows.length === 0) return;
-    const headers = ['SN', 'Order ID', 'Tracking ID', 'Receiver', 'Receiver Phone', 'Destination', 'COD', 'Commission', 'Net Payable'];
+    const headers = ['SN', 'Order ID', 'Tracking ID', 'Receiver', 'Receiver Phone', 'Alternate Number', 'Destination', 'COD', 'Commission', 'Net Payable'];
     const rows: CellValue[][] = exportRows.map((o, i) => [
       i + 1,
       `#${o.orderNumber}`,
       o.trackingId,
       o.receiverName,
-      o.receiverPhone,
+      o.receiverPhone || '',
+      o.receiverAlternatePhone || '',
       o.destination || '-',
       o.collectedAmount,
       commission,
       Math.max(0, o.collectedAmount - commission),
     ]);
     rows.push([
-      '', '', '', '', '', '',
+      '', '', '', '', '', '', '',
       exportRows.reduce((s, o) => s + o.collectedAmount, 0),
       exportRows.reduce((s, o) => s + Math.min(commission, o.collectedAmount), 0),
       exportRows.reduce((s, o) => s + Math.max(0, o.collectedAmount - commission), 0),
@@ -202,7 +217,7 @@ const BranchSettlementCreatePage: React.FC = () => {
       ),
       width: '190px',
     },
-    { header: 'NUMBER', accessor: (o: Order) => o.receiverPhone, width: '120px' },
+    { header: 'NUMBER', accessor: (o: Order) => <ReceiverPhones phone={o.receiverPhone} alternate={o.receiverAlternatePhone} />, width: '120px' },
     { header: 'DESTINATION', accessor: (o: Order) => o.destination || '-', width: '130px' },
     { header: 'COLLECTED', accessor: (o: Order) => <CodCell codAmount={o.collectedAmount} />, width: '110px' },
     {
@@ -290,7 +305,7 @@ const BranchSettlementCreatePage: React.FC = () => {
           </div>
         </section>
 
-        {(fromBranch || toBranch) && (
+        {fromBranch && (
           <section className="scp-section">
             <div className="scp-section-bar">
               <SectionHeader
@@ -322,6 +337,11 @@ const BranchSettlementCreatePage: React.FC = () => {
               emptyMessage="No unsettled COD orders were delivered by this branch."
               minWidth="1100px"
             />
+            {moreOrders && (
+              <p className="scp-subtext">
+                Showing the first {ORDER_PAGE_SIZE} unsettled orders. Create this statement, then add another for the rest.
+              </p>
+            )}
             {selectedOrders.length > 0 && (
               <div className="scp-summary">
                 <span>{selectedOrders.length} order{selectedOrders.length > 1 ? 's' : ''} selected</span>

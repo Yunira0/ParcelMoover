@@ -11,13 +11,14 @@ export const ADMIN_PERMISSIONS = [
   // Read the system audit logs - they expose actor identity and raw
   // before/after payloads across every entity, so this is a real grant.
   "SYSTEM_LOGS_ACCESS",
-  // Edit an unsettled (not yet paid) COD statement - add/remove orders to
-  // correct a mistake before money moves. Also covers reverting an already
-  // settled statement back to pending, to undo a mistaken payment record.
+  // Money corrections: edit, cancel or revert a COD statement (add/remove
+  // orders before it is paid, undo a mistaken payment), and correct the COD
+  // on a delivered/RTV/RTO parcel that is not yet on a statement.
   "EDIT_SETTLEMENTS",
   // The whole Finance section: reading the books (journal, account ledgers,
   // trial balance, party subledgers, P&L and balance sheet), writing to them
-  // (expenses, manual entries, reversals) and closing a BS month.
+  // (expenses, manual entries, reversals), closing a BS month, and editing the
+  // chart of accounts and opening balances (Masters).
   //
   // Reading, writing and closing were three separate grants once. They are one
   // now because nobody was ever given the reports without also being given the
@@ -26,14 +27,13 @@ export const ADMIN_PERMISSIONS = [
   // financial picture of the business across every vendor and rider, so it is
   // delegated deliberately, the same reasoning as SYSTEM_LOGS_ACCESS.
   "ACCOUNTING_ACCESS",
-  // Correct the COD amount on a delivered/RTV/RTO parcel - otherwise locked
-  // once a parcel reaches a terminal-ish status. Still blocked once the
-  // parcel's COD has actually been paid out to the vendor.
-  "EDIT_COD_LOCKED",
   // Cross-branch operational visibility. WRITE includes READ in
   // hasAdminPermission so a writer never needs both strings persisted.
   "BRANCH_TRACKING_READ",
   "BRANCH_TRACKING_WRITE",
+  // Force a parcel into any status from any status, bypassing the transition
+  // map and the terminal-state lock - the same override a super_admin has.
+  "FORCE_STATUS_CHANGE",
 ] as const;
 
 export type AdminPermission = (typeof ADMIN_PERMISSIONS)[number];

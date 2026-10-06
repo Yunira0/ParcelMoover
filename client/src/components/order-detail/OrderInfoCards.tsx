@@ -30,7 +30,7 @@ interface OrderInfoCardsProps {
    * identity and charge come from elsewhere (vendor profile / redirect flow). */
   editable?: boolean;
   /** Overrides `editable` for the COD field only — super_admin / an admin
-   * holding EDIT_COD_LOCKED may still fix COD on an otherwise-locked
+   * holding EDIT_SETTLEMENTS may still fix COD on an otherwise-locked
    * (delivered/RTV/RTO) parcel. Falls back to `editable` when unset. */
   codEditable?: boolean;
   /** Set (with editable false) when editing is only temporarily locked, e.g.
@@ -225,11 +225,11 @@ const OrderInfoCards: React.FC<OrderInfoCardsProps> = ({
       .finally(() => setDestinationLoading(false));
   };
 
-  const receiverPatch = (next: { name?: string; phone?: string; address?: string }): UpdateOrderInput => ({
+  const receiverPatch = (next: { name?: string; phone?: string; alternatePhone?: string; address?: string }): UpdateOrderInput => ({
     receiver: {
       name: next.name ?? receiverName,
       phone: next.phone ?? receiverPhone,
-      alternatePhone: receiverAlternatePhone || undefined,
+      alternatePhone: (next.alternatePhone ?? receiverAlternatePhone) || undefined,
       address: next.address ?? receiverAddress ?? '',
     },
   });
@@ -299,6 +299,28 @@ const OrderInfoCards: React.FC<OrderInfoCardsProps> = ({
           >
             <p className="od-details-phone">{receiverPhone}</p>
           </EditableValue>
+          {(receiverAlternatePhone || editable) && (
+            <EditableValue
+              editable={editable}
+              value={receiverAlternatePhone || ''}
+              type="tel"
+              ariaLabel="receiver alternate phone"
+              className="od-details-phone"
+              onCommit={(draft) => {
+                if (draft && !/^\+?[0-9]{10,15}$/.test(draft)) return 'Enter 10–15 digits.';
+                if (draft === (receiverAlternatePhone || '')) return null;
+                request({
+                  label: 'Receiver alternate phone',
+                  oldDisplay: receiverAlternatePhone || '—',
+                  newDisplay: draft || '—',
+                  patch: receiverPatch({ alternatePhone: draft }),
+                });
+                return null;
+              }}
+            >
+              <p className="od-details-phone">{receiverAlternatePhone || '—'}</p>
+            </EditableValue>
+          )}
           <EditableValue
             editable={editable}
             value={receiverAddress || ''}

@@ -102,7 +102,7 @@ describe('campaign reads', () => {
   it('exports codes as CSV', async () => {
     db.voucher_campaigns.findUnique.mockResolvedValue({ id: 'camp1', code_prefix: 'DASH' });
     db.$queryRaw.mockResolvedValue([
-      { id: 'v1', code: 'DASH-AAAAAA', is_active: true, expires_at: new Date('2026-10-01'), claim_state: null, claimed_at: null, business_name: null, client_name: null },
+      { id: 'v1', code: 'DASH-AAAAAA', is_active: true, expires_at: new Date(Date.now() + 86400000), claim_state: null, claimed_at: null, business_name: null, client_name: null },
     ]);
     const { filename, csv } = await campaignCodesCsv(admin, campId);
     expect(filename).toBe('dash-codes.csv');

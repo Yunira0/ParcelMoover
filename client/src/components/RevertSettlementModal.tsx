@@ -10,6 +10,8 @@ interface RevertSettlementModalProps {
   // statement that was never paid (pending -> cancelled), releasing its orders
   // for a future statement. Same remark-required confirmation UX either way.
   mode?: 'revert' | 'cancel';
+  // Overrides the vendor/rider statement endpoint, e.g. for a branch statement.
+  submit?: (settlementId: string, remark: string) => Promise<unknown>;
   onClose: () => void;
   onSuccess: () => void;
 }
@@ -48,6 +50,7 @@ const RevertSettlementModal: React.FC<RevertSettlementModalProps> = ({
   settlementId,
   statementId,
   mode = 'revert',
+  submit,
   onClose,
   onSuccess,
 }) => {
@@ -67,7 +70,7 @@ const RevertSettlementModal: React.FC<RevertSettlementModalProps> = ({
 
     setLoading(true);
     try {
-      const action = mode === 'revert' ? revertSettlement : cancelSettlement;
+      const action = submit ?? (mode === 'revert' ? revertSettlement : cancelSettlement);
       await action(settlementId, remark.trim());
       onSuccess();
       onClose();

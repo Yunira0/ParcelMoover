@@ -280,7 +280,7 @@ export async function getRemarkById(actor: Actor, id: string) {
           id: true,
           tracking_id: true,
           parties_parcels_sender_idToparties: { select: { name: true, phone: true } },
-          parties_parcels_receiver_idToparties: { select: { name: true, phone: true } },
+          parties_parcels_receiver_idToparties: { select: { name: true, phone: true, alternate_phone: true } },
         },
       },
     },
@@ -304,6 +304,7 @@ export async function getRemarkById(actor: Actor, id: string) {
     senderPhone: remark.parcels.parties_parcels_sender_idToparties.phone,
     receiverName: remark.parcels.parties_parcels_receiver_idToparties.name,
     receiverPhone: remark.parcels.parties_parcels_receiver_idToparties.phone,
+    receiverAlternatePhone: remark.parcels.parties_parcels_receiver_idToparties.alternate_phone || "",
     thread: thread.map((entry) => {
       const stripped = stripCarrierStaffTag(entry.remark);
       const parentStripped = entry.parent_remark ? stripCarrierStaffTag(entry.parent_remark.remark) : null;

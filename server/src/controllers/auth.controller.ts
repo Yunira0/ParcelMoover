@@ -1,4 +1,4 @@
-import express, { Request, Response } from "express";
+import { Request, Response } from "express";
 import {
   changePassword,
   loginUser,
@@ -74,9 +74,10 @@ export const registerUserController = async (req: Request, res: Response) => {
       licenceDocPath: docPath(files?.licenceDoc?.[0]),
       bluebookDocPath: docPath(files?.bluebookDoc?.[0]),
       businessCertDocPath: docPath(files?.businessCertDoc?.[0]),
+      agreementDocPath: docPath(files?.agreementDoc?.[0]),
     });
 
-    return sendSuccess(res, 201, `${result.role} registered successfully`, {
+return sendSuccess(res, 201, `${result.role} registered successfully`, {
       user: {
         id: result.user.id,
         fullName: result.user.full_name,
@@ -182,6 +183,7 @@ export const updateManagedUserController = async (req: Request, res: Response) =
       licenceDocPath: docPath(files?.licenceDoc?.[0]),
       bluebookDocPath: docPath(files?.bluebookDoc?.[0]),
       businessCertDocPath: docPath(files?.businessCertDoc?.[0]),
+      agreementDocPath: docPath(files?.agreementDoc?.[0]),
     });
 
     return sendSuccess(res, 200, "User updated successfully");
@@ -525,8 +527,16 @@ export const getVendorsController = async (req: Request, res: Response) => {
           }),
           prisma.cod_collections.groupBy({
             by: ["vendor_id"],
-            where: { vendor_id: { in: vendorIds }, payment_status: "pending" },
-            _sum: { pending_amount: true },
+            // Same basis as the vendor's Pending COD bill: delivered/collected,
+            // not cancelled, not yet bundled into a vendor statement.
+            where: {
+              vendor_id: { in: vendorIds },
+              payment_status: "pending",
+              collected_at: { not: null },
+              settlement_items: { none: { settlements: { payee_type: "vendor" } } },
+              parcels: { status: { not: "cancelled" } },
+            },
+            _sum: { collected_amount: true },
           }),
           // last_ordered_at is never denormalised onto vendors, so derive the
           // most recent order date per vendor straight from their parcels.
@@ -552,7 +562,7 @@ export const getVendorsController = async (req: Request, res: Response) => {
     const codByVendor = new Map<string, number>();
     for (const row of codSums) {
       if (!row.vendor_id) continue;
-      codByVendor.set(row.vendor_id, Number(row._sum.pending_amount || 0));
+      codByVendor.set(row.vendor_id, Number(row._sum.collected_amount || 0));
     }
 
     const lastOrderByVendor = new Map<string, Date>();

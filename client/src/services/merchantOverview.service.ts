@@ -1,5 +1,5 @@
 import api from '../utils/api';
-import { getOrders, type Order, type ParcelStatus } from './orders.service';
+import { getAllOrders, getOrders, type Order, type ParcelStatus } from './orders.service';
 
 /**
  * Merchant Overview: the stats cards are server-side aggregated (no row cap,
@@ -78,8 +78,8 @@ export const MERCHANT_METRIC_STATUSES: Record<MerchantMetricKey, ParcelStatus[] 
   holdOrder: ['hold'],
   cancelledOrders: ['cancelled'],
   deliveryCharge: ['delivered', 'partially_delivered'],
-  deposited: ['delivered', 'partially_delivered'],
-  pendingDeposit: ['delivered', 'partially_delivered'],
+  deposited: ['delivered', 'partially_delivered', 'returned_to_vendor'],
+  pendingDeposit: ['delivered', 'partially_delivered', 'returned_to_vendor'],
 };
 
 /** Authentic settlement filter for Deposited/Pending — deposited = in a settled settlement (has items), pending = delivered not yet settled */
@@ -128,3 +128,18 @@ export const fetchMerchantOrders = async (
   });
   return { data: res.data, meta: res.meta };
 };
+
+/** Every order behind the current cards/filters - for exports, which must not stop at one page. */
+export const fetchAllMerchantOrders = (
+  filters: MerchantOverviewFilters,
+  opts: { status?: ParcelStatus[]; settlement?: 'settled' | 'pending' } = {},
+): Promise<Order[]> =>
+  getAllOrders({
+    vendorId: filters.vendorId ? [filters.vendorId] : undefined,
+    ...(opts.status?.length ? { status: opts.status } : {}),
+    ...(opts.settlement ? { settlement: opts.settlement } : {}),
+    ...(filters.dateFrom || filters.dateTo ? { dateField: 'createdAt' as const } : {}),
+    ...(filters.dateFrom ? { dateFrom: filters.dateFrom } : {}),
+    ...(filters.dateTo ? { dateTo: filters.dateTo } : {}),
+    withArrival: true,
+  });

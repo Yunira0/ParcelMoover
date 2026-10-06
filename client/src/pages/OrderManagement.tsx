@@ -11,10 +11,12 @@ import {
   RotateCcw,
   Search,
   Shuffle,
+  Forward,
   Trash2,
   X,
 } from 'lucide-react';
 import RedirectOrderModal from '../components/RedirectOrderModal';
+import ForwardOrderModal from '../components/ForwardOrderModal';
 import ConfirmDialog from '../components/ConfirmDialog';
 import '../components/Modal.css';
 import '../components/FormField.css';
@@ -28,9 +30,9 @@ import FilterDropdown from '../components/FilterDropdown';
 import MultiFilterDropdown from '../components/MultiFilterDropdown';
 import MultiFilterDropdownAsync from '../components/MultiFilterDropdownAsync';
 import QuickRemarkPopup from '../components/QuickRemarkPopup';
-import { toBsDate, toBsDateTime, toBsDateTimeCell } from '../utils/nepaliDate';
-import { STATUS_TIMELINE_HEADERS, statusTimelineCells } from '../utils/orderStatus';
-import { downloadExcel } from '../utils/excel';
+import { toBsDate, toBsDateTime } from '../utils/nepaliDate';
+import { CARRIER_LABELS } from '../utils/orderStatus';
+import { downloadOrdersExcel } from '../utils/orderExport';
 import NepaliDatePicker from '../components/NepaliDatePicker';
 import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react';
 import {
@@ -39,6 +41,7 @@ import {
   getOrderCountsByStatus,
   type OrderCountsByStatus,
   redirectOrder,
+  forwardOrder,
   trashOrder,
   updateOrderStatus,
   subscribeToOrderStatusChanged,
@@ -53,12 +56,14 @@ import {
 } from '../services/orders.service';
 import { searchVendors, getAllAdmins } from '../services/users.service';
 import { printLabels } from '../utils/printLabels';
-import { getCurrentUserRoles } from '../utils/auth';
+import { getCurrentUserRoles, hasAdminPermission, isAccountantUser } from '../utils/auth';
 import { apiErrorMessage } from '../utils/serverValidation';
 import { FAILED_RECOVERY_LABEL, isRecoverableFailure, recoveryTargetFor } from '../utils/failedRecovery';
 import { commitScannedTerm, handleScannerPaste } from '../utils/scannerInput';
 import { useCursorPagination } from '../hooks/useCursorPagination';
 import './OrderManagement.css';
+import { formatReceiverPhones } from '../utils/format';
+import ReceiverPhones from '../components/ReceiverPhones';
 
 // Mirrors REDIRECT_ALLOWED_STATUSES in order.service.ts — once a parcel is
 // delivered, cancelled or in the RTO chain, its destination is history.
@@ -124,12 +129,13 @@ const TAB_GROUPS: Record<FilterTab, ParcelStatus[]> = {
   all: [],
   // Everything still waiting to be picked up: ordered + rider assigned.
   ready_to_pick: ['pickup_ordered', 'rider_assigned'],
-  inprogress: ['picked_up', 'arrived', 'ready_to_deliver', 'sent_for_delivery', 'oov', 'dispatched', 'arrived_at_branch', 'hold', 'failed_delivery'],
+  // Tabs partition the statuses: every order sits under exactly one tab.
+  inprogress: ['picked_up', 'arrived', 'ready_to_deliver', 'sent_for_delivery', 'oov', 'dispatched', 'arrived_at_branch', 'hold'],
   delivered: ['delivered', 'partially_delivered'],
   failed: ['failed_pickup', 'failed_delivery', 'loss_and_damage'],
   // Returns still being worked: not yet handed back to the vendor.
   return_process: ['follow_up', 'ready_to_return', 'sent_to_vendor'],
-  rtv: ['follow_up', 'ready_to_return', 'sent_to_vendor', 'returned_to_vendor'],
+  rtv: ['returned_to_vendor'],
   cancelled: ['cancelled'],
 };
 
@@ -194,7 +200,7 @@ const matchesKeyword = (order: Order, keyword: string) => {
     order.receiverName,
     order.riderName,
     order.senderPhone,
-    order.receiverPhone,
+    formatReceiverPhones(order.receiverPhone, order.receiverAlternatePhone),
     order.trackingId,
     `#${order.orderNumber}`,
     String(order.orderNumber),
@@ -559,10 +565,8 @@ const OrderManagement: React.FC = () => {
   // updates, scans) the same way the table refreshes itself.
   useEffect(() => subscribeToOrderStatusChanged(() => loadStatusCounts()), [loadStatusCounts]);
 
-  // Tabs are overlapping status groups (failed_delivery sits in both Inprogress
-  // and Failed; Return process is a subset of RTV), so each badge sums its own
-  // group's statuses rather than partitioning one total between them. "All" has
-  // an empty group by convention and counts every status instead.
+  // Each badge sums its own group's statuses. "All" has an empty group by
+  // convention and counts every status instead.
   const tabCounts = useMemo(() => {
     if (!statusCounts) return null;
     const total = Object.values(statusCounts).reduce((sum, n) => sum + n, 0);
@@ -723,15 +727,21 @@ const OrderManagement: React.FC = () => {
 
   // Redirect (customer moved) — admin/super_admin only, matching the server route.
   const canRedirect = getCurrentUserRoles().some((r) => ['super_admin', 'admin'].includes(r));
+  // The accountant reads orders only; the remark API refuses it.
+  const readOnlyRemarks = isAccountantUser();
   const [redirectOrderRow, setRedirectOrderRow] = useState<Order | null>(null);
   const [redirectSaving, setRedirectSaving] = useState(false);
   const [redirectError, setRedirectError] = useState('');
+  // Forwarding charge on a delivered parcel — same admin gate as redirect.
+  const [forwardOrderRow, setForwardOrderRow] = useState<Order | null>(null);
+  const [forwardSaving, setForwardSaving] = useState(false);
+  const [forwardError, setForwardError] = useState('');
 
-  // super_admin only: force a parcel into any status from the list, ignoring
-  // the transition map (the server grants the same bypass to super_admin
-  // actors) — mirrors the override control on OrderDetailPage.tsx, just
-  // reachable from the row menu instead of a per-order visit.
-  const isSuperAdmin = getCurrentUserRoles().includes('super_admin');
+  // super_admin or FORCE_STATUS_CHANGE: force a parcel into any status from
+  // the list, ignoring the transition map (the server grants the same bypass)
+  // — mirrors the override control on OrderDetailPage.tsx, just reachable
+  // from the row menu instead of a per-order visit.
+  const canForceStatus = hasAdminPermission('FORCE_STATUS_CHANGE');
   const [statusEditOrder, setStatusEditOrder] = useState<Order | null>(null);
   const [statusEditNewStatus, setStatusEditNewStatus] = useState<ParcelStatus | ''>('');
   const [statusEditRemarks, setStatusEditRemarks] = useState('');
@@ -781,6 +791,26 @@ const OrderManagement: React.FC = () => {
       setRedirectError(err?.response?.data?.message ?? 'Failed to redirect order');
     } finally {
       setRedirectSaving(false);
+    }
+  };
+
+  const handleForward = async (data: {
+    destinationLocationId: string;
+    forwardingCharge: number;
+    reason?: string;
+  }) => {
+    if (!forwardOrderRow) return;
+    try {
+      setForwardSaving(true);
+      setForwardError('');
+      await forwardOrder(forwardOrderRow.id, data);
+      setForwardOrderRow(null);
+      setNotice(`Forwarding charge added to order ${forwardOrderRow.trackingId}.`);
+      await loadOrders();
+    } catch (err: any) {
+      setForwardError(err?.response?.data?.message ?? 'Failed to add forwarding charge');
+    } finally {
+      setForwardSaving(false);
     }
   };
 
@@ -847,28 +877,7 @@ const OrderManagement: React.FC = () => {
       // fall back to the currently loaded page / selection
     }
 
-    const headers = ['Order ID', 'Tracking ID', 'Origin', 'Sender', 'Receiver', 'Receiver Phone', 'Receiver Address', 'Destination', 'COD', 'Delivery Charge', 'Weight', 'Status', 'Rider', 'Remarks', 'Order Created Date', 'Last Updated By', 'Last Updated At', ...STATUS_TIMELINE_HEADERS];
-    const rows = exportOrders.map(order => [
-      `#${order.orderNumber}`,
-      order.trackingId,
-      order.origin,
-      order.senderName,
-      order.receiverName,
-      order.receiverPhone || '',
-      order.receiverAddress || '',
-      order.destination,
-      order.codAmount,
-      order.deliveryCharge,
-      order.weightKg || '',
-      STATUS_LABELS[order.status],
-      order.riderName || '',
-      order.remarks || '',
-      toBsDateTimeCell(order.createdAtRaw || order.createdAt) || '',
-      order.lastUpdatedBy || '',
-      toBsDateTimeCell(order.lastUpdatedAt) || '',
-      ...statusTimelineCells(order.statusTimestamps),
-    ]);
-    await downloadExcel('orders.xlsx', 'Orders', headers, rows);
+    await downloadOrdersExcel('orders.xlsx', 'Orders', exportOrders, STATUS_LABELS);
   };
 
   const sortableHeader = (label: string, field: OrderSortField) => (
@@ -928,7 +937,7 @@ const OrderManagement: React.FC = () => {
       accessor: (order: Order) => (
         <div className="party-cell">
           <span>{order.receiverName}</span>
-          <small>{order.receiverPhone}</small>
+          <small><ReceiverPhones phone={order.receiverPhone} alternate={order.receiverAlternatePhone} /></small>
         </div>
       ),
       width: '140px',
@@ -948,14 +957,19 @@ const OrderManagement: React.FC = () => {
     {
       header: sortableHeader('STATUS', 'status'),
       accessor: (order: Order) => (
-        <StatusChip tone={getStatusTone(order.status)}>
-          {STATUS_LABELS[order.status]}
-        </StatusChip>
+        <span className="om-status-cell">
+          <StatusChip tone={getStatusTone(order.status)}>
+            {STATUS_LABELS[order.status]}
+          </StatusChip>
+          {order.carrierCode && <span className="om-carrier-chip">{CARRIER_LABELS[order.carrierCode]}</span>}
+        </span>
       ),
       width: '160px',
     },
     { header: 'RIDER', accessor: (order: Order) => order.riderName || '-', width: '140px' },
-    { header: 'REMARKS', accessor: (order: Order) => (
+    { header: 'REMARKS', accessor: (order: Order) => readOnlyRemarks ? (
+      <span title={order.remarks || undefined}>{order.remarks || '-'}</span>
+    ) : (
       <button
         type="button"
         className="remarks-cell-btn"
@@ -997,18 +1011,24 @@ const OrderManagement: React.FC = () => {
           >
             <Copy size={14} />
           </button>
-          {canRedirect && REDIRECTABLE_STATUSES.includes(order.status) && (
+          {canRedirect && (order.status === 'delivered' || REDIRECTABLE_STATUSES.includes(order.status)) && (
             <button
               type="button"
               className="row-action-icon-only"
-              title="Redirect"
-              aria-label="Redirect"
+              title={order.status === 'delivered' ? 'Forward' : 'Redirect'}
+              aria-label={order.status === 'delivered' ? 'Forward' : 'Redirect'}
               onClick={() => {
-                setRedirectError('');
-                setRedirectOrderRow(order);
+                // Same slot as redirect: once delivered, the action becomes a forward.
+                if (order.status === 'delivered') {
+                  setForwardError('');
+                  setForwardOrderRow(order);
+                } else {
+                  setRedirectError('');
+                  setRedirectOrderRow(order);
+                }
               }}
             >
-              <Shuffle size={14} />
+              {order.status === 'delivered' ? <Forward size={14} /> : <Shuffle size={14} />}
             </button>
           )}
           {canRecoverFailed && isRecoverableFailure(order.status) && (
@@ -1022,7 +1042,7 @@ const OrderManagement: React.FC = () => {
               <RotateCcw size={14} />
             </button>
           )}
-          {isSuperAdmin && (
+          {canForceStatus && (
             <button
               type="button"
               className="row-action-icon-only"
@@ -1313,6 +1333,19 @@ const OrderManagement: React.FC = () => {
           error={redirectError}
           onClose={() => setRedirectOrderRow(null)}
           onConfirm={handleRedirect}
+        />
+      )}
+
+      {forwardOrderRow && (
+        <ForwardOrderModal
+          isOpen
+          trackingId={forwardOrderRow.trackingId}
+          currentBranch={forwardOrderRow.destination}
+          currentDeliveryCharge={forwardOrderRow.deliveryCharge}
+          busy={forwardSaving}
+          error={forwardError}
+          onClose={() => setForwardOrderRow(null)}
+          onConfirm={handleForward}
         />
       )}
 

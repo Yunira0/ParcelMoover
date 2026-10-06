@@ -54,6 +54,7 @@ export interface ReturnManifestParcel {
   status: string;
   receiverName: string;
   receiverPhone: string;
+  receiverAlternatePhone?: string;
   address: string;
   destination: string;
   pieces: number;

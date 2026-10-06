@@ -78,6 +78,8 @@ export interface RegisterUserInput {
   licenceDoc?: File | null;
   bluebookDoc?: File | null;
   businessCertDoc?: File | null;
+  /** Signed agreement - PDF or DOCX only. */
+  agreementDoc?: File | null;
 }
 
 export interface UpdateUserProfileInput {
@@ -151,7 +153,13 @@ export interface UpdateUserProfileInput {
   licenceDoc?: File | null;
   bluebookDoc?: File | null;
   businessCertDoc?: File | null;
+  /** Signed agreement - PDF or DOCX only. */
+  agreementDoc?: File | null;
 }
+
+// File-picker filter for the agreement slot; the server accepts only these.
+export const AGREEMENT_FILE_ACCEPT =
+  '.pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
 export const getManagedUser = async (type: 'admin' | 'vendor' | 'rider', id: string) => {
   const response = await api.get(`/auth/users/${type}/${id}`);
@@ -309,11 +317,11 @@ export const ADMIN_PERMISSIONS = [
   { code: 'SETTINGS_ACCESS', label: 'Settings', description: 'Access the Settings section: destinations, rate setup and delivery rates.' },
   { code: 'KYC_ACCESS', label: 'KYC Applications', description: 'Review, approve and reject vendor KYC applications.' },
   { code: 'SYSTEM_LOGS_ACCESS', label: 'System Logs', description: 'Read the system audit logs, including who changed what across the app.' },
-  { code: 'EDIT_SETTLEMENTS', label: 'Edit COD Statements', description: 'Correct an unsettled COD statement (add/remove orders) before it is paid out.' },
-  { code: 'ACCOUNTING_ACCESS', label: 'Finance', description: 'The whole Finance section: the books, party balances and reports, plus recording expenses, posting journal entries and closing a month. This is the full financial picture of the business.' },
-  { code: 'EDIT_COD_LOCKED', label: 'Edit COD (any status)', description: 'Correct the COD amount on a delivered, returned-to-vendor, or RTO parcel, as long as it hasn’t been settled to the vendor yet.' },
+  { code: 'EDIT_SETTLEMENTS', label: 'Correct COD & statements', description: 'Edit, cancel or revert COD statements, and correct the COD on a delivered or returned parcel that is not yet on a statement.' },
+  { code: 'ACCOUNTING_ACCESS', label: 'Finance', description: 'The whole Finance section: the books, party balances and reports, plus recording expenses, posting journal entries, closing a month and editing the chart of accounts (Masters). This is the full financial picture of the business.' },
   { code: 'BRANCH_TRACKING_READ', label: 'Branch Tracking (read-only)', description: 'View other branches — their overview figures and settlement position — without making any change. Own branch stays the only one they can edit.' },
   { code: 'BRANCH_TRACKING_WRITE', label: 'Branch Tracking (read & write)', description: 'View other branches and act on their orders and settlements, the same as a super_admin would. Includes everything Branch Tracking (read-only) grants.' },
+  { code: 'FORCE_STATUS_CHANGE', label: 'Force Status Change', description: 'Force an order into any status, skipping the normal status flow — including out of delivered, returned or cancelled.' },
 ] as const;
 
 export type AdminPermissionCode = (typeof ADMIN_PERMISSIONS)[number]['code'];

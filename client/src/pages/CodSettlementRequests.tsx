@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { useParams } from 'react-router-dom';
 import { Banknote } from 'lucide-react';
 import Button from '../components/Button';
 import FormField from '../components/FormField';
@@ -9,12 +10,16 @@ import { Banner } from './accounting/ui';
 import { isSalesUser } from '../utils/auth';
 import {
   COD_REQUEST_STATUS_LABELS,
+  getCodSettlementRequestById,
   getCodSettlementRequests,
   isLiveCodRequest,
   updateCodSettlementRequestStatus,
   type CodSettlementRequest,
   type CodSettlementRequestStatus,
 } from '../services/codSettlementRequests.service';
+import { getSettlements, type SettlementListItem } from '../services/finance.service';
+import { settlementStatusLabel } from '../utils/settlementStatus';
+import { formatCurrency } from '../utils/format';
 import { apiErrorMessage } from '../utils/serverValidation';
 import { toBsDate } from '../utils/nepaliDate';
 import './CodSettlementRequests.css';
@@ -45,6 +50,11 @@ const CodSettlementRequests: React.FC = () => {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [rejecting, setRejecting] = useState<CodSettlementRequest | null>(null);
   const [rejectReason, setRejectReason] = useState('');
+  // Settling names the statement that answers the request - see openSettle.
+  const [settling, setSettling] = useState<CodSettlementRequest | null>(null);
+  const [statementOptions, setStatementOptions] = useState<SettlementListItem[]>([]);
+  const [statementChoice, setStatementChoice] = useState('');
+  const [statementsLoading, setStatementsLoading] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(PAGE_SIZE);
   const [total, setTotal] = useState(0);
@@ -73,10 +83,27 @@ const CodSettlementRequests: React.FC = () => {
     void load();
   }, [load]);
 
-  // Changing the status filter resets to the first page of the new result set.
+  // Notifications link to /cod-settlement-requests/:id. The request may be on
+  // any page of the list, so it is fetched on its own and pinned above it.
+  const { id: linkedId } = useParams();
+  const [linked, setLinked] = useState<CodSettlementRequest | null>(null);
   useEffect(() => {
+    if (!linkedId) {
+      setLinked(null);
+      return;
+    }
+    let active = true;
+    getCodSettlementRequestById(linkedId)
+      .then((response) => { if (active) setLinked(response.data); })
+      .catch((err) => { if (active) setError(apiErrorMessage(err, 'Could not open that request')); });
+    return () => { active = false; };
+  }, [linkedId, requests]);
+
+  // Changing the status filter resets to the first page of the new result set.
+  const changeStatus = (next: string) => {
+    setStatus(next);
     setPage(1);
-  }, [status]);
+  };
 
   // Settling/rejecting the last request on a page (other than the first)
   // leaves `page` pointing past the end of the now-shorter list, which reads
@@ -89,6 +116,7 @@ const CodSettlementRequests: React.FC = () => {
     request: CodSettlementRequest,
     next: 'settled' | 'rejected',
     decisionNote?: string,
+    settlementId?: string,
   ) => {
     setBusyId(request.id);
     setError(null);
@@ -96,14 +124,34 @@ const CodSettlementRequests: React.FC = () => {
       await updateCodSettlementRequestStatus(request.id, {
         status: next,
         ...(decisionNote ? { decisionNote } : {}),
+        ...(settlementId ? { settlementId } : {}),
       });
       setRejecting(null);
       setRejectReason('');
+      setSettling(null);
+      setStatementChoice('');
       await load();
     } catch (err) {
       setError(apiErrorMessage(err, 'Could not update the request'));
     } finally {
       setBusyId(null);
+    }
+  };
+
+  // The vendor's statements, newest first, to pick the one that pays this out.
+  const openSettle = async (request: CodSettlementRequest) => {
+    setRejecting(null);
+    setSettling(request);
+    setStatementChoice('');
+    setStatementOptions([]);
+    setStatementsLoading(true);
+    try {
+      const response = await getSettlements('vendor', request.vendorId, 1, 50);
+      setStatementOptions(response.data.filter((s) => s.status !== 'cancelled'));
+    } catch (err) {
+      setError(apiErrorMessage(err, "Could not load this vendor's statements"));
+    } finally {
+      setStatementsLoading(false);
     }
   };
 
@@ -147,10 +195,10 @@ const CodSettlementRequests: React.FC = () => {
                  changed nothing the vendor or the books could see, and it left
                  a queue of half-actioned rows nobody closed. Requests already
                  started still show, and settle or reject the same way. */}
-            <Button variant="primary" disabled={busyId === r.id} onClick={() => act(r, 'settled')}>
+            <Button variant="primary" disabled={busyId === r.id} onClick={() => void openSettle(r)}>
               Settle
             </Button>
-            <Button variant="outline" disabled={busyId === r.id} onClick={() => setRejecting(r)}>
+            <Button variant="outline" disabled={busyId === r.id} onClick={() => { setSettling(null); setRejecting(r); }}>
               Reject
             </Button>
           </div>
@@ -181,10 +229,50 @@ const CodSettlementRequests: React.FC = () => {
           label="STATUS"
           value={status}
           options={STATUS_FILTER_OPTIONS}
-          onChange={setStatus}
+          onChange={changeStatus}
           placeholder="All statuses"
         />
       </div>
+
+      {settling && (
+        <section className="cod-request-card">
+          <h2>Settle {settling.requestNo}</h2>
+          <p>
+            Pick the COD statement that pays this request out — create it in Settlements first if it
+            doesn't exist yet. The vendor sees the statement and whether it has been paid.
+          </p>
+          <FormField
+            label="Statement"
+            required
+            type="select"
+            value={statementChoice}
+            onChange={setStatementChoice}
+            placeholder={
+              statementsLoading
+                ? 'Loading statements…'
+                : statementOptions.length
+                  ? 'Choose a statement'
+                  : 'No statements for this vendor yet'
+            }
+            options={statementOptions.map((s) => ({
+              value: s.id,
+              label: `${s.statementId} · ${formatCurrency(s.amount)} · ${settlementStatusLabel(s.status)}`,
+            }))}
+          />
+          <div className="cod-request-actions">
+            <Button
+              variant="primary"
+              disabled={!statementChoice || busyId === settling.id}
+              onClick={() => act(settling, 'settled', undefined, statementChoice)}
+            >
+              Confirm settle
+            </Button>
+            <Button variant="outline" onClick={() => { setSettling(null); setStatementChoice(''); }}>
+              Cancel
+            </Button>
+          </div>
+        </section>
+      )}
 
       {rejecting && (
         <section className="cod-request-card">
@@ -218,7 +306,14 @@ const CodSettlementRequests: React.FC = () => {
         </section>
       )}
 
-      <Table columns={columns} data={requests} loading={loading} minWidth="1080px" />
+      {linked && (
+        <section className="cod-request-card">
+          <h2>{linked.requestNo}</h2>
+          <Table selectable={false} columns={columns} data={[linked]} minWidth="1080px" />
+        </section>
+      )}
+
+      <Table selectable={false} columns={columns} data={requests} loading={loading} minWidth="1080px" />
 
       <Pagination
         ariaLabel="COD settlement requests pagination"

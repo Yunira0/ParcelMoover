@@ -32,6 +32,7 @@ import { downloadExcel } from '../utils/excel';
 import { formatCurrency } from '../utils/format';
 import { commitScannedTerm, handleScannerPaste } from '../utils/scannerInput';
 import './PickupOperations.css';
+import ReceiverPhones from '../components/ReceiverPhones';
 
 type PickupTab = 'pickup_ordered' | 'rider_assigned' | 'picked_up' | 'arrived' | 'failed' | 'cancelled';
 
@@ -41,8 +42,8 @@ type ValleyFilter = 'all' | 'inside' | 'outside';
 
 const VALLEY_FILTER_OPTIONS: { value: ValleyFilter; label: string }[] = [
   { value: 'all', label: 'All' },
-  { value: 'inside', label: 'Inside Valley' },
-  { value: 'outside', label: 'Outside Valley' },
+  { value: 'inside', label: 'Our Coverage' },
+  { value: 'outside', label: 'Outside Coverage' },
 ];
 
 // Groups (pickups) per page in the outer table.
@@ -125,9 +126,11 @@ const STATUS_TRANSITIONS: Record<ParcelStatus, ParcelStatus[]> = {
 const DIRECT_DELIVERY_FRINGE_AREAS = ['kavresthali', 'thali', 'chapagaun', 'budhanilkantha', 'thankot'];
 
 // From "Arrived at Origin", whether a parcel should skip Transit and go
-// straight to Ready to Deliver (inside valley + fringe areas) or must go
-// through Transit/OOV first (everywhere else).
+// straight to Ready to Deliver (destination in the arrival branch's coverage)
+// or must go through Transit/OOV first. The server decides (skipsTransit);
+// the valley rule is only a fallback for rows without it.
 const destinationSkipsTransit = (order: Order): boolean => {
+  if (order.skipsTransit !== undefined) return order.skipsTransit;
   if (order.destinationValley === 'inside') return true;
   const name = (order.destinationName || '').toLowerCase();
   return DIRECT_DELIVERY_FRINGE_AREAS.some(area => name.includes(area));
@@ -279,7 +282,7 @@ const groupDetailColumns = (group: PickupGroup, onRemarkClick: (order: Order) =>
       <div className="pickup-group-cell">
         <span>{order.receiverName}</span>
         {order.receiverAddress && <small>{order.receiverAddress}</small>}
-        <small>{order.receiverPhone}</small>
+        <small><ReceiverPhones phone={order.receiverPhone} alternate={order.receiverAlternatePhone} /></small>
       </div>
     ),
     width: '200px',
@@ -508,7 +511,7 @@ const PickupOperations: React.FC = () => {
 
   const visibleOrders = useMemo(() => {
     if (activeTab !== 'arrived' || valleyFilter === 'all') return orders;
-    return orders.filter(order => order.destinationValley === valleyFilter);
+    return orders.filter(order => destinationSkipsTransit(order) === (valleyFilter === 'inside'));
   }, [orders, activeTab, valleyFilter]);
   const selectedIds = selectedIdsByTab[activeTab];
   const groups = useMemo(() => groupOrdersByVendor(visibleOrders), [visibleOrders]);
@@ -677,7 +680,7 @@ const PickupOperations: React.FC = () => {
     // Same columns, in the same order, as the group detail table on screen.
     // COD and delivery charge stay numbers so the columns total in the sheet.
     const headers = [
-      'Order ID', 'Date & Time', 'Sender', 'Sender Phone', 'Receiver', 'Receiver Phone',
+      'Order ID', 'Date & Time', 'Sender', 'Sender Phone', 'Receiver', 'Receiver Phone', 'Alternate Number',
       'Receiver Address', 'Pickup Rider', 'Tracking Code', 'Weight (kg)', 'Origin',
       'Destination', 'Delivery Charge', 'COD Amount', 'Last Handle By', 'Order Type', 'Remarks',
       ...STATUS_TIMELINE_HEADERS,
@@ -689,6 +692,7 @@ const PickupOperations: React.FC = () => {
       order.senderPhone || '',
       order.receiverName,
       order.receiverPhone || '',
+      order.receiverAlternatePhone || '',
       order.receiverAddress || '',
       order.riderName || '',
       order.trackingId,

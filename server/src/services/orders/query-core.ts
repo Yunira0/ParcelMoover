@@ -5,9 +5,18 @@ import { AppError } from "../../utils/AppError";
 import type { ListOrdersQuery, OrderSortField, ParcelStatus } from "../../types/order.type";
 import { formatNepalDate as formatDate, NEPAL_UTC_OFFSET_MS } from "../../utils/nepalTime";
 import { getVendorStatusLabel } from "../../utils/orderStatusLabel";
-import { stripCarrierStaffTag } from "../../utils/carrierRemark";
+import {
+  HANDOFF_NOTE_PREFIXES,
+  HANDOFF_REMARK_PREFIX,
+  UPAYA_HANDOFF_REMARK_PREFIX,
+  handoffCarrier,
+  remarkTextFor,
+  stripCarrierStaffTag,
+} from "../../utils/carrierRemark";
+import { isCarrierCode, type CarrierCode } from "./carrier";
 import { resolveLabelSize } from "../vendorPrintSettings.service";
 import { buildOrdersWhere } from "./where";
+import { makeSkipsTransitResolver } from "./status-shared";
 import {
   PICKUP_LEG_STATUSES,
   getActorScope,
@@ -19,6 +28,11 @@ import {
   dedupeInFlight,
 } from "./cache";
 import type { OrderActor } from "./types";
+
+// "Latest remark" columns show the last real remark, never a carrier handoff note.
+const LATEST_REMARK_WHERE: Prisma.parcel_remarksWhereInput = {
+  NOT: HANDOFF_NOTE_PREFIXES.map((prefix) => ({ remark: { startsWith: prefix } })),
+};
 
 // Match the existing list defaults and location/money formatting.
 const MAX_PAGE_SIZE = 500;
@@ -179,11 +193,12 @@ const ORDERS_INCLUDE = {
   parties_parcels_sender_idToparties: { select: { name: true, phone: true, address: true } },
   parties_parcels_receiver_idToparties: { select: { name: true, phone: true, alternate_phone: true, address: true } },
   locations_parcels_origin_location_idTolocations: { select: { name: true } },
-  locations_parcels_destination_location_idTolocations: { select: { name: true, valley: true } },
+  locations_parcels_destination_location_idTolocations: { select: { id: true, name: true, valley: true } },
   vendors: { select: { business_name: true, client_name: true, pickup_landmark: true, label_width_mm: true, label_height_mm: true } },
   riders_parcels_pickup_rider_idToriders: { select: { name: true } },
-  riders_parcels_delivery_rider_idToriders: { select: { name: true } },
+  riders_parcels_delivery_rider_idToriders: { select: { name: true, carrier_code: true } },
   parcel_remarks: {
+    where: LATEST_REMARK_WHERE,
     orderBy: { created_at: "desc" as const },
     take: 1,
     select: { remark: true },
@@ -244,6 +259,8 @@ export function mapOrder(
   // Only populated for exports, where the caller batch-fetches the moment each
   // parcel first entered every status it has held (see fetchStatusTimestampMap).
   statusTimestampsByParcelId?: StatusTimestampMap,
+  // Staff list views only (see fetchCarrierMap) - vendors never see which 3PL carries a parcel.
+  carrierByParcelId?: CarrierMap,
 ) {
   const latestHistory = parcel.parcel_status_history[0];
   // The delivery rider is who this column is about; the pickup rider only
@@ -338,7 +355,7 @@ export function mapOrder(
     labelWidthMm: labelSize.widthMm,
     labelHeightMm: labelSize.heightMm,
     riderName: rider?.name || "",
-    remarks: stripCarrierStaffTag(parcel.parcel_remarks[0]?.remark || "").text,
+    remarks: remarkTextFor(parcel.parcel_remarks[0]?.remark || "", isStaff),
     // The stage the parcel was in right before it was cancelled - only
     // meaningful when that's what the latest history row actually records
     // (a still-cancelled parcel's newest entry is always its cancellation,
@@ -371,7 +388,41 @@ export function mapOrder(
       ? { statusTimestamps: statusTimestampsByParcelId.get(parcel.id) ?? {} }
       : {}),
     deliveredAt: parcel.delivered_at ? formatDate(parcel.delivered_at) : "",
+    ...(carrierByParcelId ? { carrierCode: carrierByParcelId.get(parcel.id) ?? null } : {}),
   };
+}
+
+type CarrierMap = Map<string, CarrierCode>;
+
+// The 3PL carrying each parcel: a carrier placeholder delivery rider names it,
+// a real delivery rider means we carry it ourselves, and otherwise the latest
+// API handoff note decides. Mirrors resolveDeliveryCarrier, batched per page.
+async function fetchCarrierMap(
+  parcels: Prisma.parcelsGetPayload<{ include: typeof ORDERS_INCLUDE }>[],
+): Promise<CarrierMap> {
+  const map: CarrierMap = new Map();
+  const unresolved: string[] = [];
+  for (const parcel of parcels) {
+    const rider = parcel.riders_parcels_delivery_rider_idToriders;
+    if (!rider) unresolved.push(parcel.id);
+    else if (isCarrierCode(rider.carrier_code)) map.set(parcel.id, rider.carrier_code);
+  }
+  if (unresolved.length === 0) return map;
+  const notes = await prisma.parcel_remarks.findMany({
+    where: {
+      parcel_id: { in: unresolved },
+      OR: [{ remark: { startsWith: HANDOFF_REMARK_PREFIX } }, { remark: { startsWith: UPAYA_HANDOFF_REMARK_PREFIX } }],
+    },
+    orderBy: { created_at: "desc" },
+    select: { parcel_id: true, remark: true },
+  });
+  // desc order → the first note seen for a parcel is its latest handoff.
+  for (const note of notes) {
+    if (map.has(note.parcel_id)) continue;
+    const carrier = handoffCarrier(note.remark)?.toLowerCase();
+    if (isCarrierCode(carrier)) map.set(note.parcel_id, carrier);
+  }
+  return map;
 }
 
 /** parcel id → { status: ISO timestamp it first entered that status }. */
@@ -389,6 +440,25 @@ export type StatusTimestampMap = Map<string, Record<string, string>>;
 // attempt re-enters failed_delivery). The *first* entry is recorded, matching
 // how the arrival column has always behaved - "when did this parcel reach that
 // stage", not "when did it last bounce off it".
+// Parcels at "Arrived at Origin" carry skipsTransit, so the operations screen
+// offers Ready to Deliver or Transit by the same branch-coverage rule the
+// status update enforces.
+async function withTransitHints<T extends object>(
+  parcels: Array<{
+    status: string;
+    origin_location_id: string | null;
+    locations_parcels_destination_location_idTolocations?: { id: string; valley: string | null; name: string } | null;
+  }>,
+  orders: T[],
+): Promise<Array<T & { skipsTransit?: boolean }>> {
+  const resolve = makeSkipsTransitResolver();
+  return Promise.all(orders.map(async (order, i) => {
+    const p = parcels[i]!;
+    if (p.status !== "arrived") return order;
+    return { ...order, skipsTransit: await resolve(p.origin_location_id, p.locations_parcels_destination_location_idTolocations) };
+  }));
+}
+
 async function fetchStatusTimestampMap(parcelIds: string[]): Promise<StatusTimestampMap> {
   const map: StatusTimestampMap = new Map();
   if (parcelIds.length === 0) return map;
@@ -553,7 +623,8 @@ export async function listOrders(
   query: ListOrdersQuery = {},
 ): Promise<ListOrdersResult> {
   const { vendorId, vendorIds, riderId, branchLocationIds } = await getActorScope(actor);
-  const isStaff = actor.roles.includes("super_admin") || actor.roles.includes("admin");
+  // Office view: the accountant reads orders as staff do (it cannot write them).
+  const isStaff = actor.roles.some((role) => role === "super_admin" || role === "admin" || role === "accountant");
   // Own-vendor scope is set only for vendor / vendor_staff actors - never for
   // staff, sales or riders viewing the same parcels.
   const isOwnVendorViewer = !!vendorId;
@@ -579,8 +650,8 @@ export async function listOrders(
   // a trash listing would both read and overwrite the live orders cache.
   const isDefaultUnfilteredQuery =
     !paginated && !query.status?.length && !query.orderType && !query.search &&
-    !query.vendorId?.length && !query.salesUserId && !query.deliveryRiderId &&
-    !query.sortBy && !query.sortDir && !query.deliveredToday && !query.trashed && !query.settlement &&
+    !query.vendorId?.length && !query.salesUserId && !query.deliveryRiderId && !query.riderId &&
+    !query.sortBy && !query.sortDir && !query.deliveredToday && !query.viaTransit && !query.trashed && !query.settlement &&
     !query.dateFrom && !query.dateTo && !query.dateField &&
     !query.secondaryOrderType && !query.secondaryStatus?.length &&
     !query.originLocationIds?.length && !query.destinationLocationIds?.length &&
@@ -613,11 +684,12 @@ export async function listOrders(
           take: DEFAULT_LIST_CAP,
         }),
       ]);
-      const statusTimestamps = query.withArrival
-        ? await fetchStatusTimestampMap(parcels.map((p) => p.id))
-        : undefined;
+      const [statusTimestamps, carriers] = await Promise.all([
+        query.withArrival ? fetchStatusTimestampMap(parcels.map((p) => p.id)) : undefined,
+        isStaff ? fetchCarrierMap(parcels) : undefined,
+      ]);
       const result: ListOrdersResult = {
-        data: parcels.map((p) => mapOrder(p, isStaff, isOwnVendorViewer, statusTimestamps)),
+        data: await withTransitHints(parcels, parcels.map((p) => mapOrder(p, isStaff, isOwnVendorViewer, statusTimestamps, carriers))),
         meta: {
           page: 1,
           pageSize: DEFAULT_LIST_CAP,
@@ -705,12 +777,13 @@ export async function listOrders(
   // silently ignored on every paginated request - which is all of them from
   // the overview export - and "Arrived at Origin" came back empty for rows
   // that had plainly arrived.
-  const keysetStatusTimestamps = query.withArrival
-    ? await fetchStatusTimestampMap(parcels.map((p) => p.id))
-    : undefined;
+  const [keysetStatusTimestamps, keysetCarriers] = await Promise.all([
+    query.withArrival ? fetchStatusTimestampMap(parcels.map((p) => p.id)) : undefined,
+    isStaff ? fetchCarrierMap(parcels) : undefined,
+  ]);
 
   return {
-    data: parcels.map((p) => mapOrder(p, isStaff, isOwnVendorViewer, keysetStatusTimestamps)),
+    data: await withTransitHints(parcels, parcels.map((p) => mapOrder(p, isStaff, isOwnVendorViewer, keysetStatusTimestamps, keysetCarriers))),
     meta: {
       page: pageHint,
       pageSize,
@@ -747,6 +820,7 @@ export const HANDOVER_PARCEL_INCLUDE = {
   // whoever signs for the parcel reads the same note the ops list shows - see
   // mapOrder, which takes the latest the same way.
   parcel_remarks: {
+    where: LATEST_REMARK_WHERE,
     orderBy: { created_at: "desc" as const },
     take: 1,
   },
@@ -763,6 +837,7 @@ export function mapHandoverParcel(parcel: HandoverParcel) {
     status: parcel.status,
     receiverName: receiver.name,
     receiverPhone: receiver.phone,
+    receiverAlternatePhone: receiver.alternate_phone || "",
     address:
       receiver.address ||
       locationName(parcel.locations_parcels_destination_location_idTolocations) ||

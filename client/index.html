@@ -8,38 +8,78 @@
     <link rel="icon" type="image/png" sizes="64x64" href="/favicon-64.png?v=2" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?v=2" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>ParcelMoover — Track Your Parcel, Kathmandu Valley Courier & Delivery</title>
+    <title>Parcel Moover Portal — Track Your Parcel | ParcelMoover Courier Nepal</title>
     <meta
       name="description"
-      content="Track your parcel with ParcelMoover — no account needed. Own fleet across the Kathmandu valley, KYC-verified riders, delivery reach across Nepal, and a COD settlement dashboard for vendor partners."
+      content="Parcel Moover (ParcelMoover) portal: track your parcel with no account needed, log in to your vendor dashboard, or apply to ship with us. Own fleet across the Kathmandu valley and delivery reach across Nepal."
     />
-    <link rel="canonical" href="https://www.parcelmoover.com/" />
+    <!-- The app lives on portal.parcelmoover.com. www/apex parcelmoover.com is a
+         separate site; pointing canonical/og:url there told search engines the
+         portal was a duplicate of it, so the portal never ranked for its name. -->
+    <link rel="canonical" href="https://portal.parcelmoover.com/" />
 
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="ParcelMoover" />
-    <meta property="og:title" content="ParcelMoover — Track Your Parcel, Kathmandu Valley Courier & Delivery" />
+    <meta property="og:title" content="Parcel Moover Portal — Track Your Parcel | ParcelMoover Courier Nepal" />
     <meta
       property="og:description"
       content="Track your parcel with ParcelMoover — no account needed. Own fleet across the Kathmandu valley, KYC-verified riders, and delivery reach across Nepal."
     />
-    <meta property="og:url" content="https://www.parcelmoover.com/" />
-    <meta property="og:image" content="https://www.parcelmoover.com/og-image.png" />
+    <meta property="og:url" content="https://portal.parcelmoover.com/" />
+    <meta property="og:image" content="https://portal.parcelmoover.com/og-image.png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
 
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="ParcelMoover — Track Your Parcel, Kathmandu Valley Courier & Delivery" />
+    <meta name="twitter:title" content="Parcel Moover Portal — Track Your Parcel | ParcelMoover Courier Nepal" />
     <meta
       name="twitter:description"
       content="Track your parcel with ParcelMoover — no account needed. Own fleet across the Kathmandu valley, KYC-verified riders, and delivery reach across Nepal."
     />
-    <meta name="twitter:image" content="https://www.parcelmoover.com/og-image.png" />
+    <meta name="twitter:image" content="https://portal.parcelmoover.com/og-image.png" />
+
+    <!-- Site name and brand for search results: "WebSite" is what Google reads
+         for the site name shown above a result, and alternateName covers the
+         two-word spelling people actually type. -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "WebSite",
+            "@id": "https://portal.parcelmoover.com/#website",
+            "name": "ParcelMoover",
+            "alternateName": ["Parcel Moover", "ParcelMoover Portal", "Parcel Moover Portal"],
+            "url": "https://portal.parcelmoover.com/",
+            "publisher": { "@id": "https://portal.parcelmoover.com/#organization" }
+          },
+          {
+            "@type": "Organization",
+            "@id": "https://portal.parcelmoover.com/#organization",
+            "name": "ParcelMoover",
+            "alternateName": "Parcel Moover",
+            "url": "https://portal.parcelmoover.com/",
+            "logo": "https://portal.parcelmoover.com/brand/logo-icon.png",
+            "description": "Courier and parcel delivery across the Kathmandu valley and Nepal, with live tracking and COD settlement for vendor partners.",
+            "areaServed": { "@type": "Country", "name": "Nepal" },
+            "contactPoint": {
+              "@type": "ContactPoint",
+              "telephone": "+977-985-1410909",
+              "contactType": "customer service",
+              "areaServed": "NP"
+            }
+          }
+        ]
+      }
+    </script>
 
     <!-- This index.html is shared by every route in this client-side SPA (no
          SSR), so these tags describe the site as a whole - accurate for the
-         public home page at "/". The dashboard behind login is kept out of
-         search results via robots.txt (Disallow), not by per-route tags,
-         since a crawler blocked by robots.txt never even requests the page. -->
+         public home page at "/". Public pages refine title/description/
+         canonical at runtime (utils/pageMeta.ts). The dashboard behind login
+         is kept out of search results via robots.txt (Disallow), not by
+         per-route tags, since a crawler blocked by robots.txt never even
+         requests the page. -->
     <meta name="robots" content="index, follow" />
   </head>
   <body>

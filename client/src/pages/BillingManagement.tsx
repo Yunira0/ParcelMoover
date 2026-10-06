@@ -9,7 +9,7 @@ import FileField from '../components/FileField';
 import FormField from '../components/FormField';
 import Pagination from '../components/Pagination';
 import '../components/Modal.css';
-import { getCurrentUserRoles } from '../utils/auth';
+import { hasAnyRole } from '../utils/auth';
 import {
   getBillingSettings,
   listVendorBalances,
@@ -52,7 +52,8 @@ const TAB_LABELS: Record<Tab, string> = {
 };
 
 const BillingManagement: React.FC = () => {
-  const isSuperAdmin = getCurrentUserRoles().includes('super_admin');
+  // Billing settings and credit limits are office finance: super_admin or accountant.
+  const isSuperAdmin = hasAnyRole(['super_admin', 'accountant']);
 
   const [activeTab, setActiveTab] = useState<Tab>('queue');
   const [error, setError] = useState('');
@@ -431,6 +432,7 @@ const BillingManagement: React.FC = () => {
             }))}
           />
           <Table
+            selectable={false}
             columns={claimStatus === 'pending' ? pendingColumns : decidedColumns}
             data={claims}
             loading={claimsLoading}
@@ -471,6 +473,7 @@ const BillingManagement: React.FC = () => {
             />
           </div>
           <Table
+            selectable={false}
             columns={balanceColumns}
             data={balanceRows}
             loading={balancesLoading}

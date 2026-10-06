@@ -692,6 +692,14 @@ export function buildOpenApiDocument(baseUrl: string) {
                   deliveredAt: { type: ["string", "null"], format: "date-time" },
                   status: { type: "string", enum: ["settled", "not_settled"] },
                   netPayable: { type: "number", description: "Cash collected minus the delivery charge." },
+                  statement: {
+                    type: ["object", "null"],
+                    description: "The vendor statement this order is bundled into, if any. `status` stays `not_settled` while that statement is only `partially_paid`.",
+                    properties: {
+                      statementId: { type: "string" },
+                      status: { type: "string", enum: ["pending", "partially_paid", "settled"] },
+                    },
+                  },
                 },
               },
             },

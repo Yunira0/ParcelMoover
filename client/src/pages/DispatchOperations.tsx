@@ -33,6 +33,7 @@ import { toBsDate, toBsDateTime, toBsDateTimeCell } from '../utils/nepaliDate';
 import { STATUS_TIMELINE_HEADERS, statusTimelineCells } from '../utils/orderStatus';
 import { commitScannedTerm, handleScannerPaste } from '../utils/scannerInput';
 import './DispatchOperations.css';
+import ReceiverPhones from '../components/ReceiverPhones';
 
 const formatMoney = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 0 });
 
@@ -100,7 +101,8 @@ const STATUS_TRANSITIONS: Record<ParcelStatus, ParcelStatus[]> = {
   // A parcel that arrived here via transit while working through a return
   // (e.g. sent here from another branch's Follow Up tab) needs to go back
   // into the return flow rather than out for delivery.
-  arrived_at_branch: ['ready_to_deliver', 'follow_up'],
+  // 'oov' forwards a parcel that reached Imadol on its way to another branch.
+  arrived_at_branch: ['ready_to_deliver', 'follow_up', 'oov'],
   ready_to_deliver: ['sent_for_delivery', 'hold', 'cancelled'],
   sent_for_delivery: ['delivered', 'partially_delivered', 'failed_delivery'],
   oov: ['dispatched', 'hold'],
@@ -586,7 +588,7 @@ const DispatchOperations: React.FC = () => {
       accessor: (order: Order) => (
         <div className="dispatch-party-cell">
           <span>{order.receiverName}</span>
-          <small>{order.receiverPhone}</small>
+          <small><ReceiverPhones phone={order.receiverPhone} alternate={order.receiverAlternatePhone} /></small>
         </div>
       ),
       width: '170px',

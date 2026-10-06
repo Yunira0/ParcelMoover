@@ -4,7 +4,7 @@ import { ArrowLeft, CheckCircle, Upload, X, User, Truck, Building2, FileText, Cr
 import Button from '../components/Button';
 import FormField from '../components/FormField';
 import DocLink from '../components/DocLink';
-import { registerUser, getLocations, getManagedUser, updateUserProfile } from '../services/users.service';
+import { registerUser, getLocations, getManagedUser, updateUserProfile, AGREEMENT_FILE_ACCEPT } from '../services/users.service';
 import { getCurrentUser } from '../services/auth.service';
 import { extractServerFieldErrors, isValidEmail, isValidName, isValidPhone, normalizePhone } from '../utils/serverValidation';
 import { convertHeicFileIfNeeded } from '../utils/heicConvert';
@@ -39,6 +39,7 @@ interface RiderFormInput {
   panVatDoc: File | null;
   licenceDoc: File | null;
   blueBookDoc: File | null;
+  agreementDoc: File | null;
   // Bank Details
   bankName: string;
   bankAccountNo: string;
@@ -68,6 +69,7 @@ const emptyForm: RiderFormInput = {
   panVatDoc: null,
   licenceDoc: null,
   blueBookDoc: null,
+  agreementDoc: null,
   bankName: '',
   bankAccountNo: '',
   bankAccountHolder: '',
@@ -83,7 +85,8 @@ const FileInput: React.FC<{
   file: File | null | undefined;
   onChange: (file: File | null) => void;
   accept?: string;
-}> = ({ label, required, file, onChange, accept = 'image/*,.pdf' }) => {
+  hint?: string;
+}> = ({ label, required, file, onChange, accept = 'image/*,.pdf', hint = 'JPG, PNG or PDF · max 5 MB' }) => {
   const ref = useRef<HTMLInputElement>(null);
   const [converting, setConverting] = useState(false);
   const handleFile = async (picked: File | null) => {
@@ -120,7 +123,7 @@ const FileInput: React.FC<{
         style={{ display: 'none' }}
         onChange={(e) => void handleFile(e.target.files?.[0] ?? null)}
       />
-      <span className="rfp-file-hint">JPG, PNG or PDF · max 5 MB</span>
+      <span className="rfp-file-hint">{hint}</span>
     </div>
   );
 };
@@ -155,7 +158,8 @@ const RiderFormPage: React.FC = () => {
     panVatDoc: string | null;
     licenceDoc: string | null;
     bluebookDoc: string | null;
-  }>({ citizenshipDoc: null, panVatDoc: null, licenceDoc: null, bluebookDoc: null });
+    agreementDoc: string | null;
+  }>({ citizenshipDoc: null, panVatDoc: null, licenceDoc: null, bluebookDoc: null, agreementDoc: null });
   // A plain admin's riders always land in that admin's own hub; only a
   // super_admin may pick another service branch (server enforces the same).
   const { hubLocked, isPlainAdmin, isSuperAdmin } = useHubLock();
@@ -221,6 +225,7 @@ const RiderFormPage: React.FC = () => {
           panVatDoc: d.panVatDoc ?? null,
           licenceDoc: d.licenceDoc ?? null,
           bluebookDoc: d.bluebookDoc ?? null,
+          agreementDoc: d.agreementDoc ?? null,
         });
       })
       .catch(() => setError('Failed to load rider details.'));
@@ -304,6 +309,12 @@ const RiderFormPage: React.FC = () => {
           bankAccountNo: form.bankAccountNo,
           bankAccountHolder: form.bankAccountHolder,
           ...(isSuperAdmin ? { carrierCode: form.carrierCode } : {}),
+          // Only slots with a newly picked file; the rest keep what's stored.
+          ...(form.citizenshipDoc ? { citizenshipDoc: form.citizenshipDoc } : {}),
+          ...(form.panVatDoc ? { panVatDoc: form.panVatDoc } : {}),
+          ...(form.licenceDoc ? { licenceDoc: form.licenceDoc } : {}),
+          ...(form.blueBookDoc ? { bluebookDoc: form.blueBookDoc } : {}),
+          ...(form.agreementDoc ? { agreementDoc: form.agreementDoc } : {}),
         });
         navigate('/riders');
         return;
@@ -329,6 +340,7 @@ const RiderFormPage: React.FC = () => {
         panVatDoc: form.panVatDoc,
         licenceDoc: form.licenceDoc,
         bluebookDoc: form.blueBookDoc,
+        agreementDoc: form.agreementDoc,
         ...(isSuperAdmin ? { carrierCode: form.carrierCode } : {}),
       });
       setSubmitted(true);
@@ -530,11 +542,25 @@ const RiderFormPage: React.FC = () => {
                 description="Upload required documents"
               />
               {isEdit ? (
+                // Every slot stays visible on edit: the file on record (if any)
+                // plus an upload to attach a missing one or replace it.
                 <div className="rfp-docs">
-                  <DocLink path={existingDocs.citizenshipDoc} label="Citizenship" />
-                  <DocLink path={existingDocs.panVatDoc} label="PAN / VAT" />
-                  <DocLink path={existingDocs.licenceDoc} label="License" />
-                  <DocLink path={existingDocs.bluebookDoc} label="Blue Book" />
+                  <FileInput label="Citizenship" file={form.citizenshipDoc} onChange={setFile('citizenshipDoc')} />
+                  {existingDocs.citizenshipDoc && <DocLink path={existingDocs.citizenshipDoc} label="View current citizenship" />}
+                  <FileInput label="PAN / VAT" file={form.panVatDoc} onChange={setFile('panVatDoc')} />
+                  {existingDocs.panVatDoc && <DocLink path={existingDocs.panVatDoc} label="View current PAN / VAT" />}
+                  <FileInput label="License" file={form.licenceDoc} onChange={setFile('licenceDoc')} />
+                  {existingDocs.licenceDoc && <DocLink path={existingDocs.licenceDoc} label="View current license" />}
+                  <FileInput label="Blue Book" file={form.blueBookDoc} onChange={setFile('blueBookDoc')} />
+                  {existingDocs.bluebookDoc && <DocLink path={existingDocs.bluebookDoc} label="View current blue book" />}
+                  <FileInput
+                    label="Agreement"
+                    file={form.agreementDoc}
+                    onChange={setFile('agreementDoc')}
+                    accept={AGREEMENT_FILE_ACCEPT}
+                    hint="PDF or DOCX · max 5 MB"
+                  />
+                  {existingDocs.agreementDoc && <DocLink path={existingDocs.agreementDoc} label="View current agreement" />}
                 </div>
               ) : (
                 <div className="rfp-docs">
@@ -561,6 +587,13 @@ const RiderFormPage: React.FC = () => {
                     label="Blue Book"
                     file={form.blueBookDoc}
                     onChange={setFile('blueBookDoc')}
+                  />
+                  <FileInput
+                    label="Agreement"
+                    file={form.agreementDoc}
+                    onChange={setFile('agreementDoc')}
+                    accept={AGREEMENT_FILE_ACCEPT}
+                    hint="PDF or DOCX · max 5 MB"
                   />
                 </div>
               )}

@@ -35,6 +35,7 @@ import {
 } from "./order.service";
 import { resolveBranchLocationIds } from "./branch.service";
 import { assertBranchCanReceiveTransit } from "./branch-billing.service";
+import { isRelayHub } from "./orders/relay";
 import { adminBranchScopeIds } from "../lib/branchScope";
 import {
   CreateTransitManifestInput,
@@ -410,6 +411,8 @@ async function resolveScanTargets(input: TransitScanInput) {
  */
 async function manifestCoverage(manifest: { to_location_id: string | null }): Promise<Set<string> | null> {
   if (!manifest.to_location_id) return null;
+  // Imadol is the relay hub: any parcel may be routed through it.
+  if (await isRelayHub(manifest.to_location_id)) return null;
   try {
     return new Set(await resolveBranchLocationIds(manifest.to_location_id));
   } catch {
@@ -734,6 +737,17 @@ export async function dispatchTransitManifest(
       .filter((link) => link.parcels.status !== MANIFESTABLE_STATUS)
       .map((link) => ({ trackingId: link.parcels.tracking_id, status: link.parcels.status }));
 
+    // A member that isn't oov any more (handed to a carrier, moved on) isn't on
+    // this truck; keeping its link would block staging it again.
+    if (skipped.length > 0) {
+      await prisma.transit_manifest_parcels.deleteMany({
+        where: {
+          transit_manifest_id: manifestId,
+          parcels: { tracking_id: { in: skipped.map((s) => s.trackingId) } },
+        },
+      });
+    }
+
     if (eligible.length === 0) {
       throw new AppError(
         409,
@@ -862,7 +876,10 @@ export async function stageOrdersToBranch(actor: Actor, input: StageOrdersToBran
   });
   if (!branch) throw new AppError(404, "Branch not found or inactive");
   await assertBranchCanReceiveTransit(branch.id);
-  const coveredIds = new Set(await resolveBranchLocationIds(branch.id));
+  // Imadol relays parcels bound for any branch, so nothing is filtered by coverage.
+  const coveredIds = (await isRelayHub(branch.id))
+    ? null
+    : new Set(await resolveBranchLocationIds(branch.id));
 
   const parcelIds = Array.from(new Set(input.parcelIds));
   const parcels = await prisma.parcels.findMany({
@@ -896,10 +913,12 @@ export async function stageOrdersToBranch(actor: Actor, input: StageOrdersToBran
       // (bulkUpdateParcelStatus itself refuses that transition), so it would
       // just sit open forever with nothing to do.
       rejected.push({ trackingId: parcel.tracking_id, reason: `Already at ${branch.name} - nothing to transit` });
-    } else {
+    } else if (coveredIds) {
       const rejection = coverageRejection(parcel, coveredIds, returnLegIds.has(parcel.id), branch.name);
       if (rejection) rejected.push(rejection);
       else eligible.push(parcel);
+    } else {
+      eligible.push(parcel);
     }
   }
 

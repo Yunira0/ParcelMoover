@@ -10,8 +10,10 @@ export const StaffPermissionsProvider: React.FC<{ children: React.ReactNode }> =
   const isStaff = user?.roles.includes('vendor_staff') ?? false;
   // Plain admins carry delegated permissions (MANAGE_USERS / SETTINGS_ACCESS)
   // granted by a super_admin; refresh them the same way vendor staff are.
+  // The accountant is an admins-profile account too, refreshed the same way.
   const isPlainAdmin =
-    (user?.roles.includes('admin') ?? false) && !(user?.roles.includes('super_admin') ?? false);
+    ((user?.roles.includes('admin') ?? false) || (user?.roles.includes('accountant') ?? false)) &&
+    !(user?.roles.includes('super_admin') ?? false);
 
   const [permissions, setPermissions] = useState<string[]>(
     isStaff || isPlainAdmin ? (user?.permissions ?? []) : [],
@@ -22,12 +24,22 @@ export const StaffPermissionsProvider: React.FC<{ children: React.ReactNode }> =
 
     const persist = (
       perms: string[],
-      profile?: { branchScoped?: boolean; hubId?: string | null; hubName?: string | null },
+      profile?: { branchScoped?: boolean; hubId?: string | null; hubName?: string | null; roles?: string[] },
     ) => {
       if (!active) return;
       setPermissions(perms);
       const stored = JSON.parse(localStorage.getItem('user') || 'null');
       if (stored) {
+        // A super admin can change an account's role (e.g. admin -> accountant)
+        // while it is signed in. The server already enforces the new role on
+        // every request; reload so the shell stops offering the old one.
+        const storedRoles: string[] = Array.isArray(stored.roles) ? stored.roles : [];
+        const freshRoles = Array.isArray(profile?.roles) ? profile.roles : null;
+        if (freshRoles && [...freshRoles].sort().join(',') !== [...storedRoles].sort().join(',')) {
+          localStorage.setItem('user', JSON.stringify({ ...stored, roles: freshRoles, permissions: perms }));
+          window.location.replace('/dashboard');
+          return;
+        }
         const nextUser = {
           ...stored,
           permissions: perms,

@@ -12,6 +12,7 @@ import { formatCurrency as formatCurrencyBase, formatDate } from '../../utils/fo
 import { toBsDateTimeCell } from '../../utils/nepaliDate';
 import { downloadExcel } from '../../utils/excel';
 import './VendorFinance.css';
+import ReceiverPhones from '../../components/ReceiverPhones';
 
 type TabValue = 'all' | CodPaymentFilter;
 // The server caps any value at 200 here (the shared paginationQuerySchema
@@ -20,6 +21,14 @@ type TabValue = 'all' | CodPaymentFilter;
 const PAGE_SIZE = 20;
 
 const formatCurrency = (value: number) => formatCurrencyBase(value, 0);
+
+// A part-paid statement leaves its orders "not settled" (a part payment can't be
+// pinned to particular orders), so call that out rather than show plain pending.
+const isPartlyPaid = (item: OrderCodItem) =>
+  item.status === 'not_settled' && item.statement?.status === 'partially_paid';
+
+const statusLabel = (item: OrderCodItem) =>
+  item.status === 'settled' ? 'Settled' : isPartlyPaid(item) ? 'Partially paid' : 'Not Settled';
 
 const VendorOrderPayments: React.FC = () => {
   const [tab, setTab] = useState<TabValue>('all');
@@ -72,14 +81,15 @@ const VendorOrderPayments: React.FC = () => {
     await downloadExcel(
       `order-cod-${tab}-page-${page}`,
       'Order COD',
-      ['Tracking ID', 'Receiver', 'Phone', 'Created At', 'Delivered Date', 'Status', 'Net Payable'],
+      ['Tracking ID', 'Receiver', 'Phone', 'Alternate Number', 'Created At', 'Delivered Date', 'Status', 'Net Payable'],
       items.map((item) => [
         item.trackingId,
         item.receiverName,
-        item.receiverPhone,
+        item.receiverPhone || '',
+        item.receiverAlternatePhone || '',
         toBsDateTimeCell(item.createdAt) || '',
         toBsDateTimeCell(item.deliveredAt) || '',
-        item.status === 'settled' ? 'Settled' : 'Not Settled',
+        isPartlyPaid(item) ? `Partially paid (${item.statement!.statementId})` : statusLabel(item),
         // Left numeric so the column totals in the sheet.
         item.netPayable,
       ]),
@@ -96,7 +106,7 @@ const VendorOrderPayments: React.FC = () => {
       accessor: (item: OrderCodItem) => (
         <div>
           <div>{item.receiverName}</div>
-          <div className="vendor-finance-subtext">{item.receiverPhone}</div>
+          <div className="vendor-finance-subtext"><ReceiverPhones phone={item.receiverPhone} alternate={item.receiverAlternatePhone} /></div>
         </div>
       ),
     },
@@ -105,9 +115,15 @@ const VendorOrderPayments: React.FC = () => {
     {
       header: 'STATUS',
       accessor: (item: OrderCodItem) => (
-        <StatusChip variant="solid" tone={item.status === 'settled' ? 'success' : 'warning'}>
-          {item.status === 'settled' ? 'Settled' : 'Not Settled'}
-        </StatusChip>
+        <div>
+          <StatusChip
+            variant="solid"
+            tone={item.status === 'settled' ? 'success' : isPartlyPaid(item) ? 'info' : 'warning'}
+          >
+            {statusLabel(item)}
+          </StatusChip>
+          {isPartlyPaid(item) && <div className="vendor-finance-subtext">{item.statement!.statementId}</div>}
+        </div>
       ),
     },
     { header: 'NET PAYABLE', accessor: (item: OrderCodItem) => formatCurrency(item.netPayable) },

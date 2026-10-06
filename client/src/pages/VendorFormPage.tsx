@@ -10,6 +10,7 @@ import {
   getManagedUser,
   updateUserProfile,
   getUserDocuments,
+  AGREEMENT_FILE_ACCEPT,
   type ManagedUserDocument,
 } from '../services/users.service';
 import { getCurrentUser } from '../services/auth.service';
@@ -40,6 +41,7 @@ const DOCUMENT_LABELS: Partial<Record<keyof VendorFormInput, string>> = {
   citizenshipDoc: 'Citizenship document',
   panVatDoc: 'PAN / VAT document',
   businessCertDoc: 'Business certificate',
+  agreementDoc: 'Agreement',
 };
 
 const scrollToFirstFieldError = () => {
@@ -104,6 +106,7 @@ interface VendorFormInput {
   citizenshipDoc: File | null;
   panVatDoc: File | null;
   businessCertDoc: File | null;
+  agreementDoc: File | null;
   bankName: string;
   bankAccountNo: string;
   bankAccountHolder: string;
@@ -151,6 +154,7 @@ const emptyForm: VendorFormInput = {
   citizenshipDoc: null,
   panVatDoc: null,
   businessCertDoc: null,
+  agreementDoc: null,
   bankName: '',
   bankAccountNo: '',
   bankAccountHolder: '',
@@ -165,7 +169,8 @@ const FileInput: React.FC<{
   file: File | null | undefined;
   onChange: (file: File | null) => void;
   accept?: string;
-}> = ({ label, required, file, onChange, accept = 'image/*,.pdf' }) => {
+  hint?: string;
+}> = ({ label, required, file, onChange, accept = 'image/*,.pdf', hint = 'JPG, PNG or PDF · max 5 MB' }) => {
   const ref = useRef<HTMLInputElement>(null);
   const [converting, setConverting] = useState(false);
   const handleFile = async (picked: File | null) => {
@@ -207,7 +212,7 @@ const FileInput: React.FC<{
         style={{ display: 'none' }}
         onChange={(e) => void handleFile(e.target.files?.[0] ?? null)}
       />
-      <span className="vfp-file-hint">JPG, PNG or PDF · max 5 MB</span>
+      <span className="vfp-file-hint">{hint}</span>
     </div>
   );
 };
@@ -372,6 +377,14 @@ const VendorFormPage: React.FC = () => {
   const useBranchRateModel = Boolean(selectedHub) && !selectedHub!.isMasterHub;
   const insideLabel = useBranchRateModel ? `inside ${branchLabel}` : 'inside valley';
   const outsideLabel = useBranchRateModel ? `outside ${branchLabel}` : 'outside valley';
+  // The inside-valley flat rate toggle is only offered for these models. When
+  // it's hidden, a value left over from an earlier model/hub must not keep
+  // being saved - it would silently override the rates on screen.
+  const insideValleyRateOffered =
+    form.rateType === 'zone'
+    || form.rateType === 'per_destination'
+    || (useBranchRateModel && form.rateType === 'flat');
+  const insideValleyRateActive = insideValleyRateOffered && form.insideValleyEnabled;
 
   // Prefill the per-vendor rate fields with the global defaults from Settings;
   // the creator can then edit them so this vendor gets its own rates. Create
@@ -639,7 +652,7 @@ const VendorFormPage: React.FC = () => {
           zoneUrbanAreas: form.zoneUrbanAreas,
           zoneRemoteAreas: form.zoneRemoteAreas,
           zoneInsideValley: form.zoneInsideValley,
-          insideValleyFlatRate: form.insideValleyEnabled ? form.insideValleyFlatRate : '',
+          insideValleyFlatRate: insideValleyRateActive ? form.insideValleyFlatRate : '',
           returnInsideValleyPercent: form.returnInsideValleyPercent,
           returnOutsideValleyPercent: form.returnOutsideValleyPercent,
           branchReturnInsideValleyPercent: form.branchReturnInsideValleyPercent,
@@ -664,6 +677,7 @@ const VendorFormPage: React.FC = () => {
                 ...(form.citizenshipDoc ? { citizenshipDoc: form.citizenshipDoc } : {}),
                 ...(form.panVatDoc ? { panVatDoc: form.panVatDoc } : {}),
                 ...(form.businessCertDoc ? { businessCertDoc: form.businessCertDoc } : {}),
+                ...(form.agreementDoc ? { agreementDoc: form.agreementDoc } : {}),
               }
             : {}),
         });
@@ -705,7 +719,7 @@ const VendorFormPage: React.FC = () => {
         ...(form.rateType === 'per_destination'
           ? { extraWeightPercent: form.extraWeightPercent }
           : {}),
-        ...(form.insideValleyEnabled ? { insideValleyFlatRate: form.insideValleyFlatRate } : {}),
+        ...(insideValleyRateActive ? { insideValleyFlatRate: form.insideValleyFlatRate } : {}),
         // Return percents apply regardless of the primary rate model.
         returnInsideValleyPercent: form.returnInsideValleyPercent,
         returnOutsideValleyPercent: form.returnOutsideValleyPercent,
@@ -736,6 +750,7 @@ const VendorFormPage: React.FC = () => {
         citizenshipDoc: form.citizenshipDoc,
         panVatDoc: form.panVatDoc,
         businessCertDoc: form.businessCertDoc,
+        agreementDoc: form.agreementDoc,
       });
       setSubmitted(true);
     } catch (err: any) {
@@ -1045,6 +1060,19 @@ const VendorFormPage: React.FC = () => {
                     <span className="vfp-field-error">{fieldErrors.businessCertDoc}</span>
                   )}
                 </div>
+                <div>
+                  <FileInput
+                    label="Agreement"
+                    file={form.agreementDoc}
+                    onChange={setFile('agreementDoc')}
+                    accept={AGREEMENT_FILE_ACCEPT}
+                    hint="PDF or DOCX · max 5 MB"
+                  />
+                  {isEdit && <ExistingDoc docs={existingDocs} slot="agreementDoc" />}
+                  {fieldErrors.agreementDoc && (
+                    <span className="vfp-field-error">{fieldErrors.agreementDoc}</span>
+                  )}
+                </div>
               </div>
               {isEdit && (
                 <p className="vfp-hint">
@@ -1193,9 +1221,7 @@ const VendorFormPage: React.FC = () => {
                   applies the same way regardless of the vendor's own hub —
                   including a branch's "flat" model, whose Inside/Outside
                   <branch> pair otherwise has no separate valley rate. */}
-              {(form.rateType === 'zone'
-                || form.rateType === 'per_destination'
-                || (useBranchRateModel && form.rateType === 'flat')) && (
+              {insideValleyRateOffered && (
                 <div className={`vfp-rate-fields vfp-inside-valley-block${form.insideValleyEnabled ? ' is-on' : ''}`}>
                   <label className="vfp-inside-valley-toggle">
                     <input

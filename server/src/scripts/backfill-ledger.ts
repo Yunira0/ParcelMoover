@@ -200,7 +200,7 @@ async function postChunk(
       where: { id: { in: [...idsOf("rider_remittance"), ...idsOf("vendor_settlement")] } },
       select: {
         id: true, statement_id: true, payee_type: true, rider_id: true, vendor_id: true,
-        amount: true, payable_amount: true, paid_amount: true, payment_method: true, payments: true,
+        amount: true, payable_amount: true, paid_amount: true, vendor_credit_applied: true, payment_method: true, payments: true,
         settlement_date: true, updated_at: true,
         riders: { select: { name: true } },
         vendors: { select: { client_name: true, business_name: true } },

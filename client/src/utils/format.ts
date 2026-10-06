@@ -60,3 +60,30 @@ export function drCr(value: number, debitNormal: boolean): string {
   const isDebit = debitNormal ? value > 0 : value < 0;
   return `${formatMoney(Math.abs(value))} ${isDebit ? 'Dr' : 'Cr'}`;
 }
+
+/**
+ * The receiver's phone and, when the order has one, their alternate number -
+ * de-duplicated and blank-free, one entry per display line. Just the numbers,
+ * no "Alt" prefix.
+ */
+export function receiverPhoneLines(phone?: string | null, alternate?: string | null): string[] {
+  const main = phone?.trim() || '';
+  const alt = alternate?.trim() || '';
+  return [main, alt !== main ? alt : ''].filter(Boolean);
+}
+
+/**
+ * Both numbers as one line of text, for places that can't break lines: search
+ * haystacks and tooltips. On screen and on printed sheets each number goes on
+ * its own line instead (ReceiverPhones / receiverPhonesHtml).
+ */
+export function formatReceiverPhones(phone?: string | null, alternate?: string | null): string {
+  return receiverPhoneLines(phone, alternate).join(', ');
+}
+
+/** Printed-sheet version: each number HTML-escaped, one per line. */
+export function receiverPhonesHtml(phone?: string | null, alternate?: string | null): string {
+  const esc = (v: string) =>
+    v.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  return receiverPhoneLines(phone, alternate).map(esc).join('<br>');
+}

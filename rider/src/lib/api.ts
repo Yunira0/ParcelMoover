@@ -145,6 +145,7 @@ export interface Parcel {
   senderAddress?: string
   receiverName: string
   receiverPhone: string
+  receiverAlternatePhone?: string
   receiverAddress?: string
   origin: string
   destination: string

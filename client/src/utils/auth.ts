@@ -111,13 +111,53 @@ export function isBranchWorkspacePathAllowed(pathname: string): boolean {
   );
 }
 
+/**
+ * True for a finance-only accountant account (the "Accountant" department). The
+ * server gives it the whole Finance section plus branch COD settlement, and
+ * read-only views of orders and the overviews - no operations, users or settings.
+ */
+export function isAccountantUser(): boolean {
+  return hasAnyRole(['accountant']) && !isAdminSide();
+}
+
+/** Where an accountant lands, and where any non-finance URL sends them back to. */
+export const ACCOUNTANT_HOME = '/accounting';
+
+/** Routes that belong to the accountant's finance-only workspace. */
+export function isAccountantPathAllowed(pathname: string): boolean {
+  return (
+    pathname === '/profile' ||
+    pathname === '/accounting' ||
+    pathname.startsWith('/accounting/') ||
+    pathname === '/finance' ||
+    pathname.startsWith('/finance/') ||
+    pathname === '/billing' ||
+    // Drill-downs behind the COD Settlement card on the finance overview.
+    pathname.startsWith('/cod/') ||
+    pathname === '/cod-settlement-requests' ||
+    pathname.startsWith('/cod-settlement-requests/') ||
+    // Branch COD: the statement list/detail (recording payments), creating a
+    // statement, and the branch billing queue.
+    pathname === '/branches/settlement' ||
+    pathname.startsWith('/branches/settlement/') ||
+    pathname === '/branches/billing' ||
+    // Read-only views to check the money against: the order list and an
+    // order's detail (never create/bulk-create), and the three overviews.
+    pathname === '/orders' ||
+    pathname.startsWith('/orders/track/') ||
+    pathname === '/merchant-overview' ||
+    pathname === '/rider-overview' ||
+    pathname === '/branches'
+  );
+}
+
 /** True for a pure sales account — excludes admin/super_admin, who also carry the 'sales' role code when department = Sales but use the admin views. */
 export function isSalesUser(): boolean {
   return hasAnyRole(['sales']) && !isAdminSide();
 }
 
 /** Roles that actually have a web (admin/vendor/sales) experience. */
-const WEB_ROLES = ['super_admin', 'admin', 'sales', 'vendor', 'vendor_staff'];
+const WEB_ROLES = ['super_admin', 'admin', 'sales', 'accountant', 'vendor', 'vendor_staff'];
 
 /**
  * True for a rider who has no web-facing role. Riders use the dedicated Rider
@@ -148,9 +188,15 @@ export function getCurrentUserLocationId(): string | null {
   return getCurrentUser()?.locationId ?? null;
 }
 
+// The finance grants an accountant holds by role, matching the server (where
+// requireAdminPermission never narrows a non-admin role). BRANCH_TRACKING_READ
+// is the read-only Branch Overview; never the WRITE level.
+const ACCOUNTANT_PERMISSIONS = ['ACCOUNTING_ACCESS', 'EDIT_SETTLEMENTS', 'BRANCH_TRACKING_READ'];
+
 export function hasAdminPermission(permission: string): boolean {
   const roles = getCurrentUserRoles();
   if (roles.includes('super_admin')) return true;
+  if (roles.includes('accountant') && ACCOUNTANT_PERMISSIONS.includes(permission)) return true;
   if (!roles.includes('admin')) return false;
   const p = getCurrentUser()?.permissions;
   return Array.isArray(p) && p.includes(permission);

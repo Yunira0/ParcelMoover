@@ -20,6 +20,8 @@
 // Usage:
 //   npm run resync:postings -- --source=settlement --all [--dry-run]
 //   npm run resync:postings -- --source=settlement --since=2026-08-01
+//   npm run resync:postings -- --source=branch_settlement --all   (posts branch statements raised before they had entries)
+//   node dist/scripts/resync-postings.js --source=branch_settlement --all --once=branch-ledger   (deploy start; runs once per database)
 //   node dist/scripts/resync-postings.js --source=expense --all   (production)
 //
 // Under src/ for the same reason as backfill-ledger.ts and reconcile-ledger.ts:
@@ -29,13 +31,15 @@ import "dotenv/config";
 import prisma from "../lib/prisma";
 import redis from "../lib/redis";
 import {
+  syncBranchSettlementPostings,
+  syncCarrierSettlementPostings,
   syncExpensePostings,
   syncSettlementPostings,
   syncVendorPaymentPostings,
   type SyncSummary,
 } from "../services/accounting/sync";
 
-type SourceName = "settlement" | "vendor_payment" | "expense";
+type SourceName = "settlement" | "branch_settlement" | "carrier_settlement" | "vendor_payment" | "expense";
 
 type Tx = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
 
@@ -66,6 +70,28 @@ const SOURCES: Record<SourceName, Source> = {
         })
       ).map((row) => row.id),
     sync: (tx, ids) => syncSettlementPostings(tx, ids, { reason: "manual resync" }),
+  },
+  branch_settlement: {
+    candidates: async (since) =>
+      (
+        await prisma.branch_settlements.findMany({
+          where: since ? { updated_at: { gte: since } } : {},
+          select: { id: true },
+          orderBy: { updated_at: "asc" },
+        })
+      ).map((row) => row.id),
+    sync: (tx, ids) => syncBranchSettlementPostings(tx, ids, { reason: "manual resync" }),
+  },
+  carrier_settlement: {
+    candidates: async (since) =>
+      (
+        await prisma.carrier_settlements.findMany({
+          where: since ? { updated_at: { gte: since } } : {},
+          select: { id: true },
+          orderBy: { updated_at: "asc" },
+        })
+      ).map((row) => row.id),
+    sync: (tx, ids) => syncCarrierSettlementPostings(tx, ids, { reason: "manual resync" }),
   },
   vendor_payment: {
     candidates: async (since) =>
@@ -103,6 +129,11 @@ async function main() {
   const sinceArg = arg("since");
   const all = argv.includes("--all");
   const dryRun = argv.includes("--dry-run");
+  // Deploy-time runs: `--once=<tag>` skips if this database already finished a
+  // run under that tag, and records one after a clean run. The tag names the
+  // rule change being rolled out, so a later change can ship its own resync.
+  const onceTag = arg("once");
+  const onceMarker = onceTag ? `RESYNC_POSTINGS_DONE:${onceTag}` : null;
 
   if (!sourceName || !(sourceName in SOURCES)) {
     console.error(`--source is required, one of: ${Object.keys(SOURCES).join(", ")}`);
@@ -125,6 +156,11 @@ async function main() {
     return;
   }
 
+  if (onceMarker && (await prisma.audit_logs.findFirst({ where: { action: onceMarker }, select: { id: true } }))) {
+    console.log(`${sourceName}: already re-synced under --once=${onceTag}, skipping.`);
+    return;
+  }
+
   const source = SOURCES[sourceName];
   const ids = await source.candidates(since);
   console.log(
@@ -135,7 +171,6 @@ async function main() {
     console.log("--dry-run: nothing written. Re-run without it to apply.");
     return;
   }
-  if (ids.length === 0) return;
 
   let changed = 0;
   let unresolved = 0;
@@ -166,18 +201,35 @@ async function main() {
     console.log(`${failed} row(s) in failed chunks were not touched.`);
     process.exitCode = 1;
   }
+
+  // Only a clean run counts as done. Anything unresolved (usually a payment
+  // method with no account) is retried on the next deploy, which is harmless:
+  // rows already in agreement re-sync as "unchanged".
+  if (onceMarker && failed === 0 && unresolved === 0) {
+    await prisma.audit_logs.create({
+      data: {
+        actor_id: null,
+        entity_type: "system",
+        action: onceMarker,
+        new_data: { source: sourceName, rows: ids.length, changed },
+      },
+    });
+  }
   console.log("Run `npm run reconcile:ledger` to confirm the books agree.");
 }
 
 main()
   .catch((error) => {
     console.error(error);
-    process.exit(1);
+    process.exitCode = 1;
   })
   // sync.ts pulls in services that open the shared Redis client, whose
   // reconnect timer keeps the event loop alive forever - disconnect both or the
   // script prints its results and hangs.
   .finally(async () => {
-    await prisma.$disconnect();
-    redis.disconnect();
+    try {
+      await prisma.$disconnect();
+    } finally {
+      redis.disconnect();
+    }
   });

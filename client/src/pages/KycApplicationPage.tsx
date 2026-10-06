@@ -4,8 +4,9 @@ import { CheckCircle, ChevronRight, ChevronLeft, Upload, X } from 'lucide-react'
 import Button from '../components/Button';
 import FormField from '../components/FormField';
 import { submitKycApplication, type KycApplicationInput } from '../services/kyc.service';
-import { hasLetter, isValidEmail, isValidName, isValidPhone } from '../utils/serverValidation';
+import { apiErrorMessage, hasLetter, isValidEmail, isValidName, isValidPhone } from '../utils/serverValidation';
 import { convertHeicFileIfNeeded } from '../utils/heicConvert';
+import { usePageMeta } from '../utils/pageMeta';
 import './KycApplicationPage.css';
 
 const STEPS = ['Business', 'Owner & Bank', 'Documents'];
@@ -79,6 +80,11 @@ const FileField: React.FC<{
 };
 
 const KycApplicationPage: React.FC = () => {
+  usePageMeta({
+    title: 'Become a Vendor | Ship with Parcel Moover (ParcelMoover)',
+    description: 'Apply to ship with ParcelMoover: courier pickup and delivery across the Kathmandu valley and Nepal, live tracking for your customers, and COD settlement for your business.',
+    path: '/apply',
+  });
   const [step, setStep] = useState(0);
   const [form, setForm] = useState<KycApplicationInput>(emptyForm());
   const [loading, setLoading] = useState(false);
@@ -144,8 +150,8 @@ const KycApplicationPage: React.FC = () => {
     try {
       await submitKycApplication(form);
       setSubmitted(true);
-    } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to submit application. Please try again.');
+    } catch (err) {
+      setError(apiErrorMessage(err, 'Failed to submit application. Please try again.'));
     } finally {
       setLoading(false);
     }

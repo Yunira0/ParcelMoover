@@ -10,7 +10,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 vi.mock("../../lib/prisma", () => ({
   default: {
     parcels: { findMany: vi.fn() },
-    locations: { findFirst: vi.fn(), findMany: vi.fn() },
+    locations: { findFirst: vi.fn(), findMany: vi.fn(), findUnique: vi.fn() },
     transit_manifests: { findUnique: vi.fn(), findFirst: vi.fn(), create: vi.fn(), delete: vi.fn(), updateMany: vi.fn() },
     transit_manifest_parcels: { findMany: vi.fn(), createMany: vi.fn(), deleteMany: vi.fn() },
     parcel_status_history: { findMany: vi.fn() },
@@ -51,7 +51,7 @@ import {
 
 const mockedPrisma = prisma as unknown as {
   parcels: { findMany: ReturnType<typeof vi.fn> };
-  locations: { findFirst: ReturnType<typeof vi.fn>; findMany: ReturnType<typeof vi.fn> };
+  locations: { findFirst: ReturnType<typeof vi.fn>; findMany: ReturnType<typeof vi.fn>; findUnique: ReturnType<typeof vi.fn> };
   transit_manifests: {
     findUnique: ReturnType<typeof vi.fn>;
     findFirst: ReturnType<typeof vi.fn>;
@@ -116,6 +116,8 @@ beforeEach(() => {
   // left over from a previous test, so one test's call count never leaks into
   // the next test sharing the same mocked prisma method.
   vi.resetAllMocks();
+  // isRelayHub (Imadol relay exception) looks the destination up; by default it is an ordinary branch.
+  mockedPrisma.locations.findUnique.mockResolvedValue({ code: "BRANCH", name: "Pokhara", parent_id: null });
   mockedPrisma.$transaction.mockImplementation((fn: (tx: unknown) => Promise<unknown>) =>
     fn(mockedPrisma),
   );

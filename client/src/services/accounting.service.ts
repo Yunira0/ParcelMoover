@@ -105,6 +105,14 @@ export interface Account {
   isActive: boolean;
 }
 
+/**
+ * Whether a hand-written entry can post to this account. A control account
+ * needs its party named, and the party picker knows only riders and vendors -
+ * COD with Branch is tagged per branch, so it is posted through Branch COD.
+ */
+export const isPostableByHand = (account: Account) =>
+  !account.isControl || account.subledgerType === 'rider' || account.subledgerType === 'vendor';
+
 export interface AccountBalance extends Account {
   debit: number;
   credit: number;

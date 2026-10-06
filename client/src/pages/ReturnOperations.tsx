@@ -45,6 +45,7 @@ import { searchVendors } from '../services/users.service';
 import { apiErrorMessage } from '../utils/serverValidation';
 import { addOrdersToBranchManifest } from '../services/transitManifests.service';
 import './ReturnOperations.css';
+import ReceiverPhones from '../components/ReceiverPhones';
 
 // "manifests" sits between ready_to_return and sent_to_vendor because that is
 // where it sits physically: parcels are marked for return, gathered onto a
@@ -102,7 +103,9 @@ const TAB_QUERY: Record<
   ParcelReturnTab,
   { status: ParcelStatus[]; secondaryOrderType?: OrderType; secondaryStatus?: ParcelStatus[] }
 > = {
-  follow_up: { status: ['failed_delivery', 'follow_up'] },
+  // follow_up only: a fresh failed_delivery is worked from Dispatch's Failed
+  // tab and lands here once it is moved to follow_up.
+  follow_up: { status: ['follow_up'] },
   ready_to_return: {
     status: ['ready_to_return'],
     secondaryOrderType: 'return',
@@ -149,7 +152,14 @@ const manifestParcelColumns = (parcels: ReturnManifestParcel[]) => [
     header: 'CONTACT',
     accessor: (p: ReturnManifestParcel) => (
       p.receiverPhone
-        ? <a className="return-contact-link" href={`tel:${p.receiverPhone}`}>{p.receiverPhone}</a>
+        ? (
+          <>
+            <a className="return-contact-link" href={`tel:${p.receiverPhone}`}>{p.receiverPhone}</a>
+            {p.receiverAlternatePhone && p.receiverAlternatePhone !== p.receiverPhone && (
+              <><br /><a className="return-contact-link" href={`tel:${p.receiverAlternatePhone}`}>{p.receiverAlternatePhone}</a></>
+            )}
+          </>
+        )
         : <span className="return-muted">-</span>
     ),
     width: '140px',
@@ -250,7 +260,7 @@ const ReturnOperations: React.FC = () => {
       if (requestId !== countsRequestIdRef.current) return;
       if (allType?.success && returnType?.success) {
         setTabCounts({
-          follow_up: (allType.data.failed_delivery || 0) + (allType.data.follow_up || 0),
+          follow_up: allType.data.follow_up || 0,
           ready_to_return:
             (allType.data.ready_to_return || 0) +
             (returnType.data.pickup_ordered || 0) +
@@ -453,20 +463,15 @@ const ReturnOperations: React.FC = () => {
     }
   };
 
-  // "Transit" (follow_up/failed_delivery -> oov) auto-stages toward each
-  // parcel's own origin hub in one action, rather than leaving the operator to
-  // separately visit the Transit page and pick a destination - origin is
-  // exactly where a parcel needs to get back to (see stageOrdersToBranch's
-  // return-leg check, which validates the chosen branch against origin
-  // instead of the customer's now-irrelevant delivery address). A fresh
-  // failed_delivery row is included too, so an operator doesn't have to
-  // promote it to follow_up first just to unlock Transit. Parcels can have
-  // different origins, so each origin gets its own status update + staging
-  // call.
+  // "Transit" (follow_up -> oov) auto-stages toward each parcel's own origin
+  // hub in one action, rather than leaving the operator to separately visit
+  // the Transit page and pick a destination - origin is exactly where a parcel
+  // needs to get back to (see stageOrdersToBranch's return-leg check, which
+  // validates the chosen branch against origin instead of the customer's
+  // now-irrelevant delivery address). Parcels can have different origins, so
+  // each origin gets its own status update + staging call.
   const sendToTransit = async () => {
-    const eligible = filteredOrders.filter(
-      (o) => selectedIds.has(o.id) && (o.status === 'follow_up' || o.status === 'failed_delivery'),
-    );
+    const eligible = filteredOrders.filter((o) => selectedIds.has(o.id) && o.status === 'follow_up');
     if (eligible.length === 0) {
       setActionMsg('Select one or more orders in the return flow to action.');
       return;
@@ -511,14 +516,10 @@ const ReturnOperations: React.FC = () => {
     () => filteredOrders.filter(o => selectedIds.has(o.id)),
     [filteredOrders, selectedIds],
   );
-  const actionStatusOptions = useMemo(() => {
-    const options = sharedNextStatuses(selectedForAction.map(o => o.status));
-    // "Follow Up" is a legal next status for a fresh failed_delivery row (this
-    // tab bundles both failed_delivery and follow_up - see TAB_QUERY), but
-    // offering it as a destination while already viewing the Follow Up tab is
-    // just confusing - this tab's real options are Reattempt/Transit/Return.
-    return activeTab === 'follow_up' ? options.filter(status => status !== 'follow_up') : options;
-  }, [selectedForAction, activeTab]);
+  const actionStatusOptions = useMemo(
+    () => sharedNextStatuses(selectedForAction.map(o => o.status)),
+    [selectedForAction],
+  );
 
   const closeAction = () => {
     setIsActionOpen(false);
@@ -935,7 +936,7 @@ const ReturnOperations: React.FC = () => {
     {
       header: 'RECEIVER',
       accessor: (order: Order) => (
-        <div className="return-party-cell"><span>{order.receiverName}</span><small>{order.receiverPhone}</small></div>
+        <div className="return-party-cell"><span>{order.receiverName}</span><small><ReceiverPhones phone={order.receiverPhone} alternate={order.receiverAlternatePhone} /></small></div>
       ),
       width: '200px',
     },

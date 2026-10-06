@@ -8,12 +8,12 @@ vi.mock("../../lib/prisma", () => ({
   },
 }));
 vi.mock("../billing.service", () => ({ getVendorAccountBalance: vi.fn() }));
-vi.mock("../order.service", () => ({ notifyAdmins: vi.fn() }));
+vi.mock("../order.service", () => ({ notifyFinanceStaff: vi.fn() }));
 vi.mock("../notification.service", () => ({ createNotification: vi.fn() }));
 
 import prisma from "../../lib/prisma";
 import { getVendorAccountBalance } from "../billing.service";
-import { notifyAdmins } from "../order.service";
+import { notifyFinanceStaff } from "../order.service";
 import { createCodSettlementRequest, listCodSettlementRequests } from "../codSettlementRequest.service";
 
 const actor = { id: "vendor-user", roles: ["vendor"] };
@@ -89,7 +89,7 @@ describe("vendor COD settlement request rules shared by dashboard and Partner AP
       status: "open",
     });
     expect(created.bankName).toBe("Registered Bank");
-    expect(notifyAdmins).toHaveBeenCalledOnce();
+    expect(notifyFinanceStaff).toHaveBeenCalledOnce();
   });
 
   it("turns a concurrent unique-index collision into a conflict", async () => {
@@ -104,7 +104,7 @@ describe("vendor COD settlement request rules shared by dashboard and Partner AP
       note: null, amount_snapshot: 1400, status: "open", decision_note: null,
       reviewed_at: null, closed_at: null, created_at: new Date(),
     });
-    vi.mocked(notifyAdmins).mockRejectedValue(new Error("notification unavailable"));
+    vi.mocked(notifyFinanceStaff).mockRejectedValue(new Error("notification unavailable"));
     const log = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
       await expect(createCodSettlementRequest(actor, {})).resolves.toMatchObject({ id: "request-2" });

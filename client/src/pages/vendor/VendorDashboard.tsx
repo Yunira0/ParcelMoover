@@ -11,7 +11,7 @@ import VendorTodayPanel from '../../components/vendor/VendorTodayPanel';
 import VendorOrderDetails from '../../components/vendor/VendorOrderDetails';
 import { EMPTY_VALLEY_SPLIT, getDashboardSummary, type DashboardSummary } from '../../services/orders.service';
 import { subscribeToRemarkStatusChanged } from '../../services/remarks.service';
-import { getCurrentUser } from '../../utils/auth';
+import { getCurrentUser, getCurrentUserRoles, hasStaffPermission } from '../../utils/auth';
 import './VendorDashboard.css';
 
 const REFRESH_INTERVAL_MS = 15_000;
@@ -77,6 +77,7 @@ const EMPTY_SUMMARY: DashboardSummary = {
     codFromPmRider: 0,
     codFromNcm: 0,
     codFromUpaya: 0,
+    codFromBranches: 0,
     pendingDeliveryCharge: 0,
     deliveryCharge: 0,
     progressPercent: 0,
@@ -129,6 +130,7 @@ const VendorDashboard: React.FC = () => {
   }, [loadSummary]);
 
   const { overview, today, codSettlement, weeklyTrend } = summary;
+  const canSeeCod = !getCurrentUserRoles().includes('vendor_staff') || hasStaffPermission('FINANCE_ACCESS');
 
   return (
     <div className="vendor-dashboard">
@@ -160,6 +162,7 @@ const VendorDashboard: React.FC = () => {
           returnProcess={overview.pendingReturns}
           returnProcessAmount={overview.pendingReturnsAmount}
           loading={loading}
+          showAmounts={canSeeCod}
         />
 
         {/* Charts + side panel */}
@@ -182,7 +185,7 @@ const VendorDashboard: React.FC = () => {
               remarks={today.remarks}
               loading={loading}
             />
-            <VendorCodCard data={codSettlement} loading={loading} />
+            {canSeeCod && <VendorCodCard data={codSettlement} loading={loading} />}
           </div>
         </div>
 

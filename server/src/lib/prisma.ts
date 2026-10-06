@@ -27,7 +27,8 @@ pool.on("error", (err) => {
   console.error("[DB] Idle client error:", err.message);
 });
 
-const adapter = new PrismaPg(pool);
+// Dispose the shared pool on disconnect so startup scripts exit promptly.
+const adapter = new PrismaPg(pool, { disposeExternalPool: true });
 
 const baseClient = new PrismaClient({ adapter });
 // This query-only extension preserves every model's args/results. Keep the

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import TallyPage, { type TallyAction } from '../../components/finance/TallyPage';
 import Button from '../../components/Button';
 import ToggleSwitch from '../../components/ToggleSwitch';
@@ -107,10 +107,18 @@ const MastersPage: React.FC = () => {
     [rows, page, pageSize],
   );
 
+  // The forms render above the chart, so opening one from a row far down the
+  // list would otherwise happen off-screen. Only one form is open at a time.
+  const formTopRef = useRef<HTMLDivElement>(null);
+  const showForm = () =>
+    requestAnimationFrame(() => formTopRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+
   const openAdd = () => {
     setForm(blankForm());
     setEditing('');
+    setOpening(null);
     setNotice('');
+    showForm();
   };
 
   const openEdit = (node: AccountNode) => {
@@ -125,7 +133,9 @@ const MastersPage: React.FC = () => {
       description: node.description ?? '',
     });
     setEditing(node.code);
+    setOpening(null);
     setNotice('');
+    showForm();
   };
 
   const save = async (event: React.FormEvent) => {
@@ -180,6 +190,7 @@ const MastersPage: React.FC = () => {
     setOpeningParty(null);
     setEditing(null);
     setNotice('');
+    showForm();
   };
 
   const openingAccount = useMemo(() => rows.find((row) => row.code === opening) ?? null, [rows, opening]);
@@ -227,6 +238,7 @@ const MastersPage: React.FC = () => {
       error={error}
       loading={loading}
     >
+      <div ref={formTopRef} />
       {notice && <p className="tly-note">{notice}</p>}
 
       {opening !== null && openingAccount && (

@@ -6,10 +6,12 @@ import PartyPicker, { type PickedParty } from './PartyPicker';
 import { money } from './format';
 import {
   createManualEntry,
+  isPostableByHand,
   listAccounts,
   type Account,
 } from '../../services/accounting.service';
 import { apiErrorMessage } from '../../utils/serverValidation';
+import { todayNepalAd } from '../../utils/nepaliDate';
 import '../../components/Modal.css';
 import './Accounting.css';
 
@@ -51,7 +53,7 @@ interface ManualEntryModalProps {
 
 const ManualEntryModal: React.FC<ManualEntryModalProps> = ({ onClose, onSaved }) => {
   const [accounts, setAccounts] = useState<Account[]>([]);
-  const [entryDate, setEntryDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [entryDate, setEntryDate] = useState(todayNepalAd);
   const [memo, setMemo] = useState('');
   const [lines, setLines] = useState<LineDraft[]>([emptyLine(), emptyLine()]);
   const [error, setError] = useState<string | null>(null);
@@ -59,7 +61,7 @@ const ManualEntryModal: React.FC<ManualEntryModalProps> = ({ onClose, onSaved })
 
   useEffect(() => {
     listAccounts()
-      .then((rows) => setAccounts(rows.filter((account) => account.isActive)))
+      .then((rows) => setAccounts(rows.filter((account) => account.isActive && isPostableByHand(account))))
       .catch(() => setError('Could not load the chart of accounts'));
   }, []);
 
@@ -127,8 +129,9 @@ const ManualEntryModal: React.FC<ManualEntryModalProps> = ({ onClose, onSaved })
           const subledger = subledgerOf(line);
           return {
             accountCode: line.accountCode,
-            // Only ever one side — the server rejects a line carrying both.
-            ...(paisa(line.debit) > 0 ? { debit: Number(line.debit) } : { credit: Number(line.credit) }),
+            // Only ever one side — the server rejects a line carrying both. Sent
+            // in whole paisa, the same figures the Balanced check above summed.
+            ...(paisa(line.debit) > 0 ? { debit: paisa(line.debit) / 100 } : { credit: paisa(line.credit) / 100 }),
             ...(line.memo.trim() ? { memo: line.memo.trim() } : {}),
             ...(subledger && line.party
               ? { partyType: line.party.partyType, partyId: line.party.partyId }

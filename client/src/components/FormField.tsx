@@ -117,6 +117,7 @@ const FormField: React.FC<FormFieldProps> = ({
           disabled={disabled}
           placeholder={placeholder}
           rows={rows}
+          maxLength={maxLength}
           value={value ?? ''}
           onChange={(e) => onChange(e.target.value)}
           style={rows <= 1 ? { height: 36, minHeight: 'unset', resize: 'vertical' } : undefined}

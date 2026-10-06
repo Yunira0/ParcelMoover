@@ -1,7 +1,6 @@
 import QRCode from 'qrcode';
-import JsBarcode from 'jsbarcode';
 import type { Order } from '../services/orders.service';
-import { toBsDate } from './nepaliDate';
+import { toBsDate, toNptTime } from './nepaliDate';
 
 const ORDER_TYPE_LABELS: Record<string, string> = {
   delivery: 'DELIVERY',
@@ -17,22 +16,7 @@ const TYPE_COLORS: Record<string, { bg: string; text: string }> = {
 
 const fmt = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: 0 });
 const fmtDate = (iso: string) => toBsDate(iso);
-
-function barcodeDataUrl(trackingId: string): string {
-  const canvas = document.createElement('canvas');
-  JsBarcode(canvas, trackingId, {
-    format: 'CODE128',
-    displayValue: false,
-    margin: 0,
-    // Rendered far above the printed size (see .bc) so scaling it down in CSS
-    // never softens the bar edges - a blurry CODE128 is a scan failure.
-    // `width` is the narrow-bar module width in px: the single biggest lever on
-    // whether a printed barcode reads first time.
-    height: 110,
-    width: 4,
-  });
-  return canvas.toDataURL('image/png');
-}
+const fmtTime = (iso: string) => toNptTime(iso);
 
 // The label's own hand-tuned design size - every font/QR/barcode/padding
 // value below the .label-design rule is calibrated for exactly this box.
@@ -43,12 +27,15 @@ function barcodeDataUrl(trackingId: string): string {
 const DESIGN_WIDTH_MM = 100;
 const DESIGN_HEIGHT_MM = 75;
 
-function labelHtml(order: Order, qrDataUrl: string, barcodeUrl: string): string {
+function labelHtml(order: Order, qrDataUrl: string): string {
   const typeLabel = ORDER_TYPE_LABELS[order.orderType] ?? order.orderType.toUpperCase();
   const typeColor = TYPE_COLORS[order.orderType] ?? { bg: '#fff', text: '#000' };
+  const orderAt = order.createdAtRaw || order.createdAt;
+  const orderTime = fmtTime(orderAt);
   const codLine = order.codAmount > 0 ? `NPR ${fmt(order.codAmount)}` : '—';
   const weightLine = order.weightKg ? `${order.weightKg} kg` : '—';
-  const packageLine = order.packageType || '—';
+  const instruction = order.deliveryInstruction?.trim();
+  const packageText = order.packageType?.trim();
   let cleanDestination = (order.destinationName || order.destination || '')
     .replace(/^(inside\s+valley\s*[-–—]?\s*|outside\s+valley\s*[-–—]?\s*)/i, '')
     .trim();
@@ -103,17 +90,18 @@ function labelHtml(order: Order, qrDataUrl: string, barcodeUrl: string): string 
     </div>
     <div class="codes">
       <img src="${qrDataUrl}" class="qr" />
-      <img src="${barcodeUrl}" class="bc" />
     </div>
   </div>
 
-  ${order.deliveryInstruction ? `<div class="note"><span class="note-label">NOTE:</span> <span class="note-text">${esc(order.deliveryInstruction)}</span></div>` : ''}
+  ${packageText || instruction ? `<div class="info">
+    ${packageText ? `<div class="ic"><span class="fk">PRODUCT</span><span class="iv">${esc(packageText)}</span></div>` : ''}
+    ${instruction ? `<div class="ic"><span class="fk">NOTE</span><span class="iv">${esc(instruction)}</span></div>` : ''}
+  </div>` : ''}
 
   <div class="foot">
     <div class="fc"><span class="fk">COD</span><span class="fv">${codLine}</span></div>
-    <div class="fc"><span class="fk">WEIGHT</span><span class="fv">${weightLine}</span></div>
-    <div class="fc"><span class="fk">PACKAGE</span><span class="fv">${esc(packageLine)}</span></div>
-    <div class="fc"><span class="fk">DATE</span><span class="fv">${fmtDate(order.createdAt)}</span></div>
+    <div class="fc fc-w"><span class="fk">WEIGHT</span><span class="fv">${weightLine}</span></div>
+    <div class="fc fc-d"><span class="fk">DATE</span><span class="fv">${fmtDate(orderAt)}${orderTime ? `<span class="ft">${orderTime}</span>` : ''}</span></div>
   </div>
   </div>
 </div>`;
@@ -166,7 +154,8 @@ body{background:#fff;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif}
 /* ── Header ── */
 .hdr{
   display:flex;align-items:flex-start;justify-content:space-between;
-  padding:2.5mm 3.5mm 2mm;
+  padding:2.5mm 4mm 2mm;
+  align-items:center;
   border-bottom:2px solid #000;
 }
 .brand-name{font-size:15px;font-weight:800;color:#000;line-height:1.1}
@@ -183,8 +172,8 @@ body{background:#fff;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif}
 /* ── Tracking ── */
 .track{
   display:flex;align-items:baseline;justify-content:space-between;
-  padding:2mm 3.5mm;
-  border-bottom:1px dashed #000;
+  padding:1.8mm 4mm;
+  border-bottom:1px solid #000;
 }
 .order-num{font-size:10px;font-weight:700;color:#000}
 .track-id{
@@ -199,12 +188,12 @@ body{background:#fff;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif}
 /* ── Route ── */
 .route{
   display:flex;align-items:center;justify-content:center;
-  padding:2mm 3.5mm;
+  padding:1.8mm 4mm;
   gap:3mm;
-  border-bottom:2px solid #000;
+  border-bottom:1px solid #000;
 }
 .route-hub{
-  font-size:12px;font-weight:800;color:#000;
+  font-size:13px;font-weight:800;color:#000;
   letter-spacing:0.5px;text-transform:uppercase;
   word-wrap:break-word;overflow-wrap:break-word;
   hyphens:auto;min-width:0;
@@ -219,11 +208,11 @@ body{background:#fff;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif}
 /* ── Body ── */
 .body{
   display:flex;flex:1;gap:0;
-  padding:2mm 3.5mm;min-height:0;
+  padding:2.5mm 4mm;min-height:0;
   overflow:visible;
 }
 .from-col{
-  flex:0 0 26%;display:flex;flex-direction:column;
+  flex:0 0 22%;display:flex;flex-direction:column;
   gap:0.3mm;min-width:0;
   padding-right:2.5mm;
   overflow:visible;
@@ -232,16 +221,16 @@ body{background:#fff;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif}
   flex:1;display:flex;flex-direction:column;
   gap:0.3mm;min-width:0;
   padding-left:2.5mm;
-  border-left:1.5px solid #000;
+  border-left:1px solid #000;
   overflow:visible;
 }
 .party-label{
-  font-size:6.5px;font-weight:700;color:#000;
+  font-size:7px;font-weight:700;color:#000;
   text-transform:uppercase;letter-spacing:1.2px;
   line-height:1;
 }
 .party-name{
-  font-size:13px;font-weight:800;color:#000;
+  font-size:12px;font-weight:800;color:#000;
   line-height:1.2;word-wrap:break-word;overflow-wrap:break-word;
   hyphens:auto;
 }
@@ -252,9 +241,9 @@ body{background:#fff;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif}
 }
 .party-phone-alt{
   display:flex;align-items:baseline;gap:1mm;
-  font-size:11px;font-weight:700;color:#000;
+  font-size:14px;font-weight:700;color:#000;
   font-family:'Courier New',Consolas,monospace;
-  letter-spacing:0.35px;line-height:1.15;
+  letter-spacing:0.5px;line-height:1.2;
 }
 .party-addr{
   font-size:12px;font-weight:700;color:#000;
@@ -265,33 +254,38 @@ body{background:#fff;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif}
 .codes{
   flex-shrink:0;display:flex;flex-direction:column;
   align-items:center;justify-content:center;gap:1.5mm;
-  padding-left:2.5mm;border-left:1.5px solid #000;
+  padding-left:3mm;border-left:1px solid #000;
 }
-.qr{width:18mm;height:18mm;display:block}
-.bc{width:22mm;height:7mm;display:block}
+.qr{width:20mm;height:20mm;display:block}
 
-/* ── Note ── */
-.note{
-  padding:1.5mm 3.5mm;
-  border-top:1px dashed #000;
+/* ── Product / Note ── free text up to 100 chars each. One full-width row each, sized so the form's 100-character limit fits in two lines (three at most),
+   heading and text on the same line, so long text has the whole label width. */
+.info{
+  display:flex;flex-direction:column;gap:0.6mm;
+  padding:1.5mm 4mm;
+  border-top:1px solid #000;
 }
-.note-label{font-size:9px;font-weight:700;color:#000}
-.note-text{
-  font-size:9px;font-weight:700;color:#000;font-style:italic;
-  line-height:1.2;
-  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;
-  overflow:hidden;
+.ic{
+  flex:none;min-width:0;display:flex;align-items:baseline;gap:1.5mm;
+  padding:0;
+}
+.ic .fk{flex-shrink:0}
+.iv{
+  flex:1;min-width:0;
+  font-size:9.5px;font-weight:700;color:#000;line-height:1.15;
+  display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;
+  overflow:hidden;overflow-wrap:break-word;
 }
 
 /* ── Footer ── */
 .foot{
   display:flex;align-items:stretch;
-  padding:2mm 3.5mm;
+  padding:1mm 4mm;
   border-top:2px solid #000;
   gap:0;
 }
 .fc{
-  flex:1;display:flex;flex-direction:column;
+  flex:1 1 auto;min-width:0;display:flex;flex-direction:column;
   align-items:center;gap:0;
   padding:0 1.5mm;
   border-right:1px solid #000;
@@ -301,10 +295,15 @@ body{background:#fff;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif}
   font-size:8px;color:#000;text-transform:uppercase;
   letter-spacing:0.5px;font-weight:700;line-height:1.1;
 }
+.ft{font-size:8px;font-weight:700;margin-left:1.2mm}
+.foot .fk{font-size:6.5px}
+/* Weight is short, date + time is long: size the cells to match. */
+.fc-w{flex:0.5 1 auto}
+.fc-d{flex:1.6 1 auto}
 .fv{
-  font-size:13px;font-weight:800;color:#000;
+  font-size:10px;font-weight:800;color:#000;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
-  max-width:100%;line-height:1.3;
+  max-width:100%;line-height:1.15;
 }
 
 @media print{
@@ -370,9 +369,8 @@ export async function printLabels(orders: Order[]): Promise<void> {
       QRCode.toDataURL(o.trackingId, { width: 320, margin: 0, color: { dark: '#000000', light: '#ffffff' } }),
     ),
   );
-  const barcodeUrls = orders.map((o) => barcodeDataUrl(o.trackingId));
 
-  const labelsMarkup = orders.map((o, i) => labelHtml(o, qrUrls[i]!, barcodeUrls[i]!)).join('\n');
+  const labelsMarkup = orders.map((o, i) => labelHtml(o, qrUrls[i]!)).join('\n');
 
   win.document.open();
   win.document.write(`<!DOCTYPE html>

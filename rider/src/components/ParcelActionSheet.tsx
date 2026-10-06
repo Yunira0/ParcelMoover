@@ -96,6 +96,7 @@ export default function ParcelActionSheet({ parcel, onClose, onDone }: Props) {
   // parcel to carry back to the vendor - so we gate "Delivered" behind a
   // confirmation that they actually received it.
   const [exchangePrompt, setExchangePrompt] = useState(false)
+  // "Delivered" can't be undone by the rider, so it always takes a second tap.
 
   const isExchange = parcel.orderType === 'exchange'
 
@@ -256,6 +257,13 @@ export default function ParcelActionSheet({ parcel, onClose, onDone }: Props) {
             className="flex items-center gap-[7px] text-rust cursor-pointer active:opacity-70">
             <Phone size={13} /><span className="text-[13.5px] font-medium">{parcel.receiverPhone}</span>
           </button>
+          {parcel.receiverAlternatePhone && parcel.receiverAlternatePhone !== parcel.receiverPhone && (
+            <button type="button" onClick={() => callAndLog(parcel.id, parcel.receiverAlternatePhone!, 'receiver')}
+              style={{ touchAction: 'manipulation' }}
+              className="flex items-center gap-[7px] text-rust cursor-pointer active:opacity-70">
+              <Phone size={13} /><span className="text-[13.5px] font-medium">{parcel.receiverAlternatePhone}</span>
+            </button>
+          )}
           {receiverAddr && (
             <>
               <p className="text-[13px] leading-[1.5] text-ink-2">{receiverAddr}</p>
@@ -399,6 +407,16 @@ export default function ParcelActionSheet({ parcel, onClose, onDone }: Props) {
                 </Button>
               )
             })()}
+
+            {/* Kept well apart from Delivered so a tap meant for "failed"
+                can't land on the primary button. */}
+            {primary && (partialKey || dangers.length > 0) && (
+              <div className="mt-3 flex items-center gap-3">
+                <div className="h-px flex-1 bg-line" />
+                <span className="text-[11px] font-medium text-ink-3">Couldn't deliver?</span>
+                <div className="h-px flex-1 bg-line" />
+              </div>
+            )}
 
             {(partialKey || dangers.length > 0) && (
               <div className="flex gap-2.5">

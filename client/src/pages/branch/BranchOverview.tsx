@@ -21,7 +21,7 @@ import {
   type BranchMetrics,
 } from '../../services/branchTracking.service';
 import type { Order, OrdersPageMeta } from '../../services/orders.service';
-import { ORDER_STATUS_LABELS, getOrderStatusTone } from '../../utils/orderStatus';
+import { CARRIER_LABELS, ORDER_STATUS_LABELS, getOrderStatusTone } from '../../utils/orderStatus';
 import { toBsDate } from '../../utils/nepaliDate';
 import { formatMoneyCompact } from '../../utils/format';
 import { downloadExcel } from '../../utils/excel';
@@ -29,6 +29,7 @@ import { useCursorPagination } from '../../hooks/useCursorPagination';
 import '../OrderManagement.css';
 import '../MerchantOverview.css';
 import './BranchOverview.css';
+import ReceiverPhones from '../../components/ReceiverPhones';
 
 const hubName = (loc: string) => loc.split(' - ')[0];
 
@@ -129,7 +130,7 @@ const BranchOverview: React.FC = () => {
         : (await exportBranchOrders({ ...filters, ...(activeCard ? { metric: activeCard } : {}) })).data;
     const headers = [
       'Order ID', 'Tracking ID', 'Created', 'Origin', 'Destination', 'Sender',
-      'Receiver', 'Receiver Phone', 'COD', 'Collected', 'Weight', 'Status',
+      'Receiver', 'Receiver Phone', 'Alternate Number', 'COD', 'Collected', 'Weight', 'Status',
     ];
     const body = picked.map((o) => [
       `#${o.orderNumber}`,
@@ -140,6 +141,7 @@ const BranchOverview: React.FC = () => {
       o.senderName,
       o.receiverName,
       o.receiverPhone || '',
+      o.receiverAlternatePhone || '',
       o.codAmount,
       o.collectedAmount,
       o.weightKg || '',
@@ -178,7 +180,7 @@ const BranchOverview: React.FC = () => {
     {
       header: 'RECEIVER',
       accessor: (o: Order) => (
-        <div className="party-cell"><span>{o.receiverName}</span><small>{o.receiverPhone}</small></div>
+        <div className="party-cell"><span>{o.receiverName}</span><small><ReceiverPhones phone={o.receiverPhone} alternate={o.receiverAlternatePhone} /></small></div>
       ),
       width: '150px',
     },
@@ -196,7 +198,10 @@ const BranchOverview: React.FC = () => {
     {
       header: 'STATUS',
       accessor: (o: Order) => (
-        <StatusChip tone={getOrderStatusTone(o.status)}>{ORDER_STATUS_LABELS[o.status]}</StatusChip>
+        <span className="om-status-cell">
+          <StatusChip tone={getOrderStatusTone(o.status)}>{ORDER_STATUS_LABELS[o.status]}</StatusChip>
+          {o.carrierCode && <span className="om-carrier-chip">{CARRIER_LABELS[o.carrierCode]}</span>}
+        </span>
       ),
       width: '150px',
     },

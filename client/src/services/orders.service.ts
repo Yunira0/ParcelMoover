@@ -88,6 +88,9 @@ export interface Order {
   destinationLocationId?: string | null;
   /** "inside" | "outside" | null — the destination location's valley classification. */
   destinationValley?: string | null;
+  /** Arrived-at-origin parcels only: destination is in the arrival branch's
+   *  coverage, so it goes to Ready to Deliver rather than Transit. */
+  skipsTransit?: boolean;
   pieces: number;
   weightKg?: number;
   attemptCount: number;
@@ -159,6 +162,10 @@ export interface ListOrdersParams {
   salesUserId?: string;
   /** Narrows the list to parcels carried by one delivery rider. */
   deliveryRiderId?: string;
+  /** Rider Overview's filter: parcels this rider has ever handled, pickup or
+   *  delivery leg — broader than deliveryRiderId, which is only the current
+   *  delivery leg. */
+  riderId?: string;
   /** Origin/destination hub filters, by location id - matches OrderFilterOptions'
    *  origins/destinations, which are keyed by id for exactly this reason. */
   originLocationId?: string;
@@ -176,6 +183,8 @@ export interface ListOrdersParams {
   /** Narrow to parcels delivered since local midnight, as the dashboard's
    *  "Delivered today" card counts them. */
   deliveredToday?: boolean;
+  /** Only parcels that went through transit (ever moved to oov). */
+  viaTransit?: boolean;
   /** Which date `dateFrom`/`dateTo` are compared against. */
   dateField?: 'createdAt' | 'lastUpdatedAt';
   /** Inclusive Nepal-local day bounds, "YYYY-MM-DD". */
@@ -183,6 +192,8 @@ export interface ListOrdersParams {
   dateTo?: string;
   /** Merchant overview settlement filter — settled = delivered parcels in a settled settlement, pending = delivered not yet settled */
   settlement?: 'settled' | 'pending';
+  /** Whose statements `settlement` refers to; defaults to the vendor's. */
+  settlementPayee?: 'vendor' | 'rider';
 }
 
 export interface OrdersPageMeta {
@@ -329,8 +340,8 @@ export interface DashboardSummary {
     totalCod: number;
     settledCod: number;
     pendingCod: number;
-    /** codFromPmRider + codFromNcm (+ future 3PLs) - the umbrella "COD to
-     *  collect from riders" figure; carriers below break it down. */
+    /** codFromPmRider + codFromNcm + codFromUpaya + codFromBranches - the
+     *  umbrella "COD still to collect" figure; the lines below break it down. */
     codFromRiders: number;
     /** Cash a ParcelMoover rider has collected but not yet remitted to the office. */
     codFromPmRider: number;
@@ -338,6 +349,8 @@ export interface DashboardSummary {
     codFromNcm: number;
     /** Cash Upaya's placeholder rider is holding, not yet remitted to the office. */
     codFromUpaya: number;
+    /** Cash riders have handed to a branch that the branch has not yet passed on to head office. */
+    codFromBranches: number;
     /** Delivery charge owed on orders whose COD hasn't been settled yet. */
     pendingDeliveryCharge: number;
     /** Total delivery charges (office cut) on the delivered orders in the COD window. */
@@ -387,6 +400,7 @@ export const getOrders = async (params?: ListOrdersParams, signal?: AbortSignal)
   if (params?.salesUserId) query.salesUserId = params.salesUserId;
   if (params?.search) query.search = params.search;
   if (params?.deliveryRiderId) query.deliveryRiderId = params.deliveryRiderId;
+  if (params?.riderId) query.riderId = params.riderId;
   if (params?.originLocationId) query.originLocationId = params.originLocationId;
   if (params?.destinationLocationId) query.destinationLocationId = params.destinationLocationId;
   if (params?.page !== undefined) query.page = String(params.page);
@@ -397,10 +411,12 @@ export const getOrders = async (params?: ListOrdersParams, signal?: AbortSignal)
   if (params?.sortDir) query.sortDir = params.sortDir;
   if (params?.withArrival) query.withArrival = 'true';
   if (params?.deliveredToday) query.deliveredToday = 'true';
+  if (params?.viaTransit) query.viaTransit = 'true';
   if (params?.dateField) query.dateField = params.dateField;
   if (params?.dateFrom) query.dateFrom = params.dateFrom;
   if (params?.dateTo) query.dateTo = params.dateTo;
   if (params?.settlement) query.settlement = params.settlement;
+  if (params?.settlementPayee) query.settlementPayee = params.settlementPayee;
 
   const response = (params?.search?.length ?? 0) > SEARCH_POST_THRESHOLD
     ? await api.post('/orders/search', query, { signal })
@@ -510,6 +526,12 @@ export const getDashboardSummary = async (trendDays: 7 | 30 = 7) => {
   return response.data;
 };
 
+/** Just the COD Settlement card's figures (the accountant's finance overview). */
+export const getCodSettlementSummary = async (): Promise<DashboardSummary['codSettlement']> => {
+  const response = await api.get('/orders/cod-settlement-summary');
+  return response.data.data;
+};
+
 // ── COD settlement drill-down ───────────────────────────────────────────────
 // One bucket per line of the COD Settlement dashboard card. Carrier buckets
 // ('pm-rider', 'ncm', 'upaya') sit under the "COD to collect from riders"
@@ -522,6 +544,7 @@ export const COD_DETAIL_BUCKETS = [
   'pm-rider',
   'ncm',
   'upaya',
+  'branches',
   'delivery-charge',
 ] as const;
 export type CodDetailBucket = (typeof COD_DETAIL_BUCKETS)[number];
@@ -583,6 +606,7 @@ export interface RunSheetParcel {
   status: ParcelStatus;
   receiverName: string;
   receiverPhone: string;
+  receiverAlternatePhone?: string;
   address: string;
   destination: string;
   pieces: number;
@@ -669,6 +693,8 @@ export interface OrderStatusHistoryEntry {
   oldStatus: ParcelStatus | null;
   newStatus: ParcelStatus;
   remarks: string;
+  /** Staff only: the 3PL this handoff entry went to. */
+  carrier?: 'NCM' | 'Upaya' | null;
   /**
    * The rider tied to this milestone: the pickup rider for "rider_assigned",
    * the delivery rider for "sent_for_delivery". null for every other entry.
@@ -693,6 +719,8 @@ export interface PriceLogEntry {
 /** One destination change made because the customer moved after booking. */
 export interface RedirectLogEntry {
   id: string;
+  /** "redirect" = customer moved before delivery; "forward" = delivered parcel forwarded with a forwarding charge. */
+  kind: 'redirect' | 'forward';
   fromBranch: string | null;
   toBranch: string;
   fromAddress: string | null;
@@ -799,6 +827,23 @@ export const redirectOrder = async (orderId: string, data: RedirectOrderInput) =
   return response.data;
 };
 
+export interface ForwardOrderInput {
+  destinationLocationId: string;
+  /** Manual forwarding charge added on top of the existing delivery charge. */
+  forwardingCharge: number;
+  reason?: string;
+}
+
+/** Admin-only: a delivered parcel was forwarded on to another destination. Status stays delivered. */
+export const forwardOrder = async (orderId: string, data: ForwardOrderInput) => {
+  const idempotencyKey = uuidv4();
+  const response = await api.post(`/orders/${orderId}/forward`, data, {
+    headers: { 'Idempotency-Key': idempotencyKey },
+  });
+  notifyOrderStatusChanged();
+  return response.data;
+};
+
 export const updateOrderStatus = async (
   orderId: string,
   status: ParcelStatus,
@@ -832,6 +877,7 @@ export interface BulkCreateOrderRow {
   serviceType?: ServiceType;
   packageType?: string;
   deliveryInstruction?: string;
+  remarks?: string;
   originLocationId?: string;
   destinationLocationId?: string;
   /** Set by admin/super_admin/sales when bulk-importing on behalf of a vendor. */

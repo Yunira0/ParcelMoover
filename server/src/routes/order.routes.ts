@@ -18,12 +18,14 @@ import {
   addOrderRemarkSchema,
   runSheetQuerySchema,
   redirectOrderSchema,
+  forwardOrderSchema,
 } from "../validators/order.schema";
 import {
   addOrderRemarkController,
   bulkCreateOrdersController,
   bulkUpdateOrderStatusController,
   codSettlementDetailController,
+  codSettlementSummaryController,
   createOrderController,
   dashboardSummaryController,
   getOrderByTrackingIdController,
@@ -38,10 +40,13 @@ import {
   getStatusCountsController,
   listOrdersController,
   redirectOrderController,
+  forwardOrderController,
   riderRunSheetController,
   updateOrderDetailsController,
   updateOrderStatusController,
   merchantOverviewController,
+  salesOverviewController,
+  riderOverviewController,
 } from "../controllers/order.controller";
 import { csrfProtection } from "../middlewares/csrf.middleware";
 import { createRedisRateLimitStore } from "../lib/rateLimitStore";
@@ -159,13 +164,24 @@ orderRouter.get(
   dashboardSummaryController,
 );
 
+// GET /orders/cod-settlement-summary — just the COD Settlement card, for the
+// accountant's finance overview.
+orderRouter.get(
+  "/cod-settlement-summary",
+  authMiddleware,
+  authorizeRoles("super_admin", "accountant"),
+  orderReadLimiter,
+  codSettlementSummaryController,
+);
+
 // GET /orders/cod-settlement-detail — drill-down rows behind one line of the
 // COD Settlement card. Same audience/scope as dashboard-summary.
 orderRouter.get(
   "/cod-settlement-detail",
   authMiddleware,
-  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider", "sales"),
+  authorizeRoles("super_admin", "admin", "accountant", "vendor", "vendor_staff", "rider", "sales"),
   requireStaffPermission("DASHBOARD_ACCESS"),
+  requireStaffPermission("FINANCE_ACCESS"),
   orderReadLimiter,
   codSettlementDetailController,
 );
@@ -175,7 +191,7 @@ orderRouter.get(
 orderRouter.get(
   "/status-counts",
   authMiddleware,
-  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider", "sales"),
+  authorizeRoles("super_admin", "admin", "accountant", "vendor", "vendor_staff", "rider", "sales"),
   requireStaffPermission("ORDER_ACCESS"),
   orderReadLimiter,
   getStatusCountsController,
@@ -188,7 +204,7 @@ orderRouter.get(
 orderRouter.post(
   "/status-counts",
   authMiddleware,
-  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider", "sales"),
+  authorizeRoles("super_admin", "admin", "accountant", "vendor", "vendor_staff", "rider", "sales"),
   requireStaffPermission("ORDER_ACCESS"),
   orderReadLimiter,
   getStatusCountsController,
@@ -220,7 +236,7 @@ orderRouter.get(
 orderRouter.get(
   "/filter-options",
   authMiddleware,
-  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider", "sales"),
+  authorizeRoles("super_admin", "admin", "accountant", "vendor", "vendor_staff", "rider", "sales"),
   requireStaffPermission("ORDER_ACCESS"),
   orderReadLimiter,
   validate(orderFilterOptionsQuerySchema, "query"),
@@ -232,7 +248,7 @@ orderRouter.get(
 orderRouter.get(
   "/count-by-status",
   authMiddleware,
-  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider", "sales"),
+  authorizeRoles("super_admin", "admin", "accountant", "vendor", "vendor_staff", "rider", "sales"),
   requireStaffPermission("ORDER_ACCESS"),
   orderReadLimiter,
   validate(orderCountByStatusQuerySchema, "query"),
@@ -258,16 +274,41 @@ orderRouter.get(
 orderRouter.get(
   "/merchant-overview",
   authMiddleware,
-  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider", "sales"),
+  authorizeRoles("super_admin", "admin", "accountant", "vendor", "vendor_staff", "rider", "sales"),
   requireStaffPermission("DASHBOARD_ACCESS"),
   orderReadLimiter,
   merchantOverviewController,
 );
 
+// GET /orders/sales-overview — server-side aggregated stats for the Sales
+// Overview page. Admin-side only: a sales actor uses their own SalesDashboard,
+// so they're left off the role list entirely rather than trusted to send a
+// legitimate salesUserId.
+orderRouter.get(
+  "/sales-overview",
+  authMiddleware,
+  authorizeRoles("super_admin", "admin"),
+  requireStaffPermission("DASHBOARD_ACCESS"),
+  orderReadLimiter,
+  salesOverviewController,
+);
+
+// GET /orders/rider-overview — server-side aggregated stats for the Rider
+// Overview page. A rider actor sees only their own parcels (getRiderOverview
+// forces riderId to their own rider profile, ignoring the query param).
+orderRouter.get(
+  "/rider-overview",
+  authMiddleware,
+  authorizeRoles("super_admin", "admin", "accountant", "rider"),
+  requireStaffPermission("DASHBOARD_ACCESS"),
+  orderReadLimiter,
+  riderOverviewController,
+);
+
 orderRouter.get(
   "/",
   authMiddleware,
-  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider", "sales"),
+  authorizeRoles("super_admin", "admin", "accountant", "vendor", "vendor_staff", "rider", "sales"),
   requireStaffPermission("ORDER_ACCESS"),
   orderReadLimiter,
   validate(listOrdersQuerySchema, "query"),
@@ -314,7 +355,7 @@ orderRouter.get(
 orderRouter.get(
   "/track/:trackingId",
   authMiddleware,
-  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider", "sales"),
+  authorizeRoles("super_admin", "admin", "accountant", "vendor", "vendor_staff", "rider", "sales"),
   requireStaffPermission("ORDER_ACCESS"),
   orderReadLimiter,
   getOrderByTrackingIdController,
@@ -372,6 +413,21 @@ orderRouter.post(
   validate(uuidParamSchema, "params"),
   validate(redirectOrderSchema),
   redirectOrderController,
+);
+
+// POST /orders/:id/forward — a delivered parcel was forwarded on to another
+// destination: change the destination and add a manual forwarding charge.
+// Status stays delivered. Admin-only, like redirect.
+orderRouter.post(
+  "/:id/forward",
+  authMiddleware,
+  csrfProtection,
+  authorizeRoles("super_admin", "admin"),
+  requireStaffPermission("ORDER_ACCESS"),
+  statusUpdateLimiter,
+  validate(uuidParamSchema, "params"),
+  validate(forwardOrderSchema),
+  forwardOrderController,
 );
 
 // POST /orders/:id/remarks - leave a remark on a parcel (visible to anyone with access to it)

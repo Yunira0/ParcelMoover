@@ -14,7 +14,8 @@ import {
   type SettlementDetail,
   type SettlementDocument,
 } from '../services/finance.service';
-import { hasAnyRole, hasAdminPermission } from '../utils/auth';
+import { hasAnyRole, hasAdminPermission, isSalesUser, isVendorSide } from '../utils/auth';
+import { useBackOr } from '../hooks/useBackOr';
 import {
   hasSettlementPayments,
   isSettlementPayable,
@@ -25,6 +26,8 @@ import { toBsDate, toBsDateTime } from '../utils/nepaliDate';
 import { downloadExcel } from '../utils/excel';
 import './vendor/VendorFinance.css';
 import './SettlementDetailPage.css';
+import ReceiverPhones from '../components/ReceiverPhones';
+import { receiverPhonesHtml } from '../utils/format';
 
 const money = (value: number) => `Rs. ${value.toLocaleString()}`;
 const hubNameOnly = (value: string) => ((value || '').split(' - ')[0] ?? '').replace(/\s*Branch\s*$/i, '').trim();
@@ -246,7 +249,7 @@ function buildStatementHtml(detail: SettlementDetail): string {
           }
           <td>${item.receiverName}${item.receiverAddress ? `<div class="sub">${item.receiverAddress}</div>` : ''}</td>
           <td>${item.destination ? hubNameOnly(item.destination) : '-'}</td>
-          <td>${item.receiverPhone}</td>
+          <td>${receiverPhonesHtml(item.receiverPhone, item.receiverAlternatePhone)}</td>
           <td class="r">${item.weightKg === null ? '-' : item.weightKg.toFixed(2)}</td>
           <td class="r">${money(item.codAmount)}</td>
           <td class="r">${money(item.collectedAmount)}</td>
@@ -317,6 +320,7 @@ function buildStatementHtml(detail: SettlementDetail): string {
       <div><span>Total COD</span><span>${money(totals.cod)}</span></div>
       <div><span>Collected COD</span><span>${money(totals.collected)}</span></div>
       <div><span>Delivery Charges</span><span>${money(totals.deliveryCharge)}</span></div>
+      ${detail.vendorCreditApplied ? `<div><span>Prepaid charges returned</span><span>+${money(detail.vendorCreditApplied)}</span></div>` : ''}
       <div class="payable"><span>${detail.payeeType === 'rider' ? 'Receivable Amount' : 'Payable Amount'}</span><span>${money(detail.payableAmount)}</span></div>
     </div>
   </body></html>`;
@@ -335,6 +339,14 @@ const SettlementDetailPage: React.FC = () => {
   const [showEdit, setShowEdit] = useState(false);
   const [showRevert, setShowRevert] = useState(false);
   const [showCancel, setShowCancel] = useState(false);
+  // Each audience's own list, for when this statement was opened from a link.
+  const goBack = useBackOr(
+    isVendorSide()
+      ? '/finance/settlements'
+      : isSalesUser()
+        ? '/dashboard'
+        : `/accounting/transactions/${detail?.payeeType === 'vendor' ? 'vendor' : 'rider'}-cod`,
+  );
   const [tab, setTab] = useState<DetailTab>('billing');
   // Acknowledges a money-moving action that just completed - either handed in
   // via router state (a redirect from the pay flow) or set locally once a
@@ -358,7 +370,7 @@ const SettlementDetailPage: React.FC = () => {
     return () => clearTimeout(timer);
   }, [banner]);
 
-  const canPay = hasAnyRole(['super_admin', 'admin']);
+  const canPay = hasAnyRole(['super_admin', 'admin', 'accountant']);
   // Correcting a mistake — gated by the delegable EDIT_SETTLEMENTS permission,
   // same pattern as MANAGE_USERS/SETTINGS_ACCESS. Also covers reverting a
   // settled statement back to pending, since it's the same "fix a mistake"
@@ -436,7 +448,7 @@ const SettlementDetailPage: React.FC = () => {
       ...(showVendor ? ['Vendor', 'Vendor Phone'] : []),
       'Receiver',
       'Destination',
-      'Receiver Phone',
+      'Receiver Phone', 'Alternate Number',
       'Receiver Address',
       'Weight',
       'COD',
@@ -450,7 +462,8 @@ const SettlementDetailPage: React.FC = () => {
       ...(showVendor ? [item.vendorName ?? '', item.vendorPhone ?? ''] : []),
       item.receiverName,
       hubNameOnly(item.destination || ''),
-      item.receiverPhone,
+      item.receiverPhone || '',
+      item.receiverAlternatePhone || '',
       item.receiverAddress ?? '',
       item.weightKg === null ? '' : item.weightKg,
       item.codAmount,
@@ -467,7 +480,7 @@ const SettlementDetailPage: React.FC = () => {
   return (
     <div className="settlement-detail-page">
       <div className="settlement-detail-toolbar">
-        <Button variant="ghost" onClick={() => navigate(-1)}>
+        <Button variant="ghost" onClick={goBack}>
           <ArrowLeft size={16} /> Back
         </Button>
         <div className="settlement-detail-actions">
@@ -729,7 +742,7 @@ const SettlementDetailPage: React.FC = () => {
                             )}
                           </td>
                           <td title={item.destination || '-'}>{hubNameOnly(item.destination || '') || '-'}</td>
-                          <td>{item.receiverPhone}</td>
+                          <td><ReceiverPhones phone={item.receiverPhone} alternate={item.receiverAlternatePhone} /></td>
                           <td className="sdp-num">
                             {item.weightKg === null ? '-' : item.weightKg.toFixed(2)}
                           </td>
@@ -757,6 +770,14 @@ const SettlementDetailPage: React.FC = () => {
                   <span>Delivery Charges</span>
                   <span>{money(totals.deliveryCharge)}</span>
                 </div>
+                {/* Charges the vendor already paid through Billing, handed back
+                    so they are not deducted twice. Included in the payable. */}
+                {detail.vendorCreditApplied ? (
+                  <div>
+                    <span>Prepaid charges returned</span>
+                    <span>+{money(detail.vendorCreditApplied)}</span>
+                  </div>
+                ) : null}
                 <div className="sdp-totals-payable">
                   <span>{detail.payeeType === 'rider' ? 'Receivable Amount' : 'Payable Amount'}</span>
                   <span>{money(detail.payableAmount)}</span>

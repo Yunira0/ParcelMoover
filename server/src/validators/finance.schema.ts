@@ -38,6 +38,9 @@ export const settlementsQuerySchema = paginationQuerySchema.extend({
   // Payee name filter - matches riders.name for payeeType=rider, or
   // vendors.business_name/client_name for payeeType=vendor.
   search: z.string().trim().min(1).max(100).optional(),
+  // What fromDate/toDate apply to: settlement_date (default), payoff date or
+  // creation date.
+  dateField: z.enum(["transfer", "settled", "created"]).optional(),
 });
 
 export type SettlementsQuery = z.infer<typeof settlementsQuerySchema>;
@@ -64,6 +67,18 @@ export const paySettlementSchema = z.object({
     .min(1, "At least one payment is required"),
   // Optional — the payment record already carries method, amount and payer;
   // a remark is only useful when there's something unusual to note.
+  remark: z.string().trim().max(500).optional(),
+});
+
+export const createCarrierSettlementSchema = z.object({
+  carrier: z.enum(["ncm", "upaya"]),
+  settlementDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "settlementDate must be YYYY-MM-DD")
+    .refine((v) => !Number.isNaN(Date.parse(`${v}T00:00:00.000Z`)), "settlementDate is not a real date"),
+  items: z
+    .array(z.object({ codCollectionId: uuidSchema, carrierCharge: z.number().min(0, "Carrier charge cannot be negative") }))
+    .min(1, "Select at least one order"),
   remark: z.string().trim().max(500).optional(),
 });
 

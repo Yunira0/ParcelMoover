@@ -18,6 +18,7 @@ import { useCursorPagination } from '../hooks/useCursorPagination';
 import { toBsDate, toBsDateTimeCell } from '../utils/nepaliDate';
 import { formatCurrency } from '../utils/format';
 import './OverviewOrdersPage.css';
+import ReceiverPhones from '../components/ReceiverPhones';
 
 const PAGE_SIZE = 10;
 // The server caps a page at 100 rows, so the export walks the list in
@@ -115,7 +116,7 @@ const OverviewOrdersPage: React.FC = () => {
         accessor: (o: Order) => (
           <div>
             <div>{o.receiverName}</div>
-            <div className="overview-orders-subtext">{o.receiverPhone}</div>
+            <div className="overview-orders-subtext"><ReceiverPhones phone={o.receiverPhone} alternate={o.receiverAlternatePhone} /></div>
           </div>
         ),
       },
@@ -170,7 +171,7 @@ const OverviewOrdersPage: React.FC = () => {
       '#', 'Tracking ID', 'Status', 'Order Type', 'Service Type', 'Origin', 'Destination',
       'Sender', 'Sender Phone', 'Sender Address',
       'Receiver', 'Receiver Phone', 'Receiver Alt Phone', 'Receiver Address',
-      'Pieces', 'Weight (kg)', 'COD', 'Delivery Charge', 'Package Type', 'Delivery Instruction',
+      'Pieces', 'Weight (kg)', 'COD', 'Delivery Charge', 'Package Description', 'Delivery Instruction',
       'Vendor', 'Rider', 'Attempts', 'Remarks',
       'Order Created Date', 'Last Updated By', 'Last Updated At', ...STATUS_TIMELINE_HEADERS,
     ];

@@ -90,7 +90,7 @@ const writeLimiter = rateLimit({
 
 const read = [
   authMiddleware,
-  authorizeRoles("super_admin", "admin"),
+  authorizeRoles("super_admin", "accountant", "admin"),
   requireAdminPermission("ACCOUNTING_ACCESS"),
   readLimiter,
 ] as const;
@@ -98,7 +98,7 @@ const read = [
 const write = [
   authMiddleware,
   csrfProtection,
-  authorizeRoles("super_admin", "admin"),
+  authorizeRoles("super_admin", "accountant", "admin"),
   requireAdminPermission("ACCOUNTING_ACCESS"),
   writeLimiter,
 ] as const;
@@ -202,32 +202,24 @@ accountingRouter.patch("/periods/:periodKey", ...write, validate(setPeriodStatus
 
 // ── Masters ─────────────────────────────────────────────────────────────────
 //
-// Reading the chart follows the section's own grant. Editing it does not: an
-// account's type and normal side decide how every line ever posted to it is
-// read, so this is a super_admin job rather than something that comes with
-// ACCOUNTING_ACCESS. masters.service refuses the dangerous edits outright once
-// an account has been posted to; this just keeps the door narrower.
-const masters = [
-  authMiddleware,
-  csrfProtection,
-  authorizeRoles("super_admin"),
-  writeLimiter,
-] as const;
+// Editing the chart comes with ACCOUNTING_ACCESS like the rest of the section.
+// masters.service refuses the dangerous edits (type, normal side) outright once
+// an account has been posted to.
 
 // GET /api/accounting/chart — the chart as a tree, with posted-line counts
 accountingRouter.get("/chart", ...read, listChartController);
 
 // POST /api/accounting/chart — add an account or a group
-accountingRouter.post("/chart", ...masters, validate(createAccountSchema), createAccountController);
+accountingRouter.post("/chart", ...write, validate(createAccountSchema), createAccountController);
 
 // PATCH /api/accounting/chart/:code — rename, regroup, deactivate
-accountingRouter.patch("/chart/:code", ...masters, validate(updateAccountSchema), updateAccountController);
+accountingRouter.patch("/chart/:code", ...write, validate(updateAccountSchema), updateAccountController);
 
 // POST /api/accounting/opening-balance — a starting position no source row can
 // produce: cash a rider was already holding, a bank account opened with money
 accountingRouter.post(
   "/opening-balance",
-  ...masters,
+  ...write,
   validate(openingBalanceSchema),
   setOpeningBalanceController,
 );

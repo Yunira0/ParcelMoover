@@ -44,22 +44,40 @@ const ORDER_TYPE_OPTIONS: { value: OrderType; label: string }[] = [
   { value: 'return', label: 'Return' },
 ];
 
-const PACKAGE_TYPE_OPTIONS = ['Parcel', 'Document', 'Fragile', 'Other'];
-const OTHER_PACKAGE_TYPE = 'Other';
+// Free-text description of what's inside - sent as packageType (the server
+// falls back to "Parcel" when it's left empty).
+const PACKAGE_DESCRIPTION_MAX_LENGTH = 100;
+// Mirror the server's createOrderSchema limits (100 = what NCM accepts).
+const DELIVERY_INSTRUCTION_MAX_LENGTH = 100;
+const REMARKS_MAX_LENGTH = 1000;
 
-const DELIVERY_INSTRUCTION_OPTIONS = [
+// Quick-add dropdown inside the free-text delivery instruction. Picking one
+// appends it to the text (comma-separated); picking it again removes it.
+const DELIVERY_INSTRUCTION_PRESETS = [
   'Cannot open the parcel',
   'Can open the parcel',
   'Call before delivery',
   'Handle with care',
-  'Other',
 ];
-const OTHER_DELIVERY_INSTRUCTION = 'Other';
-// NCM's create-order API caps `instruction` at 100 characters and rejects the
-// whole order past it — a failure that only surfaces at handoff, long after
-// the person who typed it has moved on. Caught here instead, while it can
-// still be reworded. Our own column and the Partner API both allow 500.
-const DELIVERY_INSTRUCTION_MAX = 100;
+// Picking one of these drops the other - they contradict each other.
+const EXCLUSIVE_PRESETS = ['Cannot open the parcel', 'Can open the parcel'];
+
+const splitInstruction = (text: string) =>
+  text.split(',').map(part => part.trim()).filter(Boolean);
+
+const hasPreset = (text: string, preset: string) =>
+  splitInstruction(text).some(part => part.toLowerCase() === preset.toLowerCase());
+
+const togglePreset = (text: string, preset: string) => {
+  const parts = splitInstruction(text);
+  if (hasPreset(text, preset)) {
+    return parts.filter(part => part.toLowerCase() !== preset.toLowerCase()).join(', ');
+  }
+  const conflicts = EXCLUSIVE_PRESETS.includes(preset)
+    ? EXCLUSIVE_PRESETS.filter(p => p !== preset).map(p => p.toLowerCase())
+    : [];
+  return [...parts.filter(part => !conflicts.includes(part.toLowerCase())), preset].join(', ');
+};
 
 const defaultFormState = {
   vendorId: '',
@@ -74,10 +92,8 @@ const defaultFormState = {
   weightKg: '2',
   codAmount: '',
   itemValue: '0',
-  packageType: 'Parcel',
-  packageTypeOther: '',
+  packageType: '',
   deliveryInstruction: 'Cannot open the parcel',
-  deliveryInstructionOther: '',
   remarks: '',
   voucherCode: '',
 };
@@ -101,6 +117,7 @@ const SERVER_FIELD_MAP: Record<string, keyof FormState> = {
   itemValue: 'itemValue',
   packageType: 'packageType',
   deliveryInstruction: 'deliveryInstruction',
+  remarks: 'remarks',
   voucherCode: 'voucherCode',
 };
 
@@ -202,13 +219,6 @@ const CreateOrderPage: React.FC = () => {
   // Prefill from a "copy"/"edit" navigation (replaces the old modal's initialData prop)
   useEffect(() => {
     if (!prefillInitialData) return;
-    // A copied order's packageType/deliveryInstruction may be free text that
-    // predates these presets - fall back to "Other" + the raw text so nothing
-    // silently gets dropped.
-    const incomingPackageType = prefillInitialData.packageType || 'Parcel';
-    const isKnownPackageType = PACKAGE_TYPE_OPTIONS.includes(incomingPackageType);
-    const incomingInstruction = prefillInitialData.deliveryInstruction || '';
-    const isKnownInstruction = DELIVERY_INSTRUCTION_OPTIONS.includes(incomingInstruction);
     setForm(prev => ({
       ...prev,
       vendorId: prefillInitialData.vendorId || '',
@@ -223,12 +233,8 @@ const CreateOrderPage: React.FC = () => {
       weightKg: prefillInitialData.weightKg !== undefined ? String(prefillInitialData.weightKg) : '',
       codAmount: prefillInitialData.codAmount !== undefined ? String(prefillInitialData.codAmount) : '',
       itemValue: prefillInitialData.itemValue !== undefined ? String(prefillInitialData.itemValue) : '0',
-      packageType: isKnownPackageType ? incomingPackageType : OTHER_PACKAGE_TYPE,
-      packageTypeOther: isKnownPackageType ? '' : incomingPackageType,
-      deliveryInstruction: incomingInstruction
-        ? (isKnownInstruction ? incomingInstruction : OTHER_DELIVERY_INSTRUCTION)
-        : 'Cannot open the parcel',
-      deliveryInstructionOther: incomingInstruction && !isKnownInstruction ? incomingInstruction : '',
+      packageType: prefillInitialData.packageType || '',
+      deliveryInstruction: prefillInitialData.deliveryInstruction || 'Cannot open the parcel',
     }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prefillInitialData]);
@@ -571,16 +577,13 @@ const CreateOrderPage: React.FC = () => {
     if (!weightKgNumber) {
       errors.weightKg = 'Package weight is required.';
     }
-    if (form.packageType === OTHER_PACKAGE_TYPE && !form.packageTypeOther.trim()) {
-      errors.packageTypeOther = 'Please specify the package type.';
-    }
-    if (form.deliveryInstruction === OTHER_DELIVERY_INSTRUCTION && !form.deliveryInstructionOther.trim()) {
-      errors.deliveryInstructionOther = 'Please specify the delivery instruction.';
-    }
     // Belt to maxLength's braces: a prefilled copy-of-an-order can arrive
     // longer than the cap without the field ever being typed into.
-    if (form.deliveryInstructionOther.trim().length > DELIVERY_INSTRUCTION_MAX) {
-      errors.deliveryInstructionOther = `Keep this to ${DELIVERY_INSTRUCTION_MAX} characters — longer instructions are rejected at carrier handoff.`;
+    if (form.packageType.trim().length > PACKAGE_DESCRIPTION_MAX_LENGTH) {
+      errors.packageType = `Keep this to ${PACKAGE_DESCRIPTION_MAX_LENGTH} characters — longer descriptions are rejected at carrier handoff.`;
+    }
+    if (form.deliveryInstruction.trim().length > DELIVERY_INSTRUCTION_MAX_LENGTH) {
+      errors.deliveryInstruction = `Keep this to ${DELIVERY_INSTRUCTION_MAX_LENGTH} characters — longer instructions are rejected at carrier handoff.`;
     }
 
     if (Object.keys(errors).length > 0) {
@@ -600,13 +603,6 @@ const CreateOrderPage: React.FC = () => {
       ? { name: selectedVendor.label, phone: selectedVendor.phone, address: selectedVendor.address }
       : { name: form.customerName, phone: form.contactNumber, address: form.address };
 
-    const effectivePackageType = form.packageType === OTHER_PACKAGE_TYPE
-      ? form.packageTypeOther.trim()
-      : form.packageType;
-    const effectiveDeliveryInstruction = form.deliveryInstruction === OTHER_DELIVERY_INSTRUCTION
-      ? form.deliveryInstructionOther.trim()
-      : form.deliveryInstruction;
-
     const payload: CreateOrderInput = {
       vendorId: isVendorActor ? undefined : form.vendorId,
       sender,
@@ -625,8 +621,8 @@ const CreateOrderPage: React.FC = () => {
       weightKg: weightKgNumber,
       codAmount: Number(form.codAmount) || 0,
       itemValue: Number(form.itemValue) || 0,
-      packageType: effectivePackageType || undefined,
-      deliveryInstruction: effectiveDeliveryInstruction || undefined,
+      packageType: form.packageType.trim() || undefined,
+      deliveryInstruction: form.deliveryInstruction.trim() || undefined,
       remarks: form.remarks.trim() || undefined,
       pickupAddress: selectedVendor?.address || undefined,
       // Vouchers only exist on outbound delivery orders; the server re-checks this.
@@ -858,55 +854,64 @@ const CreateOrderPage: React.FC = () => {
                 error={fieldErrors.itemValue}
               />
               <FormField
-                label="Package Type"
-                type="select"
-                options={PACKAGE_TYPE_OPTIONS.map(opt => ({ value: opt, label: opt }))}
-                value={form.packageType}
-                onChange={value => setField('packageType', value)}
-                error={fieldErrors.packageType}
-              />
-              {form.packageType === OTHER_PACKAGE_TYPE && (
-                <FormField
-                  label="Specify Package Type"
-                  required
-                  value={form.packageTypeOther}
-                  onChange={value => setField('packageTypeOther', value)}
-                  placeholder="Enter package type"
-                  error={fieldErrors.packageTypeOther}
-                  gridColumn="span 2"
-                />
-              )}
-              <FormField
-                label="Delivery Instruction"
-                type="select"
-                placeholder="Select delivery instruction"
-                options={DELIVERY_INSTRUCTION_OPTIONS.map(opt => ({ value: opt, label: opt }))}
-                value={form.deliveryInstruction}
-                onChange={value => setField('deliveryInstruction', value)}
-                error={fieldErrors.deliveryInstruction}
-              />
-              <FormField
                 label="Remarks"
-                type="textarea"
-                rows={1}
+                maxLength={REMARKS_MAX_LENGTH}
                 value={form.remarks}
                 onChange={value => setField('remarks', value)}
                 placeholder="Any additional notes (optional)"
                 error={fieldErrors.remarks}
               />
-              {form.deliveryInstruction === OTHER_DELIVERY_INSTRUCTION && (
-                <FormField
-                  label="Specify Delivery Instruction"
-                  required
-                  value={form.deliveryInstructionOther}
-                  onChange={value => setField('deliveryInstructionOther', value)}
-                  placeholder="Enter delivery instruction"
-                  error={fieldErrors.deliveryInstructionOther}
-                  maxLength={DELIVERY_INSTRUCTION_MAX}
-                  hint={`${form.deliveryInstructionOther.length}/${DELIVERY_INSTRUCTION_MAX} characters`}
-                  gridColumn="span 2"
-                />
-              )}
+            </div>
+
+            <div className="order-field-grid">
+              <FormField
+                label="Package Description"
+                type="textarea"
+                rows={5}
+                maxLength={PACKAGE_DESCRIPTION_MAX_LENGTH}
+                value={form.packageType}
+                onChange={value => setField('packageType', value)}
+                placeholder="Describe what's in the package (e.g. 2 cotton t-shirts, 1 phone case)"
+                hint={`${form.packageType.length}/${PACKAGE_DESCRIPTION_MAX_LENGTH}`}
+                error={fieldErrors.packageType}
+                className="order-long-text"
+              />
+              <div className="order-long-field">
+                {/* Same-size box as the description, with the quick-add
+                    dropdown sitting inside its top-left corner. */}
+                <div className="order-instruction-box">
+                  <FormField
+                    label="Delivery Instruction"
+                    type="textarea"
+                    rows={5}
+                    maxLength={DELIVERY_INSTRUCTION_MAX_LENGTH}
+                    value={form.deliveryInstruction}
+                    onChange={value => setField('deliveryInstruction', value)}
+                    placeholder="How should the rider handle this delivery?"
+                    className={`order-long-text${fieldErrors.deliveryInstruction ? ' has-error' : ''}`}
+                  />
+                  {/* Always shows its placeholder: picking an option adds it to
+                      the text (or removes it if it's already there). */}
+                  <FormField
+                    label="Add a common delivery instruction"
+                    hideLabel
+                    type="select"
+                    placeholder="+ Add common instruction"
+                    options={DELIVERY_INSTRUCTION_PRESETS.map(preset => ({
+                      value: preset,
+                      label: hasPreset(form.deliveryInstruction, preset) ? `✓ ${preset}` : preset,
+                    }))}
+                    value=""
+                    onChange={preset => {
+                      if (preset) setField('deliveryInstruction', togglePreset(form.deliveryInstruction, preset));
+                    }}
+                    className="order-instruction-select"
+                  />
+                </div>
+                {fieldErrors.deliveryInstruction
+                  ? <small className="form-error">{fieldErrors.deliveryInstruction}</small>
+                  : <small className="form-hint">{form.deliveryInstruction.length}/{DELIVERY_INSTRUCTION_MAX_LENGTH}</small>}
+              </div>
             </div>
           </div>
         </div>

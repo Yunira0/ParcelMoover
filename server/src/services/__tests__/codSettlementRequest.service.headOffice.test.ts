@@ -11,13 +11,14 @@ vi.mock("../../lib/prisma", () => ({
     cod_settlement_requests: { findMany: vi.fn(), count: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
     vendors: { findFirst: vi.fn() },
     vendor_staff: { findFirst: vi.fn() },
+    settlements: { findFirst: vi.fn() },
   },
 }));
 vi.mock("../../lib/branchScope", () => ({
   assertHeadOfficeOnly: vi.fn(),
 }));
 vi.mock("../notification.service", () => ({ createNotification: vi.fn() }));
-vi.mock("../order.service", () => ({ notifyAdmins: vi.fn() }));
+vi.mock("../order.service", () => ({ notifyFinanceStaff: vi.fn() }));
 vi.mock("../billing.service", () => ({ getVendorAccountBalance: vi.fn() }));
 
 import prisma from "../../lib/prisma";
@@ -35,6 +36,7 @@ const mockedPrisma = prisma as unknown as {
   };
   vendors: { findFirst: ReturnType<typeof vi.fn> };
   vendor_staff: { findFirst: ReturnType<typeof vi.fn> };
+  settlements: { findFirst: ReturnType<typeof vi.fn> };
 };
 const mockedAssertHeadOfficeOnly = assertHeadOfficeOnly as unknown as ReturnType<typeof vi.fn>;
 
@@ -118,6 +120,39 @@ describe("updateCodSettlementRequestStatus", () => {
       updateCodSettlementRequestStatus(VENDOR_ACTOR, "req-1", { status: "settled" } as any),
     ).rejects.toMatchObject({ statusCode: 403 });
     expect(mockedAssertHeadOfficeOnly).not.toHaveBeenCalled();
+  });
+});
+
+describe("settling a request", () => {
+  beforeEach(() => {
+    mockedAssertHeadOfficeOnly.mockResolvedValue(undefined);
+    mockedPrisma.cod_settlement_requests.findUnique.mockResolvedValue(requestRow({ status: "open" }));
+  });
+
+  it("refuses to settle without naming the statement that pays it", async () => {
+    await expect(
+      updateCodSettlementRequestStatus(SUPER_ADMIN, "req-1", { status: "settled" } as never),
+    ).rejects.toMatchObject({ statusCode: 400 });
+    expect(mockedPrisma.cod_settlement_requests.update).not.toHaveBeenCalled();
+  });
+
+  it("refuses a statement that is not this vendor's", async () => {
+    mockedPrisma.settlements.findFirst.mockResolvedValue(null);
+
+    await expect(
+      updateCodSettlementRequestStatus(SUPER_ADMIN, "req-1", { status: "settled", settlementId: "stmt-x" } as never),
+    ).rejects.toMatchObject({ statusCode: 400 });
+    expect(mockedPrisma.settlements.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ vendor_id: "vendor-1", payee_type: "vendor" }) }),
+    );
+  });
+
+  it("refuses a cancelled statement", async () => {
+    mockedPrisma.settlements.findFirst.mockResolvedValue({ statement_id: "STM-1", status: "cancelled", payable_amount: 100, amount: 100 });
+
+    await expect(
+      updateCodSettlementRequestStatus(SUPER_ADMIN, "req-1", { status: "settled", settlementId: "stmt-1" } as never),
+    ).rejects.toMatchObject({ statusCode: 400 });
   });
 });
 

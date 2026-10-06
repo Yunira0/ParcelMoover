@@ -131,6 +131,14 @@ export function bsWeekday(year: number, monthIndex: number, day: number): number
   return (new (NepaliDate as any)(year, monthIndex, day).toJsDate() as Date).getDay();
 }
 
+/**
+ * Today as an AD "YYYY-MM-DD" in Nepal. `toISOString()` gives the UTC day,
+ * which is still yesterday until 05:45 NPT.
+ */
+export function todayNepalAd(): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kathmandu' }).format(new Date());
+}
+
 /** Today's date as BS parts (monthIndex is 0-11). */
 export function todayBsParts(): BsDayParts {
   const AnyNepali = NepaliDate as any;

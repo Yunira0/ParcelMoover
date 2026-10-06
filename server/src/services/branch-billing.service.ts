@@ -1,13 +1,18 @@
 import { Prisma } from "../generated/prisma/client";
 import prisma from "../lib/prisma";
 import { AppError } from "../utils/AppError";
+import { hasOfficeFinanceAuthority, isFinanceStaff } from "../utils/financeRoles";
 import { clearBlockAmount, getBillingSettings, type BillingThresholds } from "./billing.service";
 import { BRANCH_COD_SLA_KEY, getSlaSettings } from "./sla.service";
+import { syncBranchSettlementPostings } from "./accounting/sync";
+import { branchCodParcelSql } from "./orders/branchCod";
+import { notifyFinanceStaff } from "./orders/notifications";
 
 type Actor = { id: string; roles: string[] };
 const money = (value: unknown) => Math.round(Number(value ?? 0) * 100) / 100;
-const isSuperAdmin = (actor: Actor) => actor.roles.includes("super_admin");
-const isOfficeReviewer = (actor: Actor) => actor.roles.some((role) => role === "super_admin" || role === "admin");
+// Office-wide branch billing authority: super_admin or the finance accountant.
+const isSuperAdmin = (actor: Actor) => hasOfficeFinanceAuthority(actor);
+const isOfficeReviewer = (actor: Actor) => isFinanceStaff(actor);
 
 export type BranchBillingState = "ok" | "warned" | "blocked";
 export type BranchPaymentStatusFilter = "pending" | "verified" | "rejected";
@@ -137,6 +142,7 @@ async function computeBranchBalance(branchId: string, codSlaHours: number | null
         AND p.status::text IN ('delivered', 'partially_delivered')
         AND p.destination_location_id IN (SELECT id FROM branch_locs)
         AND NOT EXISTS (SELECT 1 FROM branch_settlement_items bsi WHERE bsi.parcel_id = p.id)
+        ${branchCodParcelSql("p.")}
     )
     SELECT
       COALESCE((
@@ -291,7 +297,19 @@ export async function submitBranchPayment(
   if (input.settlementId) {
     const statement = await prisma.branch_settlements.findFirst({ where: { id: input.settlementId, from_branch_id: branchId, status: { in: ["pending", "partially_paid"] } }, select: { net_payable: true, paid_amount: true } });
     if (!statement) throw new AppError(404, "Pending settlement not found for this branch");
-    if (input.amount > money(statement.net_payable) - money(statement.paid_amount)) throw new AppError(400, "Receipt amount exceeds this settlement's outstanding balance");
+    // Receipts already awaiting review count against the balance too, or two
+    // full-amount receipts could be filed and the second would only fail later
+    // at verification.
+    const pending = await prisma.branch_payments.aggregate({
+      where: { settlement_id: input.settlementId, status: "pending" },
+      _sum: { amount: true },
+    });
+    const unclaimed = money(money(statement.net_payable) - money(statement.paid_amount) - money(pending._sum.amount));
+    if (money(input.amount) > unclaimed) {
+      throw new AppError(400, unclaimed > 0
+        ? `Receipt amount exceeds the Rs. ${unclaimed} not yet paid or awaiting verification on this settlement`
+        : "This settlement's balance is already covered by receipts awaiting verification");
+    }
   }
 
   const created = await prisma.branch_payments.create({
@@ -306,6 +324,14 @@ export async function submitBranchPayment(
     actor_id: actor.id, entity_type: "branch_payment", entity_id: created.id, action: "SUBMIT_BRANCH_PAYMENT",
     new_data: { branchId, settlementId: input.settlementId ?? null, amount: input.amount, reference: created.reference },
   } });
+  await notifyFinanceStaff(
+    "Branch deposit to verify",
+    `${created.branch.name} submitted Rs. ${input.amount.toLocaleString()}${created.settlement ? ` against ${created.settlement.statement_no}` : ""}.`,
+    created.id,
+    "branch_billing",
+    "/branches/billing",
+    actor.id,
+  );
   return mapPayment(created);
 }
 
@@ -369,6 +395,7 @@ async function applyVerifiedCreditToSettlement(
     payments: mergedLines as unknown as Prisma.InputJsonValue,
     ...(settled ? { settled_by: actorId, settled_at: new Date() } : {}),
   } });
+  await syncBranchSettlementPostings(tx, [settlement.id], { actorId, reason: "branch deposit applied" });
   return { applied, settled, statementNo: settlement.statement_no };
 }
 
@@ -498,7 +525,7 @@ export async function reviewBranchPayment(
     if (decision === "verified" && existing.settlement_id) {
       const settlement = await tx.branch_settlements.findUnique({ where: { id: existing.settlement_id } });
       if (!settlement || settlement.status === "cancelled" || settlement.status === "settled") throw new AppError(409, "The linked settlement is no longer payable");
-      const outstanding = money(settlement.net_payable) - money(settlement.paid_amount);
+      const outstanding = money(money(settlement.net_payable) - money(settlement.paid_amount));
       if (money(existing.amount) > outstanding) throw new AppError(409, "Receipt amount now exceeds the settlement balance");
       const applied = await applyVerifiedCreditToSettlement(tx, settlement, money(existing.amount), actor.id, {
         method: existing.method, remark: `Verified receipt${existing.reference ? ` · ${existing.reference}` : ""}`,
@@ -546,7 +573,7 @@ const isMasterBranch = (b: { code: string | null; name: string }) =>
   (!b.code?.trim() && b.name.trim().toLowerCase() === "imadol");
 
 export async function listBranchBalances(actor: Actor): Promise<BranchBillingStatus[]> {
-  if (!isSuperAdmin(actor)) throw new AppError(403, "Only a super admin can view every branch balance");
+  if (!isSuperAdmin(actor)) throw new AppError(403, "Only the office (super admin or accountant) can view every branch balance");
   const branches = await prisma.locations.findMany({
     where: { parent_id: null, is_hub: true, is_active: true },
     select: { id: true, code: true, name: true },

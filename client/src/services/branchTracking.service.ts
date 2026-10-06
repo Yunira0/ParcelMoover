@@ -169,6 +169,7 @@ export interface BranchSettlementDetail extends Omit<BranchSettlement, 'fromBran
     status: string;
     receiverName: string;
     receiverPhone: string;
+    receiverAlternatePhone?: string;
     origin: string | null;
     destination: string | null;
     collectedAmount: number;
@@ -180,6 +181,11 @@ export interface BranchSettlementDetail extends Omit<BranchSettlement, 'fromBran
 export async function getBranchSettlement(id: string, signal?: AbortSignal): Promise<BranchSettlementDetail> {
   const response = await api.get(`/branches/settlements/${id}`, { signal });
   return response.data.data;
+}
+
+export async function cancelBranchSettlement(id: string, remark: string) {
+  const response = await api.post(`/branches/settlements/${id}/cancel`, { remark });
+  return response.data;
 }
 
 export async function payBranchSettlement(id: string, input: {
