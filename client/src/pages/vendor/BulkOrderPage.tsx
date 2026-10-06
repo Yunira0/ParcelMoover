@@ -231,7 +231,8 @@ function validateRow(row: DraftRow, index: number, destinations: LocationOption[
   if (!row.receiverPhone.trim()) errors.receiverPhone = 'receiver phone is required';
 
   const destination = resolveDestination(row.destination, destinations);
-  if (destination.error) errors.destination = destination.error;
+  if (!row.destination.trim()) errors.destination = 'destination is required';
+  else if (destination.error) errors.destination = destination.error;
   if (row.serviceType.trim() && !SERVICE_TYPES.includes(row.serviceType.trim() as ServiceType)) {
     errors.serviceType = `service type must be one of: ${SERVICE_TYPES.join(', ')}`;
   }

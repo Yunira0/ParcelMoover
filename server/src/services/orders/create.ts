@@ -229,6 +229,11 @@ async function _createOrderImpl(
   const resolvedOriginLocationId =
     forcedAdminHub || vendor?.location_id || data.originLocationId || data.sender.locationId || null;
   const resolvedDestinationLocationId = data.destinationLocationId || data.receiver.locationId || null;
+  // Every rate path below keys off the destination; without one the order
+  // would silently fall through to a NPR 0 delivery charge.
+  if (!resolvedDestinationLocationId) {
+    throw new AppError(400, "A destination is required to price this order");
+  }
   const masterHubId = await getMasterHubId();
   const weightKg = data.weightKg || 1;
 
@@ -246,7 +251,8 @@ async function _createOrderImpl(
   //  2. Vendor orders from Imadol price by the vendor's rate model
   //     (per-destination / zone / flat).
   //  3. Non-vendor orders fall back to the legacy origin→destination route rate.
-  //  4. Otherwise a manually supplied charge, else 0.
+  //  4. Otherwise (no vendor and no origin) a manually supplied charge, else 0.
+  //     A destination is always present here - it is required above.
   // Return orders are charged the return percent of the normal rate for the path taken.
   const originIsBranch = Boolean(
     resolvedOriginLocationId && masterHubId && resolvedOriginLocationId !== masterHubId,
