@@ -14,6 +14,7 @@ import {
   type UnsettledCarrierOrder,
 } from '../../services/carrierCod.service';
 import { apiErrorMessage } from '../../utils/serverValidation';
+import { todayNepalAd } from '../../utils/nepaliDate';
 import '../SettlementCreatePage.css';
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -52,7 +53,7 @@ const CarrierSettlementCreatePage: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [carrier, setCarrier] = useState<CarrierCode>(searchParams.get('carrier') === 'upaya' ? 'upaya' : 'ncm');
-  const [settlementDate, setSettlementDate] = useState(new Date().toISOString().split('T')[0]);
+  const [settlementDate, setSettlementDate] = useState(todayNepalAd);
   const [defaultCharge, setDefaultCharge] = useState('');
   const [orders, setOrders] = useState<UnsettledCarrierOrder[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());

@@ -409,7 +409,9 @@ const BranchSidebar: React.FC = () => {
         <SidebarItem to="/branches/settlement" icon={Banknote} label="Branch COD" />
         <SidebarItem to="/branches/billing" icon={Wallet} label="Branch Payments" />
         <SidebarItem to="/accounting/transactions/rider-cod" icon={Bike} label="Rider COD" />
-        <SidebarItem to="/finance/carrier-cod" icon={Truck} label="3PL COD" />
+        {/* No 3PL COD here: carrier statements are settled centrally from
+            Imadol, so the API refuses a branch and the route is outside the
+            branch workspace. */}
 
         <SidebarSection label="Customer Experience" />
         <SidebarItem to="/tickets" icon={Ticket} label="Tickets" />
@@ -427,7 +429,7 @@ const BranchSidebar: React.FC = () => {
 // ── Finance menu ────────────────────────────────────────────────────────────
 // Shared by the head-office admin sidebar and the finance-only accountant
 // sidebar, so both always offer the same Finance screens.
-const FinanceNav: React.FC<{ canReadBooks: boolean }> = ({ canReadBooks }) => (
+const FinanceNav: React.FC<{ canReadBooks: boolean; showOverview?: boolean }> = ({ canReadBooks, showOverview }) => (
   <>
     {/* Accounting. Gated on the same permission the routes and the API
         check, so the section simply isn't there for staff who weren't
@@ -448,6 +450,11 @@ const FinanceNav: React.FC<{ canReadBooks: boolean }> = ({ canReadBooks }) => (
         so an admin without the grant sees those and nothing else here. */}
     <SidebarSection label="Finance" />
     <div className="sidebar-subnav">
+      {/* The accountant has this as their home item above the section. */}
+      {showOverview && canReadBooks && (
+        <SubItem to="/accounting" icon={LayoutDashboard} label="Overview" end />
+      )}
+
       {/* Branch COD mirrors Vendor COD below: the statements and the
           deposits that clear them are one conversation, so they sit in one
           disclosure rather than as two siblings. */}
@@ -461,7 +468,9 @@ const FinanceNav: React.FC<{ canReadBooks: boolean }> = ({ canReadBooks }) => (
       </SidebarGroup>
 
       <SubItem to="/accounting/transactions/rider-cod" icon={Bike} label="Rider COD" />
-      <SubItem to="/finance/carrier-cod" icon={Truck} label="3PL COD" />
+      {/* Unlike Rider and Vendor COD, carrier statements sit behind the books
+          grant, matching the route and the API. */}
+      {canReadBooks && <SubItem to="/finance/carrier-cod" icon={Truck} label="3PL COD" />}
 
       {/* Vendor COD keeps its three screens together: the settlements
           themselves, what the vendor has asked to be paid before any of it
@@ -603,7 +612,7 @@ const AdminSidebar: React.FC<{ isSuperAdmin: boolean }> = ({ isSuperAdmin }) => 
           </SidebarGroup>
         )}
 
-        <FinanceNav canReadBooks={canReadBooks} />
+        <FinanceNav canReadBooks={canReadBooks} showOverview />
 
         <SidebarSection label="Operations" />
         <div className="sidebar-subnav">

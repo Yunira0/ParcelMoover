@@ -867,30 +867,37 @@ export async function createSettlement(
           parcels: { status: { not: parcel_status.cancelled } },
         };
 
-  const collections = await prisma.cod_collections.findMany({
-    where: eligibleWhere,
-    include: { parcels: { select: { delivery_charge: true } } },
-  });
-
-  if (collections.length !== codCollectionIds.length) {
-    throw new AppError(
-      400,
-      "One or more selected orders are not eligible for settlement (already settled or do not belong to this account)",
-    );
-  }
-
-  // Gross is the cash actually collected (not the declared COD, which overstates
-  // partial deliveries). Vendor payout is gross minus the delivery charge -
-  // a parcel returned to the vendor (return leg or plain RTO bounce-back) is
-  // billed its delivery_charge same as any other settled order.
-  const grossAmount = collections.reduce((sum, c) => sum + Number(c.collected_amount), 0);
-  const itemsPayable =
-    payeeType === "rider"
-      ? collections.reduce((sum, c) => sum + Number(c.collected_amount), 0)
-      : collections.reduce((sum, c) => sum + Number(c.collected_amount) - Number(c.parcels.delivery_charge), 0);
   const statementId = generateStatementId(payeeType);
+  const uniqueIds = [...new Set(codCollectionIds)];
 
-  const { settlement, payableAmount } = await prisma.$transaction(async (tx) => {
+  const { settlement, payableAmount, collections, grossAmount } = await prisma.$transaction(async (tx) => {
+    // settlement_items has no unique key per leg, so two statements created at
+    // the same moment would both pass the membership guard and pay the same
+    // order out twice. Locking the collections serialises them: the second
+    // waits, then re-reads and finds the orders already earmarked.
+    await tx.$queryRaw`SELECT id FROM cod_collections WHERE id = ANY(${uniqueIds}::uuid[]) ORDER BY id FOR UPDATE`;
+    const collections = await tx.cod_collections.findMany({
+      where: eligibleWhere,
+      include: { parcels: { select: { delivery_charge: true } } },
+    });
+
+    if (collections.length !== codCollectionIds.length) {
+      throw new AppError(
+        400,
+        "One or more selected orders are not eligible for settlement (already settled, already on another statement, or do not belong to this account)",
+      );
+    }
+
+    // Gross is the cash actually collected (not the declared COD, which overstates
+    // partial deliveries). Vendor payout is gross minus the delivery charge -
+    // a parcel returned to the vendor (return leg or plain RTO bounce-back) is
+    // billed its delivery_charge same as any other settled order.
+    const grossAmount = round2(collections.reduce((sum, c) => sum + Number(c.collected_amount), 0));
+    const itemsPayable =
+      payeeType === "rider"
+        ? collections.reduce((sum, c) => sum + Number(c.collected_amount), 0)
+        : collections.reduce((sum, c) => sum + Number(c.collected_amount) - Number(c.parcels.delivery_charge), 0);
+
     // Charges the vendor already paid through Billing come back on this
     // statement - see "Vendor credit" above.
     let creditApplied = 0;
@@ -941,8 +948,8 @@ export async function createSettlement(
     // The statement posts the moment it exists (as a debt, until paid).
     await syncSettlementPostings(tx, [created.id], { actorId: actor.id, reason: "settlement created" });
 
-    return { settlement: created, payableAmount };
-  });
+    return { settlement: created, payableAmount, collections, grossAmount };
+  }, SETTLEMENT_TX_OPTIONS);
 
   if (payeeType === "rider") {
     await invalidateRiderFinanceCache(target.id);

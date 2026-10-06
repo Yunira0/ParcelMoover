@@ -238,9 +238,9 @@ financeRouter.get(
 );
 
 // ── 3PL (NCM / Upaya) COD settlements ── head office only (enforced in the service).
-// Same gate as the vendor/rider statements above: an admin without Finance
-// access must not be able to read, create or pay carrier statements either.
-const carrierStaff = [authMiddleware, authorizeRoles("super_admin", "admin", "accountant"), requireStaffPermission("FINANCE_ACCESS")] as const;
+// Behind the books grant: carrier statements move head-office money, so a plain
+// admin needs ACCOUNTING_ACCESS (super_admin and the accountant always pass).
+const carrierStaff = [authMiddleware, authorizeRoles("super_admin", "admin", "accountant"), requireAdminPermission("ACCOUNTING_ACCESS")] as const;
 financeRouter.get("/carrier-cod/:carrier/unsettled", ...carrierStaff, financeReadLimiter, unsettledCarrierOrdersController);
 financeRouter.get("/carrier-settlements", ...carrierStaff, financeReadLimiter, listCarrierSettlementsController);
 financeRouter.post("/carrier-settlements", ...carrierStaff, csrfProtection, settlementCreateLimiter, validate(createCarrierSettlementSchema), createCarrierSettlementController);

@@ -159,6 +159,7 @@ const BranchSettlement: React.FC = () => {
               { value: 'pending', label: 'Pending' },
               { value: 'partially_paid', label: 'Partially paid' },
               { value: 'settled', label: 'Settled' },
+              { value: 'cancelled', label: 'Cancelled' },
             ]}
           />
         </label>
@@ -200,7 +201,9 @@ const BranchSettlement: React.FC = () => {
               <>
                 <span className="acc-stack">Paid {money(item.paidAmount)}</span>
                 <span className="acc-stack">
-                  {item.remainingAmount > 0 ? `Due ${money(item.remainingAmount)}` : 'Cleared'}
+                  {item.status === 'cancelled'
+                    ? 'Withdrawn'
+                    : item.remainingAmount > 0 ? `Due ${money(item.remainingAmount)}` : 'Cleared'}
                 </span>
               </>
             ),

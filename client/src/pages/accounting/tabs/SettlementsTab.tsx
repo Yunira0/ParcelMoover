@@ -225,11 +225,8 @@ const SettlementsTab: React.FC<{ payeeType: 'rider' | 'vendor' }> = ({ payeeType
           <span>STATUS</span>
           {/* Empty `label` on purpose: the CAPS caption is the wrapping
               <label><span>, the shape every filter panel in the app uses.
-
-              Settled and Pending only. `cancelled` is accepted by the API but
-              left out on purpose — a cancelled statement is withdrawn, not a
-              state anyone browses the list for. `partially_paid` is not in the
-              API's accepted set at all, so offering it would 400. */}
+              Partially paid is its own state: those statements still owe
+              money, so they are the ones a payout run has to find. */}
           <FormField
             label=""
             type="select"
@@ -237,8 +234,10 @@ const SettlementsTab: React.FC<{ payeeType: 'rider' | 'vendor' }> = ({ payeeType
             onChange={(value) => applyFilter(() => setStatus(value as SettlementStatusFilter | ''))}
             options={[
               { value: '', label: 'All statuses' },
-              { value: 'settled', label: 'Settled' },
               { value: 'pending', label: 'Pending' },
+              { value: 'partially_paid', label: 'Partially paid' },
+              { value: 'settled', label: 'Settled' },
+              { value: 'cancelled', label: 'Cancelled' },
             ]}
           />
         </label>
@@ -344,11 +343,20 @@ const SettlementsTab: React.FC<{ payeeType: 'rider' | 'vendor' }> = ({ payeeType
           // finishes the row.
           {
             header: 'Status',
-            width: '110px',
+            width: '150px',
             accessor: (item) => (
-              <StatusChip variant="solid" tone={settlementStatusTone(item.status)}>
-                {settlementStatusLabel(item.status)}
-              </StatusChip>
+              <>
+                <StatusChip variant="solid" tone={settlementStatusTone(item.status)}>
+                  {settlementStatusLabel(item.status)}
+                </StatusChip>
+                {/* A part-paid row otherwise reads exactly like a pending one
+                    beside its full amount. */}
+                {item.status === 'partially_paid' && (
+                  <span className="acc-sub">
+                    {money(item.paidAmount)} of {money(Math.abs(item.amount))}
+                  </span>
+                )}
+              </>
             ),
           },
           { header: 'Remark', width: '190px', accessor: (item) => item.remark || '—' },
@@ -356,7 +364,7 @@ const SettlementsTab: React.FC<{ payeeType: 'rider' | 'vendor' }> = ({ payeeType
         // Every column is sized, so the table opts into fixed layout and scrolls
         // inside its own box rather than squeezing the payment figures. Vendor
         // carries the extra bank column, hence the wider floor.
-        minWidth={payeeType === 'vendor' ? '1370px' : '1185px'}
+        minWidth={payeeType === 'vendor' ? '1410px' : '1225px'}
         emptyMessage={
           payeeId
             ? `No settlements recorded for that ${payeeType} yet.`

@@ -432,19 +432,19 @@ function App() {
           />
           <Route
             path="/finance/carrier-cod"
-            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'accountant']}><CarrierCodPage /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'accountant']} adminPermission="ACCOUNTING_ACCESS"><CarrierCodPage /></RoleGuard>}
           />
           <Route
             path="/finance/carrier-cod/new"
-            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'accountant']}><CarrierSettlementCreatePage /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'accountant']} adminPermission="ACCOUNTING_ACCESS"><CarrierSettlementCreatePage /></RoleGuard>}
           />
           <Route
             path="/finance/carrier-cod/:id"
-            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'accountant']}><CarrierSettlementDetailPage /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'accountant']} adminPermission="ACCOUNTING_ACCESS"><CarrierSettlementDetailPage /></RoleGuard>}
           />
           <Route
             path="/finance/carrier-cod/:id/pay"
-            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'accountant']}><CarrierSettlementPayPage /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'accountant']} adminPermission="ACCOUNTING_ACCESS"><CarrierSettlementPayPage /></RoleGuard>}
           />
           <Route
             path="/finance/pending-cod"

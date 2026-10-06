@@ -297,7 +297,19 @@ export async function submitBranchPayment(
   if (input.settlementId) {
     const statement = await prisma.branch_settlements.findFirst({ where: { id: input.settlementId, from_branch_id: branchId, status: { in: ["pending", "partially_paid"] } }, select: { net_payable: true, paid_amount: true } });
     if (!statement) throw new AppError(404, "Pending settlement not found for this branch");
-    if (input.amount > money(statement.net_payable) - money(statement.paid_amount)) throw new AppError(400, "Receipt amount exceeds this settlement's outstanding balance");
+    // Receipts already awaiting review count against the balance too, or two
+    // full-amount receipts could be filed and the second would only fail later
+    // at verification.
+    const pending = await prisma.branch_payments.aggregate({
+      where: { settlement_id: input.settlementId, status: "pending" },
+      _sum: { amount: true },
+    });
+    const unclaimed = money(money(statement.net_payable) - money(statement.paid_amount) - money(pending._sum.amount));
+    if (money(input.amount) > unclaimed) {
+      throw new AppError(400, unclaimed > 0
+        ? `Receipt amount exceeds the Rs. ${unclaimed} not yet paid or awaiting verification on this settlement`
+        : "This settlement's balance is already covered by receipts awaiting verification");
+    }
   }
 
   const created = await prisma.branch_payments.create({
@@ -513,7 +525,7 @@ export async function reviewBranchPayment(
     if (decision === "verified" && existing.settlement_id) {
       const settlement = await tx.branch_settlements.findUnique({ where: { id: existing.settlement_id } });
       if (!settlement || settlement.status === "cancelled" || settlement.status === "settled") throw new AppError(409, "The linked settlement is no longer payable");
-      const outstanding = money(settlement.net_payable) - money(settlement.paid_amount);
+      const outstanding = money(money(settlement.net_payable) - money(settlement.paid_amount));
       if (money(existing.amount) > outstanding) throw new AppError(409, "Receipt amount now exceeds the settlement balance");
       const applied = await applyVerifiedCreditToSettlement(tx, settlement, money(existing.amount), actor.id, {
         method: existing.method, remark: `Verified receipt${existing.reference ? ` · ${existing.reference}` : ""}`,

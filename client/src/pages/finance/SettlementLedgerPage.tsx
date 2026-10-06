@@ -13,6 +13,7 @@ import {
 } from '../../services/accounting.service';
 import { drCr, formatMoney } from '../../utils/format';
 import { downloadExcel } from '../../utils/excel';
+import { useBackOr } from '../../hooks/useBackOr';
 
 /**
  * A rider's or vendor's ledger, statement by statement.
@@ -33,6 +34,7 @@ const BALANCE_HEADER: Record<PartyType, string> = {
 const SettlementLedgerPage: React.FC = () => {
   const { partyType = 'rider', partyId = '' } = useParams<{ partyType: PartyType; partyId: string }>();
   const navigate = useNavigate();
+  const goBack = useBackOr(`/accounting/ledgers/${partyType === 'vendor' ? 'vendor' : 'rider'}`);
   const [params, setParams] = useSearchParams();
 
   const [parties, setParties] = useState<PartyBalance[]>([]);
@@ -99,14 +101,19 @@ const SettlementLedgerPage: React.FC = () => {
       `ledger-${type}-${ledger.partyName}`,
       ledger.partyName,
       ['Date', 'Particulars / Description', 'Reference', 'Receipt', 'Payment', 'Balance'],
-      ledger.rows.map((row) => [
-        row.bsDate,
-        row.description,
-        row.reference,
-        row.debit || '',
-        row.credit || '',
-        drCr(row.runningBalance, debitNormal),
-      ]),
+      [
+        ...(ledger.page === 1
+          ? [['', 'Opening balance carried forward', 'OPENING', '', '', drCr(ledger.openingBalance, debitNormal)]]
+          : []),
+        ...ledger.rows.map((row) => [
+          row.bsDate,
+          row.description,
+          row.reference,
+          row.debit || '',
+          row.credit || '',
+          drCr(row.runningBalance, debitNormal),
+        ]),
+      ],
     );
   };
 
@@ -119,7 +126,7 @@ const SettlementLedgerPage: React.FC = () => {
       onSelect: () => navigate(`/accounting/ledgers/${type === 'rider' ? 'vendor' : 'rider'}`),
     },
     { key: 'F12', label: 'Day book', onSelect: () => navigate('/accounting/transactions/journal') },
-    { key: 'Escape', label: 'Back', onSelect: () => navigate(-1) },
+    { key: 'Escape', label: 'Back', onSelect: goBack },
   ];
 
   const rows = ledger?.rows ?? [];

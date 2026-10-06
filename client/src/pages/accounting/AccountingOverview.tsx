@@ -54,7 +54,7 @@ const AccountingOverview: React.FC = () => (
   <div className="acc-page">
     <DashboardHeader user={getCurrentUser()?.fullName || ''} />
     <PageHeader
-      title="Accounting Overview"
+      title="Finance Overview"
     />
     {isAccountantUser() && <AccountantQueue />}
     <SummaryTab />

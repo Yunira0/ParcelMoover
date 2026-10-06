@@ -128,7 +128,7 @@ function parseDateParam(raw: unknown, label: string): { error?: string; date?: D
 }
 
 const VALID_PAYEE_TYPES = ["rider", "vendor"];
-const VALID_SETTLEMENT_STATUSES = ["pending", "settled", "cancelled"];
+const VALID_SETTLEMENT_STATUSES = ["pending", "partially_paid", "settled", "cancelled"];
 
 export async function listSettlementsController(req: Request, res: Response) {
   try {
