@@ -20,6 +20,7 @@ import {
 } from "../../validators/publicApi.schema";
 import { actorFrom, partnerIdempotencyKey, sendError, UUID_REGEX } from "./shared";
 import { getVendorStatusLabel } from "../../utils/orderStatusLabel";
+import type { CreateOrderInput } from "../../types/order.type";
 
 export async function publicBulkCreateOrderController(req: Request, res: Response) {
   try {
@@ -31,6 +32,8 @@ export async function publicBulkCreateOrderController(req: Request, res: Respons
     const input = req.body as PublicBulkCreateOrderInput;
     const actor = actorFrom(req);
     const profile = input.orders.some(order => !order.sender) ? await getSenderProfile(actor) : undefined;
+    // Route validation checks every row. Sender defaults and hub resolution
+    // below complete the internal shape; JSON requests omit optional fields.
     const orders = await Promise.all(input.orders.map(async order => ({
       ...order,
       sender: order.sender ?? {
@@ -40,7 +43,7 @@ export async function publicBulkCreateOrderController(req: Request, res: Respons
       },
       receiver: { ...order.receiver, ...(order.receiver.locationId ? { locationId: await resolveDestinationRef(order.receiver.locationId) } : {}) },
       ...(order.destinationLocationId ? { destinationLocationId: await resolveDestinationRef(order.destinationLocationId) } : {}),
-    })));
+    } as CreateOrderInput)));
     const effective = { orders, ...(input.confirmDuplicateBatch !== undefined ? { confirmDuplicateBatch: input.confirmDuplicateBatch } : {}) };
     const body = await withIdempotency(partnerIdempotencyKey(req, "order-bulk-create", key), effective, async () => {
       const data = await bulkCreateOrders(actor, effective);

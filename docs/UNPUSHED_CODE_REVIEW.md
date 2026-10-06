@@ -2,7 +2,7 @@
 
 Reviewed on **6 October 2026**, against freshly fetched remote references.
 
-**Final repair status, 6 October 2026:** all identified findings have been addressed locally. The active checkout passes **676 server tests across 64 files**, all application builds, the client loading budgets and six upload checks. The historical COD repair passes nine checks; the historical feature repair passes sixteen checks. Database records were not changed during these repairs. No migrations, application backfills, deployments or pushes were run. The stash and original branch history remain intact.
+**Main integration status, 6 October 2026:** all reviewed local changes and local branch tips have been committed and merged with the latest fetched `origin/main` (`087edc8`). The original stash was recovered onto `codex/stash-recovery` and merged without dropping it. Conflicts preserve current finance safeguards, carrier/accountant support, front/back KYC documents, optimized reads and reviewed fixes. Validation: **706 server tests passed across 68 files**; one real-database check was intentionally skipped. Server, client, rider, map and map-library builds passed, along with all eight loading budgets, six upload checks, seventeen historical feature checks, the map cache check and five deployment handover tests. These merge and validation steps did not change application database data. The final publication commit uses `[skip ci]` to avoid triggering the production deployment and its startup repair scripts.
 
 The original review found four code issues and one date-dependent test fixture. Regression checks also exposed the current single-order guard blocking a legitimate settled partial-delivery continuation. That guard is now aligned with the current bulk path. The original evidence below describes the code **before repair**, rather than unresolved issues.
 
@@ -12,7 +12,7 @@ The original review found four code issues and one date-dependent test fixture. 
 | --- | --- | --- | --- |
 | Shared KYC documents | Rejecting a verification could later delete a vendor's original file. | Cleanup checks every vendor document field and other KYC applications first. Shared files stay available; failed checks prevent deletion. | Active checkout and `codex/feature-review-fix` worktree |
 | Historical COD helper | Moving a partial delivery to follow-up could turn Rs 1,500 already collected into Rs 0. | Continuing a partial delivery preserves its cash and settlement fields. A statement-linked collection still cannot be rewritten as a completed delivery. | `codex/cod-review-fix` worktree |
-| Current single-order settlement guard | A partial delivery already in a statement could be blocked from follow-up, ready-to-deliver or ready-to-return. | Single and bulk operations both permit these continuation steps while leaving cash intact. Reversing a completed, settled delivery stays blocked. | Active checkout |
+| Current single-order settlement guard | A partial delivery already in a statement could be blocked from follow-up or ready-to-return. | Single and bulk operations permit follow-up/return without rewriting cash. A settled partial delivery cannot start a new collection; a completed, settled delivery cannot be reversed. | Active checkout |
 | Voucher state filters | Selecting Unclaimed could show a paused code and count it as unclaimed. | Active-state filters exclude paused codes. Displayed state, results and exact totals agree. Campaign administration stays staff-only. | Active checkout and `codex/feature-review-fix` worktree |
 | Voucher CSV test clock | A fixed October expiry made the test fail when the real date advanced. | Tests freeze their clock and check both unclaimed and expired output. Real voucher records are untouched. | Active checkout and `codex/feature-review-fix` worktree |
 | Map print preview | Changing the paper colour left old-colour hatch tiles inside buildings. | Changing either paper or building colour rebuilds the hatch; unchanged colours reuse it. | Active `map/` project |
@@ -20,14 +20,27 @@ The original review found four code issues and one date-dependent test fixture. 
 
 ## Historical repair worktrees
 
-| Branch | Base commit | Checkout | Pending files |
+| Branch | Base commit | Checkout | Committed repair |
 | --- | --- | --- | --- |
 | `codex/cod-review-fix` | `6798210d` | `/Users/gyanendrakhatiwada/.codex/worktrees/cod-review-fix/parcelmoover-beta` | COD helper and `server/scripts/check-cod-reconciliation.cjs` |
 | `codex/feature-review-fix` | `fe43ea1` | `/Users/gyanendrakhatiwada/.codex/worktrees/feature-review-fix/parcelmoover-beta` | KYC cleanup, voucher filters, voucher test clock and `server/scripts/check-review-fixes.cjs` |
 
-These worktrees contain **uncommitted corrections** on separate repair branches. The original `cod`, backup and destination-validation branches were not rewritten, and their original commit hashes still identify the reviewed snapshots. Corrected historical versions are kept separate because their document schema and order-service layout differ from the active checkout. Use the repair worktrees when recovering that older code. The stash was neither applied nor changed.
+The COD repair was committed as `c0489a7`; the feature repair as `eed7c20`. Both are merged into the integration history. The feature worktree was subsequently reused for the recovered stash (`855f537`); its earlier repair branch remains available. Every local branch tip is reachable from the integrated history. The original `cod`, backup, destination-validation and stash snapshots remain intact. Older implementations were reconciled into the current modular services rather than replacing newer policies with historical behavior.
 
-The earlier approval block has been resolved: all repair patches were applied with permission to write their isolated worktrees. Historical checks execute the actual source functions with mocked document/database effects or an in-memory SQL fixture. Their whole historical dependency stacks were not installed or rebuilt.
+The earlier approval block has been resolved: all repair patches were applied with permission to write their isolated worktrees. Historical checks execute actual source with mocked document/database effects or an in-memory SQL fixture. On the current modular service, the COD script runs the exported status-path regression suites; the feature script checks all four current document fields. The old dependency stacks were not installed or rebuilt.
+
+## Conflict decisions and retained behavior
+
+| Before merging | Integrated result |
+| --- | --- |
+| Optimization and local UI work were on a base 234 commits behind main. | Newest main security, settlement, carrier and accountant behavior is retained together with local improvements. |
+| The old COD branch contained a monolithic order service and a duplicate batch warning. | The current modular service retains its payment guards. The shared import service warns about recent identical batches, allows deliberate confirmation and keeps a ten-minute replay lock for long imports. |
+| The dashboard bulk warning had no matching Partner API import route. | `POST /api/v1/orders/bulk` uses key-owned vendor scope, validated rows, UUID idempotency, a 20/minute limit, structured errors and the same service. Docs, console and served reference are updated. |
+| Settlement pickers could return an unbounded eligible set. | The shared service returns at most 1,000 rows with a `capped` notice, stable ordering, batch totals and unchanged vendor credit calculation. Settle the batch and reload to see more. |
+| Historical voucher/KYC and stash code overlapped newer features. | Current voucher policies, credit thresholds, front/back document support, scanner routes, banners and rider confirmation remain. Duplicate route registrations and obsolete service copies are omitted. |
+| A main push would automatically deploy and run startup business-data repairs. | The final publication commit skips that workflow. No migrations, backfills or production commands were run during integration. |
+
+The one skipped server test requires a real `DATABASE_URL`; it was left unset for validation. The fresh remote fetch confirmed that no new `origin/main` commit was missing from the integrated history.
 
 ## Original findings, in priority order
 

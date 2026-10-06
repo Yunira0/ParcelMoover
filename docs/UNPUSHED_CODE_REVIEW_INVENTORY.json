@@ -2723,5 +2723,45 @@
         ]
       }
     ]
+  },
+  "mainIntegration": {
+    "date": "2026-10-06",
+    "status": "merged_and_verified",
+    "target": "origin/main",
+    "remoteBase": "087edc837b1e1ffef329a951c372ec741891d125",
+    "localChangesCommit": "bbbaea5",
+    "merges": [
+      "ff69780",
+      "3e62d75",
+      "0a09c5b",
+      "caedd42",
+      "7952bdd"
+    ],
+    "historicalRepairs": [
+      "c0489a7",
+      "eed7c20"
+    ],
+    "stashRecoveryCommit": "855f537",
+    "originalStashPreserved": true,
+    "allLocalBranchTipsIntegrated": true,
+    "serverTests": {
+      "passed": 706,
+      "passedFiles": 68,
+      "skipped": 1,
+      "reason": "real DATABASE_URL intentionally unset"
+    },
+    "builds": [
+      "server",
+      "client",
+      "rider",
+      "map",
+      "mapkit"
+    ],
+    "loadingBudgetsPassed": 8,
+    "uploadChecksPassed": 6,
+    "featureChecksPassed": 17,
+    "deploymentHandoverTestsPassed": 5,
+    "applicationDatabaseDataChangedDuringIntegration": false,
+    "productionDeployment": "skipped using final commit [skip ci]"
   }
 }

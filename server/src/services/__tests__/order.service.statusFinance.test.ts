@@ -42,6 +42,7 @@ function parcel(id: string, status: string) {
     vendor_id: null,
     order_type: "forward",
     cod_amount: 1200,
+    partial_cod_collected: status === "partially_delivered" ? 800 : null,
     delivery_charge: 100,
     delivery_rider_id: "rider-1",
     pickup_tasks: null,
@@ -109,7 +110,7 @@ describe("status changes preserve settled COD", () => {
     expect(db.$transaction).not.toHaveBeenCalled();
   });
 
-  it.each(["follow_up", "ready_to_deliver", "ready_to_return"] as const)("lets a settled partial delivery proceed to %s without reversing its cash", async status => {
+  it.each(["follow_up", "ready_to_return"] as const)("lets a settled partial delivery proceed to %s without reversing its cash", async status => {
     const tx = transaction();
     db.parcels.findFirst.mockResolvedValue(parcel("p1", "partially_delivered"));
     db.cod_collections.findMany.mockResolvedValue([{ parcels: settlement.parcels }]);
@@ -127,7 +128,7 @@ describe("status changes preserve settled COD", () => {
     expect(tx.cod_collections.upsert).not.toHaveBeenCalled();
   });
 
-  it.each(["follow_up", "ready_to_deliver", "ready_to_return"] as const)("keeps settled partial-delivery cash intact on bulk %s", async status => {
+  it.each(["follow_up", "ready_to_return"] as const)("keeps settled partial-delivery cash intact on bulk %s", async status => {
     const tx = transaction();
     db.parcels.findMany.mockResolvedValue([parcel("p1", "partially_delivered")]);
     db.cod_collections.findMany.mockResolvedValue([{ parcels: settlement.parcels }]);
@@ -145,5 +146,22 @@ describe("status changes preserve settled COD", () => {
     expect(tx.parcels.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({ data: { delivery_rider_id: null } }),
     );
+  });
+});
+
+
+describe("settled partial deliveries cannot start a new collection", () => {
+  const settled = { parcels: { tracking_id: "TRK-p1", branch_settlement_items: [] }, settlement_items: [{ settlements: { statement_id: "STM-1", payee_type: "rider" } }] };
+  it("blocks single re-delivery before the current collection can be cleared", async () => {
+    db.parcels.findFirst.mockResolvedValue(parcel("p1", "partially_delivered"));
+    db.cod_collections.findFirst.mockResolvedValue(settled);
+    await expect(updateParcelStatus(admin, "p1", { status: "ready_to_deliver" })).rejects.toMatchObject({ statusCode: 409 });
+    expect(db.$transaction).not.toHaveBeenCalled();
+  });
+  it("blocks bulk re-delivery atomically", async () => {
+    db.parcels.findMany.mockResolvedValue([parcel("p1", "partially_delivered")]);
+    db.cod_collections.findFirst.mockResolvedValue(settled);
+    await expect(bulkUpdateParcelStatus(admin, { ids: ["p1"], status: "ready_to_deliver" })).rejects.toMatchObject({ statusCode: 409 });
+    expect(db.$transaction).not.toHaveBeenCalled();
   });
 });
