@@ -1,0 +1,116 @@
+.vendor-announcements {
+  flex-basis: 100%;
+  background-color: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-modal);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.vendor-announcements-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  background-color: var(--color-background-elevated);
+  border-bottom: 1px solid var(--color-border-default);
+  color: var(--color-icon-primary);
+}
+
+.vendor-announcements-title {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-default);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.vendor-announcements-empty {
+  margin: 0;
+  padding: var(--space-6) var(--space-4);
+  text-align: center;
+  color: var(--color-text-caption);
+  font-size: var(--font-size-sm);
+}
+
+.vendor-announcements-rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.vendor-announcements-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  border: none;
+  border-bottom: 1px solid var(--color-border-default);
+  background: transparent;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.vendor-announcements-row:last-child {
+  border-bottom: none;
+}
+
+.vendor-announcements-row:hover {
+  background: var(--color-primary-subtle);
+}
+
+.vendor-announcements-row:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+}
+
+.vendor-announcements-row-title {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-default);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vendor-announcements-row-date {
+  flex-shrink: 0;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-caption);
+}
+
+.vendor-announcements-view-all {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  width: 100%;
+  padding: var(--space-2) var(--space-4);
+  border: none;
+  border-top: 1px solid var(--color-border-default);
+  background: var(--color-background-canvas);
+  color: var(--color-text-primary);
+  font-family: inherit;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+}
+
+.vendor-announcements-view-all:hover {
+  background: var(--color-primary-subtle);
+}
+
+@media (max-width: 560px) {
+  .vendor-announcements-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-1);
+  }
+
+  .vendor-announcements-row-title {
+    white-space: normal;
+  }
+}

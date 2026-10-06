@@ -160,6 +160,11 @@ export const registerUser = async (data: RegisterUserInput) => {
     // camera-shot KYC images. Let the browser set the boundary header and give
     // this write a longer timeout than normal JSON requests.
     timeout: 120000,
+    // The api instance defaults to Content-Type: application/json, which
+    // makes axios silently JSON-serialize this FormData (dropping every
+    // File) instead of sending it as multipart. Clearing it here lets axios
+    // detect the FormData and set the correct multipart boundary itself.
+    headers: { 'Content-Type': undefined },
   });
   return response.data;
 };

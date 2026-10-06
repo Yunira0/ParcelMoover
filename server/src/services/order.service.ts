@@ -75,7 +75,7 @@ function branchOverrides(v: {
     branchZoneInsideValley: n(v.branch_zone_inside_valley),
   };
 }
-import { createNotification } from "./notification.service";
+import { createNotification, publishLiveUpdatePing } from "./notification.service";
 
 // Prices a parcel's return-to-vendor charge as the vendor's return percent of
 // the normal rate for that destination/weight - the same discounted quote a
@@ -1771,9 +1771,12 @@ function buildOrdersWhere(
         .filter((t) => t.startsWith("#"))
         .map(parseOrderNumber)
         .filter((n): n is number => n !== null);
+      // A single IN(...) lets Postgres do one index lookup for the whole
+      // batch instead of planning/evaluating N separate OR-equals predicates
+      // - matters once a scan batch reaches hundreds of terms.
       conditions.push({
         OR: [
-          ...terms.map((t) => ({ tracking_id: { equals: t, mode: "insensitive" as const } })),
+          { tracking_id: { in: terms, mode: "insensitive" as const } },
           ...(orderNumbers.length ? [{ order_number: { in: orderNumbers } }] : []),
         ],
       });
@@ -1926,6 +1929,8 @@ function mapOrder(
   // Only populated for exports, where the caller batch-fetches the first
   // "arrived at origin" timestamp per parcel (see fetchArrivedAtOriginMap).
   arrivedByParcelId?: Map<string, string>,
+  // Which 3PL (if any) this parcel was API-handed-off to (see fetchCarrierByParcelId).
+  carrierByParcelId?: Map<string, "ncm" | "upaya">,
 ) {
   const latestHistory = parcel.parcel_status_history[0];
   // The delivery rider is who this column is about; the pickup rider only
@@ -1965,6 +1970,8 @@ function mapOrder(
     lastUpdatedBy =
       locationName(parcel.locations_parcels_origin_location_idTolocations) || vendorName || "Branch";
   }
+
+  const carrierCode = carrierByParcelId?.get(parcel.id) ?? null;
 
   return {
     id: parcel.id,
@@ -2018,6 +2025,8 @@ function mapOrder(
     labelWidthMm: labelSize.widthMm,
     labelHeightMm: labelSize.heightMm,
     riderName: rider?.name || "",
+    carrierCode,
+    carrierLabel: carrierCode ? CARRIER_LABELS[carrierCode] : null,
     remarks: parcel.parcel_remarks[0]?.remark || "",
     // Vendor-declared eligibility at creation, plus the actual outcome once a
     // rider/admin marks the parcel partially_delivered (both null/false until then).
@@ -2037,6 +2046,35 @@ function mapOrder(
     arrivedAtOrigin: arrivedByParcelId?.get(parcel.id) ?? "",
     deliveredAt: parcel.delivered_at ? formatDate(parcel.delivered_at) : "",
   };
+}
+
+// Label shown in ops tables/exports for a parcel routed through a 3PL API
+// handoff (see ncm.service.ts/upaya.service.ts's own HANDOFF_REMARK_PREFIX
+// constants) - not the "PM Rider N/U" manual-placeholder path, which the
+// existing riderName column already covers.
+const CARRIER_LABELS: Record<"ncm" | "upaya", string> = { ncm: "NCM", upaya: "Upaya" };
+
+// Batch-fetches which 3PL (if any) each parcel was API-handed-off to, keyed
+// off the same durable handoff remark reconciliation already reads (see
+// reconcileNcmStatuses/reconcileUpayaStatuses) rather than delivery_rider_id,
+// which the API handoff path never sets.
+async function fetchCarrierByParcelId(parcelIds: string[]): Promise<Map<string, "ncm" | "upaya">> {
+  const map = new Map<string, "ncm" | "upaya">();
+  if (parcelIds.length === 0) return map;
+  const rows = await prisma.parcel_remarks.findMany({
+    where: {
+      parcel_id: { in: parcelIds },
+      OR: [
+        { remark: { startsWith: NCM_HANDOFF_REMARK_PREFIX } },
+        { remark: { startsWith: UPAYA_HANDOFF_REMARK_PREFIX } },
+      ],
+    },
+    select: { parcel_id: true, remark: true },
+  });
+  for (const row of rows) {
+    map.set(row.parcel_id, row.remark.startsWith(NCM_HANDOFF_REMARK_PREFIX) ? "ncm" : "upaya");
+  }
+  return map;
 }
 
 // Batch-fetches the first "arrived at origin" date (Nepal-local "YYYY-MM-DD")
@@ -2256,8 +2294,9 @@ export async function listOrders(
     const arrivedMap = query.withArrival
       ? await fetchArrivedAtOriginMap(parcels.map((p) => p.id))
       : undefined;
+    const carrierMap = await fetchCarrierByParcelId(parcels.map((p) => p.id));
     const result: ListOrdersResult = {
-      data: parcels.map((p) => mapOrder(p, isStaff, isOwnVendorViewer, arrivedMap)),
+      data: parcels.map((p) => mapOrder(p, isStaff, isOwnVendorViewer, arrivedMap, carrierMap)),
       meta: {
         page: 1,
         pageSize: DEFAULT_LIST_CAP,
@@ -2340,8 +2379,10 @@ export async function listOrders(
       ? totalPages
       : Math.min(totalPages, Math.max(1, query.page || 1));
 
+  const carrierMap = await fetchCarrierByParcelId(parcels.map((p) => p.id));
+
   return {
-    data: parcels.map((p) => mapOrder(p, isStaff, isOwnVendorViewer)),
+    data: parcels.map((p) => mapOrder(p, isStaff, isOwnVendorViewer, undefined, carrierMap)),
     meta: {
       page: pageHint,
       pageSize,
@@ -2542,6 +2583,17 @@ function isStaffAuthor(
   return !!user?.user_roles?.some((ur) => STAFF_ROLE_CODES.has(ur.roles.code));
 }
 
+// A status change made from the rider app (picked_up, delivered,
+// failed_delivery, etc.) reads differently in the timeline than the same
+// status set by ops from the dashboard - staff viewers get a "Rider" badge
+// next to the name so a forced/manual override by an admin is never
+// mistaken for the rider having actually done it, and vice versa.
+function isRiderAuthor(
+  user: { user_roles?: { roles: { code: string } }[] } | null | undefined,
+): boolean {
+  return !!user?.user_roles?.some((ur) => ur.roles.code === "rider");
+}
+
 export async function getOrderByTrackingId(actor: OrderActor, trackingId: string) {
   const { vendorId, vendorIds, riderId } = await getActorScope(actor);
   const isStaff = actor.roles.includes("super_admin") || actor.roles.includes("admin");
@@ -2552,7 +2604,20 @@ export async function getOrderByTrackingId(actor: OrderActor, trackingId: string
       deleted_at: null,
       ...(vendorId ? { vendor_id: vendorId } : {}),
       ...(vendorIds ? { vendor_id: { in: vendorIds } } : {}),
-      ...(riderId ? riderHandledFilter(riderId) : {}),
+      // A rider may also look up an unclaimed ready_to_deliver parcel, or
+      // ANY failed_pickup/failed_delivery parcel regardless of who's
+      // currently on record for it - scanning it is how they self-assign/
+      // reclaim it (see the matching claim exceptions in
+      // _updateParcelStatusImpl).
+      ...(riderId
+        ? {
+            OR: [
+              ...(riderHandledFilter(riderId).OR ?? []),
+              { status: "ready_to_deliver" as parcel_status, delivery_rider_id: null },
+              { status: { in: ["failed_pickup", "failed_delivery"] as parcel_status[] } },
+            ],
+          }
+        : {}),
     },
     include: ORDER_DETAIL_INCLUDE,
   });
@@ -2675,14 +2740,19 @@ export async function getOrderByTrackingId(actor: OrderActor, trackingId: string
           : entry.new_status === "sent_for_delivery"
             ? parcel.riders_parcels_delivery_rider_idToriders?.name
             : null;
+      const changedByIsRider = isRiderAuthor(entry.users);
       return {
         id: entry.id,
         oldStatus: entry.old_status,
         newStatus: entry.new_status,
         remarks: entry.remarks || "",
         riderName: riderName || null,
+        // entry.users is null only for a handful of automated/carrier-driven
+        // rows (e.g. NCM webhook updates) - everything a person does, forced
+        // super_admin overrides included, always carries a real changed_by
+        // and so always shows that person's name here.
         changedBy: isStaff ? entry.users?.full_name || "System" : nonStaffLabel,
-        changedByType: isStaff ? ("user" as const) : ("branch" as const),
+        changedByType: isStaff ? (changedByIsRider ? ("rider" as const) : ("user" as const)) : ("branch" as const),
         // Full timestamp so the timeline shows the time of each status change.
         createdAt: entry.created_at.toISOString(),
       };
@@ -3811,20 +3881,47 @@ async function _updateParcelStatusImpl(
         throw new AppError(404, "Parcel not found");
       }
     } else if (isRiderActor) {
-      // Assigning a rider to a parcel (rider_assigned / sent_for_delivery /
-      // sent_to_vendor) is an admin/vendor operation done via the ops
-      // dashboard's rider picker — a rider never claims/assigns a parcel to
-      // themselves, so reject this before the leg-ownership check below
-      // (which, on the very first assignment, would otherwise always fail
-      // with a misleading "not your parcel" error instead of the real reason).
-      if (RIDER_ASSIGNMENT_FIELD[newStatus as parcel_status]) {
-        throw new AppError(403, "Assigning a rider to a parcel is an admin/vendor operation");
-      }
       const scope = await getActorScope(actor);
       if (!scope.riderId) {
         throw new AppError(403, "Rider profile not found or inactive");
       }
-      assertRiderOwnsLeg(currentStatus as parcel_status, parcel, scope.riderId);
+
+      // Self-assign: a rider scanning one of these may claim it straight to
+      // themselves - the rider-initiated exceptions to "assigning a rider is
+      // admin/vendor-only" below. getOrderByTrackingId is what lets them look
+      // the parcel up in the first place while it isn't (yet, or no longer)
+      // theirs:
+      //  - ready_to_deliver -> sent_for_delivery: claiming an unclaimed
+      //    parcel nobody has delivery custody of yet.
+      //  - failed_pickup -> rider_assigned / failed_delivery -> sent_for_delivery:
+      //    reclaiming a failed attempt - ANY rider may pick this back up, not
+      //    just whoever failed it, so the leg-ownership check below is
+      //    deliberately skipped for these two as well.
+      const isSelfAssignClaim =
+        (currentStatus === "ready_to_deliver" && newStatus === "sent_for_delivery") ||
+        (currentStatus === "failed_pickup" && newStatus === "rider_assigned") ||
+        (currentStatus === "failed_delivery" && newStatus === "sent_for_delivery");
+      if (isSelfAssignClaim) {
+        // Only ready_to_deliver's claim can race against another rider's
+        // claim of the same never-assigned parcel - failed_pickup/
+        // failed_delivery already have a rider on record (whoever failed the
+        // attempt) and reclaiming is exactly what's meant to overwrite it.
+        if (currentStatus === "ready_to_deliver" && parcel.delivery_rider_id) {
+          throw new AppError(409, "This parcel has already been claimed by another rider");
+        }
+        data.riderId = scope.riderId;
+      } else {
+        // Assigning a rider to a parcel (rider_assigned / sent_to_vendor, or
+        // re-claiming an already-claimed ready_to_deliver delivery) is an
+        // admin/vendor operation done via the ops dashboard's rider picker —
+        // reject this before the leg-ownership check below (which, on the
+        // very first assignment, would otherwise always fail with a
+        // misleading "not your parcel" error instead of the real reason).
+        if (RIDER_ASSIGNMENT_FIELD[newStatus as parcel_status]) {
+          throw new AppError(403, "Assigning a rider to a parcel is an admin/vendor operation");
+        }
+        assertRiderOwnsLeg(currentStatus as parcel_status, parcel, scope.riderId);
+      }
     }
   }
 
@@ -3910,8 +4007,10 @@ async function _updateParcelStatusImpl(
     }
   }
 
-  // rider_assigned needs a pickup rider, sent_for_delivery needs a delivery rider
-  // (rider actors are already rejected above, before reaching this point)
+  // rider_assigned needs a pickup rider, sent_for_delivery needs a delivery
+  // rider (rider actors are already rejected above, before reaching this
+  // point - except the ready_to_deliver self-assign claim, which already set
+  // data.riderId to the actor's own rider id)
   const riderAssignmentField = RIDER_ASSIGNMENT_FIELD[newStatus as parcel_status];
   if (riderAssignmentField) {
     if (!data.riderId) {
@@ -4357,6 +4456,42 @@ async function _updateParcelStatusImpl(
         "status_change",
         `/orders/track/${parcel.tracking_id}`,
       ).catch(() => {});
+    }
+  }
+
+  // Rider app dashboard refresh trigger: unlike the vendor's "no blanket
+  // status notifications" policy above, every status change on a parcel
+  // this rider holds is worth pushing - the rider client doesn't render the
+  // notification, it just uses the SSE event to know its cached dashboard/
+  // queue data is stale and refetch (see pm-rider-native's live-updates
+  // wiring). Both legs notified since pickup and delivery can be different
+  // riders; deduped when the same rider holds both.
+  //
+  // The SSE stream is keyed by users.id, but pickup_rider_id/delivery_rider_id
+  // are riders.id (a separate table/id space - see the `riders` model) - has
+  // to be resolved through riders.user_id before publishLiveUpdatePing, or
+  // every call here silently pings nobody.
+  //
+  // Unioned with the pre-update `parcel` snapshot, not just `updatedParcel`:
+  // leavingDelivery/releasesPickupRider/isDeliveryReversal null out these same
+  // fields above, so a rider who just had a parcel pulled out of their queue
+  // is exactly the rider `updatedParcel` alone would miss.
+  const heldByRiderRecordIds = [
+    parcel.pickup_rider_id,
+    parcel.delivery_rider_id,
+    updatedParcel.pickup_rider_id,
+    updatedParcel.delivery_rider_id,
+  ].filter((id): id is string => !!id);
+  if (heldByRiderRecordIds.length > 0) {
+    const holders = await prisma.riders.findMany({
+      where: { id: { in: heldByRiderRecordIds } },
+      select: { user_id: true },
+    });
+    const notifyUserIds = new Set(
+      holders.map((r) => r.user_id).filter((id): id is string => !!id && id !== actor.id),
+    );
+    for (const userId of notifyUserIds) {
+      publishLiveUpdatePing(userId, "rider_parcel_update", parcel.tracking_id).catch(() => {});
     }
   }
 
@@ -5036,6 +5171,45 @@ async function _bulkUpdateParcelStatusImpl(
           "status_change",
           single ? `/orders/track/${single.tracking_id}` : "/orders",
         ).catch(() => {});
+      }
+    }
+  }
+
+  // Rider app dashboard refresh trigger, bulk counterpart of the single-
+  // update path's rider-notify block. This is the path the actual admin UI
+  // uses for rider assignment (PickupOperations.tsx's applyStatusChange calls
+  // bulkUpdateOrderStatus even for a single selected order, never the
+  // single-parcel endpoint) - `parcels` above is the PRE-update snapshot, so
+  // pickup_rider_id/delivery_rider_id has to be re-read post-transaction to
+  // see a freshly assigned rider. One notification per rider, not per parcel.
+  //
+  // Queried by idsToUpdate, not ids: `ids` still includes the no-op parcels
+  // filtered out above (already at newStatus), which never touch this
+  // transaction - re-including them here would fire a false "marked X"
+  // notification for an order that didn't actually change.
+  //
+  // Also folds in the PRE-update snapshot's rider ids (from `parcels`, itself
+  // already scoped to idsToUpdate) - leavingDelivery/releasesPickupRider null
+  // these fields out per-parcel above, so the post-update query alone would
+  // miss exactly the rider who just had a parcel pulled out of their queue.
+  {
+    const postUpdateParcels = await prisma.parcels.findMany({
+      where: { id: { in: idsToUpdate } },
+      select: { pickup_rider_id: true, delivery_rider_id: true },
+    });
+    const heldByRiderRecordIds = new Set<string>();
+    for (const p of [...parcels, ...postUpdateParcels]) {
+      if (p.pickup_rider_id) heldByRiderRecordIds.add(p.pickup_rider_id);
+      if (p.delivery_rider_id) heldByRiderRecordIds.add(p.delivery_rider_id);
+    }
+    if (heldByRiderRecordIds.size > 0) {
+      const holders = await prisma.riders.findMany({
+        where: { id: { in: [...heldByRiderRecordIds] } },
+        select: { user_id: true },
+      });
+      for (const holder of holders) {
+        if (!holder.user_id || holder.user_id === actor.id) continue;
+        publishLiveUpdatePing(holder.user_id, "rider_parcel_update").catch(() => {});
       }
     }
   }

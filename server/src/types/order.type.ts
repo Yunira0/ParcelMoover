@@ -198,10 +198,14 @@ export const STATUS_TRANSITIONS = {
   // A partial delivery can be re-attempted, sent into NDR follow-up, or returned
   // straight away (Return-to-Origin) when recovery is clearly hopeless.
   partially_delivered: ["ready_to_deliver", "follow_up", "ready_to_return"],
-  failed_pickup:     ["pickup_ordered", "cancelled"],
+  // "rider_assigned" here is a rider reclaiming a failed pickup straight to
+  // themselves (any rider, not just whoever failed it) - see the self-assign
+  // exception in order.service.ts's _updateParcelStatusImpl.
+  failed_pickup:     ["pickup_ordered", "rider_assigned", "cancelled"],
   // A failed delivery can be re-attempted, sent into NDR follow-up, or returned
   // straight away (Return-to-Origin) when recovery is clearly hopeless.
-  failed_delivery:   ["ready_to_deliver", "follow_up", "ready_to_return"],
+  // "sent_for_delivery" here is the same rider self-assign reclaim as above.
+  failed_delivery:   ["ready_to_deliver", "sent_for_delivery", "follow_up", "ready_to_return"],
   cancelled:         [],
   loss_and_damage:   ["ready_to_deliver","arrived_at_branch"],
   // ── Return-to-Origin (RTO) workflow ───────────────────────────────────────

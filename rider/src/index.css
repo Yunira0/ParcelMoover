@@ -1,0 +1,165 @@
+@import url('https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+@import "tailwindcss";
+
+/* ── Tailwind v4 design tokens → real utilities ─────────── */
+@theme {
+  /* Brand — rust is the only warm color in the system */
+  --color-rust:          #C2410C;
+  --color-rust-deep:     #9A3412;
+  --color-rust-tint:     #C2410C12;
+
+  /* Canvas + surfaces */
+  --color-bg:            #F6F6F5;
+  --color-surface:       #FFFFFF;
+  --color-surface-2:     #EFEFEC;
+
+  /* Ink scale */
+  --color-ink:           #161616;
+  --color-ink-2:         #55554F;
+  --color-ink-3:         #75756E;
+
+  /* Hairlines */
+  --color-line:          #E7E7E3;
+  --color-line-strong:   #D4D4CE;
+
+  /* Status */
+  --color-green:         #15803D;
+  --color-green-tint:    #15803D10;
+  --color-olive:         #9A6A00;
+  --color-olive-tint:    #B4530910;
+  --color-red:           #B91C1C;
+  --color-red-bright:    #DC2626;
+  --color-red-tint:      #DC26260F;
+  --color-blue:          #1D4ED8;
+  --color-blue-tint:     #1D4ED810;
+
+  /* Scanner canvas */
+  --color-cam-dark:      #121212;
+
+  --font-sans: 'Archivo', system-ui, -apple-system, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, Consolas, monospace;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+}
+
+/* ── Dark theme ──────────────────────────────────────────────
+   Same token names, dark values - every `bg-surface` / `text-ink-3` /
+   `border-line` utility in the app repaints automatically, no component
+   changes needed. Applies when the OS is dark and the rider hasn't
+   overridden it (data-theme unset), or when they've explicitly picked
+   "Dark" in Profile > Appearance (ThemeContext sets data-theme). Keep the
+   two blocks in sync - the values are the same on purpose. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --color-rust:          #F16935;
+    --color-rust-deep:     #CA3500;
+    --color-rust-tint:     #F1693529;
+
+    --color-bg:            #0D0B09;
+    --color-surface:       #191512;
+    --color-surface-2:     #241F1C;
+
+    --color-ink:           #F3F2EF;
+    --color-ink-2:         #C7C0B9;
+    --color-ink-3:         #948C85;
+
+    --color-line:          #2A2521;
+    --color-line-strong:   #3A332E;
+
+    --color-green:         #5CCC76;
+    --color-green-tint:    #5CCC7622;
+    --color-olive:         #EFA831;
+    --color-olive-tint:    #EFA83122;
+    --color-red:           #FF8079;
+    --color-red-bright:    #FF6B62;
+    --color-red-tint:      #FF6B6222;
+    --color-blue:          #6D95F2;
+    --color-blue-tint:     #6D95F222;
+  }
+}
+
+:root[data-theme="dark"] {
+  --color-rust:          #F16935;
+  --color-rust-deep:     #CA3500;
+  --color-rust-tint:     #F1693529;
+
+  --color-bg:            #0D0B09;
+  --color-surface:       #191512;
+  --color-surface-2:     #241F1C;
+
+  --color-ink:           #F3F2EF;
+  --color-ink-2:         #C7C0B9;
+  --color-ink-3:         #948C85;
+
+  --color-line:          #2A2521;
+  --color-line-strong:   #3A332E;
+
+  --color-green:         #5CCC76;
+  --color-green-tint:    #5CCC7622;
+  --color-olive:         #EFA831;
+  --color-olive-tint:    #EFA83122;
+  --color-red:           #FF8079;
+  --color-red-bright:    #FF6B62;
+  --color-red-tint:      #FF6B6222;
+  --color-blue:          #6D95F2;
+  --color-blue-tint:     #6D95F222;
+}
+
+/* ── Global reset ────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+
+/* Hides the scrollbar on horizontally-scrolling chip rows (e.g. Queue's
+   lane tabs) while keeping the element scrollable via touch/drag. */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+html {
+  height: 100%;
+  height: -webkit-fill-available;
+}
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  background: var(--color-bg);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+  color: var(--color-ink);
+}
+
+#root {
+  min-height: 100dvh;
+  max-width: 430px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+  background: var(--color-bg);
+}
+
+/* ── Scanner animations ─────────────────────────────────── */
+@keyframes scanBeam {
+  0%   { top: 0;                    opacity: 0.5; }
+  50%  { top: calc(100% - 2px);     opacity: 1;   }
+  100% { top: 0;                    opacity: 0.5; }
+}
+
+@keyframes slideUp {
+  from { transform: translateY(100%); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0);   }
+}
+
+@keyframes popIn {
+  from { opacity: 0; transform: scale(0.6); }
+  to   { opacity: 1; transform: scale(1);   }
+}

@@ -37,6 +37,7 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
       <header className="public-header">
         <div className="public-header-inner">
           <Link to="/" className="app-logo">
+            <img src="/brand/logo-icon.png" alt="" className="app-logo-mark" />
             Parcel<span>Moover</span>
           </Link>
 
@@ -91,7 +92,10 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
       <footer className="public-footer">
         <div className="public-footer-inner">
           <div className="footer-brand">
-            <span className="app-logo">Parcel<span>Moover</span></span>
+            <span className="app-logo">
+              <img src="/brand/logo-icon.png" alt="" className="app-logo-mark" />
+              Parcel<span>Moover</span>
+            </span>
             <p>Pickup, delivery, and COD settlement for vendors shipping across the Kathmandu valley and beyond.</p>
             <a href={PHONE_TEL} className="footer-phone">
               <Phone size={14} /> {PHONE_DISPLAY}

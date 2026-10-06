@@ -14,7 +14,30 @@
 }
 
 .top-nav-logo {
-  width: 71px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+.top-nav-logo-mark {
+  height: 34px;
+  width: auto;
+  object-fit: contain;
+}
+
+/* Same wordmark treatment as the public site's .app-logo (MainLayout.css) -
+   heavier than the type ramp on purpose, matching the logotype elsewhere. */
+.top-nav-logo-text {
+  font-size: var(--font-size-lg);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--color-text-default);
+  white-space: nowrap;
+}
+
+.top-nav-logo-accent {
+  color: var(--color-text-primary);
 }
 
 .top-nav-search {

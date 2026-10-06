@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import VendorNoticeBanner from '../../components/vendor/VendorNoticeBanner';
 import VendorQuickActions from '../../components/vendor/VendorQuickActions';
+import VendorAnnouncements from '../../components/vendor/VendorAnnouncements';
 import VendorOverviewCards from '../../components/vendor/VendorOverviewCards';
 import OrdersTrendDonut from '../../components/vendor/OrdersTrendDonut';
 import VendorOrdersTrendChart from '../../components/vendor/VendorOrdersTrendChart';
@@ -113,6 +115,7 @@ const VendorDashboard: React.FC = () => {
 
   return (
     <div className="vendor-dashboard">
+      <VendorNoticeBanner />
       <VendorQuickActions />
 
       {error && <p className="vendor-dashboard-error">{error}</p>}
@@ -145,6 +148,7 @@ const VendorDashboard: React.FC = () => {
               loading={loading}
             />
             <VendorOrdersTrendChart data={weeklyTrend} loading={loading} />
+            <VendorAnnouncements />
           </div>
 
           <div className="vendor-dashboard-side-col">

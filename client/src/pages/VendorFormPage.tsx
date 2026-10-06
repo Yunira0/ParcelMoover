@@ -34,7 +34,7 @@ const DOCUMENT_LABELS: Partial<Record<keyof VendorFormInput, string>> = {
 
 const scrollToFirstFieldError = () => {
   window.setTimeout(() => {
-    document.querySelector('.vfp-field-error')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    document.querySelector('.has-error')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }, 0);
 };
 
@@ -151,10 +151,11 @@ const FileInput: React.FC<{
   file: File | null | undefined;
   onChange: (file: File | null) => void;
   accept?: string;
-}> = ({ label, required, file, onChange, accept = 'image/*,.pdf' }) => {
+  error?: string;
+}> = ({ label, required, file, onChange, accept = 'image/*,.pdf', error }) => {
   const ref = useRef<HTMLInputElement>(null);
   return (
-    <div className="vfp-file-field">
+    <div className={`vfp-file-field${error ? ' has-error' : ''}`}>
       <label className="vfp-file-label">
         {label}{required && <span className="vfp-required"> *</span>}
       </label>
@@ -182,7 +183,7 @@ const FileInput: React.FC<{
         style={{ display: 'none' }}
         onChange={(e) => onChange(e.target.files?.[0] ?? null)}
       />
-      <span className="vfp-file-hint">JPG, PNG or PDF · max 5 MB</span>
+      {error ? <span className="vfp-file-error">{error}</span> : <span className="vfp-file-hint">JPG, PNG or PDF · max 5 MB</span>}
     </div>
   );
 };
@@ -656,10 +657,8 @@ const VendorFormPage: React.FC = () => {
                   value={form.onlineBusinessName}
                   onChange={set('onlineBusinessName')}
                   placeholder="e.g. Nepal Traders"
+                  error={fieldErrors.onlineBusinessName}
                 />
-                {fieldErrors.onlineBusinessName && (
-                  <span className="vfp-field-error">{fieldErrors.onlineBusinessName}</span>
-                )}
                 <FormField
                   label="Hub"
                   type="select"
@@ -669,30 +668,24 @@ const VendorFormPage: React.FC = () => {
                   placeholder="Select hub"
                   options={locations}
                   disabled={hubFieldDisabled}
+                  error={fieldErrors.pickupLocation}
                 />
-                {fieldErrors.pickupLocation && (
-                  <span className="vfp-field-error">{fieldErrors.pickupLocation}</span>
-                )}
                 <FormField
                   label="Location"
                   required
                   value={form.pickupLandmark}
                   onChange={set('pickupLandmark')}
                   placeholder="Enter location on Google Maps"
+                  error={fieldErrors.pickupLandmark}
                 />
-                {fieldErrors.pickupLandmark && (
-                  <span className="vfp-field-error">{fieldErrors.pickupLandmark}</span>
-                )}
                 <FormField
                   label="Contact No."
                   required
                   value={form.businessContact}
                   onChange={set('businessContact')}
                   placeholder="e.g. 9800000000"
+                  error={fieldErrors.businessContact}
                 />
-                {fieldErrors.businessContact && (
-                  <span className="vfp-field-error">{fieldErrors.businessContact}</span>
-                )}
                 <FormField
                   label="Sales"
                   type="select"
@@ -705,38 +698,30 @@ const VendorFormPage: React.FC = () => {
                   options={salesOptions}
                   disabled={isSalesUser}
                   hint={salesOptions.length === 0 ? 'No sales staff assigned to this hub yet — you can leave this unassigned.' : undefined}
+                  error={fieldErrors.sales}
                 />
-                {fieldErrors.sales && (
-                  <span className="vfp-field-error">{fieldErrors.sales}</span>
-                )}
                 <FormField
                   label="Registered Address"
                   required
                   value={form.registeredAddress}
                   onChange={set('registeredAddress')}
                   placeholder="Official registered address"
+                  error={fieldErrors.registeredAddress}
                 />
-                {fieldErrors.registeredAddress && (
-                  <span className="vfp-field-error">{fieldErrors.registeredAddress}</span>
-                )}
                 <FormField
                   label="Registration No."
                   value={form.registrationNo}
                   onChange={set('registrationNo')}
                   placeholder="Business registration number"
+                  error={fieldErrors.registrationNo}
                 />
-                {fieldErrors.registrationNo && (
-                  <span className="vfp-field-error">{fieldErrors.registrationNo}</span>
-                )}
                 <FormField
                   label="PAN / VAT No."
                   value={form.panVatNo}
                   onChange={set('panVatNo')}
                   placeholder="PAN or VAT number"
+                  error={fieldErrors.panVatNo}
                 />
-                {fieldErrors.panVatNo && (
-                  <span className="vfp-field-error">{fieldErrors.panVatNo}</span>
-                )}
               </div>
             </section>
 
@@ -754,10 +739,8 @@ const VendorFormPage: React.FC = () => {
                   value={form.ownerName}
                   onChange={set('ownerName')}
                   placeholder="Full name as on ID"
+                  error={fieldErrors.ownerName}
                 />
-                {fieldErrors.ownerName && (
-                  <span className="vfp-field-error">{fieldErrors.ownerName}</span>
-                )}
                 <FormField
                   label="Email"
                   type="email"
@@ -765,30 +748,24 @@ const VendorFormPage: React.FC = () => {
                   value={form.ownerEmail}
                   onChange={set('ownerEmail')}
                   placeholder="owner@gmail.com"
+                  error={fieldErrors.ownerEmail}
                 />
-                {fieldErrors.ownerEmail && (
-                  <span className="vfp-field-error">{fieldErrors.ownerEmail}</span>
-                )}
                 <FormField
                   label="Contact No."
                   required
                   value={form.ownerContact}
                   onChange={set('ownerContact')}
                   placeholder="e.g. 9800000000"
+                  error={fieldErrors.ownerContact}
                 />
-                {fieldErrors.ownerContact && (
-                  <span className="vfp-field-error">{fieldErrors.ownerContact}</span>
-                )}
                 <FormField
                   label="Joined Date"
                   required
                   type="date"
                   value={form.joinedAt}
                   onChange={set('joinedAt')}
+                  error={fieldErrors.joinedAt}
                 />
-                {fieldErrors.joinedAt && (
-                  <span className="vfp-field-error">{fieldErrors.joinedAt}</span>
-                )}
               </div>
             </section>
 
@@ -809,10 +786,8 @@ const VendorFormPage: React.FC = () => {
                   value={form.password}
                   onChange={set('password')}
                   placeholder="Min. 8 characters"
+                  error={fieldErrors.password}
                 />
-                {fieldErrors.password && (
-                  <span className="vfp-field-error">{fieldErrors.password}</span>
-                )}
                 <FormField
                   label="Confirm Password"
                   type="password"
@@ -820,10 +795,8 @@ const VendorFormPage: React.FC = () => {
                   value={form.confirmPassword}
                   onChange={set('confirmPassword')}
                   placeholder="Re-enter password"
+                  error={fieldErrors.confirmPassword}
                 />
-                {fieldErrors.confirmPassword && (
-                  <span className="vfp-field-error">{fieldErrors.confirmPassword}</span>
-                )}
               </div>
               <p className="vfp-hint">Minimum 8 characters. Vendor can change password after logging in.</p>
             </section>
@@ -842,35 +815,25 @@ const VendorFormPage: React.FC = () => {
                 description="Upload required documents"
               />
               <div className="vfp-docs">
-                <div>
-                  <FileInput
-                    label="Citizenship"
-                    required
-                    file={form.citizenshipDoc}
-                    onChange={setFile('citizenshipDoc')}
-                  />
-                  {fieldErrors.citizenshipDoc && (
-                    <span className="vfp-field-error">{fieldErrors.citizenshipDoc}</span>
-                  )}
-                </div>
+                <FileInput
+                  label="Citizenship"
+                  required
+                  file={form.citizenshipDoc}
+                  onChange={setFile('citizenshipDoc')}
+                  error={fieldErrors.citizenshipDoc}
+                />
                 <FileInput
                   label="PAN / VAT Document"
                   file={form.panVatDoc}
                   onChange={setFile('panVatDoc')}
+                  error={fieldErrors.panVatDoc}
                 />
-                {fieldErrors.panVatDoc && (
-                  <span className="vfp-field-error">{fieldErrors.panVatDoc}</span>
-                )}
-                <div>
-                  <FileInput
-                    label="Business Certificate"
-                    file={form.businessCertDoc}
-                    onChange={setFile('businessCertDoc')}
-                  />
-                  {fieldErrors.businessCertDoc && (
-                    <span className="vfp-field-error">{fieldErrors.businessCertDoc}</span>
-                  )}
-                </div>
+                <FileInput
+                  label="Business Certificate"
+                  file={form.businessCertDoc}
+                  onChange={setFile('businessCertDoc')}
+                  error={fieldErrors.businessCertDoc}
+                />
               </div>
             </section>
             )}
@@ -888,28 +851,22 @@ const VendorFormPage: React.FC = () => {
                   value={form.bankName}
                   onChange={set('bankName')}
                   placeholder="e.g. Nabil Bank"
+                  error={fieldErrors.bankName}
                 />
-                {fieldErrors.bankName && (
-                  <span className="vfp-field-error">{fieldErrors.bankName}</span>
-                )}
                 <FormField
                   label="Account No."
                   value={form.bankAccountNo}
                   onChange={set('bankAccountNo')}
                   placeholder="Bank account number"
+                  error={fieldErrors.bankAccountNo}
                 />
-                {fieldErrors.bankAccountNo && (
-                  <span className="vfp-field-error">{fieldErrors.bankAccountNo}</span>
-                )}
                 <FormField
                   label="Name of Account Holder"
                   value={form.bankAccountHolder}
                   onChange={set('bankAccountHolder')}
                   placeholder="Name as on bank account"
+                  error={fieldErrors.bankAccountHolder}
                 />
-                {fieldErrors.bankAccountHolder && (
-                  <span className="vfp-field-error">{fieldErrors.bankAccountHolder}</span>
-                )}
               </div>
             </section>
 
@@ -1025,7 +982,8 @@ const VendorFormPage: React.FC = () => {
                   falls back to the Settings branch defaults. */}
               {form.rateType === 'flat' && (
                 <div className="vfp-rate-fields">
-                  <p className="vfp-rate-note">Branch delivery rates (parcel dropped at a branch). Blank uses Settings.</p>
+                  <h4 className="vfp-rate-subhead">Branch delivery rate</h4>
+                  <p className="vfp-rate-note">For parcels dropped at a branch. Blank uses the Settings default.</p>
                   <div className="vfp-fields">
                     <FormField label="Branch — inside valley (Rs.)" type="number" min={0}
                       value={form.branchFlatInsideValley} onChange={set('branchFlatInsideValley')} placeholder="e.g. 80" />
@@ -1038,7 +996,8 @@ const VendorFormPage: React.FC = () => {
               )}
               {form.rateType === 'zone' && (
                 <div className="vfp-rate-fields">
-                  <p className="vfp-rate-note">Branch delivery rates (parcel dropped at a branch). Blank uses Settings.</p>
+                  <h4 className="vfp-rate-subhead">Branch delivery rate</h4>
+                  <p className="vfp-rate-note">For parcels dropped at a branch. Blank uses the Settings default.</p>
                   <div className="vfp-fields">
                     <FormField label="Branch — major cities (Rs.)" type="number" min={0}
                       value={form.branchZoneMajorCities} onChange={set('branchZoneMajorCities')} placeholder="e.g. 200" />
@@ -1055,6 +1014,7 @@ const VendorFormPage: React.FC = () => {
               {/* Return rate: a return parcel has no COD but is billed this
                   percent of the normal delivery rate, by valley side. */}
               <div className="vfp-rate-fields">
+                <h4 className="vfp-rate-subhead">Return rate</h4>
                 <p className="vfp-rate-note">
                   Return parcels carry no COD but are charged this percent of the normal delivery
                   rate. Leave blank to use the Settings default (e.g. 0% inside, 50% outside).

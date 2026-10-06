@@ -193,23 +193,6 @@
   width: 120px;
 }
 
-.kyc-doc-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  color: var(--color-primary);
-  font-size: 0.82rem;
-  font-weight: 500;
-  text-decoration: none;
-}
-
-.kyc-doc-link:hover { text-decoration: underline; }
-
-.kyc-doc-missing {
-  color: var(--color-text-caption, #9ca3af);
-  font-size: 0.85rem;
-}
-
 /* Action form */
 .kyc-action-form {
   display: flex;

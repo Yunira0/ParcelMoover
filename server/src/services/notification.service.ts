@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import prisma from "../lib/prisma";
 import redis from "../lib/redis";
 import { AppError } from "../utils/AppError";
@@ -81,6 +82,28 @@ export async function createNotification(
   } catch (error) {
     console.error("[Notifications] Failed to create notification:", error);
   }
+}
+
+// SSE-only dashboard-refresh ping: no notifications row, no unread-count
+// bump. For events the client only uses as a "your cached data is stale,
+// refetch" signal (see pm-rider-native's useRiderLiveUpdates) and never
+// renders as an actual notification - createNotification would otherwise
+// leave a permanent row behind and inflate the unread badge for something
+// nobody ever reads.
+export async function publishLiveUpdatePing(userId: string, type: string, trackingId?: string | null): Promise<void> {
+  await publishNotification({
+    userId,
+    notification: {
+      id: randomUUID(),
+      title: "",
+      body: null,
+      trackingId: trackingId ?? null,
+      type,
+      link: null,
+      readAt: null,
+      createdAt: new Date().toISOString(),
+    },
+  });
 }
 
 export async function listNotifications(userId: string, page = 1, pageSize = DEFAULT_PAGE_SIZE) {
