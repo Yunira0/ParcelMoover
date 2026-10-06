@@ -711,6 +711,10 @@
           <div class="card">
             <div class="card-title">Status</div>
             <p id="connection-status" style="color: var(--slate-caption);">Not connected. Enter your API key and test the connection.</p>
+            <p style="color: var(--slate-caption);">Write retries use an Idempotency-Key scoped to your vendor, action, and target. A 409 for a key used before the cache upgrade means you should check the original order, payment, remark, or ticket before retrying.</p>
+            <p style="color: var(--slate-caption);">If operators enable loading diagnostics, responses include Server-Timing with API, database and authentication durations. Database timing includes client overhead and overlapping operations. Payloads, ownership and freshness stay the same; inspect the header in your browser’s Network panel.</p>
+            <p style="color: var(--slate-caption);">Order and settlement lists share the dashboard’s optimized services and keep exact page totals. Settlement order counts stay exact; statements with the same creation time use descending ID order. Connection-pool snapshots appear only in operator logs. Paying or approving settlements remains staff-only.</p>
+            <p style="color: var(--slate-caption);">Voucher campaign administration, KYC decisions/document maintenance and delivery-status corrections remain staff/system actions. Staff follow-up or return handling after a partial delivery preserves collected cash. Completed deliveries with settled or statement-linked cash cannot be reversed. Shared vendor/KYC document files survive rejection cleanup.</p>
           </div>
         </div>
 
@@ -1127,6 +1131,49 @@
             </div>
             <div id="unsettled-result"></div>
           </div>
+
+          <div class="card">
+            <div class="card-title">COD Settlement Requests</div>
+            <p style="color:var(--slate-caption);margin-bottom:16px;">Raise a payout request using the bank account on your vendor profile. Staff review and process the payout.</p>
+            <div class="btn-group" style="margin-bottom:16px;">
+              <button class="btn btn-secondary" onclick="loadCodRequestBank()">Load registered bank</button>
+            </div>
+            <pre id="cod-request-bank-result" style="white-space:pre-wrap;overflow-wrap:anywhere;color:var(--slate-caption);"></pre>
+            <div class="form-group full" style="margin-top:16px;">
+              <label>Note (optional)</label>
+              <textarea id="cod-request-note" maxlength="1000" rows="3" placeholder="Anything staff should know about this payout"></textarea>
+            </div>
+            <div class="btn-group" style="margin-top:16px;">
+              <button class="btn btn-primary" onclick="raiseCodRequest()">Raise request</button>
+            </div>
+            <pre id="cod-request-create-result" style="white-space:pre-wrap;overflow-wrap:anywhere;color:var(--slate-caption);"></pre>
+            <div class="filter-bar" style="margin-top:24px;">
+              <div class="form-group">
+                <label>Request status</label>
+                <select id="cod-request-status">
+                  <option value="">All</option>
+                  <option value="open">Open</option>
+                  <option value="in_progress">In progress</option>
+                  <option value="settled">Settled</option>
+                  <option value="rejected">Rejected</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Page</label>
+                <input type="number" id="cod-request-page" min="1" value="1">
+              </div>
+              <button class="btn btn-secondary" onclick="loadCodRequests()">Load requests</button>
+            </div>
+            <pre id="cod-request-list-result" style="white-space:pre-wrap;overflow-wrap:anywhere;color:var(--slate-caption);"></pre>
+            <div class="filter-bar" style="margin-top:16px;">
+              <div class="form-group">
+                <label>Request ID</label>
+                <input type="text" id="cod-request-id" placeholder="UUID from a request record">
+              </div>
+              <button class="btn btn-secondary" onclick="loadCodRequestDetail()">Load detail</button>
+            </div>
+            <pre id="cod-request-detail-result" style="white-space:pre-wrap;overflow-wrap:anywhere;color:var(--slate-caption);"></pre>
+          </div>
         </div>
 
         <!-- Billing Tab -->
@@ -1211,7 +1258,8 @@
       },
       orders: { page: 1, data: [], meta: null },
       tickets: { data: [] },
-      currentTicketId: null
+      currentTicketId: null,
+      codRequestIdempotencyKey: null
     };
 
     // Toast notifications
@@ -1225,7 +1273,7 @@
     }
 
     // API helper
-    async function api(method, path, body = null) {
+    async function api(method, path, body = null, idempotencyKey = null) {
       if (!App.config.apiKey) {
         toast('Please set your API key in Settings', 'error');
         throw new Error('No API key');
@@ -1237,7 +1285,7 @@
       };
 
       if (method === 'POST' || method === 'PATCH') {
-        headers['Idempotency-Key'] = crypto.randomUUID();
+        headers['Idempotency-Key'] = idempotencyKey || crypto.randomUUID();
       }
 
       const opts = { method, headers };
@@ -2115,6 +2163,71 @@
         container.innerHTML = `<p style="color:var(--danger)">${e.message}</p>`;
       }
     }
+
+    // COD settlement request actions
+    function codRequestOutput(id, value) {
+      document.getElementById(id).textContent = typeof value === 'string'
+        ? value
+        : JSON.stringify(value, null, 2);
+    }
+
+    async function loadCodRequestBank() {
+      const target = 'cod-request-bank-result';
+      codRequestOutput(target, 'Loading...');
+      try {
+        const result = await api('GET', '/cod-settlement-requests/registered-bank');
+        codRequestOutput(target, result.data);
+      } catch (e) {
+        codRequestOutput(target, e.message);
+      }
+    }
+
+    async function loadCodRequests() {
+      const target = 'cod-request-list-result';
+      codRequestOutput(target, 'Loading...');
+      const params = new URLSearchParams();
+      const status = document.getElementById('cod-request-status').value;
+      const page = document.getElementById('cod-request-page').value;
+      if (status) params.set('status', status);
+      if (page) params.set('page', page);
+      try {
+        codRequestOutput(target, await api('GET', `/cod-settlement-requests?${params}`));
+      } catch (e) {
+        codRequestOutput(target, e.message);
+      }
+    }
+
+    async function loadCodRequestDetail() {
+      const target = 'cod-request-detail-result';
+      const id = document.getElementById('cod-request-id').value.trim();
+      if (!id) { codRequestOutput(target, 'Enter a request ID.'); return; }
+      codRequestOutput(target, 'Loading...');
+      try {
+        codRequestOutput(target, await api('GET', `/cod-settlement-requests/${encodeURIComponent(id)}`));
+      } catch (e) {
+        codRequestOutput(target, e.message);
+      }
+    }
+
+    async function raiseCodRequest() {
+      const target = 'cod-request-create-result';
+      const note = document.getElementById('cod-request-note').value.trim();
+      codRequestOutput(target, 'Submitting...');
+      App.codRequestIdempotencyKey ||= crypto.randomUUID();
+      try {
+        const result = await api('POST', '/cod-settlement-requests', note ? { note } : {}, App.codRequestIdempotencyKey);
+        App.codRequestIdempotencyKey = null;
+        codRequestOutput(target, result);
+        document.getElementById('cod-request-id').value = result.data.id;
+        await loadCodRequests();
+      } catch (e) {
+        codRequestOutput(target, e.message);
+      }
+    }
+
+    document.getElementById('cod-request-note').addEventListener('input', () => {
+      App.codRequestIdempotencyKey = null;
+    });
 
     // ── Billing ────────────────────────────────────────────────────────────
 

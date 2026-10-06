@@ -1,0 +1,2727 @@
+{
+  "capturedAt": "2026-10-06T09:43:15.950096+00:00",
+  "remoteComparison": "Remote refs refreshed with git fetch origin; compared against the union of all remote refs.",
+  "branch": "refactorUi",
+  "head": "44b8be12f57759b264ebb87bfaa07ac307ba35bb",
+  "countsBeforeReport": {
+    "modifiedTracked": 91,
+    "staged": 0,
+    "untrackedEntries": 96,
+    "untrackedRegularFiles": 95,
+    "untrackedSymlinks": 1,
+    "worktrees": 3,
+    "stashes": 1,
+    "unpublishedBranchCommits": 3
+  },
+  "worktrees": [
+    {
+      "worktree": "/Users/gyanendrakhatiwada/parcelmoover-beta",
+      "HEAD": "44b8be12f57759b264ebb87bfaa07ac307ba35bb",
+      "branch": "refs/heads/refactorUi",
+      "status": [
+        "M .gitignore",
+        " M client/package.json",
+        " M client/src/App.tsx",
+        " M client/src/components/FormField.tsx",
+        " M client/src/components/ProtectedRoute.tsx",
+        " M client/src/components/SearchableSelectAsync.tsx",
+        " M client/src/components/Sidebar.css",
+        " M client/src/components/Sidebar.tsx",
+        " M client/src/layouts/DashboardLayout.tsx",
+        " M client/src/pages/AdminFormPage.css",
+        " M client/src/pages/AdminFormPage.tsx",
+        " M client/src/pages/CodSettlementDetailPage.tsx",
+        " M client/src/pages/DashboardRouter.tsx",
+        " M client/src/pages/DeliveryRatesImport.tsx",
+        " M client/src/pages/DispatchOperations.tsx",
+        " M client/src/pages/HoldOperations.tsx",
+        " M client/src/pages/Home.css",
+        " M client/src/pages/Home.tsx",
+        " M client/src/pages/Login.tsx",
+        " M client/src/pages/LossAndDamageOperations.tsx",
+        " M client/src/pages/MerchantOverview.tsx",
+        " M client/src/pages/OOVOperations.tsx",
+        " M client/src/pages/OrderManagement.tsx",
+        " M client/src/pages/OrdersRouter.tsx",
+        " M client/src/pages/OverviewOrdersPage.tsx",
+        " M client/src/pages/PickupOperations.tsx",
+        " M client/src/pages/ReportsPage.tsx",
+        " M client/src/pages/ReturnOperations.tsx",
+        " M client/src/pages/SettlementCreatePage.tsx",
+        " M client/src/pages/SettlementDetailPage.tsx",
+        " M client/src/pages/accounting/PartyPicker.tsx",
+        " M client/src/pages/accounting/TransactionsPage.tsx",
+        " M client/src/pages/branch/BranchOverview.tsx",
+        " M client/src/pages/branch/BranchSettlementCreatePage.tsx",
+        " M client/src/pages/finance/CashBankVoucherPage.tsx",
+        " M client/src/pages/finance/LedgerSheetPage.tsx",
+        " M client/src/pages/finance/SettlementLedgerPage.tsx",
+        " M client/src/pages/settings/DestinationsImport.tsx",
+        " M client/src/pages/vendor/BulkOrderPage.tsx",
+        " M client/src/pages/vendor/VendorOrderPayments.tsx",
+        " M client/src/pages/vendor/VendorOrders.tsx",
+        " M client/src/services/accounting.service.ts",
+        " M client/src/utils/excel.ts",
+        " M docs/PARTNER_API.md",
+        " M rider/public/icons/generate-icons.mjs",
+        " M rider/public/icons/icon-192.png",
+        " M rider/public/icons/icon-512.png",
+        " M rider/src/components/ParcelActionSheet.tsx",
+        " M rider/src/lib/api.ts",
+        " M rider/src/pages/LoginPage.tsx",
+        " M rider/vite.config.ts",
+        " M server/.env.example",
+        " M server/docs-static/partner-api-reference.html",
+        " M server/docs-static/partner-api.html",
+        " M server/package-lock.json",
+        " M server/package.json",
+        " M server/prisma/schema.prisma",
+        " M server/src/controllers/accounting.controller.ts",
+        " M server/src/controllers/auth.controller.ts",
+        " M server/src/controllers/order.controller.ts",
+        " M server/src/controllers/publicApi/billing.controller.ts",
+        " M server/src/controllers/publicApi/orders.controller.ts",
+        " M server/src/controllers/publicApi/remarks.controller.ts",
+        " M server/src/controllers/publicApi/returns.controller.ts",
+        " M server/src/controllers/publicApi/shared.ts",
+        " M server/src/controllers/publicApi/tickets.controller.ts",
+        " M server/src/lib/openapi.ts",
+        " M server/src/lib/prisma.ts",
+        " M server/src/lib/registrationUpload.ts",
+        " M server/src/middlewares/__tests__/auth.middleware.test.ts",
+        " M server/src/middlewares/apiKeyAuth.middleware.ts",
+        " M server/src/middlewares/auth.middleware.ts",
+        " M server/src/routes/accounting.routes.ts",
+        " M server/src/routes/publicApi.routes.ts",
+        " M server/src/server.ts",
+        " M server/src/services/__tests__/order.service.riderScope.test.ts",
+        " M server/src/services/accounting/accounting.service.ts",
+        " M server/src/services/codSettlementRequest.service.ts",
+        " M server/src/services/finance.service.ts",
+        " M server/src/services/idempotency.service.ts",
+        " M server/src/services/notification.service.ts",
+        " M server/src/services/orders/cache.ts",
+        " M server/src/services/orders/create.ts",
+        " M server/src/services/orders/dashboard.ts",
+        " M server/src/services/orders/query-core.ts",
+        " M server/src/services/orders/query-detail.ts",
+        " M server/src/services/orders/status-shared.ts",
+        " M server/src/services/orders/status-single.ts",
+        " M server/src/types/codSettlementRequest.type.ts",
+        " M server/src/validators/accounting.schema.ts",
+        " M server/src/validators/publicApi.schema.ts",
+        "?? AGENTS.md",
+        "?? CLAUDE.md",
+        "?? CODEX.md",
+        "?? client/scripts/",
+        "?? client/src/pages/finance/CashBankVoucherPage.css",
+        "?? client/src/utils/adminUpload.ts",
+        "?? docs/CLIENT_PERFORMANCE.md",
+        "?? docs/DATABASE_OPTIMIZATION_IMPLEMENTATION.md",
+        "?? docs/DATABASE_OPTIMIZATION_PREVIEW.jpg",
+        "?? docs/DATABASE_OPTIMIZATION_REPORT.html",
+        "?? docs/FIRST_LOAD_AUDIT.md",
+        "?? docs/FIRST_LOAD_REPORT.html",
+        "?? docs/FIRST_LOAD_REPORT_PREVIEW.jpg",
+        "?? docs/database-audit/",
+        "?? map/",
+        "?? rider/assets/",
+        "?? server/prisma/migrations/20261006100000_vendor_order_lookup/",
+        "?? server/prisma/migrations/20261006100100_return_history_lookup/",
+        "?? server/prisma/migrations/20261006100200_settlement_reverse_lookup/",
+        "?? server/prisma/migrations/20261006100300_vendor_settlement_lookup/",
+        "?? server/prisma/migrations/20261006100400_rider_settlement_lookup/",
+        "?? server/prisma/migrations/20261006100500_notification_feed_lookup/",
+        "?? server/scripts/audit-database-readonly.cjs",
+        "?? server/scripts/benchmark-dashboard-trend.cjs",
+        "?? server/scripts/benchmark-database-indexes.cjs",
+        "?? server/scripts/verify-database-optimization-readonly.cjs",
+        "?? server/src/controllers/__tests__/",
+        "?? server/src/controllers/publicApi/__tests__/codSettlementRequests.controller.test.ts",
+        "?? server/src/controllers/publicApi/__tests__/finance.controller.test.ts",
+        "?? server/src/controllers/publicApi/__tests__/orders.idempotencyScope.test.ts",
+        "?? server/src/controllers/publicApi/__tests__/orders.listOptimization.test.ts",
+        "?? server/src/controllers/publicApi/codSettlementRequests.controller.ts",
+        "?? server/src/lib/__tests__/databasePoolConfig.test.ts",
+        "?? server/src/lib/__tests__/registrationUpload.test.ts",
+        "?? server/src/lib/__tests__/requestPerformance.test.ts",
+        "?? server/src/lib/databasePoolConfig.ts",
+        "?? server/src/lib/requestPerformance.ts",
+        "?? server/src/middlewares/__tests__/apiKeyAuth.performance.test.ts",
+        "?? server/src/services/__tests__/codSettlementRequest.service.vendorApi.test.ts",
+        "?? server/src/services/__tests__/finance.listOptimization.test.ts",
+        "?? server/src/services/__tests__/idempotency.partnerScope.test.ts",
+        "?? server/src/services/__tests__/notification.listOptimization.test.ts",
+        "?? server/src/services/accounting/__tests__/",
+        "?? server/src/services/orders/__tests__/",
+        "?? server/src/services/orders/dashboard-returns.ts",
+        "?? server/src/services/orders/dashboard-trend.ts",
+        "?? server/src/validators/__tests__/codSettlementRequest.publicApi.test.ts"
+      ]
+    },
+    {
+      "worktree": "/Users/gyanendrakhatiwada/.codex/worktrees/prod-hotfix/parcelmoover-beta",
+      "HEAD": "b0a8a29b3399ad2a7cef44ab67efebd5cc6ebc94",
+      "branch": "refs/heads/codex/prod-hotfix",
+      "status": []
+    },
+    {
+      "worktree": "/Users/gyanendrakhatiwada/pm-fix-dest",
+      "HEAD": "4533f73e671c961ffd23b5305b2a64f9268b648d",
+      "branch": "refs/heads/fix/require-order-destination",
+      "status": []
+    }
+  ],
+  "localBranches": [
+    "backup-parcel-branch-fe43ea1|fe43ea14ad3a6ba309ba810bf9d9f6785f08336f||",
+    "ci/registry-deploy|508cedb564f998ef84717d6d6ac0755d9a563de4|origin/ci/registry-deploy|[ahead 7]",
+    "cod|6798210d227baba439996e072df31006ca2accbc||",
+    "codex/deployment-readiness|de3d092e95b8b251634428d5e07bd8247bab08c6|origin/codex/deployment-readiness|",
+    "codex/fix-main-ci-build|c4b69177e402e0dc9640f21b2bd6a329f1a98549|origin/codex/fix-main-ci-build|",
+    "codex/fix-rate-limit-prod|1ccf78eeb57d6e406d85b3db995bb756be3f310b|origin/codex/fix-rate-limit-prod|",
+    "codex/prod-hotfix|b0a8a29b3399ad2a7cef44ab67efebd5cc6ebc94||",
+    "codex/voucher-real-logo|297a154626e3ca5cdc88792e567987604f656bf7|origin/codex/voucher-real-logo|",
+    "fix-ncm-destination-sync|34936a87aedab9d49a77cbab9860100217992a1f||",
+    "fix/require-order-destination|4533f73e671c961ffd23b5305b2a64f9268b648d|origin/main|[ahead 1]",
+    "fix/rider-scope-stale-claims|167c6a91b193a945d25abb8ef81a8a485813caf8||",
+    "fix/upaya-cod-carrier-attribution|7645e67ce9f98eb780bb6fb263c2310a05af3ce6||",
+    "main|f95acc2e024c090b06d21e02d40c49e7c0542b3d|origin/main|[behind 234]",
+    "parcel-branch|44b8be12f57759b264ebb87bfaa07ac307ba35bb|origin/parcel-branch|[behind 113]",
+    "refactorUi|44b8be12f57759b264ebb87bfaa07ac307ba35bb||",
+    "upaya|d7f1195d19430b347dc7e5a97bed93281191ceb0||"
+  ],
+  "unpublishedCommits": [
+    {
+      "sha": "4533f73e671c961ffd23b5305b2a64f9268b648d",
+      "subject": "fix: require a destination when creating orders",
+      "branches": [
+        "fix/require-order-destination"
+      ],
+      "files": [
+        "client/src/pages/vendor/BulkOrderPage.tsx",
+        "server/src/services/orders/create.ts"
+      ]
+    },
+    {
+      "sha": "fe43ea14ad3a6ba309ba810bf9d9f6785f08336f",
+      "subject": "feat: vendor credit limits, voucher campaigns, and vendor KYC",
+      "branches": [
+        "backup-parcel-branch-fe43ea1"
+      ],
+      "files": [
+        "client/public/voucher-art-panel.png",
+        "client/src/App.tsx",
+        "client/src/components/AddRiderModal.tsx",
+        "client/src/components/Banner.css",
+        "client/src/components/Banner.tsx",
+        "client/src/components/BillingStatusBanner.tsx",
+        "client/src/components/CreditUsageBar.tsx",
+        "client/src/components/FormField.tsx",
+        "client/src/components/KycVerificationForm.css",
+        "client/src/components/KycVerificationForm.tsx",
+        "client/src/components/Sidebar.tsx",
+        "client/src/components/Table.css",
+        "client/src/components/VoucherPromo.css",
+        "client/src/components/VoucherPromo.tsx",
+        "client/src/components/order-detail/OrderInfoCards.tsx",
+        "client/src/components/vouchers/CampaignDetail.tsx",
+        "client/src/components/vouchers/CampaignDirectory.tsx",
+        "client/src/components/vouchers/CampaignWizard.tsx",
+        "client/src/components/vouchers/VoucherTermsFields.tsx",
+        "client/src/pages/BillingManagement.css",
+        "client/src/pages/BillingManagement.tsx",
+        "client/src/pages/CreateOrderPage.css",
+        "client/src/pages/CreateOrderPage.tsx",
+        "client/src/pages/KycManagement.css",
+        "client/src/pages/KycManagement.tsx",
+        "client/src/pages/OrderDetailPage.tsx",
+        "client/src/pages/VendorKycStartPage.css",
+        "client/src/pages/VendorKycStartPage.tsx",
+        "client/src/pages/VendorManagement.tsx",
+        "client/src/pages/Vouchers.css",
+        "client/src/pages/Vouchers.tsx",
+        "client/src/pages/vendor/VendorBilling.css",
+        "client/src/pages/vendor/VendorBilling.tsx",
+        "client/src/services/billing.service.ts",
+        "client/src/services/kyc.service.ts",
+        "client/src/services/orders.service.ts",
+        "client/src/services/voucher.service.ts",
+        "client/src/styles/index.css",
+        "client/src/utils/creditUsage.ts",
+        "client/src/utils/locations.ts",
+        "client/src/utils/voucherArt.ts",
+        "client/src/utils/voucherImage.ts",
+        "client/src/utils/voucherSlips.ts",
+        "docs/CREDIT_LIMITS.md",
+        "docs/PARTNER_API.md",
+        "docs/VENDOR_CREDIT_EDGE_CASES.md",
+        "docs/VENDOR_CREDIT_EDGE_CASES.pdf",
+        "docs/VENDOR_CREDIT_LIMIT_REPORT.md",
+        "docs/VENDOR_CREDIT_LIMIT_REPORT.pdf",
+        "docs/VOUCHERS.md",
+        "docs/assets/credit-limit-blocked.png",
+        "docs/assets/credit-limit-login.png",
+        "docs/assets/credit-limit-ok.png",
+        "docs/assets/credit-limit-warned.png",
+        "docs/assets/edge-admin-blocked-row.png",
+        "docs/assets/edge-exact-line-still-blocked.png",
+        "docs/assets/edge-matrix.png",
+        "docs/assets/edge-order-refused.png",
+        "docs/assets/edge-pending-still-blocked.png",
+        "docs/assets/edge-side1-refused.png",
+        "docs/assets/edge-side2-claim-edges.png",
+        "docs/assets/edge-side3-rules-recovery.png",
+        "docs/assets/edge-side4-usage-blocked.png",
+        "docs/assets/edge-v2-admin-usage.png",
+        "docs/assets/edge-v2-recovered-usage.png",
+        "docs/assets/edge-v2-vendor-usage.png",
+        "docs/assets/edge-vendor-blocked.png",
+        "docs/assets/edge-vendor-recovered.png",
+        "docs/assets/portal-admin-balances.png",
+        "docs/assets/portal-admin-edit-limit.png",
+        "docs/assets/portal-admin-thresholds.png",
+        "docs/assets/portal-vendor-billing.png",
+        "server/docs-static/partner-api-reference.html",
+        "server/prisma/migrations/20260911120000_parcel_credits/migration.sql",
+        "server/prisma/migrations/20260911160000_claimable_vouchers/migration.sql",
+        "server/prisma/migrations/20260912090000_voucher_percent_discounts/migration.sql",
+        "server/prisma/migrations/20260913090000_kyc_verification_for_vendors/migration.sql",
+        "server/prisma/migrations/20260914090000_vendor_credit_limits/migration.sql",
+        "server/prisma/migrations/20260915120000_voucher_campaigns/migration.sql",
+        "server/prisma/schema.prisma",
+        "server/src/controllers/auth.controller.ts",
+        "server/src/controllers/billing.controller.ts",
+        "server/src/controllers/kyc.controller.ts",
+        "server/src/controllers/order.controller.ts",
+        "server/src/controllers/publicApi/orders.controller.ts",
+        "server/src/lib/openapi.ts",
+        "server/src/routes/billing.routes.ts",
+        "server/src/routes/kyc.routes.ts",
+        "server/src/routes/voucher-campaign.routes.ts",
+        "server/src/routes/voucher.routes.ts",
+        "server/src/server.ts",
+        "server/src/services/__tests__/auth.service.documents.test.ts",
+        "server/src/services/__tests__/billing.service.test.ts",
+        "server/src/services/__tests__/branch-billing.service.test.ts",
+        "server/src/services/__tests__/kyc.service.test.ts",
+        "server/src/services/__tests__/voucher-campaign.service.test.ts",
+        "server/src/services/__tests__/voucher.service.test.ts",
+        "server/src/services/auth.service.ts",
+        "server/src/services/billing.service.ts",
+        "server/src/services/branch-billing.service.ts",
+        "server/src/services/kyc.service.ts",
+        "server/src/services/order.service.ts",
+        "server/src/services/voucher-campaign.service.ts",
+        "server/src/services/voucher.service.ts",
+        "server/src/types/order.type.ts",
+        "server/src/validators/order.schema.ts"
+      ]
+    },
+    {
+      "sha": "6798210d227baba439996e072df31006ca2accbc",
+      "subject": "wip: settlement editing, COD reconciliation, and bulk order improvements",
+      "branches": [
+        "cod"
+      ],
+      "files": [
+        "client/src/components/EditSettlementModal.css",
+        "client/src/components/EditSettlementModal.tsx",
+        "client/src/pages/SettlementCreatePage.css",
+        "client/src/pages/SettlementCreatePage.tsx",
+        "client/src/pages/SettlementDetailPage.tsx",
+        "client/src/pages/vendor/BulkOrderPage.css",
+        "client/src/pages/vendor/BulkOrderPage.tsx",
+        "client/src/services/finance.service.ts",
+        "client/src/services/orders.service.ts",
+        "server/src/controllers/order.controller.ts",
+        "server/src/routes/apiKey.routes.ts",
+        "server/src/services/__tests__/order.service.codReconcile.test.ts",
+        "server/src/services/finance.service.ts",
+        "server/src/services/order.service.ts",
+        "server/src/types/finance.type.ts",
+        "server/src/types/order.type.ts"
+      ]
+    }
+  ],
+  "stash": {
+    "ref": "stash@{0}",
+    "sha": "08b70aa3133023378055a6c60b33c28168fbbb35",
+    "files": [
+      {
+        "ref": "stash@{0}",
+        "path": ".gitignore",
+        "same_current": false,
+        "exists_current": true,
+        "bytes": 3053
+      },
+      {
+        "ref": "stash@{0}",
+        "path": "client/index.html",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 2751
+      },
+      {
+        "ref": "stash@{0}",
+        "path": "client/src/App.tsx",
+        "same_current": false,
+        "exists_current": true,
+        "bytes": 26600
+      },
+      {
+        "ref": "stash@{0}",
+        "path": "client/src/components/Sidebar.tsx",
+        "same_current": false,
+        "exists_current": true,
+        "bytes": 22647
+      },
+      {
+        "ref": "stash@{0}",
+        "path": "client/src/components/TopNav.css",
+        "same_current": false,
+        "exists_current": true,
+        "bytes": 9681
+      },
+      {
+        "ref": "stash@{0}",
+        "path": "client/src/components/TopNav.tsx",
+        "same_current": false,
+        "exists_current": true,
+        "bytes": 12947
+      },
+      {
+        "ref": "stash@{0}",
+        "path": "client/src/components/order-detail/OrderTimeline.tsx",
+        "same_current": false,
+        "exists_current": true,
+        "bytes": 6630
+      },
+      {
+        "ref": "stash@{0}",
+        "path": "client/src/layouts/MainLayout.css",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 6020
+      },
+      {
+        "ref": "stash@{0}",
+        "path": "client/src/layouts/MainLayout.tsx",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 4666
+      },
+      {
+        "ref": "stash@{0}",
+        "path": "client/src/pages/AdminFormPage.css",
+        "same_current": false,
+        "exists_current": true,
+        "bytes": 6236
+      },
+      {
+        "ref": "stash@{0}",
+        "path": "client/src/pages/AdminFormPage.tsx",
+        "same_current": false,
+        "exists_current": true,
+        "bytes": 25101
+      },
+      {
+        "ref": "stash@{0}",
+        "path": "client/src/pages/AdminManagement.tsx",
+        "same_current": false,
+        "exists_current": true,
+        "bytes": 13011
+      },
+      {
+        "ref": "stash@{0}",
+        "path": "client/src/pages/KycApplicationPage.css",
+        "same_current": false,
+        "exists_current": true,
+        "bytes": 5526
+      },
+      {
+        "ref": "stash@{0}",
+        "path": "client/src/pages/KycApplicationPage.tsx",
+        "same_current": false,
+        "exists_current": true,
+        "bytes": 13705
+      },
+      {
+        "ref": "stash@{0}",
+        "path": "client/src/pages/KycManagement.css",
+        "same_current": false,
+        "exists_current": true,
+        "bytes": 4663
+      },
+      {
+        "ref": "stash@{0}",
+        "path": "client/src/pages/KycManagement.tsx",
+        "same_current": false,
+        "exists_current": true,
+        "bytes": 12609
+      },
+      {
+        "ref": "stash@{0}",
+        "path": "client/src/pages/OOVOperations.css",
+        "same_current": false,
+        "exists_current": true,
+        "bytes": 9678
+      },
+      {
+        "ref": "stash@{0}",
+        "path": "client/src/pages/OOVOperations.tsx",
+        "same_current": false,
+        "exists_current": true,
+        "bytes": 29750
+      },
+      {
+        "ref": "stash@{0}",
+        "path": "client/src/pages/OrderDetailPage.css",
+        "same_current": false,
+        "exists_current": true,
+        "bytes": 34189
+      },
+      {
+        "ref": "stash@{0}",
+        "path": "client/src/pages/OrderDetailPage.tsx",
+        "same_current": false,
+        "exists_current": true,
+        "bytes": 15042
+      },
+      {
+        "ref": "stash@{0}",
+        "path": "client/src/pages/Remarks.tsx",
+        "same_current": false,
+        "exists_current": true,
+        "bytes": 13023
+      },
+      {
+        "ref": "stash@{0}",
+        "path": "client/src/pages/RiderFormPage.css",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 6236
+      },
+      {
+        "ref": "stash@{0}",
+        "path": "client/src/pages/RiderFormPage.tsx",
+        "same_current": false,
+        "exists_current": true,
+        "bytes": 24290
+      },
+      {
+        "ref": "stash@{0}",
+        "path": "client/src/pages/RiderManagement.tsx",
+        "same_current": false,
+        "exists_current": true,
+        "bytes": 8451
+      },
+      {
+        "ref": "stash@{0}",
+        "path": "client/src/pages/VendorFormPage.css",
+        "same_current": false,
+        "exists_current": true,
+        "bytes": 9571
+      },
+      {
+        "ref": "stash@{0}",
+        "path": "client/src/pages/VendorFormPage.tsx",
+        "same_current": false,
+        "exists_current": true,
+        "bytes": 46979
+      },
+      {
+        "ref": "stash@{0}",
+        "path": "client/src/pages/vendor/VendorDashboard.tsx",
+        "same_current": false,
+        "exists_current": true,
+        "bytes": 5348
+      },
+      {
+        "ref": "stash@{0}",
+        "path": "client/src/services/orders.service.ts",
+        "same_current": false,
+        "exists_current": true,
+        "bytes": 25477
+      },
+      {
+        "ref": "stash@{0}",
+        "path": "client/src/services/users.service.ts",
+        "same_current": false,
+        "exists_current": true,
+        "bytes": 9269
+      },
+      {
+        "ref": "stash@{0}",
+        "path": "client/src/utils/scannerInput.ts",
+        "same_current": false,
+        "exists_current": true,
+        "bytes": 2957
+      },
+      {
+        "ref": "stash@{0}",
+        "path": "server/prisma/schema.prisma",
+        "same_current": false,
+        "exists_current": true,
+        "bytes": 84245
+      },
+      {
+        "ref": "stash@{0}",
+        "path": "server/src/controllers/auth.controller.ts",
+        "same_current": false,
+        "exists_current": true,
+        "bytes": 32862
+      },
+      {
+        "ref": "stash@{0}",
+        "path": "server/src/controllers/order.controller.ts",
+        "same_current": false,
+        "exists_current": true,
+        "bytes": 32198
+      },
+      {
+        "ref": "stash@{0}",
+        "path": "server/src/routes/ncm.routes.ts",
+        "same_current": false,
+        "exists_current": true,
+        "bytes": 4329
+      },
+      {
+        "ref": "stash@{0}",
+        "path": "server/src/routes/order.routes.ts",
+        "same_current": false,
+        "exists_current": true,
+        "bytes": 11196
+      },
+      {
+        "ref": "stash@{0}",
+        "path": "server/src/server.ts",
+        "same_current": false,
+        "exists_current": true,
+        "bytes": 9105
+      },
+      {
+        "ref": "stash@{0}",
+        "path": "server/src/services/auth.service.ts",
+        "same_current": false,
+        "exists_current": true,
+        "bytes": 46695
+      },
+      {
+        "ref": "stash@{0}",
+        "path": "server/src/services/ncm.service.ts",
+        "same_current": false,
+        "exists_current": true,
+        "bytes": 36911
+      },
+      {
+        "ref": "stash@{0}",
+        "path": "server/src/services/notification.service.ts",
+        "same_current": false,
+        "exists_current": true,
+        "bytes": 6183
+      },
+      {
+        "ref": "stash@{0}",
+        "path": "server/src/services/order.service.ts",
+        "same_current": false,
+        "exists_current": true,
+        "bytes": 241700
+      },
+      {
+        "ref": "stash@{0}",
+        "path": "server/src/services/remark.service.ts",
+        "same_current": false,
+        "exists_current": true,
+        "bytes": 12957
+      },
+      {
+        "ref": "stash@{0}",
+        "path": "server/src/types/order.type.ts",
+        "same_current": false,
+        "exists_current": true,
+        "bytes": 7852
+      },
+      {
+        "ref": "stash@{0}",
+        "path": "server/src/validators/order.schema.ts",
+        "same_current": false,
+        "exists_current": true,
+        "bytes": 12157
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": ".kilo/plans/rider-pwa-redesign.md",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 8181
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "client/public/apple-touch-icon.png",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 10561
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "client/public/brand/logo-icon.png",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 80191
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "client/public/favicon-32.png",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 1314
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "client/public/favicon-48.png",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 2426
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "client/public/favicon-64.png",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 3625
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "client/public/favicon.ico",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 8490
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "client/public/og-image.png",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 56191
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "client/src/components/DocLink.css",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 310
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "client/src/components/DocLink.tsx",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 679
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "client/src/components/vendor/VendorAnnouncements.css",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 2692
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "client/src/components/vendor/VendorAnnouncements.tsx",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 2668
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "client/src/components/vendor/VendorNoticeBanner.css",
+        "same_current": false,
+        "exists_current": true,
+        "bytes": 2345
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "client/src/components/vendor/VendorNoticeBanner.tsx",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 3984
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "client/src/pages/AnnouncementFormPage.css",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 2378
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "client/src/pages/AnnouncementFormPage.tsx",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 6384
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "client/src/pages/AnnouncementManagement.css",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 450
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "client/src/pages/AnnouncementManagement.tsx",
+        "same_current": false,
+        "exists_current": true,
+        "bytes": 4898
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "client/src/pages/BannerFormPage.css",
+        "same_current": false,
+        "exists_current": true,
+        "bytes": 3996
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "client/src/pages/BannerFormPage.tsx",
+        "same_current": false,
+        "exists_current": true,
+        "bytes": 8820
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "client/src/pages/BannerManagement.css",
+        "same_current": false,
+        "exists_current": true,
+        "bytes": 683
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "client/src/pages/BannerManagement.tsx",
+        "same_current": false,
+        "exists_current": true,
+        "bytes": 5331
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "client/src/pages/vendor/VendorAnnouncementDetailPage.css",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 3960
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "client/src/pages/vendor/VendorAnnouncementDetailPage.tsx",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 3581
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "client/src/pages/vendor/VendorAnnouncementsPage.css",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 1801
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "client/src/pages/vendor/VendorAnnouncementsPage.tsx",
+        "same_current": false,
+        "exists_current": true,
+        "bytes": 1894
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "client/src/services/announcements.service.ts",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 2291
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "client/src/services/banners.service.ts",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 3406
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "rider/.gitignore",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 344
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "rider/.oxlintrc.json",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 245
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "rider/README.md",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 1278
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "rider/capacitor.config.ts",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 413
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "rider/index.html",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 1269
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "rider/package-lock.json",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 292313
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "rider/package.json",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 917
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "rider/public/favicon.svg",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 9522
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "rider/public/icons.svg",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 5031
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "rider/public/icons/generate-icons.mjs",
+        "same_current": false,
+        "exists_current": true,
+        "bytes": 317
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "rider/public/icons/icon-192.png",
+        "same_current": false,
+        "exists_current": true,
+        "bytes": 730
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "rider/public/icons/icon-512.png",
+        "same_current": false,
+        "exists_current": true,
+        "bytes": 2356
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "rider/src/App.tsx",
+        "same_current": false,
+        "exists_current": true,
+        "bytes": 3499
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "rider/src/components/BottomNav.tsx",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 2570
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "rider/src/components/Button.tsx",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 1686
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "rider/src/components/ChangePasswordForm.tsx",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 3866
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "rider/src/components/DateFilterSheet.tsx",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 4785
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "rider/src/components/ErrorBoundary.tsx",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 1500
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "rider/src/components/Input.tsx",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 2539
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "rider/src/components/OfflineBanner.tsx",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 773
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "rider/src/components/ParcelActionSheet.tsx",
+        "same_current": false,
+        "exists_current": true,
+        "bytes": 22240
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "rider/src/components/PullToRefresh.tsx",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 2674
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "rider/src/components/SettlementDetailSheet.tsx",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 5777
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "rider/src/components/StatusChip.tsx",
+        "same_current": false,
+        "exists_current": true,
+        "bytes": 3379
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "rider/src/constants/contact.ts",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 94
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "rider/src/context/AuthContext.tsx",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 3480
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "rider/src/context/PendingContext.tsx",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 3038
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "rider/src/context/ThemeContext.tsx",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 1964
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "rider/src/index.css",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 5121
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "rider/src/lib/api.ts",
+        "same_current": false,
+        "exists_current": true,
+        "bytes": 16524
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "rider/src/lib/nepaliDate.ts",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 3237
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "rider/src/lib/useOnlineStatus.ts",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 516
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "rider/src/lib/usePwaInstall.ts",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 1500
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "rider/src/main.tsx",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 324
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "rider/src/pages/ChangePasswordPage.tsx",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 1511
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "rider/src/pages/DashboardPage.tsx",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 7000
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "rider/src/pages/DeactivatedPage.tsx",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 1770
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "rider/src/pages/LoginPage.tsx",
+        "same_current": false,
+        "exists_current": true,
+        "bytes": 5943
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "rider/src/pages/OrderListPage.tsx",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 9182
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "rider/src/pages/PendingPage.tsx",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 18399
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "rider/src/pages/ProfileChangePasswordPage.tsx",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 2283
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "rider/src/pages/ProfilePage.tsx",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 6324
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "rider/src/pages/ScannerPage.tsx",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 24404
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "rider/src/pages/SettlementsPage.tsx",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 13324
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "rider/tsconfig.app.json",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 662
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "rider/tsconfig.json",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 119
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "rider/tsconfig.node.json",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 558
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "rider/vite.config.ts",
+        "same_current": false,
+        "exists_current": true,
+        "bytes": 2919
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "server/prisma/migrations/20260826140000_add_employee_number/migration.sql",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 858
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "server/prisma/migrations/20260827120000_add_banners/migration.sql",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 1034
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "server/prisma/migrations/20260827190000_add_announcements/migration.sql",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 894
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "server/scripts/_check_admin_history.ts",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 350
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "server/scripts/_check_history.ts",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 685
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "server/scripts/_get_tracking.ts",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 311
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "server/src/controllers/announcement.controller.ts",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 3533
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "server/src/controllers/banner.controller.ts",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 5188
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "server/src/lib/bannerUpload.ts",
+        "same_current": false,
+        "exists_current": true,
+        "bytes": 1229
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "server/src/routes/announcement.routes.ts",
+        "same_current": false,
+        "exists_current": true,
+        "bytes": 2857
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "server/src/routes/banner.routes.ts",
+        "same_current": false,
+        "exists_current": true,
+        "bytes": 3225
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "server/src/services/announcement.service.ts",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 5210
+      },
+      {
+        "ref": "stash@{0}^3",
+        "path": "server/src/services/banner.service.ts",
+        "same_current": true,
+        "exists_current": true,
+        "bytes": 6040
+      }
+    ],
+    "sameAsCurrent": 74,
+    "differentFromCurrent": 58,
+    "missingFromCurrent": 0
+  },
+  "files": [
+    {
+      "status": "modified",
+      "path": ".gitignore",
+      "type": "file",
+      "bytes": 2864,
+      "sha256": "f79195f5072b2cb64a9bc52364458732680662ce7e6bc60bb71dc1960ef37f06"
+    },
+    {
+      "status": "modified",
+      "path": "client/package.json",
+      "type": "file",
+      "bytes": 1198,
+      "sha256": "603fc444731f267a8542eb8b6b0edce69603d153ea1cb4a876c8f730d06e3a03"
+    },
+    {
+      "status": "modified",
+      "path": "client/src/App.tsx",
+      "type": "file",
+      "bytes": 32617,
+      "sha256": "62c0bdb3e6ba6904ed2a24a0bbe40d177346dd152cae144035929aa6a7e0ee6d"
+    },
+    {
+      "status": "modified",
+      "path": "client/src/components/FormField.tsx",
+      "type": "file",
+      "bytes": 8597,
+      "sha256": "05e6546c41eea4a35593f600617bf2a9e7dbbf6282d8cfca239c42684f61b602"
+    },
+    {
+      "status": "modified",
+      "path": "client/src/components/ProtectedRoute.tsx",
+      "type": "file",
+      "bytes": 3419,
+      "sha256": "655125886e5ce0ed72b47ed8ee0ba98c4baca6d29ed380ab1746a95f50772444"
+    },
+    {
+      "status": "modified",
+      "path": "client/src/components/SearchableSelectAsync.tsx",
+      "type": "file",
+      "bytes": 9014,
+      "sha256": "f3e43bd4f8ab22f56f5a64130179777b7019f029e4626c5d84c2da991be14f8e"
+    },
+    {
+      "status": "modified",
+      "path": "client/src/components/Sidebar.css",
+      "type": "file",
+      "bytes": 13442,
+      "sha256": "7435b58d2436158a0fdd7f56256fc0d573811eef85874abd8e2509995a823786"
+    },
+    {
+      "status": "modified",
+      "path": "client/src/components/Sidebar.tsx",
+      "type": "file",
+      "bytes": 28908,
+      "sha256": "143b0b14904cb01a5c39296d0997cc5b4607373546eb8396dce5761b52d9c2b4"
+    },
+    {
+      "status": "modified",
+      "path": "client/src/layouts/DashboardLayout.tsx",
+      "type": "file",
+      "bytes": 2110,
+      "sha256": "16cc4c1d423ed2c96bc0cbe6505b6c4361243aed040a12d82a2321f840454d56"
+    },
+    {
+      "status": "modified",
+      "path": "client/src/pages/AdminFormPage.css",
+      "type": "file",
+      "bytes": 6371,
+      "sha256": "ec72e357ace1616590a65467fb1af86257b85b246a75fd876133ddf8b2b0a4d9"
+    },
+    {
+      "status": "modified",
+      "path": "client/src/pages/AdminFormPage.tsx",
+      "type": "file",
+      "bytes": 28945,
+      "sha256": "ec914b0feaabcf91cf069ed60e140dd4ead4df074ce84cf4b2e1029214c4abe6"
+    },
+    {
+      "status": "modified",
+      "path": "client/src/pages/CodSettlementDetailPage.tsx",
+      "type": "file",
+      "bytes": 8522,
+      "sha256": "4b583d6737286f837ec2ed3e604bb691ec9133f4c1b571cb2d8da40341875bea"
+    },
+    {
+      "status": "modified",
+      "path": "client/src/pages/DashboardRouter.tsx",
+      "type": "file",
+      "bytes": 492,
+      "sha256": "bc3277514ccf175d15c646761699662f8d667e1422e39f53966d58068653da01"
+    },
+    {
+      "status": "modified",
+      "path": "client/src/pages/DeliveryRatesImport.tsx",
+      "type": "file",
+      "bytes": 17265,
+      "sha256": "678fc8c7dcb65d455d0cf7ee2852427e218bd5303cc4f94046b38240f911b750"
+    },
+    {
+      "status": "modified",
+      "path": "client/src/pages/DispatchOperations.tsx",
+      "type": "file",
+      "bytes": 37278,
+      "sha256": "fb56b379d3bdea24fe7d66b770abfa44daba7073340fc82e295960ee06e071db"
+    },
+    {
+      "status": "modified",
+      "path": "client/src/pages/HoldOperations.tsx",
+      "type": "file",
+      "bytes": 13652,
+      "sha256": "821b3a9be1a65359a8677be3c3ae0829dadb5eb1470fa0dd820eba73ca759de5"
+    },
+    {
+      "status": "modified",
+      "path": "client/src/pages/Home.css",
+      "type": "file",
+      "bytes": 10723,
+      "sha256": "64162bc7e8dbd2fc66a7a1438a84d842cc55b9e061d7118752e74ec3a815f89c"
+    },
+    {
+      "status": "modified",
+      "path": "client/src/pages/Home.tsx",
+      "type": "file",
+      "bytes": 6693,
+      "sha256": "e677cfb30ab32965e7817dd5e3088f06c15d194fafe4436437082e51fd08de8a"
+    },
+    {
+      "status": "modified",
+      "path": "client/src/pages/Login.tsx",
+      "type": "file",
+      "bytes": 3351,
+      "sha256": "e0a06567fa9df18f0187a16d2b1bca82a9a5d76180071f23fc7115f99d4403e9"
+    },
+    {
+      "status": "modified",
+      "path": "client/src/pages/LossAndDamageOperations.tsx",
+      "type": "file",
+      "bytes": 10581,
+      "sha256": "f2fd7f8a1c2ed2a9647e4b0c8c8ff1986ab477fe2e6e7e4826ddbf3e93ed8d7a"
+    },
+    {
+      "status": "modified",
+      "path": "client/src/pages/MerchantOverview.tsx",
+      "type": "file",
+      "bytes": 13556,
+      "sha256": "3f553f8ce9bab35313613819515f2bcdcc5c87d9c8c66abddf54aede5fb5c207"
+    },
+    {
+      "status": "modified",
+      "path": "client/src/pages/OOVOperations.tsx",
+      "type": "file",
+      "bytes": 40526,
+      "sha256": "efb0b3af87888dd34352b8d7505073f9dae9a4643728f7a2733fda36dd530a36"
+    },
+    {
+      "status": "modified",
+      "path": "client/src/pages/OrderManagement.tsx",
+      "type": "file",
+      "bytes": 57334,
+      "sha256": "7d630b32b554b9fa897eb629b7cfa973f8bf714668d09df6baea3ce1c1e40a33"
+    },
+    {
+      "status": "modified",
+      "path": "client/src/pages/OrdersRouter.tsx",
+      "type": "file",
+      "bytes": 346,
+      "sha256": "886b909eb16f0e764234e60a8268e058656d6070c5d37872f5a7234272048a9c"
+    },
+    {
+      "status": "modified",
+      "path": "client/src/pages/OverviewOrdersPage.tsx",
+      "type": "file",
+      "bytes": 9130,
+      "sha256": "81e5d6b4337927657c5fd149cfa63f796ba01245d43999e512629347f1336281"
+    },
+    {
+      "status": "modified",
+      "path": "client/src/pages/PickupOperations.tsx",
+      "type": "file",
+      "bytes": 39543,
+      "sha256": "467251a124e861d5b84243de7a00ce56bb84bdb0179dbd2714c2eb572bdd816f"
+    },
+    {
+      "status": "modified",
+      "path": "client/src/pages/ReportsPage.tsx",
+      "type": "file",
+      "bytes": 7584,
+      "sha256": "4a6552454f9c76ed6e9394d98e9d1768cbd064ec7e11efb78ac0d6d6628a2258"
+    },
+    {
+      "status": "modified",
+      "path": "client/src/pages/ReturnOperations.tsx",
+      "type": "file",
+      "bytes": 56337,
+      "sha256": "7982962f20fa805e71b8f9e965d1dfabac9ff42ebfa7f94927cbc812752aefc2"
+    },
+    {
+      "status": "modified",
+      "path": "client/src/pages/SettlementCreatePage.tsx",
+      "type": "file",
+      "bytes": 19910,
+      "sha256": "c2f047fb18e9e0c0178d995a3e076734264b0fde766c52e5a0f355e428a8989a"
+    },
+    {
+      "status": "modified",
+      "path": "client/src/pages/SettlementDetailPage.tsx",
+      "type": "file",
+      "bytes": 33468,
+      "sha256": "f87b665354d26c9801978e30bb4ff57071aca32eb359266a5ec9e523412037ba"
+    },
+    {
+      "status": "modified",
+      "path": "client/src/pages/accounting/PartyPicker.tsx",
+      "type": "file",
+      "bytes": 3903,
+      "sha256": "b411229dc3fc5939ebed9185beac85eb35b5551cea67d11286833d2f8f466e3d"
+    },
+    {
+      "status": "modified",
+      "path": "client/src/pages/accounting/TransactionsPage.tsx",
+      "type": "file",
+      "bytes": 1922,
+      "sha256": "29db9416af8c811d5c043e2091c87734183f2f4ac57e14728aeec39a61289dac"
+    },
+    {
+      "status": "modified",
+      "path": "client/src/pages/branch/BranchOverview.tsx",
+      "type": "file",
+      "bytes": 12070,
+      "sha256": "b9e4ee4621e80749676cc6f1d9ae0b0469ffea9e2a5e59c46707565796696fca"
+    },
+    {
+      "status": "modified",
+      "path": "client/src/pages/branch/BranchSettlementCreatePage.tsx",
+      "type": "file",
+      "bytes": 13488,
+      "sha256": "2653b146156ae26d513f4b62401a74dcb043ccae99d981d650a4503f1163d8c1"
+    },
+    {
+      "status": "modified",
+      "path": "client/src/pages/finance/CashBankVoucherPage.tsx",
+      "type": "file",
+      "bytes": 15834,
+      "sha256": "c1e61825c2d00e7c671946baf80c276214fdf82b577b1227a91f77c37c7ee833"
+    },
+    {
+      "status": "modified",
+      "path": "client/src/pages/finance/LedgerSheetPage.tsx",
+      "type": "file",
+      "bytes": 9543,
+      "sha256": "d6efbf3040e76a7ccfacf44e2e83adec803e6a5ff0e9e516b98179cad25470b5"
+    },
+    {
+      "status": "modified",
+      "path": "client/src/pages/finance/SettlementLedgerPage.tsx",
+      "type": "file",
+      "bytes": 10421,
+      "sha256": "aa7224dfdb86ad2ae758db35669c0ed2e015499857430ab13680a5660adacfe5"
+    },
+    {
+      "status": "modified",
+      "path": "client/src/pages/settings/DestinationsImport.tsx",
+      "type": "file",
+      "bytes": 22701,
+      "sha256": "09697a73328ec2078800b970a43f4f6dd7ca7607108a9739707f332daaaebdfb"
+    },
+    {
+      "status": "modified",
+      "path": "client/src/pages/vendor/BulkOrderPage.tsx",
+      "type": "file",
+      "bytes": 39299,
+      "sha256": "9bb733472b022701a8d56c9d90b13768371c7e498afcbe088fee6a4ca00b710d"
+    },
+    {
+      "status": "modified",
+      "path": "client/src/pages/vendor/VendorOrderPayments.tsx",
+      "type": "file",
+      "bytes": 5741,
+      "sha256": "26e64da62ba252ea42575ec639e33d08e4b3a7b0aed421b0cf6822057f30d2e4"
+    },
+    {
+      "status": "modified",
+      "path": "client/src/pages/vendor/VendorOrders.tsx",
+      "type": "file",
+      "bytes": 26711,
+      "sha256": "e55fbb0c8afb79702f6c6e663d44ce2732e258b990a82f3af394bb84312bcb73"
+    },
+    {
+      "status": "modified",
+      "path": "client/src/services/accounting.service.ts",
+      "type": "file",
+      "bytes": 16457,
+      "sha256": "77c3bdf8edc767ccc5230db8c361e46af75a9ff9c5578cff155600e672d787fd"
+    },
+    {
+      "status": "modified",
+      "path": "client/src/utils/excel.ts",
+      "type": "file",
+      "bytes": 1641,
+      "sha256": "231297bf56bc0c123a9476f6fcb3d946d92835fcb5fc3cf51734551e0bb1cea0"
+    },
+    {
+      "status": "modified",
+      "path": "docs/PARTNER_API.md",
+      "type": "file",
+      "bytes": 58143,
+      "sha256": "64f77f385874dd3f5f7ae922df1aad87f254e17f1e9378190d97cc0101d1ba45"
+    },
+    {
+      "status": "modified",
+      "path": "rider/public/icons/generate-icons.mjs",
+      "type": "file",
+      "bytes": 1665,
+      "sha256": "d2164aa8f81744f7e7d341852222e30c2d3f9a99a9600365812add81deede1b8"
+    },
+    {
+      "status": "modified",
+      "path": "rider/public/icons/icon-192.png",
+      "type": "file",
+      "bytes": 40794,
+      "sha256": "3c41921dcbb32180f3790a0080f6313ce6acb8c35b1fe79635202b0e45ca5352"
+    },
+    {
+      "status": "modified",
+      "path": "rider/public/icons/icon-512.png",
+      "type": "file",
+      "bytes": 254409,
+      "sha256": "fa032f7bb676cb884dccf547bf49af33e6dcdc2f75d13123cf774f8ba1657e2f"
+    },
+    {
+      "status": "modified",
+      "path": "rider/src/components/ParcelActionSheet.tsx",
+      "type": "file",
+      "bytes": 25208,
+      "sha256": "dd47c935d64fefd6cfe61bd692851215329321c96b1fe23844a77188d95c0db9"
+    },
+    {
+      "status": "modified",
+      "path": "rider/src/lib/api.ts",
+      "type": "file",
+      "bytes": 16688,
+      "sha256": "62b214141f5511df38b468f36f989fe3df3d8cc981b54a2cb31929bf9cc0d45a"
+    },
+    {
+      "status": "modified",
+      "path": "rider/src/pages/LoginPage.tsx",
+      "type": "file",
+      "bytes": 3715,
+      "sha256": "52fe546afc8edff9967d9649ab0da3b359c161a7b79482e3c8b9f572ea2c8f37"
+    },
+    {
+      "status": "modified",
+      "path": "rider/vite.config.ts",
+      "type": "file",
+      "bytes": 2904,
+      "sha256": "96f63cf8b5a64cad880bfa108c22f0d152ce4f767876b40290a8170dcd5e1eea"
+    },
+    {
+      "status": "modified",
+      "path": "server/.env.example",
+      "type": "file",
+      "bytes": 5847,
+      "sha256": "d2f66082964d999601972a620f8d0b95deb7d1938e82c3fb6a9b2a258f1381a0"
+    },
+    {
+      "status": "modified",
+      "path": "server/docs-static/partner-api-reference.html",
+      "type": "file",
+      "bytes": 119998,
+      "sha256": "34666a58231bfc9f8733d08010d4456df122928406e5fab364d88b7b4c04d907"
+    },
+    {
+      "status": "modified",
+      "path": "server/docs-static/partner-api.html",
+      "type": "file",
+      "bytes": 92624,
+      "sha256": "c666503295ef6c37b4c20689ba0ef9ccb0b381f131f49456d46dfd7e9f3f8cbb"
+    },
+    {
+      "status": "modified",
+      "path": "server/package-lock.json",
+      "type": "file",
+      "bytes": 186736,
+      "sha256": "dd57cfe9a24c72b61bf22dfae6335e3ef996ad5236e7b84473bb78eb9375e042"
+    },
+    {
+      "status": "modified",
+      "path": "server/package.json",
+      "type": "file",
+      "bytes": 4199,
+      "sha256": "228d81b6e988324574958291c3810fca53e4b0f535cfa98ee73b66fb892e55e3"
+    },
+    {
+      "status": "modified",
+      "path": "server/prisma/schema.prisma",
+      "type": "file",
+      "bytes": 115800,
+      "sha256": "25692029f29769b71b216fac2577fc4fcd0c46c468266a945d026016391f2f89"
+    },
+    {
+      "status": "modified",
+      "path": "server/src/controllers/accounting.controller.ts",
+      "type": "file",
+      "bytes": 11559,
+      "sha256": "4afee253de2807f0c78ab27faad525bc2050d5eea1266c53f83b5ef5f373c987"
+    },
+    {
+      "status": "modified",
+      "path": "server/src/controllers/auth.controller.ts",
+      "type": "file",
+      "bytes": 40904,
+      "sha256": "17def74abd43d9ec1284530a0decf000805cc590e63397a3027ae0758f774fa2"
+    },
+    {
+      "status": "modified",
+      "path": "server/src/controllers/order.controller.ts",
+      "type": "file",
+      "bytes": 41953,
+      "sha256": "ff2060e294642e21e39ea6b905de8663bdd0c46ceb760392b7abaab5628ea7a3"
+    },
+    {
+      "status": "modified",
+      "path": "server/src/controllers/publicApi/billing.controller.ts",
+      "type": "file",
+      "bytes": 5418,
+      "sha256": "c68142b34ce6ed98b6ea8bf54f0a8be93e6d6bf8b6b426df6a41a6978a35d0cf"
+    },
+    {
+      "status": "modified",
+      "path": "server/src/controllers/publicApi/orders.controller.ts",
+      "type": "file",
+      "bytes": 10061,
+      "sha256": "5ec3c8c1cae4f4365b4a4b2a205bc975796645db3715a1b0a61927b72bb30c7d"
+    },
+    {
+      "status": "modified",
+      "path": "server/src/controllers/publicApi/remarks.controller.ts",
+      "type": "file",
+      "bytes": 2695,
+      "sha256": "60f582285c6edb9a6a2957726c94d462319a66882bd4fd6a31b43fd05360c0ef"
+    },
+    {
+      "status": "modified",
+      "path": "server/src/controllers/publicApi/returns.controller.ts",
+      "type": "file",
+      "bytes": 3148,
+      "sha256": "2c81048f5fcfed41026075bf77ba31dd7dbe7b890c823ffc406261998eca7c62"
+    },
+    {
+      "status": "modified",
+      "path": "server/src/controllers/publicApi/shared.ts",
+      "type": "file",
+      "bytes": 1183,
+      "sha256": "1143a13b6fb01846c2c2cbe297e2f6f9f67d552032c4f768bed3ea04a35e7f85"
+    },
+    {
+      "status": "modified",
+      "path": "server/src/controllers/publicApi/tickets.controller.ts",
+      "type": "file",
+      "bytes": 4878,
+      "sha256": "b20813b6418ad698742c488dc9af66836f53741d689fcaed429aade6807047a8"
+    },
+    {
+      "status": "modified",
+      "path": "server/src/lib/openapi.ts",
+      "type": "file",
+      "bytes": 41526,
+      "sha256": "403876f8be519dcba10862eaa3607018d8fb38cf888c76cbc7cbb3512b7df83f"
+    },
+    {
+      "status": "modified",
+      "path": "server/src/lib/prisma.ts",
+      "type": "file",
+      "bytes": 1917,
+      "sha256": "d2c973bdebf35e45d185b9512b0e57cfd7145465f86b510cbe2be8fc569cf906"
+    },
+    {
+      "status": "modified",
+      "path": "server/src/lib/registrationUpload.ts",
+      "type": "file",
+      "bytes": 2737,
+      "sha256": "88491b430777f6c8ecd1ff82e704ef55aadf080dbdb1e73cd4fe4dd9d879d6a8"
+    },
+    {
+      "status": "modified",
+      "path": "server/src/middlewares/__tests__/auth.middleware.test.ts",
+      "type": "file",
+      "bytes": 9345,
+      "sha256": "7fcba284b67a9c49e797a3ade8eb6c643810cab8789594bd499c1dd86f113acb"
+    },
+    {
+      "status": "modified",
+      "path": "server/src/middlewares/apiKeyAuth.middleware.ts",
+      "type": "file",
+      "bytes": 3718,
+      "sha256": "cfc1b9a4d7752877150eff511aafaf22714715138dbe32dbd34897ae889824a3"
+    },
+    {
+      "status": "modified",
+      "path": "server/src/middlewares/auth.middleware.ts",
+      "type": "file",
+      "bytes": 6398,
+      "sha256": "47797729ff6fb74167dfd07e872d70c35d00668195ce2682b815bc30a46d2642"
+    },
+    {
+      "status": "modified",
+      "path": "server/src/routes/accounting.routes.ts",
+      "type": "file",
+      "bytes": 9431,
+      "sha256": "90ef3dd4509cac6616ef3ed622c223cdd489c9b49ca83380822a5f935435f700"
+    },
+    {
+      "status": "modified",
+      "path": "server/src/routes/publicApi.routes.ts",
+      "type": "file",
+      "bytes": 14098,
+      "sha256": "51e26e702b680ae20125aa88a7e60af95bbff3a92edc0d4c112e8e8973a74afe"
+    },
+    {
+      "status": "modified",
+      "path": "server/src/server.ts",
+      "type": "file",
+      "bytes": 10273,
+      "sha256": "f875e9c23bc6c0d6e98a30b3e5f33dfd497f4e1ea8f26ba27cb1907cb2dd35d6"
+    },
+    {
+      "status": "modified",
+      "path": "server/src/services/__tests__/order.service.riderScope.test.ts",
+      "type": "file",
+      "bytes": 32595,
+      "sha256": "0804f9a9270ad2b673de73ea22b4ed467a07e988af6cb1632163ce2074f2735c"
+    },
+    {
+      "status": "modified",
+      "path": "server/src/services/accounting/accounting.service.ts",
+      "type": "file",
+      "bytes": 76904,
+      "sha256": "573794fae0f50f3e4f9a7f878f7379b5b3911954e08c374fc188cae7bc3d964c"
+    },
+    {
+      "status": "modified",
+      "path": "server/src/services/codSettlementRequest.service.ts",
+      "type": "file",
+      "bytes": 15109,
+      "sha256": "e128f6d2005212f75a65dc184d7e045b3369ee5601aa3b307e0024a9e3ad9353"
+    },
+    {
+      "status": "modified",
+      "path": "server/src/services/finance.service.ts",
+      "type": "file",
+      "bytes": 87018,
+      "sha256": "324de626fe8398c8445ed4d3ef4d46efbf10fac169ee2a3c4e8bc2ccf3766266"
+    },
+    {
+      "status": "modified",
+      "path": "server/src/services/idempotency.service.ts",
+      "type": "file",
+      "bytes": 5582,
+      "sha256": "5dcd5e7ce0d7bcb9682189dd4d4738b0a5c1be6e2c1a513d4c2d25a7bce3b650"
+    },
+    {
+      "status": "modified",
+      "path": "server/src/services/notification.service.ts",
+      "type": "file",
+      "bytes": 6201,
+      "sha256": "18741842ce3045919968c6ae3355da545f0f96eeabba9ec0733355e9a304386a"
+    },
+    {
+      "status": "modified",
+      "path": "server/src/services/orders/cache.ts",
+      "type": "file",
+      "bytes": 1975,
+      "sha256": "231073a128ff94ce811d5acc56e8d78c622dd4f81c8c84ed2aded663aff94cfa"
+    },
+    {
+      "status": "modified",
+      "path": "server/src/services/orders/create.ts",
+      "type": "file",
+      "bytes": 19325,
+      "sha256": "72e911547c0345a05a3d7b82fcba4e21e27de15b12ff9f91bc9b501f6f85bcf9"
+    },
+    {
+      "status": "modified",
+      "path": "server/src/services/orders/dashboard.ts",
+      "type": "file",
+      "bytes": 36980,
+      "sha256": "9decd00da6cc6fe3b10671d857c33eec31a771eeaad457981607afc051343700"
+    },
+    {
+      "status": "modified",
+      "path": "server/src/services/orders/query-core.ts",
+      "type": "file",
+      "bytes": 38085,
+      "sha256": "2f19516885b366eb5b56989cbee9ce561896742a794d27a1653c7bc65b3825e0"
+    },
+    {
+      "status": "modified",
+      "path": "server/src/services/orders/query-detail.ts",
+      "type": "file",
+      "bytes": 12912,
+      "sha256": "ae709f42538c03c4d0bc899248eef7ad05c62dec66f518ebc9c860db7842c0ae"
+    },
+    {
+      "status": "modified",
+      "path": "server/src/services/orders/status-shared.ts",
+      "type": "file",
+      "bytes": 6378,
+      "sha256": "b7b5b59f78c5427d178314747de12f0c671ab2c25fb1b76f8118e0748e1b10c4"
+    },
+    {
+      "status": "modified",
+      "path": "server/src/services/orders/status-single.ts",
+      "type": "file",
+      "bytes": 36313,
+      "sha256": "9cb891e22078eb88cd4c2a6c2c1c6c48f7387435dd05daf53f29925b28ae6297"
+    },
+    {
+      "status": "modified",
+      "path": "server/src/types/codSettlementRequest.type.ts",
+      "type": "file",
+      "bytes": 1142,
+      "sha256": "08801dc12bb8462871ef969f05f6bfd19424024e275451cd50710e64c8afe11b"
+    },
+    {
+      "status": "modified",
+      "path": "server/src/validators/accounting.schema.ts",
+      "type": "file",
+      "bytes": 9818,
+      "sha256": "7082df875b0933639ab3f1bee8f0eb99c09b725816c613cf7d6465cd516750e8"
+    },
+    {
+      "status": "modified",
+      "path": "server/src/validators/publicApi.schema.ts",
+      "type": "file",
+      "bytes": 9395,
+      "sha256": "d8f64214a6541901f04301402828a8bdfb4b25feee3396965b60e6f0f3af65fc"
+    },
+    {
+      "status": "untracked",
+      "path": "AGENTS.md",
+      "type": "file",
+      "bytes": 739,
+      "sha256": "175133cfe737abb6005169611dd202bac07fde8b39a1f1794a97e2b0ce4fcc7e"
+    },
+    {
+      "status": "untracked",
+      "path": "CLAUDE.md",
+      "type": "file",
+      "bytes": 1675,
+      "sha256": "b245ac340a726adebbb6b800486143920f0ff41bdee433b299801fd2fab76a82"
+    },
+    {
+      "status": "untracked",
+      "path": "CODEX.md",
+      "type": "file",
+      "bytes": 738,
+      "sha256": "17e1b8853c3fdf38d815500c52f0002c5e605e33bada076ce6b487318bde49a9"
+    },
+    {
+      "status": "untracked",
+      "path": "client/scripts/check-loading-budgets.mjs",
+      "type": "file",
+      "bytes": 3208,
+      "sha256": "3951e8eb55cf5b7de7fd6ae6f2fe70cd18954c068065a14f113511eec7a93cba"
+    },
+    {
+      "status": "untracked",
+      "path": "client/scripts/report-loading-costs.mjs",
+      "type": "file",
+      "bytes": 2758,
+      "sha256": "72a3418c25c96ce7d7629cc450f5f90e60cdb5e02408f6ad2a9d9357351e7884"
+    },
+    {
+      "status": "untracked",
+      "path": "client/scripts/test-admin-upload.mjs",
+      "type": "file",
+      "bytes": 2653,
+      "sha256": "058c6b8e8028df9e3720782edce4257a55342d2a5046b6b2ce531f6650b646b7"
+    },
+    {
+      "status": "untracked",
+      "path": "client/src/pages/finance/CashBankVoucherPage.css",
+      "type": "file",
+      "bytes": 7724,
+      "sha256": "3c163cf5cd5fb28a8bd0099662b8462c06553ad82222040e356a8c369199dc1f"
+    },
+    {
+      "status": "untracked",
+      "path": "client/src/utils/adminUpload.ts",
+      "type": "file",
+      "bytes": 2132,
+      "sha256": "b0ddb40bebbe2ee213e17c6687b284f6b7ae86e00446b84f821c823f7a14b649"
+    },
+    {
+      "status": "untracked",
+      "path": "docs/CLIENT_PERFORMANCE.md",
+      "type": "file",
+      "bytes": 2333,
+      "sha256": "e6cb4b0346730801fbdef677daab4bd4623a095da07059741f9e772dbe02c98b"
+    },
+    {
+      "status": "untracked",
+      "path": "docs/DATABASE_OPTIMIZATION_IMPLEMENTATION.md",
+      "type": "file",
+      "bytes": 9341,
+      "sha256": "759921a580a7cdf567ad5d4778ab31d32915a80abb40c9ccf4c7145d410de807"
+    },
+    {
+      "status": "untracked",
+      "path": "docs/DATABASE_OPTIMIZATION_PREVIEW.jpg",
+      "type": "file",
+      "bytes": 151446,
+      "sha256": "91a228c1c09cec2fd14056f24af278e340c203404acd12156e5beb49e643541a"
+    },
+    {
+      "status": "untracked",
+      "path": "docs/DATABASE_OPTIMIZATION_REPORT.html",
+      "type": "file",
+      "bytes": 83654,
+      "sha256": "978ebda53e3355505343729a06cfbb5f46cba328698d486f74217d5790c6fa85"
+    },
+    {
+      "status": "untracked",
+      "path": "docs/FIRST_LOAD_AUDIT.md",
+      "type": "file",
+      "bytes": 11945,
+      "sha256": "9158136e8a52528c45773625cf9d0c7824079254e02c8ab4df22e65037c7d3a8"
+    },
+    {
+      "status": "untracked",
+      "path": "docs/FIRST_LOAD_REPORT.html",
+      "type": "file",
+      "bytes": 35435,
+      "sha256": "adbf5b828c476111ae9a6ba217ea4139961d0a84bf5ad0c240f350253c61af4b"
+    },
+    {
+      "status": "untracked",
+      "path": "docs/FIRST_LOAD_REPORT_PREVIEW.jpg",
+      "type": "file",
+      "bytes": 95922,
+      "sha256": "1456ea7e4a8052dc86e712da802392be2335accdacc26de6fe863ce7b77d83eb"
+    },
+    {
+      "status": "untracked",
+      "path": "docs/database-audit/README.md",
+      "type": "file",
+      "bytes": 5274,
+      "sha256": "60d9249879ed902a0581ab8fd1b879725fcfa61ab5c5a26990e1e187411f5542"
+    },
+    {
+      "status": "untracked",
+      "path": "docs/database-audit/implemented-index-benchmark.json",
+      "type": "file",
+      "bytes": 54849,
+      "sha256": "5211cb836562fa379fc02840ebd1d685177b36e7f3e9625c5f4b804ed4af6f44"
+    },
+    {
+      "status": "untracked",
+      "path": "docs/database-audit/local-implementation-verification.json",
+      "type": "file",
+      "bytes": 2801,
+      "sha256": "646651c13b4180fc68deca7ffb4250016ff2ec2ab4bc2bd3a4269ef265df8e1d"
+    },
+    {
+      "status": "untracked",
+      "path": "docs/database-audit/local-inventory.json",
+      "type": "file",
+      "bytes": 71886,
+      "sha256": "3bac63b21005cb2fec721d3d6aab236767a22f3f8854cb73bd36f45d071aa170"
+    },
+    {
+      "status": "untracked",
+      "path": "docs/database-audit/local-query-plans-after.json",
+      "type": "file",
+      "bytes": 28122,
+      "sha256": "dcfa67f4e5c900a6fce3c0a5f74bc09fed21a2050c38d892eaeeb248a6efea08"
+    },
+    {
+      "status": "untracked",
+      "path": "docs/database-audit/local-query-plans.json",
+      "type": "file",
+      "bytes": 27746,
+      "sha256": "47e002b0eba76766ab377b1806cdc2b9c3934783ce36067d5ffb9b115bd44f98"
+    },
+    {
+      "status": "untracked",
+      "path": "docs/database-audit/synthetic-index-benchmark.json",
+      "type": "file",
+      "bytes": 27639,
+      "sha256": "b7fa9751a3490b1aa70fc33a932ed8bc82240ccca5c2430f7ac91294a0ff49ac"
+    },
+    {
+      "status": "untracked",
+      "path": "docs/database-audit/synthetic-trend-benchmark.json",
+      "type": "file",
+      "bytes": 446,
+      "sha256": "27f3391a3251f6571d4718e44a4c463bcf7a903a98fbaa5b6810b8513fc79a81"
+    },
+    {
+      "status": "untracked",
+      "path": "map/.gitignore",
+      "type": "file",
+      "bytes": 56,
+      "sha256": "a923b49a53516116e44de2f7489929d2d50775fab995d18f1628691579752dfa"
+    },
+    {
+      "status": "untracked",
+      "path": "map/DATA-LICENSE.md",
+      "type": "file",
+      "bytes": 443,
+      "sha256": "d4a581e057370615ea3413a4f1e43c07b9b049db369b974ea7642bd9a5a783ca"
+    },
+    {
+      "status": "untracked",
+      "path": "map/DESIGN.md",
+      "type": "file",
+      "bytes": 1490,
+      "sha256": "cbfe3639be8197d778100bf301171af71943da649f35d4f899e39307359189de"
+    },
+    {
+      "status": "untracked",
+      "path": "map/LICENSE",
+      "type": "file",
+      "bytes": 1197,
+      "sha256": "7af66893020aa7a948df0c8493947a3d93868177b53adc1469d9ce3ca6885ef4"
+    },
+    {
+      "status": "untracked",
+      "path": "map/PRODUCT.md",
+      "type": "file",
+      "bytes": 1341,
+      "sha256": "fef31425fd2a24e7e5efceed3dc1b7c84f16ef99c5c592ea66afa2a9b97987ae"
+    },
+    {
+      "status": "untracked",
+      "path": "map/README.md",
+      "type": "file",
+      "bytes": 5793,
+      "sha256": "5df49e8c4f37f7355c4e5284ce1f5341e0f8a682a0b12ee74f637243b89f2dec"
+    },
+    {
+      "status": "untracked",
+      "path": "map/docs/preview.png",
+      "type": "file",
+      "bytes": 118801,
+      "sha256": "06b5ceac7e10df0810f1e2a831808b77e3ebec9350c54acb9ab04335373eac7e"
+    },
+    {
+      "status": "untracked",
+      "path": "map/index.html",
+      "type": "file",
+      "bytes": 522,
+      "sha256": "429e82bc082d23a11c4b9427364269c6aec3d7b4f7750887ac51267699fea22b"
+    },
+    {
+      "status": "untracked",
+      "path": "map/node_modules",
+      "type": "symlink",
+      "bytes": 22,
+      "sha256": "addf216f195d49786d70e302c1ad88927a40d4ba357d7f4bf586dffa98e359ee",
+      "target": "../client/node_modules"
+    },
+    {
+      "status": "untracked",
+      "path": "map/package.json",
+      "type": "file",
+      "bytes": 699,
+      "sha256": "5fa77320648091ced00b1047b5525b69147346677ef028e02a2dd37587681147"
+    },
+    {
+      "status": "untracked",
+      "path": "map/public/favicon.svg",
+      "type": "file",
+      "bytes": 269,
+      "sha256": "3cb85be2cdab4867b4d9874dc074a01034bb09c83aa60cd538d50867658d3a01"
+    },
+    {
+      "status": "untracked",
+      "path": "map/public/fonts/DM-Sans-OFL.txt",
+      "type": "file",
+      "bytes": 4482,
+      "sha256": "9af36190332437f5ecd09974de43c1f7c77a310a996cdd8ceb25628b458840e1"
+    },
+    {
+      "status": "untracked",
+      "path": "map/public/fonts/Fraunces-OFL.txt",
+      "type": "file",
+      "bytes": 4391,
+      "sha256": "bdf4c22802eaf804f998195871c6b8938aac2ac14b2d78a8bd66a6f1eced833b"
+    },
+    {
+      "status": "untracked",
+      "path": "map/public/fonts/dm-sans-latin.woff2",
+      "type": "file",
+      "bytes": 36980,
+      "sha256": "468d56b6b25b05b70190b6c233d773f6f1770e8579827ce022a57f03fa8002fb"
+    },
+    {
+      "status": "untracked",
+      "path": "map/public/fonts/fraunces-latin.woff2",
+      "type": "file",
+      "bytes": 34760,
+      "sha256": "7b8818e513bfff093af51b7acb8df5049bceb161c57b478400d155785d19bf46"
+    },
+    {
+      "status": "untracked",
+      "path": "map/scripts/build-map.py",
+      "type": "file",
+      "bytes": 11886,
+      "sha256": "9fff61ebf8052041410646c7f6eb36320c4afc491604e54f1637b6209dc7bb30"
+    },
+    {
+      "status": "untracked",
+      "path": "map/scripts/kathmandu.overpass",
+      "type": "file",
+      "bytes": 684,
+      "sha256": "0ed66fc280ad7ace96f4d7ca3fb9dc0638dac4fcfb00206819e3f4371e033ba4"
+    },
+    {
+      "status": "untracked",
+      "path": "map/src/App.tsx",
+      "type": "file",
+      "bytes": 18233,
+      "sha256": "c090475c74af30820f14691bb12b03110ce8eb347f52392ed20b996322d70115"
+    },
+    {
+      "status": "untracked",
+      "path": "map/src/KathmanduMap.tsx",
+      "type": "file",
+      "bytes": 15070,
+      "sha256": "5cd5d3961e4df1923794b5f41962540cbdb2d37ff8d1d2a89fecd1988f5ab861"
+    },
+    {
+      "status": "untracked",
+      "path": "map/src/data.ts",
+      "type": "file",
+      "bytes": 1417,
+      "sha256": "3a53239861e8d98514d313b6273887b858e6ede1db3b7dd92f92624b929338e3"
+    },
+    {
+      "status": "untracked",
+      "path": "map/src/data.worker.ts",
+      "type": "file",
+      "bytes": 834,
+      "sha256": "59ebac6643bcaf45b37df4e35fcd6ed088fa66129aebc227475364b52913220f"
+    },
+    {
+      "status": "untracked",
+      "path": "map/src/data/kathmandu-base.json.gz",
+      "type": "file",
+      "bytes": 697791,
+      "sha256": "1de270b5f3204324c5fa12ce53bcf0b25fdc9d37c3e2c8fe201452d3d49b255a"
+    },
+    {
+      "status": "untracked",
+      "path": "map/src/data/kathmandu-buildings.json.gz",
+      "type": "file",
+      "bytes": 2395450,
+      "sha256": "c21a6c0898ceeb62332d8450e3939bcfe3f147c5d5d6f46bc4f65e5981987cac"
+    },
+    {
+      "status": "untracked",
+      "path": "map/src/data/metadata.json",
+      "type": "file",
+      "bytes": 16557,
+      "sha256": "1f3d4451d110b738cb328b9083e0c45654687d04a4062774b61c6487c4a41f33"
+    },
+    {
+      "status": "untracked",
+      "path": "map/src/export.ts",
+      "type": "file",
+      "bytes": 16031,
+      "sha256": "504891622da48182b3020f014e5ccef9073b861cdbb01c5388392496deb0007f"
+    },
+    {
+      "status": "untracked",
+      "path": "map/src/geometry.ts",
+      "type": "file",
+      "bytes": 821,
+      "sha256": "cbcaf8db45f0797508316eab9f7a9fce54a0138fac31c642dd15dcac5cc283c8"
+    },
+    {
+      "status": "untracked",
+      "path": "map/src/index.ts",
+      "type": "file",
+      "bytes": 389,
+      "sha256": "4bc99bd0034c4334aaf57c5af28d95b2d870e223d752d28a786d25e804596c25"
+    },
+    {
+      "status": "untracked",
+      "path": "map/src/kathmandu-map.css",
+      "type": "file",
+      "bytes": 2142,
+      "sha256": "f56fb28a530aeeac183b3604e59c3315d4cb737dd1f82493eaac4af58f939303"
+    },
+    {
+      "status": "untracked",
+      "path": "map/src/landmarks.ts",
+      "type": "file",
+      "bytes": 916,
+      "sha256": "437d226b6dc140a7441364673308107c7153a73a41e91eed1979dbbb62ce0335"
+    },
+    {
+      "status": "untracked",
+      "path": "map/src/main.tsx",
+      "type": "file",
+      "bytes": 220,
+      "sha256": "02fc9fed03ba30c8335eea2c41b1fa71db748ddeeb0cf9c9446419cc4633bbeb"
+    },
+    {
+      "status": "untracked",
+      "path": "map/src/maker.css",
+      "type": "file",
+      "bytes": 17964,
+      "sha256": "9400088eaa0d80ae146d07b08f83bd2179031774b094c9e7b42f83e3d5f7f127"
+    },
+    {
+      "status": "untracked",
+      "path": "map/src/renderer.ts",
+      "type": "file",
+      "bytes": 7097,
+      "sha256": "59131b876802294ddc021f2cad5b27479b46fb6cdd0fb1a9da5b18f0ba90699e"
+    },
+    {
+      "status": "untracked",
+      "path": "map/src/themes.ts",
+      "type": "file",
+      "bytes": 1585,
+      "sha256": "6d8d62a48210cfd2f73a57de7f0a09345624d2563c0855dcdc7400df82f7e8f1"
+    },
+    {
+      "status": "untracked",
+      "path": "map/src/types.ts",
+      "type": "file",
+      "bytes": 1923,
+      "sha256": "e2d25e099cdb8a7ce6d983ee57071fe4331a2c751b63c91d719c33f1bd7c6daa"
+    },
+    {
+      "status": "untracked",
+      "path": "map/src/vite-env.d.ts",
+      "type": "file",
+      "bytes": 38,
+      "sha256": "65996936fbb042915f7b74a200fcdde7e410f32a669b1ab9597cfaa4b0faddb5"
+    },
+    {
+      "status": "untracked",
+      "path": "map/tsconfig.json",
+      "type": "file",
+      "bytes": 449,
+      "sha256": "e786bb25f36c7812c188baa870ec4c273239811aae727f0a742ceadc2a0e4f4f"
+    },
+    {
+      "status": "untracked",
+      "path": "map/vite.config.ts",
+      "type": "file",
+      "bytes": 144,
+      "sha256": "4ebe818953bbeb45b4a7da57fbe0208307d4de01b5bbd7c77b06d31bf711bcd9"
+    },
+    {
+      "status": "untracked",
+      "path": "map/vite.library.config.ts",
+      "type": "file",
+      "bytes": 420,
+      "sha256": "be3a4259be8f554d92e9d686f52bf1e878a13e953d9540abb62216dba824cbca"
+    },
+    {
+      "status": "untracked",
+      "path": "rider/assets/icon.png",
+      "type": "file",
+      "bytes": 1287162,
+      "sha256": "401139d2ade0237519e3996c55cae8065f08badfb80f97d6651f4855192247a9"
+    },
+    {
+      "status": "untracked",
+      "path": "server/prisma/migrations/20261006100000_vendor_order_lookup/migration.sql",
+      "type": "file",
+      "bytes": 288,
+      "sha256": "af73974269c63b4c4dc39ee823139f42904efbc18963c374194b070cf576c198"
+    },
+    {
+      "status": "untracked",
+      "path": "server/prisma/migrations/20261006100100_return_history_lookup/migration.sql",
+      "type": "file",
+      "bytes": 213,
+      "sha256": "9335d654f7b13b3d9f12d98db146fc828e482714da202a19b87aea4ece185a90"
+    },
+    {
+      "status": "untracked",
+      "path": "server/prisma/migrations/20261006100200_settlement_reverse_lookup/migration.sql",
+      "type": "file",
+      "bytes": 213,
+      "sha256": "74e23dacd7415b51c50193bbe5f9353347e818315d220fef7a1dddd214d63920"
+    },
+    {
+      "status": "untracked",
+      "path": "server/prisma/migrations/20261006100300_vendor_settlement_lookup/migration.sql",
+      "type": "file",
+      "bytes": 133,
+      "sha256": "f8fb3974f936c7223ad1b814733bf8c118c73fd1e824bf49ad422c6c1e7ebd8b"
+    },
+    {
+      "status": "untracked",
+      "path": "server/prisma/migrations/20261006100400_rider_settlement_lookup/migration.sql",
+      "type": "file",
+      "bytes": 131,
+      "sha256": "fca8db8914421bdc272f532042b8396e4fa2a3be134afb64a07038bd30fa8638"
+    },
+    {
+      "status": "untracked",
+      "path": "server/prisma/migrations/20261006100500_notification_feed_lookup/migration.sql",
+      "type": "file",
+      "bytes": 210,
+      "sha256": "91846eae9e37a6714d5b5a7fc6c9212862bd9c89fe6740e3854cbb48ef86325d"
+    },
+    {
+      "status": "untracked",
+      "path": "server/scripts/audit-database-readonly.cjs",
+      "type": "file",
+      "bytes": 7144,
+      "sha256": "ea7d0f1efd90c1ad79a33c444d041f94e7758a2086d939a26d01f855097f0633"
+    },
+    {
+      "status": "untracked",
+      "path": "server/scripts/benchmark-dashboard-trend.cjs",
+      "type": "file",
+      "bytes": 3641,
+      "sha256": "ac3b91d359750caa910fb9e737a889c97591af6e80800b46da386cfb3e107509"
+    },
+    {
+      "status": "untracked",
+      "path": "server/scripts/benchmark-database-indexes.cjs",
+      "type": "file",
+      "bytes": 6088,
+      "sha256": "63208b995bb2c8a6d11d45136ad3bbd54b6b65365e99720800760614679d13de"
+    },
+    {
+      "status": "untracked",
+      "path": "server/scripts/verify-database-optimization-readonly.cjs",
+      "type": "file",
+      "bytes": 7468,
+      "sha256": "30498d80de7aef0e7cf006c190dba8c58413200e577e6e7f3e00f0f2d66daf2e"
+    },
+    {
+      "status": "untracked",
+      "path": "server/src/controllers/__tests__/auth.cookieIsolation.test.ts",
+      "type": "file",
+      "bytes": 5295,
+      "sha256": "5d0ef1b98024c04051d27583fa476a4b054274c7a35fe47ec9a59dafe5c0445f"
+    },
+    {
+      "status": "untracked",
+      "path": "server/src/controllers/__tests__/order.idempotencyScope.test.ts",
+      "type": "file",
+      "bytes": 1922,
+      "sha256": "dba6c6ad4e41998f63826830d29dcf1a3303015ff00764fecd95e67553e3e764"
+    },
+    {
+      "status": "untracked",
+      "path": "server/src/controllers/publicApi/__tests__/codSettlementRequests.controller.test.ts",
+      "type": "file",
+      "bytes": 5024,
+      "sha256": "260090cb6207864827118be7a71ddd3231f67e0299301bdb38e355dd939b0fd4"
+    },
+    {
+      "status": "untracked",
+      "path": "server/src/controllers/publicApi/__tests__/finance.controller.test.ts",
+      "type": "file",
+      "bytes": 5250,
+      "sha256": "c50e995bc56ea3a7dff57275aea196c3bbd9a9bfe1ecaadcc6a3b10af7ab0f5b"
+    },
+    {
+      "status": "untracked",
+      "path": "server/src/controllers/publicApi/__tests__/orders.idempotencyScope.test.ts",
+      "type": "file",
+      "bytes": 3198,
+      "sha256": "37f219be64626c920be51d38c876fda31255ffc3b88d9ce68a40f8e8ed56e09d"
+    },
+    {
+      "status": "untracked",
+      "path": "server/src/controllers/publicApi/__tests__/orders.listOptimization.test.ts",
+      "type": "file",
+      "bytes": 1696,
+      "sha256": "9bbc21bc5dc2d08d0811fa3beff84c6f77b36463756c455cc8e3b410998efce0"
+    },
+    {
+      "status": "untracked",
+      "path": "server/src/controllers/publicApi/codSettlementRequests.controller.ts",
+      "type": "file",
+      "bytes": 3256,
+      "sha256": "d15a3bdfde9783281b312351cbabb328bd73308850bebb7ef16825ff643b39ec"
+    },
+    {
+      "status": "untracked",
+      "path": "server/src/lib/__tests__/databasePoolConfig.test.ts",
+      "type": "file",
+      "bytes": 1277,
+      "sha256": "8a702a6b369247fb175319512ed27f66bc36e759e8ca35a705a118814fb41052"
+    },
+    {
+      "status": "untracked",
+      "path": "server/src/lib/__tests__/registrationUpload.test.ts",
+      "type": "file",
+      "bytes": 3448,
+      "sha256": "e9eab3669d22f127918512abd54694c56ac0a2fa8bfa9cef75e4366e9e2ee5c2"
+    },
+    {
+      "status": "untracked",
+      "path": "server/src/lib/__tests__/requestPerformance.test.ts",
+      "type": "file",
+      "bytes": 4602,
+      "sha256": "e72c815e5506e9e5435cdbc6dd93b264ec05deb81ff6b4c950ba06bbe872fdd1"
+    },
+    {
+      "status": "untracked",
+      "path": "server/src/lib/databasePoolConfig.ts",
+      "type": "file",
+      "bytes": 1616,
+      "sha256": "6e145c630a42f7782ea602792abd320047c0faf855c10533da3787126c16bf04"
+    },
+    {
+      "status": "untracked",
+      "path": "server/src/lib/requestPerformance.ts",
+      "type": "file",
+      "bytes": 3421,
+      "sha256": "c161d0269a69b52a2a41c6fedaec2fa3c8b25b15cb80f14c8c1f5d8b6d486659"
+    },
+    {
+      "status": "untracked",
+      "path": "server/src/middlewares/__tests__/apiKeyAuth.performance.test.ts",
+      "type": "file",
+      "bytes": 2923,
+      "sha256": "5a1c0679a69a599a944cd4f1e00d360968f89eec9db6b292231b06f7c11890e8"
+    },
+    {
+      "status": "untracked",
+      "path": "server/src/services/__tests__/codSettlementRequest.service.vendorApi.test.ts",
+      "type": "file",
+      "bytes": 5254,
+      "sha256": "cff533122894783afbacc725b84faea8b72b1907b72c586511f1c2b81e0f7cc9"
+    },
+    {
+      "status": "untracked",
+      "path": "server/src/services/__tests__/finance.listOptimization.test.ts",
+      "type": "file",
+      "bytes": 2885,
+      "sha256": "3ef4a983d690a5138a789cdf9be44647eae116773bb635b8aed53c6bf1085d20"
+    },
+    {
+      "status": "untracked",
+      "path": "server/src/services/__tests__/idempotency.partnerScope.test.ts",
+      "type": "file",
+      "bytes": 2841,
+      "sha256": "8a0b74b842c63be2c83294ce42ee84ca4a1253e9a42efe5a20085d668a45c5dc"
+    },
+    {
+      "status": "untracked",
+      "path": "server/src/services/__tests__/notification.listOptimization.test.ts",
+      "type": "file",
+      "bytes": 1009,
+      "sha256": "7c6e8db087a961593139bdcf4d8ce1eb64bd9a842c5d8f34204c3efebb79154c"
+    },
+    {
+      "status": "untracked",
+      "path": "server/src/services/accounting/__tests__/partySearch.test.ts",
+      "type": "file",
+      "bytes": 2623,
+      "sha256": "763e0ca6ff6cf1afc7cdb282f7be1dc9bae533948d600d7c486513f73a45a10e"
+    },
+    {
+      "status": "untracked",
+      "path": "server/src/services/orders/__tests__/dashboard-returns.test.ts",
+      "type": "file",
+      "bytes": 3481,
+      "sha256": "c879b904a89166611c8d298ab7cb6ac88cfe9ff203ed807ab17ed3530a9af028"
+    },
+    {
+      "status": "untracked",
+      "path": "server/src/services/orders/__tests__/dashboard-trend.test.ts",
+      "type": "file",
+      "bytes": 5709,
+      "sha256": "b4286860c136ab5b367984310a23a80f2208f1f61a8d5f4335831616d417da74"
+    },
+    {
+      "status": "untracked",
+      "path": "server/src/services/orders/__tests__/query-optimization.test.ts",
+      "type": "file",
+      "bytes": 7950,
+      "sha256": "f1b5668e146a3d5cc5f3f605ca6897dca6906d47b6b3cd89a9a6fb3d38e40be9"
+    },
+    {
+      "status": "untracked",
+      "path": "server/src/services/orders/dashboard-returns.ts",
+      "type": "file",
+      "bytes": 1367,
+      "sha256": "990a2f15fea874ed196f909992ae72b4acd0c28a00e1c9316a7f42d765195e18"
+    },
+    {
+      "status": "untracked",
+      "path": "server/src/services/orders/dashboard-trend.ts",
+      "type": "file",
+      "bytes": 1413,
+      "sha256": "f3ab8c9bc547b4d8be9f7d750f438df333116753beaf7185129f33ad9f68d2d7"
+    },
+    {
+      "status": "untracked",
+      "path": "server/src/validators/__tests__/codSettlementRequest.publicApi.test.ts",
+      "type": "file",
+      "bytes": 1585,
+      "sha256": "49ac4bb31243adfa139e2e0ff355b8e0acd7dfda284b2e2becdb67b6fcb00a29"
+    }
+  ],
+  "repairCompletion": {
+    "capturedAt": "2026-10-06T11:45:19.386635+00:00",
+    "status": "All identified findings corrected locally and verified; changes remain uncommitted.",
+    "applicationDatabaseAccessDuringRepairs": false,
+    "migrationsOrBackfillsRunDuringRepairs": false,
+    "pushedOrDeployed": false,
+    "stashRefUnchanged": true,
+    "originalBranchHeads": {
+      "cod": "6798210d227baba439996e072df31006ca2accbc",
+      "backup-parcel-branch-fe43ea1": "fe43ea14ad3a6ba309ba810bf9d9f6785f08336f",
+      "fix/require-order-destination": "4533f73e671c961ffd23b5305b2a64f9268b648d"
+    },
+    "verification": {
+      "activeServerSuite": {
+        "filesPassed": 64,
+        "testsPassed": 676,
+        "failed": 0
+      },
+      "activeFocusedSuite": {
+        "testsPassed": 48,
+        "failed": 0
+      },
+      "historicalCodChecks": {
+        "testsPassed": 9,
+        "failed": 0
+      },
+      "historicalFeatureChecks": {
+        "testsPassed": 16,
+        "failed": 0
+      },
+      "clientUploadChecks": {
+        "testsPassed": 6,
+        "failed": 0
+      },
+      "buildsPassed": [
+        "server",
+        "client with all 8 loading budgets",
+        "rider",
+        "map",
+        "map library"
+      ],
+      "mapCanvasProbe": "Passed: paper/building colour changes rebuild tiles; unchanged colours reuse them.",
+      "partnerReferenceRegenerated": true,
+      "serverTypesAfterDocumentationUpdate": "Passed",
+      "whitespace": "Passed with cr-at-eol for existing CRLF files; both historical repair diffs passed.",
+      "limits": "Historical functions tested with mocked effects/in-memory SQL; historical dependency stacks were not rebuilt. Production rollout was not tested or performed."
+    },
+    "activeRepairFiles": [
+      {
+        "path": "server/src/services/kyc.service.ts",
+        "sha256": "b4a24ede0d0f8536af2baee3c1aa309b71131a6bb249558fdf50936db06b2c2e"
+      },
+      {
+        "path": "server/src/services/orders/status-single.ts",
+        "sha256": "488821a975d99fed0d9397201a70c0c7f1e2417f7d5b6bbaf05e448db32233fd"
+      },
+      {
+        "path": "server/src/services/voucher-campaign.service.ts",
+        "sha256": "b26c105483bda9b60dddf669d66aec8f79f10a65a62b0d3f3fb85d5998f6863f"
+      },
+      {
+        "path": "server/src/services/__tests__/kyc.service.documentRetention.test.ts",
+        "sha256": "a47469d33d83535e36a440f356a7624ff4fd292d8c9b942aa8fb7c7af53021c6"
+      },
+      {
+        "path": "server/src/services/__tests__/voucher-campaign.filters.test.ts",
+        "sha256": "670e1303d1d1d7b316e4c541308a4ee3ac656b0adbf743bb78eb027a369e8e26"
+      },
+      {
+        "path": "server/src/services/__tests__/voucher-campaign.service.test.ts",
+        "sha256": "dd60acc0aef05300f283f73a47bc22b3a1b2c8d44c7a525c531b688af7e571e9"
+      },
+      {
+        "path": "server/src/services/__tests__/order.service.statusFinance.test.ts",
+        "sha256": "7cb99ff3ce04ef1827aee2f93ecdb93fa5ba7203356d89266eef0bd9d6b3b7ea"
+      },
+      {
+        "path": "map/src/renderer.ts",
+        "sha256": "fc2a9ef177950b51e5b6fa527f73ed3084120003808010b3c96f29b137432331"
+      },
+      {
+        "path": "map/.gitignore",
+        "sha256": "3bbd1a57e28e543069a8aaa385d7a41efe2d44e05ded07afee151c7bc5f249a8"
+      }
+    ],
+    "historicalRepairWorktrees": [
+      {
+        "branch": "codex/cod-review-fix",
+        "root": "/Users/gyanendrakhatiwada/.codex/worktrees/cod-review-fix/parcelmoover-beta",
+        "base": "6798210d227baba439996e072df31006ca2accbc",
+        "status": [
+          "M server/src/services/order.service.ts",
+          "?? server/scripts/check-cod-reconciliation.cjs"
+        ],
+        "repairFiles": [
+          {
+            "path": "server/src/services/order.service.ts",
+            "sha256": "942d1f4932bb0e43e325c81d26def59b5f1cab2e3a6c504e242fc5c7aa8af1f1"
+          },
+          {
+            "path": "server/scripts/check-cod-reconciliation.cjs",
+            "sha256": "4fa3be2139509c34d9d4aee40dfb0c0ddd24f8957543ec998ea1e06d0d097483"
+          }
+        ]
+      },
+      {
+        "branch": "codex/feature-review-fix",
+        "root": "/Users/gyanendrakhatiwada/.codex/worktrees/feature-review-fix/parcelmoover-beta",
+        "base": "fe43ea14ad3a6ba309ba810bf9d9f6785f08336f",
+        "status": [
+          "M server/src/services/__tests__/voucher-campaign.service.test.ts",
+          " M server/src/services/kyc.service.ts",
+          " M server/src/services/voucher-campaign.service.ts",
+          "?? server/scripts/check-review-fixes.cjs"
+        ],
+        "repairFiles": [
+          {
+            "path": "server/src/services/kyc.service.ts",
+            "sha256": "67300dc1723f94ca92c27e9af02d8bb91d76737e56d55881bb19f3c2e0808518"
+          },
+          {
+            "path": "server/src/services/voucher-campaign.service.ts",
+            "sha256": "b26c105483bda9b60dddf669d66aec8f79f10a65a62b0d3f3fb85d5998f6863f"
+          },
+          {
+            "path": "server/src/services/__tests__/voucher-campaign.service.test.ts",
+            "sha256": "dd60acc0aef05300f283f73a47bc22b3a1b2c8d44c7a525c531b688af7e571e9"
+          },
+          {
+            "path": "server/scripts/check-review-fixes.cjs",
+            "sha256": "62834129ff2c28cfda9502cd39d04e604acfff6c2daba82bdbdeb9fa7123f944"
+          }
+        ]
+      }
+    ]
+  }
+}

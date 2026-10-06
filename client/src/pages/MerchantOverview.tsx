@@ -279,7 +279,7 @@ const MerchantOverview: React.FC = () => {
       ORDER_STATUS_LABELS[o.status],
     ]);
     const slug = (vendorLabel || 'all-vendors').toLowerCase().replace(/\s+/g, '-').slice(0, 24);
-    downloadExcel(`vendor-overview-${slug}.xlsx`, 'Vendor Overview', headers, sheetRows);
+    await downloadExcel(`vendor-overview-${slug}.xlsx`, 'Vendor Overview', headers, sheetRows);
   }, [filters, orders, vendorLabel, activeCard, selectedIds, selectedOrders]);
 
   return (

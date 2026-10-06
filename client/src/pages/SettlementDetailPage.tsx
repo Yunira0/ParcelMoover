@@ -427,7 +427,7 @@ const SettlementDetailPage: React.FC = () => {
     win.print();
   };
 
-  const handleDownload = () => {
+  const handleDownload = async () => {
     if (!detail) return;
     const headers = [
       'SN',
@@ -461,7 +461,7 @@ const SettlementDetailPage: React.FC = () => {
     // leading columns this variant of the sheet happens to have.
     const leadingBlanks = new Array(headers.length - 3).fill('');
     rows.push([...leadingBlanks, totals.cod, totals.collected, totals.deliveryCharge]);
-    downloadExcel(`${detail.statementId}.xlsx`, 'Statement', headers, rows);
+    await downloadExcel(`${detail.statementId}.xlsx`, 'Statement', headers, rows);
   };
 
   return (

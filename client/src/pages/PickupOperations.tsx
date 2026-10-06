@@ -671,7 +671,7 @@ const PickupOperations: React.FC = () => {
 
   // Same rows Print All uses - the selection when there is one, the visible tab
   // otherwise - so the sheet always matches what the button beside it prints.
-  const downloadCsv = () => {
+  const downloadCsv = async () => {
     const rows = selectedOrders.length > 0 ? selectedOrders : visibleOrders;
 
     // Same columns, in the same order, as the group detail table on screen.
@@ -702,7 +702,7 @@ const PickupOperations: React.FC = () => {
       order.remarks || '',
       ...statusTimelineCells(order.statusTimestamps),
     ]);
-    downloadExcel('pickup-orders.xlsx', 'Pickup Orders', headers, csvRows);
+    await downloadExcel('pickup-orders.xlsx', 'Pickup Orders', headers, csvRows);
   };
 
   const moveSelectedStatus = (direction: 1 | -1) => {

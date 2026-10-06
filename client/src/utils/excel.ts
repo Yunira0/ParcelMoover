@@ -1,12 +1,28 @@
-import * as XLSX from 'xlsx';
-
 export type CellValue = string | number | null | undefined;
 
 // Downloads an .xlsx workbook with a single sheet built from a header row plus
 // data rows (array-of-arrays). Numbers are kept as numeric cells so Excel can
 // sum/sort them; null/undefined become blank. Column widths auto-fit content.
 // Matches the SheetJS pattern already used for the import templates.
-export function downloadExcel(
+export async function downloadExcel(
+  filename: string,
+  sheetName: string,
+  headers: string[],
+  rows: CellValue[][],
+): Promise<void> {
+  try {
+    // The workbook engine is large and is only needed after an export click.
+    // Keep it out of the route's initial download, including the Orders page.
+    const XLSX = await import('xlsx');
+    writeWorkbook(XLSX, filename, sheetName, headers, rows);
+  } catch (error) {
+    console.error('Spreadsheet download failed:', error);
+    window.alert('Could not download the spreadsheet. Check your connection and try again.');
+  }
+}
+
+function writeWorkbook(
+  XLSX: typeof import('xlsx'),
   filename: string,
   sheetName: string,
   headers: string[],

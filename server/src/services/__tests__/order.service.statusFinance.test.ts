@@ -109,31 +109,39 @@ describe("status changes preserve settled COD", () => {
     expect(db.$transaction).not.toHaveBeenCalled();
   });
 
-  it("lets a partial delivery proceed to follow up without reversing its cash", async () => {
+  it.each(["follow_up", "ready_to_deliver", "ready_to_return"] as const)("lets a settled partial delivery proceed to %s without reversing its cash", async status => {
     const tx = transaction();
     db.parcels.findFirst.mockResolvedValue(parcel("p1", "partially_delivered"));
+    db.cod_collections.findMany.mockResolvedValue([{ parcels: settlement.parcels }]);
+    db.cod_collections.findFirst.mockResolvedValue(settlement);
     db.$transaction.mockImplementation((fn: (tx: unknown) => Promise<unknown>) => fn(tx));
 
-    await updateParcelStatus(admin, "p1", { status: "follow_up" });
+    await updateParcelStatus(admin, "p1", { status });
 
     expect(tx.parcels.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ delivery_rider_id: null }) }),
     );
     expect(db.cod_collections.findFirst).not.toHaveBeenCalled();
+    expect(db.cod_collections.findMany).not.toHaveBeenCalled();
     expect(tx.cod_collections.updateMany).not.toHaveBeenCalled();
+    expect(tx.cod_collections.upsert).not.toHaveBeenCalled();
   });
 
-  it("keeps partial delivery cash intact in the bulk path too", async () => {
+  it.each(["follow_up", "ready_to_deliver", "ready_to_return"] as const)("keeps settled partial-delivery cash intact on bulk %s", async status => {
     const tx = transaction();
     db.parcels.findMany.mockResolvedValue([parcel("p1", "partially_delivered")]);
+    db.cod_collections.findMany.mockResolvedValue([{ parcels: settlement.parcels }]);
+    db.cod_collections.findFirst.mockResolvedValue(settlement);
     db.$transaction.mockImplementation((fn: (tx: unknown) => Promise<unknown>) => fn(tx));
 
     await expect(
-      bulkUpdateParcelStatus(admin, { ids: ["p1"], status: "follow_up" }),
+      bulkUpdateParcelStatus(admin, { ids: ["p1"], status }),
     ).resolves.toMatchObject({ updatedCount: 1 });
 
     expect(db.cod_collections.findFirst).not.toHaveBeenCalled();
+    expect(db.cod_collections.findMany).not.toHaveBeenCalled();
     expect(tx.cod_collections.updateMany).not.toHaveBeenCalled();
+    expect(tx.cod_collections.upsert).not.toHaveBeenCalled();
     expect(tx.parcels.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({ data: { delivery_rider_id: null } }),
     );

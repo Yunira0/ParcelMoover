@@ -155,7 +155,8 @@ accountingRouter.get(
   getPartySettlementLedgerController,
 );
 
-// GET /api/accounting/party-search — riders, vendors and staff in one lookup
+// GET /api/accounting/party-search — staff-only lookup across riders, vendors
+// and other users; the ACCOUNTING_ACCESS gate keeps it outside Partner API.
 accountingRouter.get("/party-search", ...read, validate(partySearchQuerySchema, "query"), searchPartiesController);
 
 // GET /api/accounting/statement/:partyType/:id — everything paid to or

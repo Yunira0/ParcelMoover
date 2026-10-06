@@ -559,7 +559,7 @@ const OOVOperations: React.FC = () => {
     }
 
     const { headers, rows: exportRows } = buildExportRows(rows);
-    downloadExcel('oov-orders.xlsx', 'OOV Orders', headers, exportRows);
+    await downloadExcel('oov-orders.xlsx', 'OOV Orders', headers, exportRows);
   };
 
   const handlePrintLabels = () => {

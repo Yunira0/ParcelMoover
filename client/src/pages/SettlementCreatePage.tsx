@@ -222,7 +222,7 @@ const SettlementCreatePage: React.FC = () => {
   // Exports what the operator is looking at: the ticked rows once they've
   // started choosing, otherwise the whole unsettled list. The button label says
   // which, so the file never surprises them.
-  const downloadOrdersExcel = () => {
+  const downloadOrdersExcel = async () => {
     const rowsToExport = selected.size > 0 ? selectedOrders : orders;
     if (rowsToExport.length === 0) return;
 
@@ -260,7 +260,7 @@ const SettlementCreatePage: React.FC = () => {
       ...(isVendor ? [sum((o) => o.deliveryCharge), sum((o) => o.netPayable)] : []),
     ]);
 
-    downloadExcel(
+    await downloadExcel(
       `unsettled-orders-${payeeType}-${settlementDate}.xlsx`,
       'Unsettled Orders',
       headers,

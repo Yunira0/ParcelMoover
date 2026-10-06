@@ -1,6 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import TallyPage, { type TallyAction } from '../../components/finance/TallyPage';
+import type { TallyAction } from '../../components/finance/TallyPage';
 import Button from '../../components/Button';
 import FormField from '../../components/FormField';
 import NepaliDatePicker from '../../components/NepaliDatePicker';
@@ -11,8 +11,7 @@ import {
   type Account,
 } from '../../services/accounting.service';
 import { formatMoney } from '../../utils/format';
-import '../../components/finance/tally.css';
-import '../accounting/Accounting.css';
+import './CashBankVoucherPage.css';
 
 /**
  * Payment and Receipt — the two vouchers that move cash and bank money — as
@@ -34,21 +33,18 @@ const COPY: Record<VoucherType, {
   primaryLabel: string;
   counterLabel: string;
   partyLabel: string;
-  desc: string;
 }> = {
   payment: {
-    heading: 'New Payment Voucher',
+    heading: 'Payment',
     primaryLabel: 'Paid From',
     counterLabel: 'Paid For',
     partyLabel: 'Paid To',
-    desc: 'Money paid out of cash or a bank account, against any active ledger account.',
   },
   receipt: {
-    heading: 'New Receipt Voucher',
+    heading: 'Receipt',
     primaryLabel: 'Received Into',
     counterLabel: 'Received For',
     partyLabel: 'Received From',
-    desc: 'Money received into cash or a bank account, for anything the automatic postings do not already cover.',
   },
 };
 
@@ -58,6 +54,8 @@ const CashBankVoucherPage: React.FC = () => {
 
   const typeParam = searchParams.get('type');
   const type: VoucherType = TYPES.includes(typeParam as VoucherType) ? (typeParam as VoucherType) : 'payment';
+  const sourceParam = searchParams.get('source');
+  const source = sourceParam === 'cash' || sourceParam === 'bank' ? sourceParam : 'all';
 
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [cashBankAccounts, setCashBankAccounts] = useState<Account[]>([]);
@@ -86,17 +84,24 @@ const CashBankVoucherPage: React.FC = () => {
     [accounts, cashBankAccounts],
   );
 
-  const setType = (next: VoucherType) => {
-    setSearchParams({ type: next }, { replace: true });
+  const setType = useCallback((next: VoucherType) => {
+    setSearchParams((current) => {
+      const params = new URLSearchParams(current);
+      params.set('type', next);
+      return params;
+    }, { replace: true });
     setCounterCode('');
     setParty(null);
     setNotice('');
-  };
+  }, [setSearchParams]);
 
   const primaryOptions = useMemo(
-    () => cashBankAccounts.map((account) => ({ id: account.code, label: `${account.name} · ${account.code}` })),
-    [cashBankAccounts],
+    () => cashBankAccounts
+      .filter((account) => source === 'all' || (source === 'cash' ? account.code === '1000' : account.code !== '1000'))
+      .map((account) => ({ id: account.code, label: `${account.name} · ${account.code}` })),
+    [cashBankAccounts, source],
   );
+  const activePrimaryCode = primaryOptions.some((option) => option.id === primaryCode) ? primaryCode : '';
 
   // Payments use the full active chart, just like Journal. Custom accounts
   // can use any code, so a numeric range must not determine eligibility.
@@ -122,15 +127,15 @@ const CashBankVoucherPage: React.FC = () => {
 
   const value = Number(amount) || 0;
   const canSave =
-    Boolean(primaryCode) &&
+    Boolean(activePrimaryCode) &&
     Boolean(counterCode) &&
-    primaryCode !== counterCode &&
+    activePrimaryCode !== counterCode &&
     value > 0 &&
     narration.trim().length >= 3 &&
     Boolean(party) &&
     !saving;
 
-  const primaryAccount = byCode.get(primaryCode);
+  const primaryAccount = byCode.get(activePrimaryCode);
   const counterAccount = byCode.get(counterCode);
 
   // A Receipt debits the account the money landed in and credits what it was
@@ -138,7 +143,7 @@ const CashBankVoucherPage: React.FC = () => {
   const debitAccount = type === 'receipt' ? primaryAccount : counterAccount;
   const creditAccount = type === 'receipt' ? counterAccount : primaryAccount;
 
-  const submit = async () => {
+  const submit = useCallback(async () => {
     if (!canSave) return;
     setSaving(true);
     setError(null);
@@ -181,7 +186,7 @@ const CashBankVoucherPage: React.FC = () => {
     } finally {
       setSaving(false);
     }
-  };
+  }, [canSave, counterAccount, type, value, reference, party, primaryAccount, entryDate, narration]);
 
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault();
@@ -190,125 +195,157 @@ const CashBankVoucherPage: React.FC = () => {
 
   const copy = COPY[type];
 
-  const actions: TallyAction[] = [
+  const actions: TallyAction[] = useMemo(() => [
     { key: 'F5', label: 'Payment', onSelect: () => setType('payment'), primary: type === 'payment' },
     { key: 'F6', label: 'Receipt', onSelect: () => setType('receipt'), primary: type === 'receipt' },
-    { key: 'F8', label: 'Ledger', onSelect: () => navigate(`/finance/ledger/${primaryCode}`), disabled: !primaryCode },
+    { key: 'F8', label: 'Ledger', onSelect: () => navigate(`/finance/ledger/${activePrimaryCode}`), disabled: !activePrimaryCode },
     { key: 'F9', label: saving ? 'Posting…' : 'Post', onSelect: () => void submit(), disabled: !canSave },
     { key: 'Escape', label: 'Cancel', onSelect: () => navigate(-1) },
-  ];
+  ], [setType, type, navigate, activePrimaryCode, saving, submit, canSave]);
+
+  // All Cash & Bank vouchers keep the familiar shortcuts in their action bar.
+  // Manual journal posting is a staff-only action: App.tsx guards this route
+  // with the accounting permission, so it is outside the vendor Partner API.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
+      const action = actions.find((candidate) => candidate.key === event.key);
+      if (!action || action.disabled) return;
+      event.preventDefault();
+      action.onSelect();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [actions]);
+
+  const voucherName = source === 'all' ? type : `${source} ${type}`;
+  const counterSide = type === 'receipt' ? 'credit' : 'debit';
+  const previewParty = party && <span className="cash-receipt-preview-party"> · {party.partyName}</span>;
 
   return (
-    <TallyPage title="Voucher Entry" actions={actions} error={error} loading={false}>
-      <form className="tly-voucher" onSubmit={handleSubmit}>
-        <div className="tly-titlebar">
-          <h2 className="tly-title">{copy.heading}</h2>
-        </div>
+      <div className="cash-receipt-workspace">
+        <header className="cash-receipt-heading">
+          <span className="cash-receipt-heading-badge">Voucher Entry</span>
+          <h1>New {voucherName} voucher</h1>
+          <span className="cash-receipt-heading-state">{source === 'all' ? copy.heading : `${source === 'cash' ? 'Cash' : 'Bank'} ${copy.heading}`}</span>
+        </header>
 
-        <p className="tly-note">{copy.desc}</p>
-        {notice && <p className="tly-note">{notice}</p>}
+        <form className="cash-receipt-form" onSubmit={handleSubmit}>
+          {error != null && (
+            <p className="cash-receipt-message cash-receipt-message-error" role="alert">
+              {(error as { response?: { data?: { message?: string } }; message?: string }).response?.data?.message
+                ?? (error as Error).message
+                ?? 'The voucher could not be posted. Review the details and try again.'}
+            </p>
+          )}
+          {notice && <p className="cash-receipt-message cash-receipt-message-success" role="status">{notice}</p>}
 
-        <div className="tly-form-grid">
-          <label className="tly-form-date" aria-label="Date">
-            <span>Date</span>
-            <NepaliDatePicker value={entryDate} onChange={setEntryDate} placeholder="Date of this voucher" />
-          </label>
-          <FormField label="Amount" required type="decimal" value={amount} onChange={setAmount} placeholder="0.00" />
+          <section className="cash-receipt-details" aria-labelledby="cash-receipt-details-title">
+            <h2 id="cash-receipt-details-title">Voucher details</h2>
+            <div className="cash-receipt-details-grid">
+              <div className="cash-receipt-date-field">
+                <span className="cash-receipt-field-label">Date</span>
+                <NepaliDatePicker value={entryDate} onChange={setEntryDate} aria-label="Date" />
+              </div>
+              <FormField label="Reference" value={reference} onChange={setReference} placeholder="Bill or voucher no." />
+              <FormField
+                label={copy.primaryLabel}
+                required
+                type="searchable-select"
+                value={activePrimaryCode}
+                onChange={setPrimaryCode}
+                placeholder={source === 'all' ? 'Select a cash or bank account…' : `Select a ${source} account…`}
+                searchPlaceholder="Search accounts..."
+                searchableOptions={primaryOptions}
+              />
+            </div>
+          </section>
 
-          <FormField
-            label={copy.primaryLabel}
-            required
-            type="searchable-select"
-            value={primaryCode}
-            onChange={setPrimaryCode}
-            placeholder="Select a cash or bank account…"
-            searchPlaceholder="Search accounts..."
-            searchableOptions={primaryOptions}
-          />
-          <FormField
-            label={copy.counterLabel}
-            required
-            type="searchable-select"
-            value={counterCode}
-            onChange={selectCounter}
-            placeholder="Select an account…"
-            searchPlaceholder="Search the chart of accounts..."
-            searchableOptions={counterOptions}
-          />
+          <section className="cash-receipt-ledger" aria-label="Receipt ledger details">
+            <div className="cash-receipt-ledger-head" aria-hidden="true">
+              <span>Ledger account</span><span>Sub ledger</span><span>{copy.heading}</span>
+            </div>
+            <div className="cash-receipt-ledger-grid">
+              <div className="cash-receipt-ledger-cell">
+                <FormField
+                  label={copy.counterLabel}
+                  required
+                  type="searchable-select"
+                  value={counterCode}
+                  onChange={selectCounter}
+                  placeholder="Select an account…"
+                  searchPlaceholder="Search the chart of accounts..."
+                  searchableOptions={counterOptions}
+                />
+                <small>Account to {counterSide}</small>
+              </div>
+              <div className="cash-receipt-ledger-cell">
+                <span className="cash-receipt-party-label">{copy.partyLabel} <span aria-hidden="true">*</span></span>
+                <PartyPicker types={partyKinds} value={party} onChange={setParty} prompt="" inputLabel={copy.partyLabel} />
+                <small>{type === 'receipt' ? 'Person or party making this payment' : 'Person or party receiving this payment'}</small>
+              </div>
+              <div className="cash-receipt-ledger-cell">
+                <FormField label="Amount" required type="decimal" value={amount} onChange={setAmount} placeholder="0.00" />
+                <small>Value {type === 'receipt' ? 'received' : 'paid'}</small>
+              </div>
+            </div>
+          </section>
 
-          <div className="form-group" style={{ gridColumn: '1 / -1' }}>
-            <label>
-              {copy.partyLabel}
-              <span className="required">*</span>
-            </label>
-            <PartyPicker types={partyKinds} value={party} onChange={setParty} prompt="" />
-          </div>
+          <section className="cash-receipt-narration" aria-label="Narration">
+            <FormField
+              label="Narration"
+              required
+              type="textarea"
+              rows={1}
+              value={narration}
+              onChange={setNarration}
+              placeholder="What was this for?"
+            />
+          </section>
 
-          <FormField label="Reference" value={reference} onChange={setReference} placeholder="Bill or voucher no." />
-          <FormField
-            label="Narration"
-            required
-            value={narration}
-            onChange={setNarration}
-            placeholder="What was this for?"
-            gridColumn="1 / -1"
-          />
-        </div>
+          <section className="cash-receipt-preview" aria-labelledby="cash-receipt-preview-title">
+            <h2 id="cash-receipt-preview-title">Entry preview</h2>
+            <p>{type === 'receipt'
+              ? 'Debit the receiving account; credit the account this receipt is for.'
+              : 'Debit the account this payment is for; credit the account it leaves.'}</p>
+            <div className="cash-receipt-preview-rows" aria-live="polite">
+              <div className="cash-receipt-preview-row">
+                <span className="cash-receipt-side">Dr.</span>
+                <span>{debitAccount?.name ?? (type === 'receipt' ? 'Receiving account' : 'Account paid for')}{type === 'payment' && previewParty}</span>
+                <strong>{value > 0 ? formatMoney(value) : '—'}</strong>
+              </div>
+              <div className="cash-receipt-preview-row">
+                <span className="cash-receipt-side">Cr.</span>
+                <span>{creditAccount?.name ?? (type === 'receipt' ? 'Account received for' : 'Paying account')}{type === 'receipt' && previewParty}</span>
+                <strong>{value > 0 ? formatMoney(value) : '—'}</strong>
+              </div>
+            </div>
+          </section>
 
-        <p className="tly-note">Posts exactly as shown — Dr. the account debited, Cr. the account it left.</p>
-
-        {value > 0 && debitAccount && creditAccount ? (
-          <div className="tly-scroll">
-            <table className="tly-sheet tly-sheet-form">
-              <thead>
-                <tr>
-                  <th style={{ width: '10%' }}>&nbsp;</th>
-                  <th>Particulars</th>
-                  <th className="tly-amt">Debit</th>
-                  <th className="tly-amt">Credit</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td className="tly-muted">Dr.</td>
-                  <td>
-                    {debitAccount.name}
-                    {/* The party rides on whichever line is the counter
-                        account — the credit line for a Receipt, since that is
-                        what actually posts. */}
-                    {type !== 'receipt' && party && <span className="tly-muted"> — {party.partyName}</span>}
-                  </td>
-                  <td className="tly-amt">{formatMoney(value)}</td>
-                  <td className="tly-amt" />
-                </tr>
-                <tr>
-                  <td className="tly-muted">Cr.</td>
-                  <td>
-                    To {creditAccount.name}
-                    {type === 'receipt' && party && <span className="tly-muted"> — {party.partyName}</span>}
-                  </td>
-                  <td className="tly-amt" />
-                  <td className="tly-amt">{formatMoney(value)}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <p className="tly-muted" style={{ padding: '0 var(--space-4) var(--space-3)' }}>
-            Fill in the amount and both accounts to see the entry.
-          </p>
-        )}
-
-        <div className="tly-form-actions">
-          <Button type="button" variant="outline" onClick={() => navigate(-1)}>
-            Cancel
-          </Button>
-          <Button type="submit" variant="primary" disabled={!canSave}>
-            {saving ? 'Posting…' : 'Post voucher'}
-          </Button>
-        </div>
-      </form>
-    </TallyPage>
+          <footer className="cash-receipt-actions">
+            <nav className="cash-receipt-shortcuts" aria-label="Voucher shortcuts">
+              {actions.map((action) => (
+                <Button
+                  key={action.key}
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className={action.primary ? 'cash-receipt-shortcut is-active' : 'cash-receipt-shortcut'}
+                  onClick={action.onSelect}
+                  disabled={action.disabled}
+                >
+                  <kbd>{action.key === 'Escape' ? 'Esc' : action.key}</kbd><span>{action.label}</span>
+                </Button>
+              ))}
+            </nav>
+            <div className="cash-receipt-buttons">
+              <Button type="button" variant="outline" onClick={() => navigate(-1)}>Cancel</Button>
+              <Button type="submit" variant="primary" disabled={!canSave}>{saving ? 'Posting…' : 'Post voucher'}</Button>
+            </div>
+          </footer>
+        </form>
+      </div>
   );
 };
 

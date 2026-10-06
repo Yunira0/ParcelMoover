@@ -166,7 +166,7 @@ const BranchSettlementCreatePage: React.FC = () => {
   };
 
   const exportRows = selectedOrders.length > 0 ? selectedOrders : orders;
-  const downloadOrdersExcel = () => {
+  const downloadOrdersExcel = async () => {
     if (exportRows.length === 0) return;
     const headers = ['SN', 'Order ID', 'Tracking ID', 'Receiver', 'Receiver Phone', 'Destination', 'COD', 'Commission', 'Net Payable'];
     const rows: CellValue[][] = exportRows.map((o, i) => [
@@ -186,7 +186,7 @@ const BranchSettlementCreatePage: React.FC = () => {
       exportRows.reduce((s, o) => s + Math.min(commission, o.collectedAmount), 0),
       exportRows.reduce((s, o) => s + Math.max(0, o.collectedAmount - commission), 0),
     ]);
-    downloadExcel(`branch-settlement-orders-${settlementDate}.xlsx`, 'Unsettled Orders', headers, rows);
+    await downloadExcel(`branch-settlement-orders-${settlementDate}.xlsx`, 'Unsettled Orders', headers, rows);
   };
 
   const orderColumns = [

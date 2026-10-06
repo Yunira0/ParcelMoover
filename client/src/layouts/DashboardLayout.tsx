@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { Suspense } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
 import { Smartphone } from 'lucide-react';
 import Sidebar from '../components/Sidebar';
 import TopNav from '../components/TopNav';
 import Button from '../components/Button';
+import PageLoader from '../components/PageLoader';
 import { StaffPermissionsProvider } from '../context/StaffPermissionsContext';
 import { BranchScopeProvider } from '../context/BranchScopeContext';
 import { MobileNavProvider } from '../context/MobileNavContext';
@@ -47,7 +48,9 @@ const DashboardLayout: React.FC = () => {
             <div className="dashboard-body">
               <Sidebar />
               <main className="dashboard-content">
-                <Outlet />
+                <Suspense fallback={<PageLoader />}>
+                  <Outlet />
+                </Suspense>
               </main>
             </div>
           </div>

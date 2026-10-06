@@ -1,10 +1,7 @@
 import { lazy, Suspense } from 'react'
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import MainLayout from './layouts/MainLayout'
-import DashboardLayout from './layouts/DashboardLayout'
 import Home from './pages/Home'
-import TrackParcel from './pages/TrackParcel'
-import Login from './pages/Login'
 import NotFound from './pages/NotFound'
 import ProtectedRoute from './components/ProtectedRoute'
 import PublicOnlyRoute from './components/PublicOnlyRoute'
@@ -24,6 +21,11 @@ import {
 } from './pages/accounting/legacyRedirects'
 import './App.css'
 
+// Keep public entry points independent of the authenticated workspace and
+// load each page's code only when its route is opened.
+const DashboardLayout = lazy(() => import('./layouts/DashboardLayout'))
+const TrackParcel = lazy(() => import('./pages/TrackParcel'))
+const Login = lazy(() => import('./pages/Login'))
 const DashboardRouter = lazy(() => import('./pages/DashboardRouter'))
 const OverviewOrdersPage = lazy(() => import('./pages/OverviewOrdersPage'))
 const MerchantOverview = lazy(() => import('./pages/MerchantOverview'))
@@ -115,9 +117,9 @@ function App() {
       <Routes>
         {/* Public Routes */}
         <Route path="/" element={<PublicOnlyRoute><MainLayout><Home /></MainLayout></PublicOnlyRoute>} />
-        <Route path="/track" element={<MainLayout><TrackParcel /></MainLayout>} />
-        <Route path="/track/:trackingId" element={<MainLayout><TrackParcel /></MainLayout>} />
-        <Route path="/login" element={<MainLayout><Login /></MainLayout>} />
+        <Route path="/track" element={<MainLayout><Suspense fallback={<PageLoader />}><TrackParcel /></Suspense></MainLayout>} />
+        <Route path="/track/:trackingId" element={<MainLayout><Suspense fallback={<PageLoader />}><TrackParcel /></Suspense></MainLayout>} />
+        <Route path="/login" element={<MainLayout><Suspense fallback={<PageLoader />}><Login /></Suspense></MainLayout>} />
         {/* Standalone — no sidebar/topnav, intentionally outside ProtectedRoute */}
         <Route path="/change-password" element={<ForceChangePasswordPage />} />
         <Route path="/apply" element={<KycApplicationPage />} />

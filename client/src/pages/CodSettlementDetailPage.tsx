@@ -133,7 +133,7 @@ const CodSettlementDetailPage: React.FC = () => {
     ];
   }, [meta?.amountHeader, validBucket, currentPage, pageSize, pagedRows]);
 
-  const handleExport = () => {
+  const handleExport = async () => {
     if (!validBucket || !meta) return;
     const headers = [
       '#',
@@ -163,7 +163,7 @@ const CodSettlementDetailPage: React.FC = () => {
       r.deliveryCharge,
       r.bucketAmount,
     ]);
-    downloadExcel(`cod-${validBucket}.xlsx`, meta.title.slice(0, 31), headers, exportRows);
+    await downloadExcel(`cod-${validBucket}.xlsx`, meta.title.slice(0, 31), headers, exportRows);
   };
 
   if (!meta) return null;

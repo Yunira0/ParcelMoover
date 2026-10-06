@@ -21,7 +21,7 @@ import {
   TERMINAL_STATUSES,
   assertRiderOwnsLeg,
   destinationSkipsTransit,
-  isUndelivering,
+  isRiderClaim,
   pickupStampFor,
   releasesPickupRider,
 } from "./status-shared";
@@ -144,6 +144,9 @@ async function _updateParcelStatusImpl(
   // and riders may only touch parcels they're actually assigned to, and only
   // for the leg (pickup vs delivery) they were assigned for.
   const isVendorActor = actor.roles.includes("vendor") || actor.roles.includes("vendor_staff");
+  // Only a pure rider claims - staff and vendors assign through the rider picker.
+  const riderClaim = actorIsRider && !isAdmin && !isVendorActor &&
+    isRiderClaim(currentStatus as parcel_status, newStatus);
   if (!isAdmin) {
     const isRiderActor = actor.roles.includes("rider");
 
@@ -160,20 +163,25 @@ async function _updateParcelStatusImpl(
         throw new AppError(404, "Parcel not found");
       }
     } else if (isRiderActor) {
-      // Assigning a rider to a parcel (rider_assigned / sent_for_delivery /
-      // sent_to_vendor) is an admin/vendor operation done via the ops
-      // dashboard's rider picker — a rider never claims/assigns a parcel to
-      // themselves, so reject this before the leg-ownership check below
-      // (which, on the very first assignment, would otherwise always fail
-      // with a misleading "not your parcel" error instead of the real reason).
-      if (RIDER_ASSIGNMENT_FIELD[newStatus as parcel_status]) {
-        throw new AppError(403, "Assigning a rider to a parcel is an admin/vendor operation");
-      }
       const scope = await getActorScope(actor);
       if (!scope.riderId) {
         throw new AppError(403, "Rider profile not found or inactive");
       }
-      assertRiderOwnsLeg(currentStatus as parcel_status, parcel, scope.riderId);
+      if (riderClaim) {
+        // Self-claim: the rider is assigned to the leg they are claiming, so
+        // there is no existing ownership to check. Any riderId the client sent
+        // is ignored - a rider can only ever claim a parcel for themselves.
+        data = { ...data, riderId: scope.riderId };
+      } else {
+        // Every other assignment (rider_assigned / sent_for_delivery /
+        // sent_to_vendor) is an admin/vendor operation done via the ops
+        // dashboard's rider picker. Reject it before the leg-ownership check,
+        // which would otherwise fail with a misleading "not your parcel" error.
+        if (RIDER_ASSIGNMENT_FIELD[newStatus as parcel_status]) {
+          throw new AppError(403, "Assigning a rider to a parcel is an admin/vendor operation");
+        }
+        assertRiderOwnsLeg(currentStatus as parcel_status, parcel, scope.riderId);
+      }
     }
   }
 
@@ -216,7 +224,7 @@ async function _updateParcelStatusImpl(
     const allowed = STATUS_TRANSITIONS[
       currentStatus as keyof typeof STATUS_TRANSITIONS
     ] as readonly ParcelStatus[];
-    if (!allowed || !allowed.includes(newStatus)) {
+    if (!riderClaim && (!allowed || !allowed.includes(newStatus))) {
       throw new AppError(
         422,
         `Invalid status transition: '${currentStatus}' → '${newStatus}'. Allowed: [${allowed?.join(", ")}]`,
@@ -239,8 +247,7 @@ async function _updateParcelStatusImpl(
 
   // Undoing a delivery (super_admin only, since the transition map has no exit
   // from delivered) must not leave settled COD behind it.
-  const undelivering = isUndelivering(parcel.status, newStatus);
-  if (undelivering) {
+  if (isDeliveryReversal) {
     await assertDeliveryReversible([parcelId]);
   }
 
@@ -282,7 +289,7 @@ async function _updateParcelStatusImpl(
   }
 
   // rider_assigned needs a pickup rider, sent_for_delivery needs a delivery rider
-  // (rider actors are already rejected above, before reaching this point)
+  // (a rider only reaches this on a self-claim, with riderId set to themselves above)
   const riderAssignmentField = RIDER_ASSIGNMENT_FIELD[newStatus as parcel_status];
   if (riderAssignmentField) {
     if (!data.riderId) {

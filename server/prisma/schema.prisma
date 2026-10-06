@@ -241,6 +241,7 @@ model notifications {
   users       users     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([user_id, read_at], map: "idx_notifications_user_read")
+  @@index([user_id, created_at(sort: Desc), id(sort: Desc)], map: "idx_notifications_user_created_id")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -331,6 +332,7 @@ model parcel_status_history {
   @@index([changed_by], map: "idx_parcel_status_history_changed_by")
   @@index([location_id], map: "idx_parcel_status_history_location_id")
   @@index([parcel_id, created_at(sort: Desc)], map: "idx_parcel_status_history_parcel_id")
+  @@index([new_status, created_at, parcel_id], map: "idx_parcel_history_status_created_parcel")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -417,6 +419,7 @@ model parcels {
   @@index([receiver_id], map: "idx_parcels_receiver_id")
   @@index([sender_id], map: "idx_parcels_sender_id")
   @@index([vendor_id], map: "idx_parcels_vendor_id")
+  @@index([vendor_id, order_number(sort: Desc), id(sort: Desc)], map: "idx_parcels_vendor_order_number_id")
   @@index([status], map: "idx_parcels_status")
   /// Lets a status-filtered keyset page (order_number DESC, id DESC) seek
   /// directly through the index instead of scanning idx_parcels_order_number_id
@@ -750,6 +753,7 @@ model settlement_items {
   settlements       settlements     @relation(fields: [settlement_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@id([settlement_id, cod_collection_id])
+  @@index([cod_collection_id, settlement_id], map: "idx_settlement_items_cod_settlement")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -794,6 +798,8 @@ model settlements {
   @@index([approved_by], map: "idx_settlements_approved_by")
   @@index([settled_by], map: "idx_settlements_settled_by")
   @@index([settlement_date], map: "idx_settlements_settlement_date")
+  @@index([vendor_id, created_at(sort: Desc), id(sort: Desc)], map: "idx_settlements_vendor_created_id")
+  @@index([rider_id, created_at(sort: Desc), id(sort: Desc)], map: "idx_settlements_rider_created_id")
 }
 
 /// One instalment against a statement. A payout doesn't have to clear in a

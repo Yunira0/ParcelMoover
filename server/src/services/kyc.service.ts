@@ -442,12 +442,37 @@ export async function rejectKycApplication(
   });
 }
 
-// Deletes a document file on disk given its stored relative path (e.g.
-// "uploads/kyc/xyz.jpg"). Returns true if the file is gone afterward -
-// including when it was already missing, which we treat as success so a
-// half-purged record from a previous run still gets its DB fields cleared.
-async function deleteDocumentFile(relativePath: string | null): Promise<boolean> {
+// Release an expired rejection's reference, retaining the physical file when
+// a vendor or another application still needs it. Verification applications
+// can reuse profile documents rather than owning independent copies.
+async function releaseRejectedDocument(relativePath: string | null, applicationId: string): Promise<boolean> {
   if (!relativePath) return true;
+  const [vendorReference, applicationReference] = await Promise.all([
+    prisma.vendors.findFirst({
+      where: { OR: [
+        { citizenship_doc: relativePath },
+        { citizenship_doc_back: relativePath },
+        { pan_vat_doc: relativePath },
+        { business_cert_doc: relativePath },
+      ] },
+      select: { id: true },
+    }),
+    prisma.vendor_kyc_applications.findFirst({
+      where: {
+        id: { not: applicationId },
+        OR: [
+          { citizenship_doc_front: relativePath },
+          { citizenship_doc_back: relativePath },
+          { pan_vat_doc: relativePath },
+          { business_cert_doc: relativePath },
+        ],
+      },
+      select: { id: true },
+    }),
+  ]);
+  // Clear only the rejected application's expired reference. Reference lookup
+  // failures propagate before unlink, so unavailable checks cannot delete a file.
+  if (vendorReference || applicationReference) return true;
   try {
     await unlink(path.join(process.cwd(), relativePath));
     return true;
@@ -460,10 +485,8 @@ async function deleteDocumentFile(relativePath: string | null): Promise<boolean>
 
 const REJECTED_DOCUMENT_RETENTION_DAYS = 30;
 
-// Rejected applicants were never onboarded, so there's no ongoing business or
-// compliance reason to keep their citizenship/PAN/business-cert scans once
-// the review window has passed. Approved applications become vendors and are
-// intentionally excluded - see project memory on document retention.
+// Rejected applications lose document references after the review window.
+// Their files are removed only when no vendor or other application uses them.
 export async function purgeExpiredRejectedKycDocuments(): Promise<{ checked: number; purged: number }> {
   const cutoff = new Date(Date.now() - REJECTED_DOCUMENT_RETENTION_DAYS * 24 * 60 * 60 * 1000);
 
@@ -485,10 +508,10 @@ export async function purgeExpiredRejectedKycDocuments(): Promise<{ checked: num
 
   for (const app of candidates) {
     const [citizenshipFrontDeleted, citizenshipBackDeleted, panVatDeleted, businessCertDeleted] = await Promise.all([
-      deleteDocumentFile(app.citizenship_doc_front),
-      deleteDocumentFile(app.citizenship_doc_back),
-      deleteDocumentFile(app.pan_vat_doc),
-      deleteDocumentFile(app.business_cert_doc),
+      releaseRejectedDocument(app.citizenship_doc_front, app.id),
+      releaseRejectedDocument(app.citizenship_doc_back, app.id),
+      releaseRejectedDocument(app.pan_vat_doc, app.id),
+      releaseRejectedDocument(app.business_cert_doc, app.id),
     ]);
 
     const clearedFields: Record<string, null> = {};

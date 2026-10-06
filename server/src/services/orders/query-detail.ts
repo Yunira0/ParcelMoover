@@ -6,6 +6,7 @@ import { getVendorStatusLabel } from "../../utils/orderStatusLabel";
 import { displayAuthor, displayRemarkText, stripCarrierStaffTag } from "../../utils/carrierRemark";
 import { getActorScope, riderHandledFilter, branchTouchesFilter } from "./scope";
 import { isStaffAuthor } from "./remarkAuthor";
+import { RIDER_CLAIMABLE_STATUSES } from "./status-shared";
 import { locationName, mapOrder } from "./query-core";
 import type { OrderActor } from "./types";
 
@@ -63,7 +64,12 @@ export async function getOrderByTrackingId(actor: OrderActor, trackingId: string
       deleted_at: null,
       ...(vendorId ? { vendor_id: vendorId } : {}),
       ...(vendorIds ? { vendor_id: { in: vendorIds } } : {}),
-      ...(riderId ? riderHandledFilter(riderId) : {}),
+      // A rider can also look up any parcel they could claim, since a scan is
+      // how the rider app's "Claim & Start" action finds it. The claim itself
+      // is enforced by isRiderClaim in the status path.
+      ...(riderId
+        ? { OR: [...riderHandledFilter(riderId).OR as Prisma.parcelsWhereInput[], { status: { in: RIDER_CLAIMABLE_STATUSES } }] }
+        : {}),
       ...(branchLocationIds ? branchTouchesFilter(branchLocationIds) : {}),
     },
     include: ORDER_DETAIL_INCLUDE,

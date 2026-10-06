@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import * as XLSX from 'xlsx';
 import { ArrowLeft, Download, FileSpreadsheet, Trash2, Upload } from 'lucide-react';
 import Button from '../../components/Button';
 import StatusChip from '../../components/StatusChip';
@@ -103,8 +102,8 @@ const SAMPLE_ROW = [
 // before it is filled in, and a CSV lands entirely in column A for anyone whose
 // Excel uses ';' as its list separator - which makes the headers unreadable and
 // the file useless as a starting point. The importer below reads both.
-function downloadTemplate() {
-  downloadExcel('bulk_order_template', 'Orders', [...TEMPLATE_HEADERS], [SAMPLE_ROW]);
+async function downloadTemplate() {
+  await downloadExcel('bulk_order_template', 'Orders', [...TEMPLATE_HEADERS], [SAMPLE_ROW]);
 }
 
 // Single-pass parse (not line-split first) so a quoted field containing a
@@ -216,7 +215,8 @@ function validateRow(row: DraftRow, index: number, destinations: LocationOption[
   if (!row.receiverPhone.trim()) errors.receiverPhone = 'receiver phone is required';
 
   const destination = resolveDestination(row.destination, destinations);
-  if (destination.error) errors.destination = destination.error;
+  if (!row.destination.trim()) errors.destination = 'destination is required';
+  else if (destination.error) errors.destination = destination.error;
   if (row.serviceType.trim() && !SERVICE_TYPES.includes(row.serviceType.trim() as ServiceType)) {
     errors.serviceType = `service type must be one of: ${SERVICE_TYPES.join(', ')}`;
   }
@@ -365,6 +365,8 @@ const BulkOrderPage: React.FC = () => {
   const [locations, setLocations] = useState<LocationOption[]>([]);
   const [rows, setRows] = useState<DraftRow[]>([]);
   const [fileName, setFileName] = useState('');
+  const [readingFile, setReadingFile] = useState(false);
+  const fileReadVersion = useRef(0);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [result, setResult] = useState<BulkCreateResult | null>(null);
@@ -495,14 +497,20 @@ const BulkOrderPage: React.FC = () => {
   };
 
   const handleFile = (file: File) => {
+    const readVersion = ++fileReadVersion.current;
+    setReadingFile(true);
+    setRows([]);
     setFileName(file.name);
     setResult(null);
     setError('');
     const isExcel = /\.xlsx?$/.test(file.name.toLowerCase());
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       try {
+        if (readVersion !== fileReadVersion.current) return;
         if (isExcel) {
+          const XLSX = await import('xlsx');
+          if (readVersion !== fileReadVersion.current) return;
           const wb = XLSX.read(e.target?.result as ArrayBuffer, { type: 'array' });
           const ws = wb.Sheets[wb.SheetNames[0]];
           // raw:false keeps phone numbers as their displayed text instead of
@@ -513,9 +521,17 @@ const BulkOrderPage: React.FC = () => {
           setRows(matrixToRows(parseCSV(e.target?.result as string)));
         }
       } catch {
+        if (readVersion !== fileReadVersion.current) return;
         setError('Could not read file. Make sure it is a valid .csv, .xlsx, or .xls file.');
         setRows([]);
+      } finally {
+        if (readVersion === fileReadVersion.current) setReadingFile(false);
       }
+    };
+    reader.onerror = () => {
+      if (readVersion !== fileReadVersion.current) return;
+      setReadingFile(false);
+      setError('Could not read file. Please try again.');
     };
     if (isExcel) reader.readAsArrayBuffer(file);
     else reader.readAsText(file);
@@ -787,7 +803,7 @@ const BulkOrderPage: React.FC = () => {
             {fileName ? (
               <>
                 <span className="bop-dropzone-filename">{fileName}</span>
-                <span className="bop-dropzone-hint">File loaded. Click or drop another file to replace it.</span>
+                <span className="bop-dropzone-hint">{readingFile ? 'Reading file…' : 'File loaded. Click or drop another file to replace it.'}</span>
               </>
             ) : (
               <>
@@ -929,7 +945,7 @@ const BulkOrderPage: React.FC = () => {
             <Button
               type="submit"
               variant="primary"
-              disabled={submitting || validCount === 0 || (!actingForVendor && !senderProfile)}
+              disabled={submitting || readingFile || validCount === 0 || (!actingForVendor && !senderProfile)}
             >
               {submitting
                 ? 'Submitting…'

@@ -204,6 +204,19 @@ describe("authMiddleware", () => {
     expect(req.user).toMatchObject({ id: "user-1" });
   });
 
+  it("does not clear a separate cookie session when a Bearer token is rejected", async () => {
+    const req = makeReq({
+      headers: { authorization: "Bearer invalid-token" },
+      cookies: { accessToken: "dashboard-cookie", csrfToken: "dashboard-csrf" },
+    });
+    const res = makeRes();
+
+    await authMiddleware(req, res, vi.fn());
+
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(res.clearCookie).not.toHaveBeenCalled();
+  });
+
   it("blocks a must-change-password user from a non-allowlisted route", async () => {
     const token = signAccessToken({ id: "user-1", mustChangePassword: true });
     const req = makeReq({ cookies: { accessToken: token }, originalUrl: "/api/orders" });

@@ -868,7 +868,7 @@ const OrderManagement: React.FC = () => {
       toBsDateTimeCell(order.lastUpdatedAt) || '',
       ...statusTimelineCells(order.statusTimestamps),
     ]);
-    downloadExcel('orders.xlsx', 'Orders', headers, rows);
+    await downloadExcel('orders.xlsx', 'Orders', headers, rows);
   };
 
   const sortableHeader = (label: string, field: OrderSortField) => (

@@ -30,6 +30,8 @@ import {
   IN_DELIVERY_STATUSES,
 } from "./status-shared";
 import type { OrderActor } from "./types";
+import { buildReturnedTodayQuery, buildReturnedTrendQuery } from "./dashboard-returns";
+import { buildDashboardTrendQuery } from "./dashboard-trend";
 
 const moneyToNumber = (value?: Prisma.Decimal | null) => value ? Number(value) : 0;
 
@@ -305,14 +307,9 @@ async function computeDashboardSummary(
   // order_type = 'return' orders by created_at here instead measured a
   // different thing entirely (return orders raised, not parcels sent back) and
   // never matched the "Returned" figure on Today's activity.
-  const trendSelects = trendDayRanges.map(({ start, end }, i) => Prisma.sql`
-    COUNT(*) FILTER (WHERE created_at >= ${start} AND created_at < ${end}) AS ${Prisma.raw(`d${i}_total`)},
-    COUNT(*) FILTER (WHERE picked_up_at >= ${start} AND picked_up_at < ${end}) AS ${Prisma.raw(`d${i}_picked_up`)},
-    COUNT(*) FILTER (WHERE status::text = ANY(ARRAY['delivered','partially_delivered']) AND delivered_at >= ${start} AND delivered_at < ${end}) AS ${Prisma.raw(`d${i}_delivered`)}
-  `);
-  const [trendRow] = await prisma.$queryRaw<Array<Record<string, bigint>>>(Prisma.sql`
-    SELECT ${Prisma.join(trendSelects, ",")} FROM parcels WHERE deleted_at IS NULL ${parcelScopeSql}
-  `);
+  const [trendRow] = await prisma.$queryRaw<Array<Record<string, bigint>>>(
+    buildDashboardTrendQuery(trendDayRanges, parcelScopeSql),
+  );
   const trendCounts = trendDayRanges.map((_, i) => [
     Number(trendRow![`d${i}_total`]),
     Number(trendRow![`d${i}_picked_up`]),
@@ -336,10 +333,6 @@ async function computeDashboardSummary(
   // timestamp - the same event and scope as returnedTodayRows below, just
   // bucketed across the whole range so the graph's last point equals the
   // "Returned" figure on Today's activity. Aliases are loop-index-derived.
-  const trendReturnedSelects = trendDayRanges.map(({ start, end }, i) => Prisma.sql`
-    COUNT(DISTINCT h.parcel_id) FILTER (WHERE h.created_at >= ${start} AND h.created_at < ${end}) AS ${Prisma.raw(`d${i}_returned`)}
-  `);
-
   const [todaysRemarks, unclosedComments, codRows, pendingCodCount, lastSettlement, returnedTodayRows, trendReturnedRows] = await Promise.all([
     prisma.parcel_remarks.count({
       where: { created_at: { gte: todayStart }, parcels: parcelWhere },
@@ -430,25 +423,8 @@ async function computeDashboardSummary(
     // Parcels whose status *became* returned_to_vendor today (by status-history
     // timestamp, since parcels has no returned_at column). DISTINCT guards
     // against a parcel bouncing into the status more than once in a day.
-    prisma.$queryRaw<Array<{ count: bigint }>>(Prisma.sql`
-      SELECT COUNT(DISTINCT h.parcel_id) AS count
-      FROM parcel_status_history h
-      JOIN parcels p ON p.id = h.parcel_id
-      WHERE h.new_status::text = 'returned_to_vendor'
-        AND h.created_at >= ${todayStart}
-        AND p.deleted_at IS NULL
-        ${pAliasScopeSql}
-    `),
-    prisma.$queryRaw<Array<Record<string, bigint>>>(Prisma.sql`
-      SELECT ${Prisma.join(trendReturnedSelects, ",")}
-      FROM parcel_status_history h
-      JOIN parcels p ON p.id = h.parcel_id
-      WHERE h.new_status::text = 'returned_to_vendor'
-        AND h.created_at >= ${trendDayRanges[0]!.start}
-        AND h.created_at < ${trendDayRanges[TREND_DAYS - 1]!.end}
-        AND p.deleted_at IS NULL
-        ${pAliasScopeSql}
-    `),
+    prisma.$queryRaw<Array<{ count: bigint }>>(buildReturnedTodayQuery(todayStart, pAliasScopeSql)),
+    prisma.$queryRaw<Array<Record<string, bigint>>>(buildReturnedTrendQuery(trendDayRanges, pAliasScopeSql)),
   ]);
   const todaysReturnedToVendor = Number(returnedTodayRows[0]?.count ?? 0);
   const trendReturnedRow = trendReturnedRows[0];

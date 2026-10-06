@@ -401,7 +401,7 @@ const VendorOrders: React.FC = () => {
       toBsDateTimeCell(order.createdAtRaw || order.createdAt) || '',
       ...statusTimelineCells(order.statusTimestamps),
     ]);
-    downloadExcel('orders.xlsx', 'Orders', headers, csvRows);
+    await downloadExcel('orders.xlsx', 'Orders', headers, csvRows);
   };
 
   const columns = [

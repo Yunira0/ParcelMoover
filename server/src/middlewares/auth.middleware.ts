@@ -4,6 +4,7 @@ import prisma from '../lib/prisma';
 import { AppError } from '../utils/AppError';
 import { isIssuedBeforeUserRevocation, isTokenRevoked } from '../lib/tokenRevocation';
 import { ACCESS_TOKEN_AUDIENCE, JWT_ISSUER } from '../utils/jwtConfig';
+import { timeAuthentication } from '../lib/requestPerformance';
 
 
 interface AuthTokenPayload extends JwtPayload {
@@ -48,7 +49,15 @@ function isPasswordChangeBypass(req: Request): boolean {
     return false;
 }
 
-export async function authMiddleware(req: Request, res: Response, next: NextFunction) {
+export function authMiddleware(req: Request, res: Response, next: NextFunction) {
+    return timeAuthentication((finish) => authenticateRequest(req, res, (error) => {
+        finish();
+        if (error === undefined) next();
+        else next(error);
+    }));
+}
+
+async function authenticateRequest(req: Request, res: Response, next: NextFunction) {
     try {
         const authHeader = req.headers.authorization;
         const token = (authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null)
@@ -137,11 +146,13 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
             error instanceof jwt.JsonWebTokenError ||
             (error instanceof AppError && error.statusCode === 401)
         ) {
-            // The client can't clear these itself (httpOnly) - if we're rejecting
-            // the token, purge it here so the browser stops resending it and
-            // looping between a protected route and /login.
-            res.clearCookie("accessToken", { path: "/" });
-            res.clearCookie("csrfToken", { path: "/" });
+            // Cookie clients cannot clear an httpOnly token themselves. A
+            // failed Bearer token belongs to its caller and must not sign out
+            // a separate dashboard cookie session on the same host.
+            if (!req.headers.authorization?.startsWith('Bearer ')) {
+                res.clearCookie("accessToken", { path: "/" });
+                res.clearCookie("csrfToken", { path: "/" });
+            }
             return res.status(401).json({
                 success: false,
                 message: error instanceof AppError ? error.message : "Unauthorized",

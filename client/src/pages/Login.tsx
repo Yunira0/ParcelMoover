@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import axios from 'axios';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { login } from '../services/auth.service';
 import FormField from '../components/FormField';
 import Button from '../components/Button';
@@ -10,6 +11,8 @@ const Login: React.FC = () => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const sessionChanged = searchParams.get('session') === 'changed';
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -30,17 +33,17 @@ const Login: React.FC = () => {
       } else {
         setError(response.message || 'Login failed');
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Login error details:', err);
-      if (err.response) {
+      if (axios.isAxiosError(err) && err.response) {
         // Server responded with an error
         setError(err.response.data?.message || `Server error: ${err.response.status}`);
-      } else if (err.request) {
+      } else if (axios.isAxiosError(err) && err.request) {
         // Request was made but no response received (e.g. server down, CORS)
         setError('Cannot reach the server. Please ensure the backend is running.');
       } else {
         // Something else happened
-        setError(err.message || 'An error occurred during login');
+        setError(err instanceof Error ? err.message : 'An error occurred during login');
       }
     } finally {
       setLoading(false);
@@ -51,6 +54,11 @@ const Login: React.FC = () => {
     <div className="login-page">
       <div className="login-card">
         <h2>Login to ParcelMoover</h2>
+        {sessionChanged && (
+          <div className="error-message" role="alert">
+            Another account signed in on this browser. Sign in to continue to the dashboard.
+          </div>
+        )}
         <form onSubmit={handleSubmit}>
           <FormField
             label="Email Address"

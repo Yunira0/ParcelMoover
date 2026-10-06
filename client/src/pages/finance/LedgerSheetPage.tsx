@@ -83,9 +83,9 @@ const LedgerSheetPage: React.FC = () => {
     setParams(next, { replace: true });
   };
 
-  const exportSheet = () => {
+  const exportSheet = async () => {
     if (!ledger) return;
-    downloadExcel(
+    await downloadExcel(
       `ledger-${ledger.account.code}`,
       ledger.account.name,
       ['Date', 'Particulars / Description', 'Reference', 'Receipt', 'Payment', 'Balance'],

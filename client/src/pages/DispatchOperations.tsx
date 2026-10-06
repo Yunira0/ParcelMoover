@@ -538,7 +538,7 @@ const DispatchOperations: React.FC = () => {
       order.remarks || '',
       ...statusTimelineCells(order.statusTimestamps),
     ]);
-    downloadExcel('dispatch-orders.xlsx', 'Dispatch Orders', headers, csvRows);
+    await downloadExcel('dispatch-orders.xlsx', 'Dispatch Orders', headers, csvRows);
   };
 
   const handlePrintLabels = () => {

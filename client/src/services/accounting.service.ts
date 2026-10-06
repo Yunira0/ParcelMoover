@@ -432,9 +432,22 @@ export const getPartySettlementLedger = async (
   return response.data.data;
 };
 
-/** Riders, vendors and staff in one lookup. */
+/** Riders, vendors and other users in one lookup. */
 export const searchParties = async (q: string): Promise<PartySearchResult[]> => {
   const response = await api.get('/accounting/party-search', { params: { q } });
+  return response.data.data;
+};
+
+/** Bounded browse/search for voucher party pickers; loads more as the list scrolls. */
+export const searchPartiesPage = async (
+  q: string,
+  types: PartySearchResult['partyType'][],
+  offset = 0,
+  limit = 30,
+): Promise<{ results: PartySearchResult[]; hasMore: boolean }> => {
+  const response = await api.get('/accounting/party-search', {
+    params: { q, types: types.join(','), offset, limit, paged: 'true' },
+  });
   return response.data.data;
 };
 

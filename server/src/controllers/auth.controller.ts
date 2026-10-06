@@ -311,25 +311,30 @@ export const login = async (req: Request, res: Response) => {
       audience: CSRF_TOKEN_AUDIENCE,
     });
 
-    res.cookie("accessToken", result.token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      // "none" is required for the frontend/backend to sit on different
-      // origins (e.g. two separate Railway services) - "lax" silently drops
-      // the cookie on cross-site XHR/fetch. Browsers only allow "none" when
-      // secure is also true, which holds in production (HTTPS).
-      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-      path: "/",
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-    });
+    // The rider app keeps its token for Authorization: Bearer. A cookie here
+    // would replace a staff dashboard session on the same host (ports do not
+    // isolate cookies), so Bearer-only logins must leave browser cookies alone.
+    if (req.header("X-Auth-Mode") !== "bearer") {
+      res.cookie("accessToken", result.token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        // "none" is required for the frontend/backend to sit on different
+        // origins (e.g. two separate Railway services) - "lax" silently drops
+        // the cookie on cross-site XHR/fetch. Browsers only allow "none" when
+        // secure is also true, which holds in production (HTTPS).
+        sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+        path: "/",
+        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      });
 
-    res.cookie("csrfToken", csrfToken, {
-      httpOnly: false,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-      path: "/",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    });
+      res.cookie("csrfToken", csrfToken, {
+        httpOnly: false,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+        path: "/",
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+      });
+    }
 
     return res.status(200).json({
       success: true,
@@ -953,8 +958,11 @@ export const logoutController = async (req: Request, res: Response) => {
       }
     }
 
-    res.clearCookie("accessToken", { path: "/" });
-    res.clearCookie("csrfToken", { path: "/" });
+    // Revoking a Bearer token must not log out a separate cookie session.
+    if (!authHeader?.startsWith("Bearer ")) {
+      res.clearCookie("accessToken", { path: "/" });
+      res.clearCookie("csrfToken", { path: "/" });
+    }
 
     return sendSuccess(res, 200, "Logged out successfully");
   } catch (error: any) {
@@ -977,16 +985,19 @@ export const changePasswordController = async (req: Request, res: Response) => {
 
     const { token } = await changePassword(userId, currentPassword, newPassword);
 
-    // Every other session (e.g. a stolen token) was just revoked - reissue a
-    // fresh cookie so this session, which just proved it holds the correct
-    // current password, keeps working.
-    res.cookie("accessToken", token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-      path: "/",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    });
+    // Every other session was just revoked. Cookie clients need a new cookie;
+    // Bearer clients use the replacement token returned below.
+    // Bearer clients receive the replacement token in the response body.
+    // Do not overwrite an unrelated dashboard cookie on the same host.
+    if (!req.headers.authorization?.startsWith("Bearer ")) {
+      res.cookie("accessToken", token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+        path: "/",
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+      });
+    }
 
     // Mirrors login's response shape (top-level accessToken) so Bearer-only
     // clients (no cookies) can pick up the freshly-reissued token instead of

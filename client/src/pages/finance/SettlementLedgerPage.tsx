@@ -93,9 +93,9 @@ const SettlementLedgerPage: React.FC = () => {
 
   const debitNormal = type === 'rider';
 
-  const exportSheet = () => {
+  const exportSheet = async () => {
     if (!ledger) return;
-    downloadExcel(
+    await downloadExcel(
       `ledger-${type}-${ledger.partyName}`,
       ledger.partyName,
       ['Date', 'Particulars / Description', 'Reference', 'Receipt', 'Payment', 'Balance'],

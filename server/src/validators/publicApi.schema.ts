@@ -196,3 +196,11 @@ export const publicVendorPaymentsQuerySchema = paginationQuerySchema.extend({
 });
 
 export type PublicVendorPaymentsQuery = z.infer<typeof publicVendorPaymentsQuerySchema>;
+
+// Payout bank details always come from the registered vendor profile. The
+// dashboard schema tolerates legacy bank fields, but the Partner API only
+// documents and forwards the optional note.
+export const publicCreateCodSettlementRequestSchema = z.object({
+  note: z.string().trim().max(1000).optional(),
+});
+export type PublicCreateCodSettlementRequestInput = z.infer<typeof publicCreateCodSettlementRequestSchema>;

@@ -1,8 +1,9 @@
-import React from 'react';
-import Dashboard from './Dashboard';
-import VendorDashboard from './vendor/VendorDashboard';
-import SalesDashboard from './sales/SalesDashboard';
+import React, { lazy } from 'react';
 import { isVendorSide, isSalesUser } from '../utils/auth';
+
+const Dashboard = lazy(() => import('./Dashboard'));
+const VendorDashboard = lazy(() => import('./vendor/VendorDashboard'));
+const SalesDashboard = lazy(() => import('./sales/SalesDashboard'));
 
 const DashboardRouter: React.FC = () => {
   if (isVendorSide()) return <VendorDashboard />;

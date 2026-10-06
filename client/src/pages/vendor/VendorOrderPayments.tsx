@@ -63,13 +63,13 @@ const VendorOrderPayments: React.FC = () => {
     };
   }, [tab, page, pageSizeChoice]);
 
-  const handleExport = () => {
+  const handleExport = async () => {
     if (items.length === 0) return;
 
     // A real workbook rather than a comma-joined .csv: a CSV lands entirely in
     // column A for anyone whose Excel uses ';' as its list separator, and the
     // amounts arrive as text you cannot sum.
-    downloadExcel(
+    await downloadExcel(
       `order-cod-${tab}-page-${page}`,
       'Order COD',
       ['Tracking ID', 'Receiver', 'Phone', 'Created At', 'Delivered Date', 'Status', 'Net Payable'],

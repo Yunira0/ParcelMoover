@@ -145,7 +145,7 @@ const BranchOverview: React.FC = () => {
       o.weightKg || '',
       ORDER_STATUS_LABELS[o.status],
     ]);
-      downloadExcel('branch-overview.xlsx', 'Branch Overview', headers, body);
+      await downloadExcel('branch-overview.xlsx', 'Branch Overview', headers, body);
     } catch {
       setError('Failed to export branch orders.');
     } finally {

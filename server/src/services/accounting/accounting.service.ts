@@ -1288,43 +1288,60 @@ async function partyIdentity(
 // ── Party search and statement ──────────────────────────────────────────────
 
 /**
- * Finds anyone money has moved for, by name or phone.
+ * Finds an eligible party by name, phone or email, or browses the directory.
  *
- * One search across riders, vendors and staff, because from the finance side
+ * One search across riders, vendors and other users, because from the finance side
  * they are the same question - "what have we paid this person, and what do they
  * owe us" - even though the system stores them in three unrelated tables.
  */
-export async function searchParties(query: string, limit = 20): Promise<PartySearchResult[]> {
+type SearchablePartyType = PartySearchResult["partyType"];
+
+/** One bounded page across all eligible parties, including other login accounts. */
+export async function searchPartiesPage(
+  query: string,
+  types: SearchablePartyType[] = ["rider", "vendor", "user"],
+  offset = 0,
+  limit = 30,
+): Promise<{ results: PartySearchResult[]; hasMore: boolean }> {
   const needle = query.trim();
-  if (needle.length < 2) return [];
+  const pattern = `%${needle}%`;
+  const branches: Prisma.Sql[] = [];
 
-  const contains = { contains: needle, mode: "insensitive" as const };
+  if (types.includes("rider")) branches.push(Prisma.sql`
+    SELECT 'rider'::text AS "partyType", r.id AS "partyId", r.name, r.phone AS subtitle
+      FROM riders r
+     WHERE r.deleted_at IS NULL
+       ${needle ? Prisma.sql`AND (r.name ILIKE ${pattern} OR r.phone ILIKE ${pattern})` : Prisma.empty}
+  `);
+  if (types.includes("vendor")) branches.push(Prisma.sql`
+    SELECT 'vendor'::text AS "partyType", v.id AS "partyId",
+           COALESCE(NULLIF(v.business_name, ''), v.client_name) AS name, v.phone AS subtitle
+      FROM vendors v
+     WHERE v.deleted_at IS NULL
+       ${needle ? Prisma.sql`AND (v.client_name ILIKE ${pattern} OR v.business_name ILIKE ${pattern} OR v.phone ILIKE ${pattern})` : Prisma.empty}
+  `);
+  if (types.includes("user")) branches.push(Prisma.sql`
+    SELECT 'user'::text AS "partyType", u.id AS "partyId", u.full_name AS name, u.phone AS subtitle
+      FROM users u
+     WHERE u.deleted_at IS NULL
+       AND NOT EXISTS (SELECT 1 FROM riders r WHERE r.user_id = u.id AND r.deleted_at IS NULL)
+       AND NOT EXISTS (SELECT 1 FROM vendors v WHERE v.user_id = u.id AND v.deleted_at IS NULL)
+       ${needle ? Prisma.sql`AND (u.full_name ILIKE ${pattern} OR u.phone ILIKE ${pattern} OR u.email ILIKE ${pattern})` : Prisma.empty}
+  `);
 
-  const [riders, vendors] = await Promise.all([
-    prisma.riders.findMany({
-      where: { deleted_at: null, OR: [{ name: contains }, { phone: contains }] },
-      select: { id: true, name: true, phone: true },
-      take: limit,
-    }),
-    prisma.vendors.findMany({
-      where: {
-        deleted_at: null,
-        OR: [{ client_name: contains }, { business_name: contains }, { phone: contains }],
-      },
-      select: { id: true, client_name: true, business_name: true, phone: true },
-      take: limit,
-    }),
-  ]);
+  if (!branches.length) return { results: [], hasMore: false };
+  const rows = await prisma.$queryRaw<PartySearchResult[]>(Prisma.sql`
+    SELECT * FROM (${Prisma.join(branches, " UNION ALL ")}) parties
+     ORDER BY lower(name), "partyType", "partyId"
+     LIMIT ${limit + 1} OFFSET ${offset}
+  `);
+  return { results: rows.slice(0, limit), hasMore: rows.length > limit };
+}
 
-  return [
-    ...riders.map((r) => ({ partyType: "rider" as const, partyId: r.id, name: r.name, subtitle: r.phone })),
-    ...vendors.map((v) => ({
-      partyType: "vendor" as const,
-      partyId: v.id,
-      name: v.business_name || v.client_name,
-      subtitle: v.phone,
-    })),
-  ].slice(0, limit * 2);
+/** Existing search-only consumers keep their array response. */
+export async function searchParties(query: string, limit = 20): Promise<PartySearchResult[]> {
+  if (query.trim().length < 2) return [];
+  return (await searchPartiesPage(query, ["rider", "vendor", "user"], 0, limit)).results;
 }
 
 /** The display name for a party, whichever table it lives in. */

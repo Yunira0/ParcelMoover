@@ -860,7 +860,7 @@ const ReturnOperations: React.FC = () => {
       order.remarks || '',
       ...statusTimelineCells(order.statusTimestamps),
     ]);
-    downloadExcel('return-orders.xlsx', 'Return Orders', headers, csvRows);
+    await downloadExcel('return-orders.xlsx', 'Return Orders', headers, csvRows);
   };
 
   const selectedOrders = visibleOrders.filter((o) => selectedIds.has(o.id));

@@ -1,9 +1,8 @@
 import { useState, useRef, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { AlertCircle, Download } from 'lucide-react'
+import { AlertCircle } from 'lucide-react'
 import { isAccountInactiveError, loginRider } from '../lib/api'
 import { useAuth } from '../context/AuthContext'
-import usePwaInstall from '../lib/usePwaInstall'
 import Button from '../components/Button'
 import Input from '../components/Input'
 
@@ -13,8 +12,6 @@ export default function LoginPage() {
   const navigate   = useNavigate()
   const { login, markDeactivated } = useAuth()
   const emailRef   = useRef<HTMLInputElement>(null)
-  const { canInstall, hasNativePrompt, install } = usePwaInstall()
-  const [showInstructions, setShowInstructions] = useState(false)
 
   const [loading,   setLoading]   = useState(false)
   const [formError, setFormError] = useState('')
@@ -62,28 +59,8 @@ export default function LoginPage() {
 
   return (
     <div className="flex flex-col flex-1 bg-bg overflow-y-auto">
-      <div className="flex flex-col flex-1 px-5 pt-8 pb-10">
-
-        {/* Brand row */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-1.5">
-            <span className="h-[9px] w-[9px] rounded-[2px] bg-rust" />
-            <span className="text-[15px] font-bold tracking-tight text-ink">ParcelMoover</span>
-          </div>
-          <span className="rounded-full bg-surface px-2 py-0.5 text-[10px] font-semibold tracking-[0.08em] text-ink-2">
-            RIDER
-          </span>
-        </div>
-
-        {/* Headline */}
-        <div className="mt-14 flex flex-col gap-2">
-          <h1 className="text-[42px] font-bold leading-[1.06] tracking-[-1.2px] text-ink">
-            Scan. Deliver.<br />Get settled.
-          </h1>
-          <p className="text-sm leading-snug text-ink-2">
-            One app for your route, your parcels and every rupee you collect.
-          </p>
-        </div>
+      <div className="flex flex-col flex-1 px-5 pt-14 pb-10">
+        <h1 className="text-[28px] font-bold leading-tight text-ink">Rider sign in</h1>
 
         {/* Error banner */}
         {formError && (
@@ -131,38 +108,6 @@ export default function LoginPage() {
             Forgot your password? Your hub manager can reset it.
           </p>
 
-          {canInstall && (
-            <button
-              onClick={() => {
-                if (hasNativePrompt) {
-                  install()
-                } else {
-                  setShowInstructions(true)
-                }
-              }}
-              style={{ touchAction: 'manipulation' }}
-              className="flex items-center gap-1.5 text-[13px] font-medium text-ink-3 cursor-pointer"
-            >
-              <Download size={13} />
-              Install app
-            </button>
-          )}
-
-          {showInstructions && (
-            <div className="w-full rounded-sm border border-line bg-surface px-4 py-3.5 text-left">
-              <p className="mb-1 text-sm font-semibold text-ink">Add to Home Screen</p>
-              <p className="text-xs leading-relaxed text-ink-2">
-                Tap the <strong>Share</strong> button in Safari, then select{' '}
-                <strong>Add to Home Screen</strong> to install the app.
-              </p>
-              <button
-                onClick={() => setShowInstructions(false)}
-                className="mt-2 text-xs font-semibold text-rust cursor-pointer"
-              >
-                Got it
-              </button>
-            </div>
-          )}
         </div>
       </div>
     </div>

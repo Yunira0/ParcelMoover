@@ -230,13 +230,19 @@ export async function createCodSettlementRequest(actor: Actor, input: CreateCodS
     throw error;
   }
 
-  await notifyAdmins(
-    `New COD Settlement Request: ${created.request_no}`,
-    `${mapRequest(created).vendorName} has requested a COD settlement`,
-    created.id,
-    "cod_settlement",
-    `/cod-settlement-requests/${created.id}`,
-  );
+  try {
+    await notifyAdmins(
+      `New COD Settlement Request: ${created.request_no}`,
+      `${mapRequest(created).vendorName} has requested a COD settlement`,
+      created.id,
+      "cod_settlement",
+      `/cod-settlement-requests/${created.id}`,
+    );
+  } catch (error) {
+    // The request is already committed. Returning an error here would make a
+    // retry look like a duplicate even though the vendor never saw success.
+    console.error("[CodSettlementRequest] Could not notify staff:", error);
+  }
 
   return mapRequest(created);
 }

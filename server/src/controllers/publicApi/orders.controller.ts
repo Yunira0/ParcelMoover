@@ -16,7 +16,7 @@ import {
   PublicCancelOrderInput,
   PublicListOrdersQuery,
 } from "../../validators/publicApi.schema";
-import { actorFrom, sendError, UUID_REGEX } from "./shared";
+import { actorFrom, partnerIdempotencyKey, sendError, UUID_REGEX } from "./shared";
 import { getVendorStatusLabel } from "../../utils/orderStatusLabel";
 
 export async function publicCreateOrderController(req: Request, res: Response) {
@@ -63,7 +63,7 @@ export async function publicCreateOrderController(req: Request, res: Response) {
       req.body.receiver.locationId = await resolveDestinationRef(req.body.receiver.locationId);
     }
 
-    const responseBody = await withIdempotency(idempotencyKey, req.body, async () => {
+    const responseBody = await withIdempotency(partnerIdempotencyKey(req, "order-create", idempotencyKey), req.body, async () => {
       const order = await createOrder(actorFrom(req), req.body);
 
       const body = {
@@ -92,7 +92,7 @@ export async function publicCreateOrderController(req: Request, res: Response) {
           resourceID: order.id,
         },
       };
-    });
+    }, { legacyKey: idempotencyKey });
 
     return res.status(201).json(responseBody);
   } catch (error: any) {
@@ -187,7 +187,7 @@ export async function publicUpdateOrderController(req: Request, res: Response) {
     const actor = actorFrom(req);
 
     const responseBody = await withIdempotency(
-      `order-update:${trackingId}:${idempotencyKey}`,
+      partnerIdempotencyKey(req, "order-update", idempotencyKey, trackingId),
       req.body,
       async () => {
         const order = await getOrderByTrackingId(actor, trackingId);
@@ -209,6 +209,7 @@ export async function publicUpdateOrderController(req: Request, res: Response) {
           response: { statusCode: 200, body: respBody, resourceID: order.id },
         };
       },
+      { legacyKey: `order-update:${trackingId}:${idempotencyKey}` },
     );
 
     return res.status(200).json(responseBody);
@@ -245,7 +246,7 @@ export async function publicCancelOrderController(req: Request, res: Response) {
     const actor = actorFrom(req);
     const { reason } = req.body as PublicCancelOrderInput;
 
-    const responseBody = await withIdempotency(idempotencyKey, req.body, async () => {
+    const responseBody = await withIdempotency(partnerIdempotencyKey(req, "order-cancel", idempotencyKey, trackingId), req.body, async () => {
       const order = await getOrderByTrackingId(actor, trackingId);
       const updated = await updateParcelStatus(actor, order.id, {
         status: "cancelled",
@@ -262,7 +263,7 @@ export async function publicCancelOrderController(req: Request, res: Response) {
         result: body,
         response: { statusCode: 200, body, resourceID: order.id },
       };
-    });
+    }, { legacyKey: idempotencyKey });
 
     return res.status(200).json(responseBody);
   } catch (error: any) {

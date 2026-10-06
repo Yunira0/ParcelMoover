@@ -229,6 +229,11 @@ async function _createOrderImpl(
   const resolvedOriginLocationId =
     forcedAdminHub || vendor?.location_id || data.originLocationId || data.sender.locationId || null;
   const resolvedDestinationLocationId = data.destinationLocationId || data.receiver.locationId || null;
+  // Every rate path below keys off the destination; without one the order
+  // would silently fall through to a NPR 0 delivery charge.
+  if (!resolvedDestinationLocationId) {
+    throw new AppError(400, "A destination is required to price this order");
+  }
   const masterHubId = await getMasterHubId();
   const weightKg = data.weightKg || 1;
 

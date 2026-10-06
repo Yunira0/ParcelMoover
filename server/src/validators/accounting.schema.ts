@@ -88,7 +88,15 @@ export const expensesQuerySchema = rangeQuerySchema.extend({
 });
 
 export const partySearchQuerySchema = z.object({
-  q: z.string().trim().min(2, "Type at least two characters").max(80),
+  q: z.string().trim().max(80).optional(),
+  paged: z.enum(["true"]).optional(),
+  types: z.string().regex(/^(rider|vendor|user)(,(rider|vendor|user))*$/).optional(),
+  limit: z.coerce.number().int().positive().max(50).optional(),
+  offset: z.coerce.number().int().min(0).max(100000).optional(),
+}).superRefine((data, ctx) => {
+  if (data.paged !== "true" && (data.q?.length ?? 0) < 2) {
+    ctx.addIssue({ code: "custom", path: ["q"], message: "Type at least two characters" });
+  }
 });
 
 export const createExpenseSchema = z.object({

@@ -522,7 +522,7 @@ export async function listSettlements(
     prisma.settlements.findMany({
       where,
       include: {
-        settlement_items: { select: { cod_collection_id: true } },
+        _count: { select: { settlement_items: true } },
         riders: { select: { name: true, phone: true, bank_name: true, bank_account_no: true, bank_account_holder: true } },
         vendors: {
           select: {
@@ -535,7 +535,7 @@ export async function listSettlements(
           },
         },
       },
-      orderBy: { created_at: "desc" },
+      orderBy: [{ created_at: "desc" }, { id: "desc" }],
       skip,
       take,
     }),
@@ -559,7 +559,7 @@ export async function listSettlements(
       transferDate: s.settlement_date ? formatNepalDate(s.settlement_date) : null,
       // Full timestamp of when the settlement was recorded, so the UI can show time.
       createdAt: s.created_at.toISOString(),
-      orderCount: s.settlement_items.length,
+      orderCount: s._count.settlement_items,
       amount: Number(s.payable_amount ?? s.amount),
       status: s.status,
       paidAmount: Number(s.paid_amount),
