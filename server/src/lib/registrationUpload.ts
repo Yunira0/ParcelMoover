@@ -35,6 +35,7 @@ export const registrationUpload = multer({
 }).fields([
   { name: "idDocument", maxCount: 1 },
   { name: "citizenshipDoc", maxCount: 1 },
+  { name: "citizenshipDocBack", maxCount: 1 },
   { name: "panDoc", maxCount: 1 },
   { name: "panVatDoc", maxCount: 1 },
   { name: "experienceLetterDoc", maxCount: 1 },

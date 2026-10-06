@@ -16,6 +16,7 @@ import {
 import { formatCurrency } from '../../utils/format';
 import { toBsDate } from '../../utils/nepaliDate';
 import { apiErrorMessage } from '../../utils/serverValidation';
+import { useSessionState } from '../../hooks/useSessionState';
 import './VendorFinance.css';
 import './VendorBilling.css';
 
@@ -32,7 +33,8 @@ const VendorBilling: React.FC = () => {
   const [status, setStatus] = useState<BillingStatus | null>(null);
   const [payments, setPayments] = useState<VendorPayment[]>([]);
   const [page, setPage] = useState(1);
-  const [pageSizeChoice, setPageSizeChoice] = useState(PAGE_SIZE);
+  // Kept for the browser tab, so coming back keeps the chosen page size.
+  const [pageSizeChoice, setPageSizeChoice] = useSessionState('vendor-payments:pageSize', PAGE_SIZE);
   const [paymentsTotal, setPaymentsTotal] = useState(0);
   const [paymentsTotalPages, setPaymentsTotalPages] = useState(1);
   const [loading, setLoading] = useState(true);

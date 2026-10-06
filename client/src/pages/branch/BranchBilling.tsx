@@ -13,6 +13,7 @@ import { toBsDate } from '../../utils/nepaliDate';
 import CreditUsageBar from '../../components/CreditUsageBar';
 import FormField from '../../components/FormField';
 import { apiErrorMessage } from '../../utils/serverValidation';
+import { useSessionState } from '../../hooks/useSessionState';
 import {
   getBillingSettings, paymentQrUrl, updateBillingSettings, uploadPaymentQr, type BillingSettings,
 } from '../../services/billing.service';
@@ -52,14 +53,18 @@ const BranchBilling: React.FC = () => {
     : !isMasterWorkspace && requestedTab === 'statements'
     ? 'statements'
     : isMasterWorkspace ? 'queue' : 'pay';
-  const [activeTab, setActiveTab] = useState<Tab>(initialTab);
+  // The open tab and page size are kept for the browser tab, so leaving and
+  // coming back keeps them. A ?tab= link still opens its tab on arrival, over a
+  // remembered one, until another tab is picked.
+  const [savedTab, setSavedTab] = useSessionState<Tab>('branch-billing:tab', initialTab);
+  const [linkedTab, setLinkedTab] = useState<Tab | null>(requestedTab ? initialTab : null);
   const [error, setError] = useState('');
 
   const [payments, setPayments] = useState<BranchPayment[]>([]);
   const [paymentsTotal, setPaymentsTotal] = useState(0);
   const [paymentsTotalPages, setPaymentsTotalPages] = useState(1);
   const [paymentsPage, setPaymentsPage] = useState(1);
-  const [paymentsPageSize, setPaymentsPageSize] = useState(50);
+  const [paymentsPageSize, setPaymentsPageSize] = useSessionState('branch-billing:pageSize', 50);
   const [paymentsLoading, setPaymentsLoading] = useState(true);
   const [reviewing, setReviewing] = useState<string | null>(null);
   const [remarks, setRemarks] = useState<Record<string, string>>({});
@@ -115,6 +120,15 @@ const BranchBilling: React.FC = () => {
       { value: 'queue', label: 'Payment history' },
     ], [isMasterWorkspace, isSuperAdmin, paymentsTotal],
   );
+
+  // A remembered tab this account no longer has (a role changed) falls back to
+  // the default rather than showing an empty page.
+  const chosenTab = linkedTab ?? savedTab;
+  const activeTab: Tab = tabs.some((tab) => tab.value === chosenTab) ? chosenTab : initialTab;
+  const setActiveTab = (tab: Tab) => {
+    setLinkedTab(null);
+    setSavedTab(tab);
+  };
 
   const loadPayments = useCallback(async () => {
     if (isBranchWorkspace && !hasAssignedBranch) {

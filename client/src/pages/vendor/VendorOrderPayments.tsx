@@ -11,6 +11,7 @@ import { getOrderCod } from '../../services/finance.service';
 import { formatCurrency as formatCurrencyBase, formatDate } from '../../utils/format';
 import { toBsDateTimeCell } from '../../utils/nepaliDate';
 import { downloadExcel } from '../../utils/excel';
+import { useSessionState } from '../../hooks/useSessionState';
 import './VendorFinance.css';
 import ReceiverPhones from '../../components/ReceiverPhones';
 
@@ -23,9 +24,11 @@ const PAGE_SIZE = 20;
 const formatCurrency = (value: number) => formatCurrencyBase(value, 0);
 
 const VendorOrderPayments: React.FC = () => {
-  const [tab, setTab] = useState<TabValue>('all');
+  // Kept for the browser tab, so leaving and coming back keeps the filter
+  // until it is changed by hand.
+  const [tab, setTab] = useSessionState<TabValue>('vendor-order-payments:tab', 'all');
   const [page, setPage] = useState(1);
-  const [pageSizeChoice, setPageSizeChoice] = useState(PAGE_SIZE);
+  const [pageSizeChoice, setPageSizeChoice] = useSessionState('vendor-order-payments:pageSize', PAGE_SIZE);
   const [items, setItems] = useState<OrderCodItem[]>([]);
   const [settledCount, setSettledCount] = useState(0);
   const [notSettledCount, setNotSettledCount] = useState(0);

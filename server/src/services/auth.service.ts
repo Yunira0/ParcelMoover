@@ -87,6 +87,7 @@ interface UpdateManagedUserInput {
   // slot" - never "clear the stored one".
   idDocumentPath?: string;
   citizenshipDocPath?: string;
+  citizenshipDocBackPath?: string;
   panDocPath?: string;
   panVatDocPath?: string;
   experienceLetterDocPath?: string;
@@ -102,16 +103,19 @@ const DOCUMENT_COLUMNS: Record<ManagedUserType, Record<string, keyof UpdateManag
   admin: {
     id_document: "idDocumentPath",
     citizenship_doc: "citizenshipDocPath",
+    citizenship_doc_back: "citizenshipDocBackPath",
     pan_doc: "panDocPath",
     experience_letter_doc: "experienceLetterDocPath",
   },
   vendor: {
     citizenship_doc: "citizenshipDocPath",
+    citizenship_doc_back: "citizenshipDocBackPath",
     pan_vat_doc: "panVatDocPath",
     business_cert_doc: "businessCertDocPath",
   },
   rider: {
     citizenship_doc: "citizenshipDocPath",
+    citizenship_doc_back: "citizenshipDocBackPath",
     pan_vat_doc: "panVatDocPath",
     licence_doc: "licenceDocPath",
     bluebook_doc: "bluebookDocPath",
@@ -583,7 +587,8 @@ export async function getManagedUserDetail(actorUserId: string, type: ManagedUse
       fatherName: a.father_name, motherName: a.mother_name, grandfatherName: a.grandfather_name,
       permanentAddress: a.permanent_address, currentAddress: a.current_address, experience: a.experience,
       idDocumentType: a.id_document_type, idDocumentNumber: a.id_document_number,
-      idDocument: a.id_document, citizenshipDoc: a.citizenship_doc, panDoc: a.pan_doc,
+      idDocument: a.id_document, citizenshipDoc: a.citizenship_doc,
+      citizenshipDocBack: a.citizenship_doc_back, panDoc: a.pan_doc,
       experienceLetterDoc: a.experience_letter_doc,
       bankName: a.bank_name, bankAccountNo: a.bank_account_no, bankAccountHolder: a.bank_account_holder,
       joinedAt: dateStr(a.joined_at),
@@ -599,7 +604,7 @@ export async function getManagedUserDetail(actorUserId: string, type: ManagedUse
     locationId: r.location_id, riderLocation: r.rider_location,
     citizenshipNo: r.citizenship_no, licenceNo: r.licence_no, vehicleNo: r.vehicle_no,
     salaryCommission: r.salary_commission, pan: r.pan,
-    citizenshipDoc: r.citizenship_doc, panVatDoc: r.pan_vat_doc,
+    citizenshipDoc: r.citizenship_doc, citizenshipDocBack: r.citizenship_doc_back, panVatDoc: r.pan_vat_doc,
     licenceDoc: r.licence_doc, bluebookDoc: r.bluebook_doc,
     bankName: r.bank_name, bankAccountNo: r.bank_account_no, bankAccountHolder: r.bank_account_holder,
     joinedAt: dateStr(r.joined_at),
@@ -616,9 +621,10 @@ export interface ManagedUserDocument {
 
 // Labels mirror the upload fields on each registration form, so what staff see
 // here reads the same as what the applicant filled in.
-const ADMIN_DOCUMENT_FIELDS: { key: string; label: string; column: "id_document" | "citizenship_doc" | "pan_doc" | "experience_letter_doc" }[] = [
+const ADMIN_DOCUMENT_FIELDS: { key: string; label: string; column: "id_document" | "citizenship_doc" | "citizenship_doc_back" | "pan_doc" | "experience_letter_doc" }[] = [
   { key: "idDocument", label: "ID document", column: "id_document" },
-  { key: "citizenshipDoc", label: "Citizenship", column: "citizenship_doc" },
+  { key: "citizenshipDoc", label: "Citizenship (front)", column: "citizenship_doc" },
+  { key: "citizenshipDocBack", label: "Citizenship (back)", column: "citizenship_doc_back" },
   { key: "panDoc", label: "PAN", column: "pan_doc" },
   { key: "experienceLetterDoc", label: "Experience letter", column: "experience_letter_doc" },
 ];
@@ -630,8 +636,9 @@ const VENDOR_DOCUMENT_FIELDS: { key: string; label: string; column: "citizenship
   { key: "businessCertDoc", label: "Business certificate", column: "business_cert_doc" },
 ];
 
-const RIDER_DOCUMENT_FIELDS: { key: string; label: string; column: "citizenship_doc" | "pan_vat_doc" | "licence_doc" | "bluebook_doc" }[] = [
-  { key: "citizenshipDoc", label: "Citizenship", column: "citizenship_doc" },
+const RIDER_DOCUMENT_FIELDS: { key: string; label: string; column: "citizenship_doc" | "citizenship_doc_back" | "pan_vat_doc" | "licence_doc" | "bluebook_doc" }[] = [
+  { key: "citizenshipDoc", label: "Citizenship (front)", column: "citizenship_doc" },
+  { key: "citizenshipDocBack", label: "Citizenship (back)", column: "citizenship_doc_back" },
   { key: "panVatDoc", label: "PAN / VAT", column: "pan_vat_doc" },
   { key: "licenceDoc", label: "License", column: "licence_doc" },
   { key: "bluebookDoc", label: "Blue book", column: "bluebook_doc" },
@@ -893,7 +900,10 @@ function validateRegisterInput(input: RegisterUserInput) {
     // shows an empty document list. Self-service KYC applications already
     // enforce the same rule (see kyc.service.ts).
     if (!input.citizenshipDocPath) {
-      throw new AppError(400, "Citizenship document is required for vendor");
+      throw new AppError(400, "Citizenship document (front side) is required for vendor");
+    }
+    if (!input.citizenshipDocBackPath) {
+      throw new AppError(400, "Citizenship document (back side) is required for vendor");
     }
   }
 
@@ -1052,6 +1062,7 @@ export async function registerUserBySuperAdmin(
           current_address: data.currentAddress ?? null,
           experience: data.experience ?? null,
           citizenship_doc: data.citizenshipDocPath ?? null,
+          citizenship_doc_back: data.citizenshipDocBackPath ?? null,
           pan_doc: data.panDocPath ?? null,
           experience_letter_doc: data.experienceLetterDocPath ?? null,
           bank_name: data.bankName ?? null,
@@ -1072,6 +1083,7 @@ export async function registerUserBySuperAdmin(
             documentsSubmitted: {
               idDocument: !!data.idDocumentPath,
               citizenshipDoc: !!data.citizenshipDocPath,
+              citizenshipDocBack: !!data.citizenshipDocBackPath,
               panDoc: !!data.panDocPath,
               experienceLetterDoc: !!data.experienceLetterDocPath,
             },
@@ -1121,6 +1133,7 @@ export async function registerUserBySuperAdmin(
           registration_no: data.registrationNo ?? null,
           pan_vat_no: data.panVatNo ?? null,
           citizenship_doc: data.citizenshipDocPath ?? null,
+          citizenship_doc_back: data.citizenshipDocBackPath ?? null,
           pan_vat_doc: data.panVatDocPath ?? null,
           business_cert_doc: data.businessCertDocPath ?? null,
           bank_name: data.bankName ?? null,
@@ -1141,6 +1154,7 @@ export async function registerUserBySuperAdmin(
             email: data.email,
             documentsSubmitted: {
               citizenshipDoc: !!data.citizenshipDocPath,
+              citizenshipDocBack: !!data.citizenshipDocBackPath,
               panVatDoc: !!data.panVatDocPath,
               businessCertDoc: !!data.businessCertDocPath,
             },
@@ -1163,6 +1177,7 @@ export async function registerUserBySuperAdmin(
         salary_commission: data.salaryCommission ?? null,
         pan: data.pan ?? null,
         citizenship_doc: data.citizenshipDocPath ?? null,
+        citizenship_doc_back: data.citizenshipDocBackPath ?? null,
         pan_vat_doc: data.panVatDocPath ?? null,
         licence_doc: data.licenceDocPath ?? null,
         bluebook_doc: data.bluebookDocPath ?? null,
@@ -1184,6 +1199,7 @@ export async function registerUserBySuperAdmin(
           email: data.email,
           documentsSubmitted: {
             citizenshipDoc: !!data.citizenshipDocPath,
+            citizenshipDocBack: !!data.citizenshipDocBackPath,
             panVatDoc: !!data.panVatDocPath,
             licenceDoc: !!data.licenceDocPath,
             bluebookDoc: !!data.bluebookDocPath,

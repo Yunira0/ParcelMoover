@@ -71,7 +71,8 @@ export interface RegisterUserInput {
 
   // Documents (field names must match the server's multer config)
   idDocument?: File | null;
-  citizenshipDoc?: File | null;
+  citizenshipDoc?: File | null; // front side
+  citizenshipDocBack?: File | null;
   panDoc?: File | null;
   panVatDoc?: File | null;
   experienceLetterDoc?: File | null;
@@ -144,7 +145,8 @@ export interface UpdateUserProfileInput {
   // to fill a slot the account was created without, or to replace an
   // unreadable scan — omitting one leaves the stored document untouched.
   idDocument?: File | null;
-  citizenshipDoc?: File | null;
+  citizenshipDoc?: File | null; // front side
+  citizenshipDocBack?: File | null;
   panDoc?: File | null;
   panVatDoc?: File | null;
   experienceLetterDoc?: File | null;

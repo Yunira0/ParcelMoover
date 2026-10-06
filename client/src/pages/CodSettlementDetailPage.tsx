@@ -15,6 +15,7 @@ import { COD_BUCKET_META } from '../utils/codBuckets';
 import { downloadExcel } from '../utils/excel';
 import { formatCurrency, formatDate } from '../utils/format';
 import { toBsDateTimeCell } from '../utils/nepaliDate';
+import { useSessionState } from '../hooks/useSessionState';
 import './CodSettlementDetailPage.css';
 
 const PAGE_SIZE = 10;
@@ -30,7 +31,8 @@ const CodSettlementDetailPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(PAGE_SIZE);
+  // Kept for the browser tab, so coming back keeps the chosen page size.
+  const [pageSize, setPageSize] = useSessionState('cod-bucket:pageSize', PAGE_SIZE);
 
   const validBucket = isCodBucket(bucket) ? bucket : null;
   const meta = validBucket ? COD_BUCKET_META[validBucket] : null;

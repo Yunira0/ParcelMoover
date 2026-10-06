@@ -4,6 +4,7 @@ import Button from '../components/Button';
 import FormField from '../components/FormField';
 import Table from '../components/Table';
 import FilterDropdown from '../components/FilterDropdown';
+import ClearableFilter from '../components/ClearableFilter';
 import Pagination from '../components/Pagination';
 import { Banner } from './accounting/ui';
 import { isSalesUser } from '../utils/auth';
@@ -17,6 +18,7 @@ import {
 } from '../services/codSettlementRequests.service';
 import { apiErrorMessage } from '../utils/serverValidation';
 import { toBsDate } from '../utils/nepaliDate';
+import { useSessionState } from '../hooks/useSessionState';
 import './CodSettlementRequests.css';
 
 // Staff side of vendor COD settlement requests.
@@ -39,14 +41,16 @@ const CodSettlementRequests: React.FC = () => {
   // Sales sees its own vendors' requests read-only; settling stays with admins.
   const readOnly = isSalesUser();
   const [requests, setRequests] = useState<CodSettlementRequest[]>([]);
-  const [status, setStatus] = useState('');
+  // Kept for the browser tab, so leaving and coming back keeps the filter
+  // until it is cleared by hand.
+  const [status, setStatus] = useSessionState('cod-settlement-requests:status', '');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [rejecting, setRejecting] = useState<CodSettlementRequest | null>(null);
   const [rejectReason, setRejectReason] = useState('');
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(PAGE_SIZE);
+  const [pageSize, setPageSize] = useSessionState('cod-settlement-requests:pageSize', PAGE_SIZE);
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
 
@@ -177,13 +181,20 @@ const CodSettlementRequests: React.FC = () => {
       {error && <Banner tone="danger">{error}</Banner>}
 
       <div className="cod-request-toolbar">
-        <FilterDropdown
-          label="STATUS"
-          value={status}
-          options={STATUS_FILTER_OPTIONS}
-          onChange={setStatus}
-          placeholder="All statuses"
-        />
+        <ClearableFilter
+          active={Boolean(status)}
+          onClear={() => setStatus('')}
+          clearLabel="Clear status filter"
+          align="end"
+        >
+          <FilterDropdown
+            label="STATUS"
+            value={status}
+            options={STATUS_FILTER_OPTIONS}
+            onChange={setStatus}
+            placeholder="All statuses"
+          />
+        </ClearableFilter>
       </div>
 
       {rejecting && (

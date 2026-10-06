@@ -73,7 +73,8 @@ export default function Vouchers() {
     setNotice('');
     try {
       await submitMyKycVerification(values, {
-        citizenshipDoc: files.citizenship,
+        citizenshipDoc: files.citizenshipFront,
+        citizenshipDocBack: files.citizenshipBack,
         panVatDoc: files.panVat,
         businessCertDoc: files.businessCert,
       });

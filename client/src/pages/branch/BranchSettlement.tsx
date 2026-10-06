@@ -9,6 +9,7 @@ import Button from '../../components/Button';
 import FormField from '../../components/FormField';
 import SearchableSelect, { type SearchableSelectOption } from '../../components/SearchableSelect';
 import NepaliDatePicker from '../../components/NepaliDatePicker';
+import ClearableFilter from '../../components/ClearableFilter';
 import { Banner } from '../accounting/ui';
 import { money } from '../accounting/format';
 import { useBranchScope } from '../../context/BranchScopeContext';
@@ -20,6 +21,7 @@ import {
 } from '../../services/branchTracking.service';
 import { settlementStatusLabel, settlementStatusTone } from '../../utils/settlementStatus';
 import { toBsDate } from '../../utils/nepaliDate';
+import { useSessionState } from '../../hooks/useSessionState';
 import '../accounting/Accounting.css';
 
 const PAGE_SIZE = 20;
@@ -46,10 +48,12 @@ const BranchSettlement: React.FC = () => {
 
   // Branch is the party filter (mirrors the rider/vendor filter on Rider COD);
   // status and one settlement date are applied server-side alongside it.
-  const [settlementDate, setSettlementDate] = useState('');
-  const [status, setStatus] = useState<BranchSettlementStatus | ''>('');
+  // The branch is already remembered by BranchScopeContext; these are kept for
+  // the browser tab so opening a statement and coming back keeps them.
+  const [settlementDate, setSettlementDate] = useSessionState('branch-settlements:date', '');
+  const [status, setStatus] = useSessionState<BranchSettlementStatus | ''>('branch-settlements:status', '');
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(PAGE_SIZE);
+  const [pageSize, setPageSize] = useSessionState('branch-settlements:pageSize', PAGE_SIZE);
 
   const [items, setItems] = useState<BranchSettlement[]>([]);
   const [total, setTotal] = useState(0);
@@ -140,27 +144,39 @@ const BranchSettlement: React.FC = () => {
 
           <label>
             <span>SETTLEMENT DATE</span>
-            <NepaliDatePicker
-              value={settlementDate}
-              onChange={(value) => applyFilter(() => setSettlementDate(value))}
-            />
+            <ClearableFilter
+              active={Boolean(settlementDate)}
+              onClear={() => applyFilter(() => setSettlementDate(''))}
+              clearLabel="Clear settlement date filter"
+            >
+              <NepaliDatePicker
+                value={settlementDate}
+                onChange={(value) => applyFilter(() => setSettlementDate(value))}
+              />
+            </ClearableFilter>
           </label>
         </div>
 
         <label>
           <span>STATUS</span>
-          <FormField
-            label=""
-            type="select"
-            value={status}
-            onChange={(value) => applyFilter(() => setStatus(value as BranchSettlementStatus | ''))}
-            options={[
-              { value: '', label: 'All statuses' },
-              { value: 'pending', label: 'Pending' },
-              { value: 'partially_paid', label: 'Partially paid' },
-              { value: 'settled', label: 'Settled' },
-            ]}
-          />
+          <ClearableFilter
+            active={Boolean(status)}
+            onClear={() => applyFilter(() => setStatus(''))}
+            clearLabel="Clear status filter"
+          >
+            <FormField
+              label=""
+              type="select"
+              value={status}
+              onChange={(value) => applyFilter(() => setStatus(value as BranchSettlementStatus | ''))}
+              options={[
+                { value: '', label: 'All statuses' },
+                { value: 'pending', label: 'Pending' },
+                { value: 'partially_paid', label: 'Partially paid' },
+                { value: 'settled', label: 'Settled' },
+              ]}
+            />
+          </ClearableFilter>
         </label>
       </div>
 

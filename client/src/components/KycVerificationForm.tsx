@@ -15,7 +15,8 @@ export type KycVerificationValues = Record<
 >;
 
 export interface KycVerificationFiles {
-  citizenship: File | null;
+  citizenshipFront: File | null;
+  citizenshipBack: File | null;
   panVat: File | null;
   businessCert: File | null;
 }
@@ -23,7 +24,7 @@ export interface KycVerificationFiles {
 interface KycVerificationFormProps {
   /** Account prefill — the starting point staff or the vendor edits by hand. */
   initial: KycVerificationValues;
-  docsOnFile: { citizenship: boolean; panVat: boolean; businessCert: boolean };
+  docsOnFile: { citizenshipFront: boolean; citizenshipBack: boolean; panVat: boolean; businessCert: boolean };
   /** Vendors can't re-assert their own identity email; staff correcting a profile can. */
   emailLocked: boolean;
   submitting: boolean;
@@ -42,7 +43,7 @@ const KycVerificationForm: React.FC<KycVerificationFormProps> = ({
   initial, docsOnFile, emailLocked, submitting, error, submitLabel, onSubmit, onCancel,
 }) => {
   const [values, setValues] = useState<KycVerificationValues>(initial);
-  const [files, setFiles] = useState<KycVerificationFiles>({ citizenship: null, panVat: null, businessCert: null });
+  const [files, setFiles] = useState<KycVerificationFiles>({ citizenshipFront: null, citizenshipBack: null, panVat: null, businessCert: null });
   const [formError, setFormError] = useState('');
 
   const set = (key: keyof KycVerificationValues) => (value: string) => {
@@ -61,7 +62,8 @@ const KycVerificationForm: React.FC<KycVerificationFormProps> = ({
     if (!values.ownerEmail.trim()) return setFormError('Email is required.');
     if (!EMAIL_RE.test(values.ownerEmail.trim())) return setFormError('Enter a valid email address.');
     if (!values.ownerContact.trim()) return setFormError('Owner contact is required.');
-    if (!docsOnFile.citizenship && !files.citizenship) return setFormError('Citizenship document is required.');
+    if (!docsOnFile.citizenshipFront && !files.citizenshipFront) return setFormError('Citizenship front side is required.');
+    if (!docsOnFile.citizenshipBack && !files.citizenshipBack) return setFormError('Citizenship back side is required.');
     setFormError('');
     onSubmit(values, files);
   };
@@ -69,7 +71,8 @@ const KycVerificationForm: React.FC<KycVerificationFormProps> = ({
   // Recognition over recall: the reviewer sees document readiness without
   // opening each upload slot — on-file copies count alongside new picks.
   const docsReady = [
-    docsOnFile.citizenship || files.citizenship,
+    docsOnFile.citizenshipFront || files.citizenshipFront,
+    docsOnFile.citizenshipBack || files.citizenshipBack,
     docsOnFile.panVat || files.panVat,
     docsOnFile.businessCert || files.businessCert,
   ].filter(Boolean).length;
@@ -141,16 +144,22 @@ const KycVerificationForm: React.FC<KycVerificationFormProps> = ({
         <div className="kyc-section-head kyc-section-head-split">
           <div>
             <h2 id="kyc-documents"><Files size={16} aria-hidden="true" /> Documents</h2>
-            <p>Citizenship is required unless already on file. The rest are optional.</p>
+            <p>Both sides of the citizenship are required unless already on file. The rest are optional.</p>
           </div>
-          <span className="kyc-doc-count" aria-live="polite">{docsReady} of 3 ready</span>
+          <span className="kyc-doc-count" aria-live="polite">{docsReady} of 4 ready</span>
         </div>
         <div className="kyc-grid">
           <FileField
-            label={docsOnFile.citizenship ? 'Citizenship (on file — replace)' : 'Citizenship *'}
+            label={docsOnFile.citizenshipFront ? 'Citizenship front (on file — replace)' : 'Citizenship (Front) *'}
             hint="JPG, PNG, WebP or PDF · max 5 MB"
-            file={files.citizenship}
-            onChange={setFile('citizenship')}
+            file={files.citizenshipFront}
+            onChange={setFile('citizenshipFront')}
+          />
+          <FileField
+            label={docsOnFile.citizenshipBack ? 'Citizenship back (on file — replace)' : 'Citizenship (Back) *'}
+            hint="JPG, PNG, WebP or PDF · max 5 MB"
+            file={files.citizenshipBack}
+            onChange={setFile('citizenshipBack')}
           />
           <FileField
             label={docsOnFile.panVat ? 'PAN / VAT (on file — replace)' : 'PAN / VAT (optional)'}

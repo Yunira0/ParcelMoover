@@ -39,6 +39,7 @@ interface AdminFormInput {
   designation: string;
   // Documents
   citizenshipDoc: File | null;
+  citizenshipDocBack: File | null;
   nationalIdNumber: string;
   nationalIdDoc: File | null;
   panDoc: File | null;
@@ -77,6 +78,7 @@ const emptyForm: AdminFormInput = {
   department: '',
   designation: '',
   citizenshipDoc: null,
+  citizenshipDocBack: null,
   nationalIdNumber: '',
   nationalIdDoc: null,
   panDoc: null,
@@ -163,9 +165,10 @@ const AdminFormPage: React.FC = () => {
   // Already-uploaded document paths, shown as view links in edit mode.
   const [existingDocs, setExistingDocs] = useState<{
     citizenshipDoc: string | null;
+    citizenshipDocBack: string | null;
     idDocument: string | null;
     panDoc: string | null;
-  }>({ citizenshipDoc: null, idDocument: null, panDoc: null });
+  }>({ citizenshipDoc: null, citizenshipDocBack: null, idDocument: null, panDoc: null });
   // Accounts created by a plain admin inherit that admin's hub; only a
   // super_admin may choose a different one (server enforces the same rule).
   const { myHubId, hubLocked, isPlainAdmin } = useHubLock();
@@ -233,6 +236,7 @@ const AdminFormPage: React.FC = () => {
         }));
         setExistingDocs({
           citizenshipDoc: d.citizenshipDoc ?? null,
+          citizenshipDocBack: d.citizenshipDocBack ?? null,
           idDocument: d.idDocument ?? null,
           panDoc: d.panDoc ?? null,
         });
@@ -277,7 +281,8 @@ const AdminFormPage: React.FC = () => {
     else if (!isValidEmail(form.email)) errors.email = 'Enter a valid email address';
     // Document and password only required when creating a new admin.
     if (!isEdit) {
-      if (!form.citizenshipDoc) errors.citizenshipDoc = 'Citizenship document is required';
+      if (!form.citizenshipDoc) errors.citizenshipDoc = 'Citizenship front side is required';
+      if (!form.citizenshipDocBack) errors.citizenshipDocBack = 'Citizenship back side is required';
       if (!form.nationalIdNumber.trim()) errors.nationalIdNumber = 'National ID number is required';
       if (!form.nationalIdDoc) errors.nationalIdDoc = 'National ID document is required';
       if (!form.password.trim()) errors.password = 'Password is required';
@@ -357,6 +362,7 @@ const AdminFormPage: React.FC = () => {
         idDocumentNumber: form.nationalIdNumber,
         idDocument: form.nationalIdDoc,
         citizenshipDoc: form.citizenshipDoc,
+        citizenshipDocBack: form.citizenshipDocBack,
         panDoc: form.panDoc,
       });
       setSubmitted(true);
@@ -584,19 +590,27 @@ const AdminFormPage: React.FC = () => {
               </div>
               {isEdit ? (
                 <div className="afp-docs">
-                  <DocLink path={existingDocs.citizenshipDoc} label="Citizenship" />
+                  <DocLink path={existingDocs.citizenshipDoc} label="Citizenship (Front)" />
+                  <DocLink path={existingDocs.citizenshipDocBack} label="Citizenship (Back)" />
                   <DocLink path={existingDocs.idDocument} label="National ID" />
                   <DocLink path={existingDocs.panDoc} label="PAN" />
                 </div>
               ) : (
                 <div className="afp-docs">
                   <FileInput
-                    label="Citizenship"
+                    label="Citizenship (Front)"
                     required
                     file={form.citizenshipDoc}
                     onChange={setFile('citizenshipDoc')}
                   />
                   {fieldErrors.citizenshipDoc && <span className="afp-field-error">{fieldErrors.citizenshipDoc}</span>}
+                  <FileInput
+                    label="Citizenship (Back)"
+                    required
+                    file={form.citizenshipDocBack}
+                    onChange={setFile('citizenshipDocBack')}
+                  />
+                  {fieldErrors.citizenshipDocBack && <span className="afp-field-error">{fieldErrors.citizenshipDocBack}</span>}
                   <FileInput
                     label="National ID"
                     required
