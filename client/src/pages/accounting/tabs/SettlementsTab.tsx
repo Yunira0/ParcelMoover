@@ -59,7 +59,9 @@ const SettlementsTab: React.FC<{ payeeType: 'rider' | 'vendor' }> = ({ payeeType
   // screen this replaced. All three are applied server-side, so they narrow the
   // whole list rather than the page already fetched.
   const [status, setStatus] = useState<SettlementStatusFilter | ''>('');
-  // Inclusive range on settlement_date; either end can be left open.
+  // Inclusive day range; either end can be left open. `dateField` picks which
+  // column it applies to - Settled date or Created date.
+  const [dateField, setDateField] = useState<'settled' | 'created'>('settled');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
   const [pageSize, setPageSize] = useState(PAGE_SIZE);
@@ -133,6 +135,8 @@ const SettlementsTab: React.FC<{ payeeType: 'rider' | 'vendor' }> = ({ payeeType
       fromDate || undefined,
       toDate || undefined,
       status || undefined,
+      undefined,
+      dateField,
     )
       .then((res) => {
         if (!active) return;
@@ -150,7 +154,7 @@ const SettlementsTab: React.FC<{ payeeType: 'rider' | 'vendor' }> = ({ payeeType
     return () => {
       active = false;
     };
-  }, [payeeType, page, payeeId, pageSize, fromDate, toDate, status]);
+  }, [payeeType, page, payeeId, pageSize, dateField, fromDate, toDate, status]);
 
   const rows: SettlementRow[] = useMemo(
     () => items.map((item, index) => ({ ...item, sn: (page - 1) * pageSize + index + 1 })),
@@ -197,6 +201,21 @@ const SettlementsTab: React.FC<{ payeeType: 'rider' | 'vendor' }> = ({ payeeType
                 </Button>
               )}
             </div>
+          </label>
+
+          {/* Which date the From/To range filters on. */}
+          <label>
+            <span>DATE</span>
+            <FormField
+              label=""
+              type="select"
+              value={dateField}
+              onChange={(value) => applyFilter(() => setDateField(value as 'settled' | 'created'))}
+              options={[
+                { value: 'settled', label: 'Settled date' },
+                { value: 'created', label: 'Created date' },
+              ]}
+            />
           </label>
 
           {/* min/max keep the pair from crossing - a To before From would
@@ -272,6 +291,12 @@ const SettlementsTab: React.FC<{ payeeType: 'rider' | 'vendor' }> = ({ payeeType
             width: '130px',
             className: 'acc-num',
             accessor: (item) => <span className="acc-num">{money(item.amount)}</span>,
+          },
+          // When the statement was drawn up.
+          {
+            header: 'Created date',
+            width: '125px',
+            accessor: (item) => toBsDate(item.createdAt),
           },
           // The day the statement was actually paid off, not the date picked
           // when it was drawn up. Blank while pending or part-paid.
@@ -356,7 +381,7 @@ const SettlementsTab: React.FC<{ payeeType: 'rider' | 'vendor' }> = ({ payeeType
         // Every column is sized, so the table opts into fixed layout and scrolls
         // inside its own box rather than squeezing the payment figures. Vendor
         // carries the extra bank column, hence the wider floor.
-        minWidth={payeeType === 'vendor' ? '1370px' : '1185px'}
+        minWidth={payeeType === 'vendor' ? '1495px' : '1310px'}
         emptyMessage={
           payeeId
             ? `No settlements recorded for that ${payeeType} yet.`
