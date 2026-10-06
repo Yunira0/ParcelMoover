@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../../../services/order.service", () => ({
   createOrder: vi.fn(),
+  bulkCreateOrders: vi.fn(),
   getOrderByTrackingId: vi.fn(),
   getOrderStatusesByTrackingIds: vi.fn(),
   getSenderProfile: vi.fn(),
@@ -15,8 +16,8 @@ vi.mock("../../../services/idempotency.service", () => ({
 }));
 vi.mock("../../../utils/trackingId", () => ({ isValidTrackingId: vi.fn(() => true) }));
 
-import { publicCancelOrderController, publicCreateOrderController } from "../orders.controller";
-import { createOrder, getOrderByTrackingId, updateParcelStatus } from "../../../services/order.service";
+import { publicCancelOrderController, publicCreateOrderController, publicBulkCreateOrderController } from "../orders.controller";
+import { createOrder, getOrderByTrackingId, updateParcelStatus, bulkCreateOrders } from "../../../services/order.service";
 import { withIdempotency } from "../../../services/idempotency.service";
 
 const clientKey = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
@@ -77,5 +78,36 @@ describe("Partner order idempotency keys", () => {
       `partner-api:v1:${vendorA}:order-cancel:PM-ONE:${clientKey}`,
       `partner-api:v1:${vendorA}:order-cancel:PM-TWO:${clientKey}`,
     ]);
+  });
+});
+
+
+describe("Partner bulk import ownership and validation", () => {
+  it("uses the key owner's actor, forwards confirmation and scopes the replay key", async () => {
+    vi.mocked(bulkCreateOrders).mockResolvedValue({ created: 1, failed: 0, results: [] });
+    for (const vendor of [vendorA, vendorB]) {
+      const req = request(vendor);
+      req.body = { orders: [{ sender: { name: "Shop", phone: "9800000000" }, receiver: { name: "Receiver", phone: "9810000000" }, codAmount: 100, weightKg: 1 }], confirmDuplicateBatch: true };
+      const res = response();
+      await publicBulkCreateOrderController(req, res);
+      expect(res.statusCode).toBe(201);
+    }
+    expect(vi.mocked(withIdempotency).mock.calls.map(call => call[0])).toEqual([
+      `partner-api:v1:${vendorA}:order-bulk-create:-:${clientKey}`,
+      `partner-api:v1:${vendorB}:order-bulk-create:-:${clientKey}`,
+    ]);
+    expect(vi.mocked(bulkCreateOrders).mock.calls[0]).toEqual([
+      { id: vendorA, roles: ["vendor"] }, expect.objectContaining({ confirmDuplicateBatch: true }),
+    ]);
+    expect(vi.mocked(withIdempotency).mock.calls[0]?.[3]).toEqual({ lockTtlSeconds: 600 });
+  });
+  it("requires authentication and a UUID request key before calling the import service", async () => {
+    const req = request(vendorA); req.headers = {};
+    const res = response();
+    await publicBulkCreateOrderController(req, res);
+    expect(res.statusCode).toBe(400);
+    await publicBulkCreateOrderController({ ...req, apiKey: undefined }, res);
+    expect(res.statusCode).toBe(401);
+    expect(bulkCreateOrders).not.toHaveBeenCalled();
   });
 });

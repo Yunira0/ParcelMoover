@@ -1285,3 +1285,14 @@ No API key required to fetch it. Paste the URL into [Swagger Editor](https://edi
 6. Use `GET /orders/{trackingId}` and `POST /orders/statuses` only for on-demand lookups or reconciliation (e.g. catching up after your webhook endpoint was down) — not as a scheduled polling loop.
 7. Handle `401` by alerting yourself (key revoked/rotated) and `429` with exponential backoff; branch on `error.code` rather than parsing `message` text.
 8. Rotate keys periodically: generate a new key, switch traffic, then revoke the old one (up to 5 active keys per account).
+
+
+### Bulk order creation and duplicate batch confirmation
+
+`POST /api/v1/orders/bulk` accepts `{ "orders": [ /* 1–100 Create Order requests */ ], "confirmDuplicateBatch": false }`. Use API-key authentication and a UUID `Idempotency-Key`. It shares the dashboard import service and derives the vendor from the key; staff-only vendor selection and delivery-charge overrides are stripped. Omitted senders use your registered pickup profile. Destination hub names are resolved like single-order creation. Limit: 20 requests/minute per API key.
+
+The `201` response has `data.created`, `data.failed` and `data.results` (each row's original index, success, trackingId or error). Rows are independent: check results before retrying failed rows. Retrying the same request key replays the original response. A matching recently completed batch under a different key returns structured `409` / `error.code: "DUPLICATE_BATCH"`. To intentionally repeat it, send `confirmDuplicateBatch: true` with a new key. This optional one-hour warning uses Redis; it does not replace idempotency or guarantee uniqueness when Redis is unavailable or imports run simultaneously.
+
+### Bounded unsettled-order picker
+
+`GET /api/v1/finance/unsettled-orders` now returns the newest 1,000 eligible orders at most, with stable descending creation-time/ID order. `data.capped: true` means more are waiting. Totals describe the returned batch; settle those orders and reload to access the next batch. `data.availableCredit` remains the vendor's prepaid credit. The Partner API and dashboard use the same service and ownership filters. Creating, approving and paying settlement statements remain staff-only. The pending-COD statement endpoint retains its existing full-statement behavior.

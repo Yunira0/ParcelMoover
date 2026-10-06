@@ -116,6 +116,7 @@ const SettlementCreatePage: React.FC = () => {
   const [entityOptions, setEntityOptions] = useState<Array<{ value: string; label: string }>>([]);
   const [selectedEntityId, setSelectedEntityId] = useState('');
   const [orders, setOrders] = useState<UnsettledOrderItem[]>([]);
+  const [ordersCapped, setOrdersCapped] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(false);
@@ -166,6 +167,7 @@ const SettlementCreatePage: React.FC = () => {
   useEffect(() => {
     if (!selectedEntityId) {
       setOrders([]);
+      setOrdersCapped(false);
       setSelected(new Set());
       return;
     }
@@ -181,14 +183,17 @@ const SettlementCreatePage: React.FC = () => {
         if (!active) return;
         if (res?.success && res.data?.items) {
           setOrders(res.data.items);
+          setOrdersCapped(!!res.data.capped);
           setPrepaidCredit(payeeType === 'vendor' ? res.data.availableCredit ?? 0 : 0);
         } else {
           setOrders([]);
+          setOrdersCapped(false);
           setPrepaidCredit(0);
         }
       } catch (err) {
         if (!active) return;
         setOrders([]);
+        setOrdersCapped(false);
         setPrepaidCredit(0);
         setOrdersError(apiErrorMessage(err, 'Failed to load unsettled orders.'));
       } finally {
@@ -499,6 +504,12 @@ const SettlementCreatePage: React.FC = () => {
                   </tbody>
                 </table>
               </div>
+            )}
+
+            {ordersCapped && (
+              <p className="scp-hint">
+                Showing the first {orders.length.toLocaleString()} unsettled orders. Settle some of these first to see more.
+              </p>
             )}
 
             {selected.size > 0 && (

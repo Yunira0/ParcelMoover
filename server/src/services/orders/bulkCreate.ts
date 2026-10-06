@@ -6,6 +6,7 @@ import { resolveOwnVendorId } from "../vendor-scope.service";
 import { invalidateOrderCaches } from "./cache";
 import { createOrderCore } from "./create";
 import type { OrderActor } from "./types";
+import { assertNotDuplicateBatch, bulkBatchKey, rememberBulkBatch } from "./bulkDuplicate";
 
 const BULK_CREATE_MAX = 100;
 
@@ -18,6 +19,9 @@ const BULK_CREATE_MAX = 100;
 const BULK_CREATE_CONCURRENCY = 5;
 
 export async function bulkCreateOrders(actor: OrderActor, input: BulkCreateOrderInput, signal?: AbortSignal) {
+  if (input.confirmDuplicateBatch !== undefined && typeof input.confirmDuplicateBatch !== "boolean") {
+    throw new AppError(400, "confirmDuplicateBatch must be a boolean");
+  }
   if (!Array.isArray(input.orders) || input.orders.length === 0) {
     throw new AppError(400, "orders must be a non-empty array");
   }
@@ -71,6 +75,9 @@ export async function bulkCreateOrders(actor: OrderActor, input: BulkCreateOrder
     });
   }
 
+  const batchKey = bulkBatchKey(importingVendorId ?? `actor:${actor.id}`, toCreate.map(({ data }) => data));
+  if (toCreate.length) await assertNotDuplicateBatch(batchKey, input.confirmDuplicateBatch);
+
   for (let start = 0; start < toCreate.length; start += BULK_CREATE_CONCURRENCY) {
     if (signal?.aborted) {
       // Client disconnected - stop opening new transactions for orders it'll
@@ -111,6 +118,7 @@ export async function bulkCreateOrders(actor: OrderActor, input: BulkCreateOrder
   if (created > 0) {
     await invalidateOrderCaches();
     await Promise.all(Array.from(vendorIdsToInvalidate, (id) => invalidateVendorFinanceCache(id)));
+    await rememberBulkBatch(batchKey, created);
   }
 
   // New orders no longer notify admins (see createOrder) - a bulk import would

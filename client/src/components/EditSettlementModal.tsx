@@ -32,6 +32,7 @@ const EditSettlementModal: React.FC<EditSettlementModalProps> = ({
     () => new Set(currentItems.map((item) => item.codCollectionId)),
   );
   const [addableOrders, setAddableOrders] = useState<UnsettledOrderItem[]>([]);
+  const [addableCapped, setAddableCapped] = useState(false);
   const [addedIds, setAddedIds] = useState<Set<string>>(new Set());
   const [fetchingOrders, setFetchingOrders] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -41,7 +42,10 @@ const EditSettlementModal: React.FC<EditSettlementModalProps> = ({
     let active = true;
     getUnsettledOrders(payeeType, payeeId)
       .then((res) => {
-        if (active && res?.success) setAddableOrders(res.data.items);
+        if (active && res?.success) {
+          setAddableOrders(res.data.items);
+          setAddableCapped(!!res.data.capped);
+        }
       })
       .catch(() => {
         if (active) setAddableOrders([]);
@@ -81,13 +85,16 @@ const EditSettlementModal: React.FC<EditSettlementModalProps> = ({
     [addableOrders, addedIds],
   );
 
-  const totalPayable =
-    keptItems.reduce(
-      (sum, item) => sum + (payeeType === 'vendor' ? item.collectedAmount - item.deliveryCharge : item.collectedAmount),
-      0,
-    ) + addedOrders.reduce((sum, order) => sum + order.netPayable, 0);
+  const totalPayable = useMemo(
+    () =>
+      keptItems.reduce(
+        (sum, item) => sum + (payeeType === 'vendor' ? item.collectedAmount - item.deliveryCharge : item.collectedAmount),
+        0,
+      ) + addedOrders.reduce((sum, order) => sum + order.netPayable, 0),
+    [keptItems, addedOrders, payeeType],
+  );
 
-  const finalCount = keptItems.length + addedOrders.length;
+  const finalCount = useMemo(() => keptItems.length + addedOrders.length, [keptItems, addedOrders]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -113,7 +120,7 @@ const EditSettlementModal: React.FC<EditSettlementModalProps> = ({
 
   return (
     <div className="modal-overlay">
-      <div className="modal-content" style={{ width: '640px' }}>
+      <div className="modal-content esm-modal-content">
         <div className="modal-header">
           <h2>Edit Statement</h2>
           <Button variant="ghost" size="icon" className="modal-close-btn" onClick={onClose}>
@@ -220,6 +227,11 @@ const EditSettlementModal: React.FC<EditSettlementModalProps> = ({
                   </tbody>
                 </table>
               </div>
+            )}
+            {addableCapped && (
+              <p className="esm-hint">
+                Showing the first {addableOrders.length.toLocaleString()} eligible orders.
+              </p>
             )}
           </div>
 

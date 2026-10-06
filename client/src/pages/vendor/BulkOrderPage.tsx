@@ -390,6 +390,7 @@ const BulkOrderPage: React.FC = () => {
   const fileReadVersion = useRef(0);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [duplicateWarning, setDuplicateWarning] = useState('');
   const [result, setResult] = useState<BulkCreateResult | null>(null);
   // Snapshot of the drafts that were submitted, so the result screen can name
   // failed rows even after `rows` changes.
@@ -511,10 +512,14 @@ const BulkOrderPage: React.FC = () => {
 
   const updateCell = (index: number, field: DraftField, value: string) => {
     setRows(prev => prev.map((row, i) => (i === index ? { ...row, [field]: value } : row)));
+    // Editing a row changes the batch, so a stale "import anyway" from a
+    // previous fingerprint no longer applies to what's about to be submitted.
+    if (duplicateWarning) setDuplicateWarning('');
   };
 
   const removeRow = (index: number) => {
     setRows(prev => prev.filter((_, i) => i !== index));
+    if (duplicateWarning) setDuplicateWarning('');
   };
 
   const handleFile = (file: File) => {
@@ -524,6 +529,7 @@ const BulkOrderPage: React.FC = () => {
     setFileName(file.name);
     setResult(null);
     setError('');
+    setDuplicateWarning('');
     const isExcel = /\.xlsx?$/.test(file.name.toLowerCase());
     const reader = new FileReader();
     reader.onload = async (e) => {
@@ -625,10 +631,20 @@ const BulkOrderPage: React.FC = () => {
         orders: validRows.map(row => (
           actingForVendor ? { ...toOrderRow(row), vendorId: selectedVendorId } : toOrderRow(row)
         )),
+        ...(duplicateWarning ? { confirmDuplicateBatch: true } : {}),
       });
       setResult(res.data);
+      setDuplicateWarning('');
     } catch (err: any) {
-      setError(err?.response?.data?.message || err?.message || 'Bulk submission failed.');
+      const data = err?.response?.data;
+      // A batch matching this exact set of orders was already imported
+      // recently - show it inline and let a second click ("Import anyway")
+      // resend with confirmDuplicateBatch instead of silently blocking.
+      if (data?.code === 'DUPLICATE_BATCH' && !duplicateWarning) {
+        setDuplicateWarning(data.message || 'This exact batch was already imported recently.');
+        return;
+      }
+      setError(data?.message || err?.message || 'Bulk submission failed.');
     } finally {
       setSubmitting(false);
     }
@@ -968,6 +984,12 @@ const BulkOrderPage: React.FC = () => {
 
         {error && !vendorRequiredError && <p role="alert" className="bop-error">{error}</p>}
 
+        {duplicateWarning && (
+          <p role="alert" className="bop-warning">
+            {duplicateWarning} Click <strong>Import anyway</strong> to continue.
+          </p>
+        )}
+
         <div className="bop-actions">
           {vendorRequiredError && (
             <p role="alert" className="bop-submit-error">
@@ -985,7 +1007,7 @@ const BulkOrderPage: React.FC = () => {
             >
               {submitting
                 ? 'Submitting…'
-                : `Submit ${validCount} Order${validCount !== 1 ? 's' : ''}`}
+                : duplicateWarning ? 'Import anyway' : `Submit ${validCount} Order${validCount !== 1 ? 's' : ''}`}
             </Button>
           </div>
         </div>

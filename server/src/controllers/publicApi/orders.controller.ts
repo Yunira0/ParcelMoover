@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import {
   createOrder,
+  bulkCreateOrders,
   getOrderByTrackingId,
   getOrderStatusesByTrackingIds,
   getSenderProfile,
@@ -13,11 +14,44 @@ import { withIdempotency } from "../../services/idempotency.service";
 import { isValidTrackingId } from "../../utils/trackingId";
 import {
   PublicBulkStatusInput,
+  PublicBulkCreateOrderInput,
   PublicCancelOrderInput,
   PublicListOrdersQuery,
 } from "../../validators/publicApi.schema";
 import { actorFrom, partnerIdempotencyKey, sendError, UUID_REGEX } from "./shared";
 import { getVendorStatusLabel } from "../../utils/orderStatusLabel";
+
+export async function publicBulkCreateOrderController(req: Request, res: Response) {
+  try {
+    if (!req.apiKey) return res.status(401).json({ success: false, message: "Unauthorized" });
+    const key = req.headers["idempotency-key"] as string | undefined;
+    if (!key || !UUID_REGEX.test(key)) {
+      return res.status(400).json({ success: false, message: "Idempotency-Key must be a valid UUID" });
+    }
+    const input = req.body as PublicBulkCreateOrderInput;
+    const actor = actorFrom(req);
+    const profile = input.orders.some(order => !order.sender) ? await getSenderProfile(actor) : undefined;
+    const orders = await Promise.all(input.orders.map(async order => ({
+      ...order,
+      sender: order.sender ?? {
+        name: profile!.name, phone: profile!.phone,
+        ...(profile!.address ? { address: profile!.address } : {}),
+        ...(profile!.locationId ? { locationId: profile!.locationId } : {}),
+      },
+      receiver: { ...order.receiver, ...(order.receiver.locationId ? { locationId: await resolveDestinationRef(order.receiver.locationId) } : {}) },
+      ...(order.destinationLocationId ? { destinationLocationId: await resolveDestinationRef(order.destinationLocationId) } : {}),
+    })));
+    const effective = { orders, confirmDuplicateBatch: input.confirmDuplicateBatch };
+    const body = await withIdempotency(partnerIdempotencyKey(req, "order-bulk-create", key), effective, async () => {
+      const data = await bulkCreateOrders(actor, effective);
+      const result = { success: true, message: "Bulk import completed", data };
+      return { result, response: { statusCode: 201, body: result, resourceID: key } };
+    }, { lockTtlSeconds: 600 });
+    return res.status(201).json(body);
+  } catch (error: any) {
+    return sendError(res, error, "Failed to import orders");
+  }
+}
 
 export async function publicCreateOrderController(req: Request, res: Response) {
   try {

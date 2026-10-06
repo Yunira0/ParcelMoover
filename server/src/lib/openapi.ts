@@ -2,6 +2,7 @@ import { z } from "zod";
 import {
   publicAddRemarkSchema,
   publicBulkStatusSchema,
+  publicBulkCreateOrderSchema,
   publicCancelOrderSchema,
   publicCreateOrderSchema,
   publicCreateTicketSchema,
@@ -181,6 +182,19 @@ export function buildOpenApiDocument(baseUrl: string) {
           responses: {
             200: { description: "Paginated order list", content: { "application/json": { schema: { type: "object" } } } },
             ...errorResponses(400, 401, 429),
+          },
+        },
+      },
+      "/orders/bulk": {
+        post: {
+          summary: "Import up to 100 orders",
+          description: "Uses the dashboard import service and key owner's vendor scope. Individual row failures are returned in data.results. An identical recently completed batch returns 409 DUPLICATE_BATCH; set confirmDuplicateBatch to true with a new Idempotency-Key to deliberately repeat it. Limited to 20 requests per minute per API key.",
+          operationId: "bulkCreateOrders",
+          parameters: [idempotencyKeyHeader],
+          requestBody: jsonRequestBody("BulkCreateOrderRequest"),
+          responses: {
+            201: { description: "Import results: created, failed and indexed results", content: { "application/json": { schema: { type: "object" } } } },
+            ...errorResponses(400, 401, 403, 409, 429),
           },
         },
       },
@@ -408,6 +422,7 @@ export function buildOpenApiDocument(baseUrl: string) {
       "/finance/unsettled-orders": {
         get: {
           summary: "Orders with COD collected but not yet settled",
+          description: "Newest 1,000 eligible orders. capped=true means more are waiting; settle the displayed batch and reload. Totals describe only returned items. availableCredit is the vendor’s prepaid credit.",
           operationId: "getUnsettledOrders",
           responses: {
             200: { description: "Unsettled order list", content: { "application/json": { schema: { "$ref": "#/components/schemas/UnsettledOrdersResponse" } } } },
@@ -559,6 +574,7 @@ export function buildOpenApiDocument(baseUrl: string) {
         UpdateOrderRequest: toSchema(publicUpdateOrderSchema),
         ReturnRequestRequest: toSchema(publicReturnRequestSchema),
         BulkStatusRequest: toSchema(publicBulkStatusSchema),
+        BulkCreateOrderRequest: toSchema(publicBulkCreateOrderSchema),
         AddRemarkRequest: toSchema(publicAddRemarkSchema),
         CreateTicketRequest: toSchema(publicCreateTicketSchema),
         TicketReplyRequest: toSchema(publicTicketReplySchema),
@@ -844,6 +860,8 @@ export function buildOpenApiDocument(baseUrl: string) {
                 totalCod: { type: "number" },
                 totalDeliveryCharge: { type: "number" },
                 totalNetPayable: { type: "number" },
+                availableCredit: { type: "number" },
+                capped: { type: "boolean", description: "More than 1,000 eligible orders; totals cover the returned batch." },
               },
             },
           },

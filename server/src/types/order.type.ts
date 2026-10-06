@@ -236,6 +236,8 @@ export interface BulkUpdateParcelStatusInput {
 }
 
 export interface BulkCreateOrderInput {
+  /** Confirm an identical batch imported in the previous hour. */
+  confirmDuplicateBatch?: boolean;
   /** Sender applied to every order that omits its own sender field. */
   defaultSender?: OrderPartyInput;
   orders: CreateOrderInput[];

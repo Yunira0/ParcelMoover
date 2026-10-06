@@ -103,7 +103,7 @@ describe("partner finance API", () => {
   });
 
   it("reads unsettled delivery records as vendor records", async () => {
-    const records = { items: [{ trackingId: "PM-TEST", collectedAmount: 100 }] };
+    const records = { items: [{ trackingId: "PM-TEST", collectedAmount: 100 }], capped: true, availableCredit: 80 };
     vi.mocked(getUnsettledOrders).mockResolvedValue(records as any);
     const res = response();
 

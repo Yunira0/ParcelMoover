@@ -721,6 +721,16 @@
         <!-- Orders Tab -->
         <div class="tab-content" id="tab-orders">
           <div class="card">
+            <div class="card-title">Import up to 100 orders</div>
+            <p>Paste a JSON object containing an <code>orders</code> array. Each row follows Create Order below; sender may use your registered profile. Results show which rows succeeded. Repeating an identical batch within an hour returns <code>DUPLICATE_BATCH</code>. To deliberately repeat it, add <code>"confirmDuplicateBatch": true</code> and use a new request key.</p>
+            <form onsubmit="createBulkOrders(event)">
+              <label for="bulk-orders-json">Import request JSON</label>
+              <textarea id="bulk-orders-json" rows="8" required spellcheck="false" placeholder='{"orders":[{"receiver":{"name":"Customer","phone":"9800000000","address":"Main street"},"destinationLocationId":"Kathmandu","codAmount":1000,"weightKg":1}]}'></textarea>
+              <button class="btn btn-primary" type="submit">Import orders</button>
+            </form>
+            <pre id="bulk-orders-result" aria-live="polite"></pre>
+          </div>
+          <div class="card">
             <div class="card-title">Create Order</div>
             <form id="create-order-form" onsubmit="createOrder(event)">
               <div class="form-grid">
@@ -1424,6 +1434,15 @@
     }
 
     // Orders
+    async function createBulkOrders(event) {
+      event.preventDefault();
+      const output = document.getElementById('bulk-orders-result');
+      try {
+        const body = JSON.parse(document.getElementById('bulk-orders-json').value);
+        output.textContent = 'Importing…';
+        output.textContent = JSON.stringify(await api('POST', '/orders/bulk', body), null, 2);
+      } catch (error) { output.textContent = error.message; }
+    }
     async function createOrder(e) {
       e.preventDefault();
       const receiver = {
@@ -2142,7 +2161,7 @@
           return;
         }
 
-        container.innerHTML = `<div class="table-container"><table>
+        container.innerHTML = `${res.data.capped ? '<p role="status">Showing the newest 1,000 eligible orders. Totals cover this batch. Settle it and reload to see the next batch.</p>' : ''}<div class="table-container"><table>
           <thead><tr><th>Tracking ID</th><th>Receiver</th><th>Collected</th><th>Delivery Charge</th><th>Net Payable</th></tr></thead>
           <tbody>${items.map(o => `
             <tr>

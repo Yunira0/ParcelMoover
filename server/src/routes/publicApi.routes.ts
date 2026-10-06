@@ -6,6 +6,7 @@ import { createRedisRateLimitStore } from "../lib/rateLimitStore";
 import {
   publicAddRemarkSchema,
   publicBulkStatusSchema,
+  publicBulkCreateOrderSchema,
   publicCancelOrderSchema,
   publicCreateOrderSchema,
   publicCreateTicketSchema,
@@ -25,6 +26,7 @@ import { listTicketsQuerySchema } from "../validators/ticket.schema";
 import { buildOpenApiDocument } from "../lib/openapi";
 import {
   publicBulkOrderStatusController,
+  publicBulkCreateOrderController,
   publicCancelOrderController,
   publicCreateOrderController,
   publicGetOrderController,
@@ -189,6 +191,8 @@ publicApiRouter.post(
 );
 
 // GET /api/v1/orders — list own orders (paginated; ?status= comma-separated).
+publicApiRouter.post("/orders/bulk", publicBulkLimiter, validate(publicBulkCreateOrderSchema), publicBulkCreateOrderController);
+
 publicApiRouter.get(
   "/orders",
   publicReadLimiter,

@@ -234,6 +234,8 @@ export interface UnsettledOrdersResult {
   totalNetPayable: number;
   /** Vendor leg only: prepaid delivery charges a new statement would hand back. */
   availableCredit: number;
+  /** True when the eligible set exceeded UNSETTLED_ORDERS_CAP and was trimmed. */
+  capped: boolean;
 }
 
 export interface SettlementDetailItem {

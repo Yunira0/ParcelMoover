@@ -887,6 +887,8 @@ export interface BulkCreateOrderRow {
 export interface BulkCreateOrderInput {
   defaultSender?: { name: string; phone: string; address?: string };
   orders: BulkCreateOrderRow[];
+  /** Resend with this after the user confirms the "already imported?" prompt. */
+  confirmDuplicateBatch?: boolean;
 }
 
 export interface BulkCreateResult {

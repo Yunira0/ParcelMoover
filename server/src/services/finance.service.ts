@@ -670,6 +670,8 @@ function riderLegParcelFilter(): Prisma.cod_collectionsWhereInput {
   };
 }
 
+const UNSETTLED_ORDERS_CAP = 1000;
+
 export async function getUnsettledOrders(
   actor: Actor,
   type: "rider" | "vendor",
@@ -722,9 +724,9 @@ export async function getUnsettledOrders(
   // Vendor-scoped keys share the `finance:${vendorId}:*` namespace so order
   // creation and settlement creation can invalidate them; rider-scoped ones
   // share `finance:rider:${riderId}:*`, invalidated by createSettlement.
-  // The `:v2` suffix retires payloads cached before orderNumber/receiverPhone
-  // were added to the item shape (both invalidation globs still match it).
-  const cacheKey = vendorId ? `finance:${vendorId}:unsettled:v2` : `finance:rider:${riderId}:unsettled:v2`;
+  // The `:v3` suffix retires payloads cached before the picker limit and
+  // capped flag were added (both invalidation globs still match it).
+  const cacheKey = vendorId ? `finance:${vendorId}:unsettled:v3` : `finance:rider:${riderId}:unsettled:v3`;
   const cached = await readFinanceCache<UnsettledOrdersResult>(cacheKey);
   if (cached) return cached;
 
@@ -786,10 +788,11 @@ export async function getUnsettledOrders(
         },
       },
     },
-    orderBy: { created_at: "desc" },
+    orderBy: [{ created_at: "desc" }, { id: "desc" }],
+    take: UNSETTLED_ORDERS_CAP + 1,
   });
 
-  const items: UnsettledOrderItem[] = collections.map((c) => {
+  const items: UnsettledOrderItem[] = collections.slice(0, UNSETTLED_ORDERS_CAP).map((c) => {
     const collected = Number(c.collected_amount);
     // A parcel returned to the vendor - genuine return leg or a plain RTO
     // bounce-back alike - is billed its delivery_charge same as any other
@@ -841,6 +844,7 @@ export async function getUnsettledOrders(
 
   const result: UnsettledOrdersResult = {
     items,
+    capped: collections.length > UNSETTLED_ORDERS_CAP,
     availableCredit,
     totalCod,
     totalDeliveryCharge,

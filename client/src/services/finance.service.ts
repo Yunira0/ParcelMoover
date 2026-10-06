@@ -318,6 +318,8 @@ export interface UnsettledOrdersResult {
   totalNetPayable: number;
   /** Vendor leg: charges prepaid through Billing that the next statement hands back. */
   availableCredit?: number;
+  /** True when the eligible set exceeded the server-side cap and was trimmed. */
+  capped: boolean;
 }
 
 export const getUnsettledOrders = async (

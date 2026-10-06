@@ -300,6 +300,8 @@ h3.qs-step::before{
 <a class="toc-link toc-h2" href="#errors" data-slug="errors">Errors</a>
 <a class="toc-link toc-h2" href="#openapi-spec" data-slug="openapi-spec">OpenAPI spec</a>
 <a class="toc-link toc-h2" href="#integration-checklist" data-slug="integration-checklist">Integration checklist</a>
+<a class="toc-link toc-h3" href="#bulk-order-creation-and-duplicate-batch-confirmation" data-slug="bulk-order-creation-and-duplicate-batch-confirmation">Bulk order creation and duplicate batch confirmation</a>
+<a class="toc-link toc-h3" href="#bounded-unsettled-order-picker" data-slug="bounded-unsettled-order-picker">Bounded unsettled-order picker</a>
   </nav>
   <main>
 <h1 id="parcelmoover-partner-api-v1">ParcelMoover Partner API v1<a class="anchor" href="#parcelmoover-partner-api-v1" aria-label="Link to this section">#</a></h1>
@@ -1105,6 +1107,11 @@ ngrok http 4000</code></pre></div>
 <li>Handle <code>401</code> by alerting yourself (key revoked/rotated) and <code>429</code> with exponential backoff; branch on <code>error.code</code> rather than parsing <code>message</code> text.</li>
 <li>Rotate keys periodically: generate a new key, switch traffic, then revoke the old one (up to 5 active keys per account).</li>
 </ol>
+<h3 id="bulk-order-creation-and-duplicate-batch-confirmation">Bulk order creation and duplicate batch confirmation<a class="anchor" href="#bulk-order-creation-and-duplicate-batch-confirmation" aria-label="Link to this section">#</a></h3>
+<p><code>POST /api/v1/orders/bulk</code> accepts <code>{ &quot;orders&quot;: [ /* 1–100 Create Order requests */ ], &quot;confirmDuplicateBatch&quot;: false }</code>. Use API-key authentication and a UUID <code>Idempotency-Key</code>. It shares the dashboard import service and derives the vendor from the key; staff-only vendor selection and delivery-charge overrides are stripped. Omitted senders use your registered pickup profile. Destination hub names are resolved like single-order creation. Limit: 20 requests/minute per API key.</p>
+<p>The <code>201</code> response has <code>data.created</code>, <code>data.failed</code> and <code>data.results</code> (each row's original index, success, trackingId or error). Rows are independent: check results before retrying failed rows. Retrying the same request key replays the original response. A matching recently completed batch under a different key returns structured <code>409</code> / <code>error.code: &quot;DUPLICATE_BATCH&quot;</code>. To intentionally repeat it, send <code>confirmDuplicateBatch: true</code> with a new key. This optional one-hour warning uses Redis; it does not replace idempotency or guarantee uniqueness when Redis is unavailable or imports run simultaneously.</p>
+<h3 id="bounded-unsettled-order-picker">Bounded unsettled-order picker<a class="anchor" href="#bounded-unsettled-order-picker" aria-label="Link to this section">#</a></h3>
+<p><code>GET /api/v1/finance/unsettled-orders</code> now returns the newest 1,000 eligible orders at most, with stable descending creation-time/ID order. <code>data.capped: true</code> means more are waiting. Totals describe the returned batch; settle those orders and reload to access the next batch. <code>data.availableCredit</code> remains the vendor's prepaid credit. The Partner API and dashboard use the same service and ownership filters. Creating, approving and paying settlement statements remain staff-only. The pending-COD statement endpoint retains its existing full-statement behavior.</p>
   </main>
 </div>
 <script>
