@@ -38,6 +38,9 @@ export const settlementsQuerySchema = paginationQuerySchema.extend({
   // Payee name filter - matches riders.name for payeeType=rider, or
   // vendors.business_name/client_name for payeeType=vendor.
   search: z.string().trim().min(1).max(100).optional(),
+  // What fromDate/toDate apply to: settlement_date (default), payoff date or
+  // creation date.
+  dateField: z.enum(["transfer", "settled", "created"]).optional(),
 });
 
 export type SettlementsQuery = z.infer<typeof settlementsQuerySchema>;

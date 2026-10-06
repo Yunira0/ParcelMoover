@@ -3,7 +3,7 @@ import { order_type, parcel_status, payment_status, settlement_status } from "..
 import prisma from "../lib/prisma";
 import redis, { scanAndDelete } from "../lib/redis";
 import { AppError } from "../utils/AppError";
-import { formatNepalDate } from "../utils/nepalTime";
+import { formatNepalDate, nepalDayRangeUtc } from "../utils/nepalTime";
 import { getDatePart, randomBase32 } from "../utils/trackingId";
 import { resolveOwnVendorId } from "./vendor-scope.service";
 import { createNotification } from "./notification.service";
@@ -444,6 +444,11 @@ export async function listSettlements(
   toDate?: Date,
   status?: settlement_status,
   search?: string,
+  // Which date fromDate/toDate filter on. "transfer" (default) is the
+  // statement's settlement_date - the vendor page's Transfer date column.
+  // "settled" is when it was paid off and "created" when it was drawn up - the
+  // admin COD & Settlements columns of those names.
+  dateField: "transfer" | "settled" | "created" = "transfer",
 ): Promise<SettlementsListResult> {
   const isStaff = isFinanceStaff(actor);
   const isSales = actor.roles.includes("sales") && !isStaff;
@@ -509,7 +514,7 @@ export async function listSettlements(
       : branchRiderIds
         ? `branch:${[...branchRiderIds].sort().join("-")}`
         : `all:${payeeType}`;
-  const cacheKey = `finance:${scopeKey}:settlements:${safePage}:${take}:${fromDate?.toISOString() ?? ""}:${toDate?.toISOString() ?? ""}:${status ?? ""}:${search ?? ""}`;
+  const cacheKey = `finance:${scopeKey}:settlements:${safePage}:${take}:${dateField}:${fromDate?.toISOString() ?? ""}:${toDate?.toISOString() ?? ""}:${status ?? ""}:${search ?? ""}`;
   const cached = await readFinanceCache<SettlementsListResult>(cacheKey);
   if (cached) return cached;
 
@@ -520,18 +525,48 @@ export async function listSettlements(
     ...(search && payeeType === "rider" ? { name: { contains: search, mode: "insensitive" } } : {}),
   };
 
-  const where: Prisma.settlementsWhereInput = {
-    payee_type: payeeType,
-    ...(vendorId ? { vendor_id: vendorId } : {}),
-    ...(riderId ? { rider_id: riderId } : {}),
-    ...(fromDate || toDate
+  // Both dates are timestamps, so the picked days become Nepal-local day
+  // bounds (the whole To day included). Settled date mirrors the column: the
+  // instalment that paid the statement off, or - for statements settled before
+  // instalments were tracked - the row's last update.
+  const dayRange =
+    fromDate || toDate
+      ? nepalDayRangeUtc(fromDate?.toISOString().slice(0, 10), toDate?.toISOString().slice(0, 10))
+      : null;
+  const dateFilter: Prisma.settlementsWhereInput | null = !(fromDate || toDate)
+    ? null
+    : dateField === "transfer"
       ? {
+          // settlement_date is a plain date column - compared as before.
           settlement_date: {
             ...(fromDate ? { gte: fromDate } : {}),
             ...(toDate ? { lte: toDate } : {}),
           },
         }
-      : {}),
+      : dateField === "created"
+      ? { created_at: dayRange! }
+      : {
+          status: "settled",
+          OR: [
+            // The *last* instalment must fall in the range: one inside it, and
+            // none after its end.
+            {
+              settlement_payments: { some: { paid_at: dayRange! } },
+              ...(dayRange!.lt
+                ? { NOT: { settlement_payments: { some: { paid_at: { gte: dayRange!.lt } } } } }
+                : {}),
+            },
+            { settlement_payments: { none: {} }, updated_at: dayRange! },
+          ],
+        };
+
+  const where: Prisma.settlementsWhereInput = {
+    payee_type: payeeType,
+    ...(vendorId ? { vendor_id: vendorId } : {}),
+    ...(riderId ? { rider_id: riderId } : {}),
+    // Under AND so its OR / status can't collide with the vendor search OR or
+    // the status filter below.
+    ...(dateFilter ? { AND: [dateFilter] } : {}),
     ...(status ? { status } : {}),
     ...(Object.keys(ridersFilter).length ? { riders: ridersFilter } : {}),
     // Vendor name filter - business_name with client_name as fallback.
