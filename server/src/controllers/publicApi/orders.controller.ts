@@ -41,7 +41,7 @@ export async function publicBulkCreateOrderController(req: Request, res: Respons
       receiver: { ...order.receiver, ...(order.receiver.locationId ? { locationId: await resolveDestinationRef(order.receiver.locationId) } : {}) },
       ...(order.destinationLocationId ? { destinationLocationId: await resolveDestinationRef(order.destinationLocationId) } : {}),
     })));
-    const effective = { orders, confirmDuplicateBatch: input.confirmDuplicateBatch };
+    const effective = { orders, ...(input.confirmDuplicateBatch !== undefined ? { confirmDuplicateBatch: input.confirmDuplicateBatch } : {}) };
     const body = await withIdempotency(partnerIdempotencyKey(req, "order-bulk-create", key), effective, async () => {
       const data = await bulkCreateOrders(actor, effective);
       const result = { success: true, message: "Bulk import completed", data };
