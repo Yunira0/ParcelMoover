@@ -316,6 +316,40 @@ export async function getCodSettlementRequestById(actor: Actor, id: string) {
 }
 
 /**
+ * The vendor's statements that can settle this request: not cancelled and not
+ * already linked to another request. Staff only, newest first.
+ */
+export async function listSettleableStatements(actor: Actor, id: string) {
+  if (!isStaff(actor)) throw new AppError(403, "Only staff can action a COD settlement request");
+  await assertHeadOfficeOnly(actor, HEAD_OFFICE_ONLY_MESSAGE);
+
+  const request = await prisma.cod_settlement_requests.findUnique({ where: { id }, select: { vendor_id: true } });
+  if (!request) throw new AppError(404, "COD settlement request not found");
+
+  const used = await prisma.cod_settlement_requests.findMany({
+    where: { settlement_id: { not: null }, id: { not: id } },
+    select: { settlement_id: true },
+  });
+  const rows = await prisma.settlements.findMany({
+    where: {
+      payee_type: "vendor",
+      vendor_id: request.vendor_id,
+      status: { not: "cancelled" },
+      id: { notIn: used.map((row) => row.settlement_id!) },
+    },
+    select: { id: true, statement_id: true, amount: true, payable_amount: true, status: true },
+    orderBy: { created_at: "desc" },
+    take: 100,
+  });
+  return rows.map((row) => ({
+    id: row.id,
+    statementId: row.statement_id,
+    amount: Number(row.payable_amount ?? row.amount),
+    status: row.status,
+  }));
+}
+
+/**
  * Moves a request through its lifecycle. Staff only.
  *
  * A terminal request never reopens: settling or rejecting stamps closed_at and
@@ -359,6 +393,13 @@ export async function updateCodSettlementRequestStatus(
     });
     if (!statement) throw new AppError(400, "That statement does not belong to this vendor");
     if (statement.status === "cancelled") throw new AppError(400, "That statement has been cancelled");
+    // One statement answers one request; reusing it would tell a second
+    // request it was paid by money that already paid the first.
+    const taken = await prisma.cod_settlement_requests.findFirst({
+      where: { settlement_id: input.settlementId, id: { not: id } },
+      select: { request_no: true },
+    });
+    if (taken) throw new AppError(409, `Statement ${statement.statement_id} already settles ${taken.request_no}`);
   }
 
   // Compare-and-swap on the live status, so two reviewers can't both close it.

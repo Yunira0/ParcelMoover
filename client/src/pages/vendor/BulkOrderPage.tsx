@@ -420,6 +420,8 @@ const BulkOrderPage: React.FC = () => {
         }
       } catch (err) {
         console.error('Failed to load destinations:', err);
+        // Without the list, every row's destination fails to match.
+        if (!cancelled) setError("Couldn't load destinations - refresh the page before uploading.");
       }
     })();
     return () => { cancelled = true; };

@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import ConfirmDialog from './ConfirmDialog';
 import { Link } from 'react-router-dom';
 import { ChevronDown, ChevronUp, Download, Plus, Search, Trash2, Truck, X } from 'lucide-react';
 import Table from './Table';
@@ -256,8 +257,13 @@ const TransitManifestPanel: React.FC<TransitManifestPanelProps> = ({ statusFilte
   // Only ever offered for an empty open manifest (see the ACTION column) - one
   // that ever held parcels or ever left is a record of real work, not a
   // mistake to clean up.
-  const handleDelete = async (manifest: TransitManifestModel) => {
-    if (!window.confirm(`Delete empty manifest ${manifest.manifestNo}?`)) return;
+  const [pendingDelete, setPendingDelete] = useState<TransitManifestModel | null>(null);
+  const handleDelete = (manifest: TransitManifestModel) => setPendingDelete(manifest);
+
+  const confirmDelete = async () => {
+    const manifest = pendingDelete;
+    if (!manifest) return;
+    setPendingDelete(null);
     setBusy(true);
     setNotice('');
     setError('');
@@ -525,6 +531,15 @@ const TransitManifestPanel: React.FC<TransitManifestPanelProps> = ({ statusFilte
           setSelectedId(m.id);
           load();
         }}
+      />
+
+      <ConfirmDialog
+        isOpen={Boolean(pendingDelete)}
+        title={`Delete empty manifest ${pendingDelete?.manifestNo ?? ''}?`}
+        confirmLabel="Delete"
+        danger
+        onConfirm={() => void confirmDelete()}
+        onCancel={() => setPendingDelete(null)}
       />
     </>
   );

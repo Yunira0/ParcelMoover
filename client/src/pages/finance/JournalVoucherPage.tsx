@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import TallyPage, { type TallyAction } from '../../components/finance/TallyPage';
+import ConfirmDialog from '../../components/ConfirmDialog';
+import FormField from '../../components/FormField';
 import { dayBookAction, printAction, quitAction, voucherActions } from '../../components/finance/tallyKeys';
 import { hasAdminPermission } from '../../utils/auth';
 import { getJournalEntry, reverseEntry, type JournalEntry } from '../../services/accounting.service';
@@ -55,17 +57,22 @@ const JournalVoucherPage: React.FC = () => {
     };
   }, [entry]);
 
-  const reverse = async () => {
-    if (!entry) return;
-    const reason = window.prompt('Reason for reversing this voucher:');
-    // An empty reason is a cancelled prompt or a shrug. Neither is a reason,
-    // and this entry is about to become permanent history either way.
-    if (!reason?.trim()) return;
+  // The reason is required: this entry is about to become permanent history.
+  const [askReason, setAskReason] = useState(false);
+  const [reason, setReason] = useState('');
+  const reverse = () => {
+    setReason('');
+    setAskReason(true);
+  };
+  const closeReason = useCallback(() => setAskReason(false), []);
 
+  const confirmReverse = async () => {
+    if (!entry || reason.trim().length < 3) return;
     setReversing(true);
     setError(null);
     try {
       await reverseEntry(entry.id, reason.trim());
+      setAskReason(false);
       await load();
     } catch (err) {
       setError(err);
@@ -82,7 +89,7 @@ const JournalVoucherPage: React.FC = () => {
       // stays on record, answered by an equal and opposite entry.
       key: 'Alt+X',
       label: 'Cancel voucher',
-      onSelect: () => void reverse(),
+      onSelect: reverse,
       // A voided voucher has already been answered by its reversal. Reversing
       // it again would just be a third entry saying nothing.
       disabled: !entry || entry.status === 'voided' || reversing,
@@ -199,6 +206,20 @@ const JournalVoucherPage: React.FC = () => {
           </div>
         </div>
       )}
+      <ConfirmDialog
+        isOpen={askReason}
+        title={`Cancel ${entry?.entryNo ?? 'voucher'}`}
+        message="Posts an equal and opposite entry. The original stays on record, marked cancelled."
+        confirmLabel="Cancel voucher"
+        cancelLabel="Keep it"
+        danger
+        busy={reversing}
+        confirmDisabled={reason.trim().length < 3}
+        onConfirm={() => void confirmReverse()}
+        onCancel={closeReason}
+      >
+        <FormField label="Reason" required type="textarea" value={reason} onChange={setReason} />
+      </ConfirmDialog>
     </TallyPage>
   );
 };

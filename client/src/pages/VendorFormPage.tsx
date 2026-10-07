@@ -348,6 +348,7 @@ const VendorFormPage: React.FC = () => {
         }
       } catch (err) {
         console.error('Failed to load hubs:', err);
+        setFieldErrors(prev => ({ ...prev, pickupLocation: "Couldn't load hubs - refresh the page to try again." }));
       }
     };
     fetchHubs();

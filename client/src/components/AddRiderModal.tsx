@@ -52,6 +52,7 @@ const AddRiderModal: React.FC<AddRiderModalProps> = ({ isOpen, onClose, onSucces
           }
         } catch (err) {
           console.error('Failed to fetch locations:', err);
+          setFieldErrors((prev) => ({ ...prev, locationId: "Couldn't load locations - close and reopen to try again." }));
         }
       };
       fetchLocations();

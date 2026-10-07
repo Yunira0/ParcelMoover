@@ -1,4 +1,5 @@
 import api from '../utils/api';
+import type { SettlementStatus } from './finance.service';
 
 /**
  * A vendor's request to be paid out the COD the office is holding.
@@ -106,6 +107,19 @@ export const createCodSettlementRequest = async (
 ): Promise<{ success: boolean; message: string; data: CodSettlementRequest }> => {
   const response = await api.post('/cod-settlement-requests', data);
   return response.data;
+};
+
+export interface SettleableStatement {
+  id: string;
+  statementId: string;
+  amount: number;
+  status: SettlementStatus;
+}
+
+/** The vendor's statements that can settle this request: not cancelled, not used by another request. */
+export const getSettleableStatements = async (id: string): Promise<SettleableStatement[]> => {
+  const response = await api.get(`/cod-settlement-requests/${id}/statements`);
+  return response.data.data;
 };
 
 export const updateCodSettlementRequestStatus = async (
