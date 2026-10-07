@@ -1,37 +1,55 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import TallyPage, { type TallyAction } from '../../components/finance/TallyPage';
 import FilterDropdown from '../../components/FilterDropdown';
 import NepaliDatePicker from '../../components/NepaliDatePicker';
+import PartyPicker from '../accounting/PartyPicker';
+import {
+  dayBookAction,
+  exportAction,
+  printAction,
+  quitAction,
+  voucherActions,
+  voucherTypeOf,
+} from '../../components/finance/tallyKeys';
 import {
   getAccountLedger,
   listAccounts,
   type Account,
   type AccountLedger,
 } from '../../services/accounting.service';
-import { drCr, formatMoney } from '../../utils/format';
+import { hasAdminPermission } from '../../utils/auth';
+import { drCr, formatAmount } from '../../utils/format';
 import { downloadExcel } from '../../utils/excel';
-import LedgerSummary from '../../components/finance/LedgerSummary';
 import { toBsDate } from '../../utils/nepaliDate';
 import { useBackOr } from '../../hooks/useBackOr';
+import '../accounting/Accounting.css';
 
 /**
- * One account's ledger, as the ruled sheet it is on paper.
+ * One account's ledger, as TallyPrime's Ledger Vouchers report: Date,
+ * Particulars ("To" the other ledger on a debit, "By" it on a credit), Vch
+ * Type, Vch No., Debit, Credit, with the running balance on the right and
+ * Opening Balance / Current Total / Closing Balance ruled off at the foot.
  *
- * Receipt and payment for the two sides, which is what the people reading this
- * sheet call them. They are the debit and credit columns underneath and are
- * still ordered that way, so the sheet reconciles against the journal line for
- * line - only the headings speak the vocabulary of the office rather than of
- * the ledger. The running balance is the column people actually scan, so it is
- * the one on the right where the eye ends up after crossing the row.
+ * Mounted twice: as the Account Ledger menu item (?account=) and as the sheet
+ * every other screen drills into (/finance/ledger/:code).
  */
-const MIN_ROWS = 20;
+
+const TYPE_LABELS: Record<string, string> = {
+  asset: 'Assets',
+  liability: 'Liabilities',
+  equity: 'Capital',
+  revenue: 'Income',
+  expense: 'Expenses',
+};
 
 const LedgerSheetPage: React.FC = () => {
-  const { code = '' } = useParams<{ code: string }>();
+  const { code: routeCode } = useParams<{ code: string }>();
   const navigate = useNavigate();
-  const goBack = useBackOr(`/accounting/ledgers/account?account=${code}`);
   const [params, setParams] = useSearchParams();
+  const code = routeCode ?? params.get('account') ?? '1000';
+  const goBack = useBackOr('/finance/cash-bank');
+  const canWrite = hasAdminPermission('ACCOUNTING_ACCESS');
 
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [ledger, setLedger] = useState<AccountLedger | null>(null);
@@ -42,15 +60,11 @@ const LedgerSheetPage: React.FC = () => {
   const to = params.get('to') ?? '';
 
   const load = useCallback(async () => {
-    if (!code) return;
     setLoading(true);
     setError(null);
     try {
-      // This is a single printable document for the chosen range, not a
-      // browsed list - so it asks for the server's largest page in one call
-      // rather than adding page controls to something meant to be printed
-      // whole. (getAccountLedger otherwise defaults to a much smaller page,
-      // now that the interactive Ledger tab paginates it.)
+      // One printable document for the chosen range, not a browsed list - so
+      // it asks for the server's largest page in one call.
       setLedger(
         await getAccountLedger(code, {
           ...(from ? { from } : {}),
@@ -70,8 +84,6 @@ const LedgerSheetPage: React.FC = () => {
   }, [load]);
 
   useEffect(() => {
-    // The whole chart: Account Ledger's "Printable sheet" opens this for any
-    // account, and a cash-only list left the picker blank on those.
     listAccounts().then(setAccounts).catch(() => {
       // The picker is a convenience; a ledger that loaded is still readable
       // without it, so this must not take the screen down with it.
@@ -85,56 +97,70 @@ const LedgerSheetPage: React.FC = () => {
     setParams(next, { replace: true });
   };
 
-  const exportSheet = async () => {
+  // On the menu item the account rides in the query string, so switching it
+  // keeps you on the Account Ledger rather than jumping to the drill-in URL.
+  const pickAccount = (next: string) => {
+    if (!next) return;
+    if (routeCode) navigate(`/finance/ledger/${next}${params.toString() ? `?${params.toString()}` : ''}`);
+    else setParam('account', next);
+  };
+
+  const debitNormal = ledger?.account.normalSide !== 'credit';
+  /** Which column a balance sits in: its Dr or Cr side, as a positive figure. */
+  const sideOf = (balance: number) => ((debitNormal ? balance >= 0 : balance < 0) ? 'debit' : 'credit');
+
+  const rows = useMemo(() => ledger?.rows ?? [], [ledger]);
+
+  const exportSheet = useCallback(async () => {
     if (!ledger) return;
+    const dn = ledger.account.normalSide !== 'credit';
     await downloadExcel(
       `ledger-${ledger.account.code}`,
       ledger.account.name,
-      ['Date', 'Particulars / Description', 'Reference', 'Receipt', 'Payment', 'Balance'],
+      ['Date', 'Particulars', 'Vch Type', 'Vch No.', 'Debit', 'Credit', 'Balance', 'Narration'],
       [
         // The running balance below starts from this figure, so the file
         // reconciles only if it carries it too.
-        [toBsDate(ledger.range.from), 'Opening balance carried forward', 'OPENING', '', '', drCr(ledger.openingBalance, debitNormal)],
+        [toBsDate(ledger.range.from), 'Opening Balance', '', '', '', '', drCr(ledger.openingBalance, dn), ''],
         ...ledger.rows.map((row) => [
           row.bsDate,
-          row.contraAccounts || row.memo || '',
+          `${row.debit > 0 ? 'To' : 'By'} ${row.contraAccounts}`,
+          voucherTypeOf(row.sourceType),
           row.entryNo,
           row.debit || '',
           row.credit || '',
-          drCr(row.runningBalance, debitNormal),
+          drCr(row.runningBalance, dn),
+          row.memo ?? '',
         ]),
+        ['', 'Closing Balance', '', '', '', '', drCr(ledger.closingBalance, dn), ''],
       ],
     );
-  };
+  }, [ledger]);
 
-  const actions: TallyAction[] = [
-    { key: 'F5', label: 'Print', onSelect: () => window.print() },
-    { key: 'F7', label: 'Export', onSelect: exportSheet, disabled: !ledger },
-    { key: 'F12', label: 'Day book', onSelect: () => navigate('/accounting/transactions/journal') },
-    { key: 'Escape', label: 'Back', onSelect: goBack },
-  ];
+  const actions: TallyAction[] = useMemo(() => [
+    ...(canWrite ? voucherActions(navigate) : []),
+    printAction(),
+    exportAction(() => void exportSheet(), !ledger),
+    dayBookAction(navigate),
+    quitAction(goBack),
+  ], [canWrite, navigate, exportSheet, ledger, goBack]);
 
-  const debitNormal = ledger?.account.normalSide !== 'credit';
-
-  const rows = ledger?.rows ?? [];
-  const blanks = Math.max(0, MIN_ROWS - rows.length);
-
-  // The filter strip is the app's own controls, not bare <select>/<input>: a
-  // searchable dropdown because a real chart runs to hundreds of accounts, and
-  // the Nepali date picker because every date on the sheet below is BS.
+  // The app's own controls, not bare <select>/<input>: a searchable dropdown
+  // because a real chart runs to hundreds of accounts, and the Nepali date
+  // picker because every date on the sheet is BS.
   const filters = (
     <>
       <FilterDropdown
-        label="ACCOUNT"
+        label="LEDGER"
         value={code}
-        ariaLabel="Account"
-        placeholder="Select account"
-        searchPlaceholder="Search accounts..."
+        ariaLabel="Ledger"
+        placeholder="Select ledger"
+        searchPlaceholder="Search ledgers..."
         options={accounts.filter((account) => account.isActive || account.code === code).map((account) => ({
           value: account.code,
-          label: `${account.code} — ${account.name}`,
+          label: `${account.name} · ${account.code}`,
         }))}
-        onChange={(next) => next && navigate(`/finance/ledger/${next}`)}
+        onChange={pickAccount}
       />
       <label aria-label="From date">
         <span>FROM</span>
@@ -144,116 +170,108 @@ const LedgerSheetPage: React.FC = () => {
         <span>TO</span>
         <NepaliDatePicker value={to} onChange={(next) => setParam('to', next)} placeholder="End date" />
       </label>
+      {/* Admin and staff have no account of their own; their ledger is
+          everything posted against them, across every account. */}
+      <label className="acc-staff-ledger-picker" aria-label="Admin or staff ledger">
+        <span>ADMIN / STAFF</span>
+        <PartyPicker
+          types={['user']}
+          value={null}
+          onChange={(party) => party && navigate(`/finance/ledger/user/${party.partyId}`)}
+          prompt=""
+          inputLabel="Open an admin / staff ledger"
+        />
+      </label>
     </>
   );
 
+  const openingSide = ledger ? sideOf(ledger.openingBalance) : 'debit';
+  const closingSide = ledger ? sideOf(ledger.closingBalance) : 'debit';
+
   return (
     <TallyPage
-      title={ledger ? `${ledger.account.code} — ${ledger.account.name}` : 'Ledger'}
+      title={ledger ? `Ledger: ${ledger.account.name}` : 'Ledger'}
       period={ledger?.range.label}
-      periodLabel="Time Period"
+      periodLabel="Period"
       actions={actions}
       filters={filters}
       error={error}
       loading={loading}
+      menu
     >
       {ledger && (
-        <div className="tly-scroll">
-          <table className="tly-sheet tly-sheet-form">
-            <thead>
-              <tr>
-                <th style={{ width: '4%' }}>No</th>
-                <th style={{ width: '12%' }}>Date</th>
-                <th>Particulars / Description</th>
-                <th style={{ width: '15%' }}>Reference</th>
-                <th className="tly-amt">Receipt</th>
-                <th className="tly-amt">Payment</th>
-                <th className="tly-amt">Balance</th>
-              </tr>
-            </thead>
-            <tbody>
-              {/* The opening balance is a row, not a caption. It is the first
-                  number in the running column and every balance below it is
-                  only meaningful relative to it. */}
-              <tr>
-                <td />
-                {/* `range.from` comes back as an AD timestamp. Every other
-                    date in this column is BS, so it is converted rather than
-                    printed — one column, one calendar. */}
-                <td>{toBsDate(ledger.range.from)}</td>
-                <td className="tly-muted">Opening balance carried forward</td>
-                <td className="tly-muted">OPENING</td>
-                <td className="tly-amt">–</td>
-                <td className="tly-amt">–</td>
-                <td className="tly-amt">{drCr(ledger.openingBalance, debitNormal)}</td>
-              </tr>
+        <div className="tly-voucher jv">
+          <div className="jv-meta">
+            <div className="jv-meta-field">
+              <span>Ledger :</span>
+              <strong>{ledger.account.name} · {ledger.account.code}</strong>
+            </div>
+            <div className="jv-meta-field">
+              <span>Under :</span>
+              <strong>{TYPE_LABELS[ledger.account.type] ?? ledger.account.type}</strong>
+            </div>
+            <div className="jv-meta-field jv-meta-no">
+              <span>Vouchers :</span>
+              <strong>{ledger.totalRows}</strong>
+            </div>
+          </div>
 
-              {rows.map((row, index) => (
-                <tr
-                  key={row.entryId + index}
-                  onClick={() => navigate(`/finance/voucher/${row.entryId}`)}
-                  style={{ cursor: 'pointer' }}
-                >
-                  <td>{index + 1}</td>
-                  <td>{row.bsDate}</td>
-                  <td>
-                    {row.contraAccounts}
-                    {row.memo && (
-                      <>
-                        <br />
-                        <span className="tly-muted">{row.memo}</span>
-                      </>
-                    )}
-                  </td>
-                  <td>{row.entryNo}</td>
-                  <td className="tly-amt">{row.debit > 0 ? formatMoney(row.debit) : '–'}</td>
-                  <td className="tly-amt">{row.credit > 0 ? formatMoney(row.credit) : '–'}</td>
-                  <td className="tly-amt">{drCr(row.runningBalance, debitNormal)}</td>
+          <div className="tly-scroll">
+            <table className="tly-sheet jv-sheet jv-report">
+              <thead>
+                <tr>
+                  <th style={{ width: '11%' }}>Date</th>
+                  <th className="jv-col-account">Particulars</th>
+                  <th style={{ width: '10%' }}>Vch Type</th>
+                  <th style={{ width: '12%' }}>Vch No.</th>
+                  <th className="tly-amt">Debit</th>
+                  <th className="tly-amt">Credit</th>
+                  <th className="tly-amt">Balance</th>
                 </tr>
-              ))}
-
-              {Array.from({ length: blanks }, (_, index) => (
-                <tr key={`blank-${index}`} className="tly-blank">
-                  <td>{rows.length + index + 1}</td>
-                  <td />
-                  <td />
-                  <td />
-                  <td />
-                  <td />
-                  <td />
+              </thead>
+              <tbody>
+                {rows.length === 0 && (
+                  <tr className="jv-empty"><td colSpan={7}>Nothing moved on this ledger during {ledger.range.label}.</td></tr>
+                )}
+                {rows.map((row, index) => (
+                  <tr key={row.entryId + index} className="jv-row" onClick={() => navigate(`/finance/voucher/${row.entryId}`)}>
+                    <td>{row.bsDate}</td>
+                    <td>
+                      <span className="jv-by">{row.debit > 0 ? 'To' : 'By'}</span>
+                      <strong>{row.contraAccounts || '—'}</strong>
+                      {row.memo && <span className="jv-narration">({row.memo})</span>}
+                    </td>
+                    <td>{voucherTypeOf(row.sourceType)}</td>
+                    <td>{row.entryNo}</td>
+                    <td className="tly-amt">{row.debit > 0 ? formatAmount(row.debit) : ''}</td>
+                    <td className="tly-amt">{row.credit > 0 ? formatAmount(row.credit) : ''}</td>
+                    <td className="tly-amt">{drCr(row.runningBalance, debitNormal)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="jv-foot-total">
+                  <td colSpan={4} className="jv-foot-label">Opening Balance :</td>
+                  <td className="tly-amt">{openingSide === 'debit' ? formatAmount(Math.abs(ledger.openingBalance)) : ''}</td>
+                  <td className="tly-amt">{openingSide === 'credit' ? formatAmount(Math.abs(ledger.openingBalance)) : ''}</td>
+                  <td className="tly-amt" />
                 </tr>
-              ))}
-            </tbody>
-            <tfoot>
-              <tr>
-                <td colSpan={4} style={{ textAlign: 'right' }}>
-                  Totals
-                </td>
-                <td className="tly-amt">{formatMoney(ledger.totalDebit)}</td>
-                <td className="tly-amt">{formatMoney(ledger.totalCredit)}</td>
-                <td className="tly-amt" />
-              </tr>
-              <tr className="tly-grand">
-                <td colSpan={6} style={{ textAlign: 'right' }}>
-                  Closing balance
-                </td>
-                <td className="tly-amt">{drCr(ledger.closingBalance, debitNormal)}</td>
-              </tr>
-            </tfoot>
-          </table>
+                <tr>
+                  <td colSpan={4} className="jv-foot-label">Current Total :</td>
+                  <td className="tly-amt">{formatAmount(ledger.totalDebit)}</td>
+                  <td className="tly-amt">{formatAmount(ledger.totalCredit)}</td>
+                  <td className="tly-amt" />
+                </tr>
+                <tr className="jv-foot-closing">
+                  <td colSpan={4} className="jv-foot-label">Closing Balance :</td>
+                  <td className="tly-amt">{closingSide === 'debit' ? formatAmount(Math.abs(ledger.closingBalance)) : ''}</td>
+                  <td className="tly-amt">{closingSide === 'credit' ? formatAmount(Math.abs(ledger.closingBalance)) : ''}</td>
+                  <td className="tly-amt">{drCr(ledger.closingBalance, debitNormal)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
         </div>
-      )}
-
-      {ledger && (
-        <LedgerSummary
-          title="Account Summary"
-          lines={[
-            { label: 'Opening balance', value: drCr(ledger.openingBalance, debitNormal) },
-            { label: 'Total receipts', value: formatMoney(ledger.totalDebit) },
-            { label: 'Total payments', value: formatMoney(ledger.totalCredit) },
-            { label: 'Closing balance', value: drCr(ledger.closingBalance, debitNormal) },
-          ]}
-        />
       )}
     </TallyPage>
   );

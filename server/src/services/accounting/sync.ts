@@ -140,10 +140,16 @@ const SETTLEMENT_POSTING_SELECT = {
   // and return revenue. The *total* cut is taken from the statement itself
   // (gross minus payable), so a missing or stale item here shifts which revenue
   // account a rupee lands in - never whether the entry balances.
+  // Also which vendor each item's COD belongs to, so a rider remittance can
+  // credit 2005 per vendor.
   settlement_items: {
     select: {
+      amount: true,
       cod_collections: {
-        select: { parcels: { select: { status: true, order_type: true, delivery_charge: true } } },
+        select: {
+          vendor_id: true,
+          parcels: { select: { status: true, order_type: true, delivery_charge: true } },
+        },
       },
     },
   },
@@ -178,7 +184,7 @@ export async function syncSettlementPostings(
   ]);
 
   for (const row of settlements) {
-    const settlement = { ...row, methodAccounts, return_charges: returnChargesOn(row) };
+    const settlement = { ...row, methodAccounts, return_charges: returnChargesOn(row), vendor_shares: vendorSharesOn(row) };
     const isRider = settlement.payee_type === "rider";
     const eventKey = isRider ? EVENT_KEY.riderRemittance : EVENT_KEY.vendorSettlement;
     const label = `settlement ${settlement.statement_id}`;
@@ -209,6 +215,20 @@ function returnChargesOn(settlement: {
     return total.plus(parcel.delivery_charge ?? 0);
   }, new Decimal(0));
 }
+
+/** A statement's COD summed per vendor, so 2005 can be credited to each one. */
+function sharesByVendor(items: Array<{ vendorId: string | null | undefined; amount: Prisma.Decimal }>) {
+  const byVendor = new Map<string, Prisma.Decimal>();
+  for (const { vendorId, amount } of items) {
+    if (!vendorId) continue;
+    byVendor.set(vendorId, (byVendor.get(vendorId) ?? new Decimal(0)).plus(amount));
+  }
+  return Array.from(byVendor, ([vendorId, amount]) => ({ vendorId, amount }));
+}
+
+const vendorSharesOn = (settlement: {
+  settlement_items: Array<{ amount: Prisma.Decimal; cod_collections: { vendor_id: string | null } | null }>;
+}) => sharesByVendor(settlement.settlement_items.map((item) => ({ vendorId: item.cod_collections?.vendor_id, amount: item.amount })));
 
 // ── Branch settlements ──────────────────────────────────────────────────────
 
@@ -289,13 +309,17 @@ export async function syncCarrierSettlementPostings(
         payments: true,
         settlement_date: true,
         status: true,
+        items: { select: { collected_amount: true, cod_collection: { select: { vendor_id: true } } } },
       },
     }),
     loadMethodAccounts(db),
   ]);
 
   for (const row of rows) {
-    const settlement = { ...row, methodAccounts };
+    const vendor_shares = sharesByVendor(
+      row.items.map((item) => ({ vendorId: item.cod_collection.vendor_id, amount: item.collected_amount })),
+    );
+    const settlement = { ...row, methodAccounts, vendor_shares };
     const label = `carrier settlement ${settlement.statement_no}`;
     const desired = settlement.status !== "cancelled" ? resolve(() => describeCarrierSettlement(settlement), label) : null;
     record(

@@ -25,6 +25,8 @@ const mocks = vi.hoisted(() => ({
   txSettlementPaymentCreate: vi.fn(),
   txAuditCreate: vi.fn(),
   syncBranchSettlementPostings: vi.fn(),
+  methodFindFirst: vi.fn(),
+  entryFindMany: vi.fn(),
 }));
 
 vi.mock("../../lib/prisma", () => ({ default: {
@@ -34,13 +36,15 @@ vi.mock("../../lib/prisma", () => ({ default: {
     findFirst: mocks.paymentFindFirst, aggregate: mocks.paymentAggregate,
   },
   locations: { findFirst: mocks.locationFindFirst, findUnique: mocks.locationFindUnique },
+  payment_methods: { findFirst: mocks.methodFindFirst },
+  journal_entries: { findMany: mocks.entryFindMany },
   $queryRaw: mocks.queryRaw,
   $transaction: mocks.transaction,
 } }));
 vi.mock("../billing.service", () => ({ getBillingSettings: mocks.getBillingSettings }));
 vi.mock("../accounting/sync", () => ({ syncBranchSettlementPostings: mocks.syncBranchSettlementPostings }));
 
-import { branchStateForBalance, listBranchPayments, reviewBranchPayment } from "../branch-billing.service";
+import { branchStateForBalance, listBranchPayments, receiveBranchCod, reviewBranchPayment } from "../branch-billing.service";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -215,5 +219,75 @@ describe("reviewBranchPayment — verifying an Add money deposit", () => {
     expect(mocks.txSettlementUpdate).not.toHaveBeenCalled();
     expect(mocks.txPaymentUpdate).not.toHaveBeenCalled();
     expect(mocks.txPaymentCreate).not.toHaveBeenCalled();
+  });
+});
+
+describe("receiveBranchCod — cash from a branch on a Receipt voucher", () => {
+  const accountant = { id: "acct-1", roles: ["accountant"] };
+  const statement = (id: string, netPayable: number, paidAmount = 0) => ({
+    id, statement_no: id.toUpperCase(), net_payable: netPayable, paid_amount: paidAmount,
+    payments: null, status: paidAmount > 0 ? "partially_paid" : "pending", from_branch_id: "branch-a",
+  });
+
+  const wire = (statements: ReturnType<typeof statement>[]) => {
+    const tx = {
+      $queryRaw: vi.fn().mockResolvedValue([]),
+      branch_settlements: { findMany: mocks.txSettlementFindMany, update: mocks.txSettlementUpdate },
+      branch_settlement_payments: { create: mocks.txSettlementPaymentCreate },
+      audit_logs: { create: mocks.txAuditCreate },
+    };
+    mocks.transaction.mockImplementation(async (cb: (client: unknown) => Promise<unknown>) => cb(tx));
+    mocks.txSettlementFindMany.mockResolvedValue(statements);
+    mocks.txSettlementPaymentCreate.mockResolvedValue({});
+    mocks.txSettlementUpdate.mockResolvedValue({});
+    mocks.txAuditCreate.mockResolvedValue({});
+    mocks.methodFindFirst.mockResolvedValue({ name: "Cash" });
+    mocks.entryFindMany.mockResolvedValue([{ id: "je-1", entry_no: "JV-1" }]);
+    // evaluateBranchBilling afterwards: an inactive branch makes it a no-op.
+    mocks.locationFindFirst.mockResolvedValue(null);
+  };
+
+  it("pays open statements down oldest first in the chosen account's method", async () => {
+    wire([statement("s1", 5000), statement("s2", 4000)]);
+
+    const result = await receiveBranchCod(accountant, { branchId: "branch-a", amount: 7000, accountCode: "1000" });
+
+    expect(mocks.txSettlementUpdate).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      where: { id: "s1" }, data: expect.objectContaining({ paid_amount: 5000, status: "settled", payment_method: "Cash" }),
+    }));
+    expect(mocks.txSettlementUpdate).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      where: { id: "s2" }, data: expect.objectContaining({ paid_amount: 2000, status: "partially_paid" }),
+    }));
+    expect(mocks.syncBranchSettlementPostings).toHaveBeenCalledTimes(2);
+    expect(result.allocations.map((a) => a.amount)).toEqual([5000, 2000]);
+    expect(result.entries).toEqual([{ id: "je-1", entryNo: "JV-1" }]);
+  });
+
+  it("refuses more than the branch owes, so no cash goes unposted", async () => {
+    wire([statement("s1", 5000, 1000)]);
+
+    await expect(receiveBranchCod(accountant, { branchId: "branch-a", amount: 4500, accountCode: "1000" }))
+      .rejects.toThrow("more than the Rs. 4000");
+    expect(mocks.txSettlementUpdate).not.toHaveBeenCalled();
+  });
+
+  it("refuses a branch with no open statements", async () => {
+    wire([]);
+
+    await expect(receiveBranchCod(accountant, { branchId: "branch-a", amount: 100, accountCode: "1000" }))
+      .rejects.toThrow("no open COD statements");
+  });
+
+  it("refuses an account no payment method routes to", async () => {
+    wire([statement("s1", 5000)]);
+    mocks.methodFindFirst.mockResolvedValue(null);
+
+    await expect(receiveBranchCod(accountant, { branchId: "branch-a", amount: 100, accountCode: "1105" }))
+      .rejects.toThrow("no active payment method");
+  });
+
+  it("is limited to office finance authority", async () => {
+    await expect(receiveBranchCod({ id: "admin-1", roles: ["admin"] }, { branchId: "branch-a", amount: 100, accountCode: "1000" }))
+      .rejects.toThrow("super admin or accountant");
   });
 });

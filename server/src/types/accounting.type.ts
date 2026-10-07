@@ -79,6 +79,8 @@ export interface LedgerRow {
   entryDate: string;
   bsDate: string;
   memo: string | null;
+  /** What raised the entry (settlement, manual, ...), shown as the voucher type. */
+  sourceType: string;
   /** The other side(s) of the entry, so a ledger row reads as a sentence. */
   contraAccounts: string;
   debit: number;
@@ -174,6 +176,8 @@ export interface TransactionRow {
   entryDate: string;
   bsDate: string;
   memo: string | null;
+  /** What raised the entry (settlement, manual, ...), shown as the voucher type. */
+  sourceType: string;
   accountCode: string;
   accountName: string;
   /** The other side(s) of the entry, so a row reads as a sentence. */

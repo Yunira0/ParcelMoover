@@ -1,8 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import TallyPage, { type TallyAction } from '../../components/finance/TallyPage';
+import { dayBookAction, printAction, quitAction, voucherActions } from '../../components/finance/tallyKeys';
+import { hasAdminPermission } from '../../utils/auth';
 import { getJournalEntry, reverseEntry, type JournalEntry } from '../../services/accounting.service';
-import { formatMoney } from '../../utils/format';
+import { formatAmount } from '../../utils/format';
 import { useBackOr } from '../../hooks/useBackOr';
 
 /**
@@ -73,17 +75,20 @@ const JournalVoucherPage: React.FC = () => {
   };
 
   const actions: TallyAction[] = [
-    { key: 'F5', label: 'Print', onSelect: () => window.print() },
+    ...(hasAdminPermission('ACCOUNTING_ACCESS') ? voucherActions(navigate) : []),
+    printAction(),
     {
-      key: 'F8',
-      label: 'Reverse',
+      // Tally's Alt+X cancels a voucher. Here that is a reversal: the original
+      // stays on record, answered by an equal and opposite entry.
+      key: 'Alt+X',
+      label: 'Cancel voucher',
       onSelect: () => void reverse(),
       // A voided voucher has already been answered by its reversal. Reversing
       // it again would just be a third entry saying nothing.
       disabled: !entry || entry.status === 'voided' || reversing,
     },
-    { key: 'F12', label: 'Day book', onSelect: () => navigate('/accounting/transactions/journal') },
-    { key: 'Escape', label: 'Back', onSelect: goBack },
+    dayBookAction(navigate),
+    quitAction(goBack),
   ];
 
   const lines = entry?.lines ?? [];
@@ -96,6 +101,7 @@ const JournalVoucherPage: React.FC = () => {
       actions={actions}
       error={error}
       loading={loading}
+      menu
     >
       {entry && (
         <div className="tly-voucher">
@@ -142,8 +148,8 @@ const JournalVoucherPage: React.FC = () => {
                         </>
                       )}
                     </td>
-                    <td className="tly-amt">{line.debit > 0 ? formatMoney(line.debit) : ''}</td>
-                    <td className="tly-amt">{line.credit > 0 ? formatMoney(line.credit) : ''}</td>
+                    <td className="tly-amt">{line.debit > 0 ? formatAmount(line.debit) : ''}</td>
+                    <td className="tly-amt">{line.credit > 0 ? formatAmount(line.credit) : ''}</td>
                   </tr>
                 ))}
 
@@ -172,8 +178,8 @@ const JournalVoucherPage: React.FC = () => {
                 <tr>
                   <td />
                   <td style={{ textAlign: 'right' }}>Total</td>
-                  <td className="tly-amt">{formatMoney(totals.debit)}</td>
-                  <td className="tly-amt">{formatMoney(totals.credit)}</td>
+                  <td className="tly-amt">{formatAmount(totals.debit)}</td>
+                  <td className="tly-amt">{formatAmount(totals.credit)}</td>
                 </tr>
               </tfoot>
             </table>

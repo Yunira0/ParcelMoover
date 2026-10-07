@@ -1,0 +1,507 @@
+/* Voucher entry screens (Journal, Payment, Receipt), ruled like Tally's. The
+   sheet, panel and title band come from tally.css; this only makes the inputs
+   sit inside the ruled cells as written-in values rather than boxed form
+   controls. */
+
+.jv-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3) var(--space-6);
+  padding: var(--space-3) var(--space-4);
+}
+
+.jv-meta-field {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--font-size-sm);
+}
+
+.jv-meta-field > span {
+  font-weight: var(--font-weight-semibold);
+  white-space: nowrap;
+}
+
+.jv-meta-field .form-group {
+  min-width: 180px;
+}
+
+.jv-meta-no {
+  margin-left: auto;
+}
+
+.jv-meta-no > strong {
+  min-width: 96px;
+  padding: 0 var(--space-2);
+  border-bottom: 1px solid var(--color-border-default);
+  color: var(--color-text-caption);
+  font-weight: var(--font-weight-regular);
+}
+
+/* Payment/Receipt: the cash or bank account the money moves through, on its
+   own line above the sheet as Tally's "Account:" is. */
+.jv-account-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+  padding: 0 var(--space-4) var(--space-3);
+  font-size: var(--font-size-sm);
+}
+
+.jv-account-bar > span {
+  font-weight: var(--font-weight-semibold);
+  white-space: nowrap;
+}
+
+.jv-account-bar .form-group {
+  flex: 0 1 380px;
+  min-width: 220px;
+}
+
+.jv-account-bar small {
+  color: var(--color-text-caption);
+  font-size: var(--font-size-xs);
+}
+
+.jv-posted {
+  margin: 0;
+  padding: var(--space-2) var(--space-4);
+  border-top: 1px solid var(--color-border-default);
+  background: var(--color-success-surface);
+  color: var(--color-success-default);
+  font-size: var(--font-size-xs);
+}
+
+/* ── The sheet ─────────────────────────────────────────────────────────────── */
+
+.jv-sheet thead th.jv-col-account {
+  text-align: left;
+}
+
+/* Ruled like the paper form: vertical rules between columns, no horizontal
+   rule between lines, so the columns read as columns. */
+.jv-sheet tbody td {
+  border-top: 0;
+  border-bottom: 0;
+  vertical-align: top;
+}
+
+.jv-sheet tbody tr:hover td {
+  background: transparent;
+}
+
+.jv-sheet .jv-col-remove {
+  width: 36px;
+  min-width: 36px;
+  padding: var(--space-2) var(--space-1);
+  text-align: center;
+}
+
+.jv-account {
+  width: auto;
+}
+
+/* A credit line sits indented under the debits, as Tally prints it. */
+.jv-account-cr {
+  padding-left: var(--space-8) !important;
+}
+
+.jv-account-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.jv-account-row .form-group {
+  flex: 1;
+  min-width: 0;
+}
+
+.jv-side {
+  flex: none;
+  width: 20px;
+  color: var(--color-text-caption);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-bold);
+}
+
+.jv-who {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+  padding-left: 28px;
+}
+
+/* Payment/Receipt lines are all one side, so there is no Dr/Cr cap to clear. */
+.jv-sheet-single .jv-who {
+  padding-left: 0;
+}
+
+.jv-who-label {
+  flex: none;
+  min-width: 40px;
+  color: var(--color-text-caption);
+  font-size: var(--font-size-xs);
+}
+
+.jv-who-required {
+  color: var(--color-danger-text);
+  font-weight: var(--font-weight-semibold);
+}
+
+.jv-who .acc-entry-party {
+  flex: 1;
+  min-width: 0;
+  padding-left: 0;
+  border-left: 0;
+}
+
+.jv-who .acc-party-search,
+.jv-who .acc-party-search .form-group {
+  width: 100%;
+}
+
+/* Controls sit in the cell as written-in values: no box until focused. */
+.jv-sheet .form-group input,
+.jv-sheet .searchable-select-trigger {
+  min-height: 32px;
+  height: 32px;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+.jv-sheet .form-group input:hover,
+.jv-sheet .searchable-select-trigger:hover {
+  border-color: var(--color-border-default);
+}
+
+.jv-sheet .form-group input:focus,
+.jv-sheet .searchable-select-trigger:focus,
+.jv-sheet .searchable-select-trigger:focus-visible {
+  border-color: var(--color-border-primary);
+  background: var(--color-background-surface);
+}
+
+.jv-amt .form-group input {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.jv-invalid td {
+  background: var(--color-danger-surface) !important;
+}
+
+.jv-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin-top: 4px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--border-radius-sm);
+  background: transparent;
+  color: var(--color-text-caption);
+  cursor: pointer;
+}
+
+.jv-remove:hover:not(:disabled) {
+  background: var(--color-danger-surface);
+  color: var(--color-danger-text);
+}
+
+.jv-remove:disabled {
+  visibility: hidden;
+}
+
+.jv-blank:has(.jv-blank-hint) {
+  cursor: pointer;
+}
+
+.jv-sheet tbody tr.jv-blank td {
+  color: inherit;
+}
+
+.jv-blank-hint {
+  color: var(--color-text-placeholder);
+  font-size: var(--font-size-xs);
+}
+
+.jv-blank:hover .jv-blank-hint {
+  color: var(--color-text-primary);
+}
+
+/* ── Foot: narration beside the ruled-off totals ─────────────────────────── */
+
+.jv-sheet tfoot td {
+  background: var(--color-background-surface);
+  font-weight: var(--font-weight-regular);
+}
+
+.jv-narr label {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.jv-narr span {
+  padding-top: 6px;
+  font-weight: var(--font-weight-semibold);
+}
+
+.jv-narr textarea {
+  flex: 1;
+  min-height: 52px;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: var(--border-radius-sm);
+  background: transparent;
+  color: var(--color-text-default);
+  font: inherit;
+  resize: vertical;
+}
+
+.jv-narr textarea:hover {
+  border-color: var(--color-border-default);
+}
+
+.jv-narr textarea:focus {
+  outline: none;
+  border-color: var(--color-border-primary);
+}
+
+/* The totals, ruled off above as on the form. */
+.jv-sheet tfoot td.jv-total {
+  border-top: 2px solid var(--color-text-default);
+  font-weight: var(--font-weight-bold);
+}
+
+.jv-status-row td {
+  font-size: var(--font-size-xs);
+}
+
+.jv-status {
+  color: var(--color-danger-text);
+  font-weight: var(--font-weight-semibold);
+}
+
+.jv-status.is-balanced {
+  color: var(--color-success-default);
+}
+
+.jv-problem {
+  margin-left: var(--space-3);
+  color: var(--color-text-caption);
+}
+
+/* ── Menu line ─────────────────────────────────────────────────────────────── */
+
+.jv-menu {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border-top: 1px solid var(--color-border-default);
+  background: var(--color-background-elevated);
+}
+
+.jv-menu-item {
+  padding: var(--space-1) var(--space-4);
+  border: 0;
+  border-radius: var(--border-radius-sm);
+  background: transparent;
+  color: var(--color-text-default);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+
+.jv-menu-item:hover:not(:disabled) {
+  background: var(--color-primary-subtle);
+}
+
+.jv-menu-item.is-primary {
+  background: var(--color-background-primary-default);
+  color: var(--color-text-base);
+  font-weight: var(--font-weight-semibold);
+}
+
+.jv-menu-item.is-primary:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+}
+
+.jv-menu-item:disabled {
+  background: transparent;
+  color: var(--color-text-placeholder);
+  cursor: not-allowed;
+}
+
+.jv-menu-item:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/* ── Reports (Day Book, registers, ledgers, summaries, Masters) ───────────── */
+/* The same frame and ruled sheet as the vouchers, read rather than filled in:
+   rows open what they summarise, sub-lines sit indented under their voucher,
+   and the foot carries Tally's Opening / Current Total / Closing lines. */
+
+.jv-meta-field > strong {
+  min-width: 96px;
+  padding: 0 var(--space-2);
+  border-bottom: 1px solid var(--color-border-default);
+  font-weight: var(--font-weight-regular);
+}
+
+.jv-report tbody tr.jv-row {
+  cursor: pointer;
+}
+
+.jv-report tbody tr.jv-row:hover td {
+  background: var(--color-primary-subtle);
+}
+
+.jv-report tbody tr.jv-row-voided td {
+  color: var(--color-text-placeholder);
+  text-decoration: line-through;
+}
+
+/* Detailed mode's lines under each voucher: indented, quieter, no rule. */
+.jv-report tbody tr.jv-sub td {
+  padding-top: 0;
+  padding-bottom: 2px;
+  color: var(--color-text-caption);
+  font-size: var(--font-size-xs);
+}
+
+.jv-report .jv-sub-name {
+  padding-left: var(--space-6) !important;
+}
+
+.jv-report .jv-narration {
+  display: block;
+  margin-top: 2px;
+  color: var(--color-text-caption);
+  font-size: var(--font-size-xs);
+  font-style: italic;
+}
+
+.jv-report .jv-by {
+  display: inline-block;
+  min-width: 22px;
+  color: var(--color-text-caption);
+  font-size: var(--font-size-xs);
+}
+
+.jv-report .jv-group-row td {
+  padding-top: var(--space-3);
+  font-weight: var(--font-weight-bold);
+}
+
+.jv-report .jv-indent-1 { padding-left: var(--space-6) !important; }
+
+.jv-report tfoot td {
+  font-weight: var(--font-weight-semibold);
+}
+
+.jv-report tfoot .jv-foot-label {
+  text-align: right;
+}
+
+/* Ruled off above the totals, as on the paper form. */
+.jv-report tfoot tr.jv-foot-total td.tly-amt {
+  border-top: 2px solid var(--color-text-default);
+}
+
+.jv-report tfoot tr.jv-foot-closing td {
+  background: var(--color-primary-subtle);
+  color: var(--color-text-primary);
+  font-weight: var(--font-weight-bold);
+}
+
+.jv-empty td {
+  padding: var(--space-6) var(--space-4) !important;
+  color: var(--color-text-caption);
+  text-align: center;
+}
+
+.jv-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+}
+
+.jv-link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-text-primary);
+  font: inherit;
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+}
+
+.jv-link:hover { text-decoration: underline; }
+
+.jv-pagination {
+  padding: var(--space-2) var(--space-3);
+  border-top: 1px solid var(--color-border-default);
+}
+
+/* A menu line rendered by TallyPage under a report, outside any form frame. */
+.tly-menu {
+  border: 1px solid var(--color-border-default);
+}
+
+/* A Tally master form: label column, then the value, one field per row. */
+.jv-form {
+  display: grid;
+  grid-template-columns: minmax(140px, 200px) minmax(0, 520px);
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  padding: var(--space-4);
+}
+
+.jv-form > label,
+.jv-form > .jv-form-label {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+}
+
+.jv-form .jv-form-hint {
+  grid-column: 2;
+  margin-top: calc(-1 * var(--space-1));
+  color: var(--color-text-caption);
+  font-size: var(--font-size-xs);
+}
+
+@media (max-width: 720px) {
+  .jv-form { grid-template-columns: minmax(0, 1fr); }
+  .jv-form .jv-form-hint { grid-column: 1; }
+}
+
+@media print {
+  .tly-menu,
+  .jv-pagination { display: none; }
+}
+
+@media (max-width: 720px) {
+  .jv-meta-no { margin-left: 0; }
+  .jv-meta-field { flex: 1 1 100%; }
+  .jv-meta-field .form-group,
+  .jv-meta-field .ndp-trigger { flex: 1; min-width: 0; }
+  .jv-sheet { min-width: 560px; }
+}
+
+@media print {
+  .jv-menu,
+  .jv-remove,
+  .jv-blank-hint,
+  .jv-status-row { display: none; }
+}
