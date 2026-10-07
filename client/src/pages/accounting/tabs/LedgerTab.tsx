@@ -9,10 +9,10 @@ import { money, numClass } from '../format';
 import { defaultRange, rangeParams, type RangeSelection } from '../range';
 import {
   getAccountLedger,
-  listAccounts,
   type Account,
   type AccountLedger as Ledger,
 } from '../../../services/accounting.service';
+import { listAccounts } from '../../../queries/lookups';
 import { apiErrorMessage } from '../../../utils/serverValidation';
 import { bsToAdDay, toBsDate } from '../../../utils/nepaliDate';
 import '../Accounting.css';

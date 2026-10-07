@@ -41,7 +41,7 @@ import {
   type ReturnManifestParcel,
 } from '../services/returnManifests.service';
 import { printReturnManifests } from '../utils/printReturnManifest';
-import { searchVendors } from '../services/users.service';
+import { searchVendors } from '../queries/lookups';
 import { apiErrorMessage } from '../utils/serverValidation';
 import { addOrdersToBranchManifest } from '../services/transitManifests.service';
 import './ReturnOperations.css';

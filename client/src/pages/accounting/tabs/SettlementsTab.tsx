@@ -18,7 +18,8 @@ import {
   type SettlementListItem,
   type SettlementStatusFilter,
 } from '../../../services/finance.service';
-import { getRiders, searchVendors } from '../../../services/users.service';
+import { getRiders } from '../../../services/users.service';
+import { searchVendors } from '../../../queries/lookups';
 import { settlementStatusLabel, settlementStatusTone } from '../../../utils/settlementStatus';
 import { toBsDate } from '../../../utils/nepaliDate';
 import '../Accounting.css';

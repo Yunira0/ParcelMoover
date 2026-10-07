@@ -5,10 +5,10 @@ import FilterDropdown from '../../components/FilterDropdown';
 import NepaliDatePicker from '../../components/NepaliDatePicker';
 import {
   getAccountLedger,
-  listAccounts,
   type Account,
   type AccountLedger,
 } from '../../services/accounting.service';
+import { listAccounts } from '../../queries/lookups';
 import { drCr, formatMoney } from '../../utils/format';
 import { downloadExcel } from '../../utils/excel';
 import LedgerSummary from '../../components/finance/LedgerSummary';

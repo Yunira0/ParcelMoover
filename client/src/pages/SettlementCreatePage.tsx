@@ -7,7 +7,7 @@ import StatusChip, { type StatusChipTone } from '../components/StatusChip';
 import CreditUsageBar from '../components/CreditUsageBar';
 import { getUnsettledOrders, createSettlement, type UnsettledOrderItem } from '../services/finance.service';
 import { getBillingStatus, type BillingStatus, type VendorBillingState } from '../services/billing.service';
-import { getAllRiders, searchVendors } from '../services/users.service';
+import { getAllRiders, searchVendors } from '../queries/lookups';
 import { downloadExcel, type CellValue } from '../utils/excel';
 import { formatCurrency } from '../utils/format';
 import { todayNepalAd } from '../utils/nepaliDate';

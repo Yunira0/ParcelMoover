@@ -1,9 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import Table from './Table';
 import StatusChip from './StatusChip';
 import { getOrders, type Order } from '../services/orders.service';
 import { ORDER_STATUS_LABELS, getOrderStatusTone } from '../utils/orderStatus';
+import { queryKeys } from '../queries/keys';
 import './RecentOrders.css';
 
 const RECENT_LIMIT = 6;
@@ -12,32 +14,17 @@ const formatMoney = (value: number) =>
   `Rs. ${value.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 
 const RecentOrders: React.FC = () => {
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-
-  useEffect(() => {
-    const controller = new AbortController();
-    getOrders(
-      { sortBy: 'createdAt', sortDir: 'desc', pageSize: RECENT_LIMIT },
-      controller.signal,
-    )
-      .then((res) => {
-        if (res?.success && Array.isArray(res.data)) {
-          setOrders(res.data.slice(0, RECENT_LIMIT));
-          setError('');
-        } else {
-          setError('Recent orders are unavailable.');
-        }
-      })
-      .catch((err) => {
-        if (err?.name !== 'CanceledError' && err?.name !== 'AbortError') {
-          setError('Recent orders are unavailable.');
-        }
-      })
-      .finally(() => setLoading(false));
-    return () => controller.abort();
-  }, []);
+  const recentQuery = useQuery({
+    queryKey: queryKeys.orders.recent(RECENT_LIMIT),
+    queryFn: ({ signal }) => getOrders({ sortBy: 'createdAt', sortDir: 'desc', pageSize: RECENT_LIMIT }, signal),
+  });
+  const orders: Order[] = recentQuery.data?.success && Array.isArray(recentQuery.data.data)
+    ? recentQuery.data.data.slice(0, RECENT_LIMIT)
+    : [];
+  const loading = recentQuery.isPending;
+  const error = recentQuery.isError || (recentQuery.data && !recentQuery.data.success)
+    ? 'Recent orders are unavailable.'
+    : '';
 
   const columns = [
     {
