@@ -1,6 +1,8 @@
 import { useNavigate } from 'react-router-dom'
-import { ChevronLeft, ChevronRight, KeyRound, Laptop, LogOut, Moon, Phone, ShieldCheck, Sun } from 'lucide-react'
+import { ChevronLeft, ChevronRight, KeyRound, Laptop, LogOut, Moon, Phone, RefreshCw, ShieldCheck, Sun } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
+import { useAppUpdate } from '../context/UpdateContext'
+import { isNativeAndroid } from '../lib/appUpdater'
 import { useThemePreference, type ThemePreference } from '../context/ThemeContext'
 import { PHONE_DISPLAY, PHONE_TEL } from '../constants/contact'
 import Button from '../components/Button'
@@ -49,6 +51,13 @@ export default function ProfilePage() {
   const navigate = useNavigate()
   const { rider, logout } = useAuth()
   const { preference, setPreference } = useThemePreference()
+  const appUpdate = useAppUpdate()
+  const updateStatus =
+    appUpdate.phase === 'checking' ? 'Checking…'
+    : appUpdate.update ? `Update to ${appUpdate.update.versionName}`
+    : appUpdate.phase === 'upToDate' ? 'Up to date'
+    : appUpdate.phase === 'error' ? "Couldn't check"
+    : undefined
 
   return (
     <div className="flex flex-col flex-1 bg-bg overflow-y-auto">
@@ -131,10 +140,28 @@ export default function ProfilePage() {
           </div>
         </div>
 
+        {isNativeAndroid && (
+          <div>
+            <p className="mb-1.5 text-[10px] font-semibold tracking-[1.4px] text-ink-3">APP</p>
+            <div className="rounded-[14px] border border-line bg-surface px-[14px]">
+              <ActionRow
+                icon={RefreshCw}
+                label="Check for updates"
+                trailing={updateStatus}
+                onClick={() => appUpdate.update ? appUpdate.openSheet() : void appUpdate.check({ manual: true })}
+              />
+            </div>
+          </div>
+        )}
+
         <Button variant="secondary" onClick={logout} className="mt-1">
           <LogOut size={17} strokeWidth={2} />
           Log out
         </Button>
+
+        <p className="text-center font-mono text-[11.5px] text-ink-3">
+          PM Rider v{appUpdate.installed?.versionName ?? __APP_VERSION__}
+        </p>
       </div>
     </div>
   )
