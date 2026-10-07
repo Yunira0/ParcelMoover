@@ -96,7 +96,13 @@ jobs:
 
           CERTS=$("$BT/apksigner" verify --print-certs "$APK")
           echo "$CERTS"
-          CERT=$(echo "$CERTS" | awk -F': ' '/Signer #1 certificate SHA-256 digest/ {print $2}' | tr 'A-F' 'a-f')
+          # apksigner prints "Signer #1 certificate SHA-256 digest: …" or, in newer
+          # build-tools, "V2 Signer: certificate SHA-256 digest: …" - match both.
+          CERT=$(echo "$CERTS" | awk -F': ' '/certificate SHA-256 digest/ {print $NF; exit}' | tr 'A-F' 'a-f')
+          if [ -z "$CERT" ]; then
+            echo "::error::Could not read the APK's signing certificate from apksigner output"
+            exit 1
+          fi
           if [ -n "$EXPECTED_CERT" ]; then
             EXPECTED=$(echo "$EXPECTED_CERT" | tr -d ': ' | tr 'A-F' 'a-f')
             if [ "$CERT" != "$EXPECTED" ]; then
