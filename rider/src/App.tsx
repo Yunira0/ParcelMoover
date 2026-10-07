@@ -3,6 +3,8 @@ import { Suspense, lazy } from 'react'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { ThemeProvider } from './context/ThemeContext'
 import { PendingProvider } from './context/PendingContext'
+import { UpdateProvider } from './context/UpdateContext'
+import UpdateSheet from './components/UpdateSheet'
 import BottomNav from './components/BottomNav'
 import OfflineBanner from './components/OfflineBanner'
 import LoginPage from './pages/LoginPage'
@@ -74,12 +76,16 @@ function PublicLayout() {
 export default function App() {
   return (
     <ThemeProvider>
-      <AuthProvider>
-        <HashRouter>
-          <OfflineBanner />
-          <AuthRouter />
-        </HashRouter>
-      </AuthProvider>
+      <UpdateProvider>
+        <AuthProvider>
+          <HashRouter>
+            <OfflineBanner />
+            <AuthRouter />
+          </HashRouter>
+        </AuthProvider>
+        {/* Android APK only - renders nothing in the PWA */}
+        <UpdateSheet />
+      </UpdateProvider>
     </ThemeProvider>
   )
 }

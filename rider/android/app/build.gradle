@@ -1,0 +1,101 @@
+import groovy.json.JsonSlurper
+
+apply plugin: 'com.android.application'
+
+// ── Version: rider/package.json is the single source of truth ────────────────
+// versionName = "1.4.0", versionCode = 1*10000 + 4*100 + 0 = 10400. Android
+// only installs an update over the existing app when versionCode is higher,
+// so never hand-edit these here - bump "version" in package.json instead.
+def riderVersionName = new JsonSlurper().parse(file('../../package.json')).version
+def riderVersionParts = riderVersionName.tokenize('.').collect { it as int }
+if (riderVersionParts.size() != 3 || riderVersionParts.any { it < 0 || it > 99 }) {
+    throw new GradleException("rider/package.json version must be MAJOR.MINOR.PATCH with each part 0-99, got '${riderVersionName}'")
+}
+def riderVersionCode = riderVersionParts[0] * 10000 + riderVersionParts[1] * 100 + riderVersionParts[2]
+
+// ── Release signing ───────────────────────────────────────────────────────────
+// Every release MUST be signed with the same key, or Android refuses to update
+// the installed app and riders have to uninstall (losing their login).
+// CI passes RIDER_KEYSTORE_* env vars; locally, put the same four values in
+// android/keystore.properties (gitignored):
+//   storeFile=/absolute/path/to/pm-rider-release.jks
+//   storePassword=...
+//   keyAlias=pm-rider
+//   keyPassword=...
+def signingProps = new Properties()
+def signingPropsFile = rootProject.file('keystore.properties')
+if (signingPropsFile.exists()) {
+    signingPropsFile.withInputStream { signingProps.load(it) }
+}
+def signingValue = { String envName, String propName ->
+    System.getenv(envName) ?: signingProps.getProperty(propName)
+}
+def releaseStoreFile = signingValue('RIDER_KEYSTORE_PATH', 'storeFile')
+
+android {
+    namespace = "com.parcelmoover.rider"
+    compileSdk = rootProject.ext.compileSdkVersion
+    defaultConfig {
+        applicationId "com.parcelmoover.rider"
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        versionCode riderVersionCode
+        versionName riderVersionName
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        aaptOptions {
+             // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
+             // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
+            ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+        }
+    }
+    signingConfigs {
+        if (releaseStoreFile) {
+            release {
+                storeFile file(releaseStoreFile)
+                storePassword signingValue('RIDER_KEYSTORE_PASSWORD', 'storePassword')
+                keyAlias signingValue('RIDER_KEY_ALIAS', 'keyAlias')
+                keyPassword signingValue('RIDER_KEY_PASSWORD', 'keyPassword')
+            }
+        }
+    }
+    buildTypes {
+        release {
+            // Without a keystore the release APK comes out unsigned and
+            // uninstallable - CI checks for that and fails loudly.
+            if (releaseStoreFile) {
+                signingConfig signingConfigs.release
+            }
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+}
+
+repositories {
+    flatDir{
+        dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'
+    }
+}
+
+dependencies {
+    implementation fileTree(include: ['*.jar'], dir: 'libs')
+    implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
+    implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
+    implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
+    implementation project(':capacitor-android')
+    testImplementation "junit:junit:$junitVersion"
+    androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
+    androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
+    implementation project(':capacitor-cordova-android-plugins')
+}
+
+apply from: 'capacitor.build.gradle'
+
+try {
+    def servicesJSON = file('google-services.json')
+    if (servicesJSON.text) {
+        apply plugin: 'com.google.gms.google-services'
+    }
+} catch(Exception e) {
+    logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
+}
