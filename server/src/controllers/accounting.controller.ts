@@ -27,6 +27,7 @@ import {
   type TransactionQuery,
 } from "../services/accounting/accounting.service";
 import { createAccount, listChart, setOpeningBalance, updateAccount } from "../services/accounting/masters.service";
+import { listBranchCodOutstanding, receiveBranchCod } from "../services/branch-billing.service";
 
 function fail(res: Response, error: any, fallback: string) {
   return res.status(error?.statusCode || 500).json({
@@ -301,6 +302,22 @@ export async function createManualEntryController(req: Request, res: Response) {
     return res.status(201).json({ success: true, data: await createManualEntry(req.user!, req.body) });
   } catch (error) {
     return fail(res, error, "Failed to post the journal entry");
+  }
+}
+
+export async function listBranchCodOutstandingController(_req: Request, res: Response) {
+  try {
+    return ok(res, await listBranchCodOutstanding());
+  } catch (error) {
+    return fail(res, error, "Failed to load branch COD balances");
+  }
+}
+
+export async function receiveBranchCodController(req: Request, res: Response) {
+  try {
+    return res.status(201).json({ success: true, data: await receiveBranchCod(req.user!, req.body) });
+  } catch (error) {
+    return fail(res, error, "Failed to receive branch COD");
   }
 }
 

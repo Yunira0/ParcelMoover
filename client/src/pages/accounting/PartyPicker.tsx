@@ -23,15 +23,21 @@ export interface PickedParty {
   partyName: string;
 }
 
-/** What a party kind is called on screen. `user` covers other login accounts. */
+/** What a party kind is called on screen. `user` covers admin and staff logins. */
 const KIND_LABEL: Record<PartyKind, string> = {
   rider: 'rider',
   vendor: 'vendor',
-  user: 'user',
+  user: 'admin / staff',
+};
+
+const KIND_PLURAL: Record<PartyKind, string> = {
+  rider: 'riders',
+  vendor: 'vendors',
+  user: 'admin / staff',
 };
 
 const describe = (types: PartyKind[]) => {
-  const names = types.map((type) => `${KIND_LABEL[type]}s`);
+  const names = types.map((type) => KIND_PLURAL[type]);
   if (names.length === 1) return names[0];
   return `${names.slice(0, -1).join(', ')} or ${names[names.length - 1]}`;
 };

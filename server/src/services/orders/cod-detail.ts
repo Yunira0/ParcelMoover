@@ -45,31 +45,43 @@ export const BRANCH_CLEARED_SQL = Prisma.sql`
   WHERE bsi.parcel_id = p.id`;
 
 /**
- * Cash sitting at a branch (needs `pp` and `bs`): what the branch's riders have
- * remitted to it, less what the branch has passed on to head office. Cash a
- * rider has not remitted yet is still the rider's, under PM-Rider, so nothing
- * is counted twice.
+ * What a branch still owes head office on a collection (needs `bs`): the whole
+ * COD, wherever it sits - still in the branch rider's hand or already at the
+ * branch - less what the branch has passed on to head office. The branch
+ * answers for its riders' cash, so a branch parcel is never under PM-Rider.
  */
-export const BRANCH_HELD_SQL = Prisma.sql`GREATEST(
-  LEAST(c.rider_remitted_amount + c.collected_amount * pp.rider_frac, c.collected_amount)
-    - c.collected_amount * COALESCE(bs.frac, 0),
-  0)`;
+export const BRANCH_OWED_SQL = Prisma.sql`(c.collected_amount * (1 - COALESCE(bs.frac, 0)))`;
 
 /**
- * Which collections can be held at a branch: branch COD (reached its branch on
- * a transit manifest, not 3PL-delivered) outside Imadol's own coverage, since
- * Imadol is head office and has no branch to remit through.
+ * Which collections are branch COD: reached its branch on a transit manifest,
+ * not 3PL-delivered, outside Imadol's own coverage (Imadol is head office and
+ * has no branch to remit through). Never NULL, so NOT of it cleanly picks the
+ * rest - PM-Rider and Branches split a rider's cash without losing any.
  */
-export async function branchHeldFilterSql(): Promise<Prisma.Sql> {
+export function branchCodFilterSql(masterCoverage: string[]): Prisma.Sql {
+  return Prisma.sql`(c.carrier_code IS NULL
+    AND EXISTS (SELECT 1 FROM transit_manifest_parcels tmp WHERE tmp.parcel_id = p.id)
+    AND p.destination_location_id IS NOT NULL
+    AND p.destination_location_id <> ALL(${masterCoverage}::uuid[]))`;
+}
+
+export async function branchCodFilter(): Promise<Prisma.Sql> {
   const master = await prisma.locations.findFirst({
     where: { code: { equals: "IMADOL", mode: "insensitive" }, parent_id: null, is_hub: true, is_active: true },
     select: { id: true },
   });
-  const masterCoverage = master ? await resolveBranchCoverageIds(master.id) : [];
-  return Prisma.sql`c.carrier_code IS NULL
-    AND EXISTS (SELECT 1 FROM transit_manifest_parcels tmp WHERE tmp.parcel_id = p.id)
-    AND NOT (p.destination_location_id = ANY(${masterCoverage}::uuid[]))`;
+  return branchCodFilterSql(master ? await resolveBranchCoverageIds(master.id) : []);
 }
+
+/**
+ * Cash an own (non-carrier) rider holds and has not remitted (needs `pp`).
+ * Outside a rider's own scope, branch parcels are left out: their cash is
+ * counted under Branches instead.
+ */
+export const pmRiderFilterSql = (branchFilter: Prisma.Sql | null): Prisma.Sql =>
+  Prisma.sql`c.rider_id IS NOT NULL AND r.carrier_code IS NULL AND c.carrier_code IS NULL${
+    branchFilter ? Prisma.sql` AND NOT ${branchFilter}` : Prisma.empty
+  }`;
 
 import type { OrderActor } from "./types";
 
@@ -140,6 +152,9 @@ export async function getCodSettlementDetail(
     ? riderSettledSql
     : Prisma.sql`LEAST(c.remitted_amount + c.collected_amount * pp.vendor_frac, c.collected_amount)`;
   const pendingExprSql = Prisma.sql`c.collected_amount - ${settledExprSql}`;
+  // Branch parcels count under Branches, not PM-Rider - except on a rider's
+  // own drill-down, which keeps every parcel they hold under PM-Rider.
+  const branchFilter = bucket === "pm-rider" || bucket === "branches" ? await branchCodFilter() : null;
 
   // Mirrors the per-bucket formulas in computeDashboardSummary exactly, so a
   // detail page's rows always sum to the dashboard figure that linked here.
@@ -149,11 +164,11 @@ export async function getCodSettlementDetail(
       : bucket === "pending"
         ? Prisma.sql`AND ${pendingExprSql} > 0`
         : bucket === "pm-rider"
-          ? Prisma.sql`AND c.rider_id IS NOT NULL AND r.carrier_code IS NULL AND c.carrier_code IS NULL AND (c.collected_amount - ${riderSettledSql}) > 0`
+          ? Prisma.sql`AND ${pmRiderFilterSql(riderId ? null : branchFilter)} AND (c.collected_amount - ${riderSettledSql}) > 0`
           : bucket === "ncm" || bucket === "upaya"
             ? Prisma.sql`AND c.carrier_code = ${bucket} AND (${CARRIER_OWED_SQL}) > 0`
             : bucket === "branches"
-              ? Prisma.sql`AND ${await branchHeldFilterSql()} AND ${BRANCH_HELD_SQL} > 0`
+              ? Prisma.sql`AND ${branchFilter!} AND ${BRANCH_OWED_SQL} > 0`
               : Prisma.empty; // 'total' and 'delivery-charge': every in-scope row
 
   // Each bucket's rows must add up to the exact figure on the card, so the
@@ -170,7 +185,7 @@ export async function getCodSettlementDetail(
           : bucket === "ncm" || bucket === "upaya"
             ? CARRIER_OWED_SQL
             : bucket === "branches"
-              ? BRANCH_HELD_SQL
+              ? BRANCH_OWED_SQL
               : bucket === "delivery-charge"
               ? Prisma.sql`p.delivery_charge`
               : pendingExprSql;

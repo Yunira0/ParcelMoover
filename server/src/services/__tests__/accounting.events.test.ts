@@ -13,6 +13,7 @@ import {
   SYNTHETIC_SOURCE_ID,
 } from "../accounting/events";
 import { wasPosted } from "../accounting/posting.service";
+import { describeCarrierSettlement } from "../accounting/events";
 
 // Accounts generated alongside a payment method. Not in the chart - they are
 // created when an admin adds the method - so the tests stand them up the same
@@ -128,9 +129,26 @@ describe("postRiderRemittance", () => {
     await postRiderRemittance(asDb(db), settlement);
 
     expect(linesByAccount(db)).toEqual([
-      { code: ACCOUNT.CASH_IN_HAND, debit: "1200", credit: "0", party: null },
-      { code: ESEWA, debit: "300", credit: "0", party: null },
+      { code: ACCOUNT.CASH_IN_HAND, debit: "1200", credit: "0", party: "rider:rider-1" },
+      { code: ESEWA, debit: "300", credit: "0", party: "rider:rider-1" },
       { code: ACCOUNT.COD_HELD, debit: "0", credit: "1500", party: "rider:rider-1" },
+    ]);
+  });
+
+  it("credits 2005 to each vendor whose COD it is, leaving any remainder on the rider", async () => {
+    const db = fakeDb();
+    await postRiderRemittance(asDb(db), {
+      ...settlement,
+      vendor_shares: [
+        { vendorId: "vendor-b", amount: 500 },
+        { vendorId: "vendor-a", amount: 800 },
+      ],
+    });
+
+    expect(linesByAccount(db).filter((line) => line.code === ACCOUNT.COD_HELD)).toEqual([
+      { code: ACCOUNT.COD_HELD, debit: "0", credit: "800", party: "vendor:vendor-a" },
+      { code: ACCOUNT.COD_HELD, debit: "0", credit: "500", party: "vendor:vendor-b" },
+      { code: ACCOUNT.COD_HELD, debit: "0", credit: "200", party: "rider:rider-1" },
     ]);
   });
 
@@ -153,7 +171,7 @@ describe("postRiderRemittance", () => {
     });
 
     expect(linesByAccount(db)).toEqual([
-      { code: ACCOUNT.CASH_IN_HAND, debit: "1500", credit: "0", party: null },
+      { code: ACCOUNT.CASH_IN_HAND, debit: "1500", credit: "0", party: "rider:rider-1" },
       { code: ACCOUNT.COD_HELD, debit: "0", credit: "1500", party: "rider:rider-1" },
     ]);
   });
@@ -557,5 +575,24 @@ describe("postOpeningBalance", () => {
       reference: "nothing",
     });
     expect(outcome).toEqual({ skipped: true, reason: "zero opening balance" });
+  });
+});
+
+describe("describeCarrierSettlement", () => {
+  it("credits 2005 to each vendor whose COD the 3PL collected", () => {
+    const described = describeCarrierSettlement({
+      id: "cs-1", statement_no: "CS-1", carrier_code: "ncm",
+      gross_cod: 1000, carrier_charges: 100, net_receivable: 900, paid_amount: 0,
+      payment_method: null, payments: null, settlement_date: new Date("2026-09-01"),
+      vendor_shares: [{ vendorId: "vendor-a", amount: 600 }, { vendorId: "vendor-b", amount: 300 }],
+    });
+    if ("skip" in described) throw new Error("expected lines");
+
+    const held = described.lines.filter((line) => line.accountCode === ACCOUNT.COD_HELD);
+    expect(held.map((line) => [line.party?.id ?? null, String(line.credit)])).toEqual([
+      ["vendor-a", "600"],
+      ["vendor-b", "300"],
+      [null, "100"],
+    ]);
   });
 });

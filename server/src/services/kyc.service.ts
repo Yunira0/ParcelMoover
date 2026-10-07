@@ -589,7 +589,7 @@ export interface VendorKycStatus {
     billingBusinessName: string; registeredAddress: string; registrationNo: string; panVatNo: string;
     bankName: string; bankAccountNo: string; bankAccountHolder: string;
   };
-  docsOnFile: { citizenship: boolean; panVat: boolean; businessCert: boolean };
+  docsOnFile: { citizenshipFront: boolean; citizenshipBack: boolean; panVat: boolean; businessCert: boolean };
 }
 
 export async function getVendorKycStatus(vendorId: string): Promise<VendorKycStatus> {
@@ -622,7 +622,8 @@ export async function getVendorKycStatus(vendorId: string): Promise<VendorKycSta
       bankAccountHolder: text(vendor.bank_account_holder),
     },
     docsOnFile: {
-      citizenship: !!(vendor.citizenship_doc && vendor.citizenship_doc_back),
+      citizenshipFront: !!vendor.citizenship_doc,
+      citizenshipBack: !!vendor.citizenship_doc_back,
       panVat: !!vendor.pan_vat_doc,
       businessCert: !!vendor.business_cert_doc,
     },

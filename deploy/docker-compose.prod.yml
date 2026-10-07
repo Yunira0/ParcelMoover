@@ -54,9 +54,9 @@ services:
       NODE_ENV: production
       # Two release slots share Postgres; leave room for migrations/admin.
       DB_POOL_MAX: ${DB_POOL_MAX:-30}
-      # Code deployments do not authorize rewriting existing business records.
-      # Explicit maintenance may opt back into the existing one-time repairs.
-      SKIP_STARTUP_DATA_REPAIRS: ${SKIP_STARTUP_DATA_REPAIRS:-true}
+      # The one-time (--once) startup repairs run on deploy, including the
+      # per-vendor 2005 re-post. Set true to skip them for a deploy.
+      SKIP_STARTUP_DATA_REPAIRS: ${SKIP_STARTUP_DATA_REPAIRS:-false}
       TRUST_PROXY: "true"
       # Nginx reaches the container through Docker's private gateway, not the
       # container's loopback interface. Trust only local/private proxy hops;

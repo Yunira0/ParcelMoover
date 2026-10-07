@@ -113,7 +113,7 @@ export const rejectKyc = async (id: string, rejectionReason: string, notes?: str
 export const startVendorKycVerification = async (
   vendorId: string,
   fields: Record<string, string> = {},
-  docs: { citizenshipDoc?: File | null; panVatDoc?: File | null; businessCertDoc?: File | null } = {},
+  docs: { citizenshipDoc?: File | null; citizenshipDocBack?: File | null; panVatDoc?: File | null; businessCertDoc?: File | null } = {},
 ): Promise<{
   id: string; status: string; vendorId: string; vendorName: string; createdAt: string;
 }> => {
@@ -123,6 +123,7 @@ export const startVendorKycVerification = async (
     if (value.trim()) form.append(key, value);
   }
   if (docs.citizenshipDoc) form.append('citizenshipDoc', docs.citizenshipDoc);
+  if (docs.citizenshipDocBack) form.append('citizenshipDocBack', docs.citizenshipDocBack);
   if (docs.panVatDoc) form.append('panVatDoc', docs.panVatDoc);
   if (docs.businessCertDoc) form.append('businessCertDoc', docs.businessCertDoc);
   return (await api.post('/kyc/applications/start', form, {
@@ -140,7 +141,7 @@ export interface VerificationPrefill {
     'bankName' | 'bankAccountNo' | 'bankAccountHolder',
     string
   >;
-  docsOnFile: { citizenship: boolean; panVat: boolean; businessCert: boolean };
+  docsOnFile: { citizenshipFront: boolean; citizenshipBack: boolean; panVat: boolean; businessCert: boolean };
 }
 
 /** Whether this vendor can claim vouchers yet, with the verification prefill. */
@@ -154,13 +155,14 @@ export const getVerificationPrefill = async (vendorId: string): Promise<Verifica
 // Multipart because of the optional document scans.
 export const submitMyKycVerification = async (
   fields: Record<string, string>,
-  docs: { citizenshipDoc?: File | null; panVatDoc?: File | null; businessCertDoc?: File | null },
+  docs: { citizenshipDoc?: File | null; citizenshipDocBack?: File | null; panVatDoc?: File | null; businessCertDoc?: File | null },
 ): Promise<{ id: string }> => {
   const form = new FormData();
   for (const [key, value] of Object.entries(fields)) {
     if (value.trim()) form.append(key, value);
   }
   if (docs.citizenshipDoc) form.append('citizenshipDoc', docs.citizenshipDoc);
+  if (docs.citizenshipDocBack) form.append('citizenshipDocBack', docs.citizenshipDocBack);
   if (docs.panVatDoc) form.append('panVatDoc', docs.panVatDoc);
   if (docs.businessCertDoc) form.append('businessCertDoc', docs.businessCertDoc);
   const response = await api.post('/kyc/my-application', form, {

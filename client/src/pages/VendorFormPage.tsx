@@ -37,7 +37,8 @@ const MAX_DOCUMENT_BYTES = 5 * 1024 * 1024;
 const MAX_REGISTRATION_UPLOAD_BYTES = 9 * 1024 * 1024;
 
 const DOCUMENT_LABELS: Partial<Record<keyof VendorFormInput, string>> = {
-  citizenshipDoc: 'Citizenship document',
+  citizenshipDoc: 'Citizenship (front)',
+  citizenshipDocBack: 'Citizenship (back)',
   panVatDoc: 'PAN / VAT document',
   businessCertDoc: 'Business certificate',
   agreementDoc: 'Agreement',
@@ -103,6 +104,7 @@ interface VendorFormInput {
   registeredAddress: string;
   panVatNo: string;
   citizenshipDoc: File | null;
+  citizenshipDocBack: File | null;
   panVatDoc: File | null;
   businessCertDoc: File | null;
   agreementDoc: File | null;
@@ -151,6 +153,7 @@ const emptyForm: VendorFormInput = {
   registeredAddress: '',
   panVatNo: '',
   citizenshipDoc: null,
+  citizenshipDocBack: null,
   panVatDoc: null,
   businessCertDoc: null,
   agreementDoc: null,
@@ -284,7 +287,7 @@ const VendorFormPage: React.FC = () => {
   const [locations, setLocations] = useState<Array<{ value: string; label: string; code: string | null; isMasterHub: boolean }>>([]);
   // Sales-department admins, kept unfiltered so the dropdown can be re-filtered
   // by hub whenever the selected pickup location changes.
-  const [salesAdmins, setSalesAdmins] = useState<Array<{ userId: string; name: string; locationId: string | null }>>([]);
+  const [salesAdmins, setSalesAdmins] = useState<Array<{ userId: string; name: string; locationId: string | null; active: boolean }>>([]);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   // Set if the global default rates couldn't be fetched to pre-fill the rate
   // fields. Non-blocking: blank rate fields mean "use the Settings default"
@@ -322,7 +325,12 @@ const VendorFormPage: React.FC = () => {
           setSalesAdmins(
             adminsRes.data
               .filter((a: any) => (a.department || '').toLowerCase() === 'sales')
-              .map((a: any) => ({ userId: a.userId, name: a.name, locationId: a.locationId ?? null })),
+              .map((a: any) => ({
+                userId: a.userId,
+                name: a.name,
+                locationId: a.locationId ?? null,
+                active: String(a.status ?? '').toLowerCase() === 'active',
+              })),
           );
         }
         // Hub defaults to whichever hub the current staff member (super_admin
@@ -355,9 +363,12 @@ const VendorFormPage: React.FC = () => {
     // regardless so the locked, disabled field doesn't render blank.
     if (isSalesUser) return salesName ? [{ value: ownSalesUserId, label: salesName }] : [];
     return salesAdmins
+      // Only active sales can be assigned; an already-assigned one stays
+      // listed so editing a vendor doesn't blank its current selection.
+      .filter((a) => a.active || a.userId === form.salesUserId)
       .filter((a) => a.locationId && a.locationId === form.pickupLocation)
       .map((a) => ({ value: a.userId, label: a.name }));
-  }, [salesAdmins, form.pickupLocation, isSalesUser, salesName, ownSalesUserId]);
+  }, [salesAdmins, form.pickupLocation, form.salesUserId, isSalesUser, salesName, ownSalesUserId]);
 
   // The vendor's own branch, for labelling its branch-delivery rates as
   // "inside / outside <branch>" instead of "inside / outside valley".
@@ -547,11 +558,15 @@ const VendorFormPage: React.FC = () => {
     // fill a slot the vendor was registered without, so 'none selected' is
     // the normal case there.
     if (!isEdit && !form.citizenshipDoc) {
-      errors.citizenshipDoc = 'Citizenship document is required';
+      errors.citizenshipDoc = 'Citizenship front side is required';
+    }
+    if (!isEdit && !form.citizenshipDocBack) {
+      errors.citizenshipDocBack = 'Citizenship back side is required';
     }
     // Size limits apply to anything actually being uploaded, either way.
     const documents = [
       ['citizenshipDoc', form.citizenshipDoc],
+      ['citizenshipDocBack', form.citizenshipDocBack],
       ['panVatDoc', form.panVatDoc],
       ['businessCertDoc', form.businessCertDoc],
     ] as const;
@@ -674,6 +689,7 @@ const VendorFormPage: React.FC = () => {
           ...(canManageDocuments
             ? {
                 ...(form.citizenshipDoc ? { citizenshipDoc: form.citizenshipDoc } : {}),
+                ...(form.citizenshipDocBack ? { citizenshipDocBack: form.citizenshipDocBack } : {}),
                 ...(form.panVatDoc ? { panVatDoc: form.panVatDoc } : {}),
                 ...(form.businessCertDoc ? { businessCertDoc: form.businessCertDoc } : {}),
                 ...(form.agreementDoc ? { agreementDoc: form.agreementDoc } : {}),
@@ -747,6 +763,7 @@ const VendorFormPage: React.FC = () => {
         bankAccountNo: form.bankAccountNo,
         bankAccountHolder: form.bankAccountHolder,
         citizenshipDoc: form.citizenshipDoc,
+        citizenshipDocBack: form.citizenshipDocBack,
         panVatDoc: form.panVatDoc,
         businessCertDoc: form.businessCertDoc,
         agreementDoc: form.agreementDoc,
@@ -1027,7 +1044,7 @@ const VendorFormPage: React.FC = () => {
               <div className="vfp-docs">
                 <div>
                   <FileInput
-                    label="Citizenship"
+                    label="Citizenship (Front)"
                     required={!isEdit}
                     file={form.citizenshipDoc}
                     onChange={setFile('citizenshipDoc')}
@@ -1035,6 +1052,18 @@ const VendorFormPage: React.FC = () => {
                   {isEdit && <ExistingDoc docs={existingDocs} slot="citizenshipDoc" />}
                   {fieldErrors.citizenshipDoc && (
                     <span className="vfp-field-error">{fieldErrors.citizenshipDoc}</span>
+                  )}
+                </div>
+                <div>
+                  <FileInput
+                    label="Citizenship (Back)"
+                    required={!isEdit}
+                    file={form.citizenshipDocBack}
+                    onChange={setFile('citizenshipDocBack')}
+                  />
+                  {isEdit && <ExistingDoc docs={existingDocs} slot="citizenshipDocBack" />}
+                  {fieldErrors.citizenshipDocBack && (
+                    <span className="vfp-field-error">{fieldErrors.citizenshipDocBack}</span>
                   )}
                 </div>
                 <div>

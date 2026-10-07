@@ -9,7 +9,17 @@ import {
   type AccountLedger,
 } from '../../services/accounting.service';
 import { listAccounts } from '../../queries/lookups';
-import { drCr, formatMoney } from '../../utils/format';
+import { drCr, formatAmount } from '../../utils/format';
+import { downloadExcel } from '../../utils/excel';
+import { hasAdminPermission } from '../../utils/auth';
+import { useBackOr } from '../../hooks/useBackOr';
+import {
+  dayBookAction,
+  exportAction,
+  printAction,
+  quitAction,
+  voucherActions,
+} from '../../components/finance/tallyKeys';
 import '../../components/finance/tally.css';
 
 /**
@@ -34,6 +44,8 @@ interface Row {
 
 const CashBankPage: React.FC = () => {
   const navigate = useNavigate();
+  const goBack = useBackOr('/accounting');
+  const canWrite = hasAdminPermission('ACCOUNTING_ACCESS');
   const [range, setRange] = useState<RangeSelection>(defaultRange);
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
@@ -69,84 +81,115 @@ const CashBankPage: React.FC = () => {
     { opening: 0, debit: 0, credit: 0, closing: 0 },
   );
 
+  const exportSheet = async () => {
+    await downloadExcel(
+      'cash-bank-summary',
+      'Cash & Bank',
+      ['Particulars', 'Group', 'Opening Balance', 'Debit', 'Credit', 'Closing Balance'],
+      rows.map(({ account, ledger }) => {
+        const debitNormal = account.normalSide !== 'credit';
+        return [
+          account.name,
+          account.code === CASH_IN_HAND ? 'Cash-in-Hand' : 'Bank Accounts',
+          drCr(ledger.openingBalance, debitNormal),
+          ledger.totalDebit,
+          ledger.totalCredit,
+          drCr(ledger.closingBalance, debitNormal),
+        ];
+      }),
+    );
+  };
+
   const actions: TallyAction[] = [
-    { key: 'F5', label: 'Payment', onSelect: () => navigate('/finance/voucher/new?type=payment') },
-    { key: 'F6', label: 'Receipt', onSelect: () => navigate('/finance/voucher/new?type=receipt') },
+    ...(canWrite ? voucherActions(navigate) : []),
     { key: 'F8', label: 'Ledger', onSelect: () => navigate(`/finance/ledger/${CASH_IN_HAND}`) },
-    { key: 'F12', label: 'Day book', onSelect: () => navigate('/accounting/transactions/journal') },
+    printAction(),
+    exportAction(() => void exportSheet(), rows.length === 0),
+    dayBookAction(navigate),
+    quitAction(goBack),
   ];
 
   const filters = <PeriodPicker value={range} onChange={setRange} />;
 
   return (
     <TallyPage
-      title="Cash & Bank"
+      title="Cash/Bank Summary"
       period={rows[0]?.ledger.range.label}
       periodLabel="Period"
       actions={actions}
       filters={filters}
       error={error}
       loading={loading}
+      menu
     >
-      <p className="tly-note">
-        Cash-in-hand and every bank or wallet ledger, grouped as they post. Open a row for its full cash
-        book, or raise a voucher from the panel on the right.
-      </p>
+      <div className="tly-voucher jv">
+        <div className="jv-meta">
+          <div className="jv-meta-field">
+            <span>Group :</span>
+            <strong>Cash-in-Hand and Bank Accounts</strong>
+          </div>
+          <div className="jv-meta-field jv-meta-no">
+            <span>Ledgers :</span>
+            <strong>{rows.length}</strong>
+          </div>
+        </div>
 
-      <div className="tly-scroll">
-        <table className="tly-sheet">
-          <thead>
-            <tr>
-              <th style={{ width: '28%' }}>Ledger</th>
-              <th style={{ width: '18%' }}>Group</th>
-              <th className="tly-amt">Opening Bal.</th>
-              <th className="tly-amt">Debit</th>
-              <th className="tly-amt">Credit</th>
-              <th className="tly-amt">Closing Bal.</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map(({ account, ledger }) => {
-              const debitNormal = account.normalSide !== 'credit';
-              return (
-                <tr
-                  key={account.code}
-                  onClick={() => navigate(`/finance/ledger/${account.code}`)}
-                  style={{ cursor: 'pointer' }}
-                >
-                  <td>
-                    <strong>{account.name}</strong> <span className="tly-muted">· {account.code}</span>
-                  </td>
-                  <td className="tly-muted">
-                    {account.code === CASH_IN_HAND ? 'Cash-in-Hand' : 'Bank Accounts'}
-                  </td>
-                  <td className="tly-amt">{drCr(ledger.openingBalance, debitNormal)}</td>
-                  <td className="tly-amt">{formatMoney(ledger.totalDebit)}</td>
-                  <td className="tly-amt">{formatMoney(ledger.totalCredit)}</td>
-                  <td className="tly-amt">{drCr(ledger.closingBalance, debitNormal)}</td>
-                </tr>
-              );
-            })}
-            {!loading && rows.length === 0 && (
+        <div className="tly-scroll">
+          <table className="tly-sheet jv-sheet jv-report">
+            <thead>
               <tr>
-                <td colSpan={6} className="tly-muted">
-                  No cash or bank accounts yet — add one from Masters.
-                </td>
+                <th className="jv-col-account">Particulars</th>
+                <th className="tly-amt">Opening Balance</th>
+                <th className="tly-amt">Debit</th>
+                <th className="tly-amt">Credit</th>
+                <th className="tly-amt">Closing Balance</th>
               </tr>
+            </thead>
+            <tbody>
+              {(['Cash-in-Hand', 'Bank Accounts'] as const).map((group) => {
+                const members = rows.filter(({ account }) => (account.code === CASH_IN_HAND) === (group === 'Cash-in-Hand'));
+                if (members.length === 0) return null;
+                return (
+                  <React.Fragment key={group}>
+                    <tr className="jv-group-row">
+                      <td colSpan={5}>{group}</td>
+                    </tr>
+                    {members.map(({ account, ledger }) => {
+                      const debitNormal = account.normalSide !== 'credit';
+                      return (
+                        <tr key={account.code} className="jv-row" onClick={() => navigate(`/finance/ledger/${account.code}`)}>
+                          <td className="jv-indent-1">
+                            {account.name} <span className="tly-muted">· {account.code}</span>
+                          </td>
+                          <td className="tly-amt">{drCr(ledger.openingBalance, debitNormal)}</td>
+                          <td className="tly-amt">{formatAmount(ledger.totalDebit)}</td>
+                          <td className="tly-amt">{formatAmount(ledger.totalCredit)}</td>
+                          <td className="tly-amt">{drCr(ledger.closingBalance, debitNormal)}</td>
+                        </tr>
+                      );
+                    })}
+                  </React.Fragment>
+                );
+              })}
+              {!loading && rows.length === 0 && (
+                <tr className="jv-empty">
+                  <td colSpan={5}>No cash or bank accounts yet — add one from Masters.</td>
+                </tr>
+              )}
+            </tbody>
+            {rows.length > 0 && (
+              <tfoot>
+                <tr className="jv-foot-total jv-foot-closing">
+                  <td className="jv-foot-label">Grand Total</td>
+                  <td className="tly-amt">{drCr(totals.opening, true)}</td>
+                  <td className="tly-amt">{formatAmount(totals.debit)}</td>
+                  <td className="tly-amt">{formatAmount(totals.credit)}</td>
+                  <td className="tly-amt">{drCr(totals.closing, true)}</td>
+                </tr>
+              </tfoot>
             )}
-          </tbody>
-          {rows.length > 0 && (
-            <tfoot>
-              <tr className="tly-grand">
-                <td colSpan={2}>Grand Total</td>
-                <td className="tly-amt">{drCr(totals.opening, true)}</td>
-                <td className="tly-amt">{formatMoney(totals.debit)}</td>
-                <td className="tly-amt">{formatMoney(totals.credit)}</td>
-                <td className="tly-amt">{drCr(totals.closing, true)}</td>
-              </tr>
-            </tfoot>
-          )}
-        </table>
+          </table>
+        </div>
       </div>
     </TallyPage>
   );

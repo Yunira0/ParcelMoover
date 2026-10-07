@@ -12,7 +12,12 @@
  * its own precision.
  */
 export function formatMoney(value: number): string {
-  return `Rs. ${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `Rs. ${formatAmount(value)}`;
+}
+
+/** The figure alone, for the Tally-style Finance sheets, which carry no currency sign. */
+export function formatAmount(value: number): string {
+  return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 /**
@@ -56,9 +61,9 @@ export function formatDate(value?: string | null): string {
  * the account rather than the arithmetic.
  */
 export function drCr(value: number, debitNormal: boolean): string {
-  if (value === 0) return formatMoney(0);
+  if (value === 0) return formatAmount(0);
   const isDebit = debitNormal ? value > 0 : value < 0;
-  return `${formatMoney(Math.abs(value))} ${isDebit ? 'Dr' : 'Cr'}`;
+  return `${formatAmount(Math.abs(value))} ${isDebit ? 'Dr' : 'Cr'}`;
 }
 
 /**

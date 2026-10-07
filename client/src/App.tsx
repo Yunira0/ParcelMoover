@@ -64,6 +64,7 @@ const LedgerSheetPage = lazy(() => import('./pages/finance/LedgerSheetPage'))
 const SettlementLedgerPage = lazy(() => import('./pages/finance/SettlementLedgerPage'))
 const CashBankPage = lazy(() => import('./pages/finance/CashBankPage'))
 const CashBankVoucherPage = lazy(() => import('./pages/finance/CashBankVoucherPage'))
+const JournalEntryPage = lazy(() => import('./pages/finance/JournalEntryPage'))
 const MastersPage = lazy(() => import('./pages/finance/MastersPage'))
 const SettlementPayPage = lazy(() => import('./pages/SettlementPayPage'))
 const DeliveryRateSettings = lazy(() => import('./pages/DeliveryRateSettings'))
@@ -525,7 +526,7 @@ function App() {
           />
           <Route
             path="/accounting/ledgers/account"
-            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'accountant']} adminPermission="ACCOUNTING_ACCESS"><LedgerReportPage view="account" /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'accountant']} adminPermission="ACCOUNTING_ACCESS"><LedgerSheetPage /></RoleGuard>}
           />
 
           {/* The Tally-style screens. A voucher and a ledger sheet are both
@@ -541,6 +542,10 @@ function App() {
           <Route
             path="/finance/voucher/new"
             element={<RoleGuard allowedRoles={['super_admin', 'admin', 'accountant']} adminPermission="ACCOUNTING_ACCESS"><CashBankVoucherPage /></RoleGuard>}
+          />
+          <Route
+            path="/finance/journal/new"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'accountant']} adminPermission="ACCOUNTING_ACCESS"><JournalEntryPage /></RoleGuard>}
           />
           <Route
             path="/finance/voucher/:id"

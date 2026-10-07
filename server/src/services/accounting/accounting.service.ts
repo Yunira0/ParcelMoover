@@ -86,6 +86,15 @@ const iso = (date: Date) => date.toISOString();
  */
 const ALL_ENTRIES = Prisma.sql`TRUE`;
 
+/**
+ * An entry's source as the ledger screens name its voucher type. A settlement
+ * is a Receipt from a rider but a Payment to a vendor, so it carries its payee:
+ * `settlement_rider` / `settlement_vendor`.
+ */
+const VOUCHER_SOURCE = Prisma.sql`CASE WHEN e.source_type::text = 'settlement'
+  THEN 'settlement_' || COALESCE((SELECT s.payee_type FROM settlements s WHERE s.id = e.source_id), 'rider')
+  ELSE e.source_type::text END`;
+
 // ── Ranges ──────────────────────────────────────────────────────────────────
 
 export interface RangeQuery {
@@ -575,10 +584,11 @@ export async function getAccountLedger(accountCode: string, query: AccountLedger
         debit: string;
         credit: string;
         contra: string | null;
+        source_type: string;
         running_balance: string;
       }>
     >(Prisma.sql`
-      SELECT e.id AS entry_id, e.entry_no, e.entry_date, e.bs_date, e.memo,
+      SELECT e.id AS entry_id, e.entry_no, e.entry_date, e.bs_date, e.memo, ${VOUCHER_SOURCE} AS source_type,
              l.debit, l.credit,
              -- The other accounts in the same entry. Without this a ledger row
              -- says an amount moved but not what it moved against, which is the
@@ -623,6 +633,7 @@ export async function getAccountLedger(accountCode: string, query: AccountLedger
     entryDate: iso(row.entry_date),
     bsDate: row.bs_date,
     memo: row.memo,
+    sourceType: row.source_type,
     contraAccounts: row.contra ?? "",
     debit: num(row.debit),
     credit: num(row.credit),
@@ -783,9 +794,10 @@ export async function listTransactions(query: TransactionQuery): Promise<Transac
         debit: string;
         credit: string;
         contra: string | null;
+        source_type: string;
       }>
     >(Prisma.sql`
-      SELECT l.id, e.id AS entry_id, e.entry_no, e.entry_date, e.bs_date, e.memo,
+      SELECT l.id, e.id AS entry_id, e.entry_no, e.entry_date, e.bs_date, e.memo, ${VOUCHER_SOURCE} AS source_type,
              a.code AS account_code, a.name AS account_name,
              l.party_type::text AS party_type, l.party_id, l.parcel_id,
              l.debit, l.credit,
@@ -819,6 +831,7 @@ export async function listTransactions(query: TransactionQuery): Promise<Transac
       entryDate: iso(row.entry_date),
       bsDate: row.bs_date,
       memo: row.memo,
+      sourceType: row.source_type,
       accountCode: row.account_code,
       accountName: row.account_name,
       contraAccounts: row.contra ?? "",
@@ -993,9 +1006,10 @@ export async function getPartyLedger(
         debit: string;
         credit: string;
         contra: string | null;
+        source_type: string;
       }>
     >(Prisma.sql`
-      SELECT e.id AS entry_id, e.entry_no, e.entry_date, e.bs_date,
+      SELECT e.id AS entry_id, e.entry_no, e.entry_date, e.bs_date, ${VOUCHER_SOURCE} AS source_type,
              COALESCE(p.tracking_id, e.memo) AS memo,
              l.debit, l.credit,
              (
@@ -1037,6 +1051,7 @@ export async function getPartyLedger(
       entryDate: iso(row.entry_date),
       bsDate: row.bs_date,
       memo: row.memo,
+      sourceType: row.source_type,
       contraAccounts: row.contra ?? "",
       debit,
       credit,
@@ -1448,9 +1463,12 @@ export async function getPartyStatement(
         debit: string;
         credit: string;
         tracking_id: string | null;
+        status: string;
+        source_type: string;
       }>
     >(Prisma.sql`
       SELECT e.id AS entry_id, e.entry_no, e.entry_date, e.bs_date, e.memo,
+             e.status::text AS status, ${VOUCHER_SOURCE} AS source_type,
              a.code, a.name AS account_name, a.type::text AS type,
              l.debit, l.credit, p.tracking_id
         FROM journal_lines l
@@ -1507,6 +1525,8 @@ export async function getPartyStatement(
       debit: num(row.debit),
       credit: num(row.credit),
       trackingId: row.tracking_id,
+      status: row.status,
+      sourceType: row.source_type,
     })),
   };
 }

@@ -241,7 +241,14 @@ const CreateOrderPage: React.FC = () => {
 
   // When actor is a vendor (or vendor_staff), their own sender identity is
   // implicit - no Vendor picker shown.
-  const selectedVendor = isVendorActor ? myVendorProfile ?? undefined : selectedVendorDetails ?? undefined;
+  // Only trust the loaded details once they belong to the vendor actually
+  // picked: right after a vendor switch they still hold the previous vendor,
+  // and submitting then would ship the new order as the old vendor's sender.
+  const selectedVendor = isVendorActor
+    ? myVendorProfile ?? undefined
+    : selectedVendorDetails && selectedVendorDetails.id === form.vendorId
+      ? selectedVendorDetails
+      : undefined;
 
   // Daraz-style vouchers: the vendor's usable claims for the fee/discount/
   // final preview. Admins keying an order in preview the picked vendor's
@@ -426,33 +433,17 @@ const CreateOrderPage: React.FC = () => {
     if (duplicateWarning) setDuplicateWarning('');
   };
 
-  // When a vendor is selected from the async dropdown, store full details.
+  // The full details load in the effect below, keyed off form.vendorId.
   const handleVendorSelect = useCallback((id: string) => {
     setField('vendorId', id);
-    // Fetch the full details for this vendor to use in form submission.
-    searchVendors(id, 1).then(res => {
-      if (res?.success && Array.isArray(res.data)) {
-        const v = res.data.find((x: any) => x.id === id);
-        if (v) {
-          setSelectedVendorDetails({
-            id: v.id,
-            userId: null,
-            label: v.label,
-            phone: v.phone,
-            address: v.address || '',
-            locationId: v.locationId ?? null,
-          });
-        }
-      }
-    }).catch(() => {});
   }, [setField]);
 
-  // Edit mode: the vendor picker is disabled (vendor is fixed), so
-  // handleVendorSelect never fires to populate selectedVendorDetails.
-  // Fetch it directly from the prefilled vendorId, or submission always
-  // fails with "Vendor profile is still loading."
+  // Load the full details for whichever vendor form.vendorId names - one
+  // picked from the dropdown, or prefilled by a copy/edit (where no pick ever
+  // happens). Without them submission fails with "Vendor profile is still
+  // loading." A late response for a vendor no longer picked is dropped.
   useEffect(() => {
-    if (!isEditMode || isVendorActor || !form.vendorId || selectedVendorDetails) return;
+    if (isVendorActor || !form.vendorId || selectedVendorDetails?.id === form.vendorId) return;
     let cancelled = false;
     searchVendors(form.vendorId, 1).then(res => {
       if (cancelled || !res?.success || !Array.isArray(res.data)) return;
@@ -469,7 +460,7 @@ const CreateOrderPage: React.FC = () => {
       }
     }).catch(() => {});
     return () => { cancelled = true; };
-  }, [isEditMode, isVendorActor, form.vendorId, selectedVendorDetails]);
+  }, [isVendorActor, form.vendorId, selectedVendorDetails?.id]);
 
   // keepVendor is set after a successful create: an admin keying in a batch of
   // orders for one vendor shouldn't have to re-pick that vendor every time. The

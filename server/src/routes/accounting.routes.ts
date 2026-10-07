@@ -15,6 +15,7 @@ import {
   partyBalancesQuerySchema,
   partySearchQuerySchema,
   rangeQuerySchema,
+  receiveBranchCodSchema,
   reverseEntrySchema,
   setPeriodStatusSchema,
   createAccountSchema,
@@ -46,6 +47,8 @@ import {
   listTransactionsController,
   searchPartiesController,
   getPartyStatementController,
+  listBranchCodOutstandingController,
+  receiveBranchCodController,
   reverseEntryController,
   setPeriodStatusController,
   voidExpenseController,
@@ -193,6 +196,13 @@ accountingRouter.post("/expenses/:id/void", ...write, validate(voidExpenseSchema
 
 // POST /api/accounting/journal — hand-written entry
 accountingRouter.post("/journal", ...write, validate(createManualEntrySchema), createManualEntryController);
+
+// GET /api/accounting/branch-cod — branches with COD open on statements
+accountingRouter.get("/branch-cod", ...read, listBranchCodOutstandingController);
+
+// POST /api/accounting/branch-cod/receipts — a Receipt voucher's cash from a
+// branch, paid down against its open statements oldest first
+accountingRouter.post("/branch-cod/receipts", ...write, validate(receiveBranchCodSchema), receiveBranchCodController);
 
 // POST /api/accounting/journal/:id/reverse — mirror-image an entry
 accountingRouter.post("/journal/:id/reverse", ...write, validate(reverseEntrySchema), reverseEntryController);

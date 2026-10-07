@@ -120,6 +120,12 @@ export interface SettlementForPosting {
    * clamps it to the authoritative total. Absent means "all delivery revenue".
    */
   return_charges?: Prisma.Decimal | number | string | null;
+  /**
+   * A rider statement's COD per vendor, so 2005 is credited to each vendor it
+   * is owed to. Advisory like return_charges: clamped to the statement total,
+   * and anything it doesn't cover stays tagged to the rider.
+   */
+  vendor_shares?: VendorShares;
 }
 
 export interface VendorPaymentForPosting {
@@ -283,22 +289,49 @@ function cashLines(
   });
 }
 
+type VendorShares = Array<{ vendorId: string; amount: Prisma.Decimal | number | string }> | undefined;
+
+/**
+ * The 2005 credit when COD comes in, one line per vendor it is owed to, so each
+ * vendor's 2005 nets against the debit their own statement posts. In vendor
+ * order so the lines (and the restatement fingerprint) are stable. Clamped to
+ * the total; whatever the shares don't account for goes to `rest`.
+ */
+function codHeldLines(
+  total: Prisma.Decimal,
+  shares: VendorShares,
+  rest: JournalLineInput["party"],
+  memo?: string,
+): JournalLineInput[] {
+  const lines: JournalLineInput[] = [];
+  let unassigned = total;
+  for (const share of [...(shares ?? [])].sort((a, b) => a.vendorId.localeCompare(b.vendorId))) {
+    const credit = clampShare(decimal(share.amount), unassigned);
+    if (credit.isZero()) continue;
+    unassigned = unassigned.minus(credit);
+    lines.push({ accountCode: ACCOUNT.COD_HELD, credit, party: { type: "vendor", id: share.vendorId }, memo });
+  }
+  if (!unassigned.isZero()) lines.push({ accountCode: ACCOUNT.COD_HELD, credit: unassigned, party: rest, memo });
+  return lines;
+}
+
 // ── 3. Rider remits to the office ───────────────────────────────────────────
 
 /**
  * The rider hands over the cash they were carrying.
  *
- *   Dr  1000/1100/... Cash, Bank or Wallet    the office now holds it
- *   Cr  2005 COD to Pay to Vendor              and owes it on to the vendors
+ *   Dr  1000/1100/... Cash, Bank or Wallet    the office now holds it   (rider)
+ *   Cr  2005 COD to Pay to Vendor              one line per vendor        (vendor)
  *
  * This is where COD enters the books. Nothing is posted while a rider is out
  * collecting - the statement that brings the cash in is the event, not each
- * individual parcel. The credit sits in COD to Pay to Vendor until a vendor statement
- * hands it on, so 2005's balance is the float the office is sitting on.
+ * individual parcel. The credit sits in COD to Pay to Vendor until a vendor
+ * statement hands it on, so 2005's balance is the float the office is sitting
+ * on - and, split per vendor, what it is holding for each one. The vendor
+ * statement's 2005 debit is tagged the same way, so the two net per vendor.
  *
- * The rider is tagged on the liability line so their remittance history still
- * reads as theirs, even though 2005 is a pooled account rather than a per-rider
- * control: a rider hands over one sum, not one sum per vendor.
+ * The rider is tagged on the cash side, so their remittance history still
+ * reads as theirs.
  */
 export function describeRiderRemittance(settlement: SettlementForPosting): Described {
   if (settlement.payee_type !== "rider" || !settlement.rider_id) {
@@ -326,12 +359,17 @@ export function describeRiderRemittance(settlement: SettlementForPosting): Descr
 
   const lines: JournalLineInput[] = [];
   if (!paid.isZero()) {
-    lines.push(...cashLines(paymentSplits(settlement, paid), "debit", "COD received", settlement.methodAccounts));
+    lines.push(
+      ...cashLines(paymentSplits(settlement, paid), "debit", "COD received", settlement.methodAccounts).map(
+        (line) => ({ ...line, party: rider }),
+      ),
+    );
   }
   if (!stillWithRider.isZero()) {
     lines.push({ accountCode: ACCOUNT.CASH_WITH_RIDER, debit: stillWithRider, party: rider, memo: "Still with rider" });
   }
-  lines.push({ accountCode: ACCOUNT.COD_HELD, credit: amount, party: rider });
+
+  lines.push(...codHeldLines(amount, settlement.vendor_shares, rider));
 
   return {
     entryDate: settlement.settlement_date ?? settlement.updated_at,
@@ -644,6 +682,8 @@ export interface CarrierSettlementForPosting {
   payments: Prisma.JsonValue | null;
   settlement_date: Date;
   methodAccounts?: MethodAccounts | undefined;
+  /** The statement's COD per vendor; see SettlementForPosting.vendor_shares. */
+  vendor_shares?: VendorShares;
 }
 
 /**
@@ -652,7 +692,7 @@ export interface CarrierSettlementForPosting {
  *   Dr  5020 3PL Delivery Charge    the carrier's cut
  *   Dr  cash / bank / wallet        what we have received
  *   Dr  1020 COD with 3PL           what the carrier still owes
- *   Cr  2005 COD to Pay to Vendor   the COD, now owed on to vendors
+ *   Cr  2005 COD to Pay to Vendor   the COD, one line per vendor it is owed to
  *
  * This is where carrier-collected COD enters the float, the way a rider
  * remittance brings in our own riders' cash. Posted when the statement is
@@ -676,7 +716,7 @@ export function describeCarrierSettlement(settlement: CarrierSettlementForPostin
   if (!owed.isZero()) {
     lines.push({ accountCode: ACCOUNT.COD_WITH_CARRIER, debit: owed, memo: "Still with 3PL" });
   }
-  lines.push({ accountCode: ACCOUNT.COD_HELD, credit: gross, memo: "COD collected by 3PL" });
+  lines.push(...codHeldLines(gross, settlement.vendor_shares, undefined, "COD collected by 3PL"));
 
   return {
     entryDate: settlement.settlement_date,

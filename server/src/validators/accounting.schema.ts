@@ -156,6 +156,14 @@ export const createManualEntrySchema = z
     { message: "Debits and credits must add up to the same non-zero total", path: ["lines"] },
   );
 
+export const receiveBranchCodSchema = z.object({
+  branchId: z.string().uuid("Pick a branch"),
+  amount: z.coerce.number().positive("Amount must be greater than zero").max(100_000_000),
+  accountCode: z.string().trim().min(1, "Pick the cash or bank account").max(20),
+  reference: z.string().trim().max(100).optional(),
+  narration: z.string().trim().max(500).optional(),
+});
+
 export const reverseEntrySchema = z.object({
   reason: z.string().trim().min(3, "Say why this entry is being reversed").max(500),
 });

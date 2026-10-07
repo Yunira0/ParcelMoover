@@ -43,6 +43,7 @@ model admins {
   id_document_number    String?
   id_document           String?
   citizenship_doc       String?
+  citizenship_doc_back  String?
   pan_doc               String?
   experience_letter_doc String?
   agreement_doc         String? // signed agreement, PDF or DOCX - attached by staff on edit
@@ -649,6 +650,7 @@ model riders {
   salary_commission                         String?
   pan                                       String?
   citizenship_doc                           String?
+  citizenship_doc_back                      String?
   pan_vat_doc                               String?
   licence_doc                               String?
   bluebook_doc                              String?

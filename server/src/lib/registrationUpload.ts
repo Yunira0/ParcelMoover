@@ -46,6 +46,7 @@ const uploadDocuments = multer({
   { name: "agreementDoc", maxCount: 1 },
   { name: "idDocument", maxCount: 1 },
   { name: "citizenshipDoc", maxCount: 1 },
+  { name: "citizenshipDocBack", maxCount: 1 },
   { name: "panDoc", maxCount: 1 },
   { name: "panVatDoc", maxCount: 1 },
   { name: "experienceLetterDoc", maxCount: 1 },

@@ -164,6 +164,8 @@ export interface LedgerRow {
   entryDate: string;
   bsDate: string;
   memo: string | null;
+  /** What raised the entry, shown as the voucher type. */
+  sourceType: string;
   contraAccounts: string;
   debit: number;
   credit: number;
@@ -273,6 +275,9 @@ export interface PartyMovement {
   debit: number;
   credit: number;
   trackingId: string | null;
+  /** `voided` is a cancelled voucher; its reversal comes back as `sourceType: 'reversal'`. */
+  status: string;
+  sourceType: string;
 }
 
 /** Everything the company has paid to or collected from one person. */
@@ -359,6 +364,8 @@ export interface TransactionRow {
   entryDate: string;
   bsDate: string;
   memo: string | null;
+  /** What raised the entry, shown as the voucher type. */
+  sourceType: string;
   accountCode: string;
   accountName: string;
   contraAccounts: string;
@@ -491,6 +498,41 @@ export const createManualEntry = async (input: {
   }[];
 }): Promise<JournalEntry> => {
   const response = await api.post('/accounting/journal', input);
+  return response.data.data;
+};
+
+export interface BranchCodOutstanding {
+  branchId: string;
+  branchName: string;
+  outstanding: number;
+  statements: number;
+}
+
+/** Branches with COD still open on statements — who a branch receipt can be from. */
+export const listBranchCodOutstanding = async (): Promise<BranchCodOutstanding[]> => {
+  const response = await api.get('/accounting/branch-cod');
+  return response.data.data;
+};
+
+export interface BranchCodReceipt {
+  branchId: string;
+  amount: number;
+  allocations: { settlementId: string; statementNo: string; amount: number; settled: boolean }[];
+  entries: { id: string; entryNo: string }[];
+}
+
+/**
+ * Cash from a branch on a Receipt voucher. Pays the branch's open COD
+ * statements down oldest first; each statement re-posts its own entry.
+ */
+export const receiveBranchCod = async (input: {
+  branchId: string;
+  amount: number;
+  accountCode: string;
+  reference?: string;
+  narration?: string;
+}): Promise<BranchCodReceipt> => {
+  const response = await api.post('/accounting/branch-cod/receipts', input);
   return response.data.data;
 };
 
