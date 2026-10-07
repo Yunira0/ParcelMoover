@@ -133,6 +133,10 @@ async function main() {
   // run under that tag, and records one after a clean run. The tag names the
   // rule change being rolled out, so a later change can ship its own resync.
   const onceTag = arg("once");
+  if (onceTag && process.env.SKIP_STARTUP_DATA_REPAIRS === "true") {
+    console.log("resync-postings: skipped by SKIP_STARTUP_DATA_REPAIRS.");
+    return;
+  }
   const onceMarker = onceTag ? `RESYNC_POSTINGS_DONE:${onceTag}` : null;
 
   if (!sourceName || !(sourceName in SOURCES)) {
