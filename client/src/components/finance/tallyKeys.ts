@@ -47,7 +47,10 @@ export const quitAction = (onSelect: () => void): TallyAction => ({ key: 'Escape
  */
 const SOURCE_VOUCHER_TYPES: Record<string, string> = {
   cod_collection: 'Receipt',
-  settlement: 'Receipt',
+  // Ledger rows name the payee (see VOUCHER_SOURCE on the server): a rider's
+  // statement brings money in, a vendor's pays it out.
+  settlement_rider: 'Receipt',
+  settlement_vendor: 'Payment',
   branch_settlement: 'Receipt',
   carrier_settlement: 'Receipt',
   parcel: 'Sales',

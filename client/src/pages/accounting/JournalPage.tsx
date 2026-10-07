@@ -132,7 +132,11 @@ const JournalPage: React.FC = () => {
 
   const vchType = useCallback(
     (entry: JournalEntry) =>
-      entry.sourceType === 'manual' ? manualVoucherType(entry.lines, cashBankCodes) : voucherTypeOf(entry.sourceType),
+      // A hand-posted voucher or a settlement is a Payment or Receipt by which
+      // way it moved cash; the source alone doesn't say.
+      entry.sourceType === 'manual' || entry.sourceType === 'settlement'
+        ? manualVoucherType(entry.lines, cashBankCodes)
+        : voucherTypeOf(entry.sourceType),
     [cashBankCodes],
   );
 

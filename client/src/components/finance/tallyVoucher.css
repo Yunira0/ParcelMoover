@@ -152,6 +152,7 @@
   font-weight: var(--font-weight-semibold);
 }
 
+.jv-who > .form-group,
 .jv-who .acc-entry-party {
   flex: 1;
   min-width: 0;
