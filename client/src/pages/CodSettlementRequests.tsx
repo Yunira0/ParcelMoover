@@ -226,11 +226,6 @@ const CodSettlementRequests: React.FC = () => {
         <h1>
           <Banknote size={20} /> COD Settlement Requests
         </h1>
-        <p>
-          {readOnly
-            ? 'Payout requests from your vendors. Head office settles or rejects them.'
-            : 'Vendors asking to be paid out. Settling or rejecting a request releases their hold and lets them raise the next one — the payout itself is still recorded through Settlements.'}
-        </p>
       </header>
 
       {error && <Banner tone="danger">{error}</Banner>}
