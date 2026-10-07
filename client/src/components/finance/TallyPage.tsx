@@ -82,6 +82,8 @@ const TallyPage: React.FC<TallyPageProps> = ({
     if (actions.length === 0) return undefined;
 
     const onKeyDown = (event: KeyboardEvent) => {
+      // A dialog on top owns the keyboard: Esc closes it, not the screen.
+      if (document.querySelector('.modal-overlay')) return;
       const combo = comboOf(event);
       const action = actions.find((candidate) => candidate.key === combo);
       // Anything this screen doesn't claim — Ctrl+F5, Ctrl+C — stays the

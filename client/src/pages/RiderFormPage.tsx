@@ -192,6 +192,7 @@ const RiderFormPage: React.FC = () => {
         }
       } catch (err) {
         console.error('Failed to load hubs:', err);
+        setFieldErrors(prev => ({ ...prev, serviceBranch: "Couldn't load hubs - refresh the page to try again." }));
       }
     };
     fetchHubs();

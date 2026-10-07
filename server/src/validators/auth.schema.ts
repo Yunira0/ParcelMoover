@@ -27,11 +27,16 @@ const MANAGED_USER_TYPES = ["admin", "vendor", "rider"] as const;
 // unchanged" from "field blanked -> clear it" (see putText/putRate in
 // auth.service.ts, which already handle "" as "clear to null" - they just
 // never received it before).
+// A form that stringified a missing value sends "undefined" / "null"; that is
+// an absent field, not text to save (it once landed as a vendor's name).
+const isStringifiedNothing = (val: string) => /^(undefined|null)$/i.test(val.trim());
+
 const optionalAuthString = (maxLen: number, customMsg?: string) =>
   z
     .string()
     .optional()
-    .transform((val): string | undefined => (val === undefined ? undefined : val.trim()))
+    .transform((val): string | undefined =>
+      val === undefined || isStringifiedNothing(val) ? undefined : val.trim())
     .pipe(z.string().max(maxLen, customMsg).optional());
 
 // Optional string with a minimum length (e.g. clientName must be ≥ 2 chars).
@@ -41,7 +46,7 @@ const optionalMinMaxString = (minLen: number, maxLen: number) =>
     .optional()
     .transform((val): string | undefined => {
       const t = val?.trim();
-      return t || undefined;
+      return t && !isStringifiedNothing(t) ? t : undefined;
     })
     .pipe(z.string().min(minLen).max(maxLen).optional());
 
