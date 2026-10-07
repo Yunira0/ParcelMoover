@@ -159,6 +159,10 @@ export interface ListOrdersQuery {
   salesUserId?: string;
   // Narrows the list to parcels carried by one delivery rider.
   deliveryRiderId?: string;
+  // Rider Overview's filter: parcels this rider has ever handled, pickup or
+  // delivery leg (Rider Management's per-rider totals use the same rule) —
+  // broader than deliveryRiderId, which is only the current delivery leg.
+  riderId?: string;
   // Display-only page hint echoed back in meta; the actual position comes
   // from the keyset cursor, never from a row offset.
   page?: number;
@@ -176,6 +180,8 @@ export interface ListOrdersQuery {
   // dashboard card counts by delivered_at, so its drill-down needs the same
   // filter server-side to page and total consistently with the card.
   deliveredToday?: boolean;
+  // Only parcels that went through transit (ever moved to oov).
+  viaTransit?: boolean;
   // Which date the day range below is compared against. Defaults to the
   // created date, matching the UI's own default.
   dateField?: "createdAt" | "lastUpdatedAt";
@@ -184,6 +190,8 @@ export interface ListOrdersQuery {
   dateTo?: string;
   /** Vendor settlement state used by Merchant Overview. */
   settlement?: "settled" | "pending";
+  /** Which payee's statements `settlement` refers to (default vendor). */
+  settlementPayee?: "vendor" | "rider";
   /** Internal-only branch scope. These are never accepted by GET /orders. */
   originLocationIds?: string[];
   destinationLocationIds?: string[];
@@ -228,6 +236,8 @@ export interface BulkUpdateParcelStatusInput {
 }
 
 export interface BulkCreateOrderInput {
+  /** Confirm an identical batch imported in the previous hour. */
+  confirmDuplicateBatch?: boolean;
   /** Sender applied to every order that omits its own sender field. */
   defaultSender?: OrderPartyInput;
   orders: CreateOrderInput[];
@@ -252,7 +262,9 @@ export const STATUS_TRANSITIONS = {
   // returning to us (their "Sent to Vendor") - not reachable by an internal
   // rider, only by the NCM return action/reconcile sweep (see ncm.service.ts).
   dispatched:        ["arrived_at_branch", "follow_up"],
-  arrived_at_branch: ["ready_to_deliver", "follow_up"],
+  // "oov" is the relay hop: a parcel that reaches Imadol on its way to another
+  // branch is forwarded (see assertRelayForward).
+  arrived_at_branch: ["ready_to_deliver", "follow_up", "oov"],
   ready_to_deliver:  ["sent_for_delivery", "hold", "cancelled"],
   sent_for_delivery: ["delivered", "partially_delivered", "failed_delivery", "follow_up"],
   oov:               ["dispatched","hold", "follow_up"],

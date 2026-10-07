@@ -3,7 +3,7 @@ import { AppError } from "../../utils/AppError";
 
 vi.mock("../../lib/prisma", () => ({
   default: {
-    parcels: { findFirst: vi.fn(), findMany: vi.fn() },
+    parcels: { findFirst: vi.fn(), findMany: vi.fn(), groupBy: vi.fn() },
     locations: { findUnique: vi.fn() },
     vendors: { findUnique: vi.fn(), findMany: vi.fn() },
     riders: { findFirst: vi.fn(), findUnique: vi.fn() },
@@ -39,13 +39,14 @@ import {
   applyExternalCarrierFollowUp,
   getOrderStatusesByTrackingIds,
   getOrderFilterOptions,
+  getOrderByTrackingId,
 } from "../order.service";
 import prisma from "../../lib/prisma";
 import redis from "../../lib/redis";
 import { resolveOwnVendorId } from "../vendor-scope.service";
 
 const mockedPrisma = prisma as unknown as {
-  parcels: { findFirst: ReturnType<typeof vi.fn>; findMany: ReturnType<typeof vi.fn> };
+  parcels: { findFirst: ReturnType<typeof vi.fn>; findMany: ReturnType<typeof vi.fn>; groupBy: ReturnType<typeof vi.fn> };
   vendors: { findUnique: ReturnType<typeof vi.fn>; findMany: ReturnType<typeof vi.fn> };
   riders: { findFirst: ReturnType<typeof vi.fn>; findUnique: ReturnType<typeof vi.fn> };
   cod_collections: { findFirst: ReturnType<typeof vi.fn>; findMany: ReturnType<typeof vi.fn> };
@@ -72,7 +73,8 @@ function makeMockTx() {
       updateMany: vi.fn().mockResolvedValue({ count: 1 }),
     },
     parcel_status_history: { create: vi.fn(), createMany: vi.fn() },
-    parcel_remarks: { create: vi.fn(), createMany: vi.fn() },
+    parcel_remarks: { create: vi.fn(), createMany: vi.fn(), findFirst: vi.fn().mockResolvedValue(null) },
+    riders: { findUnique: vi.fn().mockResolvedValue(null) },
     audit_logs: { create: vi.fn(), createMany: vi.fn() },
     cod_collections: { upsert: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
     run_sheets: {
@@ -120,6 +122,7 @@ beforeEach(() => {
   // assertDeliveryReversible: no collection is already settled, so undelivering
   // is permitted and these tests reach the transition they are actually about.
   mockedPrisma.cod_collections.findMany.mockResolvedValue([]);
+  mockedPrisma.parcels.groupBy.mockResolvedValue([]);
   mockedPrisma.riders.findFirst.mockResolvedValue({ id: RIDER_ID });
   // A real employee, not a "PM Rider N"-style carrier placeholder.
   mockedPrisma.riders.findUnique.mockResolvedValue({ carrier_code: null });
@@ -141,7 +144,7 @@ describe("rider read scope is leg-aware", () => {
 
     await getOrderFilterOptions(RIDER_ACTOR);
 
-    const { where } = mockedPrisma.parcels.findMany.mock.calls[0]![0];
+    const { where } = mockedPrisma.parcels.groupBy.mock.calls[0]![0];
     const custody = where.AND.find((c: Record<string, unknown>) => "OR" in c);
     expect(custody.OR).toEqual([
       { delivery_rider_id: RIDER_ID },
@@ -682,5 +685,73 @@ describe("the manifest rider is recorded where ops can see it", () => {
         riderId: "rider-9",
       }),
     ).rejects.toThrow(AppError);
+  });
+});
+
+// The rider app's "Claim & Start Delivery/Pickup": a rider scans a parcel that
+// is not yet (or no longer) theirs and takes it over in one step.
+describe("rider self-claim", () => {
+  it("lets a rider look up a claimable parcel that is not assigned to them", async () => {
+    mockedPrisma.parcels.findFirst.mockResolvedValue(null);
+
+    await expect(getOrderByTrackingId(RIDER_ACTOR, "TRK-1")).rejects.toThrow("Order not found");
+
+    const { where } = mockedPrisma.parcels.findFirst.mock.calls[0]![0];
+    expect(where.OR).toContainEqual({
+      status: { in: ["ready_to_deliver", "failed_delivery", "failed_pickup"] },
+    });
+    expect(where.OR).toContainEqual({ delivery_rider_id: RIDER_ID });
+  });
+
+  it.each([
+    ["ready_to_deliver", "sent_for_delivery", "delivery_rider_id", null],
+    ["failed_delivery", "sent_for_delivery", "delivery_rider_id", "other-rider"],
+    ["failed_pickup", "rider_assigned", "pickup_rider_id", "other-rider"],
+  ])("claims %s -> %s to the scanning rider", async (from, to, field, previousRider) => {
+    const tx = makeMockTx();
+    mockedPrisma.$transaction.mockImplementation((fn: (t: unknown) => Promise<unknown>) => fn(tx));
+    mockedPrisma.parcels.findFirst.mockResolvedValue(makeFakeParcel({ status: from, [field]: previousRider }));
+
+    // A riderId from the client is ignored: a rider only ever claims for themselves.
+    await updateParcelStatus(RIDER_ACTOR, "parcel-1", { status: to as never, riderId: "someone-else" });
+
+    expect(tx.parcels.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: to, [field]: RIDER_ID }) }),
+    );
+  });
+
+  it("can then deliver the parcel it claimed", async () => {
+    const tx = makeMockTx();
+    mockedPrisma.$transaction.mockImplementation((fn: (t: unknown) => Promise<unknown>) => fn(tx));
+    mockedPrisma.parcels.findFirst.mockResolvedValue(
+      makeFakeParcel({ status: "sent_for_delivery", delivery_rider_id: RIDER_ID }),
+    );
+
+    await updateParcelStatus(RIDER_ACTOR, "parcel-1", { status: "delivered" });
+
+    expect(tx.parcels.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: "delivered" }) }),
+    );
+  });
+
+  it("still refuses assignments that are not a claim", async () => {
+    mockedPrisma.parcels.findFirst.mockResolvedValue(makeFakeParcel({ status: "pickup_ordered" }));
+
+    await expect(
+      updateParcelStatus(RIDER_ACTOR, "parcel-1", { status: "rider_assigned" }),
+    ).rejects.toThrow("Assigning a rider to a parcel is an admin/vendor operation");
+  });
+
+  it("does not open the failed-attempt reclaim to staff", async () => {
+    mockedPrisma.parcels.findFirst.mockResolvedValue(
+      makeFakeParcel({ status: "failed_delivery", delivery_rider_id: RIDER_ID }),
+    );
+
+    await expect(
+      updateParcelStatus({ id: "admin-1", roles: ["admin"] }, "parcel-1", {
+        status: "sent_for_delivery",
+        riderId: RIDER_ID,
+      }),
+    ).rejects.toThrow("Invalid status transition");
   });
 });

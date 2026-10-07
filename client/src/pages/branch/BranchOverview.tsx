@@ -21,7 +21,7 @@ import {
   type BranchMetrics,
 } from '../../services/branchTracking.service';
 import type { Order, OrdersPageMeta } from '../../services/orders.service';
-import { ORDER_STATUS_LABELS, getOrderStatusTone } from '../../utils/orderStatus';
+import { CARRIER_LABELS, ORDER_STATUS_LABELS, getOrderStatusTone } from '../../utils/orderStatus';
 import { toBsDate } from '../../utils/nepaliDate';
 import { formatMoneyCompact } from '../../utils/format';
 import { downloadExcel } from '../../utils/excel';
@@ -147,7 +147,7 @@ const BranchOverview: React.FC = () => {
       o.weightKg || '',
       ORDER_STATUS_LABELS[o.status],
     ]);
-      downloadExcel('branch-overview.xlsx', 'Branch Overview', headers, body);
+      await downloadExcel('branch-overview.xlsx', 'Branch Overview', headers, body);
     } catch {
       setError('Failed to export branch orders.');
     } finally {
@@ -198,7 +198,10 @@ const BranchOverview: React.FC = () => {
     {
       header: 'STATUS',
       accessor: (o: Order) => (
-        <StatusChip tone={getOrderStatusTone(o.status)}>{ORDER_STATUS_LABELS[o.status]}</StatusChip>
+        <span className="om-status-cell">
+          <StatusChip tone={getOrderStatusTone(o.status)}>{ORDER_STATUS_LABELS[o.status]}</StatusChip>
+          {o.carrierCode && <span className="om-carrier-chip">{CARRIER_LABELS[o.carrierCode]}</span>}
+        </span>
       ),
       width: '150px',
     },

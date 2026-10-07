@@ -2,10 +2,6 @@ import { Prisma } from "../../generated/prisma/client";
 import prisma from "../../lib/prisma";
 import redis from "../../lib/redis";
 import { NEPAL_UTC_OFFSET_MS, formatNepalDate as formatDate } from "../../utils/nepalTime";
-import {
-  HANDOFF_REMARK_PREFIX as NCM_HANDOFF_REMARK_PREFIX,
-  UPAYA_HANDOFF_REMARK_PREFIX,
-} from "../../utils/carrierRemark";
 import { getSlaSettings, SLA_GROUPS, BRANCH_COD_SLA_KEY } from "../sla.service";
 import { unclosedRemarksWhere } from "../remark.service";
 import {
@@ -29,7 +25,11 @@ import {
   AWAITING_PICKUP_STATUSES,
   IN_DELIVERY_STATUSES,
 } from "./status-shared";
+import { BRANCH_CLEARED_SQL, BRANCH_HELD_SQL, CARRIER_OWED_SQL, PART_PAID_FRACTIONS_SQL, branchHeldFilterSql } from "./cod-detail";
 import type { OrderActor } from "./types";
+import { buildReturnedTodayQuery, buildReturnedTrendQuery } from "./dashboard-returns";
+import { buildDashboardTrendQuery } from "./dashboard-trend";
+import { branchCodParcelSql } from "./branchCod";
 
 const moneyToNumber = (value?: Prisma.Decimal | null) => value ? Number(value) : 0;
 
@@ -138,15 +138,10 @@ async function computeDashboardSummary(
   };
 
   const TREND_DAYS = trendDays;
-  // The 7-day view is anchored to the current Nepal week (Sunday start) so the
-  // graph always reads Sun -> Sat rather than a rolling window that begins
-  // mid-week. It stays one contiguous week, so the line never wraps backwards.
-  // getUTCDay() on the Nepal calendar date is 0 = Sunday regardless of the
-  // host timezone. The 30-day view keeps its rolling window ending today.
-  const nepalWeekday = new Date(`${formatDate(new Date())}T00:00:00Z`).getUTCDay();
+  // Rolling window ending today. Anchoring the 7-day view to the calendar week
+  // (Sun -> Sat) left every day after today blank, e.g. only Sunday on a Sunday.
   const trendDayRanges = Array.from({ length: TREND_DAYS }, (_, index) => {
-    const dayDelta =
-      TREND_DAYS === 7 ? index - nepalWeekday : -(TREND_DAYS - 1 - index);
+    const dayDelta = -(TREND_DAYS - 1 - index);
     const start = new Date(todayStart);
     start.setDate(start.getDate() + dayDelta);
     const end = new Date(start);
@@ -258,8 +253,10 @@ async function computeDashboardSummary(
       COALESCE(SUM(cod_amount) FILTER (WHERE status::text = ANY(${DELIVERY_PENDING_STATUSES})), 0) AS pending_deliveries_amount,
       COALESCE(SUM(cod_amount) FILTER (WHERE status::text = ANY(${AWAITING_PICKUP_STATUSES})), 0) AS awaiting_pickup_amount,
       COALESCE(SUM(cod_amount) FILTER (WHERE status::text = ANY(${IN_DELIVERY_STATUSES})), 0) AS in_delivery_amount,
-      COALESCE(SUM(cod_amount) FILTER (WHERE status::text = ANY(ARRAY['delivered','partially_delivered']) AND delivered_at >= ${todayStart} ${riderDeliveredSql}), 0) AS todays_delivered_amount,
-      COALESCE(SUM(cod_amount) FILTER (WHERE status::text = ANY(ARRAY['delivered','partially_delivered']) ${riderDeliveredSql}), 0) AS total_delivered_amount,
+      COALESCE(SUM(COALESCE((SELECT cc.collected_amount FROM cod_collections cc WHERE cc.parcel_id = parcels.id), cod_amount)) FILTER (WHERE status::text = ANY(ARRAY['delivered','partially_delivered']) AND delivered_at >= ${todayStart} ${riderDeliveredSql}), 0) AS todays_delivered_amount,
+      -- Delivered amounts are the cash collected, not the declared COD, which
+      -- overstates partial deliveries (and matches the COD card below).
+      COALESCE(SUM(COALESCE((SELECT cc.collected_amount FROM cod_collections cc WHERE cc.parcel_id = parcels.id), cod_amount)) FILTER (WHERE status::text = ANY(ARRAY['delivered','partially_delivered']) ${riderDeliveredSql}), 0) AS total_delivered_amount,
       COALESCE(SUM(cod_amount) FILTER (WHERE ${returnsFilterSql}), 0) AS total_returns_amount,
       COALESCE(SUM(cod_amount) FILTER (WHERE status::text = 'returned_to_vendor'), 0) AS total_returned_to_vendor_amount
     FROM parcels
@@ -305,14 +302,9 @@ async function computeDashboardSummary(
   // order_type = 'return' orders by created_at here instead measured a
   // different thing entirely (return orders raised, not parcels sent back) and
   // never matched the "Returned" figure on Today's activity.
-  const trendSelects = trendDayRanges.map(({ start, end }, i) => Prisma.sql`
-    COUNT(*) FILTER (WHERE created_at >= ${start} AND created_at < ${end}) AS ${Prisma.raw(`d${i}_total`)},
-    COUNT(*) FILTER (WHERE picked_up_at >= ${start} AND picked_up_at < ${end}) AS ${Prisma.raw(`d${i}_picked_up`)},
-    COUNT(*) FILTER (WHERE status::text = ANY(ARRAY['delivered','partially_delivered']) AND delivered_at >= ${start} AND delivered_at < ${end}) AS ${Prisma.raw(`d${i}_delivered`)}
-  `);
-  const [trendRow] = await prisma.$queryRaw<Array<Record<string, bigint>>>(Prisma.sql`
-    SELECT ${Prisma.join(trendSelects, ",")} FROM parcels WHERE deleted_at IS NULL ${parcelScopeSql}
-  `);
+  const [trendRow] = await prisma.$queryRaw<Array<Record<string, bigint>>>(
+    buildDashboardTrendQuery(trendDayRanges, parcelScopeSql),
+  );
   const trendCounts = trendDayRanges.map((_, i) => [
     Number(trendRow![`d${i}_total`]),
     Number(trendRow![`d${i}_picked_up`]),
@@ -336,10 +328,7 @@ async function computeDashboardSummary(
   // timestamp - the same event and scope as returnedTodayRows below, just
   // bucketed across the whole range so the graph's last point equals the
   // "Returned" figure on Today's activity. Aliases are loop-index-derived.
-  const trendReturnedSelects = trendDayRanges.map(({ start, end }, i) => Prisma.sql`
-    COUNT(DISTINCT h.parcel_id) FILTER (WHERE h.created_at >= ${start} AND h.created_at < ${end}) AS ${Prisma.raw(`d${i}_returned`)}
-  `);
-
+  const branchHeldFilter = await branchHeldFilterSql();
   const [todaysRemarks, unclosedComments, codRows, pendingCodCount, lastSettlement, returnedTodayRows, trendReturnedRows] = await Promise.all([
     prisma.parcel_remarks.count({
       where: { created_at: { gte: todayStart }, parcels: parcelWhere },
@@ -358,53 +347,42 @@ async function computeDashboardSummary(
         cod_from_pm_rider: string;
         cod_from_ncm: string;
         cod_from_upaya: string;
+        cod_from_branches: string;
         pending_delivery_charge: string;
         total_delivery_charge: string;
       }>
     >(Prisma.sql`
       SELECT
         COALESCE(SUM(c.collected_amount), 0) AS total_collected,
-        COALESCE(SUM(LEAST(c.remitted_amount, c.collected_amount)), 0) AS settled_to_vendor,
-        COALESCE(SUM(LEAST(c.rider_remitted_amount, c.collected_amount)), 0) AS settled_to_rider,
+        -- remitted_amount only moves once a statement is paid in full, so a
+        -- partially_paid statement's instalments are counted through pp below.
+        COALESCE(SUM(LEAST(c.remitted_amount + c.collected_amount * pp.vendor_frac, c.collected_amount)), 0) AS settled_to_vendor,
+        COALESCE(SUM(LEAST(c.rider_remitted_amount + c.collected_amount * pp.rider_frac, c.collected_amount)), 0) AS settled_to_rider,
         -- Cash a ParcelMoover rider physically holds, not yet remitted to the
-        -- office: c.rider_id is only ever set from parcels.delivery_rider_id,
-        -- which stays NULL for NCM-delivered parcels (see
-        -- applyExternalCarrierStatus) - so rider_id IS NOT NULL is exactly
-        -- "our own rider delivered this," never an NCM handoff. r.carrier_code
-        -- IS NULL excludes placeholder rider rows that stand in for a carrier
-        -- (e.g. "PM Rider U"/"PM Rider N") rather than a real employee.
-        COALESCE(SUM(c.collected_amount - LEAST(c.rider_remitted_amount, c.collected_amount))
-          FILTER (WHERE c.rider_id IS NOT NULL AND r.carrier_code IS NULL), 0) AS cod_from_pm_rider,
-        -- Cash NCM collected on our behalf and hasn't remitted to the office
-        -- yet. Two signals feed this: the durable API handoff remark
-        -- ncm.service.ts writes (see findNcmOrderIdForParcel), and parcels
-        -- routed to NCM manually via the "PM Rider N" placeholder rider
-        -- (r.carrier_code = 'ncm') for cases the API flow doesn't cover. No
-        -- pm-rider ever touches this cash, so rider_remitted_amount is never
-        -- populated for these rows - the full collected amount counts as
-        -- outstanding until NCM's remittance clears it (via the vendor leg,
-        -- remitted_amount).
-        COALESCE(SUM(c.collected_amount - LEAST(c.remitted_amount, c.collected_amount))
-          FILTER (WHERE (c.rider_id IS NULL AND EXISTS (
-            SELECT 1 FROM parcel_remarks pr
-            WHERE pr.parcel_id = p.id AND pr.remark LIKE ${NCM_HANDOFF_REMARK_PREFIX + '%'}
-          )) OR r.carrier_code = 'ncm'), 0) AS cod_from_ncm,
-        -- Cash Upaya collected on our behalf. Two signals, same shape as NCM
-        -- above: the durable API handoff remark upaya.service.ts writes for
-        -- real API-driven handoffs, and the "PM Rider U" placeholder rider
-        -- (r.carrier_code = 'upaya') for parcels routed to Upaya manually,
-        -- from before the API integration existed. Same "clears via the
-        -- vendor leg" reasoning as NCM above.
-        COALESCE(SUM(c.collected_amount - LEAST(c.remitted_amount, c.collected_amount))
-          FILTER (WHERE (c.rider_id IS NULL AND EXISTS (
-            SELECT 1 FROM parcel_remarks pr
-            WHERE pr.parcel_id = p.id AND pr.remark LIKE ${UPAYA_HANDOFF_REMARK_PREFIX + '%'}
-          )) OR r.carrier_code = 'upaya'), 0) AS cod_from_upaya,
-        COALESCE(SUM(p.delivery_charge) FILTER (WHERE c.payment_status::text = 'pending'), 0) AS pending_delivery_charge,
+        -- office. r.carrier_code IS NULL / c.carrier_code IS NULL leave out the
+        -- carrier placeholder riders ("PM Rider N/U") and anything a 3PL
+        -- delivered - that cash is with the carrier, counted below.
+        COALESCE(SUM(c.collected_amount - LEAST(c.rider_remitted_amount + c.collected_amount * pp.rider_frac, c.collected_amount))
+          FILTER (WHERE c.rider_id IS NOT NULL AND r.carrier_code IS NULL AND c.carrier_code IS NULL), 0) AS cod_from_pm_rider,
+        -- Cash a 3PL carrier collected on parcels it delivered (c.carrier_code,
+        -- stamped at delivery) and hasn't paid us yet: full COD until it is on a
+        -- carrier statement, then its net less its share of what was paid.
+        COALESCE(SUM(${CARRIER_OWED_SQL})
+          FILTER (WHERE c.carrier_code = 'ncm'), 0) AS cod_from_ncm,
+        COALESCE(SUM(${CARRIER_OWED_SQL})
+          FILTER (WHERE c.carrier_code = 'upaya'), 0) AS cod_from_upaya,
+        -- Cash riders handed to a branch that the branch has not yet passed
+        -- on to head office (BRANCH_HELD_SQL).
+        COALESCE(SUM(${BRANCH_HELD_SQL}) FILTER (WHERE ${branchHeldFilter}), 0) AS cod_from_branches,
+        -- Cleared by the same fraction as the COD above, so the vendor card's
+        -- net pending (COD - charge) drops by exactly what was paid out.
+        COALESCE(SUM(p.delivery_charge * (1 - pp.vendor_frac)) FILTER (WHERE c.payment_status::text = 'pending'), 0) AS pending_delivery_charge,
         COALESCE(SUM(p.delivery_charge), 0) AS total_delivery_charge
       FROM cod_collections c
       JOIN parcels p ON p.id = c.parcel_id
       LEFT JOIN riders r ON r.id = c.rider_id
+      LEFT JOIN LATERAL (${PART_PAID_FRACTIONS_SQL}) pp ON TRUE
+      LEFT JOIN LATERAL (${BRANCH_CLEARED_SQL}) bs ON TRUE
       WHERE p.deleted_at IS NULL
         -- returned_to_vendor is in scope alongside the delivery statuses: an
         -- RTV/RTO parcel collected no COD (contributes 0 to the cash figures)
@@ -417,38 +395,38 @@ async function computeDashboardSummary(
         AND p.status::text IN ('delivered', 'partially_delivered', 'returned_to_vendor')
         ${codScopeSql}
     `),
+    // Counted over the same parcels as the amounts above (collected, at a
+    // delivered / returned status), so "N parcels with COD" describes the
+    // figure beside it - not every order still awaiting payment.
     prisma.cod_collections.count({
-      where: riderId
-        ? { ...codWhere, rider_payment_status: "pending", collected_amount: { gt: 0 } }
-        : { ...codWhere, payment_status: "pending" },
+      where: {
+        ...(riderId
+          ? { ...codWhere, rider_payment_status: "pending" as const, collected_amount: { gt: 0 } }
+          : { ...codWhere, payment_status: "pending" as const }),
+        collected_at: { not: null },
+        parcels: {
+          ...(branchOr ?? {}),
+          deleted_at: null,
+          status: { in: ["delivered", "partially_delivered", "returned_to_vendor"] },
+        },
+      },
     }),
-    prisma.settlements.findFirst({
-      where: settlementWhere,
-      orderBy: [{ settlement_date: "desc" }, { created_at: "desc" }],
-      select: { amount: true, payable_amount: true, settlement_date: true, created_at: true },
+    // The last money actually paid out: an instalment, so a part payment counts
+    // and the date is when it was paid rather than when the statement was cut.
+    // payable > 0 keeps out statements where the vendor paid us.
+    prisma.settlement_payments.findFirst({
+      where: {
+        amount: { gt: 0 },
+        settlements: { ...settlementWhere, status: { in: ["settled", "partially_paid"] }, payable_amount: { gt: 0 } },
+      },
+      orderBy: { paid_at: "desc" },
+      select: { amount: true, paid_at: true },
     }),
     // Parcels whose status *became* returned_to_vendor today (by status-history
     // timestamp, since parcels has no returned_at column). DISTINCT guards
     // against a parcel bouncing into the status more than once in a day.
-    prisma.$queryRaw<Array<{ count: bigint }>>(Prisma.sql`
-      SELECT COUNT(DISTINCT h.parcel_id) AS count
-      FROM parcel_status_history h
-      JOIN parcels p ON p.id = h.parcel_id
-      WHERE h.new_status::text = 'returned_to_vendor'
-        AND h.created_at >= ${todayStart}
-        AND p.deleted_at IS NULL
-        ${pAliasScopeSql}
-    `),
-    prisma.$queryRaw<Array<Record<string, bigint>>>(Prisma.sql`
-      SELECT ${Prisma.join(trendReturnedSelects, ",")}
-      FROM parcel_status_history h
-      JOIN parcels p ON p.id = h.parcel_id
-      WHERE h.new_status::text = 'returned_to_vendor'
-        AND h.created_at >= ${trendDayRanges[0]!.start}
-        AND h.created_at < ${trendDayRanges[TREND_DAYS - 1]!.end}
-        AND p.deleted_at IS NULL
-        ${pAliasScopeSql}
-    `),
+    prisma.$queryRaw<Array<{ count: bigint }>>(buildReturnedTodayQuery(todayStart, pAliasScopeSql)),
+    prisma.$queryRaw<Array<Record<string, bigint>>>(buildReturnedTrendQuery(trendDayRanges, pAliasScopeSql)),
   ]);
   const todaysReturnedToVendor = Number(returnedTodayRows[0]?.count ?? 0);
   const trendReturnedRow = trendReturnedRows[0];
@@ -465,8 +443,8 @@ async function computeDashboardSummary(
   const pendingCod = Math.max(totalCod - settledCod, 0);
 
   // Cash currently outstanding, split by who's holding it - shown on the
-  // dashboard card under one "COD to collect from riders" heading, broken
-  // down by carrier beneath it. NCM's figure is a proxy (no NCM
+  // dashboard card under one "COD still to collect" heading, broken
+  // down by who holds it beneath it. NCM's figure is a proxy (no NCM
   // remittance-to-office column exists): it clears the moment the vendor leg
   // settles, same as the rest of "pending" does. The parent total is the sum
   // of the identified carriers, not an independent all-rider_id-null figure -
@@ -475,7 +453,9 @@ async function computeDashboardSummary(
   const codFromPmRider = Number(codRow?.cod_from_pm_rider ?? 0);
   const codFromNcm = Number(codRow?.cod_from_ncm ?? 0);
   const codFromUpaya = Number(codRow?.cod_from_upaya ?? 0);
-  const codFromRiders = codFromPmRider + codFromNcm + codFromUpaya;
+  // A rider's card is about the cash in their own hands, not their branch's.
+  const codFromBranches = riderId ? 0 : Number(codRow?.cod_from_branches ?? 0);
+  const codFromRiders = codFromPmRider + codFromNcm + codFromUpaya + codFromBranches;
 
   // Delivery charge on orders whose COD hasn't been settled to the vendor
   // yet - this is deducted from collected_amount at settlement time (see
@@ -608,39 +588,50 @@ async function computeDashboardSummary(
     return vals.length ? Math.min(...vals) : null;
   };
 
-  // Branch COD submission: parcels delivered to a branch whose collected COD is
-  // still not on any branch settlement past the SLA. Same rule branch-billing
-  // uses for a branch's overdue figure, counted here across the whole network
-  // (or the admin's own branches) so it can sit beside the other SLA breaches.
+  // Branch COD submission: parcels a branch delivered whose COD is still not on
+  // a branch statement past the SLA - the same rule and net-of-commission amount
+  // branch-billing's overdue figure uses (computeBranchBalance). Only real
+  // branch hubs count; Imadol is the master branch its COD is owed to. A
+  // branch-scoped admin sees their own branch; head office sees every branch.
   let overdueBranchCod = 0;
   let overdueBranchCodAmount = 0;
   const branchCodHours = slaSettings[BRANCH_COD_SLA_KEY];
   if (typeof branchCodHours === "number") {
-    const branchScopeSql =
-      branchLocationIds === undefined
-        ? Prisma.empty
-        : branchLocationIds.length === 0
-        ? Prisma.sql`AND false`
-        : Prisma.sql`AND p.destination_location_id IN (${Prisma.join(branchLocationIds)}::uuid[])`;
+    const ownBranchSql = branchLocationIds === undefined
+      ? Prisma.empty
+      : Prisma.sql`AND (b.id = ANY(${branchLocationIds}::uuid[]) OR EXISTS (
+          SELECT 1 FROM locations m
+          WHERE m.id = ANY(${branchLocationIds}::uuid[]) AND upper(m.code) = 'IMADOL' AND m.parent_id IS NULL
+        ))`;
     const rows = await prisma.$queryRaw<Array<{ n: bigint; amount: string }>>(Prisma.sql`
-      SELECT COUNT(*)::bigint AS n,
-             COALESCE(SUM(GREATEST(0::numeric, COALESCE(cc.collected_amount, p.cod_amount))), 0) AS amount
-      FROM parcels p
-      LEFT JOIN cod_collections cc ON cc.parcel_id = p.id
-      JOIN locations dl ON dl.id = p.destination_location_id
-      WHERE p.deleted_at IS NULL
-        AND p.status::text IN ('delivered', 'partially_delivered')
-        AND p.delivered_at IS NOT NULL
-        AND p.delivered_at < now() - make_interval(hours => ${branchCodHours})
-        AND p.destination_location_id IS NOT NULL
-        AND NOT EXISTS (SELECT 1 FROM branch_settlement_items bsi WHERE bsi.parcel_id = p.id)
-        -- COD on parcels delivered into Imadol is already at the master branch:
-        -- there is no settlement for it to sit on, so it is never overdue.
-        AND COALESCE(dl.parent_id, dl.id) IS DISTINCT FROM (
-          SELECT id FROM locations
-          WHERE upper(code) = 'IMADOL' AND parent_id IS NULL AND is_hub LIMIT 1
-        )
-        ${branchScopeSql}
+      WITH branches AS (
+        SELECT b.id, b.commission_per_parcel FROM locations b
+        WHERE b.parent_id IS NULL AND b.is_hub AND upper(COALESCE(b.code, '')) <> 'IMADOL'
+          ${ownBranchSql}
+      ), branch_locs AS (
+        -- Mirrors computeBranchBalance's branch_locs, for every branch at once.
+        SELECT b.id AS branch_id, b.id AS loc_id FROM branches b
+        UNION SELECT b.id, l.id FROM branches b JOIN locations l ON l.parent_id = b.id AND l.is_active
+        UNION SELECT b.id, vc.covered_branch_id FROM branches b JOIN branch_virtual_coverage vc ON vc.branch_id = b.id
+        UNION SELECT b.id, l.id FROM branches b
+          JOIN branch_virtual_coverage vc ON vc.branch_id = b.id
+          JOIN locations l ON l.parent_id = vc.covered_branch_id AND l.is_active
+      ), overdue AS (
+        -- DISTINCT ON: a parcel covered by two branches is still one parcel.
+        SELECT DISTINCT ON (p.id)
+          GREATEST(0::numeric, COALESCE(cc.collected_amount, p.cod_amount) - COALESCE(b.commission_per_parcel, 0)) AS net_cod
+        FROM parcels p
+        JOIN branch_locs bl ON bl.loc_id = p.destination_location_id
+        JOIN branches b ON b.id = bl.branch_id
+        LEFT JOIN cod_collections cc ON cc.parcel_id = p.id
+        WHERE p.deleted_at IS NULL
+          AND p.status::text IN ('delivered', 'partially_delivered')
+          AND p.delivered_at < now() - make_interval(hours => ${branchCodHours})
+          AND NOT EXISTS (SELECT 1 FROM branch_settlement_items bsi WHERE bsi.parcel_id = p.id)
+          ${branchCodParcelSql("p.")}
+        ORDER BY p.id, bl.branch_id
+      )
+      SELECT COUNT(*)::bigint AS n, COALESCE(SUM(net_cod), 0) AS amount FROM overdue
     `);
     overdueBranchCod = Number(rows[0]?.n ?? 0);
     overdueBranchCodAmount = Math.round(Number(rows[0]?.amount ?? 0) * 100) / 100;
@@ -713,17 +704,15 @@ async function computeDashboardSummary(
       codFromPmRider,
       codFromNcm,
       codFromUpaya,
+      codFromBranches,
       deliveryCharge,
       pendingCodCount,
       pendingDeliveryCharge,
       progressPercent: totalCod > 0 ? (settledCod / totalCod) * 100 : 0,
       scopedToRider: Boolean(riderId),
-      // Net amount the vendor was actually paid (collected COD minus delivery
-      // charge - see finance.service.ts's payableAmount), not the gross total.
-      lastAmount: lastSettlement ? moneyToNumber(lastSettlement.payable_amount ?? lastSettlement.amount) : 0,
-      // Full timestamp, not just the (time-less) settlement_date column, so the
-      // UI can show both date and time of when the settlement was created.
-      lastSettledAt: lastSettlement ? lastSettlement.created_at.toISOString() : null,
+      // The last payment made (net of delivery charges, like every payout).
+      lastAmount: lastSettlement ? moneyToNumber(lastSettlement.amount) : 0,
+      lastSettledAt: lastSettlement ? lastSettlement.paid_at.toISOString() : null,
     },
     sla: {
       overduePickup: sumStatuses(SLA_GROUPS.pickup),

@@ -22,6 +22,8 @@ import { Prisma } from "../../generated/prisma/client";
 import prisma from "../../lib/prisma";
 import { AppError } from "../../utils/AppError";
 import {
+  describeBranchSettlement,
+  describeCarrierSettlement,
   describeExpense,
   describeRiderRemittance,
   describeVendorPaymentVerified,
@@ -128,6 +130,7 @@ const SETTLEMENT_POSTING_SELECT = {
   payment_method: true,
   payments: true,
   paid_amount: true,
+  vendor_credit_applied: true,
   settlement_date: true,
   updated_at: true,
   status: true,
@@ -205,6 +208,103 @@ function returnChargesOn(settlement: {
     if (!parcel || !isReturnLeg(parcel)) return total;
     return total.plus(parcel.delivery_charge ?? 0);
   }, new Decimal(0));
+}
+
+// ── Branch settlements ──────────────────────────────────────────────────────
+
+/**
+ * Brings a branch COD statement's posting into line.
+ *
+ * Posts on creation and restates on every instalment, mirroring vendor
+ * statements. A cancelled statement moved no money and reverses.
+ */
+export async function syncBranchSettlementPostings(
+  db: Db,
+  settlementIds: string[],
+  options: SyncOptions = {},
+): Promise<SyncSummary> {
+  const summary = noChange();
+  const ids = Array.from(new Set(settlementIds.filter(Boolean)));
+  if (ids.length === 0) return summary;
+
+  const [rows, methodAccounts] = await Promise.all([
+    db.branch_settlements.findMany({
+      where: { id: { in: ids } },
+      select: {
+        id: true,
+        statement_no: true,
+        from_branch_id: true,
+        to_branch_id: true,
+        gross_cod: true,
+        commission_amount: true,
+        net_payable: true,
+        paid_amount: true,
+        payment_method: true,
+        payments: true,
+        settlement_date: true,
+        status: true,
+        from_branch: { select: { name: true } },
+      },
+    }),
+    loadMethodAccounts(db),
+  ]);
+
+  for (const row of rows) {
+    const settlement = { ...row, methodAccounts };
+    const label = `branch settlement ${settlement.statement_no}`;
+    const desired = settlement.status !== "cancelled" ? resolve(() => describeBranchSettlement(settlement), label) : null;
+    record(
+      summary,
+      await run(db, label, SOURCE.branchSettlement(settlement.id), EVENT_KEY.branchSettlement, desired, options),
+    );
+  }
+
+  return summary;
+}
+
+// ── 3PL carrier settlements ─────────────────────────────────────────────────
+
+/** Same lifecycle as branch statements: posts on creation, restates per instalment, a cancelled one reverses. */
+export async function syncCarrierSettlementPostings(
+  db: Db,
+  settlementIds: string[],
+  options: SyncOptions = {},
+): Promise<SyncSummary> {
+  const summary = noChange();
+  const ids = Array.from(new Set(settlementIds.filter(Boolean)));
+  if (ids.length === 0) return summary;
+
+  const [rows, methodAccounts] = await Promise.all([
+    db.carrier_settlements.findMany({
+      where: { id: { in: ids } },
+      select: {
+        id: true,
+        statement_no: true,
+        carrier_code: true,
+        gross_cod: true,
+        carrier_charges: true,
+        net_receivable: true,
+        paid_amount: true,
+        payment_method: true,
+        payments: true,
+        settlement_date: true,
+        status: true,
+      },
+    }),
+    loadMethodAccounts(db),
+  ]);
+
+  for (const row of rows) {
+    const settlement = { ...row, methodAccounts };
+    const label = `carrier settlement ${settlement.statement_no}`;
+    const desired = settlement.status !== "cancelled" ? resolve(() => describeCarrierSettlement(settlement), label) : null;
+    record(
+      summary,
+      await run(db, label, SOURCE.carrierSettlement(settlement.id), EVENT_KEY.carrierSettlement, desired, options),
+    );
+  }
+
+  return summary;
 }
 
 // ── Vendor payments ─────────────────────────────────────────────────────────
@@ -365,18 +465,33 @@ export interface SweepResult {
 export async function sweepSettlementPostings(
   options: { since: Date; limit: number } = { since: new Date(Date.now() - 60 * 60 * 1000), limit: 500 },
 ): Promise<SweepResult> {
-  const candidates = await prisma.settlements.findMany({
-    where: { updated_at: { gte: options.since } },
-    select: { id: true },
-    orderBy: { updated_at: "asc" },
-    take: options.limit,
-  });
+  const window = { where: { updated_at: { gte: options.since } }, select: { id: true }, orderBy: { updated_at: "asc" as const }, take: options.limit };
+  const [statements, branchStatements, carrierStatements] = await Promise.all([
+    prisma.settlements.findMany(window),
+    prisma.branch_settlements.findMany(window),
+    prisma.carrier_settlements.findMany(window),
+  ]);
 
+  const vendorAndRider = await sweepChunks(statements.map((row) => row.id), syncSettlementPostings, "statement");
+  const branch = await sweepChunks(branchStatements.map((row) => row.id), syncBranchSettlementPostings, "branch statement");
+  const carrier = await sweepChunks(carrierStatements.map((row) => row.id), syncCarrierSettlementPostings, "carrier statement");
+  return {
+    considered: statements.length + branchStatements.length + carrierStatements.length,
+    repaired: vendorAndRider.repaired + branch.repaired + carrier.repaired,
+    failed: vendorAndRider.failed + branch.failed + carrier.failed,
+  };
+}
+
+async function sweepChunks(
+  ids: string[],
+  sync: (db: Db, ids: string[], options: SyncOptions) => Promise<SyncSummary>,
+  noun: string,
+): Promise<Omit<SweepResult, "considered">> {
   let repaired = 0;
   let failed = 0;
 
-  for (let index = 0; index < candidates.length; index += SWEEP_CHUNK) {
-    const chunk = candidates.slice(index, index + SWEEP_CHUNK).map((settlement) => settlement.id);
+  for (let index = 0; index < ids.length; index += SWEEP_CHUNK) {
+    const chunk = ids.slice(index, index + SWEEP_CHUNK);
     try {
       // In a transaction, and this is not optional. The balance trigger is
       // DEFERRABLE INITIALLY DEFERRED, which defers it to the end of the
@@ -388,16 +503,16 @@ export async function sweepSettlementPostings(
       // than counting entries either side of the call - two queries per chunk
       // to rediscover a number that was in hand.
       const summary = await prisma.$transaction(
-        (tx) => syncSettlementPostings(tx, chunk, { reason: "ledger sweep" }),
+        (tx) => sync(tx, chunk, { reason: "ledger sweep" }),
         { timeout: 120_000, maxWait: 30_000 },
       );
       repaired += summary.changed;
       failed += summary.unresolved;
     } catch (error) {
       failed += chunk.length;
-      console.error(`[Ledger] Sweep chunk failed (${chunk.length} statement(s)):`, error);
+      console.error(`[Ledger] Sweep chunk failed (${chunk.length} ${noun}(s)):`, error);
     }
   }
 
-  return { considered: candidates.length, repaired, failed };
+  return { repaired, failed };
 }

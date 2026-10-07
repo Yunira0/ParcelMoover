@@ -3,7 +3,7 @@ export { buildOrdersWhere } from "./orders/where";
 
 export { invalidateOrderCaches } from "./orders/cache";
 
-export { notifyAdmins, notifyVendorOfParcel } from "./orders/notifications";
+export { notifyAdmins, notifyFinanceStaff, notifyVendorOfParcel } from "./orders/notifications";
 
 export { createOrder } from "./orders/create";
 
@@ -48,7 +48,7 @@ export { addOrderRemark } from "./orders/remarks";
 
 export { getSenderProfile } from "./orders/senderProfile";
 
-export { getStatusCounts, getMerchantOverview } from "./orders/operations-reporting";
+export { getStatusCounts, getMerchantOverview, getSalesOverview, getRiderOverview } from "./orders/operations-reporting";
 
 export type { MerchantOverviewMetric, MerchantOverviewResult } from "./orders/operations-reporting";
 

@@ -43,6 +43,12 @@ export interface PendingCodBill {
     deliveryCharges: number;
     payableAmount: number;
   };
+  /**
+   * Orders leave this bill once they are put on a statement, but they are not
+   * paid until that statement is. What those open statements still owe (negative
+   * when the vendor owes us), so this page can account for the dashboard figure.
+   */
+  onStatements: { count: number; outstanding: number };
 }
 
 export interface OrderCodItem {
@@ -55,6 +61,9 @@ export interface OrderCodItem {
   deliveredAt: string | null;
   status: CodPaymentFilter;
   netPayable: number;
+  /** The open or paid vendor statement this order is bundled into, if any. `status` stays
+   *  "not_settled" while that statement is only partially_paid - see payForSettlement. */
+  statement: { statementId: string; status: SettlementStatus } | null;
 }
 
 export interface OrderCodListResult {
@@ -77,6 +86,11 @@ export interface SettlementListItem {
   bankAccountNo: string | null;
   bankAccountHolder: string | null;
   transferDate: string | null;
+  /**
+   * Day the statement was fully paid (Nepal date, YYYY-MM-DD) — the last
+   * instalment's paid_at. Null until the status is `settled`.
+   */
+  settledDate: string | null;
   createdAt: string;
   orderCount: number;
   amount: number;
@@ -218,6 +232,10 @@ export interface UnsettledOrdersResult {
   totalCod: number;
   totalDeliveryCharge: number;
   totalNetPayable: number;
+  /** Vendor leg only: prepaid delivery charges a new statement would hand back. */
+  availableCredit: number;
+  /** True when the eligible set exceeded UNSETTLED_ORDERS_CAP and was trimmed. */
+  capped: boolean;
 }
 
 export interface SettlementDetailItem {
@@ -268,6 +286,8 @@ export interface SettlementDetailResult {
   createdAt: string;
   amount: number;
   payableAmount: number;
+  /** Delivery charges the vendor prepaid through Billing, handed back here. Included in payableAmount. */
+  vendorCreditApplied: number;
   /** Total recorded so far across every instalment. */
   paidAmount: number;
   /** ABS(payableAmount) - paidAmount — what the payee is still owed. */

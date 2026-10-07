@@ -171,7 +171,7 @@ const OverviewOrdersPage: React.FC = () => {
       '#', 'Tracking ID', 'Status', 'Order Type', 'Service Type', 'Origin', 'Destination',
       'Sender', 'Sender Phone', 'Sender Address',
       'Receiver', 'Receiver Phone', 'Receiver Alt Phone', 'Receiver Address',
-      'Pieces', 'Weight (kg)', 'COD', 'Delivery Charge', 'Package Type', 'Delivery Instruction',
+      'Pieces', 'Weight (kg)', 'COD', 'Delivery Charge', 'Package Description', 'Delivery Instruction',
       'Vendor', 'Rider', 'Attempts', 'Remarks',
       'Order Created Date', 'Last Updated By', 'Last Updated At', ...STATUS_TIMELINE_HEADERS,
     ];
@@ -207,7 +207,7 @@ const OverviewOrdersPage: React.FC = () => {
     ]);
     const label = group?.label ?? 'orders';
     const slug = label.toLowerCase().replace(/\s+/g, '-');
-    downloadExcel(`${slug}.xlsx`, label.slice(0, 31), headers, sheetRows);
+    await downloadExcel(`${slug}.xlsx`, label.slice(0, 31), headers, sheetRows);
   };
 
   if (!group) return null;

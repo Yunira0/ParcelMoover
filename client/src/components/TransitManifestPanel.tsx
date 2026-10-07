@@ -1,12 +1,14 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ChevronDown, ChevronUp, Plus, Search, Trash2, Truck, X } from 'lucide-react';
+import { ChevronDown, ChevronUp, Download, Plus, Search, Trash2, Truck, X } from 'lucide-react';
 import Table from './Table';
 import Pagination from './Pagination';
 import Button from './Button';
 import StatusChip, { type StatusChipTone } from './StatusChip';
 import { toBsDateTime } from '../utils/nepaliDate';
 import { apiErrorMessage } from '../utils/serverValidation';
+import { downloadOrdersExcel } from '../utils/orderExport';
+import { getOrders, type Order } from '../services/orders.service';
 import {
   addParcelsToTransitManifest,
   deleteTransitManifest,
@@ -84,6 +86,7 @@ const TransitManifestPanel: React.FC<TransitManifestPanelProps> = ({ statusFilte
   // Operations - the list endpoint only carries member ids.
   const [details, setDetails] = useState<Record<string, TransitManifestDetail>>({});
   const [detailLoadingId, setDetailLoadingId] = useState('');
+  const [downloading, setDownloading] = useState(false);
   const [expandedId, setExpandedId] = useState('');
   const [selectedParcelIds, setSelectedParcelIds] = useState<Set<string | number>>(new Set());
 
@@ -340,6 +343,40 @@ const TransitManifestPanel: React.FC<TransitManifestPanelProps> = ({ statusFilte
     },
   ];
 
+  // Same sheet as the Orders page download. Ticked parcels only, or the whole
+  // manifest when none are ticked; full order rows (with status timestamps)
+  // are fetched by tracking id, in manifest order.
+  const downloadParcels = async (manifest: TransitManifestModel, detail: TransitManifestDetail) => {
+    const ticked = detail.parcels.filter((p) => selectedParcelIds.has(p.id));
+    const parcels = ticked.length > 0 ? ticked : detail.parcels;
+    if (parcels.length === 0) return;
+    setDownloading(true);
+    try {
+      const res = await getOrders({ search: parcels.map((p) => p.trackingId).join(','), withArrival: true });
+      const byTracking = new Map((res?.data ?? []).map((o) => [o.trackingId.toLowerCase(), o]));
+      const orders = parcels
+        .map((p) => byTracking.get(p.trackingId.toLowerCase()))
+        .filter((o): o is Order => Boolean(o));
+      downloadOrdersExcel(`${manifest.manifestNo}.xlsx`, manifest.manifestNo, orders);
+    } catch (err) {
+      setError(apiErrorMessage(err, 'Failed to download the orders on this manifest.'));
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  // Toolbar download (Receive Manifest): the manifest whose details are open,
+  // else the one clicked. Ticked parcels only exist on the open one.
+  const downloadTarget = rows.find((m) => m.id === (expandedId || selectedId)) ?? null;
+  const downloadCount = downloadTarget?.id === expandedId
+    ? (details[expandedId]?.parcels.filter((p) => selectedParcelIds.has(p.id)).length ?? 0)
+    : 0;
+  const handleDownload = async () => {
+    if (!downloadTarget) return;
+    const detail = await loadDetail(downloadTarget.id);
+    if (detail) await downloadParcels(downloadTarget, detail);
+  };
+
   const renderParcels = (manifest: TransitManifestModel) => {
     const detail = details[manifest.id];
 
@@ -377,7 +414,7 @@ const TransitManifestPanel: React.FC<TransitManifestPanelProps> = ({ statusFilte
         <Table
           columns={parcelColumns(detail.parcels)}
           data={detail.parcels}
-          selectable={manifest.status === 'open'}
+          selectable
           selectedIds={selectedParcelIds}
           onToggleRow={toggleParcelSelection}
           allSelected={allSelected}
@@ -400,11 +437,24 @@ const TransitManifestPanel: React.FC<TransitManifestPanelProps> = ({ statusFilte
           {selected
             ? `${isReceiving ? 'Receiving' : 'Scanning'} into ${selected.manifestNo}`
             : `Select a manifest to ${isReceiving ? 'receive' : 'scan into'}`}
+          {statusFilter !== 'active' && downloadCount > 0 && <> · {downloadCount} selected</>}
         </span>
-        {statusFilter === 'active' && (
+        {statusFilter === 'active' ? (
           <div className="oov-toolbar-actions">
             <Button variant="secondary" className="oov-outline-btn" onClick={() => setCreateOpen(true)} disabled={busy}>
               <Plus size={14} /> New manifest
+            </Button>
+          </div>
+        ) : (
+          <div className="oov-toolbar-actions">
+            <Button
+              variant="secondary"
+              className="oov-outline-btn"
+              onClick={handleDownload}
+              disabled={!downloadTarget || detailLoadingId !== '' || downloading}
+              title={downloadTarget ? undefined : 'Select a manifest to download its orders'}
+            >
+              <Download size={14} /> {downloading ? 'Exporting…' : downloadCount > 0 ? `Download (${downloadCount})` : 'Download'}
             </Button>
           </div>
         )}

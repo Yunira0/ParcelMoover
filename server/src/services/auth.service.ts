@@ -94,6 +94,7 @@ interface UpdateManagedUserInput {
   licenceDocPath?: string;
   bluebookDocPath?: string;
   businessCertDocPath?: string;
+  agreementDocPath?: string;
 }
 
 // The document columns each account type carries, keyed by the upload field
@@ -106,12 +107,14 @@ const DOCUMENT_COLUMNS: Record<ManagedUserType, Record<string, keyof UpdateManag
     citizenship_doc_back: "citizenshipDocBackPath",
     pan_doc: "panDocPath",
     experience_letter_doc: "experienceLetterDocPath",
+    agreement_doc: "agreementDocPath",
   },
   vendor: {
     citizenship_doc: "citizenshipDocPath",
     citizenship_doc_back: "citizenshipDocBackPath",
     pan_vat_doc: "panVatDocPath",
     business_cert_doc: "businessCertDocPath",
+    agreement_doc: "agreementDocPath",
   },
   rider: {
     citizenship_doc: "citizenshipDocPath",
@@ -119,6 +122,7 @@ const DOCUMENT_COLUMNS: Record<ManagedUserType, Record<string, keyof UpdateManag
     pan_vat_doc: "panVatDocPath",
     licence_doc: "licenceDocPath",
     bluebook_doc: "bluebookDocPath",
+    agreement_doc: "agreementDocPath",
   },
 };
 
@@ -589,7 +593,7 @@ export async function getManagedUserDetail(actorUserId: string, type: ManagedUse
       idDocumentType: a.id_document_type, idDocumentNumber: a.id_document_number,
       idDocument: a.id_document, citizenshipDoc: a.citizenship_doc,
       citizenshipDocBack: a.citizenship_doc_back, panDoc: a.pan_doc,
-      experienceLetterDoc: a.experience_letter_doc,
+      experienceLetterDoc: a.experience_letter_doc, agreementDoc: a.agreement_doc,
       bankName: a.bank_name, bankAccountNo: a.bank_account_no, bankAccountHolder: a.bank_account_holder,
       joinedAt: dateStr(a.joined_at),
     };
@@ -605,7 +609,7 @@ export async function getManagedUserDetail(actorUserId: string, type: ManagedUse
     citizenshipNo: r.citizenship_no, licenceNo: r.licence_no, vehicleNo: r.vehicle_no,
     salaryCommission: r.salary_commission, pan: r.pan,
     citizenshipDoc: r.citizenship_doc, citizenshipDocBack: r.citizenship_doc_back, panVatDoc: r.pan_vat_doc,
-    licenceDoc: r.licence_doc, bluebookDoc: r.bluebook_doc,
+    licenceDoc: r.licence_doc, bluebookDoc: r.bluebook_doc, agreementDoc: r.agreement_doc,
     bankName: r.bank_name, bankAccountNo: r.bank_account_no, bankAccountHolder: r.bank_account_holder,
     joinedAt: dateStr(r.joined_at),
     carrierCode: r.carrier_code ?? "",
@@ -621,27 +625,30 @@ export interface ManagedUserDocument {
 
 // Labels mirror the upload fields on each registration form, so what staff see
 // here reads the same as what the applicant filled in.
-const ADMIN_DOCUMENT_FIELDS: { key: string; label: string; column: "id_document" | "citizenship_doc" | "citizenship_doc_back" | "pan_doc" | "experience_letter_doc" }[] = [
+const ADMIN_DOCUMENT_FIELDS: { key: string; label: string; column: "id_document" | "citizenship_doc" | "citizenship_doc_back" | "pan_doc" | "experience_letter_doc" | "agreement_doc" }[] = [
   { key: "idDocument", label: "ID document", column: "id_document" },
   { key: "citizenshipDoc", label: "Citizenship (front)", column: "citizenship_doc" },
   { key: "citizenshipDocBack", label: "Citizenship (back)", column: "citizenship_doc_back" },
   { key: "panDoc", label: "PAN", column: "pan_doc" },
   { key: "experienceLetterDoc", label: "Experience letter", column: "experience_letter_doc" },
+  { key: "agreementDoc", label: "Agreement", column: "agreement_doc" },
 ];
 
-const VENDOR_DOCUMENT_FIELDS: { key: string; label: string; column: "citizenship_doc" | "citizenship_doc_back" | "pan_vat_doc" | "business_cert_doc" }[] = [
+const VENDOR_DOCUMENT_FIELDS: { key: string; label: string; column: "citizenship_doc" | "citizenship_doc_back" | "pan_vat_doc" | "business_cert_doc" | "agreement_doc" }[] = [
   { key: "citizenshipDoc", label: "Citizenship (front)", column: "citizenship_doc" },
   { key: "citizenshipDocBack", label: "Citizenship (back)", column: "citizenship_doc_back" },
   { key: "panVatDoc", label: "PAN / VAT", column: "pan_vat_doc" },
   { key: "businessCertDoc", label: "Business certificate", column: "business_cert_doc" },
+  { key: "agreementDoc", label: "Agreement", column: "agreement_doc" },
 ];
 
-const RIDER_DOCUMENT_FIELDS: { key: string; label: string; column: "citizenship_doc" | "citizenship_doc_back" | "pan_vat_doc" | "licence_doc" | "bluebook_doc" }[] = [
+const RIDER_DOCUMENT_FIELDS: { key: string; label: string; column: "citizenship_doc" | "citizenship_doc_back" | "pan_vat_doc" | "licence_doc" | "bluebook_doc" | "agreement_doc" }[] = [
   { key: "citizenshipDoc", label: "Citizenship (front)", column: "citizenship_doc" },
   { key: "citizenshipDocBack", label: "Citizenship (back)", column: "citizenship_doc_back" },
   { key: "panVatDoc", label: "PAN / VAT", column: "pan_vat_doc" },
   { key: "licenceDoc", label: "License", column: "licence_doc" },
   { key: "bluebookDoc", label: "Blue book", column: "bluebook_doc" },
+  { key: "agreementDoc", label: "Agreement", column: "agreement_doc" },
 ];
 
 /**
@@ -1065,6 +1072,7 @@ export async function registerUserBySuperAdmin(
           citizenship_doc_back: data.citizenshipDocBackPath ?? null,
           pan_doc: data.panDocPath ?? null,
           experience_letter_doc: data.experienceLetterDocPath ?? null,
+          agreement_doc: data.agreementDocPath ?? null,
           bank_name: data.bankName ?? null,
           bank_account_no: data.bankAccountNo ?? null,
           bank_account_holder: data.bankAccountHolder ?? null,
@@ -1136,6 +1144,7 @@ export async function registerUserBySuperAdmin(
           citizenship_doc_back: data.citizenshipDocBackPath ?? null,
           pan_vat_doc: data.panVatDocPath ?? null,
           business_cert_doc: data.businessCertDocPath ?? null,
+          agreement_doc: data.agreementDocPath ?? null,
           bank_name: data.bankName ?? null,
           bank_account_no: data.bankAccountNo ?? null,
           bank_account_holder: data.bankAccountHolder ?? null,
@@ -1181,6 +1190,7 @@ export async function registerUserBySuperAdmin(
         pan_vat_doc: data.panVatDocPath ?? null,
         licence_doc: data.licenceDocPath ?? null,
         bluebook_doc: data.bluebookDocPath ?? null,
+        agreement_doc: data.agreementDocPath ?? null,
         bank_name: data.bankName ?? null,
         bank_account_no: data.bankAccountNo ?? null,
         bank_account_holder: data.bankAccountHolder ?? null,

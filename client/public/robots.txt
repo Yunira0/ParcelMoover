@@ -1,5 +1,18 @@
 User-agent: *
+# Public pages only. "$" anchors the match, so /track/<tracking-id> (one
+# customer's parcel) and everything behind login stay out of the index.
 Allow: /$
+Allow: /track$
+Allow: /apply$
+Allow: /login$
+# What those pages need to render and to show in results: the JS/CSS bundles
+# (without them Google sees an empty SPA shell), the favicon and brand images.
+Allow: /assets/
+Allow: /brand/
+Allow: /favicon
+Allow: /apple-touch-icon.png
+Allow: /og-image.png
+Allow: /voucher-art-panel.png
 Disallow: /
 
-Sitemap: https://www.parcelmoover.com/sitemap.xml
+Sitemap: https://portal.parcelmoover.com/sitemap.xml

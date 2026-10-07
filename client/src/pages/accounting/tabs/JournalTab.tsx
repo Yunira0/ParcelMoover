@@ -37,6 +37,8 @@ const SOURCE_LABELS: Record<string, string> = {
   cod_collection: 'COD collected',
   parcel: 'Delivery charge',
   settlement: 'Settlement',
+  branch_settlement: 'Branch COD',
+  carrier_settlement: '3PL COD',
   vendor_payment: 'Vendor payment',
   expense: 'Expense',
   manual: 'Manual entry',
@@ -59,6 +61,8 @@ const SOURCE_OPTIONS = [
 const VOUCHER_TYPES: Record<string, string> = {
   cod_collection: 'Receipt',
   settlement: 'Receipt',
+  branch_settlement: 'Receipt',
+  carrier_settlement: 'Receipt',
   parcel: 'Sales',
   vendor_payment: 'Payment',
   expense: 'Payment',

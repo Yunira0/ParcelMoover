@@ -105,6 +105,14 @@ export interface Account {
   isActive: boolean;
 }
 
+/**
+ * Whether a hand-written entry can post to this account. A control account
+ * needs its party named, and the party picker knows only riders and vendors -
+ * COD with Branch is tagged per branch, so it is posted through Branch COD.
+ */
+export const isPostableByHand = (account: Account) =>
+  !account.isControl || account.subledgerType === 'rider' || account.subledgerType === 'vendor';
+
 export interface AccountBalance extends Account {
   debit: number;
   credit: number;
@@ -432,9 +440,22 @@ export const getPartySettlementLedger = async (
   return response.data.data;
 };
 
-/** Riders, vendors and staff in one lookup. */
+/** Riders, vendors and other users in one lookup. */
 export const searchParties = async (q: string): Promise<PartySearchResult[]> => {
   const response = await api.get('/accounting/party-search', { params: { q } });
+  return response.data.data;
+};
+
+/** Bounded browse/search for voucher party pickers; loads more as the list scrolls. */
+export const searchPartiesPage = async (
+  q: string,
+  types: PartySearchResult['partyType'][],
+  offset = 0,
+  limit = 30,
+): Promise<{ results: PartySearchResult[]; hasMore: boolean }> => {
+  const response = await api.get('/accounting/party-search', {
+    params: { q, types: types.join(','), offset, limit, paged: 'true' },
+  });
   return response.data.data;
 };
 

@@ -41,6 +41,7 @@ import cookiesParser from "cookie-parser";
 import {authMiddleware} from "./middlewares/auth.middleware";
 import { errorHandler } from "./middlewares/errorHandler.middleware";
 import { requestId } from "./middlewares/requestId.middleware";
+import { requestPerformance } from "./lib/requestPerformance";
 import {authorizeRoles} from "./middlewares/authorizeRoles.middleware";
 import { createRedisRateLimitStore } from "./lib/rateLimitStore";
 import { createGlobalRateLimitKeyGenerator } from "./lib/rateLimitKey";
@@ -73,9 +74,9 @@ if (!process.env.DOCUMENT_ENCRYPTION_KEY) {
 }
 
 const app: Express = express();
-const port = process.env.PORT || 3000;
 
 app.use(requestId);
+app.use("/api", requestPerformance);
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {

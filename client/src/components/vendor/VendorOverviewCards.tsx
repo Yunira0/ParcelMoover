@@ -24,6 +24,8 @@ interface VendorOverviewCardsProps {
   returnProcess: number;
   returnProcessAmount: number;
   loading?: boolean;
+  /** Hidden for vendor staff without FINANCE_ACCESS. */
+  showAmounts?: boolean;
 }
 
 interface MetricCard {
@@ -52,14 +54,17 @@ const VendorOverviewCards: React.FC<VendorOverviewCardsProps> = ({
   returnProcess,
   returnProcessAmount,
   loading = false,
+  showAmounts = true,
 }) => {
   const fmt = (v: number) => (loading ? '—' : v.toLocaleString());
-  const fmtAmount = (v: number) => (loading ? undefined : formatCurrency(v ?? 0));
+  const fmtAmount = (v: number) => (loading || !showAmounts ? undefined : formatCurrency(v ?? 0));
 
   const cards: MetricCard[] = [
     { icon: Package,       label: 'Total Orders',  value: fmt(totalOrders),  sub: fmtAmount(totalOrderAmount),    accent: 'primary', to: '/dashboard/metric/total-orders' },
     { icon: Truck,         label: 'Delivered',     value: fmt(delivered),    sub: fmtAmount(deliveredAmount),     accent: 'success', to: '/dashboard/metric/delivered' },
-    { icon: RotateCcw,     label: 'RTV Delivered', value: fmt(rtvDelivered), sub: fmtAmount(rtvDeliveredAmount),  accent: 'warning', to: '/dashboard/metric/rtv-delivered' },
+    // The COD on returned parcels was never collected - labelled so it doesn't
+    // read as money owed to the vendor.
+    { icon: RotateCcw,     label: 'RTV Delivered', value: fmt(rtvDelivered), sub: loading || !showAmounts ? undefined : `${formatCurrency(rtvDeliveredAmount ?? 0)} not collected`,  accent: 'warning', to: '/dashboard/metric/rtv-delivered' },
     // Transit only: parcels moving between hubs (Transit/oov) or out on a
     // dispatch (In Transit/dispatched). Deliberately NOT the whole
     // picked-up-to-doorstep span - that is the in-delivery bucket this card

@@ -6,6 +6,7 @@ import { createRedisRateLimitStore } from "../lib/rateLimitStore";
 import {
   publicAddRemarkSchema,
   publicBulkStatusSchema,
+  publicBulkCreateOrderSchema,
   publicCancelOrderSchema,
   publicCreateOrderSchema,
   publicCreateTicketSchema,
@@ -17,12 +18,15 @@ import {
   publicTicketReplySchema,
   publicUpdateOrderSchema,
   publicVendorPaymentsQuerySchema,
+  publicCreateCodSettlementRequestSchema,
 } from "../validators/publicApi.schema";
+import { listCodSettlementRequestsQuerySchema } from "../validators/codSettlementRequest.schema";
 import { paymentProofUpload } from "../lib/billingUpload";
 import { listTicketsQuerySchema } from "../validators/ticket.schema";
 import { buildOpenApiDocument } from "../lib/openapi";
 import {
   publicBulkOrderStatusController,
+  publicBulkCreateOrderController,
   publicCancelOrderController,
   publicCreateOrderController,
   publicGetOrderController,
@@ -58,6 +62,12 @@ import {
   publicListVendorPaymentsController,
   publicSubmitVendorPaymentController,
 } from "../controllers/publicApi/billing.controller";
+import {
+  publicCreateCodSettlementRequestController,
+  publicGetCodSettlementRequestController,
+  publicGetRegisteredBankDetailsController,
+  publicListCodSettlementRequestsController,
+} from "../controllers/publicApi/codSettlementRequests.controller";
 
 // Public partner API v1 — external e-commerce integrations authenticate with
 // vendor API keys (header-only, no cookies → no CSRF middleware here).
@@ -181,6 +191,8 @@ publicApiRouter.post(
 );
 
 // GET /api/v1/orders — list own orders (paginated; ?status= comma-separated).
+publicApiRouter.post("/orders/bulk", publicBulkLimiter, validate(publicBulkCreateOrderSchema), publicBulkCreateOrderController);
+
 publicApiRouter.get(
   "/orders",
   publicReadLimiter,
@@ -320,6 +332,31 @@ publicApiRouter.get(
   "/finance/settlements/:id/documents/:kind",
   publicReadLimiter,
   publicGetSettlementDocumentController,
+);
+
+// The vendor's request for a COD payout is distinct from a settlement itself.
+// These mirror the dashboard's request flow; staff still action the request.
+publicApiRouter.get(
+  "/cod-settlement-requests",
+  publicReadLimiter,
+  validate(listCodSettlementRequestsQuerySchema, "query"),
+  publicListCodSettlementRequestsController,
+);
+publicApiRouter.get(
+  "/cod-settlement-requests/registered-bank",
+  publicReadLimiter,
+  publicGetRegisteredBankDetailsController,
+);
+publicApiRouter.get(
+  "/cod-settlement-requests/:id",
+  publicReadLimiter,
+  publicGetCodSettlementRequestController,
+);
+publicApiRouter.post(
+  "/cod-settlement-requests",
+  publicWriteLimiter,
+  validate(publicCreateCodSettlementRequestSchema),
+  publicCreateCodSettlementRequestController,
 );
 
 // GET /api/v1/billing/status — account balance, thresholds, and current state.

@@ -1,4 +1,3 @@
-import * as XLSX from 'xlsx';
 import type { DataValidation } from 'exceljs';
 
 export type CellValue = string | number | null | undefined;
@@ -7,7 +6,25 @@ export type CellValue = string | number | null | undefined;
 // data rows (array-of-arrays). Numbers are kept as numeric cells so Excel can
 // sum/sort them; null/undefined become blank. Column widths auto-fit content.
 // Matches the SheetJS pattern already used for the import templates.
-export function downloadExcel(
+export async function downloadExcel(
+  filename: string,
+  sheetName: string,
+  headers: string[],
+  rows: CellValue[][],
+): Promise<void> {
+  try {
+    // The workbook engine is large and is only needed after an export click.
+    // Keep it out of the route's initial download, including the Orders page.
+    const XLSX = await import('xlsx');
+    writeWorkbook(XLSX, filename, sheetName, headers, rows);
+  } catch (error) {
+    console.error('Spreadsheet download failed:', error);
+    window.alert('Could not download the spreadsheet. Check your connection and try again.');
+  }
+}
+
+function writeWorkbook(
+  XLSX: typeof import('xlsx'),
   filename: string,
   sheetName: string,
   headers: string[],
@@ -37,12 +54,16 @@ interface RangeValidations {
 // in-cell dropdown for that column. Uses exceljs, loaded on demand, because
 // SheetJS community can't write data validation. Options live on a hidden
 // sheet since inline list validations cap at 255 chars.
+//   columnWidths: header → width in characters, overriding the auto-fit.
+//   freeText:     dropdown columns that suggest their options but still accept
+//                 anything typed (no "invalid value" error).
 export async function downloadExcelTemplate(
   filename: string,
   sheetName: string,
   headers: string[],
   rows: CellValue[][],
   dropdowns: Record<string, string[]>,
+  { columnWidths, freeText = [] }: { columnWidths?: Record<string, number>; freeText?: string[] } = {},
 ): Promise<void> {
   const { default: ExcelJS } = await import('exceljs');
   const wb = new ExcelJS.Workbook();
@@ -51,6 +72,8 @@ export async function downloadExcelTemplate(
   rows.forEach(row => ws.addRow(row.map(v => v ?? null)));
   ws.getRow(1).font = { bold: true };
   ws.columns.forEach((column, col) => {
+    const fixed = columnWidths?.[headers[col]];
+    if (fixed) { column.width = fixed; return; }
     const bodyMax = rows.reduce((max, row) => Math.max(max, String(row[col] ?? '').length), 0);
     column.width = Math.min(Math.max(headers[col].length, bodyMax) + 2, 40);
   });
@@ -70,7 +93,7 @@ export async function downloadExcelTemplate(
       type: 'list',
       allowBlank: true,
       formulae: [`Lists!$${letter}$1:$${letter}$${options.length}`],
-      showErrorMessage: true,
+      showErrorMessage: !freeText.includes(header),
       errorTitle: 'Invalid value',
       error: `Pick a ${header} from the dropdown.`,
     });

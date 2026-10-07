@@ -1,6 +1,10 @@
-import { parcel_status } from "../../generated/prisma/client";
+import { parcel_status, Prisma } from "../../generated/prisma/client";
 import type { ParcelStatus } from "../../types/order.type";
 import { AppError } from "../../utils/AppError";
+import prisma from "../../lib/prisma";
+import { resolveBranchCoverageIds } from "../../lib/branchScope";
+
+type Db = Prisma.TransactionClient | typeof prisma;
 import { DELIVERY_LEG_STATUSES, PICKUP_LEG_STATUSES } from "./scope";
 
 // The admin overview divides the pipeline into disjoint operational stages.
@@ -110,11 +114,76 @@ export function destinationSkipsTransit(destination: { valley?: string | null; n
   return DIRECT_DELIVERY_FRINGE_AREAS.some((area) => name.includes(area));
 }
 
+type TransitDestination = { id?: string | null; valley?: string | null; name?: string | null } | null | undefined;
+type HubCoverage = { coverage: Set<string>; insideValley: boolean } | null;
+
+/**
+ * From "Arrived at Origin" a parcel skips Transit when the branch it arrived at
+ * covers the destination (the branch itself, its areas, its virtually covered
+ * branches) - so Biratnagar delivers Biratnagar's areas directly and sends
+ * everything else to Transit. Valley branches (Imadol) also keep the older
+ * valley + fringe-area rule, since the valley is their coverage.
+ *
+ * Returns a resolver that caches each origin branch's coverage, so a list or a
+ * bulk update resolves every branch once.
+ */
+export function makeSkipsTransitResolver(db: Db = prisma) {
+  const hubs = new Map<string, Promise<HubCoverage>>();
+
+  const hubCoverage = (originLocationId: string): Promise<HubCoverage> => {
+    let pending = hubs.get(originLocationId);
+    if (!pending) {
+      pending = (async () => {
+        const origin = await db.locations.findUnique({
+          where: { id: originLocationId },
+          select: { id: true, parent_id: true, valley: true },
+        });
+        if (!origin) return null;
+        const hubId = origin.parent_id ?? origin.id;
+        const hub = origin.parent_id
+          ? await db.locations.findUnique({ where: { id: hubId }, select: { valley: true } })
+          : origin;
+        const coverage = await resolveBranchCoverageIds(hubId).catch(() => [] as string[]);
+        return { coverage: new Set(coverage), insideValley: hub?.valley === "inside" };
+      })();
+      hubs.set(originLocationId, pending);
+    }
+    return pending;
+  };
+
+  return async (originLocationId: string | null | undefined, destination: TransitDestination): Promise<boolean> => {
+    if (!destination) return false;
+    const hub = originLocationId ? await hubCoverage(originLocationId) : null;
+    if (hub && destination.id && hub.coverage.has(destination.id)) return true;
+    // Unknown origin, or a valley branch: the valley rule still applies.
+    if (!hub || hub.insideValley) return destinationSkipsTransit(destination);
+    return false;
+  };
+}
+
 export const RIDER_ASSIGNMENT_FIELD: Partial<Record<parcel_status, "pickup_rider_id" | "delivery_rider_id">> = {
   rider_assigned: "pickup_rider_id",
   sent_for_delivery: "delivery_rider_id",
   sent_to_vendor: "delivery_rider_id",
 };
+
+// Rider self-claim: the rider app's "Claim & Start Delivery/Pickup" action.
+// The scanning rider takes a parcel in the delivery pool, or reclaims a failed
+// attempt (theirs or another rider's), and is written as the rider for that leg
+// in one step. These are the only assignment transitions a rider may make, and
+// only ever to themselves. failed_* -> claim is deliberately not in
+// STATUS_TRANSITIONS: staff release a failed attempt to the pool and reassign.
+export const RIDER_CLAIM_TRANSITIONS: Partial<Record<parcel_status, parcel_status>> = {
+  ready_to_deliver: "sent_for_delivery",
+  failed_delivery: "sent_for_delivery",
+  failed_pickup: "rider_assigned",
+};
+
+export const RIDER_CLAIMABLE_STATUSES = Object.keys(RIDER_CLAIM_TRANSITIONS) as parcel_status[];
+
+export function isRiderClaim(from: parcel_status, to: parcel_status | ParcelStatus): boolean {
+  return RIDER_CLAIM_TRANSITIONS[from] === to;
+}
 
 export const REASON_REQUIRED_STATUSES: parcel_status[] = [
   "cancelled",

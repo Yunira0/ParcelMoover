@@ -8,6 +8,8 @@ const EXTENSION_BY_MIME_TYPE: Record<string, string> = {
   "image/png": ".png",
   "image/webp": ".webp",
   "application/pdf": ".pdf",
+  // Agreement slot only (see registrationUpload); served as a download.
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
   // Accepted on upload only - secureUploadedFiles converts every HEIC/HEIF
   // file to JPEG before it's ever encrypted and stored, so this extension
   // only ever names the transient pre-conversion file on disk.
@@ -19,9 +21,15 @@ export function safeUploadExtension(mimetype: string): string {
   return EXTENSION_BY_MIME_TYPE[mimetype] ?? "";
 }
 
-const MIME_TYPE_BY_EXTENSION: Record<string, string> = Object.fromEntries(
-  Object.entries(EXTENSION_BY_MIME_TYPE).map(([mime, ext]) => [ext, mime]),
-);
+const MIME_TYPE_BY_EXTENSION: Record<string, string> = {
+  ...Object.fromEntries(Object.entries(EXTENSION_BY_MIME_TYPE).map(([mime, ext]) => [ext, mime])),
+  // Documents (see documentUpload.ts), served back with their real type.
+  ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ".xls": "application/vnd.ms-excel",
+  ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ".doc": "application/msword",
+  ".csv": "text/csv",
+};
 
 export function mimeTypeForExtension(ext: string): string {
   return MIME_TYPE_BY_EXTENSION[ext.toLowerCase()] ?? "application/octet-stream";

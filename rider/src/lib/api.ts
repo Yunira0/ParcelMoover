@@ -103,13 +103,15 @@ export interface RiderUser {
 }
 
 export async function loginRider(payload: LoginPayload): Promise<RiderUser> {
+  // Keep the rider session Bearer-only so it cannot replace a dashboard cookie
+  // when both apps run on the same host.
   const { data } = await api.post<{
     success: boolean
     message: string
     data: RiderUser
     accessToken: string
     csrfToken: string
-  }>('/auth/login', payload)
+  }>('/auth/login', payload, { headers: { 'X-Auth-Mode': 'bearer' } })
 
   const roles: string[] = (data.data as any).roles ?? []
   if (!roles.includes('rider')) {

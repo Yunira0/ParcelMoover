@@ -1,12 +1,13 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useId } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, CheckCircle, Upload, X, User, Building2, FileText, CreditCard, Lock } from 'lucide-react';
 import Button from '../components/Button';
 import FormField from '../components/FormField';
 import DocLink from '../components/DocLink';
-import { registerUser, getManagedUser, updateUserProfile, getLocations } from '../services/users.service';
+import { registerUser, getManagedUser, updateUserProfile, getLocations, AGREEMENT_FILE_ACCEPT } from '../services/users.service';
 import { extractServerFieldErrors, isValidEmail, isValidName, isValidPhone, normalizePhone } from '../utils/serverValidation';
 import { convertHeicFileIfNeeded } from '../utils/heicConvert';
+import { adminDocumentSizeError, adminSaveErrorMessage, formatAdminFileSize } from '../utils/adminUpload';
 import { useHubLock } from '../hooks/useHubLock';
 import './AdminFormPage.css';
 
@@ -15,6 +16,7 @@ import './AdminFormPage.css';
 const API_FIELD_MAP: Record<string, string> = {
   position: 'designation',
   idDocumentNumber: 'nationalIdNumber',
+  idDocument: 'nationalIdDoc',
 };
 
 interface AdminFormInput {
@@ -43,6 +45,7 @@ interface AdminFormInput {
   nationalIdNumber: string;
   nationalIdDoc: File | null;
   panDoc: File | null;
+  agreementDoc: File | null;
   // Bank Details
   bankName: string;
   bankAccountNo: string;
@@ -82,6 +85,7 @@ const emptyForm: AdminFormInput = {
   nationalIdNumber: '',
   nationalIdDoc: null,
   panDoc: null,
+  agreementDoc: null,
   bankName: '',
   bankAccountNo: '',
   bankAccountHolder: '',
@@ -95,45 +99,64 @@ const FileInput: React.FC<{
   required?: boolean;
   file: File | null | undefined;
   onChange: (file: File | null) => void;
+  onBusyChange: (busy: boolean) => void;
+  error?: string;
+  disabled?: boolean;
   accept?: string;
-}> = ({ label, required, file, onChange, accept = 'image/*,.pdf' }) => {
+  hint?: string;
+}> = ({ label, required, file, onChange, onBusyChange, error, disabled, accept = 'image/*,.pdf', hint = 'JPG, PNG or PDF · max 5 MB' }) => {
   const ref = useRef<HTMLInputElement>(null);
+  const id = useId();
+  const description = `${id}-hint${error ? ` ${id}-error` : ''}`;
   const [converting, setConverting] = useState(false);
   const handleFile = async (picked: File | null) => {
-    if (!picked) { onChange(null); return; }
+    // Let the same file be selected again after rejection or removal.
+    if (ref.current) ref.current.value = '';
+    if (!picked) return;
+    // Reject before HEIC conversion, which can otherwise hide an oversized input.
+    if (adminDocumentSizeError(picked)) { onChange(picked); return; }
     setConverting(true);
+    onBusyChange(true);
     try {
       onChange(await convertHeicFileIfNeeded(picked));
     } finally {
       setConverting(false);
+      onBusyChange(false);
     }
   };
   return (
     <div className="afp-file-field">
-      <label className="afp-file-label">
+      <label className="afp-file-label" htmlFor={id}>
         {label}{required && <span className="afp-required"> *</span>}
       </label>
       {file ? (
         <div className="afp-file-chip">
           <FileText size={14} />
-          <span>{file.name}</span>
-          <button type="button" onClick={() => onChange(null)} aria-label="Remove file">
+          <span title={file.name}>{file.name}</span>
+          <span className="afp-file-size">{formatAdminFileSize(file.size)}</span>
+          <button type="button" disabled={disabled || converting} onClick={() => onChange(null)} aria-label={`Remove ${label} file`}>
             <X size={14} />
           </button>
         </div>
       ) : (
-        <button type="button" className="afp-file-btn" disabled={converting} onClick={() => ref.current?.click()}>
+        <button type="button" className="afp-file-btn" disabled={disabled || converting} aria-label={`Choose ${label} file`} aria-invalid={!!error} aria-describedby={description} onClick={() => ref.current?.click()}>
           <Upload size={15} /> {converting ? 'Converting…' : 'Choose file'}
         </button>
       )}
       <input
         ref={ref}
+        id={id}
         type="file"
+        disabled={disabled || converting}
+        aria-describedby={description}
+        aria-invalid={!!error}
         accept={accept}
         style={{ display: 'none' }}
         onChange={(e) => void handleFile(e.target.files?.[0] ?? null)}
       />
-      <span className="afp-file-hint">JPG, PNG or PDF · max 5 MB</span>
+      <span className="afp-file-hint" id={`${id}-hint`}>{hint}</span>
+      {error && <span className="afp-field-error" id={`${id}-error`} role="alert">{error}</span>}
+      {error && !file && <button type="button" className="afp-back" disabled={disabled || converting} onClick={() => onChange(null)}>Clear selection</button>}
     </div>
   );
 };
@@ -161,6 +184,9 @@ const AdminFormPage: React.FC = () => {
   const [error, setError] = useState('');
   const [submitted, setSubmitted] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [uploadErrors, setUploadErrors] = useState<Record<string, string>>({});
+  const [busyUploads, setBusyUploads] = useState<Record<string, boolean>>({});
+  const uploadsBusy = Object.values(busyUploads).some(Boolean);
   const [hubs, setHubs] = useState<Array<{ value: string; label: string; isMasterHub: boolean }>>([]);
   // Already-uploaded document paths, shown as view links in edit mode.
   const [existingDocs, setExistingDocs] = useState<{
@@ -168,7 +194,8 @@ const AdminFormPage: React.FC = () => {
     citizenshipDocBack: string | null;
     idDocument: string | null;
     panDoc: string | null;
-  }>({ citizenshipDoc: null, citizenshipDocBack: null, idDocument: null, panDoc: null });
+    agreementDoc: string | null;
+  }>({ citizenshipDoc: null, citizenshipDocBack: null, idDocument: null, panDoc: null, agreementDoc: null });
   // Accounts created by a plain admin inherit that admin's hub; only a
   // super_admin may choose a different one (server enforces the same rule).
   const { myHubId, hubLocked, isPlainAdmin } = useHubLock();
@@ -239,6 +266,7 @@ const AdminFormPage: React.FC = () => {
           citizenshipDocBack: d.citizenshipDocBack ?? null,
           idDocument: d.idDocument ?? null,
           panDoc: d.panDoc ?? null,
+          agreementDoc: d.agreementDoc ?? null,
         });
       })
       .catch(() => setError('Failed to load admin details.'));
@@ -256,7 +284,21 @@ const AdminFormPage: React.FC = () => {
   };
 
   const setFile = (field: keyof AdminFormInput) => (file: File | null) => {
+    const sizeError = file ? adminDocumentSizeError(file) : undefined;
+    if (sizeError) {
+      // Keep any previously accepted document, but block saving until the
+      // rejected replacement is corrected or the slot is explicitly cleared.
+      setUploadErrors((prev) => ({ ...prev, [field]: sizeError }));
+      setFieldErrors((prev) => ({ ...prev, [field]: sizeError }));
+      return;
+    }
     setForm((prev) => ({ ...prev, [field]: file }));
+    setError('');
+    setUploadErrors((prev) => {
+      const next = { ...prev };
+      delete next[field];
+      return next;
+    });
     if (fieldErrors[field]) {
       setFieldErrors((prev) => {
         const next = { ...prev };
@@ -266,8 +308,11 @@ const AdminFormPage: React.FC = () => {
     }
   };
 
+  const setUploadBusy = (field: keyof AdminFormInput) => (busy: boolean) =>
+    setBusyUploads((prev) => ({ ...prev, [field]: busy }));
+
   const validate = (): Record<string, string> => {
-    const errors: Record<string, string> = {};
+    const errors: Record<string, string> = { ...uploadErrors };
     if (!form.fullName.trim()) errors.fullName = 'Name is required';
     else if (!isValidName(form.fullName)) errors.fullName = "Enter a valid name (letters, spaces, . ' - only)";
     if (!form.address.trim()) errors.address = 'Address is required';
@@ -281,10 +326,10 @@ const AdminFormPage: React.FC = () => {
     else if (!isValidEmail(form.email)) errors.email = 'Enter a valid email address';
     // Document and password only required when creating a new admin.
     if (!isEdit) {
-      if (!form.citizenshipDoc) errors.citizenshipDoc = 'Citizenship front side is required';
-      if (!form.citizenshipDocBack) errors.citizenshipDocBack = 'Citizenship back side is required';
+      if (!form.citizenshipDoc) errors.citizenshipDoc ??= 'Citizenship front side is required';
+      if (!form.citizenshipDocBack) errors.citizenshipDocBack ??= 'Citizenship back side is required';
       if (!form.nationalIdNumber.trim()) errors.nationalIdNumber = 'National ID number is required';
-      if (!form.nationalIdDoc) errors.nationalIdDoc = 'National ID document is required';
+      if (!form.nationalIdDoc) errors.nationalIdDoc ??= 'National ID document is required';
       if (!form.password.trim()) errors.password = 'Password is required';
       else if (form.password.length < 8) errors.password = 'Min. 8 characters';
       if (!form.confirmPassword.trim()) errors.confirmPassword = 'Please confirm the password';
@@ -295,6 +340,7 @@ const AdminFormPage: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (loading || uploadsBusy) return;
     setLoading(true);
     setError('');
 
@@ -302,8 +348,7 @@ const AdminFormPage: React.FC = () => {
     if (Object.keys(errors).length > 0) {
       setFieldErrors(errors);
       setLoading(false);
-      const firstError = document.querySelector('.afp-field-error');
-      firstError?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setTimeout(() => document.querySelector('.afp-field-error')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 0);
       return;
     }
 
@@ -332,6 +377,12 @@ const AdminFormPage: React.FC = () => {
           bankAccountHolder: form.bankAccountHolder,
           idDocumentType: 'National ID',
           idDocumentNumber: form.nationalIdNumber,
+          // Only slots with a newly picked file; the rest keep what's stored.
+          ...(form.citizenshipDoc ? { citizenshipDoc: form.citizenshipDoc } : {}),
+          ...(form.citizenshipDocBack ? { citizenshipDocBack: form.citizenshipDocBack } : {}),
+          ...(form.nationalIdDoc ? { idDocument: form.nationalIdDoc } : {}),
+          ...(form.panDoc ? { panDoc: form.panDoc } : {}),
+          ...(form.agreementDoc ? { agreementDoc: form.agreementDoc } : {}),
         });
         navigate('/admin');
         return;
@@ -364,6 +415,7 @@ const AdminFormPage: React.FC = () => {
         citizenshipDoc: form.citizenshipDoc,
         citizenshipDocBack: form.citizenshipDocBack,
         panDoc: form.panDoc,
+        agreementDoc: form.agreementDoc,
       });
       setSubmitted(true);
     } catch (err: any) {
@@ -377,7 +429,7 @@ const AdminFormPage: React.FC = () => {
           document.querySelector('.afp-field-error')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }, 0);
       } else {
-        setError(err.response?.data?.message || 'Failed to create admin. Please try again.');
+        setError(adminSaveErrorMessage(err, isEdit ? 'Failed to update admin. Please try again.' : 'Failed to create admin. Please try again.'));
       }
     } finally {
       setLoading(false);
@@ -589,11 +641,28 @@ const AdminFormPage: React.FC = () => {
                 {fieldErrors.nationalIdNumber && <span className="afp-field-error">{fieldErrors.nationalIdNumber}</span>}
               </div>
               {isEdit ? (
+                // Every slot stays visible on edit: the file on record (if any)
+                // plus an upload to attach a missing one or replace it.
                 <div className="afp-docs">
-                  <DocLink path={existingDocs.citizenshipDoc} label="Citizenship (Front)" />
-                  <DocLink path={existingDocs.citizenshipDocBack} label="Citizenship (Back)" />
-                  <DocLink path={existingDocs.idDocument} label="National ID" />
-                  <DocLink path={existingDocs.panDoc} label="PAN" />
+                  <FileInput label="Citizenship (Front)" file={form.citizenshipDoc} onChange={setFile('citizenshipDoc')} onBusyChange={setUploadBusy('citizenshipDoc')} error={fieldErrors.citizenshipDoc} disabled={loading} />
+                  {existingDocs.citizenshipDoc && <DocLink path={existingDocs.citizenshipDoc} label="View current citizenship (front)" />}
+                  <FileInput label="Citizenship (Back)" file={form.citizenshipDocBack} onChange={setFile('citizenshipDocBack')} onBusyChange={setUploadBusy('citizenshipDocBack')} error={fieldErrors.citizenshipDocBack} disabled={loading} />
+                  {existingDocs.citizenshipDocBack && <DocLink path={existingDocs.citizenshipDocBack} label="View current citizenship (back)" />}
+                  <FileInput label="National ID" file={form.nationalIdDoc} onChange={setFile('nationalIdDoc')} onBusyChange={setUploadBusy('nationalIdDoc')} error={fieldErrors.nationalIdDoc} disabled={loading} />
+                  {existingDocs.idDocument && <DocLink path={existingDocs.idDocument} label="View current national ID" />}
+                  <FileInput label="PAN" file={form.panDoc} onChange={setFile('panDoc')} onBusyChange={setUploadBusy('panDoc')} error={fieldErrors.panDoc} disabled={loading} />
+                  {existingDocs.panDoc && <DocLink path={existingDocs.panDoc} label="View current PAN" />}
+                  <FileInput
+                    label="Agreement"
+                    file={form.agreementDoc}
+                    onChange={setFile('agreementDoc')}
+                    onBusyChange={setUploadBusy('agreementDoc')}
+                    error={fieldErrors.agreementDoc}
+                    disabled={loading}
+                    accept={AGREEMENT_FILE_ACCEPT}
+                    hint="PDF or DOCX · max 5 MB"
+                  />
+                  {existingDocs.agreementDoc && <DocLink path={existingDocs.agreementDoc} label="View current agreement" />}
                 </div>
               ) : (
                 <div className="afp-docs">
@@ -602,26 +671,45 @@ const AdminFormPage: React.FC = () => {
                     required
                     file={form.citizenshipDoc}
                     onChange={setFile('citizenshipDoc')}
+                    onBusyChange={setUploadBusy('citizenshipDoc')}
+                    error={fieldErrors.citizenshipDoc}
+                    disabled={loading}
                   />
-                  {fieldErrors.citizenshipDoc && <span className="afp-field-error">{fieldErrors.citizenshipDoc}</span>}
                   <FileInput
                     label="Citizenship (Back)"
                     required
                     file={form.citizenshipDocBack}
                     onChange={setFile('citizenshipDocBack')}
+                    onBusyChange={setUploadBusy('citizenshipDocBack')}
+                    error={fieldErrors.citizenshipDocBack}
+                    disabled={loading}
                   />
-                  {fieldErrors.citizenshipDocBack && <span className="afp-field-error">{fieldErrors.citizenshipDocBack}</span>}
                   <FileInput
                     label="National ID"
                     required
                     file={form.nationalIdDoc}
                     onChange={setFile('nationalIdDoc')}
+                    onBusyChange={setUploadBusy('nationalIdDoc')}
+                    error={fieldErrors.nationalIdDoc}
+                    disabled={loading}
                   />
-                  {fieldErrors.nationalIdDoc && <span className="afp-field-error">{fieldErrors.nationalIdDoc}</span>}
                   <FileInput
                     label="PAN"
                     file={form.panDoc}
                     onChange={setFile('panDoc')}
+                    onBusyChange={setUploadBusy('panDoc')}
+                    error={fieldErrors.panDoc}
+                    disabled={loading}
+                  />
+                  <FileInput
+                    label="Agreement"
+                    file={form.agreementDoc}
+                    onChange={setFile('agreementDoc')}
+                    onBusyChange={setUploadBusy('agreementDoc')}
+                    error={fieldErrors.agreementDoc}
+                    disabled={loading}
+                    accept={AGREEMENT_FILE_ACCEPT}
+                    hint="PDF or DOCX · max 5 MB"
                   />
                 </div>
               )}
@@ -711,8 +799,8 @@ const AdminFormPage: React.FC = () => {
           <Button type="button" variant="secondary" onClick={() => navigate('/admin')} disabled={loading}>
             Cancel
           </Button>
-          <Button type="submit" variant="primary" disabled={loading}>
-            {loading ? 'Saving...' : isEdit ? 'Save Changes' : 'Create Admin'}
+          <Button type="submit" variant="primary" disabled={loading || uploadsBusy}>
+            {loading ? 'Saving...' : uploadsBusy ? 'Preparing document...' : isEdit ? 'Save Changes' : 'Create Admin'}
           </Button>
         </div>
       </form>

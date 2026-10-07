@@ -1,6 +1,7 @@
 import { NextFunction, Request, Response } from "express";
 import prisma from "../lib/prisma";
 import redis from "../lib/redis";
+import { timeAuthentication } from "../lib/requestPerformance";
 import {
   API_KEY_CACHE_TTL_SECONDS,
   apiKeyCacheKey,
@@ -53,7 +54,15 @@ function unauthorized(res: Response, message: string) {
   return res.status(401).json({ success: false, message, error: { code: "UNAUTHORIZED" } });
 }
 
-export async function apiKeyAuthMiddleware(req: Request, res: Response, next: NextFunction) {
+export function apiKeyAuthMiddleware(req: Request, res: Response, next: NextFunction) {
+  return timeAuthentication((finish) => authenticateApiKey(req, res, (error) => {
+    finish();
+    if (error === undefined) next();
+    else next(error);
+  }));
+}
+
+async function authenticateApiKey(req: Request, res: Response, next: NextFunction) {
   try {
     const plaintextKey = extractKey(req);
     if (!plaintextKey || !isApiKeyShaped(plaintextKey)) {

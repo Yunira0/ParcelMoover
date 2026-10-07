@@ -28,6 +28,8 @@ export interface PendingCodBill {
     deliveryCharges: number;
     payableAmount: number;
   };
+  /** Open statements' unpaid balance (negative = you owe). Optional: older cached payloads lack it. */
+  onStatements?: { count: number; outstanding: number };
 }
 
 export type CodPaymentFilter = 'settled' | 'not_settled';
@@ -42,6 +44,8 @@ export interface OrderCodItem {
   deliveredAt: string | null;
   status: CodPaymentFilter;
   netPayable: number;
+  /** Vendor statement this order is bundled into. Optional: cached responses may predate it. */
+  statement?: { statementId: string; status: SettlementStatus } | null;
 }
 
 export interface PageMeta {
@@ -74,6 +78,8 @@ export interface SettlementListItem {
   bankAccountNo: string | null;
   bankAccountHolder: string | null;
   transferDate: string | null;
+  /** Day the statement was fully paid; null until it is settled. */
+  settledDate: string | null;
   createdAt: string;
   orderCount: number;
   amount: number;
@@ -123,6 +129,8 @@ export const getSettlements = async (
   toDate?: string,
   status?: SettlementStatusFilter,
   search?: string,
+  /** What fromDate/toDate filter on: payoff date (default) or creation date. */
+  dateField?: 'settled' | 'created',
 ): Promise<SettlementsListResponse> => {
   const response = await api.get('/finance/settlements', {
     params: {
@@ -134,6 +142,7 @@ export const getSettlements = async (
       ...(toDate ? { toDate } : {}),
       ...(status ? { status } : {}),
       ...(search ? { search } : {}),
+      ...(dateField ? { dateField } : {}),
     },
   });
   return response.data;
@@ -307,6 +316,10 @@ export interface UnsettledOrdersResult {
   totalCod: number;
   totalDeliveryCharge: number;
   totalNetPayable: number;
+  /** Vendor leg: charges prepaid through Billing that the next statement hands back. */
+  availableCredit?: number;
+  /** True when the eligible set exceeded the server-side cap and was trimmed. */
+  capped: boolean;
 }
 
 export const getUnsettledOrders = async (
@@ -361,6 +374,8 @@ export interface SettlementDetail {
   createdAt: string;
   amount: number;
   payableAmount: number;
+  /** Delivery charges prepaid through Billing, handed back on this statement. Inside payableAmount. */
+  vendorCreditApplied?: number;
   /** Total recorded so far across every instalment. */
   paidAmount: number;
   /** What the payee is still owed. */

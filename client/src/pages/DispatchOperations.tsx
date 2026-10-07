@@ -101,7 +101,8 @@ const STATUS_TRANSITIONS: Record<ParcelStatus, ParcelStatus[]> = {
   // A parcel that arrived here via transit while working through a return
   // (e.g. sent here from another branch's Follow Up tab) needs to go back
   // into the return flow rather than out for delivery.
-  arrived_at_branch: ['ready_to_deliver', 'follow_up'],
+  // 'oov' forwards a parcel that reached Imadol on its way to another branch.
+  arrived_at_branch: ['ready_to_deliver', 'follow_up', 'oov'],
   ready_to_deliver: ['sent_for_delivery', 'hold', 'cancelled'],
   sent_for_delivery: ['delivered', 'partially_delivered', 'failed_delivery'],
   oov: ['dispatched', 'hold'],
@@ -539,7 +540,7 @@ const DispatchOperations: React.FC = () => {
       order.remarks || '',
       ...statusTimelineCells(order.statusTimestamps),
     ]);
-    downloadExcel('dispatch-orders.xlsx', 'Dispatch Orders', headers, csvRows);
+    await downloadExcel('dispatch-orders.xlsx', 'Dispatch Orders', headers, csvRows);
   };
 
   const handlePrintLabels = () => {

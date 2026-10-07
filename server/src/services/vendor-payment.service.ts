@@ -4,8 +4,9 @@ import { isFinanceStaff } from "../utils/financeRoles";
 import { createNotification } from "./notification.service";
 import { resolveOwnVendorId } from "./vendor-scope.service";
 import { evaluateVendorBilling, invalidateVendorBalanceCache } from "./billing.service";
-import { invalidateVendorFinanceCache } from "./finance.service";
+import { applyVendorCreditToOpenStatements, invalidateVendorFinanceCache } from "./finance.service";
 import { syncVendorPaymentPostings } from "./accounting/sync";
+import { notifyFinanceStaff } from "./orders/notifications";
 
 // ── Vendor -> office payments ────────────────────────────────────────────────
 //
@@ -122,6 +123,15 @@ export async function submitVendorPayment(
     },
   });
 
+  await notifyFinanceStaff(
+    "Vendor payment to verify",
+    `${created.vendors.business_name || created.vendors.client_name} submitted Rs. ${input.amount.toLocaleString()} with a payment screenshot.`,
+    created.id,
+    "billing",
+    "/billing",
+    actor.id,
+  );
+
   // Deliberately no balance change and no re-evaluation here — a pending claim
   // is not money.
   return mapPayment(created);
@@ -232,6 +242,12 @@ export async function reviewVendorPayment(
       actorId: actor.id,
       reason: `payment ${decision}`,
     });
+
+    // The money pays down any open statement the vendor owes on, so it is not
+    // left pending for an admin to record the same payment again.
+    if (decision === "verified") {
+      await applyVendorCreditToOpenStatements(tx, existing.vendor_id, actor.id);
+    }
 
     return tx.vendor_payments.findFirstOrThrow({
       where: { id: paymentId },

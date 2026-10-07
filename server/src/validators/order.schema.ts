@@ -86,8 +86,8 @@ export const createOrderSchema = z.object({
   codAmount: z.number().min(0, "codAmount cannot be negative").optional(),
   itemValue: z.number().min(0, "itemValue cannot be negative").optional(),
   deliveryCharge: z.number().min(0, "deliveryCharge cannot be negative").optional(),
-  packageType: z.string().max(50).optional(),
-  deliveryInstruction: z.string().max(500).optional(),
+  packageType: z.string().max(100).optional(),
+  deliveryInstruction: z.string().max(100).optional(),
   remarks: z.string().max(1000).optional(),
   pickupAddress: z.string().max(255).optional(),
   scheduledPickupAt: z.string().datetime({ offset: true }).optional(),
@@ -125,8 +125,8 @@ export const updateOrderDetailsSchema = z
     weightKg: z.number().positive("weightKg must be a positive number").optional(),
     codAmount: z.number().min(0, "codAmount cannot be negative").optional(),
     itemValue: z.number().min(0, "itemValue cannot be negative").optional(),
-    packageType: z.string().max(50).optional(),
-    deliveryInstruction: z.string().max(500).optional(),
+    packageType: z.string().max(100).optional(),
+    deliveryInstruction: z.string().max(100).optional(),
   })
   .refine((data) => Object.values(data).some((v) => v !== undefined), {
     message: "At least one field must be provided",
@@ -280,6 +280,10 @@ export const listOrdersQuerySchema = paginationQuerySchema.extend({
   salesUserId: optionalUuidSchema,
   // Narrows the list to parcels carried by one delivery rider.
   deliveryRiderId: optionalUuidSchema,
+  // Rider Overview's filter: parcels this rider has ever handled, pickup or
+  // delivery leg — broader than deliveryRiderId, which is only the current
+  // delivery leg.
+  riderId: optionalUuidSchema,
   // Origin/destination hub filters from the orders list page. Single-value,
   // matching the dropdown's single-select UI; the service already supports a
   // multi-value form (originLocationIds/destinationLocationIds) for internal
@@ -301,6 +305,8 @@ export const listOrdersQuerySchema = paginationQuerySchema.extend({
   // Narrows to parcels delivered since local midnight, matching the
   // "Delivered today" dashboard card's own count (getDashboardSummary).
   deliveredToday: booleanFlagSchema,
+  // Narrows to parcels that went through transit (ever moved to oov).
+  viaTransit: booleanFlagSchema,
   // Inclusive Nepal-local day range, compared against whichever date
   // `dateField` names. Server-side (not filtered over the fetched page) so a
   // range and its pagination totals describe the same set of orders.
@@ -312,6 +318,9 @@ export const listOrdersQuerySchema = paginationQuerySchema.extend({
   // parcels not yet in a settled settlement. Authentic — excludes settlements
   // with no items (e.g. STL-2024-001).
   settlement: z.enum(["settled", "pending"]).optional(),
+  // Whose statements `settlement` refers to. Defaults to the vendor's; Rider
+  // Overview passes "rider" so its COD cards and table agree.
+  settlementPayee: z.enum(["vendor", "rider"]).optional(),
 });
 
 export type ListOrdersQuery = z.infer<typeof listOrdersQuerySchema>;

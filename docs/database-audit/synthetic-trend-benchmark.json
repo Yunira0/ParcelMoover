@@ -1,0 +1,30 @@
+[
+  {
+    "days": 7,
+    "scope": "admin",
+    "rows": 100000,
+    "beforeMs": 109.97,
+    "afterMs": 14.53
+  },
+  {
+    "days": 7,
+    "scope": "vendor",
+    "rows": 100000,
+    "beforeMs": 6.21,
+    "afterMs": 1.58
+  },
+  {
+    "days": 30,
+    "scope": "admin",
+    "rows": 100000,
+    "beforeMs": 301.57,
+    "afterMs": 30.79
+  },
+  {
+    "days": 30,
+    "scope": "vendor",
+    "rows": 100000,
+    "beforeMs": 17.75,
+    "afterMs": 2.83
+  }
+]

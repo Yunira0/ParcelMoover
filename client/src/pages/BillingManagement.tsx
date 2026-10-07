@@ -435,6 +435,7 @@ const BillingManagement: React.FC = () => {
             }))}
           />
           <Table
+            selectable={false}
             columns={claimStatus === 'pending' ? pendingColumns : decidedColumns}
             data={claims}
             loading={claimsLoading}
@@ -488,6 +489,7 @@ const BillingManagement: React.FC = () => {
             )}
           </div>
           <Table
+            selectable={false}
             columns={balanceColumns}
             data={balanceRows}
             loading={balancesLoading}

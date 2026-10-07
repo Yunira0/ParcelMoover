@@ -8,6 +8,7 @@ import { csrfProtection } from "../middlewares/csrf.middleware";
 import { validate } from "../middlewares/validate.middleware";
 import { parseMultipartJson } from "../middlewares/multipartJson.middleware";
 import { settlementDocsUpload } from "../lib/settlementUpload";
+import { carrierSettlementFileUpload } from "../lib/documentUpload";
 import {
   pendingCodQuerySchema,
   orderCodQuerySchema,
@@ -17,8 +18,20 @@ import {
   updateSettlementSchema,
   revertSettlementSchema,
   cancelSettlementSchema,
+  createCarrierSettlementSchema,
 } from "../validators/finance.schema";
 import { createRedisRateLimitStore } from "../lib/rateLimitStore";
+import {
+  attachCarrierSettlementDocumentsController,
+  cancelCarrierSettlementController,
+  deleteCarrierSettlementDocumentController,
+  getCarrierSettlementDocumentController,
+  createCarrierSettlementController,
+  getCarrierSettlementController,
+  listCarrierSettlementsController,
+  payCarrierSettlementController,
+  unsettledCarrierOrdersController,
+} from "../controllers/carrierSettlement.controller";
 import {
   getPendingCodController,
   listOrderCodController,
@@ -223,5 +236,19 @@ financeRouter.get(
   financeReadLimiter,
   getUnsettledOrdersController,
 );
+
+// ── 3PL (NCM / Upaya) COD settlements ── head office only (enforced in the service).
+// Behind the books grant: carrier statements move head-office money, so a plain
+// admin needs ACCOUNTING_ACCESS (super_admin and the accountant always pass).
+const carrierStaff = [authMiddleware, authorizeRoles("super_admin", "admin", "accountant"), requireAdminPermission("ACCOUNTING_ACCESS")] as const;
+financeRouter.get("/carrier-cod/:carrier/unsettled", ...carrierStaff, financeReadLimiter, unsettledCarrierOrdersController);
+financeRouter.get("/carrier-settlements", ...carrierStaff, financeReadLimiter, listCarrierSettlementsController);
+financeRouter.post("/carrier-settlements", ...carrierStaff, csrfProtection, settlementCreateLimiter, validate(createCarrierSettlementSchema), createCarrierSettlementController);
+financeRouter.get("/carrier-settlements/:id", ...carrierStaff, financeReadLimiter, getCarrierSettlementController);
+financeRouter.post("/carrier-settlements/:id/pay", ...carrierStaff, csrfProtection, settlementCreateLimiter, validate(paySettlementSchema), payCarrierSettlementController);
+financeRouter.post("/carrier-settlements/:id/cancel", ...carrierStaff, csrfProtection, requireAdminPermission("EDIT_SETTLEMENTS"), settlementCreateLimiter, validate(cancelSettlementSchema), cancelCarrierSettlementController);
+financeRouter.post("/carrier-settlements/:id/documents", ...carrierStaff, csrfProtection, settlementCreateLimiter, carrierSettlementFileUpload, attachCarrierSettlementDocumentsController);
+financeRouter.get("/carrier-settlements/:id/documents/:documentId", ...carrierStaff, financeReadLimiter, getCarrierSettlementDocumentController);
+financeRouter.delete("/carrier-settlements/:id/documents/:documentId", ...carrierStaff, csrfProtection, settlementCreateLimiter, deleteCarrierSettlementDocumentController);
 
 export default financeRouter;

@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import {
   createOrder,
+  bulkCreateOrders,
   getOrderByTrackingId,
   getOrderStatusesByTrackingIds,
   getSenderProfile,
@@ -13,11 +14,47 @@ import { withIdempotency } from "../../services/idempotency.service";
 import { isValidTrackingId } from "../../utils/trackingId";
 import {
   PublicBulkStatusInput,
+  PublicBulkCreateOrderInput,
   PublicCancelOrderInput,
   PublicListOrdersQuery,
 } from "../../validators/publicApi.schema";
-import { actorFrom, sendError, UUID_REGEX } from "./shared";
+import { actorFrom, partnerIdempotencyKey, sendError, UUID_REGEX } from "./shared";
 import { getVendorStatusLabel } from "../../utils/orderStatusLabel";
+import type { CreateOrderInput } from "../../types/order.type";
+
+export async function publicBulkCreateOrderController(req: Request, res: Response) {
+  try {
+    if (!req.apiKey) return res.status(401).json({ success: false, message: "Unauthorized" });
+    const key = req.headers["idempotency-key"] as string | undefined;
+    if (!key || !UUID_REGEX.test(key)) {
+      return res.status(400).json({ success: false, message: "Idempotency-Key must be a valid UUID" });
+    }
+    const input = req.body as PublicBulkCreateOrderInput;
+    const actor = actorFrom(req);
+    const profile = input.orders.some(order => !order.sender) ? await getSenderProfile(actor) : undefined;
+    // Route validation checks every row. Sender defaults and hub resolution
+    // below complete the internal shape; JSON requests omit optional fields.
+    const orders = await Promise.all(input.orders.map(async order => ({
+      ...order,
+      sender: order.sender ?? {
+        name: profile!.name, phone: profile!.phone,
+        ...(profile!.address ? { address: profile!.address } : {}),
+        ...(profile!.locationId ? { locationId: profile!.locationId } : {}),
+      },
+      receiver: { ...order.receiver, ...(order.receiver.locationId ? { locationId: await resolveDestinationRef(order.receiver.locationId) } : {}) },
+      ...(order.destinationLocationId ? { destinationLocationId: await resolveDestinationRef(order.destinationLocationId) } : {}),
+    } as CreateOrderInput)));
+    const effective = { orders, ...(input.confirmDuplicateBatch !== undefined ? { confirmDuplicateBatch: input.confirmDuplicateBatch } : {}) };
+    const body = await withIdempotency(partnerIdempotencyKey(req, "order-bulk-create", key), effective, async () => {
+      const data = await bulkCreateOrders(actor, effective);
+      const result = { success: true, message: "Bulk import completed", data };
+      return { result, response: { statusCode: 201, body: result, resourceID: key } };
+    }, { lockTtlSeconds: 600 });
+    return res.status(201).json(body);
+  } catch (error: any) {
+    return sendError(res, error, "Failed to import orders");
+  }
+}
 
 export async function publicCreateOrderController(req: Request, res: Response) {
   try {
@@ -63,7 +100,7 @@ export async function publicCreateOrderController(req: Request, res: Response) {
       req.body.receiver.locationId = await resolveDestinationRef(req.body.receiver.locationId);
     }
 
-    const responseBody = await withIdempotency(idempotencyKey, req.body, async () => {
+    const responseBody = await withIdempotency(partnerIdempotencyKey(req, "order-create", idempotencyKey), req.body, async () => {
       const order = await createOrder(actorFrom(req), req.body);
 
       const body = {
@@ -92,7 +129,7 @@ export async function publicCreateOrderController(req: Request, res: Response) {
           resourceID: order.id,
         },
       };
-    });
+    }, { legacyKey: idempotencyKey });
 
     return res.status(201).json(responseBody);
   } catch (error: any) {
@@ -187,7 +224,7 @@ export async function publicUpdateOrderController(req: Request, res: Response) {
     const actor = actorFrom(req);
 
     const responseBody = await withIdempotency(
-      `order-update:${trackingId}:${idempotencyKey}`,
+      partnerIdempotencyKey(req, "order-update", idempotencyKey, trackingId),
       req.body,
       async () => {
         const order = await getOrderByTrackingId(actor, trackingId);
@@ -209,6 +246,7 @@ export async function publicUpdateOrderController(req: Request, res: Response) {
           response: { statusCode: 200, body: respBody, resourceID: order.id },
         };
       },
+      { legacyKey: `order-update:${trackingId}:${idempotencyKey}` },
     );
 
     return res.status(200).json(responseBody);
@@ -245,7 +283,7 @@ export async function publicCancelOrderController(req: Request, res: Response) {
     const actor = actorFrom(req);
     const { reason } = req.body as PublicCancelOrderInput;
 
-    const responseBody = await withIdempotency(idempotencyKey, req.body, async () => {
+    const responseBody = await withIdempotency(partnerIdempotencyKey(req, "order-cancel", idempotencyKey, trackingId), req.body, async () => {
       const order = await getOrderByTrackingId(actor, trackingId);
       const updated = await updateParcelStatus(actor, order.id, {
         status: "cancelled",
@@ -262,7 +300,7 @@ export async function publicCancelOrderController(req: Request, res: Response) {
         result: body,
         response: { statusCode: 200, body, resourceID: order.id },
       };
-    });
+    }, { legacyKey: idempotencyKey });
 
     return res.status(200).json(responseBody);
   } catch (error: any) {

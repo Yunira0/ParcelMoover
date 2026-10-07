@@ -1,5 +1,5 @@
 import type { VoucherOffer } from '../services/voucher.service';
-import { VOUCHER_ART_SRC, voucherFootnoteLeft, voucherFootnoteRight, voucherHeadline } from './voucherArt';
+import { VOUCHER_ART_SRC, VOUCHER_LOGO_SRC, voucherFootnoteLeft, voucherFootnoteRight, voucherHeadline } from './voucherArt';
 
 /**
  * Renders the voucher to a 1700x800 PNG (the Figma frame size) with
@@ -68,7 +68,7 @@ export async function renderVoucherCanvas(
   opts: { copyPill?: boolean; note?: string } = {},
 ): Promise<HTMLCanvasElement> {
   const [headA, headB] = voucherHeadline(offer);
-  const art = await loadImage(ART_SRC);
+  const [art, logo] = await Promise.all([loadImage(ART_SRC), loadImage(VOUCHER_LOGO_SRC)]);
 
   const canvas = document.createElement('canvas');
   canvas.width = W;
@@ -113,14 +113,16 @@ export async function renderVoucherCanvas(
 
   // Brand row
   ctx.textBaseline = 'alphabetic';
-  ctx.font = `750 32px ${FONT}`;
+  ctx.font = `750 48px ${FONT}`;
   const brandX = 84;
-  const brandY = 78;
+  const brandY = 83;
+  ctx.drawImage(logo, brandX, 28, 108, 77);
+  const wordmarkX = brandX + 129;
   ctx.fillStyle = '#ffffff';
   const parcelW = ctx.measureText('Parcel').width;
-  ctx.fillText('Parcel', brandX, brandY);
+  ctx.fillText('Parcel', wordmarkX, brandY);
   ctx.fillStyle = ORANGE;
-  ctx.fillText('moover', brandX + parcelW, brandY);
+  ctx.fillText('Moover', wordmarkX + parcelW, brandY);
 
   // Delivery reward tag.
   ctx.font = `650 21px ${FONT}`;
@@ -298,7 +300,7 @@ export async function printVoucher(offer: VoucherOffer): Promise<void> {
   win.document.close();
 
   try {
-    const art = await loadImage(ART_SRC);
+    const [art, logo] = await Promise.all([loadImage(ART_SRC), loadImage(VOUCHER_LOGO_SRC)]);
     const artCanvas = document.createElement('canvas');
     artCanvas.width = art.naturalWidth;
     artCanvas.height = art.naturalHeight;
@@ -306,6 +308,13 @@ export async function printVoucher(offer: VoucherOffer): Promise<void> {
     if (!actx) throw new Error('Canvas 2D is not available in this browser');
     actx.drawImage(art, 0, 0);
     const artDataUrl = artCanvas.toDataURL('image/png');
+    const logoCanvas = document.createElement('canvas');
+    logoCanvas.width = logo.naturalWidth;
+    logoCanvas.height = logo.naturalHeight;
+    const lctx = logoCanvas.getContext('2d');
+    if (!lctx) throw new Error('Canvas 2D is not available in this browser');
+    lctx.drawImage(logo, 0, 0);
+    const logoDataUrl = logoCanvas.toDataURL('image/png');
 
     win.document.open();
     win.document.write(`<!DOCTYPE html><html><head><title>${offer.code} voucher</title><style>
@@ -314,7 +323,7 @@ export async function printVoucher(offer: VoucherOffer): Promise<void> {
     .v { display: flex; width: 6in; aspect-ratio: 17/8; background: #09090b; overflow: hidden; color: #fff; }
     .l { position: relative; flex: 0 0 70.7%; padding: .29in .32in .28in .5in; display: flex; flex-direction: column; justify-content: space-between; background: radial-gradient(circle at 78% 40%, rgba(248,96,12,.12), transparent 36%), #09090b; overflow: hidden; }
     .top { display: flex; justify-content: space-between; align-items: center; }
-    .brand { font-size: 15pt; font-weight: 750; letter-spacing: -.025em; } .brand em { font-style: normal; color: ${ORANGE}; }
+    .brand { display: inline-flex; align-items: center; gap: 6pt; flex: none; font-size: 17pt; font-weight: 750; letter-spacing: -.025em; white-space: nowrap; } .brand img { display: block; width: .38in; height: .27in; object-fit: contain; } .brand em { font-style: normal; color: ${ORANGE}; }
     .tag { display: inline-flex; align-items: center; gap: 5pt; border: .5pt solid rgba(248,96,12,.48); border-radius: 99pt; background: rgba(248,96,12,.13); color: #ffd5bf; font-size: 9pt; font-weight: 650; padding: 5pt 8pt; }
     .tag:before, .foot span:before { content: ''; width: 3pt; height: 3pt; border-radius: 50%; background: ${ORANGE}; }
     .m { display: flex; flex-direction: column; }
@@ -331,7 +340,7 @@ export async function printVoucher(offer: VoucherOffer): Promise<void> {
     @media print { body { padding: 0; } .v { border-radius: 0; width: 100%; } @page { size: 6in 2.85in; margin: 0; } }
   </style></head><body>
     <div class="v"><div class="l">
-      <div class="top"><div class="brand">Parcel<em>moover</em></div><span class="tag">Delivery reward</span></div>
+      <div class="top"><div class="brand"><img src="${logoDataUrl}" alt="" /><span>Parcel<em>Moover</em></span></div><span class="tag">Delivery reward</span></div>
       <div class="m">
         <div class="head${headA.length > 5 ? ' compact' : ''}">${headA} <b>${headB}</b></div>
         <div class="sub">${escapeHtml(offer.title)}</div>

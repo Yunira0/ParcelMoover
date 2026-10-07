@@ -1,10 +1,7 @@
 import { lazy, Suspense } from 'react'
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import MainLayout from './layouts/MainLayout'
-import DashboardLayout from './layouts/DashboardLayout'
 import Home from './pages/Home'
-import TrackParcel from './pages/TrackParcel'
-import Login from './pages/Login'
 import NotFound from './pages/NotFound'
 import ProtectedRoute from './components/ProtectedRoute'
 import PublicOnlyRoute from './components/PublicOnlyRoute'
@@ -24,6 +21,11 @@ import {
 } from './pages/accounting/legacyRedirects'
 import './App.css'
 
+// Keep public entry points independent of the authenticated workspace and
+// load each page's code only when its route is opened.
+const DashboardLayout = lazy(() => import('./layouts/DashboardLayout'))
+const TrackParcel = lazy(() => import('./pages/TrackParcel'))
+const Login = lazy(() => import('./pages/Login'))
 const DashboardRouter = lazy(() => import('./pages/DashboardRouter'))
 const OverviewOrdersPage = lazy(() => import('./pages/OverviewOrdersPage'))
 const MerchantOverview = lazy(() => import('./pages/MerchantOverview'))
@@ -101,11 +103,17 @@ const ForceChangePasswordPage = lazy(() => import('./pages/ForceChangePasswordPa
 const KycApplicationPage = lazy(() => import('./pages/KycApplicationPage'))
 const SystemLogs = lazy(() => import('./pages/SystemLogs'))
 const ProfilePage = lazy(() => import('./pages/ProfilePage'))
+const RiderOverview = lazy(() => import('./pages/rider/RiderOverview'))
+const SalesOverview = lazy(() => import('./pages/sales/SalesOverview'))
 const BranchOverview = lazy(() => import('./pages/branch/BranchOverview'))
 const BranchSettlement = lazy(() => import('./pages/branch/BranchSettlement'))
 const BranchSettlementCreatePage = lazy(() => import('./pages/branch/BranchSettlementCreatePage'))
 const BranchSettlementDetailPage = lazy(() => import('./pages/branch/BranchSettlementDetailPage'))
 const BranchBilling = lazy(() => import('./pages/branch/BranchBilling'))
+const CarrierCodPage = lazy(() => import('./pages/carrier/CarrierCodPage'))
+const CarrierSettlementCreatePage = lazy(() => import('./pages/carrier/CarrierSettlementCreatePage'))
+const CarrierSettlementDetailPage = lazy(() => import('./pages/carrier/CarrierSettlementDetailPage'))
+const CarrierSettlementPayPage = lazy(() => import('./pages/carrier/CarrierSettlementPayPage'))
 
 function App() {
 
@@ -115,9 +123,9 @@ function App() {
       <Routes>
         {/* Public Routes */}
         <Route path="/" element={<PublicOnlyRoute><MainLayout><Home /></MainLayout></PublicOnlyRoute>} />
-        <Route path="/track" element={<MainLayout><TrackParcel /></MainLayout>} />
-        <Route path="/track/:trackingId" element={<MainLayout><TrackParcel /></MainLayout>} />
-        <Route path="/login" element={<MainLayout><Login /></MainLayout>} />
+        <Route path="/track" element={<MainLayout><Suspense fallback={<PageLoader />}><TrackParcel /></Suspense></MainLayout>} />
+        <Route path="/track/:trackingId" element={<MainLayout><Suspense fallback={<PageLoader />}><TrackParcel /></Suspense></MainLayout>} />
+        <Route path="/login" element={<MainLayout><Suspense fallback={<PageLoader />}><Login /></Suspense></MainLayout>} />
         {/* Standalone — no sidebar/topnav, intentionally outside ProtectedRoute */}
         <Route path="/change-password" element={<ForceChangePasswordPage />} />
         <Route path="/apply" element={<KycApplicationPage />} />
@@ -143,7 +151,7 @@ function App() {
               the waybill table, scoped by a merchant picker and date range. */}
           <Route
             path="/merchant-overview"
-            element={<RoleGuard allowedRoles={['super_admin', 'admin']}><MerchantOverview /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'accountant']}><MerchantOverview /></RoleGuard>}
           />
           {/* Branch Tracking — cross-hub monitoring. Default super_admin only;
               a super_admin may grant a branch admin BRANCH_TRACKING_READ (or
@@ -151,7 +159,21 @@ function App() {
               holding every adminPermission, so the READ gate covers both. */}
           <Route
             path="/branches"
-            element={<RoleGuard allowedRoles={['super_admin', 'admin']} adminPermission="BRANCH_TRACKING_READ"><BranchOverview /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'accountant']} adminPermission="BRANCH_TRACKING_READ"><BranchOverview /></RoleGuard>}
+          />
+          {/* Per-rider read of the orders list — the same ten roll-up figures
+              plus the waybill table as Vendor Overview, scoped by a rider
+              picker and date range instead of a vendor. */}
+          <Route
+            path="/rider-overview"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'accountant']}><RiderOverview /></RoleGuard>}
+          />
+          {/* Per-sales-rep read of the orders list — scoped to every vendor a
+              sales rep owns (vendors.sales_user_id) instead of one vendor.
+              Admin-side only: a sales actor uses their own SalesDashboard. */}
+          <Route
+            path="/sales-overview"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']}><SalesOverview /></RoleGuard>}
           />
           <Route
             path="/branches/settlement"
@@ -173,10 +195,11 @@ function App() {
           />
           {/* Drill-down behind a line of the COD Settlement card. Same audience
               as the card itself (Dashboard.tsx), which DashboardRouter shows to
-              everyone who isn't vendor-side or sales. */}
+              everyone who isn't vendor-side or sales, plus the accountant, who
+              sees it on the finance overview. */}
           <Route
             path="/cod/:bucket"
-            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'rider']}><CodSettlementDetailPage /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'accountant', 'rider']}><CodSettlementDetailPage /></RoleGuard>}
           />
           <Route path="/orders" element={<OrdersRouter />} />
           <Route
@@ -204,7 +227,7 @@ function App() {
               any future role added to the system. */}
           <Route
             path="/orders/track/:trackingId"
-            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'vendor', 'vendor_staff', 'sales', 'rider']}><OrderDetailPage /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'accountant', 'vendor', 'vendor_staff', 'sales', 'rider']}><OrderDetailPage /></RoleGuard>}
           />
           <Route
             path="/admin"
@@ -410,6 +433,22 @@ function App() {
             element={<RoleGuard allowedRoles={['vendor', 'vendor_staff']} requiredPermission="FINANCE_ACCESS"><VendorSettlements /></RoleGuard>}
           />
           <Route
+            path="/finance/carrier-cod"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'accountant']} adminPermission="ACCOUNTING_ACCESS"><CarrierCodPage /></RoleGuard>}
+          />
+          <Route
+            path="/finance/carrier-cod/new"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'accountant']} adminPermission="ACCOUNTING_ACCESS"><CarrierSettlementCreatePage /></RoleGuard>}
+          />
+          <Route
+            path="/finance/carrier-cod/:id"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'accountant']} adminPermission="ACCOUNTING_ACCESS"><CarrierSettlementDetailPage /></RoleGuard>}
+          />
+          <Route
+            path="/finance/carrier-cod/:id/pay"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'accountant']} adminPermission="ACCOUNTING_ACCESS"><CarrierSettlementPayPage /></RoleGuard>}
+          />
+          <Route
             path="/finance/pending-cod"
             element={<RoleGuard allowedRoles={['vendor', 'vendor_staff']} requiredPermission="FINANCE_ACCESS"><VendorPendingCod /></RoleGuard>}
           />
@@ -517,12 +556,9 @@ function App() {
             path="/finance/ledger/:partyType/:partyId"
             element={<RoleGuard allowedRoles={['super_admin', 'admin', 'accountant']} adminPermission="ACCOUNTING_ACCESS"><SettlementLedgerPage /></RoleGuard>}
           />
-          {/* Masters. Creating and editing accounts is a super-admin job: an
-              account's type and normal side reinterpret every entry ever posted
-              to it, so this is not a grant to hand out with the books. */}
           <Route
             path="/finance/masters"
-            element={<RoleGuard allowedRoles={['super_admin', 'accountant']}><MastersPage /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'accountant']} adminPermission="ACCOUNTING_ACCESS"><MastersPage /></RoleGuard>}
           />
 
           {/* Reached by drilling from a ledger, never from the nav. */}

@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   X, Phone, MapPin, Navigation,
   Banknote, CheckCheck, Truck, XCircle, RefreshCw, RotateCcw,
@@ -90,14 +90,40 @@ export default function ParcelActionSheet({ parcel, onClose, onDone }: Props) {
   const [done,       setDone]       = useState<ParcelStatus | null>(null)
   const [error,      setError]      = useState('')
   const [partialCodCollected, setPartialCodCollected] = useState('')
+  const [deliveryPrompt, setDeliveryPrompt] = useState(false)
+  const deliveryDialogRef = useRef<HTMLDivElement>(null)
   // On an exchange delivery the rider must collect the customer's exchange
   // parcel to carry back to the vendor - so we gate "Delivered" behind a
   // confirmation that they actually received it.
   const [exchangePrompt, setExchangePrompt] = useState(false)
   // "Delivered" can't be undone by the rider, so it always takes a second tap.
-  const [deliveredPrompt, setDeliveredPrompt] = useState(false)
 
   const isExchange = parcel.orderType === 'exchange'
+
+  useEffect(() => {
+    if (!deliveryPrompt) return
+    const previouslyFocused = document.activeElement as HTMLElement | null
+    deliveryDialogRef.current?.querySelectorAll('button')[1]?.focus()
+    function handleDialogKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        if (!deliveryDialogRef.current?.querySelector('button:disabled')) { setDeliveryPrompt(false); setError('') }
+        event.preventDefault()
+      }
+      if (event.key === 'Tab') {
+        const buttons = deliveryDialogRef.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')
+        if (!buttons?.length) { event.preventDefault(); return }
+        const first = buttons[0]
+        const last = buttons[buttons.length - 1]
+        if (event.shiftKey && document.activeElement === first) { last.focus(); event.preventDefault() }
+        else if (!event.shiftKey && document.activeElement === last) { first.focus(); event.preventDefault() }
+      }
+    }
+    document.addEventListener('keydown', handleDialogKeyDown)
+    return () => {
+      document.removeEventListener('keydown', handleDialogKeyDown)
+      previouslyFocused?.focus()
+    }
+  }, [deliveryPrompt])
 
   const nextStatuses = RIDER_TRANSITIONS[parcel.status] ?? []
 
@@ -157,6 +183,7 @@ export default function ParcelActionSheet({ parcel, onClose, onDone }: Props) {
         )
       }
       idempotencyRef.current = null
+      setDeliveryPrompt(false)
       setDone(status)
       navigator.vibrate?.(80)
       setTimeout(onDone, 2000)
@@ -169,14 +196,13 @@ export default function ParcelActionSheet({ parcel, onClose, onDone }: Props) {
     }
   }
 
-  // Delivering an exchange order first asks whether the rider received the
-  // exchange parcel to bring back; a normal delivery asks "are you sure?".
-  // Every other action goes straight through.
+  // All completed deliveries need a final confirmation. Exchanges first ask
+  // whether the rider received the return parcel.
   function handlePrimaryAction(status: ParcelStatus) {
     if (status === 'delivered') {
       setError('')
       if (isExchange) setExchangePrompt(true)
-      else setDeliveredPrompt(true)
+      else setDeliveryPrompt(true)
       return
     }
     confirmAction(status)
@@ -342,32 +368,6 @@ export default function ParcelActionSheet({ parcel, onClose, onDone }: Props) {
           </div>
         )}
 
-        {/* Delivered confirmation */}
-        {deliveredPrompt && !done && (
-          <div className="mt-4 flex flex-col gap-3 rounded-md border border-line-strong bg-surface-2 px-4 py-4">
-            <div className="flex items-start gap-2.5">
-              <CheckCheck size={18} className="mt-0.5 shrink-0 text-green" />
-              <div className="flex flex-col gap-1">
-                <p className="text-sm font-bold text-ink">Mark this parcel as delivered?</p>
-                <p className="text-xs leading-snug text-ink-2">
-                  {parcel.codAmount
-                    ? `Only confirm if the parcel is handed over and you collected COD Rs ${fmt(parcel.codAmount)}.`
-                    : 'Only confirm if the parcel has been handed to the receiver.'}
-                </p>
-              </div>
-            </div>
-            <div className="flex flex-col gap-2">
-              <Button loading={loading} onClick={() => confirmAction('delivered')}>
-                <CheckCheck size={17} /> Yes, it's delivered
-              </Button>
-              <button onClick={() => setDeliveredPrompt(false)} disabled={loading} style={{ touchAction: 'manipulation' }}
-                className="flex h-[46px] items-center justify-center rounded-[12px] border border-line-strong bg-surface text-sm font-semibold text-ink-2 cursor-pointer active:bg-surface-2 disabled:opacity-40 transition-colors">
-                Cancel
-              </button>
-            </div>
-          </div>
-        )}
-
         {/* Exchange gate */}
         {exchangePrompt && !done && (
           <div className="mt-4 flex flex-col gap-3 rounded-md border border-[#C2410C38] bg-rust-tint px-4 py-4">
@@ -381,7 +381,7 @@ export default function ParcelActionSheet({ parcel, onClose, onDone }: Props) {
               </div>
             </div>
             <div className="flex flex-col gap-2">
-              <Button loading={loading} onClick={() => confirmAction('delivered', { exchangeReturnReceived: true })}>
+              <Button loading={loading} onClick={() => { setError(''); setDeliveryPrompt(true) }}>
                 <CheckCheck size={17} /> Yes, I received it
               </Button>
               <button onClick={() => {
@@ -396,7 +396,7 @@ export default function ParcelActionSheet({ parcel, onClose, onDone }: Props) {
         )}
 
         {/* Actions */}
-        {!done && !exchangePrompt && !deliveredPrompt && !failedSelected && !partialSelected &&
+        {!done && !exchangePrompt && !failedSelected && !partialSelected &&
          (primary || partialKey || dangers.length > 0 || secondaries.length > 0) && (
           <div className="mt-4 flex flex-col gap-2.5">
             {primary && (() => {
@@ -475,6 +475,31 @@ export default function ParcelActionSheet({ parcel, onClose, onDone }: Props) {
           </div>
         )}
       </div>
+
+      {deliveryPrompt && !done && (
+        <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/60 px-5" onClick={() => { if (!loading) { setDeliveryPrompt(false); setError('') } }}>
+          <div ref={deliveryDialogRef} role="dialog" aria-modal="true" aria-labelledby="delivery-confirm-title" aria-describedby="delivery-confirm-description"
+            onClick={event => event.stopPropagation()}
+            className="w-full max-w-sm rounded-[16px] bg-surface p-5 shadow-[0_16px_48px_rgba(0,0,0,0.24)]">
+            <h3 id="delivery-confirm-title" className="text-lg font-bold text-ink">Mark as delivered?</h3>
+            <p id="delivery-confirm-description" className="mt-2 text-sm leading-relaxed text-ink-2">
+              Are you sure you delivered parcel <span className="font-semibold text-ink break-all">{parcel.trackingId}</span> to {parcel.receiverName}?
+              {!!parcel.codAmount && <> Confirm you collected COD Rs {fmt(parcel.codAmount)}.</>}
+            </p>
+            {error && (
+              <p role="alert" className="mt-3 text-sm text-red-bright">{error}</p>
+            )}
+            <div className="mt-5 flex flex-col gap-2.5">
+              <Button loading={loading} onClick={() => confirmAction('delivered', isExchange ? { exchangeReturnReceived: true } : undefined)}>
+                <CheckCheck size={17} /> Yes, mark delivered
+              </Button>
+              <Button variant="secondary" disabled={loading} onClick={() => { setDeliveryPrompt(false); setError('') }}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

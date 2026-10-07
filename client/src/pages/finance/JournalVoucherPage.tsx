@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import TallyPage, { type TallyAction } from '../../components/finance/TallyPage';
 import { getJournalEntry, reverseEntry, type JournalEntry } from '../../services/accounting.service';
 import { formatMoney } from '../../utils/format';
+import { useBackOr } from '../../hooks/useBackOr';
 
 /**
  * One journal entry as a voucher.
@@ -21,6 +22,7 @@ const MIN_ROWS = 8;
 const JournalVoucherPage: React.FC = () => {
   const { id = '' } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const goBack = useBackOr('/accounting/transactions/journal');
 
   const [entry, setEntry] = useState<JournalEntry | null>(null);
   const [loading, setLoading] = useState(true);
@@ -81,7 +83,7 @@ const JournalVoucherPage: React.FC = () => {
       disabled: !entry || entry.status === 'voided' || reversing,
     },
     { key: 'F12', label: 'Day book', onSelect: () => navigate('/accounting/transactions/journal') },
-    { key: 'Escape', label: 'Back', onSelect: () => navigate(-1) },
+    { key: 'Escape', label: 'Back', onSelect: goBack },
   ];
 
   const lines = entry?.lines ?? [];

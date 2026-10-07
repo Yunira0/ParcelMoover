@@ -183,6 +183,11 @@ export async function getBranchSettlement(id: string, signal?: AbortSignal): Pro
   return response.data.data;
 }
 
+export async function cancelBranchSettlement(id: string, remark: string) {
+  const response = await api.post(`/branches/settlements/${id}/cancel`, { remark });
+  return response.data;
+}
+
 export async function payBranchSettlement(id: string, input: {
   payments: BranchPaymentLine[];
   remark?: string;

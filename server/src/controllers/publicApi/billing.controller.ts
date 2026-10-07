@@ -9,7 +9,7 @@ import { withIdempotency } from "../../services/idempotency.service";
 import { flattenMulterFiles, secureUploadedFiles } from "../../lib/secureUploadedFiles";
 import { sendEncryptedFile } from "../../lib/serveEncryptedDocument";
 import { PublicVendorPaymentsQuery } from "../../validators/publicApi.schema";
-import { actorFrom, sendError, UUID_REGEX } from "./shared";
+import { actorFrom, partnerIdempotencyKey, sendError, UUID_REGEX } from "./shared";
 
 // Read-only mirrors of the vendor dashboard's Billing & Payments views, plus
 // the one write a vendor can make there: filing a payment claim. As everywhere
@@ -101,7 +101,7 @@ export async function publicSubmitVendorPaymentController(req: Request, res: Res
     if (proof) await secureUploadedFiles(flattenMulterFiles(files));
 
     const responseBody = await withIdempotency(
-      `billing-payment:${idempotencyKey}`,
+      partnerIdempotencyKey(req, "billing-payment", idempotencyKey),
       req.body,
       async () => {
         const payment = await submitVendorPayment(actorFrom(req), {
@@ -120,6 +120,7 @@ export async function publicSubmitVendorPaymentController(req: Request, res: Res
 
         return { result: body, response: { statusCode: 201, body, resourceID: payment.id } };
       },
+      { legacyKey: `billing-payment:${idempotencyKey}` },
     );
 
     return res.status(201).json(responseBody);

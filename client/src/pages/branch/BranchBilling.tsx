@@ -231,8 +231,10 @@ const BranchBilling: React.FC = () => {
 
   const submitMoney = async (event: React.FormEvent) => {
     event.preventDefault();
-    const suggested = branchStatus && branchStatus.balance < 0 ? Math.abs(branchStatus.balance).toFixed(2) : '';
-    const amount = Number(payAmount ?? suggested);
+    // Exactly what the field shows. This used to fall back to the full balance
+    // owed, so an untouched field showing the smaller amount-to-unblock (or
+    // nothing at all) submitted a different figure than the one on screen.
+    const amount = Math.round(Number(amountValue) * 100) / 100;
     if (!Number.isFinite(amount) || amount <= 0) { setError('Enter the amount you paid.'); return; }
     if (!payProof) { setError('Attach the payment screenshot before submitting.'); return; }
     setPaySaving(true); setError(''); setPayMessage('');
@@ -289,6 +291,9 @@ const BranchBilling: React.FC = () => {
     { header: 'DATE', accessor: (payment: BranchPayment) => toBsDate(payment.createdAt) || '—', width: '110px' },
     { header: 'BRANCH', accessor: (payment: BranchPayment) => payment.branchName, width: '190px' },
     { header: 'AMOUNT', accessor: (payment: BranchPayment) => formatCurrency(payment.amount), width: '130px' },
+    // Which statement the receipt pays, or a general deposit that verification
+    // spreads over the open statements oldest first.
+    { header: 'SETTLEMENT', accessor: (payment: BranchPayment) => payment.statementNo || 'General deposit', width: '180px' },
     { header: 'REFERENCE', accessor: (payment: BranchPayment) => payment.reference || '—', width: '180px' },
     { header: 'PROOF', accessor: proofCell, width: '110px' },
     { header: 'NOTE', accessor: (payment: BranchPayment) => payment.note || '—', width: '180px' },
@@ -297,7 +302,7 @@ const BranchBilling: React.FC = () => {
   const historyColumns = [
     { header: 'DATE', accessor: (payment: BranchPayment) => toBsDate(payment.createdAt) || '—', width: '110px' },
     { header: 'AMOUNT', accessor: (payment: BranchPayment) => formatCurrency(payment.amount), width: '130px' },
-    { header: 'SETTLEMENT', accessor: (payment: BranchPayment) => payment.statementNo || 'General credit', width: '180px' },
+    { header: 'SETTLEMENT', accessor: (payment: BranchPayment) => payment.statementNo || 'General deposit', width: '180px' },
     { header: 'REFERENCE', accessor: (payment: BranchPayment) => payment.reference || '—', width: '180px' },
     { header: 'PROOF', accessor: proofCell, width: '110px' },
     { header: 'STATUS', accessor: (payment: BranchPayment) => <span className={`billing-pill billing-pill-${payment.status}`}>{payment.status === 'verified' && <CheckCircle2 size={12} />}{payment.status === 'pending' && <Clock size={12} />}{PAYMENT_STATUS_LABEL[payment.status]}</span>, width: '180px' },
@@ -394,7 +399,7 @@ const BranchBilling: React.FC = () => {
       </div>
     </>}
 
-    {activeTab === 'queue' && <><Table columns={isMasterWorkspace ? officePaymentColumns : historyColumns} data={payments} loading={paymentsLoading} loadingMessage="Loading branch payments…" emptyMessage={isMasterWorkspace ? 'No payments awaiting verification.' : 'No branch payments added yet.'} minWidth={isMasterWorkspace ? '1290px' : '1080px'} /><Pagination ariaLabel={isMasterWorkspace ? 'Branch payment verification pagination' : 'Branch payment history pagination'} page={paymentsPage} totalPages={paymentsTotalPages} onPageChange={setPaymentsPage} pageSize={paymentsPageSize} pageSizeLabel="payments" onPageSizeChange={(size) => { setPaymentsPageSize(size); setPaymentsPage(1); }} summary={`${paymentsTotal} payment${paymentsTotal === 1 ? '' : 's'}`} /></>}
+    {activeTab === 'queue' && <><Table selectable={false} columns={isMasterWorkspace ? officePaymentColumns : historyColumns} data={payments} loading={paymentsLoading} loadingMessage="Loading branch payments…" emptyMessage={isMasterWorkspace ? 'No payments awaiting verification.' : 'No branch payments added yet.'} minWidth={isMasterWorkspace ? '1470px' : '1080px'} /><Pagination ariaLabel={isMasterWorkspace ? 'Branch payment verification pagination' : 'Branch payment history pagination'} page={paymentsPage} totalPages={paymentsTotalPages} onPageChange={setPaymentsPage} pageSize={paymentsPageSize} pageSizeLabel="payments" onPageSizeChange={(size) => { setPaymentsPageSize(size); setPaymentsPage(1); }} summary={`${paymentsTotal} payment${paymentsTotal === 1 ? '' : 's'}`} /></>}
 
     {activeTab === 'statements' && !isMasterWorkspace && <>
       <section className="billing-card"><h3>COD due to the master branch</h3><p className="billing-hint">Pay a statement and attach the receipt or screenshot. It becomes settled after the master branch verifies it.</p><Table selectable={false} columns={pendingColumns} data={pendingRows} emptyMessage="No COD statements are awaiting payment." minWidth="900px" /></section>
@@ -402,7 +407,7 @@ const BranchBilling: React.FC = () => {
       {receiptMessage && <p className="billing-success"><CheckCircle2 size={14} /> {receiptMessage}</p>}
     </>}
 
-    {activeTab === 'branches' && isSuperAdmin && <><p className="billing-hint">A branch at its block threshold cannot receive new transit until verified credit clears the hold. Overdue COD is COD past the branch SLA in the SLA settings page{balances[0]?.codSlaHours ? ` (currently ${balances[0].codSlaHours} hours after delivery)` : ''}.</p><Table columns={balanceColumns} data={balanceRows} loading={balancesLoading} loadingMessage="Calculating branch balances…" emptyMessage="No active branches found." minWidth="1100px" /></>}
+    {activeTab === 'branches' && isSuperAdmin && <><p className="billing-hint">A branch at its block threshold cannot receive new transit until verified credit clears the hold. Overdue COD is COD past the branch SLA in the SLA settings page{balances[0]?.codSlaHours ? ` (currently ${balances[0].codSlaHours} hours after delivery)` : ''}.</p><Table selectable={false} columns={balanceColumns} data={balanceRows} loading={balancesLoading} loadingMessage="Calculating branch balances…" emptyMessage="No active branches found." minWidth="1100px" /></>}
 
     {activeTab === 'settings' && isSuperAdmin && <div className="billing-grid"><section className="billing-card"><h3>Branch transit thresholds</h3><p className="billing-hint">Both values are negative balances. A branch is warned at the first threshold and cannot receive transit at the block threshold.</p><form className="billing-form" onSubmit={saveThresholds}><label>Warn threshold<input type="number" step="0.01" value={branchWarn} onChange={(event) => setBranchWarn(event.target.value)} disabled={savingSettings} /></label><label>Transit block threshold<input type="number" step="0.01" value={branchBlock} onChange={(event) => setBranchBlock(event.target.value)} disabled={savingSettings} /></label>{settingsError && <p className="vendor-finance-error">{settingsError}</p>}{settingsMessage && <p className="billing-success"><CheckCircle2 size={14} /> {settingsMessage}</p>}<Button type="submit" variant="primary" disabled={savingSettings}>{savingSettings ? 'Saving…' : 'Save thresholds'}</Button></form></section><section className="billing-card"><h3>Branch payment QR</h3><p className="billing-hint">Shown to branch staff before they add money.</p>{settings?.paymentQrPath ? <img className="billing-qr" src={paymentQrUrl(settings.paymentQrPath)} alt="Current payment QR" /> : <p className="billing-hint">No QR uploaded yet.</p>}<FileField label={settings?.paymentQrPath ? 'Replace with a new QR' : 'Upload a QR'} hint="JPG, PNG, or WebP · max 5 MB" file={qrFile} onChange={(file) => { setQrFile(file); setQrError(''); setQrMessage(''); }} />{qrError && <p className="vendor-finance-error">{qrError}</p>}{qrMessage && <p className="billing-success"><CheckCircle2 size={14} /> {qrMessage}</p>}{qrFile && <div className="billing-review-actions"><Button variant="secondary" onClick={() => setQrFile(null)} disabled={qrUploading}>Cancel</Button><Button variant="primary" onClick={() => void replaceQr()} disabled={qrUploading}>{qrUploading ? 'Uploading…' : 'Replace QR'}</Button></div>}</section></div>}
 

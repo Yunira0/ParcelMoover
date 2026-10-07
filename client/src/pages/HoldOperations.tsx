@@ -208,7 +208,7 @@ const HoldOperations: React.FC = () => {
       order.remarks || '',
       ...statusTimelineCells(order.statusTimestamps),
     ]);
-    downloadExcel('hold-orders.xlsx', 'Hold Orders', headers, csvRows);
+    await downloadExcel('hold-orders.xlsx', 'Hold Orders', headers, csvRows);
   };
 
   const selectedOrders = orders.filter((order) => selectedIds.has(order.id));

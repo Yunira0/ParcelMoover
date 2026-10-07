@@ -37,7 +37,7 @@ const TransactionsPage: React.FC<TransactionsPageProps> = ({ scope, direction = 
         title={config.title}
         actionLabel={canWrite ? (direction === 'out' ? 'New payment' : 'New receipt') : undefined}
         actionIcon={<Plus size={16} />}
-        onAction={() => navigate(`/finance/voucher/new?type=${voucherType}`)}
+        onAction={() => navigate(`/finance/voucher/new?type=${voucherType}&source=${scope}`)}
       />
 
       <TransactionsTab scope={scope} direction={direction} />

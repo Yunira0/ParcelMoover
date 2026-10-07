@@ -2,6 +2,7 @@
 .bsd-heading { align-items: flex-start; display: flex; gap: var(--space-4); justify-content: space-between; }
 .bsd-heading h1 { color: var(--color-text-default); font-size: var(--font-size-2xl); line-height: var(--line-height-2xl); margin: 0 0 var(--space-1); }
 .bsd-heading p { color: var(--color-text-caption); margin: 0; }
+.bsd-heading-actions { align-items: center; display: flex; flex-shrink: 0; gap: var(--space-3); }
 .bsd-ledger { background: var(--color-background-surface); border: 1px solid var(--color-border-default); display: grid; grid-template-columns: repeat(5, minmax(160px, 1fr)); overflow-x: auto; }
 .bsd-ledger > div { display: flex; flex-direction: column; gap: var(--space-1); min-width: 160px; padding: var(--space-4) var(--space-5); }
 .bsd-ledger > div + div { border-left: 1px solid var(--color-border-default); }

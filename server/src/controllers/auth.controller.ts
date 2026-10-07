@@ -1,4 +1,4 @@
-import express, { Request, Response } from "express";
+import { Request, Response } from "express";
 import {
   changePassword,
   loginUser,
@@ -75,9 +75,10 @@ export const registerUserController = async (req: Request, res: Response) => {
       licenceDocPath: docPath(files?.licenceDoc?.[0]),
       bluebookDocPath: docPath(files?.bluebookDoc?.[0]),
       businessCertDocPath: docPath(files?.businessCertDoc?.[0]),
+      agreementDocPath: docPath(files?.agreementDoc?.[0]),
     });
 
-    return sendSuccess(res, 201, `${result.role} registered successfully`, {
+return sendSuccess(res, 201, `${result.role} registered successfully`, {
       user: {
         id: result.user.id,
         fullName: result.user.full_name,
@@ -184,6 +185,7 @@ export const updateManagedUserController = async (req: Request, res: Response) =
       licenceDocPath: docPath(files?.licenceDoc?.[0]),
       bluebookDocPath: docPath(files?.bluebookDoc?.[0]),
       businessCertDocPath: docPath(files?.businessCertDoc?.[0]),
+      agreementDocPath: docPath(files?.agreementDoc?.[0]),
     });
 
     return sendSuccess(res, 200, "User updated successfully");
@@ -313,25 +315,30 @@ export const login = async (req: Request, res: Response) => {
       audience: CSRF_TOKEN_AUDIENCE,
     });
 
-    res.cookie("accessToken", result.token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      // "none" is required for the frontend/backend to sit on different
-      // origins (e.g. two separate Railway services) - "lax" silently drops
-      // the cookie on cross-site XHR/fetch. Browsers only allow "none" when
-      // secure is also true, which holds in production (HTTPS).
-      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-      path: "/",
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-    });
+    // The rider app keeps its token for Authorization: Bearer. A cookie here
+    // would replace a staff dashboard session on the same host (ports do not
+    // isolate cookies), so Bearer-only logins must leave browser cookies alone.
+    if (req.header("X-Auth-Mode") !== "bearer") {
+      res.cookie("accessToken", result.token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        // "none" is required for the frontend/backend to sit on different
+        // origins (e.g. two separate Railway services) - "lax" silently drops
+        // the cookie on cross-site XHR/fetch. Browsers only allow "none" when
+        // secure is also true, which holds in production (HTTPS).
+        sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+        path: "/",
+        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      });
 
-    res.cookie("csrfToken", csrfToken, {
-      httpOnly: false,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-      path: "/",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    });
+      res.cookie("csrfToken", csrfToken, {
+        httpOnly: false,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+        path: "/",
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+      });
+    }
 
     return res.status(200).json({
       success: true,
@@ -522,8 +529,16 @@ export const getVendorsController = async (req: Request, res: Response) => {
           }),
           prisma.cod_collections.groupBy({
             by: ["vendor_id"],
-            where: { vendor_id: { in: vendorIds }, payment_status: "pending" },
-            _sum: { pending_amount: true },
+            // Same basis as the vendor's Pending COD bill: delivered/collected,
+            // not cancelled, not yet bundled into a vendor statement.
+            where: {
+              vendor_id: { in: vendorIds },
+              payment_status: "pending",
+              collected_at: { not: null },
+              settlement_items: { none: { settlements: { payee_type: "vendor" } } },
+              parcels: { status: { not: "cancelled" } },
+            },
+            _sum: { collected_amount: true },
           }),
           // last_ordered_at is never denormalised onto vendors, so derive the
           // most recent order date per vendor straight from their parcels.
@@ -549,7 +564,7 @@ export const getVendorsController = async (req: Request, res: Response) => {
     const codByVendor = new Map<string, number>();
     for (const row of codSums) {
       if (!row.vendor_id) continue;
-      codByVendor.set(row.vendor_id, Number(row._sum.pending_amount || 0));
+      codByVendor.set(row.vendor_id, Number(row._sum.collected_amount || 0));
     }
 
     const lastOrderByVendor = new Map<string, Date>();
@@ -955,8 +970,11 @@ export const logoutController = async (req: Request, res: Response) => {
       }
     }
 
-    res.clearCookie("accessToken", { path: "/" });
-    res.clearCookie("csrfToken", { path: "/" });
+    // Revoking a Bearer token must not log out a separate cookie session.
+    if (!authHeader?.startsWith("Bearer ")) {
+      res.clearCookie("accessToken", { path: "/" });
+      res.clearCookie("csrfToken", { path: "/" });
+    }
 
     return sendSuccess(res, 200, "Logged out successfully");
   } catch (error: any) {
@@ -979,16 +997,19 @@ export const changePasswordController = async (req: Request, res: Response) => {
 
     const { token } = await changePassword(userId, currentPassword, newPassword);
 
-    // Every other session (e.g. a stolen token) was just revoked - reissue a
-    // fresh cookie so this session, which just proved it holds the correct
-    // current password, keeps working.
-    res.cookie("accessToken", token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-      path: "/",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    });
+    // Every other session was just revoked. Cookie clients need a new cookie;
+    // Bearer clients use the replacement token returned below.
+    // Bearer clients receive the replacement token in the response body.
+    // Do not overwrite an unrelated dashboard cookie on the same host.
+    if (!req.headers.authorization?.startsWith("Bearer ")) {
+      res.cookie("accessToken", token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+        path: "/",
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+      });
+    }
 
     // Mirrors login's response shape (top-level accessToken) so Bearer-only
     // clients (no cookies) can pick up the freshly-reissued token instead of

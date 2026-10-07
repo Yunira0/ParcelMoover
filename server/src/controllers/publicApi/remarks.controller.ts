@@ -3,7 +3,7 @@ import { addOrderRemark, getOrderByTrackingId } from "../../services/order.servi
 import { withIdempotency } from "../../services/idempotency.service";
 import { isValidTrackingId } from "../../utils/trackingId";
 import { PublicAddRemarkInput } from "../../validators/publicApi.schema";
-import { actorFrom, sendError, UUID_REGEX } from "./shared";
+import { actorFrom, partnerIdempotencyKey, sendError, UUID_REGEX } from "./shared";
 
 export async function publicListRemarksController(req: Request, res: Response) {
   try {
@@ -52,7 +52,7 @@ export async function publicAddRemarkController(req: Request, res: Response) {
     const actor = actorFrom(req);
     const { remark, parentRemarkId } = req.body as PublicAddRemarkInput;
 
-    const responseBody = await withIdempotency(idempotencyKey, req.body, async () => {
+    const responseBody = await withIdempotency(partnerIdempotencyKey(req, "order-remark", idempotencyKey, trackingId), req.body, async () => {
       const order = await getOrderByTrackingId(actor, trackingId);
       const created = await addOrderRemark(actor, order.id, remark, parentRemarkId);
 
@@ -66,7 +66,7 @@ export async function publicAddRemarkController(req: Request, res: Response) {
         result: body,
         response: { statusCode: 201, body, resourceID: created.id },
       };
-    });
+    }, { legacyKey: idempotencyKey });
 
     return res.status(201).json(responseBody);
   } catch (error: any) {

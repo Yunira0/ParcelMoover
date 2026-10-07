@@ -477,6 +477,11 @@ export async function handoffParcelsToNcm(
       await bumpDailyCreateCounter();
 
       await prisma.$transaction([
+        // Handed to the carrier: no longer staged for our own trucks, and a leftover
+        // link would block re-staging it later.
+        prisma.transit_manifest_parcels.deleteMany({
+          where: { parcel_id: parcel.id, transit_manifests: { status: "open" } },
+        }),
         prisma.parcel_status_history.create({
           data: {
             parcel_id: parcel.id,
@@ -600,7 +605,7 @@ async function applyCarrierStatusWithRetry(
 ): Promise<{ applied: boolean; reason?: string }> {
   for (let attempt = 0; ; attempt++) {
     try {
-      return await applyExternalCarrierStatus(parcelId, targetStatus, remark);
+      return await applyExternalCarrierStatus(parcelId, targetStatus, remark, "ncm");
     } catch (error) {
       const isLockConflict = error instanceof AppError && error.statusCode === 409;
       if (!isLockConflict || attempt >= 2) throw error;

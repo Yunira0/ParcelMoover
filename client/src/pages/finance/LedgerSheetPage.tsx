@@ -13,6 +13,7 @@ import { drCr, formatMoney } from '../../utils/format';
 import { downloadExcel } from '../../utils/excel';
 import LedgerSummary from '../../components/finance/LedgerSummary';
 import { toBsDate } from '../../utils/nepaliDate';
+import { useBackOr } from '../../hooks/useBackOr';
 
 /**
  * One account's ledger, as the ruled sheet it is on paper.
@@ -29,6 +30,7 @@ const MIN_ROWS = 20;
 const LedgerSheetPage: React.FC = () => {
   const { code = '' } = useParams<{ code: string }>();
   const navigate = useNavigate();
+  const goBack = useBackOr(`/accounting/ledgers/account?account=${code}`);
   const [params, setParams] = useSearchParams();
 
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -68,9 +70,9 @@ const LedgerSheetPage: React.FC = () => {
   }, [load]);
 
   useEffect(() => {
-    // Cash and bank only: this sheet is the cash book, and the control and
-    // revenue accounts are read from their own screens.
-    listAccounts('cash_bank').then(setAccounts).catch(() => {
+    // The whole chart: Account Ledger's "Printable sheet" opens this for any
+    // account, and a cash-only list left the picker blank on those.
+    listAccounts().then(setAccounts).catch(() => {
       // The picker is a convenience; a ledger that loaded is still readable
       // without it, so this must not take the screen down with it.
     });
@@ -83,20 +85,25 @@ const LedgerSheetPage: React.FC = () => {
     setParams(next, { replace: true });
   };
 
-  const exportSheet = () => {
+  const exportSheet = async () => {
     if (!ledger) return;
-    downloadExcel(
+    await downloadExcel(
       `ledger-${ledger.account.code}`,
       ledger.account.name,
       ['Date', 'Particulars / Description', 'Reference', 'Receipt', 'Payment', 'Balance'],
-      ledger.rows.map((row) => [
-        row.bsDate,
-        row.contraAccounts || row.memo || '',
-        row.entryNo,
-        row.debit || '',
-        row.credit || '',
-        drCr(row.runningBalance, debitNormal),
-      ]),
+      [
+        // The running balance below starts from this figure, so the file
+        // reconciles only if it carries it too.
+        [toBsDate(ledger.range.from), 'Opening balance carried forward', 'OPENING', '', '', drCr(ledger.openingBalance, debitNormal)],
+        ...ledger.rows.map((row) => [
+          row.bsDate,
+          row.contraAccounts || row.memo || '',
+          row.entryNo,
+          row.debit || '',
+          row.credit || '',
+          drCr(row.runningBalance, debitNormal),
+        ]),
+      ],
     );
   };
 
@@ -104,7 +111,7 @@ const LedgerSheetPage: React.FC = () => {
     { key: 'F5', label: 'Print', onSelect: () => window.print() },
     { key: 'F7', label: 'Export', onSelect: exportSheet, disabled: !ledger },
     { key: 'F12', label: 'Day book', onSelect: () => navigate('/accounting/transactions/journal') },
-    { key: 'Escape', label: 'Back', onSelect: () => navigate(-1) },
+    { key: 'Escape', label: 'Back', onSelect: goBack },
   ];
 
   const debitNormal = ledger?.account.normalSide !== 'credit';
@@ -123,7 +130,7 @@ const LedgerSheetPage: React.FC = () => {
         ariaLabel="Account"
         placeholder="Select account"
         searchPlaceholder="Search accounts..."
-        options={accounts.map((account) => ({
+        options={accounts.filter((account) => account.isActive || account.code === code).map((account) => ({
           value: account.code,
           label: `${account.code} — ${account.name}`,
         }))}

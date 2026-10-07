@@ -12,9 +12,6 @@ export type CodSettlementRequestStatus = "open" | "in_progress" | "settled" | "r
 export const LIVE_REQUEST_STATUSES: CodSettlementRequestStatus[] = ["open", "in_progress"];
 
 export interface CreateCodSettlementRequestInput {
-  bankName: string;
-  accountNumber: string;
-  accountName: string;
   note?: string;
 }
 

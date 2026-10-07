@@ -14,7 +14,8 @@ import {
   type SettlementDetail,
   type SettlementDocument,
 } from '../services/finance.service';
-import { hasAnyRole, hasAdminPermission } from '../utils/auth';
+import { hasAnyRole, hasAdminPermission, isSalesUser, isVendorSide } from '../utils/auth';
+import { useBackOr } from '../hooks/useBackOr';
 import {
   hasSettlementPayments,
   isSettlementPayable,
@@ -319,8 +320,20 @@ function buildStatementHtml(detail: SettlementDetail): string {
       <div><span>Total COD</span><span>${money(totals.cod)}</span></div>
       <div><span>Collected COD</span><span>${money(totals.collected)}</span></div>
       <div><span>Delivery Charges</span><span>${money(totals.deliveryCharge)}</span></div>
+      ${detail.vendorCreditApplied ? `<div><span>Prepaid charges returned</span><span>+${money(detail.vendorCreditApplied)}</span></div>` : ''}
       <div class="payable"><span>${detail.payeeType === 'rider' ? 'Receivable Amount' : 'Payable Amount'}</span><span>${money(detail.payableAmount)}</span></div>
     </div>
+    <script>
+      // Printing from document.close() in the opener races the new window's
+      // layout - it can fire before the statement has actually rendered, so
+      // the print dialog shows a blank/default page instead. Wait for this
+      // window's own load event first, same as printLabels.ts/printRunSheet.ts.
+      window.addEventListener('load', function() {
+        window.focus();
+        window.print();
+        window.addEventListener('afterprint', function() { window.close(); });
+      });
+    <\/script>
   </body></html>`;
 }
 
@@ -337,6 +350,14 @@ const SettlementDetailPage: React.FC = () => {
   const [showEdit, setShowEdit] = useState(false);
   const [showRevert, setShowRevert] = useState(false);
   const [showCancel, setShowCancel] = useState(false);
+  // Each audience's own list, for when this statement was opened from a link.
+  const goBack = useBackOr(
+    isVendorSide()
+      ? '/finance/settlements'
+      : isSalesUser()
+        ? '/dashboard'
+        : `/accounting/transactions/${detail?.payeeType === 'vendor' ? 'vendor' : 'rider'}-cod`,
+  );
   const [tab, setTab] = useState<DetailTab>('billing');
   // Acknowledges a money-moving action that just completed - either handed in
   // via router state (a redirect from the pay flow) or set locally once a
@@ -425,11 +446,9 @@ const SettlementDetailPage: React.FC = () => {
     if (!win) return;
     win.document.write(buildStatementHtml(detail));
     win.document.close();
-    win.focus();
-    win.print();
   };
 
-  const handleDownload = () => {
+  const handleDownload = async () => {
     if (!detail) return;
     const headers = [
       'SN',
@@ -464,13 +483,13 @@ const SettlementDetailPage: React.FC = () => {
     // leading columns this variant of the sheet happens to have.
     const leadingBlanks = new Array(headers.length - 3).fill('');
     rows.push([...leadingBlanks, totals.cod, totals.collected, totals.deliveryCharge]);
-    downloadExcel(`${detail.statementId}.xlsx`, 'Statement', headers, rows);
+    await downloadExcel(`${detail.statementId}.xlsx`, 'Statement', headers, rows);
   };
 
   return (
     <div className="settlement-detail-page">
       <div className="settlement-detail-toolbar">
-        <Button variant="ghost" onClick={() => navigate(-1)}>
+        <Button variant="ghost" onClick={goBack}>
           <ArrowLeft size={16} /> Back
         </Button>
         <div className="settlement-detail-actions">
@@ -760,6 +779,14 @@ const SettlementDetailPage: React.FC = () => {
                   <span>Delivery Charges</span>
                   <span>{money(totals.deliveryCharge)}</span>
                 </div>
+                {/* Charges the vendor already paid through Billing, handed back
+                    so they are not deducted twice. Included in the payable. */}
+                {detail.vendorCreditApplied ? (
+                  <div>
+                    <span>Prepaid charges returned</span>
+                    <span>+{money(detail.vendorCreditApplied)}</span>
+                  </div>
+                ) : null}
                 <div className="sdp-totals-payable">
                   <span>{detail.payeeType === 'rider' ? 'Receivable Amount' : 'Payable Amount'}</span>
                   <span>{money(detail.payableAmount)}</span>

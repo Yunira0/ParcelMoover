@@ -42,8 +42,8 @@ type ValleyFilter = 'all' | 'inside' | 'outside';
 
 const VALLEY_FILTER_OPTIONS: { value: ValleyFilter; label: string }[] = [
   { value: 'all', label: 'All' },
-  { value: 'inside', label: 'Inside Valley' },
-  { value: 'outside', label: 'Outside Valley' },
+  { value: 'inside', label: 'Our Coverage' },
+  { value: 'outside', label: 'Outside Coverage' },
 ];
 
 // Groups (pickups) per page in the outer table.
@@ -126,9 +126,11 @@ const STATUS_TRANSITIONS: Record<ParcelStatus, ParcelStatus[]> = {
 const DIRECT_DELIVERY_FRINGE_AREAS = ['kavresthali', 'thali', 'chapagaun', 'budhanilkantha', 'thankot'];
 
 // From "Arrived at Origin", whether a parcel should skip Transit and go
-// straight to Ready to Deliver (inside valley + fringe areas) or must go
-// through Transit/OOV first (everywhere else).
+// straight to Ready to Deliver (destination in the arrival branch's coverage)
+// or must go through Transit/OOV first. The server decides (skipsTransit);
+// the valley rule is only a fallback for rows without it.
 const destinationSkipsTransit = (order: Order): boolean => {
+  if (order.skipsTransit !== undefined) return order.skipsTransit;
   if (order.destinationValley === 'inside') return true;
   const name = (order.destinationName || '').toLowerCase();
   return DIRECT_DELIVERY_FRINGE_AREAS.some(area => name.includes(area));
@@ -509,7 +511,7 @@ const PickupOperations: React.FC = () => {
 
   const visibleOrders = useMemo(() => {
     if (activeTab !== 'arrived' || valleyFilter === 'all') return orders;
-    return orders.filter(order => order.destinationValley === valleyFilter);
+    return orders.filter(order => destinationSkipsTransit(order) === (valleyFilter === 'inside'));
   }, [orders, activeTab, valleyFilter]);
   const selectedIds = selectedIdsByTab[activeTab];
   const groups = useMemo(() => groupOrdersByVendor(visibleOrders), [visibleOrders]);
@@ -672,7 +674,7 @@ const PickupOperations: React.FC = () => {
 
   // Same rows Print All uses - the selection when there is one, the visible tab
   // otherwise - so the sheet always matches what the button beside it prints.
-  const downloadCsv = () => {
+  const downloadCsv = async () => {
     const rows = selectedOrders.length > 0 ? selectedOrders : visibleOrders;
 
     // Same columns, in the same order, as the group detail table on screen.
@@ -704,7 +706,7 @@ const PickupOperations: React.FC = () => {
       order.remarks || '',
       ...statusTimelineCells(order.statusTimestamps),
     ]);
-    downloadExcel('pickup-orders.xlsx', 'Pickup Orders', headers, csvRows);
+    await downloadExcel('pickup-orders.xlsx', 'Pickup Orders', headers, csvRows);
   };
 
   const moveSelectedStatus = (direction: 1 | -1) => {
