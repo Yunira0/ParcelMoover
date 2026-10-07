@@ -10,6 +10,8 @@ import { formatCurrency as formatCurrencyBase } from '../../utils/format';
 import { toBsDate } from '../../utils/nepaliDate';
 import { settlementStatusLabel, settlementStatusTone } from '../../utils/settlementStatus';
 import NepaliDatePicker from '../../components/NepaliDatePicker';
+import ClearableFilter from '../../components/ClearableFilter';
+import { useSessionState } from '../../hooks/useSessionState';
 import './VendorFinance.css';
 
 // The selector below the table goes up to 500, this endpoint's ceiling
@@ -20,10 +22,12 @@ const formatCurrency = (value: number) => formatCurrencyBase(value, 0);
 
 const VendorSettlements: React.FC = () => {
   const navigate = useNavigate();
-  const [fromDate, setFromDate] = useState('');
-  const [toDate, setToDate] = useState('');
+  // Kept for the browser tab, so opening a statement and coming back keeps the
+  // range until it is cleared by hand.
+  const [fromDate, setFromDate] = useSessionState('vendor-settlements:from', '');
+  const [toDate, setToDate] = useSessionState('vendor-settlements:to', '');
   const [page, setPage] = useState(1);
-  const [pageSizeChoice, setPageSizeChoice] = useState(PAGE_SIZE);
+  const [pageSizeChoice, setPageSizeChoice] = useSessionState('vendor-settlements:pageSize', PAGE_SIZE);
   const [items, setItems] = useState<SettlementListItem[]>([]);
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
@@ -121,27 +125,45 @@ const VendorSettlements: React.FC = () => {
         <div className="vendor-finance-date-range">
           <label>
             From
-            <NepaliDatePicker
-              value={fromDate}
-              max={toDate || undefined}
-              aria-label="From date"
-              onChange={(next) => {
+            <ClearableFilter
+              active={Boolean(fromDate)}
+              onClear={() => {
                 setPage(1);
-                setFromDate(next);
+                setFromDate('');
               }}
-            />
+              clearLabel="Clear from date"
+            >
+              <NepaliDatePicker
+                value={fromDate}
+                max={toDate || undefined}
+                aria-label="From date"
+                onChange={(next) => {
+                  setPage(1);
+                  setFromDate(next);
+                }}
+              />
+            </ClearableFilter>
           </label>
           <label>
             To
-            <NepaliDatePicker
-              value={toDate}
-              min={fromDate || undefined}
-              aria-label="To date"
-              onChange={(next) => {
+            <ClearableFilter
+              active={Boolean(toDate)}
+              onClear={() => {
                 setPage(1);
-                setToDate(next);
+                setToDate('');
               }}
-            />
+              clearLabel="Clear to date"
+            >
+              <NepaliDatePicker
+                value={toDate}
+                min={fromDate || undefined}
+                aria-label="To date"
+                onChange={(next) => {
+                  setPage(1);
+                  setToDate(next);
+                }}
+              />
+            </ClearableFilter>
           </label>
         </div>
       </div>

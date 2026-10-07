@@ -42,6 +42,7 @@ interface AdminFormInput {
   designation: string;
   // Documents
   citizenshipDoc: File | null;
+  citizenshipDocBack: File | null;
   nationalIdNumber: string;
   nationalIdDoc: File | null;
   panDoc: File | null;
@@ -81,6 +82,7 @@ const emptyForm: AdminFormInput = {
   department: '',
   designation: '',
   citizenshipDoc: null,
+  citizenshipDocBack: null,
   nationalIdNumber: '',
   nationalIdDoc: null,
   panDoc: null,
@@ -190,10 +192,11 @@ const AdminFormPage: React.FC = () => {
   // Already-uploaded document paths, shown as view links in edit mode.
   const [existingDocs, setExistingDocs] = useState<{
     citizenshipDoc: string | null;
+    citizenshipDocBack: string | null;
     idDocument: string | null;
     panDoc: string | null;
     agreementDoc: string | null;
-  }>({ citizenshipDoc: null, idDocument: null, panDoc: null, agreementDoc: null });
+  }>({ citizenshipDoc: null, citizenshipDocBack: null, idDocument: null, panDoc: null, agreementDoc: null });
   // Accounts created by a plain admin inherit that admin's hub; only a
   // super_admin may choose a different one (server enforces the same rule).
   const { myHubId, hubLocked, isPlainAdmin } = useHubLock();
@@ -261,6 +264,7 @@ const AdminFormPage: React.FC = () => {
         }));
         setExistingDocs({
           citizenshipDoc: d.citizenshipDoc ?? null,
+          citizenshipDocBack: d.citizenshipDocBack ?? null,
           idDocument: d.idDocument ?? null,
           panDoc: d.panDoc ?? null,
           agreementDoc: d.agreementDoc ?? null,
@@ -323,7 +327,8 @@ const AdminFormPage: React.FC = () => {
     else if (!isValidEmail(form.email)) errors.email = 'Enter a valid email address';
     // Document and password only required when creating a new admin.
     if (!isEdit) {
-      if (!form.citizenshipDoc) errors.citizenshipDoc ??= 'Citizenship document is required';
+      if (!form.citizenshipDoc) errors.citizenshipDoc ??= 'Citizenship front side is required';
+      if (!form.citizenshipDocBack) errors.citizenshipDocBack ??= 'Citizenship back side is required';
       if (!form.nationalIdNumber.trim()) errors.nationalIdNumber = 'National ID number is required';
       if (!form.nationalIdDoc) errors.nationalIdDoc ??= 'National ID document is required';
       if (!form.password.trim()) errors.password = 'Password is required';
@@ -375,6 +380,7 @@ const AdminFormPage: React.FC = () => {
           idDocumentNumber: form.nationalIdNumber,
           // Only slots with a newly picked file; the rest keep what's stored.
           ...(form.citizenshipDoc ? { citizenshipDoc: form.citizenshipDoc } : {}),
+          ...(form.citizenshipDocBack ? { citizenshipDocBack: form.citizenshipDocBack } : {}),
           ...(form.nationalIdDoc ? { idDocument: form.nationalIdDoc } : {}),
           ...(form.panDoc ? { panDoc: form.panDoc } : {}),
           ...(form.agreementDoc ? { agreementDoc: form.agreementDoc } : {}),
@@ -408,6 +414,7 @@ const AdminFormPage: React.FC = () => {
         idDocumentNumber: form.nationalIdNumber,
         idDocument: form.nationalIdDoc,
         citizenshipDoc: form.citizenshipDoc,
+        citizenshipDocBack: form.citizenshipDocBack,
         panDoc: form.panDoc,
         agreementDoc: form.agreementDoc,
       });
@@ -638,8 +645,10 @@ const AdminFormPage: React.FC = () => {
                 // Every slot stays visible on edit: the file on record (if any)
                 // plus an upload to attach a missing one or replace it.
                 <div className="afp-docs">
-                  <FileInput label="Citizenship" file={form.citizenshipDoc} onChange={setFile('citizenshipDoc')} onBusyChange={setUploadBusy('citizenshipDoc')} error={fieldErrors.citizenshipDoc} disabled={loading} />
-                  {existingDocs.citizenshipDoc && <DocLink path={existingDocs.citizenshipDoc} label="View current citizenship" />}
+                  <FileInput label="Citizenship (Front)" file={form.citizenshipDoc} onChange={setFile('citizenshipDoc')} onBusyChange={setUploadBusy('citizenshipDoc')} error={fieldErrors.citizenshipDoc} disabled={loading} />
+                  {existingDocs.citizenshipDoc && <DocLink path={existingDocs.citizenshipDoc} label="View current citizenship (front)" />}
+                  <FileInput label="Citizenship (Back)" file={form.citizenshipDocBack} onChange={setFile('citizenshipDocBack')} onBusyChange={setUploadBusy('citizenshipDocBack')} error={fieldErrors.citizenshipDocBack} disabled={loading} />
+                  {existingDocs.citizenshipDocBack && <DocLink path={existingDocs.citizenshipDocBack} label="View current citizenship (back)" />}
                   <FileInput label="National ID" file={form.nationalIdDoc} onChange={setFile('nationalIdDoc')} onBusyChange={setUploadBusy('nationalIdDoc')} error={fieldErrors.nationalIdDoc} disabled={loading} />
                   {existingDocs.idDocument && <DocLink path={existingDocs.idDocument} label="View current national ID" />}
                   <FileInput label="PAN" file={form.panDoc} onChange={setFile('panDoc')} onBusyChange={setUploadBusy('panDoc')} error={fieldErrors.panDoc} disabled={loading} />
@@ -659,12 +668,21 @@ const AdminFormPage: React.FC = () => {
               ) : (
                 <div className="afp-docs">
                   <FileInput
-                    label="Citizenship"
+                    label="Citizenship (Front)"
                     required
                     file={form.citizenshipDoc}
                     onChange={setFile('citizenshipDoc')}
                     onBusyChange={setUploadBusy('citizenshipDoc')}
                     error={fieldErrors.citizenshipDoc}
+                    disabled={loading}
+                  />
+                  <FileInput
+                    label="Citizenship (Back)"
+                    required
+                    file={form.citizenshipDocBack}
+                    onChange={setFile('citizenshipDocBack')}
+                    onBusyChange={setUploadBusy('citizenshipDocBack')}
+                    error={fieldErrors.citizenshipDocBack}
                     disabled={loading}
                   />
                   <FileInput

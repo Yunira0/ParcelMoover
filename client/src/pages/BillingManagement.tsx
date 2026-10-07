@@ -26,6 +26,7 @@ import {
 import { formatCurrency } from '../utils/format';
 import { toBsDate } from '../utils/nepaliDate';
 import { apiErrorMessage } from '../utils/serverValidation';
+import { useSessionState } from '../hooks/useSessionState';
 import './vendor/VendorFinance.css';
 import './vendor/VendorBilling.css';
 import './BillingManagement.css';
@@ -55,18 +56,20 @@ const BillingManagement: React.FC = () => {
   // Billing settings and credit limits are office finance: super_admin or accountant.
   const isSuperAdmin = hasAnyRole(['super_admin', 'accountant']);
 
-  const [activeTab, setActiveTab] = useState<Tab>('queue');
+  // Tab, claim status, page size and vendor search are kept for the browser
+  // tab, so leaving and coming back keeps them until cleared by hand.
+  const [activeTab, setActiveTab] = useSessionState<Tab>('vendor-billing:tab', 'queue');
   const [error, setError] = useState('');
 
   // Verification queue
   const [claims, setClaims] = useState<VendorPayment[]>([]);
-  const [claimStatus, setClaimStatus] = useState<ClaimStatus>('pending');
+  const [claimStatus, setClaimStatus] = useSessionState<ClaimStatus>('vendor-billing:claimStatus', 'pending');
   const [claimsTotal, setClaimsTotal] = useState(0);
   // The tab badge counts the work waiting, whichever history view is open.
   const [pendingCount, setPendingCount] = useState(0);
   const [claimsTotalPages, setClaimsTotalPages] = useState(1);
   const [claimsPage, setClaimsPage] = useState(1);
-  const [claimsPageSize, setClaimsPageSize] = useState(50);
+  const [claimsPageSize, setClaimsPageSize] = useSessionState('vendor-billing:pageSize', 50);
   const [claimsLoading, setClaimsLoading] = useState(true);
   const [reviewing, setReviewing] = useState<string | null>(null);
   const [remarks, setRemarks] = useState<Record<string, string>>({});
@@ -77,7 +80,7 @@ const BillingManagement: React.FC = () => {
 
   // Vendor balances
   const [balances, setBalances] = useState<VendorBalanceRow[]>([]);
-  const [balanceSearch, setBalanceSearch] = useState('');
+  const [balanceSearch, setBalanceSearch] = useSessionState('vendor-billing:balanceSearch', '');
   const [balancesLoading, setBalancesLoading] = useState(false);
 
   // Settings
@@ -471,6 +474,19 @@ const BillingManagement: React.FC = () => {
               onChange={(e) => setBalanceSearch(e.target.value)}
               aria-label="Search vendor balances"
             />
+            {/* The search is remembered across visits, so the box can open
+                already filled - this puts the full list back in one click. */}
+            {balanceSearch && (
+              <button
+                type="button"
+                className="search-box-clear"
+                onClick={() => setBalanceSearch('')}
+                aria-label="Clear vendor search"
+                title="Clear vendor search"
+              >
+                <X size={14} />
+              </button>
+            )}
           </div>
           <Table
             selectable={false}

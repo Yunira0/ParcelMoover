@@ -192,7 +192,7 @@ a.settlement-subrow:focus-visible {
   background-color: #0e7490;
 }
 
-/* Branches: cash already off the riders but not yet at Imadol. Same "cash
+/* Branches: COD the branches have not yet paid to Imadol. Same "cash
    still out" family, violet so it stays distinct from the three carriers. */
 .status-dot.branches {
   background-color: #6d28d9;

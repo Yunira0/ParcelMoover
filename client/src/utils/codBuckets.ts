@@ -45,7 +45,8 @@ export const COD_BUCKET_META: Record<CodDetailBucket, CodBucketMeta> = {
     label: 'PM-Rider',
     title: 'COD to collect from PM-Riders',
     amountHeader: 'OUTSTANDING',
-    description: 'Cash our own riders are holding and have not remitted to the office.',
+    description:
+      "Cash our own riders are holding and have not remitted to the office. Branch riders' cash is counted under Branches.",
     carrier: true,
   },
   ncm: {
@@ -67,9 +68,9 @@ export const COD_BUCKET_META: Record<CodDetailBucket, CodBucketMeta> = {
   branches: {
     label: 'Branches',
     title: 'COD to collect from branches',
-    amountHeader: 'AT BRANCH',
+    amountHeader: 'OWED BY BRANCH',
     description:
-      "Cash a branch's riders have handed to the branch that the branch has not yet paid to Imadol. Cash still with a rider is under PM-Rider.",
+      'COD on branch-delivered orders that the branches, all together, have not yet paid to Imadol - whether it is still with a branch rider or already at the branch.',
     carrier: true,
   },
   'delivery-charge': {

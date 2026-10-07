@@ -59,6 +59,42 @@ export async function findOrCreateParty(
   });
 }
 
+// Receivers are shared rows that every parcel reads its receiver name/address
+// from, so a match is reused only when the details are identical. A copied
+// order with an edited name/address/alternate number (same phone) gets its own
+// row - reusing the old one would silently create the order with the old
+// details, and updating it would rewrite every earlier order to that receiver.
+export async function findOrCreateReceiver(
+  tx: Prisma.TransactionClient,
+  partyData: CreateOrderInput["receiver"],
+) {
+  const normalizedPhone = partyData.phone.trim().replace(/\s/g, "");
+  const email = partyData.email?.trim() || null;
+
+  const existing = await tx.parties.findFirst({
+    where: {
+      phone: normalizedPhone,
+      name: partyData.name.trim(),
+      alternate_phone: partyData.alternatePhone?.trim() || null,
+      address: partyData.address?.trim() || null,
+      // Callers that don't send an email match on the rest alone.
+      ...(email ? { email } : {}),
+    },
+    orderBy: { created_at: "desc" },
+  });
+  if (existing) return existing;
+
+  return tx.parties.create({
+    data: {
+      name: partyData.name.trim(),
+      phone: normalizedPhone,
+      alternate_phone: partyData.alternatePhone?.trim() || null,
+      email: partyData.email?.trim() || null,
+      address: partyData.address?.trim() || null,
+    },
+  });
+}
+
 export async function createOrderCore(
   actor: OrderActor,
   data: CreateOrderInput,
@@ -311,7 +347,7 @@ async function _createOrderImpl(
       // Sender is the vendor's own identity - keep it synced with their current
       // profile so a shop/address change propagates to new orders.
       findOrCreateParty(tx, data.sender, { refreshExisting: true }),
-      findOrCreateParty(tx, data.receiver),
+      findOrCreateReceiver(tx, data.receiver),
     ]);
 
     let parcel = await tx.parcels.create({

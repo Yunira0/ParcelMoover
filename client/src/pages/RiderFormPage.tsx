@@ -37,6 +37,7 @@ interface RiderFormInput {
   pan: string;
   // Documents
   citizenshipDoc: File | null;
+  citizenshipDocBack: File | null;
   panVatDoc: File | null;
   licenceDoc: File | null;
   blueBookDoc: File | null;
@@ -67,6 +68,7 @@ const emptyForm: RiderFormInput = {
   salaryCommission: '',
   pan: '',
   citizenshipDoc: null,
+  citizenshipDocBack: null,
   panVatDoc: null,
   licenceDoc: null,
   blueBookDoc: null,
@@ -156,11 +158,12 @@ const RiderFormPage: React.FC = () => {
   // Already-uploaded document paths, shown as view links in edit mode.
   const [existingDocs, setExistingDocs] = useState<{
     citizenshipDoc: string | null;
+    citizenshipDocBack: string | null;
     panVatDoc: string | null;
     licenceDoc: string | null;
     bluebookDoc: string | null;
     agreementDoc: string | null;
-  }>({ citizenshipDoc: null, panVatDoc: null, licenceDoc: null, bluebookDoc: null, agreementDoc: null });
+  }>({ citizenshipDoc: null, citizenshipDocBack: null, panVatDoc: null, licenceDoc: null, bluebookDoc: null, agreementDoc: null });
   // A plain admin's riders always land in that admin's own hub; only a
   // super_admin may pick another service branch (server enforces the same).
   const { hubLocked, isPlainAdmin, isSuperAdmin } = useHubLock();
@@ -223,6 +226,7 @@ const RiderFormPage: React.FC = () => {
         }));
         setExistingDocs({
           citizenshipDoc: d.citizenshipDoc ?? null,
+          citizenshipDocBack: d.citizenshipDocBack ?? null,
           panVatDoc: d.panVatDoc ?? null,
           licenceDoc: d.licenceDoc ?? null,
           bluebookDoc: d.bluebookDoc ?? null,
@@ -267,7 +271,8 @@ const RiderFormPage: React.FC = () => {
     else if (!isValidEmail(form.email)) errors.email = 'Enter a valid email address';
     // Documents and password only required when creating a new rider.
     if (!isEdit) {
-      if (!form.citizenshipDoc) errors.citizenshipDoc = 'Citizenship document is required';
+      if (!form.citizenshipDoc) errors.citizenshipDoc = 'Citizenship front side is required';
+      if (!form.citizenshipDocBack) errors.citizenshipDocBack = 'Citizenship back side is required';
       if (!form.licenceDoc) errors.licenceDoc = 'License document is required';
       if (!form.password.trim()) errors.password = 'Password is required';
       else if (form.password.length < 8) errors.password = 'Min. 8 characters';
@@ -312,6 +317,7 @@ const RiderFormPage: React.FC = () => {
           ...(isSuperAdmin ? { carrierCode: form.carrierCode } : {}),
           // Only slots with a newly picked file; the rest keep what's stored.
           ...(form.citizenshipDoc ? { citizenshipDoc: form.citizenshipDoc } : {}),
+          ...(form.citizenshipDocBack ? { citizenshipDocBack: form.citizenshipDocBack } : {}),
           ...(form.panVatDoc ? { panVatDoc: form.panVatDoc } : {}),
           ...(form.licenceDoc ? { licenceDoc: form.licenceDoc } : {}),
           ...(form.blueBookDoc ? { bluebookDoc: form.blueBookDoc } : {}),
@@ -338,6 +344,7 @@ const RiderFormPage: React.FC = () => {
         bankAccountNo: form.bankAccountNo,
         bankAccountHolder: form.bankAccountHolder,
         citizenshipDoc: form.citizenshipDoc,
+        citizenshipDocBack: form.citizenshipDocBack,
         panVatDoc: form.panVatDoc,
         licenceDoc: form.licenceDoc,
         bluebookDoc: form.blueBookDoc,
@@ -546,8 +553,10 @@ const RiderFormPage: React.FC = () => {
                 // Every slot stays visible on edit: the file on record (if any)
                 // plus an upload to attach a missing one or replace it.
                 <div className="rfp-docs">
-                  <FileInput label="Citizenship" file={form.citizenshipDoc} onChange={setFile('citizenshipDoc')} />
-                  {existingDocs.citizenshipDoc && <DocLink path={existingDocs.citizenshipDoc} label="View current citizenship" />}
+                  <FileInput label="Citizenship (Front)" file={form.citizenshipDoc} onChange={setFile('citizenshipDoc')} />
+                  {existingDocs.citizenshipDoc && <DocLink path={existingDocs.citizenshipDoc} label="View current citizenship (front)" />}
+                  <FileInput label="Citizenship (Back)" file={form.citizenshipDocBack} onChange={setFile('citizenshipDocBack')} />
+                  {existingDocs.citizenshipDocBack && <DocLink path={existingDocs.citizenshipDocBack} label="View current citizenship (back)" />}
                   <FileInput label="PAN / VAT" file={form.panVatDoc} onChange={setFile('panVatDoc')} />
                   {existingDocs.panVatDoc && <DocLink path={existingDocs.panVatDoc} label="View current PAN / VAT" />}
                   <FileInput label="License" file={form.licenceDoc} onChange={setFile('licenceDoc')} />
@@ -566,12 +575,19 @@ const RiderFormPage: React.FC = () => {
               ) : (
                 <div className="rfp-docs">
                   <FileInput
-                    label="Citizenship"
+                    label="Citizenship (Front)"
                     required
                     file={form.citizenshipDoc}
                     onChange={setFile('citizenshipDoc')}
                   />
                   {fieldErrors.citizenshipDoc && <span className="rfp-field-error">{fieldErrors.citizenshipDoc}</span>}
+                  <FileInput
+                    label="Citizenship (Back)"
+                    required
+                    file={form.citizenshipDocBack}
+                    onChange={setFile('citizenshipDocBack')}
+                  />
+                  {fieldErrors.citizenshipDocBack && <span className="rfp-field-error">{fieldErrors.citizenshipDocBack}</span>}
                   <FileInput
                     label="PAN / VAT"
                     file={form.panVatDoc}
