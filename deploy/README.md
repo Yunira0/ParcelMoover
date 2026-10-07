@@ -32,6 +32,14 @@ migration/admin connections. Overrides must account for both slots. Prisma
 explicitly disposes its externally supplied pg pool on disconnect, so startup
 CLI scripts exit immediately after their work rather than waiting 30 seconds.
 
+Production defaults `SKIP_STARTUP_DATA_REPAIRS=true` for both app slots. The
+existing `--once` branch-deposit repair, carrier collection backfill and ledger
+resync exit before querying or writing business records. Schema/index migrations
+and the read-only diagnostic still run. These repairs remain available for
+explicit maintenance: set the variable to `false` when that work is authorized,
+or invoke the individual repair command without `--once`. Deploying code does
+not implicitly authorize changing existing settlement or collection records.
+
 After the switch, the workflow runs `deploy/post-deploy-seo.sh` from the
 runner: it purges the public pages, `robots.txt` and `sitemap.xml` from
 Cloudflare (needs the `CF_API_TOKEN` and `CF_ZONE_ID` secrets; skipped

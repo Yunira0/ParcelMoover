@@ -14,10 +14,10 @@ import {
 } from '../../components/finance/tallyKeys';
 import {
   getAccountLedger,
-  listAccounts,
   type Account,
   type AccountLedger,
 } from '../../services/accounting.service';
+import { listAccounts } from '../../queries/lookups';
 import { hasAdminPermission } from '../../utils/auth';
 import { drCr, formatAmount } from '../../utils/format';
 import { downloadExcel } from '../../utils/excel';

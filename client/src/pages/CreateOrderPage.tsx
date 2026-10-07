@@ -6,7 +6,7 @@ import SearchableSelectAsync from '../components/SearchableSelectAsync';
 import PageHeader from '../components/PageHeader';
 import BillingStatusBanner from '../components/BillingStatusBanner';
 import Button from '../components/Button';
-import { getLocations, searchVendors } from '../services/users.service';
+import { getLocations, searchVendors } from '../queries/lookups';
 import { getVendorQuote } from '../services/pricing.service';
 import { listMyVouchers, lookupVoucher, voucherBenefit, voucherDiscountForFee,
   type MyVoucher, type VoucherLookup, type VoucherOffer } from '../services/voucher.service';

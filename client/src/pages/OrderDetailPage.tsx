@@ -1,10 +1,9 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Package, ShieldAlert } from 'lucide-react';
 import {
-  getOrderByTrackingId,
   addOrderRemark,
-  subscribeToOrderStatusChanged,
   updateOrderStatus,
   redirectOrder,
   forwardOrder,
@@ -25,6 +24,8 @@ import OrderRedirectLog from '../components/order-detail/OrderRedirectLog';
 import RedirectOrderModal from '../components/RedirectOrderModal';
 import ForwardOrderModal from '../components/ForwardOrderModal';
 import { printLabels } from '../utils/printLabels';
+import { queryKeys } from '../queries/keys';
+import { orderDetailQuery } from '../queries/orders';
 import './OrderDetailPage.css';
 
 // Statuses whose transition needs structured extra data (a rider pick, COD
@@ -77,9 +78,23 @@ const VENDOR_EDITABLE_STATUSES: ParcelStatus[] = [
 const OrderDetailPage: React.FC = () => {
   const { trackingId } = useParams<{ trackingId: string }>();
   const navigate = useNavigate();
-  const [order, setOrder] = useState<OrderDetail | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const orderKey = queryKeys.orders.detail(trackingId ?? '');
+  // A revisit paints the cached parcel at once and refetches behind it; any
+  // order change in this tab refetches it too (queryClient.ts). A failed
+  // background refetch keeps the parcel on screen rather than blanking it.
+  const orderQuery = useQuery({
+    ...orderDetailQuery(trackingId ?? ''),
+    enabled: Boolean(trackingId),
+  });
+  const order: OrderDetail | null = orderQuery.data?.success ? orderQuery.data.data : null;
+  const loading = orderQuery.isPending && Boolean(trackingId);
+  const error = orderQuery.isError
+    ? 'Failed to load order details. Please try again.'
+    : orderQuery.data && !orderQuery.data.success ? 'Order not found.' : null;
+  // Every mutation used below announces itself, which already started the
+  // refetch - wait for that one instead of starting a second.
+  const fetchOrder = () => orderQuery.refetch({ cancelRefetch: false });
   const [replyingTo, setReplyingTo] = useState<OrderRemark | null>(null);
   const [highlightedRemarkId, setHighlightedRemarkId] = useState<string | null>(null);
   const highlightTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -121,44 +136,14 @@ const OrderDetailPage: React.FC = () => {
     await fetchOrder();
   };
 
-  const fetchOrder = useCallback(async () => {
-    if (!trackingId) return;
-    try {
-      setLoading(true);
-      setError(null);
-      const response = await getOrderByTrackingId(trackingId);
-      if (response.success) {
-        setOrder(response.data);
-      } else {
-        setError('Order not found.');
-      }
-    } catch {
-      setError('Failed to load order details. Please try again.');
-    } finally {
-      setLoading(false);
-    }
-  }, [trackingId]);
-
-  useEffect(() => {
-    fetchOrder();
-  }, [fetchOrder]);
-
-  useEffect(() => {
-    const unsubscribe = subscribeToOrderStatusChanged(() => {
-      fetchOrder();
-    });
-    return unsubscribe;
-  }, [fetchOrder]);
-
   const handleAddRemark = async (remark: string, parentRemarkId?: string | null) => {
     if (!order) return;
     const response = await addOrderRemark(order.id, remark, parentRemarkId);
     if (response.success) {
       const newRemark = response.data;
-      setOrder((prev) => {
-        if (!prev) return prev;
-        return { ...prev, remarks: [...prev.remarks, newRemark] };
-      });
+      queryClient.setQueryData<{ success: boolean; data: OrderDetail }>(orderKey, (prev) =>
+        prev?.success ? { ...prev, data: { ...prev.data, remarks: [...prev.data.remarks, newRemark] } } : prev,
+      );
       setHighlightedRemarkId(newRemark.id);
       if (highlightTimeoutRef.current) clearTimeout(highlightTimeoutRef.current);
       highlightTimeoutRef.current = setTimeout(() => setHighlightedRemarkId(null), 2500);
@@ -245,7 +230,7 @@ const OrderDetailPage: React.FC = () => {
     );
   }
 
-  if (error || !order) {
+  if (!order) {
     return (
       <div className="od-page">
         <div className="od-container">

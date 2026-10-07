@@ -14,7 +14,8 @@ import {
   voucherActions,
   voucherTypeOf,
 } from '../../components/finance/tallyKeys';
-import { listAccounts, listJournal, type JournalEntry } from '../../services/accounting.service';
+import { listJournal, type JournalEntry } from '../../services/accounting.service';
+import { listAccounts } from '../../queries/lookups';
 import { hasAdminPermission } from '../../utils/auth';
 import { formatAmount } from '../../utils/format';
 import { downloadExcel } from '../../utils/excel';

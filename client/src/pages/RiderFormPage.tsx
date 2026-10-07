@@ -4,7 +4,8 @@ import { ArrowLeft, CheckCircle, Upload, X, User, Truck, Building2, FileText, Cr
 import Button from '../components/Button';
 import FormField from '../components/FormField';
 import DocLink from '../components/DocLink';
-import { registerUser, getLocations, getManagedUser, updateUserProfile, AGREEMENT_FILE_ACCEPT } from '../services/users.service';
+import { registerUser, getManagedUser, updateUserProfile, AGREEMENT_FILE_ACCEPT } from '../services/users.service';
+import { getLocations } from '../queries/lookups';
 import { getCurrentUser } from '../services/auth.service';
 import { extractServerFieldErrors, isValidEmail, isValidName, isValidPhone, normalizePhone } from '../utils/serverValidation';
 import { convertHeicFileIfNeeded } from '../utils/heicConvert';

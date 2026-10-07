@@ -1,6 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { getTopVendors } from '../services/users.service';
+import { queryKeys } from '../queries/keys';
 import './TopVendors.css';
 
 interface VendorRow {
@@ -11,28 +13,13 @@ interface VendorRow {
 }
 
 const TopVendors: React.FC = () => {
-  const [vendors, setVendors] = useState<VendorRow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-
-  useEffect(() => {
-    let active = true;
-    getTopVendors()
-      .then((res) => {
-        if (!active) return;
-        const data: VendorRow[] = res?.success && Array.isArray(res.data) ? res.data : [];
-        setVendors(data);
-      })
-      .catch(() => {
-        if (active) setError('Vendor performance is unavailable.');
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
+  const topQuery = useQuery({
+    queryKey: queryKeys.dashboard.topVendors,
+    queryFn: getTopVendors,
+  });
+  const vendors: VendorRow[] = topQuery.data?.success && Array.isArray(topQuery.data.data) ? topQuery.data.data : [];
+  const loading = topQuery.isPending;
+  const error = topQuery.isError ? 'Vendor performance is unavailable.' : '';
 
   const max = vendors.reduce((m, v) => Math.max(m, v.orders?.total ?? 0), 0) || 1;
 

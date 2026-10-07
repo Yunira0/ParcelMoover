@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import './Modal.css';
 import FormField from './FormField';
 import Button from './Button';
-import { registerUser, getLocations, type RegisterUserInput } from '../services/users.service';
+import { registerUser, type RegisterUserInput } from '../services/users.service';
+import { getLocations } from '../queries/lookups';
 import { findMasterHub } from '../utils/locations';
 
 interface AddRiderModalProps {

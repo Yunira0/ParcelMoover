@@ -1,5 +1,6 @@
 import React, { Suspense } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
+import { QueryClientProvider } from '@tanstack/react-query';
 import { Smartphone } from 'lucide-react';
 import Sidebar from '../components/Sidebar';
 import TopNav from '../components/TopNav';
@@ -10,6 +11,8 @@ import { BranchScopeProvider } from '../context/BranchScopeContext';
 import { MobileNavProvider } from '../context/MobileNavContext';
 import { isRiderOnly } from '../utils/auth';
 import { logout } from '../services/auth.service';
+import { queryClient } from '../queries/queryClient';
+import { prefetchOrderFromLink } from '../queries/orders';
 import './DashboardLayout.css';
 
 // Riders have a dedicated Rider app; the web panel has no rider experience, so
@@ -39,24 +42,29 @@ const RiderNotice: React.FC = () => {
 const DashboardLayout: React.FC = () => {
   if (isRiderOnly()) return <RiderNotice />;
 
+  // The cache lives here, not in App: public pages never need it, and the
+  // layout stays mounted across every signed-in route, so a page revisited
+  // from the sidebar or Back paints from it immediately.
   return (
-    <StaffPermissionsProvider>
-      <BranchScopeProvider>
-        <MobileNavProvider>
-          <div className="dashboard-layout">
-            <TopNav />
-            <div className="dashboard-body">
-              <Sidebar />
-              <main className="dashboard-content">
-                <Suspense fallback={<PageLoader />}>
-                  <Outlet />
-                </Suspense>
-              </main>
+    <QueryClientProvider client={queryClient}>
+      <StaffPermissionsProvider>
+        <BranchScopeProvider>
+          <MobileNavProvider>
+            <div className="dashboard-layout" onMouseOver={prefetchOrderFromLink} onFocus={prefetchOrderFromLink}>
+              <TopNav />
+              <div className="dashboard-body">
+                <Sidebar />
+                <main className="dashboard-content">
+                  <Suspense fallback={<PageLoader />}>
+                    <Outlet />
+                  </Suspense>
+                </main>
+              </div>
             </div>
-          </div>
-        </MobileNavProvider>
-      </BranchScopeProvider>
-    </StaffPermissionsProvider>
+          </MobileNavProvider>
+        </BranchScopeProvider>
+      </StaffPermissionsProvider>
+    </QueryClientProvider>
   );
 };
 
