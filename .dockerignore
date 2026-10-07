@@ -17,3 +17,6 @@ client/dist
 .impeccable
 docs
 
+
+# The Android project is only needed to build the APK in its own workflow
+rider/android
