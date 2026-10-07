@@ -161,6 +161,11 @@ const CodSettlementRequests: React.FC = () => {
     }
   };
 
+  const closeReject = useCallback(() => {
+    setRejecting(null);
+    setRejectReason('');
+  }, []);
+
   const closeSettle = useCallback(() => {
     setSettling(null);
     setStatementChoice('');
@@ -276,37 +281,21 @@ const CodSettlementRequests: React.FC = () => {
         />
       </ConfirmDialog>
 
-      {rejecting && (
-        <section className="cod-request-card">
-          <h2>Reject {rejecting.requestNo}</h2>
-          <p>
-            The vendor is blocked from raising another request until this closes, so tell them what to
-            fix. They will see this reason.
-          </p>
-          <FormField
-            label="Reason"
-            required
-            type="textarea"
-            value={rejectReason}
-            onChange={setRejectReason}
-          />
-          <div className="cod-request-actions">
-            {/* Rejecting is destructive from the vendor's side — the vendor is
-                told no and has to raise another. `danger`, not the brand
-                colour: primary would invite the click. */}
-            <Button
-              variant="danger"
-              disabled={!rejectReason.trim() || busyId === rejecting.id}
-              onClick={() => act(rejecting, 'rejected', rejectReason.trim())}
-            >
-              Confirm rejection
-            </Button>
-            <Button variant="outline" onClick={() => { setRejecting(null); setRejectReason(''); }}>
-              Cancel
-            </Button>
-          </div>
-        </section>
-      )}
+      {/* Rejecting is destructive from the vendor's side — they are told no and
+          have to raise another — so the confirm takes `danger`. */}
+      <ConfirmDialog
+        isOpen={Boolean(rejecting)}
+        title={rejecting ? `Reject ${rejecting.requestNo}` : ''}
+        message="The vendor will see this reason."
+        confirmLabel="Confirm rejection"
+        danger
+        busy={Boolean(rejecting) && busyId === rejecting?.id}
+        confirmDisabled={!rejectReason.trim()}
+        onConfirm={() => rejecting && void act(rejecting, 'rejected', rejectReason.trim())}
+        onCancel={closeReject}
+      >
+        <FormField label="Reason" required type="textarea" value={rejectReason} onChange={setRejectReason} />
+      </ConfirmDialog>
 
       {linked && (
         <section className="cod-request-card">
