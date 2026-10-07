@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import './Modal.css';
 import Button from './Button';
 import SearchableSelect from './SearchableSelect';
-import { getAllRiders } from '../services/users.service';
+import { getAllRiders } from '../queries/lookups';
 
 interface RiderRecord {
   id: string;

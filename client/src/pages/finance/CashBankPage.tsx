@@ -5,10 +5,10 @@ import PeriodPicker from '../accounting/PeriodPicker';
 import { defaultRange, rangeParams, type RangeSelection } from '../accounting/range';
 import {
   getAccountLedger,
-  listAccounts,
   type Account,
   type AccountLedger,
 } from '../../services/accounting.service';
+import { listAccounts } from '../../queries/lookups';
 import { drCr, formatMoney } from '../../utils/format';
 import '../../components/finance/tally.css';
 

@@ -7,9 +7,9 @@ import { money } from './format';
 import {
   createManualEntry,
   isPostableByHand,
-  listAccounts,
   type Account,
 } from '../../services/accounting.service';
+import { listAccounts } from '../../queries/lookups';
 import { apiErrorMessage } from '../../utils/serverValidation';
 import { todayNepalAd } from '../../utils/nepaliDate';
 import '../../components/Modal.css';

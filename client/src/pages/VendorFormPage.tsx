@@ -5,14 +5,13 @@ import Button from '../components/Button';
 import FormField from '../components/FormField';
 import {
   registerUser,
-  getLocations,
-  getAllAdmins,
   getManagedUser,
   updateUserProfile,
   getUserDocuments,
   AGREEMENT_FILE_ACCEPT,
   type ManagedUserDocument,
 } from '../services/users.service';
+import { getAllAdmins, getLocations } from '../queries/lookups';
 import { getCurrentUser } from '../services/auth.service';
 import { getCurrentUser as getCachedUser, getCurrentUserRoles, isAdminSide } from '../utils/auth';
 import { toDocumentUrl } from '../utils/documentUrl';

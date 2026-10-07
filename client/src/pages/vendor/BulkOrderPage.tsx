@@ -15,7 +15,7 @@ import {
   type SenderProfile,
   type ServiceType,
 } from '../../services/orders.service';
-import { getLocations, searchVendors } from '../../services/users.service';
+import { getLocations, searchVendors } from '../../queries/lookups';
 import { isVendorSide } from '../../utils/auth';
 import { downloadExcelTemplate } from '../../utils/excel';
 import './BulkOrderPage.css';

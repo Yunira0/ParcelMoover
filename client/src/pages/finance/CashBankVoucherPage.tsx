@@ -8,9 +8,9 @@ import PartyPicker, { type PartyKind, type PickedParty } from '../accounting/Par
 import {
   createManualEntry,
   isPostableByHand,
-  listAccounts,
   type Account,
 } from '../../services/accounting.service';
+import { listAccounts } from '../../queries/lookups';
 import { formatMoney } from '../../utils/format';
 import { todayNepalAd } from '../../utils/nepaliDate';
 import { useBackOr } from '../../hooks/useBackOr';

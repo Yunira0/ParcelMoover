@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { MoreVertical } from 'lucide-react';
 import SegmentedTabs from '../SegmentedTabs';
@@ -8,6 +9,7 @@ import StatusChip, { type StatusChipTone } from '../StatusChip';
 import type { Order, OrdersPageMeta, ParcelStatus } from '../../services/orders.service';
 import { getOrders } from '../../services/orders.service';
 import { useCursorPagination } from '../../hooks/useCursorPagination';
+import { queryKeys } from '../../queries/keys';
 import { toBsDateLabel } from '../../utils/nepaliDate';
 import './VendorOrderDetails.css';
 import ReceiverPhones from '../ReceiverPhones';
@@ -41,47 +43,32 @@ const getStatusTone = (status: ParcelStatus): StatusChipTone => {
 
 const VendorOrderDetails: React.FC = () => {
   const [tab, setTab] = useState<DetailsTab>('all');
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [meta, setMeta] = useState<OrdersPageMeta | null>(null);
   // The orders endpoint is keyset-paginated (no row offsets), so navigation
   // goes through the cursors it hands back rather than a page number.
   const pager = useCursorPagination();
   const [pageSizeChoice, setPageSizeChoice] = useState(PAGE_SIZE);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
 
   const changeTab = (next: DetailsTab) => {
     setTab(next);
     pager.reset();
   };
 
-  useEffect(() => {
-    let active = true;
-    setLoading(true);
-    setError('');
-
-    getOrders({
-      ...(tab === 'delivered' ? { status: ['delivered' as ParcelStatus] } : {}),
-      ...(tab === 'return' ? { orderType: 'return' as const } : {}),
-      ...pager.request,
-      pageSize: pageSizeChoice,
-    })
-      .then((res) => {
-        if (!active) return;
-        setOrders(res.data);
-        setMeta(res.meta ?? null);
-      })
-      .catch(() => {
-        if (active) setError('Failed to load orders.');
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [tab, pager.request, pageSizeChoice]);
+  const params = {
+    ...(tab === 'delivered' ? { status: ['delivered' as ParcelStatus] } : {}),
+    ...(tab === 'return' ? { orderType: 'return' as const } : {}),
+    ...pager.request,
+    pageSize: pageSizeChoice,
+  };
+  // The previous page stays on screen while the next tab/page loads.
+  const ordersQuery = useQuery({
+    queryKey: queryKeys.orders.list(params),
+    queryFn: ({ signal }) => getOrders(params, signal),
+    placeholderData: keepPreviousData,
+  });
+  const orders: Order[] = ordersQuery.data?.data ?? [];
+  const meta: OrdersPageMeta | null = ordersQuery.data?.meta ?? null;
+  const loading = ordersQuery.isPending;
+  const error = ordersQuery.isError ? 'Failed to load orders.' : '';
 
   const columns = [
     {
