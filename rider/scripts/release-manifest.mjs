@@ -116,7 +116,7 @@ function build(args) {
     '',
     ...(section.required ? ['**Required update** — older versions must update to keep working.', ''] : []),
     '### Install',
-    `Riders with PM Rider 1.4.0 or newer get this automatically from the in-app popup.`,
+    `Riders who already have the self-updating app get this automatically from the in-app popup.`,
     `First install: download \`${assetName}\` below on the phone and open it.`,
     '',
     `SHA-256: \`${manifest.sha256}\``,
