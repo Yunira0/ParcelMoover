@@ -104,41 +104,51 @@
   white-space: nowrap;
 }
 
-.sales-vendors-table .sales-vendors-money {
+.sales-vendors-table .sales-vendors-numeric {
   text-align: right;
+}
+
+/* ORDERS: the header and the label-value block both sit mid-column. */
+.sales-vendors-table .sales-vendors-centered {
+  text-align: center;
+}
+
+.sales-vendors-centered .sales-vendor-orders {
+  justify-content: center;
+  text-align: left;
 }
 
 .sales-vendor-nil {
   color: var(--color-text-caption);
 }
 
-/* Total / Delivered / Returned as label-value pairs with the numbers aligned. */
+/* Total / Delivered / Returned as label-value pairs. The labels are the same
+   text in every row, so sizing to them is stable; the number track is fixed
+   and every line shares one size, so the digits right-align in the same
+   place on every row instead of zigzagging with each cell's own content. */
 .sales-vendor-orders {
   display: grid;
-  grid-template-columns: auto auto;
-  justify-content: start;
+  grid-template-columns: max-content 5ch;
   column-gap: var(--space-3);
   row-gap: 2px;
   margin: 0;
+  font-size: var(--font-size-xs);
   font-variant-numeric: tabular-nums;
   line-height: 1.4;
 }
 
 .sales-vendor-orders dt {
-  font-size: var(--font-size-xs);
   color: var(--color-text-caption);
 }
 
 .sales-vendor-orders dd {
   margin: 0;
-  font-size: var(--font-size-xs);
   text-align: right;
   color: var(--color-text-default);
 }
 
 .sales-vendor-orders dt:first-of-type,
 .sales-vendor-orders dd:first-of-type {
-  font-size: var(--font-size-sm);
   font-weight: var(--font-weight-semi-bold);
   color: var(--color-text-default);
 }
