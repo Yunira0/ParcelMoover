@@ -408,6 +408,47 @@ function fingerprint(lines: Array<{ code: string; debit: string; credit: string;
  * voided entry paired with its reversal.
  */
 export async function syncPosting(db: Db, input: SyncPostingInput): Promise<SyncResult> {
+  const { history, active, wantsPosting, current } = await assessPosting(db, input);
+  if (current) return "unchanged";
+
+  if (!wantsPosting) {
+    await reverseActive(db, active!, input);
+    return "reversed";
+  }
+
+  if (active) await reverseActive(db, active, input);
+
+  // Version the key so the restatement is a new, separately-idempotent posting
+  // rather than one blocked by the original's unique row.
+  const version = history.length + 1;
+  const eventKey = version === 1 ? input.baseEventKey : `${input.baseEventKey}#${version}`;
+
+  const { entryDate, memo } = await resolvePostingDate(db, input.desired!.entryDate, input.desired!.memo ?? null, input.redateIfClosed);
+
+  const outcome = await postJournal(db, {
+    entryDate,
+    memo,
+    sourceType: input.sourceType,
+    sourceId: input.sourceId,
+    eventKey,
+    postedBy: input.postedBy,
+    lines: input.desired!.lines,
+    // The redate above moves the entry to an open period when one exists. This
+    // covers the remaining case - every candidate period closed - where the
+    // choice is between a slightly untidy entry and a failed parcel scan.
+    allowClosedPeriod: input.redateIfClosed,
+  });
+
+  if (!wasPosted(outcome)) return "skipped";
+  return active ? "reposted" : "posted";
+}
+
+/** Whether the ledger already says what `input.desired` says, so a sync would write nothing. */
+export async function isPostingCurrent(db: Db, input: SyncPostingInput): Promise<boolean> {
+  return (await assessPosting(db, input)).current;
+}
+
+async function assessPosting(db: Db, input: SyncPostingInput) {
   const history = await db.journal_entries.findMany({
     where: {
       source_type: input.sourceType,
@@ -434,13 +475,12 @@ export async function syncPosting(db: Db, input: SyncPostingInput): Promise<Sync
 
   const wantsPosting = Boolean(input.desired) && desiredLines.length > 0;
 
+  let current: boolean;
   if (!wantsPosting) {
-    if (!active) return "unchanged";
-    await reverseActive(db, active, input);
-    return "reversed";
-  }
-
-  if (active) {
+    current = !active;
+  } else if (!active) {
+    current = false;
+  } else {
     const currentLines = active.lines.map((line) => ({
       code: line.account.code,
       debit: line.debit.toFixed(SCALE),
@@ -461,34 +501,10 @@ export async function syncPosting(db: Db, input: SyncPostingInput): Promise<Sync
     // What actually has to be right is which month the amount lands in. If it
     // still lands in the same period, leave it alone.
     const samePeriod = active.period_key === bsPeriodKey(input.desired!.entryDate);
-    if (sameMoney && samePeriod) return "unchanged";
-
-    await reverseActive(db, active, input);
+    current = sameMoney && samePeriod;
   }
 
-  // Version the key so the restatement is a new, separately-idempotent posting
-  // rather than one blocked by the original's unique row.
-  const version = history.length + 1;
-  const eventKey = version === 1 ? input.baseEventKey : `${input.baseEventKey}#${version}`;
-
-  const { entryDate, memo } = await resolvePostingDate(db, input.desired!.entryDate, input.desired!.memo ?? null, input.redateIfClosed);
-
-  const outcome = await postJournal(db, {
-    entryDate,
-    memo,
-    sourceType: input.sourceType,
-    sourceId: input.sourceId,
-    eventKey,
-    postedBy: input.postedBy,
-    lines: input.desired!.lines,
-    // The redate above moves the entry to an open period when one exists. This
-    // covers the remaining case - every candidate period closed - where the
-    // choice is between a slightly untidy entry and a failed parcel scan.
-    allowClosedPeriod: input.redateIfClosed,
-  });
-
-  if (!wasPosted(outcome)) return "skipped";
-  return active ? "reposted" : "posted";
+  return { history, active, wantsPosting, current };
 }
 
 /**

@@ -201,7 +201,22 @@ export const EVENT_KEY = {
   expense: "expense_recorded",
   branchSettlement: "branch_settlement",
   carrierSettlement: "carrier_settlement",
+  // A statement and each instalment against it post separately - see
+  // "Statements and their instalments" below. The four keys above are the
+  // older one-entry-per-statement postings, still live on statements posted
+  // before the split.
+  riderStatement: "rider_statement",
+  vendorStatement: "vendor_statement",
+  branchStatement: "branch_statement",
+  carrierStatement: "carrier_statement",
 } as const;
+
+/** The event key of one instalment's posting, anchored on its statement. */
+export const instalmentEventKey = (statementKey: string, instalmentId: string) =>
+  `${statementKey}_payment:${instalmentId}`;
+
+/** Every instalment key of a statement starts with this. */
+export const instalmentKeyPrefix = (statementKey: string) => `${statementKey}_payment:`;
 
 async function write(
   db: Db,
@@ -731,6 +746,213 @@ export async function postBranchSettlement(
   options: PostOptions = {},
 ): Promise<PostOutcome> {
   return write(db, describeBranchSettlement(settlement), SOURCE.branchSettlement(settlement.id), EVENT_KEY.branchSettlement, options);
+}
+
+// ── Statements and their instalments ────────────────────────────────────────
+//
+// A statement posts once, as a debt: what it says is owed and by whom, with no
+// cash in it. Each instalment then posts on its own, for its own amount, on the
+// day it was paid - moving that much off the debt and into cash or bank.
+//
+// The one-entry postings above carry both in a single entry, restated on every
+// instalment, which left a reversal in the journal per payment. Here paying
+// adds one entry and touches nothing already posted; a reversal only appears
+// when something posted was actually wrong - an edited statement, a reverted
+// payment, a cancellation.
+//
+// The split never moves a balance: a statement plus its instalments posts what
+// the one-entry form posted at the same paid amount, line for line.
+
+export interface InstalmentForPosting {
+  id: string;
+  amount: Prisma.Decimal | number | string;
+  /** Summary of the instalment's methods; the fallback when `breakdown` doesn't add up. */
+  method: string | null;
+  /** The {method, amount} lines of this instalment. */
+  breakdown: Prisma.JsonValue | null;
+  paid_at: Date;
+}
+
+/** One instalment's share of its statement, ready to describe. */
+export interface AllocatedInstalment {
+  id: string;
+  amount: Prisma.Decimal;
+  method: string | null;
+  breakdown: Prisma.JsonValue | null;
+  paidAt: Date;
+}
+
+/** Id of the share of a statement's paid amount that no instalment row accounts for. */
+export const UNRECORDED_INSTALMENT = "unrecorded";
+
+/**
+ * Shares out what a statement has been paid across its instalments, oldest first.
+ *
+ * The total is the header's paid amount clamped to what the statement can
+ * absorb - the figure the one-entry postings used - so the split cannot move a
+ * balance. An instalment past that cap posts only what fits. Paid money with no
+ * instalment row behind it is kept as one `unrecorded` share at the header's
+ * own methods rather than dropped.
+ */
+export function allocateInstalments(
+  statement: { paid_amount?: Prisma.Decimal | number | string | null; payment_method: string | null; payments: Prisma.JsonValue | null },
+  instalments: InstalmentForPosting[],
+  cap: Prisma.Decimal,
+  unrecordedDate: Date,
+): AllocatedInstalment[] {
+  let remaining = clampShare(decimal(statement.paid_amount), cap.isNegative() ? new Prisma.Decimal(0) : cap);
+  const ordered = [...instalments].sort((a, b) => a.paid_at.getTime() - b.paid_at.getTime() || a.id.localeCompare(b.id));
+
+  const shares: AllocatedInstalment[] = [];
+  for (const instalment of ordered) {
+    const amount = clampShare(decimal(instalment.amount), remaining);
+    if (amount.isZero()) continue;
+    remaining = remaining.minus(amount);
+    shares.push({ id: instalment.id, amount, method: instalment.method, breakdown: instalment.breakdown, paidAt: instalment.paid_at });
+  }
+  if (!remaining.isZero()) {
+    shares.push({
+      id: UNRECORDED_INSTALMENT,
+      amount: remaining,
+      method: statement.payment_method,
+      breakdown: statement.payments,
+      paidAt: unrecordedDate,
+    });
+  }
+  return shares;
+}
+
+const instalmentSplits = (share: AllocatedInstalment) =>
+  paymentSplits({ payments: share.breakdown, payment_method: share.method }, share.amount);
+
+/** A rider statement as a debt: Dr 1010 Cash with Rider / Cr 2005 per vendor. */
+export function describeRiderStatement(settlement: SettlementForPosting): Described {
+  const described = describeRiderRemittance({ ...settlement, paid_amount: 0 });
+  if (isSkip(described)) return described;
+  return {
+    ...described,
+    memo: settlement.riders?.name
+      ? `COD due from rider ${settlement.riders.name}, ${settlement.statement_id}`
+      : `COD due from rider, ${settlement.statement_id}`,
+  };
+}
+
+/** Cash in from the rider: Dr cash / Cr 1010 Cash with Rider. */
+export function describeRiderInstalment(settlement: SettlementForPosting, share: AllocatedInstalment): Described {
+  if (settlement.payee_type !== "rider" || !settlement.rider_id) {
+    throw new AppError(500, `Settlement ${settlement.statement_id} is not a rider statement`);
+  }
+  const rider = { type: "rider" as const, id: settlement.rider_id };
+  return {
+    entryDate: share.paidAt,
+    memo: settlement.riders?.name
+      ? `COD received from rider ${settlement.riders.name}, ${settlement.statement_id}`
+      : `COD received from rider, ${settlement.statement_id}`,
+    lines: [
+      ...cashLines(instalmentSplits(share), "debit", "COD received", settlement.methodAccounts).map((line) => ({
+        ...line,
+        party: rider,
+      })),
+      { accountCode: ACCOUNT.CASH_WITH_RIDER, credit: share.amount, party: rider, memo: "Paid by rider" },
+    ],
+  };
+}
+
+/** A vendor statement as a debt: COD released, the cut earned, the payable left on 2000 Vendor. */
+export function describeVendorStatement(settlement: SettlementForPosting): Described {
+  const described = describeVendorSettlement({ ...settlement, paid_amount: 0 });
+  if (isSkip(described)) return described;
+  const payable = decimal(settlement.payable_amount ?? settlement.amount);
+  const what = payable.isNegative() ? "COD shortfall due from vendor" : "COD payable to vendor";
+  const vendor = vendorLabel(settlement.vendors);
+  return {
+    ...described,
+    memo: vendor ? `${what} ${vendor}, ${settlement.statement_id}` : `${what}, ${settlement.statement_id}`,
+  };
+}
+
+/**
+ * One instalment between the office and a vendor, in whichever direction the
+ * payable points: paying out clears 2000 against cash, a shortfall coming in
+ * clears it the other way.
+ */
+export function describeVendorInstalment(settlement: SettlementForPosting, share: AllocatedInstalment): Described {
+  if (settlement.payee_type !== "vendor" || !settlement.vendor_id) {
+    throw new AppError(500, `Settlement ${settlement.statement_id} is not a vendor statement`);
+  }
+  const payable = decimal(settlement.payable_amount ?? settlement.amount);
+  if (payable.isZero()) return { skip: "nothing payable" };
+
+  const vendor = { type: "vendor" as const, id: settlement.vendor_id };
+  const officePays = payable.isPositive();
+  const cash = cashLines(
+    instalmentSplits(share),
+    officePays ? "credit" : "debit",
+    officePays ? "COD paid" : "COD received",
+    settlement.methodAccounts,
+  );
+  const control: JournalLineInput = {
+    accountCode: ACCOUNT.VENDOR_CONTROL,
+    ...(officePays ? { debit: share.amount } : { credit: share.amount }),
+    party: vendor,
+    memo: officePays ? "Paid to vendor" : "Received from vendor",
+  };
+
+  const what = officePays ? "COD paid to vendor" : "COD recovered from vendor";
+  const name = vendorLabel(settlement.vendors);
+  return {
+    entryDate: share.paidAt,
+    memo: name ? `${what} ${name}, ${settlement.statement_id}` : `${what}, ${settlement.statement_id}`,
+    lines: officePays ? [control, ...cash] : [...cash, control],
+  };
+}
+
+/** A branch statement as a debt: commission kept, the net left on 1015 COD with Branch. */
+export function describeBranchStatement(settlement: BranchSettlementForPosting): Described {
+  const described = describeBranchSettlement({ ...settlement, paid_amount: 0 });
+  if (isSkip(described)) return described;
+  return {
+    ...described,
+    memo: settlement.from_branch?.name
+      ? `COD due from branch ${settlement.from_branch.name}, ${settlement.statement_no}`
+      : `COD due from branch, ${settlement.statement_no}`,
+  };
+}
+
+/** Cash in from a branch: Dr cash (at head office) / Cr 1015 COD with Branch. */
+export function describeBranchInstalment(settlement: BranchSettlementForPosting, share: AllocatedInstalment): Described {
+  const branch = { type: "location" as const, id: settlement.from_branch_id };
+  return {
+    entryDate: share.paidAt,
+    memo: settlement.from_branch?.name
+      ? `COD received from branch ${settlement.from_branch.name}, ${settlement.statement_no}`
+      : `COD received from branch, ${settlement.statement_no}`,
+    lines: [
+      ...cashLines(instalmentSplits(share), "debit", "COD received from branch", settlement.methodAccounts).map(
+        (line) => ({ ...line, party: branch, locationId: settlement.to_branch_id }),
+      ),
+      { accountCode: ACCOUNT.COD_WITH_BRANCH, credit: share.amount, party: branch, memo: "Paid by branch" },
+    ],
+  };
+}
+
+/** A 3PL statement as a debt: the carrier's charge, the net left on 1020 COD with 3PL. */
+export function describeCarrierStatement(settlement: CarrierSettlementForPosting): Described {
+  const described = describeCarrierSettlement({ ...settlement, paid_amount: 0 });
+  if (isSkip(described)) return described;
+  return { ...described, memo: `COD due from ${settlement.carrier_code.toUpperCase()}, ${settlement.statement_no}` };
+}
+
+/** Cash in from a 3PL: Dr cash / Cr 1020 COD with 3PL. */
+export function describeCarrierInstalment(settlement: CarrierSettlementForPosting, share: AllocatedInstalment): Described {
+  return {
+    entryDate: share.paidAt,
+    memo: `COD received from ${settlement.carrier_code.toUpperCase()}, ${settlement.statement_no}`,
+    lines: [
+      ...cashLines(instalmentSplits(share), "debit", "COD received from 3PL", settlement.methodAccounts),
+      { accountCode: ACCOUNT.COD_WITH_CARRIER, credit: share.amount, memo: "Paid by 3PL" },
+    ],
+  };
 }
 
 // ── 6. Expense recorded ─────────────────────────────────────────────────────
