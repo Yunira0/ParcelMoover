@@ -4,7 +4,9 @@
 # traffic, against production data, and changes nothing:
 #
 # 1. Ledger reconcile - the books agree with the settlement statements.
-# 2. Admin role report - no account's access disagrees with its department.
+# 2. Statements missing entries - and which payment method names block them
+#    (fix with: node dist/scripts/repair-statement-entries.js --map ... --apply).
+# 3. Admin role report - no account's access disagrees with its department.
 #
 # Advisory: a failed check prints a GitHub warning and makes the script exit
 # non-zero, but never touches the release. Safe to re-run by hand:
@@ -34,6 +36,7 @@ check() {
 }
 
 check "Ledger reconcile" node dist/scripts/reconcile-ledger.js
+check "Statements missing entries" node dist/scripts/repair-statement-entries.js --check
 check "Admin role report" node dist/scripts/admin-role-report.js --fail-on-mismatch
 
 exit "$failed"

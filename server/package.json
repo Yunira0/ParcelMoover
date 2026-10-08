@@ -27,6 +27,8 @@
     "ledger:dry-run:prod": "node dist/scripts/dryrun-ledger-sync.js",
     "admins:role-report": "ts-node --transpile-only src/scripts/admin-role-report.ts",
     "admins:role-report:prod": "node dist/scripts/admin-role-report.js",
+    "ledger:repair": "ts-node --transpile-only src/scripts/repair-statement-entries.ts",
+    "ledger:repair:prod": "node dist/scripts/repair-statement-entries.js",
     "backfill:ledger:prod": "node dist/scripts/backfill-ledger.js",
     "reconcile:ledger:prod": "node dist/scripts/reconcile-ledger.js",
     "check:vendorless": "ts-node --transpile-only scripts/check-vendorless-postings.ts",
