@@ -85,6 +85,8 @@ export interface RegisterUserInput {
 
 export interface UpdateUserProfileInput {
   type: 'admin' | 'vendor' | 'rider';
+  /** Admin only: what the account can access (admin, accountant or sales). */
+  role?: 'admin' | 'accountant' | 'sales';
   fullName?: string;
   phone?: string;
   email?: string;
