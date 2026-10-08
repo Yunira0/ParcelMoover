@@ -1,5 +1,5 @@
-import React, { useCallback, useRef } from 'react';
-import StatementEditModal, { type EditableOrder } from '../../components/StatementEditModal';
+import React, { useCallback } from 'react';
+import StatementEditModal from '../../components/StatementEditModal';
 import { getBranchOrders, updateBranchSettlement, type BranchSettlementDetail } from '../../services/branchTracking.service';
 
 /** Same page size the create screen loads eligible orders with. */
@@ -14,22 +14,7 @@ const BranchEditSettlementModal: React.FC<{
   onClose: () => void;
   onSuccess: () => void;
 }> = ({ detail, onClose, onSuccess }) => {
-  const netOf = (collected: number) => Math.max(0, collected - Math.min(detail.commissionPerParcel, collected));
-  // Net per order, for every order either table has shown.
-  const amounts = useRef(new Map<string, number>());
-  const remember = (orders: EditableOrder[]) => {
-    orders.forEach((order) => amounts.current.set(order.id, order.amount));
-    return orders;
-  };
-
-  const currentOrders = remember(
-    detail.items.map((item) => ({
-      id: item.parcelId,
-      trackingId: item.trackingId,
-      receiverName: item.receiverName,
-      amount: item.netPayable,
-    })),
-  );
+  const { commissionPerParcel } = detail;
 
   const loadAddable = useCallback(async () => {
     // The create screen's lookup: delivered by the paying branch, on no statement.
@@ -41,28 +26,32 @@ const BranchEditSettlementModal: React.FC<{
     });
     const list = Array.isArray(res.data) ? res.data : [];
     return {
-      orders: remember(
-        list.map((order) => ({
+      orders: list.map((order) => {
+        const collected = order.collectedAmount || 0;
+        return {
           id: order.id,
           trackingId: order.trackingId,
           receiverName: order.receiverName,
-          amount: netOf(order.collectedAmount || 0),
-        })),
-      ),
+          amount: Math.max(0, collected - Math.min(commissionPerParcel, collected)),
+        };
+      }),
       capped: list.length >= ORDER_PAGE_SIZE,
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [detail.fromBranch.id]);
+  }, [detail.fromBranch.id, commissionPerParcel]);
 
   return (
     <StatementEditModal
-      currentOrders={currentOrders}
+      currentOrders={detail.items.map((item) => ({
+        id: item.parcelId,
+        trackingId: item.trackingId,
+        receiverName: item.receiverName,
+        amount: item.netPayable,
+      }))}
       loadAddable={loadAddable}
       amountLabel="Net payable"
       payeeNoun="branch"
-      totalOf={(ids) => ids.reduce((sum, id) => sum + (amounts.current.get(id) ?? 0), 0)}
-      onSave={async (ids) => {
-        await updateBranchSettlement(detail.id, ids);
+      onSave={async (selected) => {
+        await updateBranchSettlement(detail.id, selected.map((order) => order.id));
       }}
       onClose={onClose}
       onSuccess={onSuccess}

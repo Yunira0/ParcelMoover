@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import Button from './Button';
 import { apiErrorMessage } from '../utils/serverValidation';
 import './Modal.css';
@@ -20,15 +20,14 @@ interface StatementEditModalProps {
   amountLabel: string;
   /** Who the statement is for, as the empty state names them: "vendor", "branch", "carrier". */
   payeeNoun: string;
-  /** What the statement totals with these orders, in the order they will be saved. */
-  totalOf: (ids: string[]) => number;
-  onSave: (ids: string[]) => Promise<void>;
+  /** What the statement totals with these orders. Defaults to the sum of their amounts. */
+  totalOf?: (selected: EditableOrder[]) => number;
+  /** Saves the orders the statement will hold, in display order. */
+  onSave: (selected: EditableOrder[]) => Promise<void>;
   onClose: () => void;
   onSuccess: () => void;
-  /** Reports the orders the statement will hold, for callers that derive state from them. */
-  onSelectionChange?: (ids: string[]) => void;
   /** A column after the amount, e.g. an editable charge. */
-  extraColumn?: { header: string; render: (order: EditableOrder, included: boolean) => React.ReactNode };
+  extraColumn?: { header: string; render: (order: EditableOrder, selected: EditableOrder[]) => React.ReactNode };
   /** Shown above the order tables, e.g. charge inputs that apply to every order. */
   children?: React.ReactNode;
 }
@@ -45,11 +44,10 @@ const StatementEditModal: React.FC<StatementEditModalProps> = ({
   loadAddable,
   amountLabel,
   payeeNoun,
-  totalOf,
+  totalOf = (selected) => selected.reduce((sum, order) => sum + order.amount, 0),
   onSave,
   onClose,
   onSuccess,
-  onSelectionChange,
   extraColumn,
   children,
 }) => {
@@ -78,17 +76,10 @@ const StatementEditModal: React.FC<StatementEditModalProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const selectedIds = useMemo(
-    () => [
-      ...currentOrders.filter((order) => keptIds.has(order.id)).map((order) => order.id),
-      ...addable.filter((order) => addedIds.has(order.id)).map((order) => order.id),
-    ],
-    [currentOrders, addable, keptIds, addedIds],
-  );
-
-  useEffect(() => {
-    onSelectionChange?.(selectedIds);
-  }, [selectedIds, onSelectionChange]);
+  const selected = [
+    ...currentOrders.filter((order) => keptIds.has(order.id)),
+    ...addable.filter((order) => addedIds.has(order.id)),
+  ];
 
   const toggle = (setter: React.Dispatch<React.SetStateAction<Set<string>>>, id: string) =>
     setter((prev) => {
@@ -101,13 +92,13 @@ const StatementEditModal: React.FC<StatementEditModalProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    if (selectedIds.length === 0) {
+    if (selected.length === 0) {
       setError('A statement must include at least one order.');
       return;
     }
     setSubmitting(true);
     try {
-      await onSave(selectedIds);
+      await onSave(selected);
       onSuccess();
       onClose();
     } catch (err) {
@@ -147,7 +138,7 @@ const StatementEditModal: React.FC<StatementEditModalProps> = ({
               <td style={{ textAlign: 'right' }}>{money(order.amount)}</td>
               {extraColumn && (
                 <td style={{ textAlign: 'right' }} onClick={(e) => e.stopPropagation()}>
-                  {extraColumn.render(order, isChecked(order.id))}
+                  {extraColumn.render(order, selected)}
                 </td>
               )}
             </tr>
@@ -210,9 +201,9 @@ const StatementEditModal: React.FC<StatementEditModalProps> = ({
 
           <div className="scp-summary">
             <span>
-              {selectedIds.length} order{selectedIds.length === 1 ? '' : 's'} in statement
+              {selected.length} order{selected.length === 1 ? '' : 's'} in statement
             </span>
-            <span className="scp-summary-total">Total: {money(totalOf(selectedIds))}</span>
+            <span className="scp-summary-total">Total: {money(totalOf(selected))}</span>
           </div>
 
           {error && <p className="error-text esm-error">{error}</p>}

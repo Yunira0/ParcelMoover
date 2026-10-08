@@ -145,6 +145,13 @@ interface StatementPostings {
 const baseKeyOf = (eventKey: string) => eventKey.split("#")[0]!;
 
 /**
+ * One entry per instalment (the default), or `LEDGER_PER_PAYMENT_POSTINGS=off`
+ * for the older one entry per statement. Read on every sync, so flipping it and
+ * running resync-postings moves existing statements across in either direction.
+ */
+export const perPaymentPostings = () => process.env.LEDGER_PER_PAYMENT_POSTINGS?.trim().toLowerCase() !== "off";
+
+/**
  * Brings a statement's postings into line: one entry for the statement, one per
  * instalment against it (see "Statements and their instalments" in events.ts).
  *
@@ -168,6 +175,19 @@ async function runStatement(db: Db, plan: StatementPostings, options: SyncOption
       postedBy: options.actorId,
       redateIfClosed: true,
     });
+  const prefix = instalmentKeyPrefix(plan.statementKey);
+
+  // The way back. Switched off, a statement returns to the one-entry posting,
+  // unwinding any per-payment entries first - so backing this change out is a
+  // setting and a resync, not a code revert that would post both forms at once.
+  if (!perPaymentPostings()) {
+    const legacy = plan.legacy();
+    if (legacy === undefined) return "unresolved";
+    const split = [...liveKeys].filter((key) => key === plan.statementKey || key.startsWith(prefix));
+    for (const key of split) await sync(key, null);
+    const result = await sync(plan.legacyKey, legacy);
+    return split.length > 0 && result === "unchanged" ? "reposted" : result;
+  }
 
   let converted = false;
   if (liveKeys.has(plan.legacyKey)) {
@@ -203,7 +223,6 @@ async function runStatement(db: Db, plan: StatementPostings, options: SyncOption
   }
 
   // Instalments that no longer exist - a reverted payment - come back out.
-  const prefix = instalmentKeyPrefix(plan.statementKey);
   for (const key of liveKeys) {
     if (key.startsWith(prefix) && !wanted.has(key)) results.push(await sync(key, null));
   }

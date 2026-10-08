@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("../../lib/prisma", () => ({ default: {}, pool: {} }));
 vi.mock("../../lib/redis", () => ({ default: { get: vi.fn(), setex: vi.fn(), del: vi.fn() }, scanAndDelete: vi.fn() }));
@@ -322,6 +322,52 @@ describe("statement instalments - paying adds entries, never reverses", () => {
     expect(ledgerBalances(db)).toEqual(
       describedBalances(describeRiderRemittance({ ...settled, methodAccounts: METHOD_ACCOUNTS })),
     );
+  });
+});
+
+describe("statement instalments - LEDGER_PER_PAYMENT_POSTINGS=off", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("posts one entry per statement while switched off", async () => {
+    vi.stubEnv("LEDGER_PER_PAYMENT_POSTINGS", "off");
+    const db = fakeLedger(vendorStatement());
+    pay(db, instalment("pay-1", 6000, "Bank Transfer", 9));
+    await sync(db);
+
+    expect(live(db).map((entry) => entry.event_key)).toEqual(["vendor_settlement"]);
+  });
+
+  it("unwinds per-payment entries back to one entry, on the same balances", async () => {
+    const db = fakeLedger(vendorStatement());
+    await sync(db);
+    pay(db, instalment("pay-1", 6000, "Bank Transfer", 9));
+    await sync(db);
+
+    vi.stubEnv("LEDGER_PER_PAYMENT_POSTINGS", "off");
+    await sync(db);
+
+    expect(live(db).map((entry) => entry.event_key)).toEqual(["vendor_settlement"]);
+    const current = db.state.settlement as ReturnType<typeof vendorStatement>;
+    expect(ledgerBalances(db)).toEqual(
+      describedBalances(describeVendorSettlement({ ...current, methodAccounts: METHOD_ACCOUNTS })),
+    );
+  });
+
+  it("moves back to per-payment entries when switched on again", async () => {
+    vi.stubEnv("LEDGER_PER_PAYMENT_POSTINGS", "off");
+    const db = fakeLedger(vendorStatement());
+    pay(db, instalment("pay-1", 6000, "Bank Transfer", 9));
+    await sync(db);
+
+    vi.unstubAllEnvs();
+    pay(db, instalment("pay-2", 4000, "Cash", 12));
+    await sync(db);
+
+    expect(live(db).map((entry) => entry.event_key)).toEqual([
+      "vendor_statement",
+      "vendor_statement_payment:pay-1",
+      "vendor_statement_payment:pay-2",
+    ]);
   });
 });
 

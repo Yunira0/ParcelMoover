@@ -15,7 +15,8 @@ import {
 } from '../../services/carrierCod.service';
 import { apiErrorMessage } from '../../utils/serverValidation';
 import { todayNepalAd } from '../../utils/nepaliDate';
-import { CarrierChargeFields, CarrierChargeInput, useCarrierCharges } from './carrierCharges';
+import { useCarrierCharges } from './carrierCharges';
+import { CarrierChargeFields, CarrierChargeInput } from './CarrierChargeFields';
 import '../SettlementCreatePage.css';
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
