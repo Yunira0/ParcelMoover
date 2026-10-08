@@ -23,6 +23,8 @@ type ManagedUserType = "admin" | "vendor" | "rider";
 
 interface UpdateManagedUserInput {
   type: ManagedUserType;
+  /** Admin accounts only: their base role (admin, accountant or sales). */
+  role?: "admin" | "accountant" | "sales";
   fullName?: string;
   phone?: string;
   email?: string;
@@ -162,10 +164,9 @@ function putRate(obj: Record<string, unknown>, key: string, val: string | number
 // vendors. Leaving `admin` in place would silently grant a sales account
 // full admin access instead of the intended vendor-scoped view.
 //
-// NOT called on profile edits: department is a display attribute past
-// creation, and editing it must not silently re-derive RBAC role membership.
-// Role changes for an existing account go through the dedicated role and
-// permissions endpoints (setAdminSuperAdminRole / updateAdminPermissions).
+// Department only picks the starting role. Editing it later must not
+// silently change access, so an existing account's role changes through the
+// explicit `role` field on the admin edit form (changeAdminBaseRole below).
 //
 // The "Accountant" department works the same way for the finance-only
 // `accountant` role (utils/financeRoles.ts): it replaces `admin` so the
@@ -175,13 +176,54 @@ const DEPARTMENT_ROLES: Record<string, string> = {
   accountant: ACCOUNTANT_ROLE,
 };
 
-async function syncSalesRoleForDepartment(
+/**
+ * Moves an existing admin account to another base role, audited. Refused for
+ * your own account (no locking yourself out) and for a super admin, whose
+ * access the super-admin switch decides.
+ */
+async function changeAdminBaseRole(
+  tx: Pick<typeof prisma, "roles" | "user_roles" | "audit_logs">,
+  actorUserId: string,
+  userId: string,
+  adminId: string,
+  role: string,
+) {
+  const held = (await tx.user_roles.findMany({ where: { user_id: userId }, include: { roles: true } }))
+    .map((userRole) => userRole.roles.code);
+  const base = held.filter((code) => BASE_ROLES.includes(code));
+  if (base.length === 1 && base[0] === role) return;
+  if (held.includes("super_admin")) {
+    throw new AppError(400, "A super admin already has full access; use the super admin switch instead");
+  }
+  if (userId === actorUserId) throw new AppError(400, "You cannot change your own role");
+
+  await setBaseRole(tx, userId, role);
+  await tx.audit_logs.create({
+    data: {
+      actor_id: actorUserId,
+      entity_type: "admin",
+      entity_id: adminId,
+      action: "CHANGE_ADMIN_ROLE",
+      old_data: { roles: base },
+      new_data: { role },
+    },
+  });
+}
+
+/** The role an admin account starts with: Sales or Accountant by department, otherwise admin. */
+const roleForDepartment = (department: string | null | undefined) =>
+  DEPARTMENT_ROLES[(department ?? "").trim().toLowerCase()] ?? "admin";
+
+/** The base roles an admin account holds exactly one of. super_admin sits on top and is set separately. */
+const BASE_ROLES = ["admin", ...new Set(Object.values(DEPARTMENT_ROLES))];
+
+/** Gives the account exactly one base role, removing the others. */
+async function setBaseRole(
   tx: Pick<typeof prisma, "roles" | "user_roles">,
   userId: string,
-  department: string | null | undefined,
+  wantedCode: string,
 ) {
-  const wantedCode = DEPARTMENT_ROLES[(department ?? "").trim().toLowerCase()] ?? "admin";
-  const codes = ["admin", ...new Set(Object.values(DEPARTMENT_ROLES))];
+  const codes = BASE_ROLES;
   const roles = await tx.roles.findMany({ where: { code: { in: codes } } });
   const wanted = roles.find((r) => r.code === wantedCode);
   if (!wanted) {
@@ -456,11 +498,8 @@ export async function updateManagedUserProfile(
         u.branch_scoped = await deriveBranchScoped(tx, data.locationId || null);
       }
       if (joinedAt) u.joined_at = joinedAt;
-      // Department is a display attribute only past account creation - it must
-      // not silently re-derive the account's RBAC role (that previously made
-      // routine department edits grant/revoke the `admin`/`sales` role as a
-      // side effect). Role changes go through the dedicated role/permissions
-      // endpoints instead.
+      // Department is a label past creation; only an explicit `role` changes access.
+      if (data.role) await changeAdminBaseRole(tx, actorUserId, userId, id, data.role);
       Object.assign(u, documentPaths);
       const updatedAdmin = await tx.admins.update({ where: { id }, data: u });
       return updatedAdmin;
@@ -580,10 +619,17 @@ export async function getManagedUserDetail(actorUserId: string, type: ManagedUse
   }
 
   if (type === "admin") {
-    const a = await prisma.admins.findUnique({ where: { id }, include: { users: true } });
+    const a = await prisma.admins.findUnique({
+      where: { id },
+      include: { users: { include: { user_roles: { include: { roles: true } } } } },
+    });
     if (!a) throw new AppError(404, "Admin not found");
+    const roleCodes = a.users.user_roles.map((userRole) => userRole.roles.code);
     return {
       type, id: a.id, userId: a.user_id,
+      // What the account can access - department is only a label after creation.
+      role: BASE_ROLES.find((code) => roleCodes.includes(code)) ?? null,
+      isSuperAdmin: roleCodes.includes("super_admin"),
       employeeId: a.employee_number ? `PM-${a.employee_number}` : "",
       fullName: a.users.full_name, email: a.users.email, phone: a.users.phone,
       locationId: a.location_id, branchScoped: a.branch_scoped, position: a.position, department: a.department,
@@ -1079,7 +1125,7 @@ export async function registerUserBySuperAdmin(
           joined_at: data.joinedAt ? new Date(data.joinedAt) : null,
         },
       });
-      await syncSalesRoleForDepartment(tx, user.id, data.department);
+      await setBaseRole(tx, user.id, roleForDepartment(data.department));
       await tx.audit_logs.create({
         data: {
           actor_id: superAdminUserID,

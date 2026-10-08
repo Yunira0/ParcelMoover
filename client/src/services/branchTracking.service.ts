@@ -133,6 +133,12 @@ export async function createBranchSettlement(input: {
   return response.data;
 }
 
+/** Replaces an unpaid statement's orders; the commission keeps the statement's rate. */
+export async function updateBranchSettlement(id: string, orderIds: string[]) {
+  const response = await api.patch(`/branches/settlements/${id}`, { orderIds });
+  return response.data;
+}
+
 export interface BranchSettlementPaymentRecord {
   id: string;
   amount: number;

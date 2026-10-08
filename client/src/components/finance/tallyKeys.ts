@@ -53,6 +53,8 @@ const SOURCE_VOUCHER_TYPES: Record<string, string> = {
   settlement_vendor: 'Payment',
   branch_settlement: 'Receipt',
   carrier_settlement: 'Receipt',
+  // A statement records what is owed; its instalments are the Receipts and Payments.
+  statement: 'Journal',
   parcel: 'Sales',
   vendor_payment: 'Payment',
   expense: 'Payment',

@@ -68,6 +68,11 @@ export async function createCarrierSettlement(input: {
   return (await api.post('/finance/carrier-settlements', input)).data.data;
 }
 
+/** Replaces an unpaid statement's orders and charges. */
+export async function updateCarrierSettlement(id: string, items: Array<{ codCollectionId: string; carrierCharge: number }>) {
+  return (await api.patch(`/finance/carrier-settlements/${id}`, { items })).data.data;
+}
+
 export async function getCarrierSettlement(id: string): Promise<CarrierSettlementDetail> {
   return (await api.get(`/finance/carrier-settlements/${id}`)).data.data;
 }

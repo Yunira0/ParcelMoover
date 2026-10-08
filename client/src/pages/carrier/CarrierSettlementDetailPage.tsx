@@ -1,12 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Ban, CreditCard } from 'lucide-react';
+import { ArrowLeft, Ban, CreditCard, Pencil } from 'lucide-react';
 import Button from '../../components/Button';
 import StatusChip from '../../components/StatusChip';
 import ConfirmBanner from '../../components/ConfirmBanner';
 import RevertSettlementModal from '../../components/RevertSettlementModal';
 import SegmentedTabs from '../../components/SegmentedTabs';
 import CarrierSettlementFiles from './CarrierSettlementFiles';
+import CarrierEditSettlementModal from './CarrierEditSettlementModal';
 import { hasAdminPermission, hasAnyRole } from '../../utils/auth';
 import {
   CARRIER_LABEL,
@@ -32,6 +33,7 @@ const CarrierSettlementDetailPage: React.FC = () => {
   const [error, setError] = useState('');
   const [reloadKey, setReloadKey] = useState(0);
   const [showCancel, setShowCancel] = useState(false);
+  const [showEdit, setShowEdit] = useState(false);
   const [tab, setTab] = useState<'billing' | 'file'>('billing');
   const [banner, setBanner] = useState<{ title: string; meta?: string } | null>(
     (location.state as { confirmBanner?: { title: string; meta?: string } } | null)?.confirmBanner ?? null,
@@ -58,6 +60,11 @@ const CarrierSettlementDetailPage: React.FC = () => {
           {detail && isSettlementPayable(detail.status) && (
             <Button variant="primary" onClick={() => navigate(`/finance/carrier-cod/${id}/pay`)}>
               <CreditCard size={16} /> {detail.status === 'partially_paid' ? 'Record Balance' : 'Record Payment'}
+            </Button>
+          )}
+          {canCancel && detail?.status === 'pending' && (
+            <Button variant="secondary" onClick={() => setShowEdit(true)}>
+              <Pencil size={16} /> Edit
             </Button>
           )}
           {canCancel && detail?.status === 'pending' && (
@@ -237,6 +244,17 @@ const CarrierSettlementDetailPage: React.FC = () => {
           onSuccess={() => {
             setReloadKey((k) => k + 1);
             setBanner({ title: `${detail.statementNo} cancelled`, meta: 'Its orders are free for a future statement' });
+          }}
+        />
+      )}
+
+      {showEdit && detail && (
+        <CarrierEditSettlementModal
+          detail={detail}
+          onClose={() => setShowEdit(false)}
+          onSuccess={() => {
+            setReloadKey((k) => k + 1);
+            setBanner({ title: `${detail.statementNo} updated` });
           }}
         />
       )}

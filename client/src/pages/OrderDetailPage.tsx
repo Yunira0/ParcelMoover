@@ -114,7 +114,7 @@ const OrderDetailPage: React.FC = () => {
   const [overrideSaving, setOverrideSaving] = useState(false);
   const [overrideError, setOverrideError] = useState('');
 
-  // Redirect (customer moved) — admin/super_admin only, same as the server route.
+  // Redirect (customer moved) and forwarding: admins and the accountant, same as the server routes.
   const isAdmin = getCurrentUserRoles().some((r) => ['admin', 'super_admin'].includes(r));
   const [redirectOpen, setRedirectOpen] = useState(false);
   const [redirectSaving, setRedirectSaving] = useState(false);
@@ -251,19 +251,19 @@ const OrderDetailPage: React.FC = () => {
   }
 
   const isEditBlocked = EDIT_BLOCKED_STATUSES.includes(order.status);
-  const canEditNow = isAdmin ? !isEditBlocked : isVendorActor && VENDOR_EDITABLE_STATUSES.includes(order.status);
+  // Office staff edit order details: admins and the accountant (finance corrections).
+  const isOfficeEditor = isAdmin || isAccountantUser();
+  const canEditNow = isOfficeEditor ? !isEditBlocked : isVendorActor && VENDOR_EDITABLE_STATUSES.includes(order.status);
   // Hidden outright for a terminal parcel or a viewer with no edit permission
   // at all (rider/sales); disabled-with-reason only for the vendor window
   // that closes once ops has the parcel, since that's a temporary, explainable
   // state worth surfacing rather than a settled one worth hiding.
   const showEditDisabled = !canEditNow && !isEditBlocked && isVendorActor;
-  // Narrow escape hatch: super_admin or an admin holding EDIT_SETTLEMENTS may
-  // still fix the COD amount on an otherwise-locked (delivered/RTV/RTO)
-  // parcel — every other field stays locked. Server re-enforces this exactly;
-  // this only decides whether to offer the affordance.
-  // The accountant holds EDIT_SETTLEMENTS for statements, not orders - the
-  // order edit API refuses it, so the control would only fail.
-  const canOverrideCod = isSuperAdmin || (isAdmin && hasAdminPermission('EDIT_SETTLEMENTS'));
+  // Narrow escape hatch: super_admin, the accountant, or an admin holding
+  // EDIT_SETTLEMENTS may still fix the COD amount on an otherwise-locked
+  // (delivered/RTV/RTO) parcel — every other field stays locked. Server
+  // re-enforces this exactly; this only decides whether to offer the affordance.
+  const canOverrideCod = isSuperAdmin || isAccountantUser() || (isAdmin && hasAdminPermission('EDIT_SETTLEMENTS'));
   const codEditable = canEditNow || canOverrideCod;
 
   return (
@@ -398,7 +398,7 @@ const OrderDetailPage: React.FC = () => {
           <div className="od-section-header od-section-header-divided">
             <h2>Redirect / Forward Log</h2>
             <span className="od-section-count">{order.redirectLog.length}</span>
-            {isAdmin && (order.status === 'delivered' || REDIRECTABLE_STATUSES.includes(order.status)) && (
+            {isOfficeEditor && (order.status === 'delivered' || REDIRECTABLE_STATUSES.includes(order.status)) && (
               <button
                 type="button"
                 className="od-section-action"

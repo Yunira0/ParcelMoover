@@ -10,6 +10,7 @@ import { extractServerFieldErrors, isValidEmail, isValidName, isValidPhone, norm
 import { convertHeicFileIfNeeded } from '../utils/heicConvert';
 import { adminDocumentSizeError, adminSaveErrorMessage, formatAdminFileSize } from '../utils/adminUpload';
 import { useHubLock } from '../hooks/useHubLock';
+import Banner from '../components/Banner';
 import './AdminFormPage.css';
 
 // API validation-error field → form field, for errors returned by the server.
@@ -63,6 +64,20 @@ const DEPARTMENT_OPTIONS = [
   { value: 'Customer Experience', label: 'Customer Experience' },
   { value: 'Sales', label: 'Sales' },
 ];
+
+type AdminRole = 'admin' | 'accountant' | 'sales';
+
+const ROLE_OPTIONS: Array<{ value: AdminRole; label: string }> = [
+  { value: 'admin', label: 'Admin — operations' },
+  { value: 'accountant', label: 'Accountant — Finance only' },
+  { value: 'sales', label: 'Sales — their own vendors only' },
+];
+
+/** The role a department gives a new account; mirrors roleForDepartment on the server. */
+const roleForDepartment = (department: string): AdminRole => {
+  const key = department.trim().toLowerCase();
+  return key === 'sales' ? 'sales' : key === 'accountant' ? 'accountant' : 'admin';
+};
 
 const emptyForm: AdminFormInput = {
   employeeId: '',
@@ -181,6 +196,12 @@ const AdminFormPage: React.FC = () => {
   const { id: editId } = useParams();
   const isEdit = !!editId;
   const [form, setForm] = useState<AdminFormInput>(emptyForm);
+  // Edit only: what the account can access. Department never changes it after creation.
+  const [access, setAccess] = useState<{ role: AdminRole | ''; saved: AdminRole | ''; superAdmin: boolean }>({
+    role: '',
+    saved: '',
+    superAdmin: false,
+  });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [submitted, setSubmitted] = useState(false);
@@ -238,6 +259,8 @@ const AdminFormPage: React.FC = () => {
         if (!res?.success || !res.data) return;
         const d = res.data;
         const s = (v: unknown) => (v == null ? '' : String(v));
+        const role = (d.role ?? '') as AdminRole | '';
+        setAccess({ role, saved: role, superAdmin: !!d.isSuperAdmin });
         setForm((prev) => ({
           ...prev,
           employeeId: s(d.employeeId),
@@ -357,6 +380,7 @@ const AdminFormPage: React.FC = () => {
       if (isEdit) {
         await updateUserProfile(editId!, {
           type: 'admin',
+          ...(access.role && access.role !== access.saved ? { role: access.role } : {}),
           fullName: form.fullName,
           phone: normalizePhone(form.phone),
           email: form.email,
@@ -610,6 +634,28 @@ const AdminFormPage: React.FC = () => {
                   options={DEPARTMENT_OPTIONS}
                 />
                 {fieldErrors.department && <span className="afp-field-error">{fieldErrors.department}</span>}
+                {isEdit && (access.superAdmin ? (
+                  <p className="afp-hint">Super admin — full access. Change it with the super admin switch in Admin Management.</p>
+                ) : access.role && (
+                  <>
+                    <FormField
+                      label="Role"
+                      type="select"
+                      required
+                      value={access.role}
+                      onChange={(value) => setAccess((prev) => ({ ...prev, role: value as AdminRole }))}
+                      options={ROLE_OPTIONS}
+                    />
+                    <p className="afp-hint">What this person can open. Department and designation are only labels.</p>
+                    {form.department && roleForDepartment(form.department) !== access.role && (
+                      <Banner tone="warning">
+                        Department is {form.department}, but the role is{' '}
+                        {ROLE_OPTIONS.find((option) => option.value === access.role)?.label.split(' — ')[0]}. Change the
+                        role if their access should match.
+                      </Banner>
+                    )}
+                  </>
+                ))}
                 <FormField
                   label="Designation"
                   required

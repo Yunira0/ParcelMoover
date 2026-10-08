@@ -130,29 +130,37 @@ const CashBankVoucherPage: React.FC = () => {
   const primaryOptions = useMemo(
     () => cashBankAccounts
       .filter((account) => source === 'all' || (source === 'cash' ? account.code === '1000' : account.code !== '1000'))
-      .map((account) => ({ id: account.code, label: `${account.name} · ${account.code}` })),
+      .map((account) => ({ id: account.code, label: account.name })),
     [cashBankAccounts, source],
   );
   const activePrimaryCode = primaryOptions.some((option) => option.id === primaryCode) ? primaryCode : '';
   const primaryAccount = byCode.get(activePrimaryCode);
 
-  // Payments use the full active chart, just like Journal. Custom accounts
-  // can use any code, so a numeric range must not determine eligibility.
-  // Receipts retain their existing exclusion of cash/bank counter accounts.
+  // Only what the voucher can plausibly be for, chosen by account type rather
+  // than code, since custom accounts can use any code. Money goes out to
+  // expenses, liabilities and other assets - and, for a deposit, to another
+  // cash or bank account; it comes in from income, liabilities and other
+  // assets. Equity, and income on a payment or expenses on a receipt, never
+  // belong on these vouchers.
   const counterOptions = useMemo(() => {
-    if (type === 'payment') {
-      return accounts.map((account) => ({ id: account.code, label: `${account.name} · ${account.code}` }));
-    }
     const cashBankCodes = new Set(cashBankAccounts.map((account) => account.code));
+    if (type === 'payment') {
+      return accounts
+        .filter((account) => cashBankCodes.has(account.code)
+          ? account.code !== activePrimaryCode
+          : account.type === 'expense' || account.type === 'liability' || account.type === 'asset')
+        .map((account) => ({ id: account.code, label: account.name }));
+    }
     return [
       ...(branchCodAccount
-        ? [{ id: branchCodAccount.code, label: `${branchCodAccount.name} · ${branchCodAccount.code} (cash from a branch)` }]
+        ? [{ id: branchCodAccount.code, label: `${branchCodAccount.name} (cash from a branch)` }]
         : []),
       ...accounts
-        .filter((account) => !cashBankCodes.has(account.code))
-        .map((account) => ({ id: account.code, label: `${account.name} · ${account.code}` })),
+        .filter((account) => !cashBankCodes.has(account.code)
+          && (account.type === 'revenue' || account.type === 'liability' || account.type === 'asset'))
+        .map((account) => ({ id: account.code, label: account.name })),
     ];
-  }, [type, accounts, cashBankAccounts, branchCodAccount]);
+  }, [type, accounts, cashBankAccounts, branchCodAccount, activePrimaryCode]);
 
   const isBranchLine = useCallback(
     (line: LineDraft) => type === 'receipt' && Boolean(branchCodAccount) && line.accountCode === branchCodAccount?.code,

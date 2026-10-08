@@ -11,6 +11,7 @@ import {
   getUnsettledCarrierOrders,
   listCarrierSettlements,
   payCarrierSettlement,
+  updateCarrierSettlement,
 } from "../services/carrier-settlement.service";
 
 const actor = (req: Request) => ({ id: req.user!.id, roles: req.user!.roles });
@@ -87,4 +88,9 @@ export async function deleteCarrierSettlementDocumentController(req: Request, re
     await deleteCarrierSettlementDocument(actor(req), String(req.params.id), String(req.params.documentId));
     return res.json({ success: true, message: "File removed" });
   } catch (e) { return fail(res, e, "Failed to remove file"); }
+}
+
+export async function updateCarrierSettlementController(req: Request, res: Response) {
+  try { return res.json({ success: true, message: "3PL statement updated", data: await updateCarrierSettlement(actor(req), String(req.params.id), req.body) }); }
+  catch (e) { return fail(res, e, "Failed to update 3PL statement"); }
 }

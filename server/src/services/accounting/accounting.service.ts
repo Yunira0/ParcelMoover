@@ -89,9 +89,13 @@ const ALL_ENTRIES = Prisma.sql`TRUE`;
 /**
  * An entry's source as the ledger screens name its voucher type. A settlement
  * is a Receipt from a rider but a Payment to a vendor, so it carries its payee:
- * `settlement_rider` / `settlement_vendor`.
+ * `settlement_rider` / `settlement_vendor`. A statement entry moves no cash -
+ * its instalments do - so it reads as `statement`.
  */
-const VOUCHER_SOURCE = Prisma.sql`CASE WHEN e.source_type::text = 'settlement'
+const VOUCHER_SOURCE = Prisma.sql`CASE WHEN split_part(e.event_key, '#', 1)
+    IN ('rider_statement', 'vendor_statement', 'branch_statement', 'carrier_statement')
+  THEN 'statement'
+  WHEN e.source_type::text = 'settlement'
   THEN 'settlement_' || COALESCE((SELECT s.payee_type FROM settlements s WHERE s.id = e.source_id), 'rider')
   ELSE e.source_type::text END`;
 
@@ -1173,21 +1177,30 @@ export async function getPartySettlementLedger(
         FROM settlements s
         -- The live entry only: a restated statement has its superseded entries
         -- voided, and drilling into one would open a voucher that no longer
-        -- says what this row says.
+        -- says what this row says. Instalments post their own entries, which
+        -- the instalment rows below link to instead.
         LEFT JOIN LATERAL (
           SELECT je.id FROM journal_entries je
            WHERE je.source_type = 'settlement' AND je.source_id = s.id AND je.status = 'posted'
+             AND je.event_key NOT LIKE '%payment:%'
            ORDER BY je.created_at DESC LIMIT 1
         ) e ON TRUE
        WHERE ${belongsToParty}
          AND ${raisedAt} >= ${range.from} AND ${raisedAt} < ${range.to}
     `),
     prisma.$queryRaw<
-      Array<{ id: string; statement_id: string; paid_at: Date; amount: string; method: string | null }>
+      Array<{ id: string; statement_id: string; paid_at: Date; amount: string; method: string | null; entry_id: string | null }>
     >(Prisma.sql`
-      SELECT sp.id, s.statement_id, sp.paid_at, sp.amount, sp.method
+      SELECT sp.id, s.statement_id, sp.paid_at, sp.amount, sp.method, e.id AS entry_id
         FROM settlement_payments sp
         JOIN settlements s ON s.id = sp.settlement_id
+        -- Null on statements still carrying the older one-entry posting.
+        LEFT JOIN LATERAL (
+          SELECT je.id FROM journal_entries je
+           WHERE je.source_type = 'settlement' AND je.source_id = s.id AND je.status = 'posted'
+             AND split_part(je.event_key, '#', 1) LIKE '%payment:' || sp.id::text
+           LIMIT 1
+        ) e ON TRUE
        WHERE ${belongsToParty}
          AND sp.paid_at >= ${range.from} AND sp.paid_at < ${range.to}
     `),
@@ -1243,7 +1256,7 @@ export async function getPartySettlementLedger(
       id: `pay-${instalment.id}`,
       kind: "instalment",
       reference: instalment.statement_id,
-      entryId: null,
+      entryId: instalment.entry_id,
       at: instalment.paid_at,
       description: isRider
         ? `COD paid by rider ${money(amount)}${method}`

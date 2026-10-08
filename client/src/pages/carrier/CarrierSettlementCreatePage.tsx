@@ -15,6 +15,8 @@ import {
 } from '../../services/carrierCod.service';
 import { apiErrorMessage } from '../../utils/serverValidation';
 import { todayNepalAd } from '../../utils/nepaliDate';
+import { useCarrierCharges } from './carrierCharges';
+import { CarrierChargeFields, CarrierChargeInput } from './CarrierChargeFields';
 import '../SettlementCreatePage.css';
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -54,11 +56,10 @@ const CarrierSettlementCreatePage: React.FC = () => {
   const [searchParams] = useSearchParams();
   const [carrier, setCarrier] = useState<CarrierCode>(searchParams.get('carrier') === 'upaya' ? 'upaya' : 'ncm');
   const [settlementDate, setSettlementDate] = useState(todayNepalAd);
-  const [defaultCharge, setDefaultCharge] = useState('');
+  const charges = useCarrierCharges();
+  const { resetRows } = charges;
   const [orders, setOrders] = useState<UnsettledCarrierOrder[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  // A row's own charge, when it differs from the default above.
-  const [charges, setCharges] = useState<Record<string, string>>({});
   const [pasted, setPasted] = useState('');
   const [fetchingOrders, setFetchingOrders] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -72,13 +73,13 @@ const CarrierSettlementCreatePage: React.FC = () => {
         if (!active) return;
         setOrders(list);
         setSelected(new Set());
-        setCharges({});
+        resetRows();
         setPasted('');
       })
       .catch(() => active && setOrders([]))
       .finally(() => active && setFetchingOrders(false));
     return () => { active = false; };
-  }, [carrier]);
+  }, [carrier, resetRows]);
 
   const search = useMemo(() => searchPasted(pasted, orders), [pasted, orders]);
   const visible = search ? orders.filter((o) => search.matched.has(o.codCollectionId)) : orders;
@@ -90,8 +91,11 @@ const CarrierSettlementCreatePage: React.FC = () => {
     setSelected(result ? new Set(result.matched) : new Set());
   };
 
-  const chargeOf = (id: string) => Number(charges[id] ?? defaultCharge) || 0;
   const selectedOrders = orders.filter((o) => selected.has(o.codCollectionId));
+  // In list order, so under a total the last selected row takes the remainder.
+  const chargeMap = charges.chargesFor(selectedOrders.map((o) => o.codCollectionId));
+  const chargeOf = (id: string) =>
+    chargeMap.get(id) ?? (charges.totalMode ? 0 : Number(charges.rowValue(id, undefined)) || 0);
   const total = round2(selectedOrders.reduce((sum, o) => sum + o.collectedAmount - chargeOf(o.codCollectionId), 0));
 
   const toggleOrder = (id: string) =>
@@ -161,16 +165,7 @@ const CarrierSettlementCreatePage: React.FC = () => {
             <div className="scp-field">
               <FormField label="Settlement Date" type="date" value={settlementDate} onChange={setSettlementDate} />
             </div>
-            <div className="scp-field">
-              <FormField
-                label="Charge per Order"
-                type="decimal"
-                value={defaultCharge}
-                onChange={setDefaultCharge}
-                placeholder="e.g. 150"
-                hint={`What ${label} keeps on each order. Change a row below if it differs.`}
-              />
-            </div>
+            <CarrierChargeFields charges={charges} carrierLabel={label} fieldClassName="scp-field" />
           </div>
         </section>
 
@@ -241,13 +236,11 @@ const CarrierSettlementCreatePage: React.FC = () => {
                       <td>{order.destination || '-'}</td>
                       <td className="scp-num">Rs. {order.collectedAmount.toLocaleString()}</td>
                       <td className="scp-num" onClick={(e) => e.stopPropagation()}>
-                        <FormField
+                        <CarrierChargeInput
+                          charges={charges}
+                          id={order.codCollectionId}
+                          share={chargeMap.get(order.codCollectionId)}
                           label={`${label} charge on ${order.trackingId}`}
-                          hideLabel
-                          type="decimal"
-                          value={charges[order.codCollectionId] ?? defaultCharge}
-                          onChange={(value) => setCharges((prev) => ({ ...prev, [order.codCollectionId]: value }))}
-                          placeholder="0"
                         />
                       </td>
                       <td className="scp-num scp-num-strong">

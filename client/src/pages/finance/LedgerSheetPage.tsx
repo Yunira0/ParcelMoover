@@ -115,7 +115,7 @@ const LedgerSheetPage: React.FC = () => {
     if (!ledger) return;
     const dn = ledger.account.normalSide !== 'credit';
     await downloadExcel(
-      `ledger-${ledger.account.code}`,
+      `ledger-${ledger.account.name}`,
       ledger.account.name,
       ['Date', 'Particulars', 'Vch Type', 'Vch No.', 'Debit', 'Credit', 'Balance', 'Narration'],
       [
@@ -158,7 +158,7 @@ const LedgerSheetPage: React.FC = () => {
         searchPlaceholder="Search ledgers..."
         options={accounts.filter((account) => account.isActive || account.code === code).map((account) => ({
           value: account.code,
-          label: `${account.name} · ${account.code}`,
+          label: account.name,
         }))}
         onChange={pickAccount}
       />
@@ -204,7 +204,7 @@ const LedgerSheetPage: React.FC = () => {
           <div className="jv-meta">
             <div className="jv-meta-field">
               <span>Ledger :</span>
-              <strong>{ledger.account.name} · {ledger.account.code}</strong>
+              <strong>{ledger.account.name}</strong>
             </div>
             <div className="jv-meta-field">
               <span>Under :</span>

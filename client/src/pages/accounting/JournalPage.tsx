@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import TallyPage, { type TallyAction } from '../../components/finance/TallyPage';
+import { dayBookLines } from '../../components/finance/compactLines';
 import FilterDropdown from '../../components/FilterDropdown';
 import Pagination from '../../components/Pagination';
 import SearchField from '../../components/SearchField';
@@ -43,6 +44,8 @@ const SOURCE_LABELS: Record<string, string> = {
   reversal: 'Reversal',
   opening_balance: 'Opening balance',
 };
+
+const SETTLED_BY_CASH = new Set(['manual', 'settlement', 'branch_settlement', 'carrier_settlement']);
 
 const SOURCE_OPTIONS = [
   { value: 'all', label: 'All sources' },
@@ -134,8 +137,9 @@ const JournalPage: React.FC = () => {
   const vchType = useCallback(
     (entry: JournalEntry) =>
       // A hand-posted voucher or a settlement is a Payment or Receipt by which
-      // way it moved cash; the source alone doesn't say.
-      entry.sourceType === 'manual' || entry.sourceType === 'settlement'
+      // way it moved cash, or a Journal if it moved none (a statement); the
+      // source alone doesn't say.
+      SETTLED_BY_CASH.has(entry.sourceType)
         ? manualVoucherType(entry.lines, cashBankCodes)
         : voucherTypeOf(entry.sourceType),
     [cashBankCodes],
@@ -274,7 +278,7 @@ const JournalPage: React.FC = () => {
                     </tr>
                     {detailed && (
                       <>
-                        {entry.lines.map((line, index) => (
+                        {dayBookLines(entry.lines).map((line, index) => (
                           <tr key={index} className="jv-sub">
                             <td />
                             <td className="jv-sub-name">

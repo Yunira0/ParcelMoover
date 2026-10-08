@@ -13,6 +13,7 @@ import { syncSettlementPostings } from "./accounting/sync";
 import { getActivePaymentMethodNames } from "./payment-method.service";
 import { adminBranchScopeIds, assertHeadOfficeOnly } from "../lib/branchScope";
 import { isFinanceStaff } from "../utils/financeRoles";
+import { DELIVERY_CHARGE_VAT_RATE } from "./money-rules";
 import {
   AttachSettlementDocumentsInput,
   CodPaymentFilter,
@@ -962,6 +963,7 @@ export async function createSettlement(
         amount: grossAmount,
         payable_amount: payableAmount,
         vendor_credit_applied: creditApplied,
+        vat_rate: payeeType === "vendor" ? DELIVERY_CHARGE_VAT_RATE : null,
         settlement_date: parsedDate,
         status: "pending",
         settled_by: actor.id,
@@ -2378,6 +2380,9 @@ export async function getSettlementDetail(actor: Actor, settlementId: string): P
     amount: Number(settlement.amount),
     payableAmount,
     vendorCreditApplied: Number(settlement.vendor_credit_applied),
+    // Staff screens only: left off entirely for a vendor, so the vendor portal
+    // and the Partner API (which shares this result) are unchanged.
+    ...(isFinanceStaff(actor) && settlement.vat_rate !== null ? { vatRate: Number(settlement.vat_rate) } : {}),
     paidAmount,
     remainingAmount: round2(Math.abs(payableAmount) - paidAmount),
     status: settlement.status,

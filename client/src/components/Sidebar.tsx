@@ -545,10 +545,9 @@ const AccountantSidebar: React.FC = () => {
       <SidebarToggleBtn />
       <div className="sidebar-nav">
         <SidebarItem to="/accounting" icon={LayoutDashboard} label="Finance Overview" end />
-        {/* Read-only: where to check a figure against the orders behind it. */}
+        {/* Where to check a figure against the orders behind it, and correct one. */}
         <SidebarItem to="/orders" icon={Package} label="Orders" />
         <SidebarItem to="/merchant-overview" icon={Gauge} label="Vendor Overview" />
-        <SidebarItem to="/rider-overview" icon={Bike} label="Rider Overview" />
         <SidebarItem to="/branches" icon={Building2} label="Branch Overview" end />
         <FinanceNav canReadBooks />
       </div>

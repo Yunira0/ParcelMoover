@@ -86,7 +86,11 @@ jobs:
   # ── Stage 2: build the image HERE, not on the 1GB production box.
   # Building on the server OOM-killed it on 2026-07-16 and locked out SSH.
   # The server only ever pulls finished images from GHCR now. ──
+  # Only the production repository builds and deploys. Copies of it (forks,
+  # personal working repos) have no server secrets, so on a push to their main
+  # they run the checks above and stop here instead of failing at "Set up SSH".
   build:
+    if: github.repository == 'Yunira0/ParcelMoover'
     needs: ci
     runs-on: ubuntu-latest
     permissions:
@@ -142,6 +146,7 @@ jobs:
 
   # ── Stage 3: ship to EC2 — pull the image, snapshot the DB, warm replacement, switch traffic ──
   deploy:
+    if: github.repository == 'Yunira0/ParcelMoover'
     needs: build
     runs-on: ubuntu-latest
     environment: production     # optional: add required reviewers in repo settings
@@ -161,6 +166,10 @@ jobs:
           SSH_KEY: ${{ secrets.EC2_SSH_KEY }}          # dedicated deploy key, NOT the .pem
           SSH_KNOWN_HOSTS: ${{ secrets.EC2_KNOWN_HOSTS }}  # optional pinned host key
         run: |
+          if [ -z "$SSH_KEY" ] || [ -z "$SSH_HOST" ]; then
+            echo "::error title=Deploy secrets missing::Set EC2_HOST and EC2_SSH_KEY in Settings > Secrets and variables > Actions for ${{ github.repository }}."
+            exit 1
+          fi
           mkdir -p ~/.ssh
           echo "$SSH_KEY" > ~/.ssh/deploy_key
           chmod 400 ~/.ssh/deploy_key
