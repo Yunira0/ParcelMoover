@@ -114,7 +114,7 @@ const OrderDetailPage: React.FC = () => {
   const [overrideSaving, setOverrideSaving] = useState(false);
   const [overrideError, setOverrideError] = useState('');
 
-  // Redirect (customer moved) — admin/super_admin only, same as the server route.
+  // Redirect (customer moved) and forwarding: admins and the accountant, same as the server routes.
   const isAdmin = getCurrentUserRoles().some((r) => ['admin', 'super_admin'].includes(r));
   const [redirectOpen, setRedirectOpen] = useState(false);
   const [redirectSaving, setRedirectSaving] = useState(false);
@@ -398,7 +398,7 @@ const OrderDetailPage: React.FC = () => {
           <div className="od-section-header od-section-header-divided">
             <h2>Redirect / Forward Log</h2>
             <span className="od-section-count">{order.redirectLog.length}</span>
-            {isAdmin && (order.status === 'delivered' || REDIRECTABLE_STATUSES.includes(order.status)) && (
+            {isOfficeEditor && (order.status === 'delivered' || REDIRECTABLE_STATUSES.includes(order.status)) && (
               <button
                 type="button"
                 className="od-section-action"

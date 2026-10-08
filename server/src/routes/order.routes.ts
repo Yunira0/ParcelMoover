@@ -402,13 +402,13 @@ orderRouter.patch(
 );
 
 // POST /orders/:id/redirect — customer moved: point the parcel at a different
-// destination branch/address, with a reason and a diversion charge. Admin-only;
-// vendors go through support so the fee is always an ops decision.
+// destination branch/address, with a reason and a diversion charge. Admins and
+// the accountant; vendors go through support so the fee is always an office decision.
 orderRouter.post(
   "/:id/redirect",
   authMiddleware,
   csrfProtection,
-  authorizeRoles("super_admin", "admin"),
+  authorizeRoles("super_admin", "admin", "accountant"),
   requireStaffPermission("ORDER_ACCESS"),
   statusUpdateLimiter,
   validate(uuidParamSchema, "params"),
@@ -418,12 +418,12 @@ orderRouter.post(
 
 // POST /orders/:id/forward — a delivered parcel was forwarded on to another
 // destination: change the destination and add a manual forwarding charge.
-// Status stays delivered. Admin-only, like redirect.
+// Status stays delivered. Same roles as redirect.
 orderRouter.post(
   "/:id/forward",
   authMiddleware,
   csrfProtection,
-  authorizeRoles("super_admin", "admin"),
+  authorizeRoles("super_admin", "admin", "accountant"),
   requireStaffPermission("ORDER_ACCESS"),
   statusUpdateLimiter,
   validate(uuidParamSchema, "params"),

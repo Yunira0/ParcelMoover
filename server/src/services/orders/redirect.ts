@@ -4,6 +4,7 @@ import { AppError } from "../../utils/AppError";
 import type { RedirectOrderInput } from "../../types/order.type";
 import { invalidateVendorFinanceCache } from "../finance.service";
 import { isStaffActor } from "../vendor-scope.service";
+import { isAccountant } from "../../utils/financeRoles";
 import { invalidateOrderCaches } from "./cache";
 import { buildSearchText } from "./orderHelpers";
 import { getAdminBranchScope, branchTouchesFilter } from "./scope";
@@ -26,7 +27,7 @@ const REDIRECT_ALLOWED_STATUSES: parcel_status[] = [
 
 /**
  * Redirect a parcel to a different destination branch + address because the
- * customer moved. Admin/super_admin only.
+ * customer moved. Admin, super_admin or the accountant.
  *
  * Deliberately separate from updateOrderDetails: it always demands a reason,
  * never re-prices the route (the original charge stands) and instead adds the
@@ -38,8 +39,8 @@ export async function redirectOrder(
   parcelId: string,
   data: RedirectOrderInput,
 ) {
-  if (!isStaffActor(actor)) {
-    throw new AppError(403, "Only an admin can redirect an order");
+  if (!isStaffActor(actor) && !isAccountant(actor)) {
+    throw new AppError(403, "Only an admin or accountant can redirect an order");
   }
 
   const adminBranchIds = await getAdminBranchScope(actor);
