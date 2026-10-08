@@ -7,6 +7,7 @@
 //
 //   npm run admins:role-report          (development)
 //   npm run admins:role-report:prod     (production build)
+//   add --fail-on-mismatch to exit 1 when any account disagrees
 import "dotenv/config";
 import prisma from "../lib/prisma";
 
@@ -43,6 +44,8 @@ async function main() {
 
   console.log(`${admins.length} admin account(s) checked, ${mismatches.length} where role and department disagree.`);
   if (mismatches.length > 0) console.table(mismatches);
+  // For the post-deploy check: a mismatch is worth flagging on the deploy run.
+  if (mismatches.length > 0 && process.argv.includes("--fail-on-mismatch")) process.exitCode = 1;
   await prisma.$disconnect();
 }
 

@@ -256,6 +256,14 @@ jobs:
             sudo env APP_IMAGE="$APP_IMAGE" bash "$APP_DIR/deploy/deploy-app.sh"
           EOF
 
+      # Runs on the host, inside the container now serving traffic: the ledger
+      # reconcile and the admin role report (deploy/post-deploy-checks.sh).
+      # Advisory like the SEO step: a failed check flags the run with a warning
+      # without undoing a healthy release.
+      - name: Post-deploy checks (ledger reconcile, admin roles)
+        continue-on-error: true
+        run: ssh -i ~/.ssh/deploy_key ubuntu@"$SSH_HOST" "sudo bash /var/www/express-app/deploy/post-deploy-checks.sh"
+
       # Runs here, not on the host, so it sees the site through Cloudflare the
       # way crawlers do. Advisory: a failed SEO check flags the run without
       # undoing a healthy release. The purge needs the CF_API_TOKEN (Zone >

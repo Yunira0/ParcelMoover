@@ -26,7 +26,12 @@ if [[ "$mode" == active-image ]]; then
   docker inspect "deploy-${old_service}-1" --format '{{.Config.Image}}'
   exit
 fi
-[[ "$mode" == deploy || "$mode" == rollback ]] || { echo 'Usage: deploy-app.sh [deploy|rollback|active-image]' >&2; exit 1; }
+# The container serving traffic, for running checks inside the live release.
+if [[ "$mode" == active-container ]]; then
+  echo "deploy-${old_service}-1"
+  exit
+fi
+[[ "$mode" == deploy || "$mode" == rollback ]] || { echo 'Usage: deploy-app.sh [deploy|rollback|active-image|active-container]' >&2; exit 1; }
 exec 9>"$DEPLOY_LOCK"
 flock -n 9 || { echo 'Another deployment is running.' >&2; exit 1; }
 # Re-read after acquiring the lock; another deployment may have just finished.
