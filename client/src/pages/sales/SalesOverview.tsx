@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Download } from 'lucide-react';
 import PageHeader from '../../components/PageHeader';
@@ -62,16 +62,6 @@ const SalesOverview: React.FC = () => {
 
   // With a rep picked, orders wait until one of their vendors is clicked.
   const showOrders = !salesUserId || selectedVendor !== null;
-
-  // Picking a vendor brings its orders into view - they open below the
-  // vendor table, usually past the bottom of the screen.
-  const ordersRef = useRef<HTMLDivElement>(null);
-  const selectedVendorId = selectedVendor?.id;
-  useEffect(() => {
-    if (!selectedVendorId) return;
-    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    ordersRef.current?.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' });
-  }, [selectedVendorId]);
 
   const filters: SalesOverviewFilters = useMemo(
     () => ({
@@ -281,7 +271,7 @@ const SalesOverview: React.FC = () => {
         <>
           {error && <p className="order-load-error">{error}</p>}
 
-          <div className="order-toolbar sales-orders-anchor" ref={ordersRef}>
+          <div className="order-toolbar sales-orders-anchor">
             <div className="order-toolbar-left">
               <span className="vendor-overview-count">
                 {loading ? 'Loading…' : `${totalCount} order${totalCount === 1 ? '' : 's'}`}

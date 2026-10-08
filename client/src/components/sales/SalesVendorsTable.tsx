@@ -85,7 +85,8 @@ const SalesVendorsTable: React.FC<SalesVendorsTableProps> = ({ salesUserId, sele
       accessor: (v: SalesVendor) => (
         <span className="sales-vendor-email" title={v.email || undefined}>{v.email || '—'}</span>
       ),
-      width: '230px',
+      // No width: on a wide screen this column takes the spare room, so the
+      // figure columns stay snug instead of drifting apart.
     },
     { header: 'PHONE', accessor: (v: SalesVendor) => v.phone || '—', width: '130px', className: 'sales-vendors-figure' },
     {
@@ -100,7 +101,8 @@ const SalesVendorsTable: React.FC<SalesVendorsTableProps> = ({ salesUserId, sele
           <dd>{v.orders.returned.toLocaleString()}</dd>
         </dl>
       ),
-      width: '170px',
+      width: '140px',
+      className: 'sales-vendors-centered',
     },
     {
       header: 'COD DUE',
@@ -109,8 +111,8 @@ const SalesVendorsTable: React.FC<SalesVendorsTableProps> = ({ salesUserId, sele
           Rs. {Math.round(v.codDue).toLocaleString()}
         </span>
       ),
-      width: '130px',
-      className: 'sales-vendors-figure sales-vendors-money',
+      width: '120px',
+      className: 'sales-vendors-figure sales-vendors-numeric',
     },
     // The API sends these as AD "YYYY-MM-DD"; every date shown in this app is BS.
     { header: 'JOINED', accessor: (v: SalesVendor) => toBsDate(v.joined) || '—', width: '120px', className: 'sales-vendors-figure' },
@@ -136,7 +138,7 @@ const SalesVendorsTable: React.FC<SalesVendorsTableProps> = ({ salesUserId, sele
           </h2>
           <p className="sales-vendors-hint">
             {selectedVendor
-              ? <>Showing <strong>{salesVendorName(selectedVendor)}</strong> only. Click it again or clear to see every vendor.</>
+              ? <>Showing orders for <strong>{salesVendorName(selectedVendor)}</strong> only.</>
               : 'Click a vendor to see its orders.'}
           </p>
         </div>
@@ -147,9 +149,11 @@ const SalesVendorsTable: React.FC<SalesVendorsTableProps> = ({ salesUserId, sele
         )}
       </div>
 
-      {error && <p className="order-load-error">{error}</p>}
+      {/* With a vendor picked the list folds away so its orders sit right
+          below; the page stays mounted, so "Show all vendors" returns to it. */}
+      {!selectedVendor && error && <p className="order-load-error">{error}</p>}
 
-      <Table
+      {!selectedVendor && <Table
         columns={columns}
         data={vendors}
         selectable={false}
@@ -158,12 +162,12 @@ const SalesVendorsTable: React.FC<SalesVendorsTableProps> = ({ salesUserId, sele
         emptyMessage="This sales rep has no vendors yet."
         minWidth="1120px"
         tableClassName="sales-vendors-table"
-        onRowClick={(v) => onSelectVendor(selectedVendor?.id === v.id ? null : v)}
+        onRowClick={(v) => onSelectVendor(v)}
         getRowClassName={(v) => (isSelected(v) ? 'selected-row' : '')}
-      />
+      />}
 
       {/* Only when there's more than one page to move through (or the size was changed). */}
-      {(totalPages > 1 || pageSize !== PAGE_SIZE) && (
+      {!selectedVendor && (totalPages > 1 || pageSize !== PAGE_SIZE) && (
         <Pagination
           ariaLabel="Sales rep vendors pagination"
           page={page}

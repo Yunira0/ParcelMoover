@@ -204,8 +204,6 @@ export const updateManagedUserSchema = z.object({
   // admin-only
   position: optionalAuthString(100),
   department: optionalAuthString(100),
-  // What the admin account can access. Changes it on its own; department never does.
-  role: z.enum(["admin", "accountant", "sales"]).optional(),
   idDocumentType: optionalAuthString(50),
   idDocumentNumber: optionalAuthString(100),
   fatherName: optionalAuthString(100),
